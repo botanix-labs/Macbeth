@@ -29,6 +29,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot, Mutex};
+use secp256k1::PublicKey;
+use std::{future::Future, sync::Arc};
 
 mod block;
 mod call;
@@ -42,6 +44,18 @@ mod transactions;
 use crate::TracingCallPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
+use btc_wallet::address::gateway_address;
+
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+}
+
+#[derive(Debug)]
+pub enum GatewayAddressRPCError {
+    FailedToDecodeAggregatePublicKey(hex::FromHexError),
+    InvalidParam(&'static str),
+    FailedToGenerateGatewayAddress,
+}
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.
@@ -55,6 +69,15 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
 
     /// Returns provider chain info
     fn chain_info(&self) -> Result<ChainInfo>;
+
+    /// Returns gateway address
+    fn get_gateway_address(
+        &self,
+        eth_address: Address,
+        nonce: u64,
+        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
+        aggregate_public_key: String,
+    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -347,6 +370,28 @@ where
     /// Returns the chain id
     fn chain_id(&self) -> U64 {
         U64::from(self.network().chain_id())
+    }
+
+    fn get_gateway_address(
+        &self,
+        eth_address: Address,
+        nonce: u64,
+        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
+        aggregate_public_key: String,
+    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError> {
+        // let address = gate
+        let pk_vec = hex::decode(aggregate_public_key)
+            .map_err(|e| GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e))?;
+
+        let pk = PublicKey::from_slice(pk_vec.as_slice()).map_err(|_e| {
+            GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
+        })?;
+        // TODO (armins) network needs to come from config
+        let network = bitcoin::Network::Signet;
+        let address = gateway_address(&SECP, &pk, &eth_address, network, nonce)
+            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+
+        Ok(address)
     }
 
     /// Returns the current info for the chain
