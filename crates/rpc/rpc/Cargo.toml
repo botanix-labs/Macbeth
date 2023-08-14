@@ -68,6 +68,10 @@ tracing-futures = "0.2"
 schnellru = "0.2"
 futures.workspace = true
 
+# Botanix Btc wallet
+btc-wallet = { path = "../../../../btc-wallet" }
+bitcoin = "0.30.1"
+
 [dev-dependencies]
 jsonrpsee = { workspace = true, features = ["client"] }
 assert_matches.workspace = true
