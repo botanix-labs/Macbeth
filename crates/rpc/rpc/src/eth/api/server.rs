@@ -95,6 +95,22 @@ where
         Ok(EthApi::rpc_block(self, number, full).await?)
     }
 
+    /// Handler for: `eth_getGatewayAddress`
+    async fn gateway_address(
+        &self,
+        eth_address: Address,
+        nonce: u64,
+        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
+        aggregate_public_key: String,
+    ) -> Result<Option<String>> {
+        trace!(target: "rpc::eth", ?eth_address, ?nonce, ?aggregate_public_key, "Serving eth_getGateWayAddress");
+        let address = match EthApi::get_gateway_address(self, eth_address, nonce, aggregate_public_key) {
+            Ok(value) => Some(value.to_string()),
+            Err(_) => None,
+        };
+        Ok(address)
+    }
+
     /// Handler for: `eth_getBlockTransactionCountByHash`
     async fn block_transaction_count_by_hash(&self, hash: H256) -> Result<Option<U256>> {
         trace!(target: "rpc::eth", ?hash, "Serving eth_getBlockTransactionCountByHash");
