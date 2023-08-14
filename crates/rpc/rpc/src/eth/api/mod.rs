@@ -34,6 +34,7 @@ use std::{
 };
 
 use tokio::sync::{oneshot, Mutex};
+use secp256k1::PublicKey;
 
 mod block;
 mod call;
@@ -51,11 +52,18 @@ use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeesRPCError};
+use btc_wallet::address::gateway_address;
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
 
+#[derive(Debug)]
+pub enum GatewayAddressRPCError {
+    FailedToDecodeAggregatePublicKey(hex::FromHexError),
+    InvalidParam(&'static str),
+    FailedToGenerateGatewayAddress,
+}
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.
