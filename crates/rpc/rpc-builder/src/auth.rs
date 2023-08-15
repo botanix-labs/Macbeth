@@ -65,6 +65,7 @@ where
     let botanix_provider = Botanix::new(BotanixConfig::default());
     let fee_history_cache =
         FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
+    let botanix_provider = Botanix::new(BotanixConfig::default());
     let eth_api = EthApi::with_spawner(
         provider.clone(),
         pool.clone(),
