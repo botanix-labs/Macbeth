@@ -39,7 +39,7 @@ pub trait EthApi {
 
     /// Returns the Bitcoin pegin gateway address
     #[method(name = "getGatewayAddress")]
-    async fn gateway_address(&self, eth_address: Address, nonce: u64, aggregate_public_key: String) -> RpcResult<Option<String>>;
+    async fn gateway_address(&self, eth_address: Address, nonce: u64) -> RpcResult<Option<String>>;
 
     /// Returns information about a block by hash.
     #[method(name = "getBlockByHash")]

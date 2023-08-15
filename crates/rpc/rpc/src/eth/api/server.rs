@@ -96,15 +96,9 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(
-        &self,
-        eth_address: Address,
-        nonce: u64,
-        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
-        aggregate_public_key: String,
-    ) -> Result<Option<String>> {
-        trace!(target: "rpc::eth", ?eth_address, ?nonce, ?aggregate_public_key, "Serving eth_getGateWayAddress");
-        let address = match EthApi::get_gateway_address(self, eth_address, nonce, aggregate_public_key) {
+    async fn gateway_address(&self, eth_address: Address, nonce: u64) -> Result<Option<String>> {
+        trace!(target: "rpc::eth", ?eth_address, ?nonce, "Serving eth_getGateWayAddress");
+        let address = match EthApi::get_gateway_address(self, eth_address, nonce).await {
             Ok(value) => Some(value.to_string()),
             Err(_) => None,
         };
@@ -407,7 +401,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        eth::{cache::EthStateCache, gas_oracle::GasPriceOracle},
+        eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, botanix_config::Botanix},
         EthApi,
     };
     use jsonrpsee::types::error::INVALID_PARAMS_CODE;
@@ -443,6 +437,8 @@ mod tests {
             NoopNetwork,
             cache.clone(),
             GasPriceOracle::new(provider, Default::default(), cache),
+            // TODO (armins) reading default config
+            Botanix::new(Default::default()),
         )
     }
 

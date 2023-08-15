@@ -1,5 +1,6 @@
 use reth_rpc::{
     eth::{
+        botanix_config::BotanixConfig,
         cache::{EthStateCache, EthStateCacheConfig},
         gas_oracle::GasPriceOracleConfig,
     },
@@ -33,6 +34,8 @@ pub struct EthConfig {
     pub cache: EthStateCacheConfig,
     /// Settings for the gas price oracle
     pub gas_oracle: GasPriceOracleConfig,
+    /// Botanix related configs
+    pub botanix_config: BotanixConfig,
     /// The maximum number of tracing calls that can be executed in concurrently.
     pub max_tracing_requests: u32,
     /// Maximum number of logs that can be returned in a single response in `eth_getLogs` calls.
@@ -44,6 +47,7 @@ impl Default for EthConfig {
         Self {
             cache: EthStateCacheConfig::default(),
             gas_oracle: GasPriceOracleConfig::default(),
+            botanix_config: BotanixConfig::default(),
             max_tracing_requests: DEFAULT_MAX_TRACING_REQUESTS,
             max_logs_per_response: DEFAULT_MAX_LOGS_PER_RESPONSE,
         }
@@ -60,6 +64,12 @@ impl EthConfig {
     /// Configures the gas price oracle settings
     pub fn gpo_config(mut self, gas_oracle_config: GasPriceOracleConfig) -> Self {
         self.gas_oracle = gas_oracle_config;
+        self
+    }
+
+    /// Configures the botanix RPC configurables
+    pub fn botanix_config(mut self, botanix_config: BotanixConfig) -> Self {
+        self.botanix_config = botanix_config;
         self
     }
 
