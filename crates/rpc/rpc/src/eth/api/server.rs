@@ -98,15 +98,9 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(
-        &self,
-        eth_address: Address,
-        nonce: u64,
-        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
-        aggregate_public_key: String,
-    ) -> Result<Option<String>> {
-        trace!(target: "rpc::eth", ?eth_address, ?nonce, ?aggregate_public_key, "Serving eth_getGateWayAddress");
-        let address = match EthApi::get_gateway_address(self, eth_address, nonce, aggregate_public_key) {
+    async fn gateway_address(&self, eth_address: Address, nonce: u64) -> Result<Option<String>> {
+        trace!(target: "rpc::eth", ?eth_address, ?nonce, "Serving eth_getGateWayAddress");
+        let address = match EthApi::get_gateway_address(self, eth_address, nonce).await {
             Ok(value) => Some(value.to_string()),
             Err(_) => None,
         };
@@ -421,7 +415,7 @@ where
 mod tests {
     use crate::{
         eth::{cache::EthStateCache, gas_oracle::GasPriceOracle},
-        EthApi, TracingCallPool,
+        EthApi, TracingCallPool, botanix_config::Botanix
     };
     use jsonrpsee::types::error::INVALID_PARAMS_CODE;
     use reth_interfaces::test_utils::{generators, generators::Rng};
@@ -459,6 +453,8 @@ mod tests {
             GasPriceOracle::new(provider, Default::default(), cache),
             ETHEREUM_BLOCK_GAS_LIMIT,
             TracingCallPool::build().expect("failed to build tracing pool"),
+            // TODO (armins) reading default config
+            Botanix::new(Default::default()),
         )
     }
 
