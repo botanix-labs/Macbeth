@@ -118,6 +118,7 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
+        botanix_config::{Botanix, BotanixConfig},
         cache::{cache_new_blocks_task, EthStateCache},
         gas_oracle::GasPriceOracle,
     },
@@ -907,6 +908,9 @@ where
                 self.config.eth.gas_oracle.clone(),
                 cache.clone(),
             );
+
+            let botanix_provider = Botanix::new(self.config.eth.botanix_config.clone());
+
             let new_canonical_blocks = self.events.canonical_state_stream();
             let c = cache.clone();
             self.executor.spawn_critical(
@@ -924,6 +928,7 @@ where
                 cache.clone(),
                 gas_oracle,
                 executor.clone(),
+                botanix_provider,
             );
             let filter = EthFilter::new(
                 self.provider.clone(),
