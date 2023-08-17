@@ -22,6 +22,7 @@ mod peer;
 pub mod relay;
 mod rpc;
 pub mod serde_helpers;
+mod botanix;
 
 pub use admin::*;
 pub use botanix::*;
@@ -32,3 +33,5 @@ pub use otterscan::*;
 pub use peer::*;
 pub use rpc::*;
 pub use serde_helpers::*;
+pub use botanix::*;
+
