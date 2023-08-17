@@ -53,7 +53,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
         &self,
         eth_address: Address,
         nonce: u64,
-    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError>;
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -253,9 +253,9 @@ where
         &self,
         eth_address: Address,
         nonce: u64,
-    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError> {
-        let address = self.inner.botanix_provider.get_gateway_address(eth_address, nonce).await?;
-        Ok(address)
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
+        let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address, nonce).await?;
+        Ok(pegin_info)
     }
 
     /// Returns the current info for the chain

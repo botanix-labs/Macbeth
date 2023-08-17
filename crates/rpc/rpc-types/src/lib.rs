@@ -18,7 +18,10 @@
 mod admin;
 mod eth;
 mod rpc;
+mod botanix;
 
 pub use admin::*;
 pub use eth::*;
 pub use rpc::*;
+pub use botanix::*;
+
