@@ -59,7 +59,7 @@ impl Botanix {
         &self,
         eth_address: reth_primitives::Address,
         nonce: u64,
-    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError> {
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         let mut client =
             client::BtcServerClient::connect(self.botanix_rpc_config.btc_server_url.clone())
                 .await
@@ -79,6 +79,6 @@ impl Botanix {
         let address = gateway_address(&SECP, &pk, &eth_address, network, nonce)
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
-        Ok(address)
+        Ok((address, pk))
     }
 }

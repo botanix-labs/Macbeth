@@ -19,8 +19,11 @@ mod admin;
 mod eth;
 mod otterscan;
 mod rpc;
+mod botanix;
 
 pub use admin::*;
 pub use eth::*;
 pub use otterscan::*;
 pub use rpc::*;
+pub use botanix::*;
+

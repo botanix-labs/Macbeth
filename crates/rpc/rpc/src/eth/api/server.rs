@@ -21,9 +21,8 @@ use reth_provider::{
 };
 use reth_rpc_api::EthApiServer;
 use reth_rpc_types::{
-    state::StateOverride, BlockOverrides, Bundle, CallRequest, EIP1186AccountProofResponse,
-    EthCallResponse, FeeHistory, Index, RichBlock, StateContext, SyncStatus, TransactionReceipt,
-    TransactionRequest, Work,
+    state::StateOverride, BlockOverrides, CallRequest, EIP1186AccountProofResponse, FeeHistory,
+    GatewayAddress, Index, RichBlock, SyncStatus, TransactionReceipt, TransactionRequest, Work,
 };
 use reth_transaction_pool::TransactionPool;
 use serde_json::Value;
@@ -98,10 +97,19 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(&self, eth_address: Address, nonce: u64) -> Result<Option<String>> {
+    async fn gateway_address(
+        &self,
+        eth_address: Address,
+        nonce: u64,
+    ) -> Result<Option<GatewayAddress>> {
         trace!(target: "rpc::eth", ?eth_address, ?nonce, "Serving eth_getGateWayAddress");
         let address = match EthApi::get_gateway_address(self, eth_address, nonce).await {
-            Ok(value) => Some(value.to_string()),
+            Ok(value) => Some(GatewayAddress {
+                gateway_address: value.0.to_string(),
+                aggregate_public_key: value.1.to_string(),
+                nonce,
+                eth_address,
+            }),
             Err(_) => None,
         };
         Ok(address)
@@ -414,7 +422,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, botanix_config::Botanix},
+        eth::{botanix_config::Botanix, cache::EthStateCache, gas_oracle::GasPriceOracle},
         EthApi,
     };
     use jsonrpsee::types::error::INVALID_PARAMS_CODE;
