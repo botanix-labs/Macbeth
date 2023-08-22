@@ -13,6 +13,7 @@
     attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))
 ))]
 
+
 //! This crate contains a collection of traits and trait implementations for common database
 //! operations.
 //!

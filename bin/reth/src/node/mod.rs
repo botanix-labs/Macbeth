@@ -22,6 +22,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
 use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus, MiningMode};
+use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
@@ -73,7 +74,7 @@ use secp256k1::SecretKey;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
-    sync::Arc,
+    sync::Arc
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -106,6 +107,7 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// - mainnet
     /// - goerli
     /// - sepolia
+    /// - botanix_testnet
     /// - dev
     #[arg(
         long,
@@ -163,6 +165,10 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// Additional cli arguments
     #[clap(flatten)]
     pub ext: Ext::Node,
+
+    /// Automatically mine blocks for new transactions
+    #[arg(long)]
+    auto_mine: bool,
 }
 
 impl<Ext: RethCliExt> NodeCommand<Ext> {
@@ -182,6 +188,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             db,
             dev,
             pruning,
+            auto_mine,
             ..
         } = self;
         NodeCommand {
@@ -199,6 +206,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             dev,
             pruning,
             ext,
+            auto_mine
         }
     }
 
@@ -362,6 +370,40 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
                 MiningMode::instant(1, transaction_pool.pending_transactions_listener())
             };
+
+            let (_, client, mut task) = AutoSealBuilder::new(
+                Arc::clone(&self.chain),
+                blockchain_db.clone(),
+                transaction_pool.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender,
+                mining_mode,
+            )
+            .build();
+
+            let mut pipeline = self
+                .build_networked_pipeline(
+                    &config,
+                    client.clone(),
+                    Arc::clone(&consensus),
+                    db.clone(),
+                    &ctx.task_executor,
+                    metrics_tx,
+                    prune_config.clone(),
+                    max_block,
+                )
+                .await?;
+
+            let pipeline_events = pipeline.events();
+            task.set_pipeline_events(pipeline_events);
+            debug!(target: "reth::cli", "Spawning auto mine task");
+            ctx.task_executor.spawn(Box::pin(task));
+
+            (pipeline, EitherDownloader::Left(client))
+        } else if self.auto_mine {
+            info!(target: "reth::cli", "Starting Reth with auto-mine");
+            let mining_mode =
+                MiningMode::instant(1, transaction_pool.pending_transactions_listener());
 
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
@@ -891,8 +933,8 @@ mod tests {
 
     #[test]
     fn parse_common_node_command_chain_args() {
-        for chain in ["mainnet", "sepolia", "goerli"] {
-            let args: NodeCommand = NodeCommand::<()>::parse_from(["reth", "--chain", chain]);
+        for chain in ["mainnet", "sepolia", "goerli", "botanix_testnet"] {
+            let args: NodeCommand = NodeCommand::parse_from(["reth", "--chain", chain]);
             assert_eq!(args.chain.chain, chain.parse().unwrap());
         }
     }

@@ -10,8 +10,8 @@ use std::{fmt, str::FromStr};
 // The chain spec module.
 mod spec;
 pub use spec::{
-    AllGenesisFormats, BaseFeeParams, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkCondition,
-    ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA,
+    AllGenesisFormats, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkCondition,
+    ForkTimestamps, BOTANIX_TESTNET, DEV, GOERLI, MAINNET, SEPOLIA, BaseFeeParams
 };
 
 // The chain info module.
@@ -47,6 +47,12 @@ impl Chain {
     /// Returns the dev chain.
     pub const fn dev() -> Self {
         Chain::Named(ethers_core::types::Chain::Dev)
+    }
+
+    /// Returns the botanix testnet chain.
+    pub const fn botanix_testnet() -> Self {
+        Chain::Id(444)
+        // Chain::Named(ethers_core::types::Chain::BotanixTestnet)
     }
 
     /// The id of the chain
@@ -88,6 +94,7 @@ impl Chain {
             Mainnet => Some(mainnet_nodes()),
             Goerli => Some(goerli_nodes()),
             Sepolia => Some(sepolia_nodes()),
+            // TODO (armins) Set up boot nodes
             _ => None,
         }
     }
@@ -207,9 +214,9 @@ impl<'a> arbitrary::Arbitrary<'a> for Chain {
         // if u.ratio(1, 2)? {
         //     let chain = u.int_in_range(0..=(ethers_core::types::Chain::COUNT - 1))?;
 
-        //     return Ok(Chain::Named(ethers_core::types::Chain::iter().nth(chain).expect("in range")))
-        // }
-            /// TODO fix this 
+        //     return Ok(Chain::Named(ethers_core::types::Chain::iter().nth(chain).expect("in
+        // range"))) }
+        /// TODO fix this
         Ok(Self::Id(3000))
     }
 }
@@ -232,7 +239,8 @@ impl proptest::arbitrary::Arbitrary for Chain {
         // let named = any::<Selector>()
         //     .prop_map(move |sel| Chain::Named(sel.select(ethers_core::types::Chain::iter())));
         let id = any::<u64>().prop_map(Chain::from);
-        proptest::strategy::Union::new_weighted(vec![(50, id.clone().boxed()), (50, id.boxed())]).boxed()
+        proptest::strategy::Union::new_weighted(vec![(50, id.clone().boxed()), (50, id.boxed())])
+            .boxed()
     }
 
     type Strategy = BoxedStrategy<Chain>;

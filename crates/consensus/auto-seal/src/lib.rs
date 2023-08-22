@@ -104,9 +104,10 @@ pub struct AutoSealBuilder<Client, Pool> {
 
 // === impl AutoSealBuilder ===
 
-impl<Client, Pool: TransactionPool> AutoSealBuilder<Client, Pool>
+impl<Client, Pool> AutoSealBuilder<Client, Pool>
 where
     Client: BlockReaderIdExt,
+    Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
     pub fn new(

@@ -23,7 +23,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 use tokio::sync::oneshot;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 /// Additional settings for maintaining the transaction pool
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
