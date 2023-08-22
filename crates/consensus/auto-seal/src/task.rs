@@ -1,5 +1,6 @@
 use crate::{mode::MiningMode, Storage};
 use futures_util::{future::BoxFuture, FutureExt};
+use botanix_lib::mint_validation::process_log_topic;
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_primitives::{Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
@@ -10,10 +11,12 @@ use reth_revm::{
 };
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+use secp256k1::Secp256k1;
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -103,11 +106,11 @@ where
                     // nothing to insert
                     break
                 }
-                
+
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-                
+
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
@@ -217,8 +220,7 @@ where
 
                     events
                 }));
-            } 
-            
+            }
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {

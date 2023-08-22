@@ -3,7 +3,7 @@
 use futures_util::{stream::Fuse, StreamExt};
 use reth_primitives::TxHash;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tracing::debug;
+use tracing::{info, debug};
 use std::{
     fmt,
     pin::Pin,
