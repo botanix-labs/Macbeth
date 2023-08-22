@@ -26,7 +26,7 @@ use std::{
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace, warn, info};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
 pub struct MiningTask<Client, Pool: TransactionPool> {
@@ -96,23 +96,25 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        // this drives block production and
+        // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
+                info!("Adding to the list of transctions, {:?}", transactions);
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions);
             }
-
-            if this.insert_task.is_none() {
+            // TODO (armins) should be checking if insert_task is none
+            {
                 if this.queued.is_empty() {
+                    info!("Txs list is empty, skipping");
                     // nothing to insert
                     break
                 }
-
+                
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-
+                
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
@@ -269,7 +271,7 @@ where
                             client.set_canonical_head(header.clone().seal(new_hash));
                             client.set_safe(header.clone().seal(new_hash));
                             client.set_finalized(header.clone().seal(new_hash));
-
+                            
                             debug!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
                             let chain =
@@ -286,7 +288,8 @@ where
 
                     events
                 }));
-            }
+            } 
+            
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {

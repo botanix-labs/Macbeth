@@ -13,7 +13,7 @@ use clap::Parser;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
-use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus};
+use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus, MiningMode};
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
 use reth_blockchain_tree::{
@@ -61,7 +61,7 @@ use secp256k1::SecretKey;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -111,6 +111,7 @@ pub struct Command {
     /// - mainnet
     /// - goerli
     /// - sepolia
+    /// - botanix_testnet
     #[arg(
         long,
         value_name = "CHAIN_OR_PATH",
@@ -299,12 +300,19 @@ impl Command {
 
         // Configure the pipeline
         let (mut pipeline, client) = if self.auto_mine {
+            info!(target: "reth::cli", "Starting Reth with auto-mine");
+            let mining_mode = MiningMode::instant(
+                1,
+                transaction_pool.pending_transactions_listener(),
+            );
+
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
                 transaction_pool.clone(),
                 consensus_engine_tx.clone(),
                 canon_state_notification_sender,
+                mining_mode
             )
             .build();
 
@@ -785,7 +793,7 @@ mod tests {
 
     #[test]
     fn parse_common_node_command_chain_args() {
-        for chain in ["mainnet", "sepolia", "goerli"] {
+        for chain in ["mainnet", "sepolia", "goerli", "botanix_testnet"] {
             let args: Command = Command::parse_from(["reth", "--chain", chain]);
             assert_eq!(args.chain.chain, chain.parse().unwrap());
         }

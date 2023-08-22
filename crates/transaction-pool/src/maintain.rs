@@ -12,7 +12,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 /// Maximum (reorg) depth we handle when updating the transaction pool: `new.number -
 /// last_seen.number`

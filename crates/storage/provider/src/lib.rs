@@ -12,6 +12,8 @@
     no_crate_inject,
     attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))
 ))]
+#![feature(is_some_and)]
+
 
 //! This crate contains a collection of traits and trait implementations for common database
 //! operations.
