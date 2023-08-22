@@ -121,11 +121,11 @@ where
                     // nothing to insert
                     break
                 }
-
+                
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-
+                
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
@@ -328,7 +328,8 @@ where
 
                     events
                 }));
-            }
+            } 
+            
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {

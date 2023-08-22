@@ -323,6 +323,41 @@ pub static OP_GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     .into()
 });
 
+/// The Botanix Testnet
+pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
+    ChainSpec {
+        chain: Chain::botanix_testnet(),
+        genesis: serde_json::from_str(include_str!("../../res/genesis/botanix_testnet.json"))
+            .expect("Can't deserialize Botanix Testnet genesis json"),
+        genesis_hash: None,
+        paris_block_and_final_difficulty: Some((0, U256::from(0))),
+        fork_timestamps: ForkTimestamps::default().shanghai(0),
+        // TODO set hardfork configs
+        hardforks: BTreeMap::from([
+            (Hardfork::Frontier, ForkCondition::Block(0)),
+            (Hardfork::Homestead, ForkCondition::Block(0)),
+            (Hardfork::Dao, ForkCondition::Block(0)),
+            (Hardfork::Tangerine, ForkCondition::Block(0)),
+            (Hardfork::SpuriousDragon, ForkCondition::Block(0)),
+            (Hardfork::Byzantium, ForkCondition::Block(0)),
+            (Hardfork::Constantinople, ForkCondition::Block(0)),
+            (Hardfork::Petersburg, ForkCondition::Block(0)),
+            (Hardfork::Istanbul, ForkCondition::Block(0)),
+            (Hardfork::MuirGlacier, ForkCondition::Block(0)),
+            (Hardfork::Berlin, ForkCondition::Block(0)),
+            (Hardfork::London, ForkCondition::Block(0)),
+            (
+                Hardfork::Paris,
+                ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::from(0) },
+            ),
+            (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
+        ]),
+        deposit_contract: None, // TODO: do we even have?
+        ..Default::default()
+    }
+    .into()
+});
+
 /// The Base Goerli spec
 #[cfg(feature = "optimism")]
 pub static BASE_GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
@@ -1557,6 +1592,10 @@ mod tests {
     use alloy_rlp::Encodable;
     use bytes::BytesMut;
     use std::{collections::HashMap, str::FromStr};
+    use ethers_core::types as EtherType;
+    use reth_rlp::Encodable;
+
+    use super::BOTANIX_TESTNET;
 
     #[cfg(feature = "optimism")]
     use crate::OP_GOERLI;
@@ -2155,6 +2194,17 @@ Post-merge hard forks (timestamp based):
     fn dev_forkids() {
         test_fork_ids(
             &DEV,
+            &[(
+                Head { number: 0, ..Default::default() },
+                ForkId { hash: ForkHash([0x45, 0xb8, 0x36, 0x12]), next: 0 },
+            )],
+        )
+    }
+
+    #[test]
+    fn botanix_testnet_forkids() {
+        test_fork_ids(
+            &BOTANIX_TESTNET,
             &[(
                 Head { number: 0, ..Default::default() },
                 ForkId { hash: ForkHash([0x45, 0xb8, 0x36, 0x12]), next: 0 },
