@@ -76,7 +76,7 @@ use secp256k1::SecretKey;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -110,6 +110,7 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// - goerli
     /// - sepolia
     /// - dev
+    /// - botanix_testnet
     #[arg(
         long,
         value_name = "CHAIN_OR_PATH",
@@ -941,7 +942,7 @@ mod tests {
 
     #[test]
     fn parse_common_node_command_chain_args() {
-        for chain in ["mainnet", "sepolia", "goerli"] {
+        for chain in ["mainnet", "sepolia", "goerli", "botanix_testnet"] {
             let args: NodeCommand = NodeCommand::<()>::parse_from(["reth", "--chain", chain]);
             assert_eq!(args.chain.chain, chain.parse().unwrap());
         }

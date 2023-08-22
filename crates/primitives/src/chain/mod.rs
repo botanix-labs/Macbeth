@@ -11,7 +11,7 @@ use std::{fmt, str::FromStr};
 mod spec;
 pub use spec::{
     AllGenesisFormats, BaseFeeParams, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkCondition,
-    ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA,
+    ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA, BOTANIX_TESTNET
 };
 
 // The chain info module.
@@ -47,6 +47,11 @@ impl Chain {
     /// Returns the dev chain.
     pub const fn dev() -> Self {
         Chain::Named(ethers_core::types::Chain::Dev)
+    }
+
+    /// Returns the botanix testnet chain.
+    pub const fn botanix_testnet() -> Self {
+        Chain::Id(444)
     }
 
     /// The id of the chain
@@ -88,6 +93,7 @@ impl Chain {
             Mainnet => Some(mainnet_nodes()),
             Goerli => Some(goerli_nodes()),
             Sepolia => Some(sepolia_nodes()),
+            // TODO (armins) Set up boot nodes
             _ => None,
         }
     }

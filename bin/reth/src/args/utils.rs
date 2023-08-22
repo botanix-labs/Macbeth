@@ -1,7 +1,7 @@
 //! Clap parser utilities
 
 use reth_primitives::{
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, DEV, GOERLI, MAINNET, SEPOLIA,
+    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, DEV, GOERLI, MAINNET, SEPOLIA, BOTANIX_TESTNET
 };
 use reth_revm::primitives::B256 as H256;
 use std::{
@@ -26,6 +26,7 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "goerli" => GOERLI.clone(),
         "sepolia" => SEPOLIA.clone(),
         "dev" => DEV.clone(),
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             let raw = fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned()))?;
             serde_json::from_str(&raw)?
@@ -41,6 +42,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "goerli" => GOERLI.clone(),
         "sepolia" => SEPOLIA.clone(),
         "dev" => DEV.clone(),
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             let raw = fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned()))?;
             let genesis: AllGenesisFormats = serde_json::from_str(&raw)?;
@@ -110,7 +112,7 @@ mod tests {
 
     #[test]
     fn parse_chain_spec() {
-        for chain in ["mainnet", "sepolia", "goerli"] {
+        for chain in ["mainnet", "sepolia", "goerli", "botanix_testnet"] {
             chain_spec_value_parser(chain).unwrap();
             genesis_value_parser(chain).unwrap();
         }

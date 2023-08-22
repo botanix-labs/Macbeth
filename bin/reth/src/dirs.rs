@@ -16,6 +16,8 @@ pub fn config_path_prefix(chain: Chain) -> String {
         "goerli".to_string()
     } else if chain == Chain::sepolia() {
         "sepolia".to_string()
+    } else if chain == Chain::botanix_testnet() {
+        "botanix_testnet".to_string()
     } else {
         chain.id().to_string()
     }

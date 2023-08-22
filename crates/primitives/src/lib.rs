@@ -61,7 +61,7 @@ pub use block::{
 pub use bloom::Bloom;
 pub use chain::{
     AllGenesisFormats, BaseFeeParams, Chain, ChainInfo, ChainSpec, ChainSpecBuilder,
-    DisplayHardforks, ForkCondition, ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA,
+    DisplayHardforks, ForkCondition, ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA, BOTANIX_TESTNET
 };
 pub use compression::*;
 pub use constants::{
