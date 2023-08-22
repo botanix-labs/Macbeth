@@ -534,6 +534,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e99ff7289b20a7385f66a0feda78af2fc119d28fb56aea8886a9cd0a4abdd75"
+dependencies = [
+ "bech32 0.9.1",
+ "bitcoin-private",
+ "bitcoin_hashes",
+ "hex_lit",
+ "secp256k1",
+]
+
+[[package]]
+name = "bitcoin-private"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
+dependencies = [
+ "bitcoin-private",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -719,6 +747,21 @@ dependencies = [
 name = "boa_profiler"
 version = "0.16.0"
 source = "git+https://github.com/boa-dev/boa#0e1b32a232109fc0e192c1297a7274091af2ac61"
+
+[[package]]
+name = "botanix-lib"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "hex",
+ "lazy_static",
+ "reth-interfaces",
+ "reth-primitives",
+ "reth-revm-primitives",
+ "reth-rlp",
+ "secp256k1",
+ "thiserror",
+]
 
 [[package]]
 name = "brotli"
@@ -4518,16 +4561,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
 
 [[package]]
-name = "petgraph"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dd7d28ee937e54fe3080c91faa1c3a46c06de6252988a7f4592ba2310ef22a4"
-dependencies = [
- "fixedbitset",
- "indexmap 1.9.3",
-]
-
-[[package]]
 name = "pharos"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5471,6 +5504,7 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "botanix-lib",
  "futures-util",
  "reth-beacon-consensus",
  "reth-interfaces",
@@ -5479,6 +5513,7 @@ dependencies = [
  "reth-revm",
  "reth-stages",
  "reth-transaction-pool",
+ "secp256k1",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -7546,18 +7581,18 @@ checksum = "aac81b6fd6beb5884b0cf3321b8117e6e5d47ecb6fc89f414cfdcca8b2fe2dd8"
 
 [[package]]
 name = "thiserror"
-version = "1.0.40"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978c9a314bd8dc99be594bc3c175faaa9794be04a5a5e153caba6915336cebac"
+checksum = "97a802ec30afc17eee47b2855fc72e0c4cd62be9b4efe6591edde0ec5bd68d8f"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.40"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
+checksum = "6bb623b56e39ab7dcd4b1b98bb6c8f8d907ed255b18de254088016b27a8ee19b"
 dependencies = [
  "proc-macro2 1.0.63",
  "quote 1.0.30",
@@ -7647,9 +7682,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.31.0"
+version = "1.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40de3a2ba249dcb097e01be5e67a5ff53cf250397715a071a81543e8a832a920"
+checksum = "94d7b1cfd2aa4011f2de74c2c4c63665e27a71006b0a192dcd2710272e73dfa2"
 dependencies = [
  "backtrace",
  "bytes",
@@ -7693,6 +7728,8 @@ checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
 dependencies = [
  "native-tls",
  "tokio",
+ "quote 1.0.30",
+ "syn 2.0.29",
 ]
 
 [[package]]

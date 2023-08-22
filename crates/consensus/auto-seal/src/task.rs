@@ -1,4 +1,5 @@
 use crate::{mode::MiningMode, Storage};
+use botanix_lib::mint_validation::process_log_topic;
 use futures_util::{future::BoxFuture, FutureExt, StreamExt};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::consensus::ForkchoiceState;
@@ -6,8 +7,8 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs,
     stage::StageId,
-    Block, BlockBody, ChainSpec, Header, IntoRecoveredTransaction, ReceiptWithBloom,
-    SealedBlockWithSenders, EMPTY_OMMER_ROOT, U256,
+    Address, Block, BlockBody, ChainSpec, Header, IntoRecoveredTransaction, ReceiptWithBloom,
+    SealedBlockWithSenders, EMPTY_OMMER_ROOT, H256, U256,
 };
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
@@ -16,17 +17,19 @@ use reth_revm::{
 };
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+use secp256k1::Secp256k1;
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace, warn, info};
+use tracing::{debug, info, trace, warn};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
 pub struct MiningTask<Client, Pool: TransactionPool> {
@@ -110,11 +113,11 @@ where
                     // nothing to insert
                     break
                 }
-                
+
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-                
+
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
@@ -188,6 +191,25 @@ where
                             let post_state = executor
                                 .apply_post_block_changes(&block, U256::ZERO, post_state)
                                 .unwrap();
+
+                            // Botanix pegin logic
+
+                            for log in post_state.logs(block.number) {
+                                let secp = Secp256k1::new();
+                                let key_pair = secp256k1::KeyPair::from_seckey_str(
+                                &secp,
+                                "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
+                            )
+                            .unwrap();
+                                if let Err(err) = process_log_topic(
+                                    &secp,
+                                    log,
+                                    &key_pair.public_key(),
+                                    &Vec::new(),
+                                ) {
+                                    warn!("Failed pegin attempt! {:?}", err);
+                                }
+                            }
 
                             let Block { mut header, body, .. } = block;
 
@@ -271,7 +293,7 @@ where
                             client.set_canonical_head(header.clone().seal(new_hash));
                             client.set_safe(header.clone().seal(new_hash));
                             client.set_finalized(header.clone().seal(new_hash));
-                            
+
                             debug!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
                             let chain =
@@ -288,8 +310,7 @@ where
 
                     events
                 }));
-            } 
-            
+            }
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {
