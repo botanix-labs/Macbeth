@@ -15,8 +15,8 @@ use strum::{AsRefStr, EnumCount, EnumIter, EnumString, EnumVariantNames};
 mod spec;
 pub use spec::{
     AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
-    DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps, BOTANIX_TESTNET, DEV,
-    GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps, DEV, GOERLI, HOLESKY,
+    MAINNET, SEPOLIA, BOTANIX_TESTNET,
 };
 
 #[cfg(feature = "optimism")]
@@ -174,6 +174,11 @@ impl Chain {
             Chain::Named(chain) => Some(*chain),
             Chain::Id(id) => NamedChain::try_from(*id).ok(),
         }
+    }
+
+    /// Returns the botanix testnet chain.
+    pub const fn botanix_testnet() -> Self {
+        Chain::Id(444)
     }
 
     /// The id of the chain

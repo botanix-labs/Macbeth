@@ -48,6 +48,7 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             let raw = fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned()))?;
             serde_json::from_str(&raw)?
@@ -77,6 +78,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
+        #[cfg(not(feature = "optimism"))]
         "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
