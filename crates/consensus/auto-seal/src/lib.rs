@@ -144,7 +144,7 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-        let Self { client, consensus, pool, mode, storage, to_engine, canon_state_notification } =
+        let Self { client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
             self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
