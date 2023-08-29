@@ -3,7 +3,9 @@ use futures_util::{future::BoxFuture, FutureExt};
 use botanix_lib::mint_validation::process_log_topic;
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
+
 use reth_primitives::{Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
+use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
     database::{State, SubState},
@@ -16,7 +18,6 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -95,28 +96,31 @@ where
         // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-                info!("Adding to the list of transctions, {:?}", transactions);
+                // info!("Adding to the list of transctions, {:?}", transactions);
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions);
             }
-            // TODO (armins) should be checking if insert_task is none
-            {
+
+            // If insert task is not none executinon of async task is on going
+            if this.insert_task.is_none() {
                 if this.queued.is_empty() {
                     info!("Txs list is empty, skipping");
                     // nothing to insert
                     break
                 }
-
+                
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-
+                
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
                 let pool = this.pool.clone();
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
+                // TODO (armins) should be comming from config or as a provider to this task
+                let mempool = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
 
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
@@ -220,7 +224,8 @@ where
 
                     events
                 }));
-            }
+            } 
+            
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {
@@ -234,7 +239,6 @@ where
                 }
             }
         }
-
         Poll::Pending
     }
 }

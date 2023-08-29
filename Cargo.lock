@@ -5909,7 +5909,9 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.8"
 dependencies = [
+ "bitcoin",
  "botanix-lib",
+ "btc-wallet",
  "futures-util",
  "reth-beacon-consensus",
  "reth-interfaces",
