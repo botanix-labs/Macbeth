@@ -9,6 +9,7 @@ use crate::{
     utils::get_single_header,
     version::SHORT_VERSION,
 };
+
 use clap::Parser;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -61,7 +62,8 @@ use secp256k1::SecretKey;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
-    sync::Arc, time::Duration,
+    sync::Arc,
+    time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -301,10 +303,8 @@ impl Command {
         // Configure the pipeline
         let (mut pipeline, client) = if self.auto_mine {
             info!(target: "reth::cli", "Starting Reth with auto-mine");
-            let mining_mode = MiningMode::instant(
-                1,
-                transaction_pool.pending_transactions_listener(),
-            );
+            let mining_mode =
+                MiningMode::instant(1, transaction_pool.pending_transactions_listener());
 
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
@@ -312,7 +312,7 @@ impl Command {
                 transaction_pool.clone(),
                 consensus_engine_tx.clone(),
                 canon_state_notification_sender,
-                mining_mode
+                mining_mode,
             )
             .build();
 
