@@ -1,5 +1,7 @@
 use crate::{mode::MiningMode, Storage};
 use botanix_lib::mint_validation::process_log_topic;
+
+use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use futures_util::{future::BoxFuture, FutureExt, StreamExt};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::consensus::ForkchoiceState;
@@ -7,8 +9,8 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs,
     stage::StageId,
-    Address, Block, BlockBody, ChainSpec, Header, IntoRecoveredTransaction, ReceiptWithBloom,
-    SealedBlockWithSenders, EMPTY_OMMER_ROOT, H256, U256,
+    Block, BlockBody, ChainSpec, Header, IntoRecoveredTransaction, ReceiptWithBloom,
+    SealedBlockWithSenders, EMPTY_OMMER_ROOT, U256,
 };
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
@@ -22,7 +24,6 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::{SystemTime, UNIX_EPOCH},
@@ -102,28 +103,31 @@ where
         // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-                info!("Adding to the list of transctions, {:?}", transactions);
+                // info!("Adding to the list of transctions, {:?}", transactions);
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions);
             }
-            // TODO (armins) should be checking if insert_task is none
-            {
+
+            // If insert task is not none executinon of async task is on going
+            if this.insert_task.is_none() {
                 if this.queued.is_empty() {
                     info!("Txs list is empty, skipping");
                     // nothing to insert
                     break
                 }
-
+                
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-
+                
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
                 let pool = this.pool.clone();
                 let mut events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
+                // TODO (armins) should be comming from config or as a provider to this task
+                let mempool = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
 
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
@@ -185,32 +189,30 @@ where
                         .map(|tx| tx.recover_signer())
                         .collect::<Option<Vec<_>>>()?;
 
+                    let tip = mempool.get_tip().await.unwrap();
+                    let mut recent_block_headers: Vec<bitcoin::BlockHash> = vec![];
+                    for block_height in tip - 6..tip {
+                        let block_hash = mempool.get_block_hash(block_height).await.unwrap();
+                        recent_block_headers.push(block_hash);
+                    }
+
                     match executor.execute_transactions(&block, U256::ZERO, Some(senders.clone())) {
                         Ok((post_state, gas_used)) => {
                             // apply post block changes
                             let post_state = executor
                                 .apply_post_block_changes(&block, U256::ZERO, post_state)
                                 .unwrap();
-
                             // Botanix pegin logic
-
+                            let secp = Secp256k1::new();
                             for log in post_state.logs(block.number) {
-                                let secp = Secp256k1::new();
-                                let key_pair = secp256k1::KeyPair::from_seckey_str(
-                                &secp,
-                                "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
-                            )
-                            .unwrap();
-                                if let Err(err) = process_log_topic(
-                                    &secp,
-                                    log,
-                                    &key_pair.public_key(),
-                                    &Vec::new(),
-                                ) {
+                                if let Err(err) =
+                                    process_log_topic(&secp, log, &recent_block_headers)
+                                {
                                     warn!("Failed pegin attempt! {:?}", err);
+                                    // TODO (armins) check if pegin result is successful before
+                                    // commiting to block
                                 }
                             }
-
                             let Block { mut header, body, .. } = block;
 
                             // clear all transactions from pool
@@ -293,7 +295,7 @@ where
                             client.set_canonical_head(header.clone().seal(new_hash));
                             client.set_safe(header.clone().seal(new_hash));
                             client.set_finalized(header.clone().seal(new_hash));
-
+                            
                             debug!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
                             let chain =
@@ -310,7 +312,8 @@ where
 
                     events
                 }));
-            }
+            } 
+            
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {
@@ -324,7 +327,6 @@ where
                 }
             }
         }
-
         Poll::Pending
     }
 }
