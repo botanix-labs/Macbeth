@@ -30,7 +30,7 @@ mod transactions;
 
 pub use transactions::{EthTransactions, TransactionSource};
 
-use super::botanix_config::{Botanix, GatewayAddressRPCError};
+use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError};
 
 
 
@@ -54,6 +54,13 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
         eth_address: Address,
         nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
+
+    /// Returns the merkle proof for a given block hash
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -255,6 +262,15 @@ where
         nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address, nonce).await?;
+        Ok(pegin_info)
+    }
+
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
+        let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
         Ok(pegin_info)
     }
 
