@@ -117,6 +117,16 @@ where
         Ok(address)
     }
 
+    /// Handler from `eth_getMerkleProof`
+    async fn merkle_proof(&self, txid: String, block_hash: String) -> Result<Option<Bytes>> {
+        trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
+        let merkle_proof = match EthApi::get_merkle_proof(self, txid, block_hash).await {
+            Ok(value) => Some(Bytes::from(value)),
+            Err(_) => None,
+        };
+        Ok(merkle_proof)
+    }
+
     /// Handler for: `eth_getBlockTransactionCountByHash`
     async fn block_transaction_count_by_hash(&self, hash: H256) -> Result<Option<U256>> {
         trace!(target: "rpc::eth", ?hash, "Serving eth_getBlockTransactionCountByHash");

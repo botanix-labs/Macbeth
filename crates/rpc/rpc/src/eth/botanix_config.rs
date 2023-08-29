@@ -2,6 +2,9 @@
 
 use std::str::FromStr;
 
+use bitcoin::consensus::Encodable;
+use btc_wallet::block_source::BlockSource;
+use futures::TryFutureExt;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
 
@@ -18,20 +21,34 @@ pub struct BotanixConfig {
 
     /// The gRPC url for the bitcoin signer
     pub btc_server_url: String,
+
+    /// mempool space url
+    pub mempool_space_url: String,
 }
 
 impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
-            bitcoin_network: bitcoin::Network::Signet,
+            bitcoin_network: bitcoin::Network::Testnet,
             btc_server_url: "http://localhost:8080".to_string(),
+            mempool_space_url: "https://mempool.space/testnet/api".to_string(),
         }
     }
 }
 
 impl BotanixConfig {
     fn new(bitcoin_network: bitcoin::Network, btc_server_url: String) -> Self {
-        BotanixConfig { bitcoin_network, btc_server_url }
+        let mempool_space_api = match bitcoin_network {
+            bitcoin::Network::Bitcoin => "https://mempool.space/api",
+            bitcoin::Network::Testnet => "https://mempool.space/api/testnet",
+            bitcoin::Network::Signet => "https://mempool.space/api/signet",
+            _ => panic!("Unsupported network"),
+        };
+        BotanixConfig {
+            bitcoin_network,
+            btc_server_url,
+            mempool_space_url: mempool_space_api.to_string(),
+        }
     }
 }
 
@@ -44,6 +61,19 @@ pub enum GatewayAddressRPCError {
     InvalidParam(&'static str),
     /// Address generation failed
     FailedToGenerateGatewayAddress,
+}
+
+/// Errors from get merkle proof RPC endpoint
+#[derive(Debug)]
+pub enum MerkleProofRPCError {
+    /// Incorrect txid format
+    InvalidTxId,
+    /// Failed to get txids from blockhash
+    FailedToGetTxIds,
+    /// txid not in block
+    TxIdNotInBlock,
+    /// Failed to encode Partial Merkle Tree
+    FailedToEncodePartialMerkleTree(bitcoin::consensus::encode::Error),
 }
 
 /// Botanix config
@@ -89,5 +119,37 @@ impl Botanix {
                 .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
         Ok((address, pk))
+    }
+
+    /// Function generates merkle proof for txid in a given block
+    pub async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
+        let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
+            .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
+        let mempool =
+            btc_wallet::block_source::MempoolSpace::new(self.config().mempool_space_url.clone());
+
+        let txids = mempool
+            .get_txids(bitcoin::BlockHash::from_str(&block_hash).unwrap())
+            .await
+            .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
+        if !txids.contains(&tx_id) {
+            return Err(MerkleProofRPCError::TxIdNotInBlock)
+        }
+
+        let matches = txids.iter().map(|txid| txid == &tx_id).collect::<Vec<bool>>();
+
+        let pmt = bitcoin::merkle_tree::PartialMerkleTree::from_txids(&txids, &matches);
+        let mut bytes = Vec::new();
+        pmt.consensus_encode(&mut bytes).map_err(|e| {
+            MerkleProofRPCError::FailedToEncodePartialMerkleTree(
+                bitcoin::consensus::encode::Error::Io(e),
+            )
+        })?;
+
+        Ok(bytes)
     }
 }

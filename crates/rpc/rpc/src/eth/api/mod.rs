@@ -44,6 +44,7 @@ use crate::TracingCallPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use btc_wallet::address::gateway_address;
+use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -77,6 +78,13 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
         // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
         aggregate_public_key: String,
     ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError>;
+
+    /// Returns the merkle proof for a given block hash
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -391,6 +399,15 @@ where
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
         Ok(address)
+    }
+
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
+        let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
+        Ok(pegin_info)
     }
 
     /// Returns the current info for the chain

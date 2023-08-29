@@ -5,8 +5,8 @@ use reth_primitives::{
 };
 use reth_rpc_types::{
     state::StateOverride, BlockOverrides, Bundle, CallRequest, EIP1186AccountProofResponse,
-    EthCallResponse, FeeHistory, Index, RichBlock, StateContext, SyncStatus, Transaction,
-    TransactionReceipt, TransactionRequest, Work, GatewayAddress
+    EthCallResponse, FeeHistory, GatewayAddress, Index, RichBlock, StateContext, SyncStatus,
+    Transaction, TransactionReceipt, TransactionRequest, Work,
 };
 
 /// Eth rpc interface: <https://ethereum.github.io/execution-apis/api-documentation/>
@@ -40,7 +40,15 @@ pub trait EthApi {
 
     /// Returns the Bitcoin pegin gateway address
     #[method(name = "getGatewayAddress")]
-    async fn gateway_address(&self, eth_address: Address, nonce: u64) -> RpcResult<Option<GatewayAddress>>;
+    async fn gateway_address(
+        &self,
+        eth_address: Address,
+        nonce: u64,
+    ) -> RpcResult<Option<GatewayAddress>>;
+
+    /// Returns the Bitcoin pegin gateway address
+    #[method(name = "merkleProof")]
+    async fn merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Option<Bytes>>;
 
     /// Returns information about a block by hash.
     #[method(name = "getBlockByHash")]
