@@ -27,11 +27,14 @@ tracing.workspace = true
 ## Botanix
 botanix-lib = { path = "../../../../botanix-lib" }
 btc-wallet = { path = "../../../../btc-wallet" }
+<<<<<<< HEAD
 btc-server = { path = "../../../../btc-server" }
 client = {path = "../../../../btc-server/client"}
 
 ## url
 url = "2.2"
+=======
+>>>>>>> 49c171b62 (feature: pull block hashes from mempool.space)
 
 ## Bitcoin
 bitcoin = "0.30.0"
