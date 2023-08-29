@@ -17,6 +17,7 @@ use crate::{
     utils::get_single_header,
     version::SHORT_VERSION,
 };
+
 use clap::Parser;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -370,7 +371,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
                 MiningMode::instant(1, transaction_pool.pending_transactions_listener())
             };
-
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
