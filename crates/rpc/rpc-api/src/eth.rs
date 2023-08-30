@@ -48,7 +48,11 @@ pub trait EthApi {
 
     /// Returns the Bitcoin pegin gateway address
     #[method(name = "merkleProof")]
-    async fn merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Option<Bytes>>;
+    async fn merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> RpcResult<Bytes>;
 
     /// Returns information about a block by hash.
     #[method(name = "getBlockByHash")]

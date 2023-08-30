@@ -19,7 +19,7 @@ use reth_primitives::{
 use reth_provider::{
     BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderBox, StateProviderFactory,
 };
-use reth_rpc_types::{SyncInfo, SyncStatus};
+use reth_rpc_types::{GatewayAddress, SyncInfo, SyncStatus};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::TransactionPool;
 use revm_primitives::{BlockEnv, CfgEnv};
@@ -29,7 +29,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot, Mutex};
-use secp256k1::PublicKey;
 
 mod block;
 mod call;
@@ -43,19 +42,12 @@ mod transactions;
 use crate::TracingCallPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
-use btc_wallet::address::gateway_address;
 use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
 
-#[derive(Debug)]
-pub enum GatewayAddressRPCError {
-    FailedToDecodeAggregatePublicKey(hex::FromHexError),
-    InvalidParam(&'static str),
-    FailedToGenerateGatewayAddress,
-}
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.
@@ -71,13 +63,11 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     fn chain_info(&self) -> Result<ChainInfo>;
 
     /// Returns gateway address
-    fn get_gateway_address(
+    async fn get_gateway_address(
         &self,
         eth_address: Address,
         nonce: u64,
-        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
-        aggregate_public_key: String,
-    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError>;
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
 
     /// Returns the merkle proof for a given block hash
     async fn get_merkle_proof(
@@ -122,6 +112,7 @@ where
         gas_oracle: GasPriceOracle<Provider>,
         gas_cap: impl Into<GasCap>,
         tracing_call_pool: TracingCallPool,
+        botanix_provider: Botanix,
     ) -> Self {
         Self::with_spawner(
             provider,
@@ -132,6 +123,7 @@ where
             gas_cap.into().into(),
             Box::<TokioTaskExecutor>::default(),
             tracing_call_pool,
+            botanix_provider,
         )
     }
 
@@ -146,6 +138,7 @@ where
         gas_cap: u64,
         task_spawner: Box<dyn TaskSpawner>,
         tracing_call_pool: TracingCallPool,
+        botanix_provider: Botanix,
     ) -> Self {
         // get the block number of the latest block
         let latest_block = provider
@@ -167,6 +160,7 @@ where
             task_spawner,
             pending_block: Default::default(),
             tracing_call_pool,
+            botanix_provider,
         };
         Self { inner: Arc::new(inner) }
     }
@@ -379,27 +373,15 @@ where
         U64::from(self.network().chain_id())
     }
 
-    fn get_gateway_address(
+    async fn get_gateway_address(
         &self,
         eth_address: Address,
         nonce: u64,
-        // TODO Hex encoded string because Bitcoin public key doesnt implement deserialize
-        aggregate_public_key: String,
-    ) -> std::result::Result<bitcoin::Address, GatewayAddressRPCError> {
-        // let address = gate
-        let pk_vec = hex::decode(aggregate_public_key)
-            .map_err(|e| GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e))?;
-
-        let pk = PublicKey::from_slice(pk_vec.as_slice()).map_err(|_e| {
-            GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
-        })?;
-        // TODO (armins) network needs to come from config
-        let network = bitcoin::Network::Signet;
-        let address = gateway_address(&SECP, &pk, &eth_address, network, nonce)
-            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
-
-        Ok(address)
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
+        let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address, nonce).await?;
+        Ok(pegin_info)
     }
+
 
     async fn get_merkle_proof(
         &self,
@@ -496,4 +478,6 @@ struct EthApiInner<Provider, Pool, Network> {
     pending_block: Mutex<Option<PendingBlock>>,
     /// A pool dedicated to tracing calls
     tracing_call_pool: TracingCallPool,
+    /// Botanix config
+    botanix_provider: Botanix,
 }
