@@ -52,7 +52,7 @@ pub trait EthApi {
         &self,
         txid: String,
         block_hash: String,
-    ) -> RpcResult<Option<Bytes>>;
+    ) -> RpcResult<Bytes>;
 
     /// Returns information about a block by hash.
     #[method(name = "getBlockByHash")]

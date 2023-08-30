@@ -115,11 +115,11 @@ where
     }
 
     /// Handler from `eth_getMerkleProof`
-    async fn merkle_proof(&self, txid: String, block_hash: String) -> Result<Option<Bytes>> {
+    async fn merkle_proof(&self, txid: String, block_hash: String) -> Result<Bytes> {
         trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
         let merkle_proof = match EthApi::get_merkle_proof(self, txid, block_hash).await {
-            Ok(value) => Some(Bytes::from(value)),
-            Err(_) => None,
+            Ok(value) => Bytes::from(value),
+            Err(e) => return Err(internal_rpc_err(e)),
         };
         Ok(merkle_proof)
     }
