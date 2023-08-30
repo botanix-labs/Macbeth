@@ -1,6 +1,6 @@
 //! Defines structure for botanix RPC configurables and business logic
 
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use bitcoin::consensus::Encodable;
 use btc_wallet::block_source::BlockSource;
@@ -74,6 +74,32 @@ pub enum MerkleProofRPCError {
     TxIdNotInBlock,
     /// Failed to encode Partial Merkle Tree
     FailedToEncodePartialMerkleTree(bitcoin::consensus::encode::Error),
+    /// Malformed block hash
+    MalformedBlockHash,
+}
+
+impl fmt::Display for MerkleProofRPCError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MerkleProofRPCError::InvalidTxId => write!(f, "Invalid txid format"),
+            MerkleProofRPCError::FailedToGetTxIds => {
+                write!(f, "Failed to get txids from blockhash")
+            }
+            MerkleProofRPCError::TxIdNotInBlock => write!(f, "Txid not in block"),
+            MerkleProofRPCError::FailedToEncodePartialMerkleTree(e) => {
+                write!(f, "Failed to encode Partial Merkle Tree: {}", e)
+            }
+            MerkleProofRPCError::MalformedBlockHash => write!(f, "Malformed block hash"),
+        }
+    }
+}
+
+impl std::error::Error for MerkleProofRPCError {}
+
+impl From<MerkleProofRPCError> for String {
+    fn from(error: MerkleProofRPCError) -> Self {
+        error.to_string()
+    }
 }
 
 /// Botanix config
@@ -133,7 +159,10 @@ impl Botanix {
             btc_wallet::block_source::MempoolSpace::new(self.config().mempool_space_url.clone());
 
         let txids = mempool
-            .get_txids(bitcoin::BlockHash::from_str(&block_hash).unwrap())
+            .get_txids(
+                bitcoin::BlockHash::from_str(&block_hash)
+                    .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?,
+            )
             .await
             .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
         if !txids.contains(&tx_id) {
