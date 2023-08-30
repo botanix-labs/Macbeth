@@ -23,7 +23,7 @@ use reth_primitives::{
 use reth_provider::{
     BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderBox, StateProviderFactory,
 };
-use reth_rpc_types::{SyncInfo, SyncStatus};
+use reth_rpc_types::{GatewayAddress, SyncInfo, SyncStatus};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::TransactionPool;
 use std::{
@@ -33,7 +33,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot, Mutex};
-use secp256k1::PublicKey;
 
 mod block;
 mod call;
@@ -58,12 +57,6 @@ lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
 
-#[derive(Debug)]
-pub enum GatewayAddressRPCError {
-    FailedToDecodeAggregatePublicKey(hex::FromHexError),
-    InvalidParam(&'static str),
-    FailedToGenerateGatewayAddress,
-}
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.
@@ -79,7 +72,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     fn chain_info(&self) -> RethResult<ChainInfo>;
 
     /// Returns gateway address
-    fn get_gateway_address(
+    async fn get_gateway_address(
         &self,
         eth_address: Address,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
@@ -421,7 +414,7 @@ where
         U64::from(self.network().chain_id())
     }
 
-    fn get_gateway_address(
+    async fn get_gateway_address(
         &self,
         eth_address: Address,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
@@ -442,6 +435,7 @@ where
         let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
         Ok(fee_rate)
     }
+
 
     async fn get_merkle_proof(
         &self,
