@@ -169,16 +169,9 @@ impl Botanix {
             return Err(MerkleProofRPCError::TxIdNotInBlock)
         }
 
-        let matches = txids.iter().map(|txid| txid == &tx_id).collect::<Vec<bool>>();
+        let matches = txids.iter().map(|txid| txid == &tx_id).collect::<Vec<_>>();
 
         let pmt = bitcoin::merkle_tree::PartialMerkleTree::from_txids(&txids, &matches);
-        let mut bytes = Vec::new();
-        pmt.consensus_encode(&mut bytes).map_err(|e| {
-            MerkleProofRPCError::FailedToEncodePartialMerkleTree(
-                bitcoin::consensus::encode::Error::Io(e),
-            )
-        })?;
-
-        Ok(bytes)
+        Ok(bitcoin::consensus::serialize(&pmt))
     }
 }
