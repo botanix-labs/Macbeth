@@ -3,7 +3,7 @@
     "timestamp": "0x00",
     "extraData": "0x00",
     "gasLimit": "0x1c9c380",
-    "difficulty": "0x00000",
+    "difficulty": "0x0",
     "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "coinbase": "0x0000000000000000000000000000000000000000",
     "alloc": {
@@ -11,6 +11,9 @@
             "balance": "0xD3C21BCECCEDA1000000"
         },
         "0xF27a6Ea4a1d5f7341Da7EDAaa47C5C933b738f4F": {
+            "balance": "0xD3C21BCECCEDA1000000"
+        },
+        "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78": {
             "balance": "0xD3C21BCECCEDA1000000"
         }
     },
