@@ -23,7 +23,6 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
 use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus, MiningMode};
-use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
@@ -75,7 +74,7 @@ use secp256k1::SecretKey;
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
-    sync::Arc
+    sync::Arc,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -207,7 +206,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             dev,
             pruning,
             ext,
-            auto_mine
+            auto_mine,
         }
     }
 
@@ -241,7 +240,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         info!(target: "reth::cli", "{}", DisplayHardforks::from(self.chain.hardforks().clone()));
 
-        let consensus: Arc<dyn Consensus> = if self.dev.dev {
+        let consensus: Arc<dyn Consensus> = if self.dev.dev || self.auto_mine {
             debug!(target: "reth::cli", "Using auto seal");
             Arc::new(AutoSealConsensus::new(Arc::clone(&self.chain)))
         } else {
@@ -357,7 +356,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             self.pruning.prune_config(Arc::clone(&self.chain))?.or(config.prune.clone());
 
         // Configure the pipeline
-        let (mut pipeline, client) = if self.dev.dev {
+        let (mut pipeline, client) = if self.dev.dev || self.auto_mine {
             info!(target: "reth::cli", "Starting Reth in dev mode");
 
             let mining_mode = if let Some(interval) = self.dev.block_time {
@@ -371,40 +370,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
                 MiningMode::instant(1, transaction_pool.pending_transactions_listener())
             };
-            let (_, client, mut task) = AutoSealBuilder::new(
-                Arc::clone(&self.chain),
-                blockchain_db.clone(),
-                transaction_pool.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender,
-                mining_mode,
-            )
-            .build();
-
-            let mut pipeline = self
-                .build_networked_pipeline(
-                    &config,
-                    client.clone(),
-                    Arc::clone(&consensus),
-                    db.clone(),
-                    &ctx.task_executor,
-                    metrics_tx,
-                    prune_config.clone(),
-                    max_block,
-                )
-                .await?;
-
-            let pipeline_events = pipeline.events();
-            task.set_pipeline_events(pipeline_events);
-            debug!(target: "reth::cli", "Spawning auto mine task");
-            ctx.task_executor.spawn(Box::pin(task));
-
-            (pipeline, EitherDownloader::Left(client))
-        } else if self.auto_mine {
-            info!(target: "reth::cli", "Starting Reth with auto-mine");
-            let mining_mode =
-                MiningMode::instant(1, transaction_pool.pending_transactions_listener());
-
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
