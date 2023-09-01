@@ -1,11 +1,11 @@
 use crate::{mode::MiningMode, Storage};
-use futures_util::{future::BoxFuture, FutureExt};
 use botanix_lib::mint_validation::process_log_topic;
+use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
 
-use reth_primitives::{Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
+use reth_primitives::{Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
     database::{State, SubState},
@@ -23,7 +23,7 @@ use std::{
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace, warn, info, error};
+use tracing::{debug, error, info, trace, warn};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
 pub struct MiningTask<Client, Pool: TransactionPool> {
@@ -96,7 +96,7 @@ where
         // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-                // info!("Adding to the list of transctions, {:?}", transactions);
+                info!("Adding to the list of transctions, {:?}", transactions);
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions);
             }
@@ -108,11 +108,11 @@ where
                     // nothing to insert
                     break
                 }
-                
+
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-                
+
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
@@ -125,6 +125,15 @@ where
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
+                    // let tip = mempool.get_tip().await.unwrap();
+                    // info!("Bitcoin tip: {}", tip);
+                    // let mut recent_block_hashes: Vec<bitcoin::BlockHash> = vec![];
+                    // for block_height in tip - 6..tip {
+                    //     println!("Getting block hash for height: {}", block_height);
+                    //     let block_hash = mempool.get_block_hash(block_height).await.unwrap();
+                    //     recent_block_hashes.push(block_hash);
+                    // }
+
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -143,6 +152,24 @@ where
                     match storage.build_and_execute(transactions.clone(), &mut executor, chain_spec)
                     {
                         Ok((new_header, post_state)) => {
+                            println!("New header: {:?}", new_header);
+                            println!("post state, {:?}", post_state);
+                            // Botanix pegin logic
+                            let secp = Secp256k1::new();
+                            for log in post_state.logs(new_header.number) {
+                                let receipts = post_state.receipts(new_header.number);
+                                for receipt in receipts {
+                                    if receipt.success {
+                                        if let Err(err) = process_log_topic(&secp, log, &vec![]) {
+                                            warn!("Failed pegin attempt! {:?}", err);
+                                            // TODO: remove transaction before commiting to block
+                                            // transactions.remove(index);
+                                        } else {
+                                            info!("PEGIN SUCCESS");
+                                        }
+                                    }
+                                }
+                            }
                             // clear all transactions from pool
                             pool.remove_transactions(
                                 transactions.iter().map(|tx| tx.hash()).collect(),
@@ -177,7 +204,7 @@ where
                                                 return None
                                             }
                                             ForkchoiceStatus::Syncing => {
-                                                debug!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
+                                                info!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
                                                 // wait for the next fork choice update
                                                 continue
                                             }
@@ -197,6 +224,7 @@ where
                                 ommers: vec![],
                                 withdrawals: None,
                             };
+
                             let sealed_block = block.seal_slow();
 
                             let sealed_block_with_senders =
@@ -208,7 +236,7 @@ where
                             client.set_safe(new_header.clone());
                             client.set_finalized(new_header.clone());
 
-                            debug!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
+                            info!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
                             let chain =
                                 Arc::new(Chain::new(vec![(sealed_block_with_senders, post_state)]));
@@ -224,8 +252,7 @@ where
 
                     events
                 }));
-            } 
-            
+            }
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {

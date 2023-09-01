@@ -202,14 +202,9 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         chain: Chain::botanix_testnet(),
         genesis: serde_json::from_str(include_str!("../../res/genesis/botanix_testnet.json"))
             .expect("Can't deserialize Botanix Testnet genesis json"),
-        // TODO(armins)
-        // genesis_hash: Some(H256(hex!(
-        //     "25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9"
-        // ))),
         genesis_hash: None,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         fork_timestamps: ForkTimestamps::default().shanghai(0),
-        // TODO set hardfork configs
         hardforks: BTreeMap::from([
             (Hardfork::Frontier, ForkCondition::Block(0)),
             (Hardfork::Homestead, ForkCondition::Block(0)),
