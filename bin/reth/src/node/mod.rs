@@ -77,7 +77,6 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
@@ -184,6 +183,11 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// Additional cli arguments
     #[clap(flatten)]
     pub ext: Ext::Node,
+
+    /// Enable auto mining
+    #[clap(long)]
+    pub auto_mine: bool, 
+
 }
 
 impl<Ext: RethCliExt> NodeCommand<Ext> {
@@ -204,6 +208,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             db,
             dev,
             pruning,
+            auto_mine,
             ..
         } = self;
         NodeCommand {
@@ -222,6 +227,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             dev,
             pruning,
             ext,
+            auto_mine,
         }
     }
 
@@ -255,7 +261,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         info!(target: "reth::cli", "{}", DisplayHardforks::from(self.chain.hardforks().clone()));
 
-        let consensus: Arc<dyn Consensus> = if self.dev.dev {
+        let consensus: Arc<dyn Consensus> = if self.dev.dev || self.auto_mine {
             debug!(target: "reth::cli", "Using auto seal");
             Arc::new(AutoSealConsensus::new(Arc::clone(&self.chain)))
         } else {
@@ -372,7 +378,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         };
 
         // Configure the pipeline
-        let (mut pipeline, client) = if self.dev.dev {
+        let (mut pipeline, client) = if self.dev.dev || self.auto_mine {
             info!(target: "reth::cli", "Starting Reth in dev mode");
 
             let mining_mode = if let Some(interval) = self.dev.block_time {
