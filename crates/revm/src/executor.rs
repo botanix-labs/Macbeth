@@ -26,7 +26,8 @@ use revm::{
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
-    sync::Arc, time, thread,
+    sync::Arc,
+    thread, time,
 };
 use tracing::{info, warn};
 
@@ -270,38 +271,34 @@ where
                             &executor,
                             Box::pin(async move {
                                 let block_header =
-                                    mempool_clone.get_block_header(block_hash).await
-                                    .unwrap();
-                                    // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
+                                    mempool_clone.get_block_header(block_hash).await.unwrap();
+                                // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
                                 sender.send(block_header).await.expect("send error");
                                 ()
                             }),
                         );
                         // Wait for the task to finish
                         // TODO ideally this function runs in the same runtime as the caller.
-                        // This is easier said than done, so it may be easier to have a async task in a seperate runtime
-                        // this task will recieve jobs from the caller and send the result back to the caller.
+                        // This is easier said than done, so it may be easier to have a async task
+                        // in a seperate runtime this task will recieve jobs
+                        // from the caller and send the result back to the caller.
                         let mut counter = 0;
                         let ten_millis = time::Duration::from_millis(10);
                         loop {
                             if counter == 10_000 {
-                                return Err(BlockExecutionError::FailedToGetBitcoinHeader);
+                                return Err(BlockExecutionError::FailedToGetBitcoinHeader)
                             }
                             if let Ok(block_header) = receiver.try_recv() {
-                                // TODO Get pk from crate
-                                let pk = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
-                                if let Err(pegin_error) =
-                                    pegin_data.validate(&secp, &pk, &block_header)
+                                if let Err(pegin_error) = pegin_data.validate(&secp, &block_header)
                                 {
                                     warn!("Failed pegin attempt! {:?}", pegin_error);
                                     pegin_fail = true;
                                 }
-                                break;
+                                break
                             } else {
                                 thread::sleep(ten_millis);
                             }
                             counter += 1;
-
                         }
                     }
                     // TODO (armins) remove pegin tx from block txs and pool
