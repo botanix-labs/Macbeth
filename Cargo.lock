@@ -6988,6 +6988,10 @@ dependencies = [
 name = "reth-revm"
 version = "0.1.0-alpha.13"
 dependencies = [
+ "bitcoin",
+ "botanix-lib",
+ "btc-wallet",
+ "once_cell",
  "reth-consensus-common",
  "reth-interfaces",
  "reth-primitives",
@@ -6995,7 +6999,7 @@ dependencies = [
  "reth-revm-inspectors",
  "reth-trie",
  "revm",
- "secp256k1 0.27.0",
+ "secp256k1",
  "tokio",
  "tracing",
 ]

@@ -7,8 +7,8 @@ use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use futures_util::{future::BoxFuture, FutureExt, StreamExt};
+use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
-use botanix_lib::mint_validation::process_log_topic;
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs,
@@ -19,13 +19,13 @@ use reth_primitives::{
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use secp256k1::Secp256k1;
+use secp256k1::{Secp256k1, PublicKey};
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{Context, Poll}, str::FromStr,
 };
 use url::Url;
 
@@ -131,11 +131,11 @@ where
                     // nothing to insert
                     break
                 }
-                
+
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-                
+
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
