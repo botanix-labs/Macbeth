@@ -1,6 +1,8 @@
 use crate::{
+    constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
+    holesky_nodes,
     net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
-    NodeRecord, U256, U64, constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
+    NodeRecord, U256, U64,
 };
 use reth_codecs::add_arbitrary_tests;
 use reth_rlp::{Decodable, Encodable};
@@ -11,7 +13,7 @@ use std::{fmt, str::FromStr};
 mod spec;
 pub use spec::{
     AllGenesisFormats, BaseFeeParams, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkCondition,
-    ForkTimestamps, DEV, GOERLI, MAINNET, SEPOLIA, BOTANIX_TESTNET
+    ForkTimestamps, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 
 // The chain info module.
@@ -42,6 +44,11 @@ impl Chain {
     /// Returns the sepolia chain.
     pub const fn sepolia() -> Self {
         Chain::Named(ethers_core::types::Chain::Sepolia)
+    }
+
+    /// Returns the holesky chain.
+    pub const fn holesky() -> Self {
+        Chain::Named(ethers_core::types::Chain::Holesky)
     }
 
     /// Returns the dev chain.
@@ -94,13 +101,18 @@ impl Chain {
             Goerli => Some(goerli_nodes()),
             Sepolia => Some(sepolia_nodes()),
             // TODO (armins) Set up boot nodes
+            Holesky => Some(holesky_nodes()),
             _ => None,
         }
     }
 
     /// Returns the initial base fee based on chain id
     pub fn initial_base_fee_by_chain_id(self) -> u64 {
-        if self.id() == Chain::botanix_testnet().id() { BOTANIX_INITIAL_BASE_FEE} else { EIP1559_INITIAL_BASE_FEE }
+        if self.id() == Chain::botanix_testnet().id() {
+            BOTANIX_INITIAL_BASE_FEE
+        } else {
+            EIP1559_INITIAL_BASE_FEE
+        }
     }
 }
 
@@ -218,9 +230,9 @@ impl<'a> arbitrary::Arbitrary<'a> for Chain {
         // if u.ratio(1, 2)? {
         //     let chain = u.int_in_range(0..=(ethers_core::types::Chain::COUNT - 1))?;
 
-        //     return Ok(Chain::Named(ethers_core::types::Chain::iter().nth(chain).expect("in range")))
-        // }
-            /// TODO fix this 
+        //     return Ok(Chain::Named(ethers_core::types::Chain::iter().nth(chain).expect("in
+        // range"))) }
+        /// TODO fix this
         Ok(Self::Id(3000))
     }
 }
@@ -243,7 +255,8 @@ impl proptest::arbitrary::Arbitrary for Chain {
         // let named = any::<Selector>()
         //     .prop_map(move |sel| Chain::Named(sel.select(ethers_core::types::Chain::iter())));
         let id = any::<u64>().prop_map(Chain::from);
-        proptest::strategy::Union::new_weighted(vec![(50, id.clone().boxed()), (50, id.boxed())]).boxed()
+        proptest::strategy::Union::new_weighted(vec![(50, id.clone().boxed()), (50, id.boxed())])
+            .boxed()
     }
 
     type Strategy = BoxedStrategy<Chain>;
