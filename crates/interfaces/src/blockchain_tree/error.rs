@@ -193,7 +193,8 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::CanonicalCommit { .. } |
                     BlockExecutionError::BlockHashNotFoundInChain { .. } |
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
-                    BlockExecutionError::UnavailableForTest => false,
+                    BlockExecutionError::UnavailableForTest => false ,
+                    &BlockExecutionError::FailedToGetBitcoinHeader => true, 
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

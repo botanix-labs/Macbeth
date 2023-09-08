@@ -16,12 +16,22 @@ reth-provider.workspace = true
 reth-revm-primitives = { path = "./revm-primitives" }
 reth-revm-inspectors = { path = "./revm-inspectors" }
 reth-consensus-common = { path = "../consensus/common" }
+reth-tasks = { path = "../tasks" }
 
 # revm
 revm.workspace = true
 
+# Botanix
+btc-wallet = { path = "../../../btc-wallet" }
+botanix-lib = { path = "../../../botanix-lib" }
+
+# Secp256k1
+secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
+
 # common
 tracing.workspace = true
+tokio.workspace = true
+bitcoin = "0.30.1"
 
 [dev-dependencies]
 reth-rlp.workspace = true

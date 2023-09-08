@@ -1,9 +1,9 @@
 use crate::{mode::MiningMode, Storage};
-use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
+use botanix_lib::mint_validation::parse_log_topic;
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use futures_util::{future::BoxFuture, FutureExt, StreamExt};
+use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
-use botanix_lib::mint_validation::process_log_topic;
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs,
@@ -18,17 +18,17 @@ use reth_revm::{
 };
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use secp256k1::Secp256k1;
+use secp256k1::{Secp256k1, PublicKey};
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{Context, Poll}, str::FromStr,
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, warn, trace, info};
+use tracing::{debug, error, info, trace, warn};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
 pub struct MiningTask<Client, Pool: TransactionPool> {
@@ -113,20 +113,17 @@ where
                     // nothing to insert
                     break
                 }
-                
+
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
                 let transactions = this.queued.pop_front().expect("not empty");
-                
+
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
                 let chain_spec = Arc::clone(&this.chain_spec);
                 let pool = this.pool.clone();
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
-                // TODO (armins) should be comming from config or as a provider to this task
-                let mempool = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
-
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {

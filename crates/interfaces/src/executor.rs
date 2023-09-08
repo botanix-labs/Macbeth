@@ -57,6 +57,10 @@ pub enum BlockExecutionError {
     /// Note: this is not feature gated for convenience.
     #[error("Execution unavailable for tests")]
     UnavailableForTest,
+
+    /// Failed to get bitcoin header
+    #[error("Failed to get bitcoin header")]
+    FailedToGetBitcoinHeader,
 }
 
 impl BlockExecutionError {
