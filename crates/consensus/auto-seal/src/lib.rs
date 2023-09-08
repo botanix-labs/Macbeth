@@ -159,7 +159,6 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-<<<<<<< HEAD
         let Self {
             btc_server,
             client,
@@ -172,10 +171,6 @@ where
             bitcoin_block_header,
             bitcoin_block_source_address,
         } = self;
-=======
-        let Self { client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
-            self;
->>>>>>> 49c171b62 (feature: pull block hashes from mempool.space)
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
             Arc::clone(&consensus.chain_spec),

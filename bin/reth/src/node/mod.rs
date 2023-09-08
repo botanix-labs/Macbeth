@@ -86,7 +86,6 @@ use std::{
     net::{SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
@@ -223,6 +222,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             auto_mine,
             #[cfg(feature = "optimism")]
             rollup,
+            auto_mine,
             ..
         } = self;
         NodeCommand {
@@ -321,7 +321,12 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         info!(target: "reth::cli", "{}", DisplayHardforks::new(self.chain.hardforks()));
 
-        let consensus = self.consensus();
+        let consensus: Arc<dyn Consensus> = if self.dev.dev || self.auto_mine {
+            debug!(target: "reth::cli", "Using auto seal");
+            Arc::new(AutoSealConsensus::new(Arc::clone(&self.chain)))
+        } else {
+            Arc::new(BeaconConsensus::new(Arc::clone(&self.chain)))
+        };
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
