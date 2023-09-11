@@ -246,6 +246,7 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::CanonicalRevert { .. } |
                     BlockExecutionError::CanonicalCommit { .. } |
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
+                    BlockExecutionError::UnavailableForTest => false,
                     &BlockExecutionError::FailedToGetBitcoinHeader => true, 
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
