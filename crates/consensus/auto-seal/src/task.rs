@@ -1,16 +1,9 @@
 use crate::{mode::MiningMode, Storage};
-use botanix_lib::mint_validation::parse_log_topic;
-use btc_wallet::block_source::{BlockSource, MempoolSpace};
-use futures_util::{future::BoxFuture, FutureExt, StreamExt};
+use botanix_lib::mint_validation::{parse_reth_log_topic, GenesisContractEvents};
+use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
-use reth_primitives::{
-    constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    proofs,
-    stage::StageId,
-    Block, BlockBody, ChainSpec, Header, IntoRecoveredTransaction, ReceiptWithBloom,
-    SealedBlockWithSenders, EMPTY_OMMER_ROOT, U256,
-};
+use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
     database::{State, SubState},
@@ -18,17 +11,18 @@ use reth_revm::{
 };
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use secp256k1::{Secp256k1, PublicKey};
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll}, str::FromStr,
+    task::{Context, Poll},
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
+
+use client::{BtcServerClient, NotifyPeginRequest};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
 pub struct MiningTask<Client, Pool: TransactionPool> {
@@ -127,6 +121,9 @@ where
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
+                    // TODO (armins) should be getting pulled from config
+                    let mut btc_server_client: BtcServerClient<tonic::transport::Channel> =
+                        BtcServerClient::connect("http://localhost:8080").await.unwrap();
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -156,6 +153,49 @@ where
                                 safe_block_hash: new_header.hash,
                             };
                             drop(storage);
+
+                            for reciept in post_state.receipts(new_header.number) {
+                                if !reciept.success {
+                                    continue
+                                }
+                                for log in &reciept.logs {
+                                    for topic in &log.topics {
+                                        if let Ok(GenesisContractEvents::MintingEvent) =
+                                            GenesisContractEvents::try_from(topic.clone())
+                                        {
+                                            let pegin_data = parse_reth_log_topic(&log).expect(
+                                                "passed evm check should pass this parse attempt",
+                                            );
+
+                                            let request = NotifyPeginRequest {
+                                                utxo_txid: pegin_data
+                                                    .meta
+                                                    .outpoint
+                                                    .txid
+                                                    .to_string(),
+                                                utxo_vout: pegin_data.meta.outpoint.vout,
+                                                eth_address: hex::encode(
+                                                    pegin_data.meta.address.to_vec(),
+                                                ),
+                                                output: bitcoin::consensus::serialize(
+                                                    &pegin_data
+                                                        .meta
+                                                        .tx
+                                                        .output
+                                                        .get(pegin_data.meta.outpoint.vout as usize)
+                                                        .unwrap(),
+                                                ),
+                                                nonce: pegin_data.nonce,
+                                            };
+                                            btc_server_client.notify_pegin(request).await.unwrap();
+                                            info!("notifying btc server about pegin utxo");
+                                            // TODO (armins) parse burn event here
+                                        } else {
+                                            continue
+                                        }
+                                    }
+                                }
+                            }
 
                             // TODO: make this a future
                             // await the fcu call rx for SYNCING, then wait for a VALID response
@@ -226,8 +266,7 @@ where
 
                     events
                 }));
-            } 
-            
+            }
 
             if let Some(mut fut) = this.insert_task.take() {
                 match fut.poll_unpin(cx) {
