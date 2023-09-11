@@ -113,6 +113,10 @@ pub enum BlockExecutionError {
         /// The fork on the other chain
         other_chain_fork: Box<BlockNumHash>,
     },
+
+    /// Failed to get bitcoin header
+    #[error("Failed to get bitcoin header")]
+    FailedToGetBitcoinHeader,
     /// Only used for TestExecutor
     ///
     /// Note: this is not feature gated for convenience.
