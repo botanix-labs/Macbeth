@@ -29,7 +29,7 @@ use std::{
     sync::Arc,
     thread, time,
 };
-use tracing::{info, warn};
+use tracing::{warn};
 
 use secp256k1::{PublicKey, Secp256k1};
 

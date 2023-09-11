@@ -620,6 +620,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk"
+version = "1.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c748f5f3167395cdad782428e9ccb496deca0ba2405f2aff49bda50ee3065fc0"
+dependencies = [
+ "bdk_chain",
+ "bitcoin 0.29.2",
+ "getrandom 0.2.10",
+ "js-sys",
+ "log",
+ "miniscript 9.0.2",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bdk_chain"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaba1449489201f5e6d4d3905b7e02aad6270b9215665c649c4a4dcee5bde4e0"
+dependencies = [
+ "bitcoin 0.29.2",
+ "miniscript 9.0.2",
+ "serde",
+]
+
+[[package]]
 name = "bech32"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -722,15 +750,29 @@ checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
 name = "bitcoin"
+version = "0.29.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0694ea59225b0c5f3cb405ff3f670e4828358ed26aec49dc352f730f0cb1a8a3"
+dependencies = [
+ "base64 0.13.1",
+ "bech32",
+ "bitcoin_hashes 0.11.0",
+ "secp256k1 0.24.3",
+ "serde",
+]
+
+[[package]]
+name = "bitcoin"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e99ff7289b20a7385f66a0feda78af2fc119d28fb56aea8886a9cd0a4abdd75"
 dependencies = [
+ "base64 0.13.1",
  "bech32",
  "bitcoin-private",
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "hex_lit",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
 ]
 
@@ -739,6 +781,15 @@ name = "bitcoin-private"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bitcoin_hashes"
@@ -944,7 +995,7 @@ source = "git+https://github.com/boa-dev/boa#b47087c02866e914356a990267083c04604
 name = "botanix-lib"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.30.1",
  "btc-wallet",
  "ethabi",
  "ethers",
@@ -954,7 +1005,7 @@ dependencies = [
  "reth-primitives",
  "reth-revm-primitives",
  "reth-rlp",
- "secp256k1",
+ "secp256k1 0.27.0",
  "thiserror",
 ]
 
@@ -1010,19 +1061,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "btc-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk",
+ "bitcoin 0.30.1",
+ "btc-wallet",
+ "ciborium",
+ "clap",
+ "env_logger",
+ "hex",
+ "lazy_static",
+ "log",
+ "miniscript 10.0.0",
+ "parking_lot 0.12.1",
+ "prost",
+ "rand 0.8.5",
+ "reth-primitives",
+ "serde",
+ "sled",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "btc-wallet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bitcoin",
+ "bitcoin 0.30.1",
  "hex",
  "lazy_static",
- "miniscript",
+ "miniscript 10.0.0",
  "rand 0.6.5",
  "reqwest",
  "reth-primitives",
- "secp256k1",
+ "secp256k1 0.27.0",
 ]
 
 [[package]]
@@ -2218,7 +2296,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "rlp",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde-hex",
  "sha3",
@@ -2271,6 +2349,19 @@ dependencies = [
  "proc-macro2 1.0.66",
  "quote 1.0.33",
  "syn 2.0.29",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
+ "log",
+ "regex",
+ "termcolor",
 ]
 
 [[package]]
@@ -4137,9 +4228,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.20"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+checksum = "518ef76f2f87365916b142844c16d8fefd85039bc5699050210a7778ee1cd1de"
 
 [[package]]
 name = "lru"
@@ -4341,11 +4432,21 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniscript"
+version = "9.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5b106477a0709e2da253e5559ba4ab20a272f8577f1eefff72f3a905b5d35f5"
+dependencies = [
+ "bitcoin 0.29.2",
+ "serde",
+]
+
+[[package]]
+name = "miniscript"
 version = "10.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1eb102b66b2127a872dbcc73095b7b47aeb9d92f7b03c2b2298253ffc82c7594"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.30.1",
  "bitcoin-private",
 ]
 
@@ -5894,7 +5995,7 @@ dependencies = [
  "reth-tracing",
  "reth-transaction-pool",
  "reth-trie",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "shellexpand",
@@ -5911,9 +6012,11 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.8"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.30.1",
  "botanix-lib",
+ "btc-server",
  "btc-wallet",
+ "client",
  "futures-util",
  "reth-beacon-consensus",
  "reth-interfaces",
@@ -5922,9 +6025,10 @@ dependencies = [
  "reth-revm",
  "reth-stages",
  "reth-transaction-pool",
- "secp256k1",
+ "secp256k1 0.27.0",
  "tokio",
  "tokio-stream",
+ "tonic",
  "tracing",
 ]
 
@@ -6023,7 +6127,7 @@ dependencies = [
  "reth-network",
  "reth-primitives",
  "reth-stages",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -6071,7 +6175,7 @@ dependencies = [
  "reth-libmdbx",
  "reth-metrics",
  "reth-primitives",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -6098,7 +6202,7 @@ dependencies = [
  "reth-rlp",
  "reth-rlp-derive",
  "reth-tracing",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "thiserror",
  "tokio",
@@ -6120,7 +6224,7 @@ dependencies = [
  "reth-rlp",
  "reth-tracing",
  "schnellru",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_with",
  "thiserror",
@@ -6176,7 +6280,7 @@ dependencies = [
  "reth-net-common",
  "reth-primitives",
  "reth-rlp",
- "secp256k1",
+ "secp256k1 0.27.0",
  "sha2",
  "sha3",
  "thiserror",
@@ -6210,7 +6314,7 @@ dependencies = [
  "reth-primitives",
  "reth-rlp",
  "reth-tracing",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "smol_str",
  "snap",
@@ -6243,7 +6347,7 @@ dependencies = [
  "reth-primitives",
  "reth-rpc-types",
  "revm-primitives",
- "secp256k1",
+ "secp256k1 0.27.0",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -6384,7 +6488,7 @@ dependencies = [
  "reth-tasks",
  "reth-tracing",
  "reth-transaction-pool",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "serial_test 2.0.0",
@@ -6463,7 +6567,7 @@ dependencies = [
  "reth-rlp-derive",
  "revm-primitives",
  "ruint",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -6527,7 +6631,7 @@ dependencies = [
 name = "reth-revm"
 version = "0.1.0-alpha.8"
 dependencies = [
- "bitcoin",
+ "bitcoin 0.30.1",
  "botanix-lib",
  "btc-wallet",
  "once_cell",
@@ -6540,7 +6644,7 @@ dependencies = [
  "reth-rlp",
  "reth-tasks",
  "revm",
- "secp256k1",
+ "secp256k1 0.27.0",
  "tokio",
  "tracing",
 ]
@@ -6603,7 +6707,7 @@ version = "0.1.0-alpha.8"
 dependencies = [
  "assert_matches",
  "async-trait",
- "bitcoin",
+ "bitcoin 0.30.1",
  "btc-wallet",
  "bytes",
  "client",
@@ -6637,7 +6741,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "schnellru",
- "secp256k1",
+ "secp256k1 0.27.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -6896,7 +7000,7 @@ dependencies = [
  "once_cell",
  "revm-primitives",
  "ripemd",
- "secp256k1",
+ "secp256k1 0.27.0",
  "sha2",
  "sha3",
  "substrate-bn",
@@ -7288,14 +7392,35 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
+version = "0.24.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
+dependencies = [
+ "bitcoin_hashes 0.11.0",
+ "rand 0.8.5",
+ "secp256k1-sys 0.6.1",
+ "serde",
+]
+
+[[package]]
+name = "secp256k1"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "rand 0.8.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.8.1",
  "serde",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -7681,6 +7806,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
 dependencies = [
  "autocfg 1.1.0",
+]
+
+[[package]]
+name = "sled"
+version = "0.34.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f96b4737c2ce5987354855aed3797279def4ebf734436c6aa4552cf8e169935"
+dependencies = [
+ "crc32fast",
+ "crossbeam-epoch",
+ "crossbeam-utils",
+ "fs2",
+ "fxhash",
+ "libc",
+ "log",
+ "parking_lot 0.11.2",
 ]
 
 [[package]]
