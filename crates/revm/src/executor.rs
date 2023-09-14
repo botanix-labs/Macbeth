@@ -23,18 +23,20 @@ use revm::{
     },
     EVM,
 };
+use tracing::warn;
 use std::{
     collections::{BTreeMap, HashMap},
-    str::FromStr,
     sync::Arc,
     thread, time,
 };
-use tracing::{warn};
-
-use secp256k1::{PublicKey, Secp256k1};
 
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use tokio::sync::mpsc;
+
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+    static ref BLOCK_SOURCE: btc_wallet::block_source::MempoolSpace = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
+}
 
 /// Main block executor
 pub struct Executor<DB>
@@ -226,8 +228,6 @@ where
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
-        let mempool = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
-
         // perf: do not execute empty blocks
         if block.body.is_empty() {
             return Ok((PostState::default(), 0))
@@ -254,9 +254,8 @@ where
             let ResultAndState { result, state } = self.transact(transaction, sender)?;
             let logs = result.logs();
             // Botanix pegin logic
-            let secp = Secp256k1::new();
             for log in logs {
-                let mempool_clone = mempool.clone();
+                let block_source_clone = BLOCK_SOURCE.to_owned();
                 match parse_log_topic(&log) {
                     Ok(pegin_data) => {
                         let block_hash = pegin_data.meta.block_header.block_hash();
@@ -271,7 +270,7 @@ where
                             &executor,
                             Box::pin(async move {
                                 let block_header =
-                                    mempool_clone.get_block_header(block_hash).await.unwrap();
+                                    block_source_clone.get_block_header(block_hash).await.unwrap();
                                 // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
                                 sender.send(block_header).await.expect("send error");
                                 ()
@@ -289,7 +288,7 @@ where
                                 return Err(BlockExecutionError::FailedToGetBitcoinHeader)
                             }
                             if let Ok(block_header) = receiver.try_recv() {
-                                if let Err(pegin_error) = pegin_data.validate(&secp, &block_header)
+                                if let Err(pegin_error) = pegin_data.validate(&SECP, &block_header)
                                 {
                                     warn!("Failed pegin attempt! {:?}", pegin_error);
                                     pegin_fail = true;
