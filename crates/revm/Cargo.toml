@@ -17,6 +17,7 @@ reth-revm-primitives = { path = "./revm-primitives" }
 reth-revm-inspectors = { path = "./revm-inspectors" }
 reth-consensus-common = { path = "../consensus/common" }
 reth-tasks = { path = "../tasks" }
+lazy_static = "*"
 
 # revm
 revm.workspace = true

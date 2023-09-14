@@ -6634,6 +6634,7 @@ dependencies = [
  "bitcoin 0.30.1",
  "botanix-lib",
  "btc-wallet",
+ "lazy_static",
  "once_cell",
  "reth-consensus-common",
  "reth-interfaces",
