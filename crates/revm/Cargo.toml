@@ -37,3 +37,4 @@ bitcoin = "0.30.1"
 [dev-dependencies]
 reth-rlp.workspace = true
 once_cell = "1.17.0"
+tracing.workspace = true

@@ -1,20 +1,26 @@
-use crate::{post_state::PostState, BlockExecutor, ExecutorFactory, StateProvider};
+use crate::{
+    bundle_state::BundleStateWithReceipts, BlockExecutor, BlockExecutorStats, ExecutorFactory,
+    PrunableBlockExecutor, StateProvider,
+};
 use parking_lot::Mutex;
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{Address, Block, ChainSpec, U256};
+use reth_primitives::{Address, Block, BlockNumber, ChainSpec, PruneModes, U256};
 use std::sync::Arc;
 /// Test executor with mocked result.
-pub struct TestExecutor(pub Option<PostState>);
+pub struct TestExecutor(pub Option<BundleStateWithReceipts>);
 
-impl<SP: StateProvider> BlockExecutor<SP> for TestExecutor {
+impl BlockExecutor for TestExecutor {
     fn execute(
         &mut self,
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
         _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
-    ) -> Result<PostState, BlockExecutionError> {
-        self.0.clone().ok_or(BlockExecutionError::UnavailableForTest)
+    ) -> Result<(), BlockExecutionError> {
+        if self.0.is_none() {
+            return Err(BlockExecutionError::UnavailableForTest)
+        }
+        Ok(())
     }
 
     fn execute_and_verify_receipt(
@@ -23,15 +29,36 @@ impl<SP: StateProvider> BlockExecutor<SP> for TestExecutor {
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
         _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
-    ) -> Result<PostState, BlockExecutionError> {
-        self.0.clone().ok_or(BlockExecutionError::UnavailableForTest)
+    ) -> Result<(), BlockExecutionError> {
+        if self.0.is_none() {
+            return Err(BlockExecutionError::UnavailableForTest)
+        }
+        Ok(())
     }
+
+    fn take_output_state(&mut self) -> BundleStateWithReceipts {
+        self.0.clone().unwrap_or_default()
+    }
+
+    fn stats(&self) -> BlockExecutorStats {
+        BlockExecutorStats::default()
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        None
+    }
+}
+
+impl PrunableBlockExecutor for TestExecutor {
+    fn set_tip(&mut self, _tip: BlockNumber) {}
+
+    fn set_prune_modes(&mut self, _prune_modes: PruneModes) {}
 }
 
 /// Executor factory with pre-set execution results.
 #[derive(Clone, Debug)]
 pub struct TestExecutorFactory {
-    exec_results: Arc<Mutex<Vec<PostState>>>,
+    exec_results: Arc<Mutex<Vec<BundleStateWithReceipts>>>,
     chain_spec: Arc<ChainSpec>,
 }
 
@@ -42,17 +69,18 @@ impl TestExecutorFactory {
     }
 
     /// Extend the mocked execution results
-    pub fn extend(&self, results: Vec<PostState>) {
+    pub fn extend(&self, results: Vec<BundleStateWithReceipts>) {
         self.exec_results.lock().extend(results);
     }
 }
 
 impl ExecutorFactory for TestExecutorFactory {
-    type Executor<T: StateProvider> = TestExecutor;
-
-    fn with_sp<SP: StateProvider>(&self, _sp: SP) -> Self::Executor<SP> {
+    fn with_state<'a, SP: StateProvider + 'a>(
+        &'a self,
+        _sp: SP,
+    ) -> Box<dyn PrunableBlockExecutor + 'a> {
         let exec_res = self.exec_results.lock().pop();
-        TestExecutor(exec_res)
+        Box::new(TestExecutor(exec_res))
     }
 
     fn chain_spec(&self) -> &ChainSpec {
