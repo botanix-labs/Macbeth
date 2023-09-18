@@ -6,7 +6,7 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     to_reth_acc,
 };
-use botanix_lib::mint_validation::parse_log_topic;
+use botanix_lib::mint_validation::parse_pegin_topic;
 use reth_consensus_common::calc;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
@@ -256,7 +256,7 @@ where
             // Botanix pegin logic
             for log in logs {
                 let block_source_clone = BLOCK_SOURCE.to_owned();
-                match parse_log_topic(&log) {
+                match parse_pegin_topic(&log) {
                     Ok(pegin_data) => {
                         let block_hash = pegin_data.meta.block_header.block_hash();
                         let (sender, mut receiver) = mpsc::channel(1);
@@ -300,10 +300,7 @@ where
                             counter += 1;
                         }
                     }
-                    // TODO (armins) remove pegin tx from block txs and pool
-                    Err(err) => {
-                        warn!("Failed pegin attempt! {:?}", err);
-                        pegin_fail = true;
+                    Err(_err) => {
                         continue
                     }
                 }
