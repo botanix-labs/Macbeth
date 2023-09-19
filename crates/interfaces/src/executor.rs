@@ -28,6 +28,10 @@ pub enum BlockValidationError {
     MissingTotalDifficulty { hash: H256 },
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
+    #[error("EIP-4788 Parent beacon block root missing for active Cancun block")]
+    MissingParentBeaconBlockRoot,
+    #[error("The parent beacon block root is not zero for Cancun genesis block")]
+    CancunGenesisParentBeaconBlockRootNotZero,
 }
 
 /// BlockExecutor Errors
