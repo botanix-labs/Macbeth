@@ -9,7 +9,7 @@ repository.workspace = true
 description = "reth specific revm utilities"
 
 [dependencies]
-# reth 
+# reth
 reth-primitives.workspace = true
 reth-interfaces.workspace = true
 reth-provider.workspace = true
@@ -31,10 +31,6 @@ secp256k1 = { version = "0.27.0", default-features = false, features = ["global-
 
 # common
 tracing.workspace = true
-tokio.workspace = true
-bitcoin = "0.30.1"
 
-[dev-dependencies]
-reth-rlp.workspace = true
-once_cell = "1.17.0"
-tracing.workspace = true
+# Bitcoin
+bitcoin = "0.30.1"
