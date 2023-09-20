@@ -2,6 +2,7 @@ use crate::{mode::MiningMode, Storage};
 use botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
+use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_interfaces::consensus::ForkchoiceState;
@@ -123,9 +124,12 @@ where
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
-                    // TODO (armins) should be getting pulled from config
+                    // TODO (armins) these should be getting pulled from config
                     let mut btc_server_client: BtcServerClient<tonic::transport::Channel> =
                         BtcServerClient::connect("http://localhost:8080").await.unwrap();
+
+                    let block_source =
+                        MempoolSpace::new("https://mempool.space/testnet/api".to_string());
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -198,14 +202,33 @@ where
                                                 info!("notifying btc server about pegin utxo");
                                             }
                                             Ok(GenesisContractEvents::BurnEvent) => {
+                                                // TODO (armins): obv
+                                                let fee = 30u32;
                                                 info!("Parsing and sending withdrawal event to btc_server");
                                                 let pegout = parse_pegout_reth_log_topic(&log)
                                                     .expect("valid pegout request");
                                                 let request = MakeTxRequest {
                                                     address: pegout.destination.to_string(),
                                                     value: pegout.amount.to_sat(),
+                                                    fee,
                                                 };
-                                                btc_server_client.make_tx(request).await.unwrap();
+
+                                                if let Ok(response) =
+                                                    btc_server_client.make_tx(request).await
+                                                {
+                                                    if let Ok(tx_response) = block_source
+                                                        .broadcast_tx(&hex::encode(
+                                                            response.into_inner().tx,
+                                                        ))
+                                                        .await
+                                                    {
+                                                        info!("Broadcasted withdrawal tx with txid: {tx_response}")
+                                                    } else {
+                                                        error!("Warning: Failed to broadcast withdrawal request");
+                                                    }
+                                                } else {
+                                                    error!("Warning: Failed to send BTC server withdrawal request");
+                                                }
                                             }
                                             _ => {}
                                         }
