@@ -59,8 +59,7 @@ pub enum BlockValidationError {
         /// The hash of the block
         hash: H256,
     },
-    /// Error when total difficulty is missing
-    #[error("Missing total difficulty")]
+    #[error("Missing total difficulty for block {hash:?}")]
     MissingTotalDifficulty { hash: H256 },
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
