@@ -207,6 +207,9 @@ pub enum InsertBlockErrorKind {
     /// Canonical error.
     #[error(transparent)]
     Canonical(CanonicalError),
+    /// BlockchainTree error.
+    #[error(transparent)]
+    BlockchainTree(BlockchainTreeError),
 }
 
 impl InsertBlockErrorKind {
@@ -238,7 +241,6 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::Pruning(_) |
                     BlockExecutionError::CanonicalRevert { .. } |
                     BlockExecutionError::CanonicalCommit { .. } |
-                    BlockExecutionError::BlockHashNotFoundInChain { .. } |
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
                     BlockExecutionError::UnavailableForTest => false ,
                     &BlockExecutionError::FailedToGetBitcoinHeader => true, 
@@ -267,6 +269,7 @@ impl InsertBlockErrorKind {
                 CanonicalError::CanonicalRevert { .. } => false,
                 CanonicalError::Validation(_) => true,
             },
+            InsertBlockErrorKind::BlockchainTree(_) => false,
         }
     }
 
@@ -328,6 +331,7 @@ impl From<crate::RethError> for InsertBlockErrorKind {
             RethError::Network(err) => InsertBlockErrorKind::Internal(Box::new(err)),
             RethError::Custom(err) => InsertBlockErrorKind::Internal(err.into()),
             RethError::Canonical(err) => InsertBlockErrorKind::Canonical(err),
+            RethError::BlockchainTree(err) => InsertBlockErrorKind::BlockchainTree(err),
         }
     }
 }
