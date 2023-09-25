@@ -1078,7 +1078,6 @@ dependencies = [
  "parking_lot 0.12.1",
  "prost",
  "rand 0.8.5",
- "reth-primitives",
  "serde",
  "sled",
  "thiserror",
