@@ -89,6 +89,12 @@ pin-project.workspace = true
 # http/rpc
 hyper = "0.14.25"
 
+# Botanix
+client = {path = "../../../btc-server/client"}
+
+# Grpc
+tonic = "0.9.2"
+
 # misc
 aquamarine.workspace = true
 eyre = "0.6.8"

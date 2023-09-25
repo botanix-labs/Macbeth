@@ -19,7 +19,7 @@ pub struct BotanixConfig {
     pub bitcoin_network: bitcoin::Network,
 
     /// The gRPC url for the bitcoin signer
-    pub btc_server_url: String,
+    pub btc_server: String,
 
     /// mempool space url
     pub mempool_space_url: String,
@@ -29,14 +29,15 @@ impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
             bitcoin_network: bitcoin::Network::Testnet,
-            btc_server_url: "http://localhost:8080".to_string(),
+            btc_server: "http://localhost:8080".to_string(),
             mempool_space_url: "https://mempool.space/testnet/api".to_string(),
         }
     }
 }
 
 impl BotanixConfig {
-    fn new(bitcoin_network: bitcoin::Network, btc_server_url: String) -> Self {
+    //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
+    fn new(bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
         let mempool_space_api = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://mempool.space/api",
             bitcoin::Network::Testnet => "https://mempool.space/api/testnet",
@@ -45,9 +46,14 @@ impl BotanixConfig {
         };
         BotanixConfig {
             bitcoin_network,
-            btc_server_url,
+            btc_server,
             mempool_space_url: mempool_space_api.to_string(),
         }
+    }
+
+    pub fn btc_server(mut self, btc_server: String) -> Self {
+        self.btc_server = btc_server;
+        self
     }
 }
 
@@ -131,7 +137,7 @@ impl Botanix {
         nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         let mut client =
-            client::BtcServerClient::connect(self.botanix_rpc_config.btc_server_url.clone())
+            client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
                 .await
                 .unwrap();
         let request = tonic::Request::new(client::Empty {});
