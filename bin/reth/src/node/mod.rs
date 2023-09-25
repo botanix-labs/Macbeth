@@ -188,6 +188,11 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     #[clap(long)]
     pub auto_mine: bool, 
 
+    /// Btc signing service
+    ///
+    /// The metrics will be served at the given interface and port.
+    #[arg(long, value_name = "BTC_SERVER", value_parser = parse_socket_address, help_heading = "Btc_server")]
+    pub btc_server: Option<SocketAddr>,
 }
 
 impl<Ext: RethCliExt> NodeCommand<Ext> {
@@ -209,6 +214,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             dev,
             pruning,
             auto_mine,
+            btc_server,
             ..
         } = self;
         NodeCommand {
@@ -228,6 +234,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             pruning,
             ext,
             auto_mine,
+            btc_server,
         }
     }
 
@@ -244,6 +251,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let config_path = self.config.clone().unwrap_or(data_dir.config_path());
 
         let mut config: Config = self.load_config(config_path.clone())?;
+
+        // Connect to btc signining server
+        let mut btc_server_client: BtcServerClient<tonic::transport::Channel> =
+        BtcServerClient::connect(self.btc_server).await.expect("connect to btc_server");
+        info!(target: "reth::cli", "Btc server connected");
 
         // always store reth.toml in the data dir, not the chain specific data dir
         info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
@@ -400,6 +412,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 consensus_engine_tx.clone(),
                 canon_state_notification_sender,
                 mining_mode,
+                btc_server_client,
             )
             .build();
 

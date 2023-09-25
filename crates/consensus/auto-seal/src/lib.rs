@@ -20,6 +20,7 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 
+use ::client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
@@ -100,6 +101,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
+    btc_server: BtcServerClient<tonic::transport::Channel> 
 }
 
 // === impl AutoSealBuilder ===
@@ -117,6 +119,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
+        btc_server: BtcServerClient<tonic::transport::Channel>,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -132,6 +135,7 @@ where
             mode,
             to_engine,
             canon_state_notification,
+            btc_server,
         }
     }
 
@@ -144,7 +148,7 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-        let Self { client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
+        let Self { btc_server, client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
             self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
@@ -155,6 +159,7 @@ where
             storage,
             client,
             pool,
+            btc_server
         );
         (consensus, auto_client, task)
     }
