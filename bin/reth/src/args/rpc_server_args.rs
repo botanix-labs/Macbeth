@@ -20,7 +20,7 @@ use reth_rpc::{
             DEFAULT_BLOCK_CACHE_MAX_LEN, DEFAULT_ENV_CACHE_MAX_LEN, DEFAULT_RECEIPT_CACHE_MAX_LEN,
         },
         gas_oracle::GasPriceOracleConfig,
-        RPC_DEFAULT_GAS_CAP,
+        RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig,
     },
     JwtError, JwtSecret,
 };
@@ -40,6 +40,8 @@ use std::{
     path::PathBuf,
 };
 use tracing::{debug, info};
+
+use super::utils::parse_socket_address;
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -163,6 +165,12 @@ pub struct RpcServerArgs {
     /// Maximum number of env cache entries.
     #[arg(long, default_value_t = DEFAULT_ENV_CACHE_MAX_LEN)]
     pub env_cache_len: u32,
+
+    /// Btc signing service
+    ///
+    /// The metrics will be served at the given interface and port.
+    #[arg(long, value_name = "BTC_SERVER", help_heading = "Btc_server")]
+    pub btc_server: String,
 }
 
 impl RpcServerArgs {
@@ -321,10 +329,14 @@ impl RethRpcConfig for RpcServerArgs {
     }
 
     fn eth_config(&self) -> EthConfig {
+        let mut botanix_config = BotanixConfig::default();
+        botanix_config = botanix_config.btc_server(self.btc_server.to_string());
+
         EthConfig::default()
             .max_tracing_requests(self.rpc_max_tracing_requests)
             .rpc_gas_cap(self.rpc_gas_cap)
             .gpo_config(self.gas_price_oracle_config())
+            .botanix_config(botanix_config)
     }
 
     fn rpc_max_request_size_bytes(&self) -> u32 {

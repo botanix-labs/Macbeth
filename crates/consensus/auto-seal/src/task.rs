@@ -124,6 +124,7 @@ where
                 let pool = this.pool.clone();
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
+                let mut btc_server = this.btc_server.clone();
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
@@ -194,7 +195,7 @@ where
                                                     ),
                                                     nonce: pegin_data.nonce,
                                                 };
-                                                this.btc_server
+                                                btc_server
                                                     .notify_pegin(request)
                                                     .await
                                                     .unwrap();
