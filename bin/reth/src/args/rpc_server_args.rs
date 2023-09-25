@@ -23,8 +23,13 @@ use reth_provider::{
     EvmEnvProvider, HeaderProvider, StateProviderFactory,
 };
 use reth_rpc::{
+<<<<<<< HEAD
     eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig, },
     JwtError, JwtSecret,
+=======
+    eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig},
+    JwtError, JwtSecret, 
+>>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
 };
 use reth_rpc_builder::{
     auth::{AuthServerConfig, AuthServerHandle},
@@ -45,6 +50,8 @@ use tracing::{debug, info};
 use url::Url;
 
 use super::utils::{parse_grpc_address, parse_url};
+
+use super::utils::parse_socket_address;
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -183,6 +190,7 @@ pub struct RpcServerArgs {
     /// Btc signing service
     ///
     /// The metrics will be served at the given interface and port.
+<<<<<<< HEAD
     #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
     pub btc_server: String,
 
@@ -191,6 +199,10 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
     pub btc_block_source: Url,
+=======
+    #[arg(long, value_name = "BTC_SERVER", help_heading = "Btc_server")]
+    pub btc_server: String,
+>>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
 }
 
 impl RpcServerArgs {
@@ -347,9 +359,13 @@ impl RethRpcConfig for RpcServerArgs {
 
     fn eth_config(&self) -> EthConfig {
         let mut botanix_config = BotanixConfig::default();
+<<<<<<< HEAD
         botanix_config = botanix_config
             .btc_server(self.btc_server.clone())
             .mempool_space_url(self.btc_block_source.clone().to_string());
+=======
+        botanix_config = botanix_config.btc_server(self.btc_server.to_string());
+>>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
 
         EthConfig::default()
             .max_tracing_requests(self.rpc_max_tracing_requests)
