@@ -223,6 +223,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             #[cfg(feature = "optimism")]
             rollup,
             auto_mine,
+            btc_server,
             ..
         } = self;
         NodeCommand {
@@ -244,6 +245,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             rollup,
             ext,
             auto_mine,
+            btc_server,
         }
     }
 
@@ -293,7 +295,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
         let prometheus_handle = self.install_prometheus_recorder()?;
-
+        // Connect to btc signining server
+        let mut btc_server_client: BtcServerClient<tonic::transport::Channel> =
+        BtcServerClient::connect(self.btc_server).await.expect("connect to btc_server");
+        info!(target: "reth::cli", "Btc server connected");
+        
         let data_dir = self.data_dir();
         let db_path = data_dir.db_path();
 
