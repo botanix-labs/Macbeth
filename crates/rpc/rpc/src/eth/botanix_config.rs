@@ -2,9 +2,7 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoin::consensus::Encodable;
 use btc_wallet::block_source::BlockSource;
-use futures::TryFutureExt;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
 use reth_primitives::U256;
