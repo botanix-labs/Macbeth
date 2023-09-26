@@ -5,10 +5,11 @@ use super::EthApiSpec;
 use crate::{
     eth::{
         api::{EthApi, EthTransactions},
-        revm_utils::EvmOverrides,
+        revm_utils::EvmOverrides, botanix_config::BtcFeesRPCError,
     },
     result::{internal_rpc_err, ToRpcResult},
 };
+use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult as Result;
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
@@ -26,7 +27,7 @@ use reth_rpc_types::{
     state::StateOverride, BlockOverrides, CallRequest, EIP1186AccountProofResponse, FeeHistory,
     GatewayAddress, Index, RichBlock, SyncStatus, TransactionReceipt, TransactionRequest, Work,
 };
-use reth_transaction_pool::TransactionPool;
+use reth_transaction_pool::{TransactionPool, EthPoolTransaction};
 use serde_json::Value;
 use tracing::trace;
 
@@ -125,6 +126,16 @@ where
             Err(e) => return Err(internal_rpc_err(e)),
         };
         Ok(merkle_proof)
+    }
+
+    /// Handler for: `eth_getBtcFees`
+    async fn btc_fees(&self) -> Result<Option<U256>> {
+        trace!(target: "rpc::eth", "Serving eth_getBtcFees");
+        let btc_fees = match EthApi::get_btc_fees(self).await {
+            Ok(value) => Some(value),
+            Err(_) => None
+        };
+        Ok(btc_fees)
     }
 
     /// Handler for: `eth_getBlockTransactionCountByHash`

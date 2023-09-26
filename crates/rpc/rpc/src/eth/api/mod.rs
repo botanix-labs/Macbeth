@@ -42,7 +42,7 @@ mod transactions;
 use crate::TracingCallPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
-use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError};
+use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeesRPCError};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -75,6 +75,9 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
         txid: String,
         block_hash: String,
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
+
+    /// Returns btc fees for a pegout transaction
+    async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -382,7 +385,6 @@ where
         Ok(pegin_info)
     }
 
-
     async fn get_merkle_proof(
         &self,
         txid: String,
@@ -390,6 +392,11 @@ where
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
         let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
         Ok(pegin_info)
+    }
+
+    async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError> {
+        let btc_fees = self.inner.botanix_provider.get_btc_fees().await?;
+        Ok(btc_fees)
     }
 
     /// Returns the current info for the chain
