@@ -7,6 +7,7 @@ use btc_wallet::block_source::BlockSource;
 use futures::TryFutureExt;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
+use reth_primitives::U256;
 
 // TODO Secp should be getting pulled from provider
 lazy_static::lazy_static! {
@@ -77,6 +78,10 @@ pub enum MerkleProofRPCError {
     /// Malformed block hash
     MalformedBlockHash,
 }
+
+/// Errors from get btc fees RPC endpoint
+#[derive(Debug)]
+pub enum BtcFeesRPCError {}
 
 impl fmt::Display for MerkleProofRPCError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -173,5 +178,13 @@ impl Botanix {
 
         let pmt = bitcoin::merkle_tree::PartialMerkleTree::from_txids(&txids, &matches);
         Ok(bitcoin::consensus::serialize(&pmt))
+    }
+
+    /// Function calls btc_server to get btc fees for a pegout transaction:
+    /// currently returns a static fee without calling btc_server
+    pub async fn get_btc_fees(
+        &self,
+     ) -> std::result::Result<U256, BtcFeesRPCError> {
+        Ok(U256::from(30u32))
     }
 }

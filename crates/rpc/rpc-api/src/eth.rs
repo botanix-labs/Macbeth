@@ -54,6 +54,10 @@ pub trait EthApi {
         block_hash: String,
     ) -> RpcResult<Bytes>;
 
+    /// Returns the Bitcoin fees for a pegout transaction
+    #[method(name = "getBtcFees")]
+    async fn btc_fees(&self) -> RpcResult<Option<U256>>;
+
     /// Returns information about a block by hash.
     #[method(name = "getBlockByHash")]
     async fn block_by_hash(&self, hash: H256, full: bool) -> RpcResult<Option<RichBlock>>;
