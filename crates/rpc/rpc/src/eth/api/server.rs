@@ -28,7 +28,7 @@ use reth_rpc_types::{
     EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Index, RichBlock, StateContext,
     SyncStatus, TransactionReceipt, TransactionRequest, Work, GatewayAddress,
 };
-use reth_transaction_pool::TransactionPool;
+use reth_transaction_pool::{TransactionPool, EthPoolTransaction};
 use serde_json::Value;
 use tracing::trace;
 

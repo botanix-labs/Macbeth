@@ -436,16 +436,6 @@ where
         Ok(fee_rate)
     }
 
-
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
-        let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
-        Ok(pegin_info)
-    }
-
     /// Returns the current info for the chain
     fn chain_info(&self) -> RethResult<ChainInfo> {
         Ok(self.provider().chain_info()?)
