@@ -6,6 +6,7 @@ use btc_wallet::block_source::BlockSource;
 use reth_primitives::U256;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
+use reth_primitives::U256;
 
 // TODO Secp should be getting pulled from provider
 lazy_static::lazy_static! {
