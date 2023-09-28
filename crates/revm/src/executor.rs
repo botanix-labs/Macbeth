@@ -6,7 +6,7 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     to_reth_acc,
 };
-use botanix_lib::mint_validation::parse_pegin_topic;
+use botanix_lib::mint_validation::{parse_pegin_topic, parse_pegout_topic, MINT_TOPIC, BURN_TOPIC};
 use reth_consensus_common::calc;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
@@ -240,6 +240,7 @@ where
         let mut post_state = PostState::with_tx_capacity(block.number, block.body.len());
         for (transaction, sender) in block.body.iter().zip(senders) {
             let mut pegin_fail = false;
+            let mut pegout_fail = false;
             // The sum of the transaction’s gas limit, Tg, and the gas utilised in this block prior,
             // must be no greater than the block’s gasLimit.
             let block_available_gas = block.header.gas_limit - cumulative_gas_used;
@@ -256,52 +257,63 @@ where
             // Botanix pegin logic
             for log in logs {
                 let block_source_clone = BLOCK_SOURCE.to_owned();
-                match parse_pegin_topic(&log) {
-                    Ok(pegin_data) => {
-                        let block_hash = pegin_data.meta.block_header.block_hash();
-                        let (sender, mut receiver) = mpsc::channel(1);
-                        // Create a Tokio runtime
-                        let rt = tokio::runtime::Handle::current();
-
-                        let manager = TaskManager::new(rt.clone());
-                        let executor = manager.executor();
-
-                        let _task = TaskSpawner::spawn_blocking(
-                            &executor,
-                            Box::pin(async move {
-                                let block_header =
-                                    block_source_clone.get_block_header(block_hash).await.unwrap();
-                                // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
-                                sender.send(block_header).await.expect("send error");
-                                ()
-                            }),
-                        );
-                        // Wait for the task to finish
-                        // TODO ideally this function runs in the same runtime as the caller.
-                        // This is easier said than done, so it may be easier to have a async task
-                        // in a seperate runtime this task will recieve jobs
-                        // from the caller and send the result back to the caller.
-                        let mut counter = 0;
-                        let ten_millis = time::Duration::from_millis(10);
-                        loop {
-                            if counter == 10_000 {
-                                return Err(BlockExecutionError::FailedToGetBitcoinHeader)
-                            }
-                            if let Ok(block_header) = receiver.try_recv() {
-                                if let Err(pegin_error) = pegin_data.validate(&SECP, &block_header)
-                                {
-                                    warn!("Failed pegin attempt! {:?}", pegin_error);
-                                    pegin_fail = true;
+                if log.topics.contains(&MINT_TOPIC) {
+                    match parse_pegin_topic(&log) {
+                        Ok(pegin_data) => {
+                            let block_hash = pegin_data.meta.block_header.block_hash();
+                            let (sender, mut receiver) = mpsc::channel(1);
+                            // Create a Tokio runtime
+                            let rt = tokio::runtime::Handle::current();
+    
+                            let manager = TaskManager::new(rt.clone());
+                            let executor = manager.executor();
+    
+                            let _task = TaskSpawner::spawn_blocking(
+                                &executor,
+                                Box::pin(async move {
+                                    let block_header =
+                                        block_source_clone.get_block_header(block_hash).await.unwrap();
+                                    // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
+                                    sender.send(block_header).await.expect("send error");
+                                    ()
+                                }),
+                            );
+                            // Wait for the task to finish
+                            // TODO ideally this function runs in the same runtime as the caller.
+                            // This is easier said than done, so it may be easier to have a async task
+                            // in a seperate runtime this task will recieve jobs
+                            // from the caller and send the result back to the caller.
+                            let mut counter = 0;
+                            let ten_millis = time::Duration::from_millis(10);
+                            loop {
+                                if counter == 10_000 {
+                                    return Err(BlockExecutionError::FailedToGetBitcoinHeader)
                                 }
-                                break
-                            } else {
-                                thread::sleep(ten_millis);
+                                if let Ok(block_header) = receiver.try_recv() {
+                                    if let Err(pegin_error) = pegin_data.validate(&SECP, &block_header)
+                                    {
+                                        warn!("Failed pegin attempt! {:?}", pegin_error);
+                                        pegin_fail = true;
+                                    }
+                                    break
+                                } else {
+                                    thread::sleep(ten_millis);
+                                }
+                                counter += 1;
                             }
-                            counter += 1;
+                        }
+                        Err(_err) => {
+                            continue
                         }
                     }
-                    Err(_err) => {
-                        continue
+                }
+                if log.topics.contains(&BURN_TOPIC) {
+                    match parse_pegout_topic(&log) {
+                        Ok(pegout_data) => continue,
+                        Err(pegout_error) => {
+                            warn!("Failed pegout attempt! {:?}", pegout_error);
+                            pegout_fail = true;
+                        }
                     }
                 }
             }
@@ -331,7 +343,7 @@ where
                     tx_type: transaction.tx_type(),
                     // Success flag was added in `EIP-658: Embedding transaction status code in
                     // receipts`.
-                    success: if pegin_fail { false } else { result.is_success() },
+                    success: if pegin_fail || pegout_fail { false } else { result.is_success() },
                     cumulative_gas_used,
                     // convert to reth log
                     logs: result.into_logs().into_iter().map(into_reth_log).collect(),
