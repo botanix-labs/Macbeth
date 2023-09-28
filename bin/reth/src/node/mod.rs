@@ -117,6 +117,7 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// - mainnet
     /// - goerli
     /// - sepolia
+    /// - holesky
     /// - dev
     /// - botanix_testnet
     #[arg(
