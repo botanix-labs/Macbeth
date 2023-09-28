@@ -25,6 +25,7 @@ use reth_rpc::{
     },
     JwtError, JwtSecret,
 };
+
 use reth_rpc_builder::{
     auth::{AuthServerConfig, AuthServerHandle},
     constants,
@@ -54,7 +55,7 @@ pub(crate) const RPC_DEFAULT_MAX_REQUEST_SIZE_MB: u32 = 15;
 /// This is only relevant for very large trace responses.
 pub(crate) const RPC_DEFAULT_MAX_RESPONSE_SIZE_MB: u32 = 115;
 /// Default number of incoming connections.
-pub(crate) const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
+pub(crate) const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 500;
 
 /// Parameters for configuring the rpc more granularity via CLI
 #[derive(Debug, Args)]
