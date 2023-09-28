@@ -129,7 +129,7 @@ where
                         BtcServerClient::connect("http://localhost:8080").await.unwrap();
 
                     let block_source =
-                        MempoolSpace::new("https://mempool.space/testnet/api".to_string());
+                        MempoolSpace::new("https://mempool.space/testnet".to_string());
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -213,21 +213,26 @@ where
                                                     fee,
                                                 };
 
-                                                if let Ok(response) =
-                                                    btc_server_client.make_tx(request).await
-                                                {
-                                                    if let Ok(tx_response) = block_source
-                                                        .broadcast_tx(&hex::encode(
-                                                            response.into_inner().tx,
-                                                        ))
-                                                        .await
-                                                    {
-                                                        info!("Broadcasted withdrawal tx with txid: {tx_response}")
-                                                    } else {
-                                                        error!("Warning: Failed to broadcast withdrawal request");
+                                                match btc_server_client.make_tx(request).await {
+                                                    Ok(response) => {
+                                                        let raw_tx = response.into_inner().tx;
+                                                        info!("Pegout tx from btc signer service {:?}", raw_tx.clone());
+
+                                                        match block_source
+                                                            .broadcast_tx(&hex::encode(raw_tx))
+                                                            .await
+                                                        {
+                                                            Ok(tx_response) => {
+                                                                info!("Broadcasted withdrawal tx with txid: {}", tx_response);
+                                                            }
+                                                            Err(err) => {
+                                                                error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
+                                                            }
+                                                        }
                                                     }
-                                                } else {
-                                                    error!("Warning: Failed to send BTC server withdrawal request");
+                                                    Err(err) => {
+                                                        error!("Warning: Failed to send BTC server withdrawal request, {:?}", err);
+                                                    }
                                                 }
                                             }
                                             _ => {}
