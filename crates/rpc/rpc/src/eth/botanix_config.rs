@@ -30,16 +30,10 @@ pub struct BotanixConfig {
 impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
-<<<<<<< HEAD
             bitcoin_network: bitcoin::Network::Signet,
             btc_server: "http://localhost:8080".to_string(),
             // Use a public signet endpoint by default
             mempool_space_url: "https://mempool.space/signet/api".to_string(),
-=======
-            bitcoin_network: bitcoin::Network::Testnet,
-            btc_server: "http://localhost:8080".to_string(),
-            mempool_space_url: "https://mempool.space/testnet/api".to_string(),
->>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
         }
     }
 }
@@ -47,10 +41,7 @@ impl Default for BotanixConfig {
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     fn new(bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
-<<<<<<< HEAD
         // TODO(armins) Update these to point to botanix mempool instances
-=======
->>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
         let mempool_space_api = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://mempool.space/api",
             bitcoin::Network::Testnet => "https://mempool.space/api/testnet",
@@ -65,23 +56,17 @@ impl BotanixConfig {
         }
     }
 
-<<<<<<< HEAD
     /// Set btc server Grpc Url
-=======
->>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
     pub fn btc_server(mut self, btc_server: String) -> Self {
         self.btc_server = btc_server;
         self
     }
-<<<<<<< HEAD
 
     /// Set mempool space block source url
     pub fn mempool_space_url(mut self, mempool_space_url: String) -> Self {
         self.mempool_space_url = mempool_space_url;
         self
     }
-=======
->>>>>>> e97ee0874 (fix: pull btc_server url config from rpc cli args)
 }
 
 /// Errors from get gateway address RPC endpoint

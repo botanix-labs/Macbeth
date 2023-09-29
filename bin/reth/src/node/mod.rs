@@ -94,8 +94,7 @@ use std::time::{Instant, Duration};
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
 
-use client::{BtcServerClient};
-
+use client::BtcServerClient;
 
 pub mod cl_events;
 pub mod events;
@@ -298,7 +297,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let prometheus_handle = self.install_prometheus_recorder()?;
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.rpc.btc_server.to_string()).await.expect("connect to btc_server");
+            BtcServerClient::connect(self.rpc.btc_server.clone()).await.expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
         
         let data_dir = self.data_dir();
