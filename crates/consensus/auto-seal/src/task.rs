@@ -213,7 +213,7 @@ where
                                                     fee,
                                                 };
 
-                                                match btc_server_client.make_tx(request).await {
+                                                match btc_server.make_tx(request).await {
                                                     Ok(response) => {
                                                         let raw_tx = response.into_inner().tx;
                                                         info!("Pegout tx from btc signer service {:?}", raw_tx.clone());
