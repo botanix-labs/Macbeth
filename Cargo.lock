@@ -6057,6 +6057,7 @@ dependencies = [
  "reth-rpc-builder",
  "reth-rpc-engine-api",
  "reth-rpc-types",
+ "reth-snapshot",
  "reth-stages",
  "reth-tasks",
  "reth-tracing",
@@ -6710,8 +6711,10 @@ dependencies = [
  "reth-metrics",
  "reth-primitives",
  "reth-provider",
+ "reth-snapshot",
  "reth-stages",
  "thiserror",
+ "tokio",
  "tokio-stream",
  "tracing",
 ]
@@ -6925,6 +6928,8 @@ dependencies = [
  "reth-provider",
  "reth-stages",
  "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
