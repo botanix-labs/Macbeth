@@ -41,7 +41,7 @@ use std::{
 };
 use tracing::{debug, info};
 
-use super::utils::parse_socket_address;
+use super::utils::parse_grpc_address;
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -169,7 +169,7 @@ pub struct RpcServerArgs {
     /// Btc signing service
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "BTC_SERVER", help_heading = "Btc_server")]
+    #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
     pub btc_server: String,
 }
 

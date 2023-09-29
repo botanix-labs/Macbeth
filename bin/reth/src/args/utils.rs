@@ -1,7 +1,8 @@
 //! Clap parser utilities
 
 use reth_primitives::{
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, DEV, GOERLI, MAINNET, SEPOLIA, BOTANIX_TESTNET
+    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, BOTANIX_TESTNET, DEV, GOERLI, MAINNET,
+    SEPOLIA,
 };
 use reth_revm::primitives::B256 as H256;
 use std::{
@@ -102,6 +103,21 @@ pub fn parse_socket_address(value: &str) -> eyre::Result<SocketAddr, SocketAddre
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| SocketAddressParsingError::Parse(value.to_string()))
+}
+
+/// Parse a [SocketAddr] from a `str` prefixing with http.
+///
+/// An error is returned if the value is empty or if non socket value is passed
+pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {
+    if value.is_empty() {
+        return Err(SocketAddressParsingError::Empty)
+    }
+    // TODO configuarable for https
+    let addr = format!("http://{}", value.to_string());
+    tonic::transport::Endpoint::try_from(addr.clone()).map_err(|_e| {
+        SocketAddressParsingError::Parse("Failed to parse as tonic Endpoint".to_string())
+    })?;
+    Ok(addr)
 }
 
 #[cfg(test)]

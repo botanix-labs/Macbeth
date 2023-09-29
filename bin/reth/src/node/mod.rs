@@ -81,8 +81,7 @@ use std::{
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
 use tracing::*;
 
-use client::{BtcServerClient};
-
+use client::BtcServerClient;
 
 pub mod cl_events;
 pub mod events;
@@ -249,7 +248,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.rpc.btc_server.to_string()).await.expect("connect to btc_server");
+            BtcServerClient::connect(self.rpc.btc_server.clone()).await.expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
         // always store reth.toml in the data dir, not the chain specific data dir
