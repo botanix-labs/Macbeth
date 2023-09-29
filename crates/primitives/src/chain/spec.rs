@@ -66,6 +66,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::mainnet(),
+        snapshot_block_interval: 500_000,
     }
     .into()
 });
@@ -108,6 +109,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::testnet(),
+        snapshot_block_interval: 1_000_000,
     }
     .into()
 });
@@ -154,6 +156,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::testnet(),
+        snapshot_block_interval: 1_000_000,
     }
     .into()
 });
@@ -195,6 +198,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::testnet(),
+        snapshot_block_interval: 1_000_000,
     }
     .into()
 });
@@ -339,6 +343,9 @@ pub struct ChainSpec {
     /// data coming in.
     #[serde(default)]
     pub prune_batch_sizes: PruneBatchSizes,
+
+    /// The block interval for creating snapshots. Each snapshot will have that much blocks in it.
+    pub snapshot_block_interval: u64,
 }
 
 impl Default for ChainSpec {
@@ -353,6 +360,7 @@ impl Default for ChainSpec {
             deposit_contract: Default::default(),
             base_fee_params: BaseFeeParams::ethereum(),
             prune_batch_sizes: Default::default(),
+            snapshot_block_interval: Default::default(),
         }
     }
 }
