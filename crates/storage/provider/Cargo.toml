@@ -39,7 +39,7 @@ alloy-rlp = { workspace = true, optional = true }
 ## Bitcoin
 bitcoin = "0.30.0"
 # parallel utils
-rayon = "1.7"
+rayon.workspace = true
 
 [dev-dependencies]
 reth-db = { workspace = true, features = ["test-utils"] }
@@ -49,7 +49,7 @@ reth-interfaces = { workspace = true, features = ["test-utils"] }
 
 alloy-rlp.workspace = true
 parking_lot.workspace = true
-tempfile = "3.3"
+tempfile.workspace = true
 assert_matches.workspace = true
 rand.workspace = true
 
