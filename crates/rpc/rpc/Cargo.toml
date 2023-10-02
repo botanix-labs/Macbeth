@@ -80,5 +80,5 @@ tonic = "0.9.2"
 [dev-dependencies]
 jsonrpsee = { workspace = true, features = ["client"] }
 assert_matches.workspace = true
-tempfile = "3.5.0"
+tempfile.workspace = true
 reth-interfaces = { workspace = true, features = ["test-utils"] }
