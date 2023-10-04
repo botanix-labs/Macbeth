@@ -8,7 +8,7 @@ use crate::{
     header::Head,
     proofs::genesis_state_root,
     Address, BlockNumber, Chain, ForkFilter, ForkHash, ForkId, Genesis, Hardfork, Header,
-    PruneBatchSizes, SealedHeader, B256, EMPTY_OMMER_ROOT, U256,
+    SealedHeader, B256, EMPTY_OMMER_ROOT, U256,
 };
 use once_cell::sync::Lazy;
 use revm_primitives::{address, b256};
@@ -65,7 +65,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParams::ethereum(),
-        prune_batch_sizes: PruneBatchSizes::mainnet(),
+        prune_delete_limit: 3500,
         snapshot_block_interval: 500_000,
     }
     .into()
@@ -108,7 +108,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParams::ethereum(),
-        prune_batch_sizes: PruneBatchSizes::testnet(),
+        prune_delete_limit: 1700,
         snapshot_block_interval: 1_000_000,
     }
     .into()
@@ -155,7 +155,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParams::ethereum(),
-        prune_batch_sizes: PruneBatchSizes::testnet(),
+        prune_delete_limit: 1700,
         snapshot_block_interval: 1_000_000,
     }
     .into()
@@ -197,7 +197,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParams::ethereum(),
-        prune_batch_sizes: PruneBatchSizes::testnet(),
+        prune_delete_limit: 1700,
         snapshot_block_interval: 1_000_000,
     }
     .into()
@@ -338,11 +338,11 @@ pub struct ChainSpec {
     /// The parameters that configure how a block's base fee is computed
     pub base_fee_params: BaseFeeParams,
 
-    /// The batch sizes for pruner, per block. In the actual pruner run it will be multiplied by
+    /// The delete limit for pruner, per block. In the actual pruner run it will be multiplied by
     /// the amount of blocks between pruner runs to account for the difference in amount of new
     /// data coming in.
     #[serde(default)]
-    pub prune_batch_sizes: PruneBatchSizes,
+    pub prune_delete_limit: usize,
 
     /// The block interval for creating snapshots. Each snapshot will have that much blocks in it.
     pub snapshot_block_interval: u64,
@@ -359,7 +359,7 @@ impl Default for ChainSpec {
             hardforks: Default::default(),
             deposit_contract: Default::default(),
             base_fee_params: BaseFeeParams::ethereum(),
-            prune_batch_sizes: Default::default(),
+            prune_delete_limit: MAINNET.prune_delete_limit,
             snapshot_block_interval: Default::default(),
         }
     }
