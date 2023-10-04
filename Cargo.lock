@@ -6766,6 +6766,7 @@ name = "reth-revm-primitives"
 version = "0.1.0-alpha.10"
 dependencies = [
  "reth-primitives",
+ "revm",
 ]
 
 [[package]]
@@ -7026,7 +7027,9 @@ dependencies = [
  "reth-metrics",
  "reth-primitives",
  "reth-provider",
+ "reth-revm-primitives",
  "reth-tasks",
+ "revm",
  "serde",
  "thiserror",
  "tokio",
