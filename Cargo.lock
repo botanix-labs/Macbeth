@@ -5940,7 +5940,9 @@ version = "0.1.0-alpha.8"
 dependencies = [
  "aquamarine",
  "backon",
+ "bitcoin 0.30.1",
  "boyer-moore-magiclen",
+ "btc-wallet",
  "clap",
  "client",
  "comfy-table",
@@ -6594,6 +6596,7 @@ version = "0.1.0-alpha.8"
 dependencies = [
  "assert_matches",
  "auto_impl",
+ "bitcoin 0.30.1",
  "derive_more",
  "itertools 0.11.0",
  "parking_lot 0.12.1",

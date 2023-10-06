@@ -204,7 +204,7 @@ impl AppendableChain {
         let provider = PostStateProvider::new(state_provider, post_state_data_provider);
 
         let mut executor = externals.executor_factory.with_sp(&provider);
-        let post_state = executor.execute_and_verify_receipt(&block, U256::MAX, Some(senders))?;
+        let post_state = executor.execute_and_verify_receipt(&block, U256::MAX, Some(senders), None)?;
 
         // check state root if the block extends the canonical chain.
         if block_kind.extends_canonical_head() {

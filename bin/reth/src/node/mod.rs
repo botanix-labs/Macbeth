@@ -78,10 +78,12 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
 
 use client::BtcServerClient;
+use btc_wallet::block_source::MempoolSpace;
+use btc_wallet::block_source::BlockSource;
 
 pub mod cl_events;
 pub mod events;
@@ -251,6 +253,35 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             BtcServerClient::connect(self.rpc.btc_server.clone()).await.expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
+        let bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>> =
+            Arc::new(RwLock::new(Vec::new()));
+        let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
+        let block_source =
+                        MempoolSpace::new("https://mempool.space/testnet".to_string());
+
+        ctx.task_executor.spawn_critical(
+            "async bitcoin block header task",
+            Box::pin(async move {
+                let sleep_ms = tokio::time::Duration::from_millis(5000);
+                let mut tip = 0u64;
+                loop {
+                    let mut header_write = bitcoin_block_headers.write().await;
+                    let current_tip = block_source.get_tip().await.unwrap();
+                    if current_tip != tip {
+                        info!("Async bitcoin worker tip mismatch");
+                        let block_hash = block_source.get_block_hash(current_tip).await.unwrap();
+                        let block_header = block_source.get_block_header(block_hash).await.unwrap();
+
+                        header_write.push(block_header);
+                        tip = current_tip;
+                    }
+                    println!("header_write, {:?}", bitcoin_block_headers);
+                    tokio::time::sleep(sleep_ms).await;
+                }
+            }),
+        );
+        info!(target: "reth::cli", "Spawned async bitcoin block header task");
+
         // always store reth.toml in the data dir, not the chain specific data dir
         info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
 
@@ -407,6 +438,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 canon_state_notification_sender,
                 mining_mode,
                 btc_server_client,
+                bitcoin_block_headers_clone,
             )
             .build();
 

@@ -227,6 +227,7 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         // perf: do not execute empty blocks
         if block.body.is_empty() {
@@ -256,50 +257,30 @@ where
             let logs = result.logs();
             // Botanix pegin logic
             for log in logs {
-                let block_source_clone = BLOCK_SOURCE.to_owned();
                 if log.topics.contains(&MINT_TOPIC) {
                     match parse_pegin_topic(&log) {
                         Ok(pegin_data) => {
-                            let block_hash = pegin_data.meta.block_header.block_hash();
-                            let (sender, mut receiver) = mpsc::channel(1);
-                            // Create a Tokio runtime
-                            let rt = tokio::runtime::Handle::current();
-    
-                            let manager = TaskManager::new(rt.clone());
-                            let executor = manager.executor();
-    
-                            let _task = TaskSpawner::spawn_blocking(
-                                &executor,
-                                Box::pin(async move {
-                                    let block_header =
-                                        block_source_clone.get_block_header(block_hash).await.unwrap();
-                                    // .map_err(|e| BlockExecutionError::FailedToGetBitcoinHeader)?;
-                                    sender.send(block_header).await.expect("send error");
-                                    ()
-                                }),
-                            );
-                            // Wait for the task to finish
-                            // TODO ideally this function runs in the same runtime as the caller.
-                            // This is easier said than done, so it may be easier to have a async task
-                            // in a seperate runtime this task will recieve jobs
-                            // from the caller and send the result back to the caller.
-                            let mut counter = 0;
-                            let ten_millis = time::Duration::from_millis(10);
-                            loop {
-                                if counter == 10_000 {
-                                    return Err(BlockExecutionError::FailedToGetBitcoinHeader)
+                            if let Some(ref bitcoin_headers) = recent_block_headers {
+                                let recent_block_header =
+                                    bitcoin_headers.into_iter().find(|header| {
+                                        header.block_hash() ==
+                                            pegin_data.meta.block_header.block_hash()
+                                    });
+
+                                if recent_block_header.is_none() {
+                                    warn!("Failed pegin attempt Could not find block header in list of recent headers");
+                                    pegin_fail = true;
+                                    break;
                                 }
-                                if let Ok(block_header) = receiver.try_recv() {
-                                    if let Err(pegin_error) = pegin_data.validate(&SECP, &block_header)
-                                    {
-                                        warn!("Failed pegin attempt! {:?}", pegin_error);
-                                        pegin_fail = true;
-                                    }
-                                    break
-                                } else {
-                                    thread::sleep(ten_millis);
+
+                                if let Err(pegin_error) = pegin_data.validate(
+                                    &SECP,
+                                    &recent_block_header.expect("valid block header"),
+                                ) {
+                                    warn!("Failed pegin attempt! {:?}", pegin_error);
+                                    pegin_fail = true;
+                                    break;
                                 }
-                                counter += 1;
                             }
                         }
                         Err(_err) => {
@@ -385,9 +366,10 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<PostState, BlockExecutionError> {
         let (post_state, cumulative_gas_used) =
-            self.execute_transactions(block, total_difficulty, senders)?;
+            self.execute_transactions(block, total_difficulty, senders, recent_block_headers)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -406,8 +388,9 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<PostState, BlockExecutionError> {
-        let post_state = self.execute(block, total_difficulty, senders)?;
+        let post_state = self.execute(block, total_difficulty, senders, recent_block_headers)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -884,7 +867,7 @@ mod tests {
 
         // execute chain and verify receipts
         let mut executor = Executor::new(chain_spec, db);
-        let post_state = executor.execute_and_verify_receipt(&block, U256::ZERO, None).unwrap();
+        let post_state = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
 
         let base_block_reward = ETH_TO_WEI * 2;
         let block_reward = calc::block_reward(base_block_reward, 1);
@@ -1042,6 +1025,7 @@ mod tests {
                 &Block { header, body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
                 None,
+                None,
             )
             .unwrap();
 
@@ -1117,7 +1101,7 @@ mod tests {
 
         // execute chain and verify receipts
         let mut executor = Executor::new(chain_spec, db);
-        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None).unwrap();
+        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None, ).unwrap();
 
         assert_eq!(out.bytecodes().len(), 0, "Should have zero new bytecodes");
 
@@ -1162,7 +1146,7 @@ mod tests {
 
         // execute chain and verify receipts
         let mut executor = Executor::new(chain_spec, db);
-        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None).unwrap();
+        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
 
         let withdrawal_sum = withdrawals.iter().fold(U256::ZERO, |sum, w| sum + w.amount_wei());
         let beneficiary_account = executor.db().accounts.get(&withdrawal_beneficiary).unwrap();
@@ -1177,7 +1161,7 @@ mod tests {
         );
 
         // Execute same block again
-        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None).unwrap();
+        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
 
         assert_eq!(
             out.accounts().get(&withdrawal_beneficiary).unwrap(),
