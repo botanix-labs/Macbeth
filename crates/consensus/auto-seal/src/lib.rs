@@ -328,6 +328,7 @@ impl StorageInner {
         block: &Block,
         executor: &mut EVMProcessor<'_>,
         senders: Vec<Address>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
         // TODO: there isn't really a parent beacon block root here, so not sure whether or not to
