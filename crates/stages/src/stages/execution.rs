@@ -145,7 +145,7 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
             // Execute the block
             let (block, senders) = block.into_components();
             let block_state = executor
-                .execute_and_verify_receipt(&block, td, Some(senders))
+                .execute_and_verify_receipt(&block, td, Some(senders), None)
                 .map_err(|error| StageError::ExecutionError {
                     block: block.header.clone().seal_slow(),
                     error,

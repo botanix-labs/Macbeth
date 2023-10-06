@@ -101,7 +101,8 @@ pub struct AutoSealBuilder<Client, Pool> {
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: BtcServerClient<tonic::transport::Channel> 
+    btc_server: BtcServerClient<tonic::transport::Channel>,
+    bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
 }
 
 // === impl AutoSealBuilder ===
@@ -120,6 +121,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+        bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -136,6 +138,7 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
+            bitcoin_block_headers,
         }
     }
 
@@ -148,7 +151,7 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-        let Self { btc_server, client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
+        let Self { btc_server, client, consensus, pool, mode, storage, to_engine, canon_state_notification, bitcoin_block_headers} =
             self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
@@ -159,7 +162,8 @@ where
             storage,
             client,
             pool,
-            btc_server
+            btc_server,
+            bitcoin_block_headers
         );
         (consensus, auto_client, task)
     }
@@ -303,11 +307,12 @@ impl StorageInner {
         block: &Block,
         executor: &mut Executor<DB>,
         senders: Vec<Address>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
         let (post_state, gas_used) =
-            executor.execute_transactions(block, U256::ZERO, Some(senders))?;
+            executor.execute_transactions(block, U256::ZERO, Some(senders), recent_block_headers)?;
 
         // apply post block changes
         let post_state = executor.apply_post_block_changes(block, U256::ZERO, post_state)?;
@@ -351,6 +356,7 @@ impl StorageInner {
         transactions: Vec<TransactionSigned>,
         executor: &mut Executor<DB>,
         chain_spec: Arc<ChainSpec>,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
         let header = self.build_header_template(&transactions, chain_spec);
 
@@ -362,7 +368,7 @@ impl StorageInner {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
         // now execute the block
-        let (post_state, gas_used) = self.execute(&block, executor, senders)?;
+        let (post_state, gas_used) = self.execute(&block, executor, senders, recent_block_headers)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };

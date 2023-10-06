@@ -172,6 +172,7 @@ impl Command {
             &block.clone().unseal(),
             merkle_block_td + block.difficulty,
             None,
+            None
         )?;
 
         // Unpacked `PostState::state_root_slow` function

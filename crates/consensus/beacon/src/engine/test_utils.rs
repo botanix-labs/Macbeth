@@ -185,8 +185,8 @@ where
         senders: Option<Vec<reth_primitives::Address>>,
     ) -> Result<PostState, BlockExecutionError> {
         match self {
-            EitherBlockExecutor::Left(a) => a.execute(block, total_difficulty, senders),
-            EitherBlockExecutor::Right(b) => b.execute(block, total_difficulty, senders),
+            EitherBlockExecutor::Left(a) => a.execute(block, total_difficulty, senders, None),
+            EitherBlockExecutor::Right(b) => b.execute(block, total_difficulty, senders, None),
         }
     }
 
@@ -198,10 +198,10 @@ where
     ) -> Result<PostState, BlockExecutionError> {
         match self {
             EitherBlockExecutor::Left(a) => {
-                a.execute_and_verify_receipt(block, total_difficulty, senders)
+                a.execute_and_verify_receipt(block, total_difficulty, senders, None)
             }
             EitherBlockExecutor::Right(b) => {
-                b.execute_and_verify_receipt(block, total_difficulty, senders)
+                b.execute_and_verify_receipt(block, total_difficulty, senders, None)
             }
         }
     }

@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
@@ -49,7 +49,10 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     canon_state_notification: CanonStateNotificationSender,
     /// The pipeline events to listen on
     pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
+    /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
+    /// Recent bitcoin block headers
+    bitcoin_block_headers :Arc<RwLock<Vec<bitcoin::block::Header>>>,
 }
 
 // === impl MiningTask ===
@@ -65,6 +68,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+        bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
     ) -> Self {
         Self {
             chain_spec,
@@ -78,6 +82,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             queued: Default::default(),
             pipe_line_events: None,
             btc_server,
+            bitcoin_block_headers
         }
     }
 
@@ -125,11 +130,13 @@ where
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
                 let mut btc_server = this.btc_server.clone();
+                let bitcoin_block_headers = this.bitcoin_block_headers.clone();
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
                     let block_source =
                         MempoolSpace::new("https://mempool.space/testnet".to_string());
+                    let recent_block_headers= bitcoin_block_headers.read().await.clone();
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -145,7 +152,7 @@ where
                     let substate = SubState::new(State::new(client.latest().unwrap()));
                     let mut executor = Executor::new(Arc::clone(&chain_spec), substate);
 
-                    match storage.build_and_execute(transactions.clone(), &mut executor, chain_spec)
+                    match storage.build_and_execute(transactions.clone(), &mut executor, chain_spec, Some(recent_block_headers))
                     {
                         Ok((new_header, post_state)) => {
                             // clear all transactions from pool
