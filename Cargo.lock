@@ -7004,6 +7004,7 @@ dependencies = [
  "auto_impl",
  "dashmap",
  "itertools 0.11.0",
+ "bitcoin 0.30.1",
  "metrics",
  "parking_lot 0.12.1",
  "pin-project",
