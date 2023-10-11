@@ -6,7 +6,9 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     to_reth_acc,
 };
-use botanix_lib::mint_validation::{parse_pegin_topic, parse_pegout_topic, MINT_TOPIC, BURN_TOPIC};
+use botanix_lib::mint_validation::{
+    parse_pegin_topic, parse_pegout_topic, MINT_CONTRACT_ADDRESS, MINT_TOPIC, BURN_TOPIC,
+};
 use reth_consensus_common::calc;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
@@ -19,11 +21,11 @@ use revm::{
     db::{AccountState, CacheDB, DatabaseRef},
     primitives::{
         hash_map::{self, Entry},
-        Account as RevmAccount, AccountInfo, ResultAndState,
+        Account as RevmAccount, AccountInfo, ExecutionResult, ResultAndState,
     },
     EVM,
 };
-use tracing::warn;
+use tracing::{error, warn};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -59,6 +61,47 @@ where
         let evm = EVM::new();
         Executor { chain_spec, evm, stack: InspectorStack::new(InspectorStackConfig::default()) }
     }
+}
+
+fn botanix_mint_contract_checks(
+    result: &ExecutionResult,
+    recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+) -> Result<(), BlockExecutionError> {
+    for log in result.logs() {
+        let block_source_clone = BLOCK_SOURCE.to_owned();
+
+        if log.topics.get(0) == Some(&MINT_TOPIC) {
+            let pegin_data = parse_pegin_topic(&log).map_err(|e| {
+                error!("Failed to parse pegin topic! {:?}", e);
+                BlockValidationError::MintContractViolation
+            })?;
+
+            let blockhash = pegin_data.meta.block_header.block_hash();
+            let pegin_header = recent_block_headers
+                //TODO(stevenroose) under what circumstances would we not have them?
+                //we could alternatively return the same error as on violation
+                .expect("can't pegin without recent headers known")
+                .iter().find(|h| h.block_hash() == blockhash)
+                .ok_or_else(|| {
+                    warn!("Failed pegin attempt Could not find block header in list of recent headers");
+                    BlockExecutionError::FailedToGetBitcoinHeader
+                })?;
+
+            if let Err(e) = pegin_data.validate(&SECP, &pegin_header) {
+                warn!("Failed pegin attempt! {:?}", e);
+                return Err(BlockValidationError::MintContractViolation.into());
+            }
+        }
+
+        if log.topics.get(0) == Some(&BURN_TOPIC) {
+            if let Err(e) = parse_pegout_topic(&log) {
+                error!("Failed to parse pegout topic! {:?}", e);
+                return Err(BlockValidationError::MintContractViolation.into());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 impl<DB> Executor<DB>
@@ -191,6 +234,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
+        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         fill_tx_env(&mut self.evm.env.tx, transaction, sender);
@@ -209,6 +253,14 @@ where
             // main execution.
             self.evm.transact()
         };
+
+        // Botanix mint contract validation
+        if let Ok(ResultAndState { ref result, .. }) = out {
+            if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                botanix_mint_contract_checks(&result, recent_block_headers)?;
+            }
+        }
+
         out.map_err(|e| BlockValidationError::EVM { hash, message: format!("{e:?}") }.into())
     }
 
@@ -240,8 +292,6 @@ where
         let mut cumulative_gas_used = 0;
         let mut post_state = PostState::with_tx_capacity(block.number, block.body.len());
         for (transaction, sender) in block.body.iter().zip(senders) {
-            let mut pegin_fail = false;
-            let mut pegout_fail = false;
             // The sum of the transaction’s gas limit, Tg, and the gas utilised in this block prior,
             // must be no greater than the block’s gasLimit.
             let block_available_gas = block.header.gas_limit - cumulative_gas_used;
@@ -253,50 +303,9 @@ where
                 .into())
             }
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, sender)?;
-            let logs = result.logs();
-            // Botanix pegin logic
-            for log in logs {
-                if log.topics.contains(&MINT_TOPIC) {
-                    match parse_pegin_topic(&log) {
-                        Ok(pegin_data) => {
-                            if let Some(ref bitcoin_headers) = recent_block_headers {
-                                let recent_block_header =
-                                    bitcoin_headers.into_iter().find(|header| {
-                                        header.block_hash() ==
-                                            pegin_data.meta.block_header.block_hash()
-                                    });
-
-                                if recent_block_header.is_none() {
-                                    warn!("Failed pegin attempt Could not find block header in list of recent headers");
-                                    return Err(BlockExecutionError::FailedToGetBitcoinHeader);
-                                }
-
-                                if let Err(pegin_error) = pegin_data.validate(
-                                    &SECP,
-                                    &recent_block_header.expect("valid block header"),
-                                ) {
-                                    warn!("Failed pegin attempt! {:?}", pegin_error);
-                                    pegin_fail = true;
-                                    break;
-                                }
-                            }
-                        }
-                        Err(_err) => {
-                            continue
-                        }
-                    }
-                }
-                if log.topics.contains(&BURN_TOPIC) {
-                    match parse_pegout_topic(&log) {
-                        Ok(pegout_data) => continue,
-                        Err(pegout_error) => {
-                            warn!("Failed pegout attempt! {:?}", pegout_error);
-                            pegout_fail = true;
-                        }
-                    }
-                }
-            }
+            let ResultAndState { result, state } = self.transact(
+                transaction, sender, recent_block_headers,
+            )?;
 
             // commit changes
             self.commit_changes(
@@ -323,7 +332,7 @@ where
                     tx_type: transaction.tx_type(),
                     // Success flag was added in `EIP-658: Embedding transaction status code in
                     // receipts`.
-                    success: if pegin_fail || pegout_fail { false } else { result.is_success() },
+                    success: result.is_success(),
                     cumulative_gas_used,
                     // convert to reth log
                     logs: result.into_logs().into_iter().map(into_reth_log).collect(),
