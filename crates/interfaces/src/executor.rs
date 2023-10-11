@@ -77,6 +77,8 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
+    #[error("Invalid Mint contract invocation")]
+    MintContractViolation,
 }
 
 /// BlockExecutor Errors
@@ -114,6 +116,7 @@ pub enum BlockExecutionError {
         other_chain_fork: Box<BlockNumHash>,
     },
 
+    //TODO(stevenroose) this should be removed in later versions
     /// Failed to get bitcoin header
     #[error("Failed to get bitcoin header")]
     FailedToGetBitcoinHeader,
