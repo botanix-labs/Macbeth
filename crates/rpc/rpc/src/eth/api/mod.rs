@@ -76,8 +76,8 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
         block_hash: String,
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
 
-    /// Returns btc fees for a pegout transaction
-    async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError>;
+    /// Returns the BTC fee rate for a pegout transaction in sat/vb.
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
 
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
@@ -394,9 +394,9 @@ where
         Ok(pegin_info)
     }
 
-    async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError> {
-        let btc_fees = self.inner.botanix_provider.get_btc_fees().await?;
-        Ok(btc_fees)
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError> {
+        let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
+        Ok(fee_rate)
     }
 
     /// Returns the current info for the chain

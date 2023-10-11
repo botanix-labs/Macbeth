@@ -215,14 +215,14 @@ where
                                             }
                                             Ok(GenesisContractEvents::BurnEvent) => {
                                                 // TODO (armins): obv
-                                                let fee = 30u32;
+                                                let fee_rate = 30u32;
                                                 info!("Parsing and sending withdrawal event to btc_server");
                                                 let pegout = parse_pegout_reth_log_topic(&log)
                                                     .expect("valid pegout request");
                                                 let request = MakeTxRequest {
                                                     address: pegout.destination.to_string(),
                                                     value: pegout.amount.to_sat(),
-                                                    fee,
+                                                    fee_rate,
                                                 };
 
                                                 match btc_server.make_tx(request).await {
