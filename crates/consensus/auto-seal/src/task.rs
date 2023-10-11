@@ -52,7 +52,7 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
-    bitcoin_block_headers :Arc<RwLock<Vec<bitcoin::block::Header>>>,
+    bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
 }
 
 // === impl MiningTask ===
@@ -82,7 +82,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             queued: Default::default(),
             pipe_line_events: None,
             btc_server,
-            bitcoin_block_headers
+            bitcoin_block_headers,
         }
     }
 
@@ -106,9 +106,13 @@ where
         // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-                // info!("Adding to the list of transctions, {:?}", transactions);
+                info!("Adding to the list of transctions, {:?}, {:?}", transactions, this.queued);
                 // miner returned a set of transaction that we feed to the producer
-                this.queued.push_back(transactions);
+                this.queued.push_back(transactions.clone());
+                let mining_pool = this.pool.clone();
+                mining_pool.remove_transactions(
+                    transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
+                );
             }
 
             // If insert task is not none executinon of async task is on going
@@ -136,7 +140,7 @@ where
                 this.insert_task = Some(Box::pin(async move {
                     let block_source =
                         MempoolSpace::new("https://mempool.space/testnet".to_string());
-                    let recent_block_headers= bitcoin_block_headers.read().await.clone();
+                    let recent_block_headers = bitcoin_block_headers.read().await.clone();
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
@@ -151,15 +155,13 @@ where
                     // execute the new block
                     let substate = SubState::new(State::new(client.latest().unwrap()));
                     let mut executor = Executor::new(Arc::clone(&chain_spec), substate);
-
-                    match storage.build_and_execute(transactions.clone(), &mut executor, chain_spec, Some(recent_block_headers))
-                    {
+                    match storage.build_and_execute(
+                        transactions.clone(),
+                        &mut executor,
+                        chain_spec,
+                        Some(recent_block_headers),
+                    ) {
                         Ok((new_header, post_state)) => {
-                            // clear all transactions from pool
-                            pool.remove_transactions(
-                                transactions.iter().map(|tx| tx.hash()).collect(),
-                            );
-
                             let state = ForkchoiceState {
                                 head_block_hash: new_header.hash,
                                 finalized_block_hash: new_header.hash,
@@ -202,10 +204,7 @@ where
                                                     ),
                                                     nonce: pegin_data.nonce,
                                                 };
-                                                btc_server
-                                                    .notify_pegin(request)
-                                                    .await
-                                                    .unwrap();
+                                                btc_server.notify_pegin(request).await.unwrap();
                                                 info!("notifying btc server about pegin utxo");
                                             }
                                             Ok(GenesisContractEvents::BurnEvent) => {
@@ -301,7 +300,7 @@ where
                             client.set_safe(new_header.clone());
                             client.set_finalized(new_header.clone());
 
-                            debug!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
+                            info!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
                             let chain =
                                 Arc::new(Chain::new(vec![(sealed_block_with_senders, post_state)]));
@@ -331,6 +330,7 @@ where
                 }
             }
         }
+
         Poll::Pending
     }
 }
