@@ -32,7 +32,7 @@ use tracing::{error, warn};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-    static ref BLOCK_SOURCE: btc_wallet::block_source::MempoolSpace = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
+    static ref BLOCK_SOURCE: btc_wallet::block_source::MempoolSpace = MempoolSpace::new("https://mempool.space/signet/api".to_string());
 }
 
 /// Main block executor

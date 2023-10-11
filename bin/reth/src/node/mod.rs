@@ -508,11 +508,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 canon_state_notification_sender,
                 mining_mode,
                 btc_server_client,
-<<<<<<< HEAD
                 bitcoin_block_header_clone,
-=======
-                bitcoin_block_headers_clone,
->>>>>>> 52db5556a (feature(node): take block source url from cli args)
                 self.rpc.btc_block_source.clone(),
             )
             .build();
