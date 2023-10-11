@@ -128,14 +128,14 @@ where
         Ok(merkle_proof)
     }
 
-    /// Handler for: `eth_getBtcFees`
-    async fn btc_fees(&self) -> Result<Option<U256>> {
-        trace!(target: "rpc::eth", "Serving eth_getBtcFees");
-        let btc_fees = match EthApi::get_btc_fees(self).await {
+    /// Handler for: `eth_getBtcFeeRate`
+    async fn btc_fee_rate(&self) -> Result<Option<U256>> {
+        trace!(target: "rpc::eth", "Serving eth_getBtcFeeRate");
+        let fee_rate = match EthApi::get_btc_fee_rate(self).await {
             Ok(value) => Some(value),
             Err(_) => None
         };
-        Ok(btc_fees)
+        Ok(fee_rate)
     }
 
     /// Handler for: `eth_getBlockTransactionCountByHash`

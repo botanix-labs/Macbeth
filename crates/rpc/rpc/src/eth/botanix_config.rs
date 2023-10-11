@@ -199,9 +199,10 @@ impl Botanix {
         Ok(bitcoin::consensus::serialize(&pmt))
     }
 
-    /// Function calls btc_server to get btc fees for a pegout transaction:
-    /// currently returns a static fee without calling btc_server
-    pub async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError> {
+    /// Function calls btc_server to get btc fee rate in sat/vb for a pegout transaction.
+    ///
+    /// Currently returns a static fee rate without calling btc_server.
+    pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError> {
         Ok(U256::from(30u32))
     }
 }
