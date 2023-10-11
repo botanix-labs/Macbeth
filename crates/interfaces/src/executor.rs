@@ -24,6 +24,8 @@ pub enum BlockValidationError {
     BlockPreMerge { hash: H256 },
     #[error("Missing total difficulty")]
     MissingTotalDifficulty { hash: H256 },
+    #[error("Invalid Mint contract invocation")]
+    MintContractViolation,
 }
 
 /// BlockExecutor Errors
@@ -58,6 +60,7 @@ pub enum BlockExecutionError {
     #[error("Execution unavailable for tests")]
     UnavailableForTest,
 
+    //TODO(stevenroose) this should be removed in later versions
     /// Failed to get bitcoin header
     #[error("Failed to get bitcoin header")]
     FailedToGetBitcoinHeader,
