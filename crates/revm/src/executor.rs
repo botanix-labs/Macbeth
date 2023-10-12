@@ -269,8 +269,7 @@ where
 
                                 if recent_block_header.is_none() {
                                     warn!("Failed pegin attempt Could not find block header in list of recent headers");
-                                    pegin_fail = true;
-                                    break;
+                                    return Err(BlockExecutionError::FailedToGetBitcoinHeader);
                                 }
 
                                 if let Err(pegin_error) = pegin_data.validate(
