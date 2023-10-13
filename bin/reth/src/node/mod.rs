@@ -94,9 +94,8 @@ use std::time::{Instant, Duration};
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
 
+use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
-use btc_wallet::block_source::MempoolSpace;
-use btc_wallet::block_source::BlockSource;
 
 pub mod cl_events;
 pub mod events;
@@ -299,14 +298,15 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let prometheus_handle = self.install_prometheus_recorder()?;
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.rpc.btc_server.clone()).await.expect("connect to btc_server");
+            BtcServerClient::connect(self.rpc.btc_server.clone())
+                .await
+                .expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
         let bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>> =
             Arc::new(RwLock::new(Vec::new()));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
-        let block_source =
-                        MempoolSpace::new("https://mempool.space/testnet".to_string());
+        let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
 
         ctx.task_executor.spawn_critical(
             "async bitcoin block header task",
@@ -508,7 +508,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 canon_state_notification_sender,
                 mining_mode,
                 btc_server_client,
+<<<<<<< HEAD
                 bitcoin_block_header_clone,
+=======
+                bitcoin_block_headers_clone,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
                 self.rpc.btc_block_source.clone(),
             )
             .build();

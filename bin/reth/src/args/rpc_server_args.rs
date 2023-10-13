@@ -43,10 +43,13 @@ use std::{
 };
 use tracing::{debug, info};
 use url::Url;
+<<<<<<< HEAD
 
 use super::utils::{parse_grpc_address, parse_url};
+=======
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
 
-use super::utils::parse_grpc_address;
+use super::utils::{parse_grpc_address, parse_url};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
