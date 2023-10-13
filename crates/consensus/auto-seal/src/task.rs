@@ -21,6 +21,8 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use url::Url;
+
 use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
@@ -53,6 +55,8 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
     bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+    /// Bitcoin block source url
+    bitcoin_block_source_address: Url,
 }
 
 // === impl MiningTask ===
@@ -69,6 +73,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+        bitcoin_block_source_address: Url,
     ) -> Self {
         Self {
             chain_spec,
@@ -83,6 +88,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             pipe_line_events: None,
             btc_server,
             bitcoin_block_headers,
+            bitcoin_block_source_address,
         }
     }
 
@@ -135,11 +141,11 @@ where
                 let canon_state_notification = this.canon_state_notification.clone();
                 let mut btc_server = this.btc_server.clone();
                 let bitcoin_block_headers = this.bitcoin_block_headers.clone();
+                let block_source =
+                    MempoolSpace::new(this.bitcoin_block_source_address.clone().to_string());
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
-                    let block_source =
-                        MempoolSpace::new("https://mempool.space/testnet".to_string());
                     let recent_block_headers = bitcoin_block_headers.read().await.clone();
                     let mut storage = storage.write().await;
 

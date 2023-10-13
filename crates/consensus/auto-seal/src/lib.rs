@@ -40,6 +40,8 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use url::Url;
+
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
 
@@ -103,6 +105,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+    bitcoin_block_source_address: Url,
 }
 
 // === impl AutoSealBuilder ===
@@ -122,6 +125,7 @@ where
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+        bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -139,6 +143,7 @@ where
             canon_state_notification,
             btc_server,
             bitcoin_block_headers,
+            bitcoin_block_source_address,
         }
     }
 
@@ -151,8 +156,18 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-        let Self { btc_server, client, consensus, pool, mode, storage, to_engine, canon_state_notification, bitcoin_block_headers} =
-            self;
+        let Self {
+            btc_server,
+            client,
+            consensus,
+            pool,
+            mode,
+            storage,
+            to_engine,
+            canon_state_notification,
+            bitcoin_block_headers,
+            bitcoin_block_source_address,
+        } = self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
             Arc::clone(&consensus.chain_spec),
@@ -163,7 +178,8 @@ where
             client,
             pool,
             btc_server,
-            bitcoin_block_headers
+            bitcoin_block_headers,
+            bitcoin_block_source_address,
         );
         (consensus, auto_client, task)
     }
@@ -311,8 +327,12 @@ impl StorageInner {
     ) -> Result<(PostState, u64), BlockExecutionError> {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
-        let (post_state, gas_used) =
-            executor.execute_transactions(block, U256::ZERO, Some(senders), recent_block_headers)?;
+        let (post_state, gas_used) = executor.execute_transactions(
+            block,
+            U256::ZERO,
+            Some(senders),
+            recent_block_headers,
+        )?;
 
         // apply post block changes
         let post_state = executor.apply_post_block_changes(block, U256::ZERO, post_state)?;
@@ -368,7 +388,16 @@ impl StorageInner {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
         // now execute the block
-        let (post_state, gas_used) = self.execute(&block, executor, senders, recent_block_headers)?;
+        let (post_state, gas_used) =
+            self.execute(&block, executor, senders, recent_block_headers)?;
+
+        // TODO (armins) should return Err if the only tx in block in invalid
+        // let reciepts = post_state.receipts(block.number);
+        // if reciepts.len() == 1 {
+        //     if let None =  reciepts.iter().find(|&&receipt| receipt.success == true ) {
+        //         return
+        //     }
+        // }
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };

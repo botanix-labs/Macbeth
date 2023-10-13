@@ -13,6 +13,8 @@ use std::{
     time::Duration,
 };
 
+use url::Url;
+
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {
     let seconds = arg.parse()?;
@@ -77,6 +79,14 @@ pub enum SocketAddressParsingError {
     Port(#[from] std::num::ParseIntError),
 }
 
+/// Error thrown while parsing a URL
+#[derive(thiserror::Error, Debug)]
+pub enum UrlParsingError {
+    /// Failed to parse the address
+    #[error("Could not parse URL from {0}")]
+    Parse(String),
+}
+
 /// Parse a [SocketAddr] from a `str`.
 ///
 /// The following formats are checked:
@@ -118,6 +128,12 @@ pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressPars
         SocketAddressParsingError::Parse("Failed to parse as tonic Endpoint".to_string())
     })?;
     Ok(addr)
+}
+
+/// Parse a [URL] from a `str` value
+pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
+    let url = Url::parse(value).map_err(|e| UrlParsingError::Parse(value.to_owned()))?;
+    Ok(url)
 }
 
 #[cfg(test)]

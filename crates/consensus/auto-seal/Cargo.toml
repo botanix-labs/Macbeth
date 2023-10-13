@@ -30,6 +30,9 @@ btc-wallet = { path = "../../../../btc-wallet" }
 btc-server = { path = "../../../../btc-server" }
 client = {path = "../../../../btc-server/client"}
 
+## url
+url = "2.2"
+
 ## Bitcoin
 bitcoin = "0.30.0"
 
