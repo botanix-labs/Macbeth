@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use url::Url;
 
 use url::Url;
 #[cfg(feature = "optimism")]

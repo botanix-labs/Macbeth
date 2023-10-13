@@ -107,7 +107,11 @@ pub struct AutoSealBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+    bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
     bitcoin_block_source_address: Url,
 }
 
@@ -127,7 +131,11 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+        bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
         bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
@@ -145,7 +153,11 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
+<<<<<<< HEAD
             bitcoin_block_header,
+=======
+            bitcoin_block_headers,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
             bitcoin_block_source_address,
         }
     }
@@ -168,7 +180,11 @@ where
             storage,
             to_engine,
             canon_state_notification,
+<<<<<<< HEAD
             bitcoin_block_header,
+=======
+            bitcoin_block_headers,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
             bitcoin_block_source_address,
         } = self;
         let auto_client = AutoSealClient::new(storage.clone());
@@ -181,7 +197,11 @@ where
             client,
             pool,
             btc_server,
+<<<<<<< HEAD
             bitcoin_block_header,
+=======
+            bitcoin_block_headers,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
             bitcoin_block_source_address,
         );
         (consensus, auto_client, task)

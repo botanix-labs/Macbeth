@@ -53,7 +53,11 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
+<<<<<<< HEAD
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+    bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
     /// Bitcoin block source url
     bitcoin_block_source_address: Url,
 }
@@ -71,7 +75,11 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+        bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
         bitcoin_block_source_address: Url,
     ) -> Self {
         Self {
@@ -86,7 +94,11 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             queued: Default::default(),
             pipe_line_events: None,
             btc_server,
+<<<<<<< HEAD
             bitcoin_block_header,
+=======
+            bitcoin_block_headers,
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
             bitcoin_block_source_address,
         }
     }
@@ -136,13 +148,21 @@ where
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
                 let mut btc_server = this.btc_server.clone();
+<<<<<<< HEAD
                 let bitcoin_block_header = this.bitcoin_block_header.clone();
+=======
+                let bitcoin_block_headers = this.bitcoin_block_headers.clone();
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
                 let block_source =
                     MempoolSpace::new(this.bitcoin_block_source_address.clone().to_string());
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
+<<<<<<< HEAD
                     let recent_block_header = bitcoin_block_header.read().await.clone();
+=======
+                    let recent_block_headers = bitcoin_block_headers.read().await.clone();
+>>>>>>> 52db5556a (feature(node): take block source url from cli args)
                     let mut storage = storage.write().await;
 
                     let (transactions, senders): (Vec<_>, Vec<_>) = transactions
