@@ -3,9 +3,9 @@
 use std::{fmt, str::FromStr};
 
 use btc_wallet::block_source::BlockSource;
+use reth_primitives::U256;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
-use reth_primitives::U256;
 
 // TODO Secp should be getting pulled from provider
 lazy_static::lazy_static! {
@@ -18,6 +18,7 @@ pub struct BotanixConfig {
     /// Bitcoin network
     pub bitcoin_network: bitcoin::Network,
 
+    // TODO set up stronger url types
     /// The gRPC url for the bitcoin signer
     pub btc_server: String,
 
@@ -30,6 +31,7 @@ impl Default for BotanixConfig {
         BotanixConfig {
             bitcoin_network: bitcoin::Network::Testnet,
             btc_server: "http://localhost:8080".to_string(),
+            // Use a public testnet endpoint by default
             mempool_space_url: "https://mempool.space/testnet/api".to_string(),
         }
     }
@@ -44,6 +46,7 @@ impl BotanixConfig {
             bitcoin::Network::Signet => "https://mempool.space/api/signet",
             _ => panic!("Unsupported network"),
         };
+
         BotanixConfig {
             bitcoin_network,
             btc_server,
@@ -51,8 +54,15 @@ impl BotanixConfig {
         }
     }
 
+    /// Set btc server Grpc Url
     pub fn btc_server(mut self, btc_server: String) -> Self {
         self.btc_server = btc_server;
+        self
+    }
+
+    /// Set mempool space block source url
+    pub fn mempool_space_url(mut self, mempool_space_url: String) -> Self {
+        self.mempool_space_url = mempool_space_url;
         self
     }
 }
@@ -149,9 +159,14 @@ impl Botanix {
             GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
         })?;
         let network = self.botanix_rpc_config.bitcoin_network;
-        let address =
-            btc_wallet::address::gateway_address(&SECP, &pk, &eth_address.as_slice().to_vec(), network, nonce)
-                .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+        let address = btc_wallet::address::gateway_address(
+            &SECP,
+            &pk,
+            &eth_address.as_slice().to_vec(),
+            network,
+            nonce,
+        )
+        .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
         Ok((address, pk))
     }
@@ -186,9 +201,7 @@ impl Botanix {
 
     /// Function calls btc_server to get btc fees for a pegout transaction:
     /// currently returns a static fee without calling btc_server
-    pub async fn get_btc_fees(
-        &self,
-     ) -> std::result::Result<U256, BtcFeesRPCError> {
+    pub async fn get_btc_fees(&self) -> std::result::Result<U256, BtcFeesRPCError> {
         Ok(U256::from(30u32))
     }
 }

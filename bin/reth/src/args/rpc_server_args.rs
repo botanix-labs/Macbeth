@@ -16,11 +16,12 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
+        botanix_config::BotanixConfig,
         cache::{
             DEFAULT_BLOCK_CACHE_MAX_LEN, DEFAULT_ENV_CACHE_MAX_LEN, DEFAULT_RECEIPT_CACHE_MAX_LEN,
         },
         gas_oracle::GasPriceOracleConfig,
-        RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig,
+        RPC_DEFAULT_GAS_CAP,
     },
     JwtError, JwtSecret,
 };
@@ -40,8 +41,9 @@ use std::{
     path::PathBuf,
 };
 use tracing::{debug, info};
+use url::Url;
 
-use super::utils::parse_grpc_address;
+use super::utils::{parse_grpc_address, parse_url};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -171,6 +173,12 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
     pub btc_server: String,
+
+    /// Btc signing service
+    ///
+    /// The metrics will be served at the given interface and port.
+    #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
+    pub btc_block_source: Url,
 }
 
 impl RpcServerArgs {
@@ -330,7 +338,9 @@ impl RethRpcConfig for RpcServerArgs {
 
     fn eth_config(&self) -> EthConfig {
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config.btc_server(self.btc_server.to_string());
+        botanix_config = botanix_config
+            .btc_server(self.btc_server.clone())
+            .mempool_space_url(self.btc_block_source.clone().to_string());
 
         EthConfig::default()
             .max_tracing_requests(self.rpc_max_tracing_requests)

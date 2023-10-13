@@ -1093,12 +1093,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitcoin 0.30.1",
+ "ethers",
  "hex",
  "lazy_static",
  "miniscript 10.0.0",
  "rand 0.6.5",
  "reqwest",
- "reth-primitives",
  "secp256k1 0.27.0",
 ]
 
@@ -6008,6 +6008,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tui",
+ "url",
  "vergen",
 ]
 
@@ -6033,6 +6034,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
+ "url",
 ]
 
 [[package]]
