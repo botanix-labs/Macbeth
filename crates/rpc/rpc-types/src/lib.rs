@@ -13,12 +13,14 @@
 
 mod admin;
 mod eth;
+mod mev;
 mod otterscan;
 mod rpc;
 mod botanix;
 
 pub use admin::*;
 pub use eth::*;
+pub use mev::*;
 pub use otterscan::*;
 pub use rpc::*;
 pub use botanix::*;
