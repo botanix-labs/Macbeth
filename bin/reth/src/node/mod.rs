@@ -254,8 +254,8 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 .expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
-        let bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>> =
-            Arc::new(RwLock::new(Vec::new()));
+        let bitcoin_block_headers: Arc<RwLock<Option<bitcoin::block::Header>>> =
+            Arc::new(RwLock::new(None));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
         let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
 
@@ -272,10 +272,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                         let block_hash = block_source.get_block_hash(current_tip).await.unwrap();
                         let block_header = block_source.get_block_header(block_hash).await.unwrap();
 
-                        header_write.push(block_header);
+                        // TODO (armins) in v1 we will need the nth deep block header not tip
+                        *header_write = Some(block_header);
                         tip = current_tip;
                     }
-                    println!("header_write, {:?}", bitcoin_block_headers);
                     tokio::time::sleep(sleep_ms).await;
                 }
             }),

@@ -7,7 +7,7 @@ use crate::{
     to_reth_acc,
 };
 use botanix_lib::mint_validation::{
-    parse_pegin_topic, parse_pegout_topic, MINT_CONTRACT_ADDRESS, MINT_TOPIC, BURN_TOPIC,
+    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_consensus_common::calc;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
@@ -16,7 +16,6 @@ use reth_primitives::{
     ReceiptWithBloom, TransactionSigned, Withdrawal, H256, U256,
 };
 use reth_provider::{BlockExecutor, PostState, StateProvider};
-use reth_tasks::{TaskManager, TaskSpawner};
 use revm::{
     db::{AccountState, CacheDB, DatabaseRef},
     primitives::{
@@ -25,19 +24,14 @@ use revm::{
     },
     EVM,
 };
-use tracing::{error, warn};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
-    thread, time,
 };
-
-use btc_wallet::block_source::{BlockSource, MempoolSpace};
-use tokio::sync::mpsc;
+use tracing::{error, warn};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-    static ref BLOCK_SOURCE: btc_wallet::block_source::MempoolSpace = MempoolSpace::new("https://mempool.space/testnet/api".to_string());
 }
 
 /// Main block executor
@@ -65,38 +59,27 @@ where
 
 fn botanix_mint_contract_checks(
     result: &ExecutionResult,
-    recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+    recent_block_header: Option<bitcoin::block::Header>,
 ) -> Result<(), BlockExecutionError> {
     for log in result.logs() {
-        let block_source_clone = BLOCK_SOURCE.to_owned();
-
-        if log.topics.get(0) == Some(&MINT_TOPIC) {
+        if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
             let pegin_data = parse_pegin_topic(&log).map_err(|e| {
                 error!("Failed to parse pegin topic! {:?}", e);
                 BlockValidationError::MintContractViolation
             })?;
 
-            let blockhash = pegin_data.meta.block_header.block_hash();
-            let pegin_header = recent_block_headers
-                //TODO(stevenroose) under what circumstances would we not have them?
-                //we could alternatively return the same error as on violation
-                .expect("can't pegin without recent headers known")
-                .iter().find(|h| h.block_hash() == blockhash)
-                .ok_or_else(|| {
-                    warn!("Failed pegin attempt Could not find block header in list of recent headers");
-                    BlockExecutionError::FailedToGetBitcoinHeader
-                })?;
-
-            if let Err(e) = pegin_data.validate(&SECP, &pegin_header) {
+            if let Err(e) =
+                pegin_data.validate(&SECP, &recent_block_header.expect("valid header").block_hash())
+            {
                 warn!("Failed pegin attempt! {:?}", e);
-                return Err(BlockValidationError::MintContractViolation.into());
+                return Err(BlockValidationError::MintContractViolation.into())
             }
         }
 
         if log.topics.get(0) == Some(&BURN_TOPIC) {
             if let Err(e) = parse_pegout_topic(&log) {
                 error!("Failed to parse pegout topic! {:?}", e);
-                return Err(BlockValidationError::MintContractViolation.into());
+                return Err(BlockValidationError::MintContractViolation.into())
             }
         }
     }
@@ -234,7 +217,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         fill_tx_env(&mut self.evm.env.tx, transaction, sender);
@@ -257,7 +240,7 @@ where
         // Botanix mint contract validation
         if let Ok(ResultAndState { ref result, .. }) = out {
             if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                botanix_mint_contract_checks(&result, recent_block_headers)?;
+                botanix_mint_contract_checks(&result, recent_block_header)?;
             }
         }
 
@@ -279,7 +262,7 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         // perf: do not execute empty blocks
         if block.body.is_empty() {
@@ -303,9 +286,8 @@ where
                 .into())
             }
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(
-                transaction, sender, recent_block_headers,
-            )?;
+            let ResultAndState { result, state } =
+                self.transact(transaction, sender, recent_block_header)?;
 
             // commit changes
             self.commit_changes(
@@ -374,10 +356,10 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<PostState, BlockExecutionError> {
         let (post_state, cumulative_gas_used) =
-            self.execute_transactions(block, total_difficulty, senders, recent_block_headers)?;
+            self.execute_transactions(block, total_difficulty, senders, recent_block_header)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -396,9 +378,9 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<PostState, BlockExecutionError> {
-        let post_state = self.execute(block, total_difficulty, senders, recent_block_headers)?;
+        let post_state = self.execute(block, total_difficulty, senders, recent_block_header)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -875,7 +857,8 @@ mod tests {
 
         // execute chain and verify receipts
         let mut executor = Executor::new(chain_spec, db);
-        let post_state = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
+        let post_state =
+            executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
 
         let base_block_reward = ETH_TO_WEI * 2;
         let block_reward = calc::block_reward(base_block_reward, 1);
@@ -1109,7 +1092,7 @@ mod tests {
 
         // execute chain and verify receipts
         let mut executor = Executor::new(chain_spec, db);
-        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None, ).unwrap();
+        let out = executor.execute_and_verify_receipt(&block, U256::ZERO, None, None).unwrap();
 
         assert_eq!(out.bytecodes().len(), 0, "Should have zero new bytecodes");
 

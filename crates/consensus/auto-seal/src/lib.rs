@@ -104,7 +104,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
-    bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
     bitcoin_block_source_address: Url,
 }
 
@@ -124,7 +124,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_headers: Arc<RwLock<Vec<bitcoin::block::Header>>>,
+        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
         bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
@@ -142,7 +142,7 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
-            bitcoin_block_headers,
+            bitcoin_block_header,
             bitcoin_block_source_address,
         }
     }
@@ -165,7 +165,7 @@ where
             storage,
             to_engine,
             canon_state_notification,
-            bitcoin_block_headers,
+            bitcoin_block_header,
             bitcoin_block_source_address,
         } = self;
         let auto_client = AutoSealClient::new(storage.clone());
@@ -178,7 +178,7 @@ where
             client,
             pool,
             btc_server,
-            bitcoin_block_headers,
+            bitcoin_block_header,
             bitcoin_block_source_address,
         );
         (consensus, auto_client, task)
@@ -323,7 +323,7 @@ impl StorageInner {
         block: &Block,
         executor: &mut Executor<DB>,
         senders: Vec<Address>,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
@@ -331,7 +331,7 @@ impl StorageInner {
             block,
             U256::ZERO,
             Some(senders),
-            recent_block_headers,
+            recent_block_header,
         )?;
 
         // apply post block changes
@@ -376,7 +376,7 @@ impl StorageInner {
         transactions: Vec<TransactionSigned>,
         executor: &mut Executor<DB>,
         chain_spec: Arc<ChainSpec>,
-        recent_block_headers: Option<Vec<bitcoin::block::Header>>,
+        recent_block_header: Option<bitcoin::block::Header>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
         let header = self.build_header_template(&transactions, chain_spec);
 
@@ -389,15 +389,7 @@ impl StorageInner {
 
         // now execute the block
         let (post_state, gas_used) =
-            self.execute(&block, executor, senders, recent_block_headers)?;
-
-        // TODO (armins) should return Err if the only tx in block in invalid
-        // let reciepts = post_state.receipts(block.number);
-        // if reciepts.len() == 1 {
-        //     if let None =  reciepts.iter().find(|&&receipt| receipt.success == true ) {
-        //         return
-        //     }
-        // }
+            self.execute(&block, executor, senders, recent_block_header)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
