@@ -35,7 +35,11 @@ pub trait BlockExecutor {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+<<<<<<< HEAD
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
+=======
+        recent_block_headers: Option<bitcoin::block::Header>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     ) -> Result<(), BlockExecutionError>;
 
     /// Executes the block and checks receipts.
@@ -44,7 +48,11 @@ pub trait BlockExecutor {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+<<<<<<< HEAD
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
+=======
+        recent_block_headers: Option<bitcoin::block::Header>
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     ) -> Result<(), BlockExecutionError>;
 
     /// Runs the provided transactions and commits their state to the run-time database.
