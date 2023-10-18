@@ -107,7 +107,11 @@ pub struct AutoSealBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     bitcoin_block_source_address: Url,
 }
 
@@ -127,7 +131,11 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
         bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
@@ -403,7 +411,11 @@ impl StorageInner {
         transactions: Vec<TransactionSigned>,
         client: &impl StateProviderFactory,
         chain_spec: Arc<ChainSpec>,
+<<<<<<< HEAD
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
+=======
+        recent_block_headers: Option<bitcoin::block::Header>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
         let header = self.build_header_template(&transactions, chain_spec.clone());
 

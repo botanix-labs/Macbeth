@@ -53,7 +53,11 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
+<<<<<<< HEAD
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     /// Bitcoin block source url
     bitcoin_block_source_address: Url,
 }
@@ -71,7 +75,11 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+<<<<<<< HEAD
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+=======
+        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
         bitcoin_block_source_address: Url,
     ) -> Self {
         Self {
@@ -154,6 +162,7 @@ where
                         })
                         .unzip();
 
+<<<<<<< HEAD
                     match storage.build_and_execute(transactions.clone(), &client, chain_spec, recent_block_header,) {
                         Ok((new_header, bundle_state)) => {
                             // clear all transactions from pool
@@ -161,6 +170,18 @@ where
                                 transactions.iter().map(|tx| tx.hash()).collect(),
                             );
 
+=======
+                    // execute the new block
+                    let substate = SubState::new(State::new(client.latest().unwrap()));
+                    let mut executor = Executor::new(Arc::clone(&chain_spec), substate);
+                    match storage.build_and_execute(
+                        transactions.clone(),
+                        &mut executor,
+                        chain_spec,
+                        recent_block_header,
+                    ) {
+                        Ok((new_header, post_state)) => {
+>>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
                             let state = ForkchoiceState {
                                 head_block_hash: new_header.hash,
                                 finalized_block_hash: new_header.hash,
