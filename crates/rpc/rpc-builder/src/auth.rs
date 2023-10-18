@@ -17,8 +17,8 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, botanix_config::{BotanixConfig, Botanix}},
-    AuthLayer, Claims, EngineEthApi, EthApi, EthFilter, EthSubscriptionIdProvider,
-    JwtAuthValidator, JwtSecret, TracingCallPool,
+    AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
+    EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
 };
 use reth_rpc_api::{servers::*, EngineApiServer};
 use reth_tasks::TaskSpawner;
@@ -67,8 +67,8 @@ where
         gas_oracle,
         EthConfig::default().rpc_gas_cap,
         Box::new(executor.clone()),
-        TracingCallPool::build().expect("failed to build tracing pool"),
-        botanix_provider
+        BlockingTaskPool::build().expect("failed to build tracing pool"),
+        botanix_provider,
     );
     let eth_filter = EthFilter::new(
         provider,

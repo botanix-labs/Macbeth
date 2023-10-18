@@ -5,7 +5,9 @@ use super::EthApiSpec;
 use crate::{
     eth::{
         api::{EthApi, EthTransactions},
-        revm_utils::EvmOverrides, botanix_config::BtcFeesRPCError,
+        error::EthApiError,
+        revm_utils::EvmOverrides,
+        botanix_config::BtcFeesRPCError,
     },
     result::{internal_rpc_err, ToRpcResult},
 };
@@ -407,29 +409,27 @@ where
     /// Handler for: `eth_getProof`
     async fn get_proof(
         &self,
-        _address: Address,
-        _keys: Vec<JsonStorageKey>,
-        _block_number: Option<BlockId>,
+        address: Address,
+        keys: Vec<JsonStorageKey>,
+        block_number: Option<BlockId>,
     ) -> Result<EIP1186AccountProofResponse> {
-        // TODO: uncomment when implemented
-        // trace!(target: "rpc::eth", ?address, ?keys, ?block_number, "Serving eth_getProof");
-        // let res = EthApi::get_proof(self, address, keys, block_number);
+        trace!(target: "rpc::eth", ?address, ?keys, ?block_number, "Serving eth_getProof");
+        let res = EthApi::get_proof(self, address, keys, block_number).await;
 
-        // Ok(res.map_err(|e| match e {
-        //     EthApiError::InvalidBlockRange => {
-        //         internal_rpc_err("eth_getProof is unimplemented for historical blocks")
-        //     }
-        //     _ => e.into(),
-        // })?)
-        Err(internal_rpc_err("unimplemented"))
+        Ok(res.map_err(|e| match e {
+            EthApiError::InvalidBlockRange => {
+                internal_rpc_err("eth_getProof is unimplemented for historical blocks")
+            }
+            _ => e.into(),
+        })?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        eth::{botanix_config::Botanix, cache::EthStateCache, gas_oracle::GasPriceOracle},
-        EthApi, TracingCallPool,
+        eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, botanix_config::Botanix},
+        BlockingTaskPool, EthApi,
     };
     use jsonrpsee::types::error::INVALID_PARAMS_CODE;
     use reth_interfaces::test_utils::{generators, generators::Rng};
@@ -467,7 +467,7 @@ mod tests {
             cache.clone(),
             GasPriceOracle::new(provider, Default::default(), cache),
             ETHEREUM_BLOCK_GAS_LIMIT,
-            TracingCallPool::build().expect("failed to build tracing pool"),
+            BlockingTaskPool::build().expect("failed to build tracing pool"),
             // TODO (armins) reading default config
             Botanix::new(Default::default()),
         )
