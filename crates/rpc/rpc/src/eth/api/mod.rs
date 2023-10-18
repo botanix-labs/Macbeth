@@ -39,7 +39,7 @@ mod sign;
 mod state;
 mod transactions;
 
-use crate::TracingCallPool;
+use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeesRPCError};
@@ -113,7 +113,7 @@ where
         eth_cache: EthStateCache,
         gas_oracle: GasPriceOracle<Provider>,
         gas_cap: impl Into<GasCap>,
-        tracing_call_pool: TracingCallPool,
+        blocking_task_pool: BlockingTaskPool,
         botanix_provider: Botanix,
     ) -> Self {
         Self::with_spawner(
@@ -124,7 +124,7 @@ where
             gas_oracle,
             gas_cap.into().into(),
             Box::<TokioTaskExecutor>::default(),
-            tracing_call_pool,
+            blocking_task_pool,
             botanix_provider,
         )
     }
@@ -139,7 +139,7 @@ where
         gas_oracle: GasPriceOracle<Provider>,
         gas_cap: u64,
         task_spawner: Box<dyn TaskSpawner>,
-        tracing_call_pool: TracingCallPool,
+        blocking_task_pool: BlockingTaskPool,
         botanix_provider: Botanix,
     ) -> Self {
         // get the block number of the latest block
@@ -161,7 +161,7 @@ where
             starting_block: U256::from(latest_block),
             task_spawner,
             pending_block: Default::default(),
-            tracing_call_pool,
+            blocking_task_pool,
             botanix_provider,
         };
         Self { inner: Arc::new(inner) }
@@ -484,8 +484,8 @@ struct EthApiInner<Provider, Pool, Network> {
     task_spawner: Box<dyn TaskSpawner>,
     /// Cached pending block if any
     pending_block: Mutex<Option<PendingBlock>>,
-    /// A pool dedicated to tracing calls
-    tracing_call_pool: TracingCallPool,
+    /// A pool dedicated to blocking tasks.
+    blocking_task_pool: BlockingTaskPool,
     /// Botanix config
     botanix_provider: Botanix,
 }
