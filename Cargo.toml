@@ -8,6 +8,7 @@ members = [
     "crates/btc-wallet",
     "crates/config/",
     "crates/consensus/auto-seal/",
+    "crates/consensus/authority",
     "crates/consensus/beacon/",
     "crates/consensus/common/",
     "crates/ethereum-forks/",

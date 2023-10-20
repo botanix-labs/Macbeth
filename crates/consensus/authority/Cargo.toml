@@ -1,5 +1,5 @@
 [package]
-name = "authority_consensus"
+name = "authority-consensus"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,47 @@ license.workspace = true
 homepage.workspace = true
 repository.workspace = true
 exclude.workspace = true
+description = "A PoA consensus engine"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# reth
+reth-consensus-common = { path = "../common" }
+reth-beacon-consensus = { path = "../beacon" }
+reth-primitives.workspace = true
+reth-interfaces.workspace = true
+reth-provider.workspace = true
+reth-stages = { path = "../../stages" }
+reth-revm = { path = "../../revm" }
+reth-transaction-pool.workspace = true
+# reth-beacon-imports
+reth-db = { path = "../../storage/db" }
+reth-prune = { path = "../../prune" }
+reth-payload-builder.workspace = true
+reth-tasks.workspace = true
+reth-rpc-types.workspace = true
+
+# async
+futures-util.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+tokio-stream.workspace = true
+tracing.workspace = true
+
+## Botanix
+botanix-lib = { path = "../../../../botanix-lib" }
+btc-wallet = { path = "../../../../btc-wallet" }
+btc-server = { path = "../../../../btc-server" }
+client = {path = "../../../../btc-server/client"}
+
+## Bitcoin
+bitcoin = "0.30.0"
+
+## Crypto
+secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
+
+### Grpc
+tonic = "0.9.2"
+
+[dev-dependencies]
+reth-interfaces = { workspace = true, features = ["test-utils"] }
