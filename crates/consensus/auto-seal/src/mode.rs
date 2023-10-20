@@ -3,7 +3,6 @@
 use futures_util::{stream::Fuse, StreamExt};
 use reth_primitives::TxHash;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tracing::{info, debug};
 use std::{
     fmt,
     pin::Pin,
@@ -13,6 +12,7 @@ use std::{
 };
 use tokio::{sync::mpsc::Receiver, time::Interval};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tracing::{debug, info};
 
 /// Mode of operations for the `Miner`
 #[derive(Debug)]
@@ -136,7 +136,6 @@ impl ReadyTransactionMiner {
 
         let transactions = pool.best_transactions().take(self.max_transactions).collect::<Vec<_>>();
         debug!("Miner processing txs {:?}", transactions);
-
 
         // there are pending transactions if we didn't drain the pool
         self.has_pending_txs = Some(transactions.len() >= self.max_transactions);

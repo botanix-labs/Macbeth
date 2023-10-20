@@ -2,6 +2,7 @@
 members = [
     "bin/reth",
     "crates/config",
+    "crates/consensus/authority",
     "crates/consensus/auto-seal",
     "crates/consensus/beacon",
     "crates/consensus/common",
