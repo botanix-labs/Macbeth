@@ -195,10 +195,7 @@ where
                                                     ),
                                                     nonce: pegin_data.nonce,
                                                 };
-                                                btc_server
-                                                    .notify_pegin(request)
-                                                    .await
-                                                    .unwrap();
+                                                btc_server.notify_pegin(request).await.unwrap();
                                                 info!("notifying btc server about pegin utxo");
                                             }
                                             Ok(GenesisContractEvents::BurnEvent) => {

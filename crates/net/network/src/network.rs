@@ -120,6 +120,8 @@ impl NetworkHandle {
         &self.inner.network_mode
     }
 
+    /// add function to send consensus message
+
     /// Sends a [`NetworkHandleMessage`] to the manager
     pub(crate) fn send_message(&self, msg: NetworkHandleMessage) {
         let _ = self.inner.to_manager_tx.send(msg);
