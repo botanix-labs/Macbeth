@@ -207,7 +207,7 @@ where
                                                 let request = MakeTxRequest {
                                                     address: pegout.destination.to_string(),
                                                     value: pegout.amount.to_sat(),
-                                                    fee,
+                                                    fee_rate: fee,
                                                 };
 
                                                 match btc_server.make_tx(request).await {

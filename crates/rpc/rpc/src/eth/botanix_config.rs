@@ -150,7 +150,7 @@ impl Botanix {
         })?;
         let network = self.botanix_rpc_config.bitcoin_network;
         let address =
-            btc_wallet::address::gateway_address(&SECP, &pk, &eth_address, network, nonce)
+            btc_wallet::address::gateway_address(&SECP, &pk, &eth_address.0, network, nonce)
                 .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
         Ok((address, pk))
