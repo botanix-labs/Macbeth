@@ -8,6 +8,7 @@ use std::time::Duration;
 
 /// [EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#parameters) constants.
 pub mod eip4844;
+pub mod eip225;
 
 /// The client version: `reth/v{major}.{minor}.{patch}`
 pub const RETH_CLIENT_VERSION: &str = concat!("reth/v", env!("CARGO_PKG_VERSION"));
@@ -17,6 +18,9 @@ pub const SELECTOR_LEN: usize = 4;
 
 /// Maximum extra data size in a block after genesis
 pub const MAXIMUM_EXTRA_DATA_SIZE: usize = 32;
+
+/// Fixed number of extra-data suffix bytes reserved for signer seal.
+pub const MAXIMUM_EXTRA_SEAL_SIZE: usize = 65;
 
 /// An EPOCH is a series of 32 slots.
 pub const EPOCH_SLOTS: u64 = 32;
