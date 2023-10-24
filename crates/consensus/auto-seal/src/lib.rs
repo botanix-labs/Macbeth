@@ -101,7 +101,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: BtcServerClient<tonic::transport::Channel> 
+    btc_server: BtcServerClient<tonic::transport::Channel>,
 }
 
 // === impl AutoSealBuilder ===
@@ -148,8 +148,16 @@ where
     /// Consumes the type and returns all components
     #[track_caller]
     pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
-        let Self { btc_server, client, consensus, pool, mode, storage, to_engine, canon_state_notification} =
-            self;
+        let Self {
+            btc_server,
+            client,
+            consensus,
+            pool,
+            mode,
+            storage,
+            to_engine,
+            canon_state_notification,
+        } = self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
             Arc::clone(&consensus.chain_spec),
@@ -159,7 +167,7 @@ where
             storage,
             client,
             pool,
-            btc_server
+            btc_server,
         );
         (consensus, auto_client, task)
     }
