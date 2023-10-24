@@ -72,7 +72,7 @@ use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPool, TransactionValidationTaskExecutor,
 };
-use secp256k1::SecretKey;
+use secp256k1::{Secp256k1, SecretKey};
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
@@ -86,6 +86,10 @@ use client::BtcServerClient;
 pub mod cl_events;
 pub mod events;
 
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+}
+
 /// Start the node
 #[derive(Debug, Parser)]
 pub struct NodeCommand<Ext: RethCliExt = ()> {
@@ -98,6 +102,10 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// - macOS: `$HOME/Library/Application Support/reth/`
     #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
     pub datadir: MaybePlatformPath<DataDirPath>,
+
+    /// The path to the POA secret key file.
+    #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
+    pub secret_key_dir: Option<PathBuf>,
 
     /// The path to the configuration file to use.
     #[arg(long, value_name = "FILE", verbatim_doc_comment)]
@@ -246,9 +254,16 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         let mut config: Config = self.load_config(config_path.clone())?;
 
+        let proof_of_authority_secret_key =
+            self.secret_key_dir.clone().unwrap_or(data_dir.secret_key_path());
+
+        let secret_key = self.load_secret_key(proof_of_authority_secret_key)?;
+
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.rpc.btc_server.clone()).await.expect("connect to btc_server");
+            BtcServerClient::connect(self.rpc.btc_server.clone())
+                .await
+                .expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
         // always store reth.toml in the data dir, not the chain specific data dir
@@ -601,6 +616,18 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             .await?;
 
         Ok(pipeline)
+    }
+
+    fn load_secret_key(&self, secret_key_path: PathBuf) -> eyre::Result<SecretKey> {
+        let mut file = File::open(file_path)?;
+        // Read the contents of the file into a Vec<u8>
+        let mut hex_data: Vec<_> = Vec::new();
+        file.read_to_end(&mut hex_data)?;
+
+        // Parse the hex data into bytes
+        let secret_bytes = Vec::from_hex(hex_data)?;
+
+        Ok(secret_bytes)
     }
 
     /// Loads the reth config with the given datadir root
