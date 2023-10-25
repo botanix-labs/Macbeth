@@ -51,7 +51,7 @@ impl Chain {
 
     /// Returns the botanix testnet chain.
     pub const fn botanix_testnet() -> Self {
-        Chain::Id(444)
+        Chain::Id(3636)
     }
 
     /// The id of the chain
