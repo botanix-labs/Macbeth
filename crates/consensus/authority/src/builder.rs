@@ -13,6 +13,8 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
+    secp: Secp256k1<All>,
+    secret_key: secp256k1::SecretKey,
 }
 
 // ===== impl AuthorityConsensusBuilder =====
@@ -30,6 +32,8 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+        secp: Secp256k1<All>,
+        secret_key: secp256k1::SecretKey,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -46,6 +50,8 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
+            secp,
+            secret_key
         }
     }
 
@@ -60,6 +66,8 @@ where
             storage,
             to_engine,
             canon_state_notification,
+            secp,
+            secret_key
         } = self;
 
         //TODO: instantiate a new mining task
