@@ -372,10 +372,12 @@ impl StorageInner {
         // fill in the rest of the fields
         let header = self.complete_header(header, &post_state, executor, gas_used);
         let extra_header_content_no_sig = ExtraDataHeader::new(0u32, None, chain_spec.authority_signers);
-        header.extra_data = extra_header_content.serialize_without_signature();
+        header.extra_data = extra_header_content_no_sig.serialize_without_signature();
         
         let sig_hash = header.hash_slow();
         let signature = secp256k1::Secp256k1::new().sign_ecdsa(sig_hash.as_slice(), sk);
+        let extra_data_header_with_signature = ExtraDataHeader::new(0u32, Some(signature), chain_spec.authority_signers);
+        header.extra_data = extra_data_header_with_signature.serialize();
 
         trace!(target: "consensus::auto", root=?header.state_root, ?body, "calculated root");
 
