@@ -18,6 +18,8 @@ use std::{
     sync::Arc,
 };
 
+use secp256k1;
+
 /// The Ethereum mainnet spec
 pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     ChainSpec {
@@ -65,6 +67,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::mainnet(),
+        authority_signers: None,
     }
     .into()
 });
@@ -107,6 +110,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::testnet(),
+        authority_signers: None,
     }
     .into()
 });
@@ -153,6 +157,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParams::ethereum(),
         prune_batch_sizes: PruneBatchSizes::testnet(),
+        authority_signers: None,
     }
     .into()
 });
@@ -226,6 +231,16 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
         ]),
         deposit_contract: None, // TODO: do we even have?
+        authority_signers: Some(vec![
+            // TODO change later
+            secp256k1::PublicKey::from_slice(&[
+                0x02,
+                0xc6, 0x6e, 0x7d, 0x89, 0x66, 0xb5, 0xc5, 0x55,
+                0xaf, 0x58, 0x05, 0x98, 0x9d, 0xa9, 0xfb, 0xf8,
+                0xdb, 0x95, 0xe1, 0x56, 0x31, 0xce, 0x35, 0x8c,
+                0x3a, 0x17, 0x10, 0xc9, 0x62, 0x67, 0x90, 0x63,
+            ]).expect("public keys must be 33 or 65 bytes, serialized according to SEC 2")
+        ]),
         ..Default::default()
     }
     .into()
@@ -297,6 +312,8 @@ pub struct ChainSpec {
     /// data coming in.
     #[serde(default)]
     pub prune_batch_sizes: PruneBatchSizes,
+
+    pub authority_signers: Option<Vec<secp256k1::PublicKey>>,
 }
 
 impl Default for ChainSpec {
@@ -311,6 +328,7 @@ impl Default for ChainSpec {
             deposit_contract: Default::default(),
             base_fee_params: BaseFeeParams::ethereum(),
             prune_batch_sizes: Default::default(),
+            authority_signers: None,
         }
     }
 }
