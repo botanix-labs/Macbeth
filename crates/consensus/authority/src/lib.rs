@@ -28,6 +28,8 @@ use reth_primitives::{
 use std::{sync::Arc, time::SystemTime};
 
 mod builder;
+mod voting;
+mod utils;
 pub use builder::AuthorityConsensusBuilder;
 
 /// Ethereum authority consensus
