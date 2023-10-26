@@ -19,6 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
+use botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::validation;
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
@@ -30,8 +31,8 @@ use reth_primitives::{
         ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
     },
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Chain,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT, H256, U256, Hardfork,
+    ChainSpec, Hardfork, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
+    EMPTY_OMMER_ROOT, H256, U256, Bytes,
 };
 use reth_provider::{PostState, StateProvider};
 use reth_revm::executor::Executor;
@@ -41,7 +42,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use voting::AuthorityVote;
+use voting::{AuthorityVote, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
@@ -130,13 +131,6 @@ impl Consensus for AuthorityConsensus {
                     present_timestamp,
                 })
             }
-
-            // Goerli exception:
-            //  * If the network is goerli pre-merge, ignore the extradata check, since we do not
-            //  support clique.
-            if self.chain_spec.chain != Chain::goerli() {
-                validate_header_extradata(header)?;
-            }
         }
 
         Ok(())
@@ -155,6 +149,17 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
         Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     } else {
+        let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data).map_err(|_e| {
+            ConsensusError::ExtraDataInvalid();
+        })?;
+
+        let sig_hash = utils::create_authority_sighash(header, &extra_data).map_err(|_e| {
+            ConsensusError::ExtraDataInvalid();
+        })?;
+
+        header.validate_authority_signature(sig_hash).map_err(|_e| {
+            ConsensusError::InvalidAuthoritySignature();
+        })?;
         Ok(())
     }
 }
@@ -251,7 +256,10 @@ impl StorageInner {
         &self,
         transactions: &Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-    ) -> Header {
+        authority_secret_key: &secp256k1::SecretKey,
+        authority_to_vote_on: Option<secp256k1::PublicKey>,
+        vote: Option<Vote>,
+    ) -> Result<Header, BlockExecutionError> {
         // check previous block for base fee
         let base_fee_per_gas = self
             .headers
@@ -281,13 +289,31 @@ impl StorageInner {
             parent_beacon_block_root: None,
         };
 
+        let extra_header_content_no_sig =
+            ExtraDataHeader::new(0u32, None, chain_spec.authority_signer, authority_to_vote_on);
+        header.extra_data = extra_header_content_no_sig.serialize_without_signature();
+
+        let sig_hash = header.hash_slow();
+        let signature = secp256k1::Secp256k1::new().sign_ecdsa(sig_hash.as_slice(), sk);
+        let extra_data_header_with_signature =
+            ExtraDataHeader::new(0u32, Some(signature), chain_spec.authority_signers, authority_to_vote_on);
+        header.extra_data = extra_data_header_with_signature.serialize();
+
+        if let Some(authority_to_vote_on) = authority_to_vote_on {
+            if let Some(vote) = vote {
+                header.nonce = vote as u64;
+            } else {
+                return Err(BlockExecutionError::Validation(BlockValidationError::MissingVote))
+            }
+        }
+
         header.transactions_root = if transactions.is_empty() {
             EMPTY_TRANSACTIONS
         } else {
             proofs::calculate_transaction_root(transactions)
         };
 
-        header
+        Ok(header)
     }
 
     /// Executes the block with the given block and senders, on the provided [Executor].
