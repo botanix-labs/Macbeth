@@ -1,11 +1,10 @@
+use std::collections::HashMap;
+
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
     Header,
 };
-use std::collections::HashMap;
-
 use botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
-
 use crate::utils::create_authority_sighash;
 
 /// Repersenting a vote to add or remove an authority
@@ -26,7 +25,7 @@ impl TryFrom<u64> for Vote {
 }
 
 /// A collection of votes from federation member to add/remove a particular authority
-struct AuthorityVote {
+pub struct AuthorityVote {
     /// Authority to add/remove
     authority: secp256k1::PublicKey,
     /// Votes for this authority
@@ -56,6 +55,8 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
             continue
         }
 
+        // If there is no signature, we can't verify who casted the vote
+        // This would be a invalid block anyways
         if extra_data_header.authority_signature.is_none() {
             continue
         }
@@ -104,7 +105,7 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
 }
 
 /// Given a list of votes, return the outcome of the vote based on the majority vote
-pub fn get_outcome_of_vote(votes: AuthorityVote) -> Vote {
+pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
     let mut add_votes = 0;
     let mut remove_votes = 0;
 
@@ -121,5 +122,3 @@ pub fn get_outcome_of_vote(votes: AuthorityVote) -> Vote {
         Vote::Remove
     }
 }
-
-
