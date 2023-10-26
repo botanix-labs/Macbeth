@@ -163,4 +163,6 @@ pub enum ConsensusError {
     /// Error for a transaction that violates consensus.
     #[error(transparent)]
     InvalidTransaction(#[from] InvalidTransactionError),
+    #[error("Invalid authority signature")]
+    InvalidAuthoritySignature,
 }
