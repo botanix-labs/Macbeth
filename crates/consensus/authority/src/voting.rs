@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use crate::utils::create_authority_sighash;
+use botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
     Header,
 };
-use botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
-use crate::utils::create_authority_sighash;
 
 /// Repersenting a vote to add or remove an authority
 pub enum Vote {
@@ -66,23 +66,22 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
             continue
         }
 
-        let authority = extra_data_header.authority_vote.expect("valid authority vote");
+        let authority_to_vote_on = extra_data_header.authority_vote.expect("valid authority vote");
+        // Need to recover the authority that signed the block from the signature
+        let sig_hash = secp256k1::Message::from_slice(
+            create_authority_sighash(&header, &extra_data_header).unwrap().as_slice(),
+        )
+        .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
+        let authority_that_votes = extra_data_header
+            .authority_signature
+            .expect("valid signature")
+            .recover(&sig_hash)
+            .map_err(|e| GetVotesError::FailedToRecoverAuthority(e))?;
         // Already keeping track of this authority
-        if auth_vote.contains(&authority) {
-            // Need to recover the authority that signed the block from the signature
-            let sig_hash = secp256k1::Message::from_slice(
-                create_authority_sighash(&header, &extra_data_header).unwrap().as_slice(),
-            )
-            .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
-
-            let authority_that_votes = extra_data_header
-                .authority_signature
-                .expect("valid signature")
-                .recover(&sig_hash)
-                .map_err(|e| GetVotesError::FailedToRecoverAuthority(e))?;
-
+        if auth_vote.contains(&authority_to_vote_on) {
             // Check if the authority that signed block currently has a vote for this authority
-            let current_vote = auth_vote.iter().find(|vote: &&AuthorityVote| vote == authority);
+            let current_vote =
+                auth_vote.iter().find(|vote: &&AuthorityVote| vote == authority_to_vote_on);
 
             // Check if the block producer already provided a vote for this authority
             if current_vote.expect("valid vote").votes.contains_key(&authority_that_votes) {
@@ -99,7 +98,7 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
                 authority_that_votes,
                 header.nonce.try_into().map_err(|| GetVotesError::FailedToParseNonceVote)?,
             );
-            auth_vote.push(AuthorityVote { authority, votes });
+            auth_vote.push(AuthorityVote { authority: authority_to_vote_on, votes });
         }
     }
 }
@@ -122,3 +121,5 @@ pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
         Vote::Remove
     }
 }
+
+// pub fn construct_vote(authority_to_vote_on: secp256k1::PublicKey, vote: Vote, )
