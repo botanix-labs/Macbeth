@@ -1,5 +1,4 @@
 use crate::message::NewBlockMessage;
-use reth_beacon_consensus::BeaconEngineMessage;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::{Consensus, ConsensusError};
 use reth_primitives::{
@@ -10,7 +9,6 @@ use std::{
     collections::VecDeque,
     task::{Context, Poll}, sync::Arc,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 /// Abstraction over block import.
 pub trait BlockImport: Send + Sync {
@@ -96,7 +94,7 @@ impl<C> ProofOfAuthorityBlockImport<C> {
         if block.td != DIFF_INTURN && block.td != DIFF_NOTURN && block.td != DIFF_NOVOTE {
             return Err(ConsensusError::AuthorityDifficultyInvalid)
         }
-        self.validate_header(block.block.header)?;
+        self.validate_header(block.block.header.clone())?;
         Ok(())
     }
 }
@@ -111,11 +109,11 @@ where
 
     fn poll(&mut self, cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
         if let Some(pair) = self.queue.pop_front() {
-            let block = pair.1.block;
+            let block = pair.1.block.clone();
             let result = self
                 .validate_new_block(block)
                 .map_err(|e| BlockImportError::Consensus(e))
-                .map(|_| BlockValidation::ValidHeader { block: pair.1 });
+                .map(|_| BlockValidation::ValidHeader { block: pair.1.clone() });
             
             return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
         }

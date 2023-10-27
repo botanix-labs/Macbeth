@@ -354,7 +354,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             head,
             secret_key,
             default_peers_path.clone(),
-            Box::new(ProofOfAuthorityBlockImport::new(consensus_engine_tx.clone()))
+            Box::new(ProofOfAuthorityBlockImport::new(consensus.clone()))
         );
         let network = self
             .start_network(
