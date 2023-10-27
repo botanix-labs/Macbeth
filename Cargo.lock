@@ -488,36 +488,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "authority-consensus"
-version = "0.1.0-alpha.8"
-dependencies = [
- "bitcoin 0.30.1",
- "botanix-lib",
- "btc-server",
- "btc-wallet",
- "client",
- "futures-util",
- "reth-beacon-consensus",
- "reth-consensus-common",
- "reth-db",
- "reth-interfaces",
- "reth-payload-builder",
- "reth-primitives",
- "reth-provider",
- "reth-prune",
- "reth-revm",
- "reth-rpc-types",
- "reth-stages",
- "reth-tasks",
- "reth-transaction-pool",
- "secp256k1 0.27.0",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
-]
-
-[[package]]
 name = "auto_impl"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6040,6 +6010,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-authority-consensus"
+version = "0.1.0-alpha.8"
+dependencies = [
+ "bitcoin 0.30.1",
+ "botanix-lib",
+ "btc-server",
+ "btc-wallet",
+ "client",
+ "futures-util",
+ "reth-beacon-consensus",
+ "reth-consensus-common",
+ "reth-db",
+ "reth-interfaces",
+ "reth-network",
+ "reth-payload-builder",
+ "reth-primitives",
+ "reth-provider",
+ "reth-prune",
+ "reth-revm",
+ "reth-rpc-types",
+ "reth-stages",
+ "reth-tasks",
+ "reth-transaction-pool",
+ "secp256k1 0.27.0",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.8"
 dependencies = [
@@ -6502,6 +6503,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "pin-project",
  "rand 0.8.5",
+ "reth-beacon-consensus",
  "reth-discv4",
  "reth-dns-discovery",
  "reth-ecies",

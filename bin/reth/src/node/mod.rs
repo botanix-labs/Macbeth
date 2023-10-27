@@ -25,7 +25,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
 use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus, MiningMode};
-use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
+use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN, BeaconEngineMessage};
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
 };
@@ -44,7 +44,7 @@ use reth_interfaces::{
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
 };
-use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager};
+use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager, import::{BlockImport, ProofOfAuthorityBlockImport}};
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -78,7 +78,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::{mpsc::unbounded_channel, oneshot, watch};
+use tokio::sync::{mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver}, oneshot, watch};
 use tracing::*;
 
 use client::BtcServerClient;
@@ -344,6 +344,9 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let secret_key = get_secret_key(&network_secret_path)?;
         let default_peers_path = data_dir.known_peers_path();
         let head = self.lookup_head(Arc::clone(&db)).expect("the head block is missing");
+
+        let (consensus_engine_tx, consensus_engine_rx): (UnboundedSender<BeaconEngineMessage>, UnboundedReceiver<BeaconEngineMessage>) = unbounded_channel();
+
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -351,6 +354,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             head,
             secret_key,
             default_peers_path.clone(),
+            Box::new(ProofOfAuthorityBlockImport::new(consensus_engine_tx.clone()))
         );
         let network = self
             .start_network(
@@ -364,7 +368,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
         let network_client = network.fetch_client().await?;
 
-        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
         debug!(target: "reth::cli", "Spawning payload builder service");
         let payload_builder = self.ext.spawn_payload_builder_service(
@@ -763,9 +766,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         head: Head,
         secret_key: SecretKey,
         default_peers_path: PathBuf,
+        block_import: Box<dyn BlockImport>,
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
             .network_config(config, self.chain.clone(), secret_key, default_peers_path)
+            .network_mode(reth_network::config::NetworkMode::Authority)
             .with_task_executor(Box::new(executor))
             .set_head(head)
             .listener_addr(SocketAddr::V4(SocketAddrV4::new(

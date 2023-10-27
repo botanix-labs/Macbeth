@@ -1,6 +1,16 @@
 use crate::message::NewBlockMessage;
-use reth_primitives::PeerId;
-use std::task::{Context, Poll};
+use reth_beacon_consensus::BeaconEngineMessage;
+use reth_eth_wire::NewBlock;
+use reth_interfaces::consensus::{Consensus, ConsensusError};
+use reth_primitives::{
+    constants::eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE},
+    Header, PeerId,
+};
+use std::{
+    collections::VecDeque,
+    task::{Context, Poll}, sync::Arc,
+};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Abstraction over block import.
 pub trait BlockImport: Send + Sync {
@@ -61,6 +71,54 @@ impl BlockImport for ProofOfStakeBlockImport {
     fn on_new_block(&mut self, _peer_id: PeerId, _incoming_block: NewBlockMessage) {}
 
     fn poll(&mut self, _cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
+        Poll::Pending
+    }
+}
+
+/// An implementation of `BlockImport` used in Proof-of-Authority consensus
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ProofOfAuthorityBlockImport<C> {
+    queue: VecDeque<(PeerId, NewBlockMessage)>,
+    consensus: C,
+}
+
+impl<C> ProofOfAuthorityBlockImport<C> {
+    pub fn new(consensus: C) -> Self {
+        Self { queue: VecDeque::new(), consensus }
+    }
+
+    fn validate_header(&mut self, header: Header) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    fn validate_new_block(&mut self, block: Arc<NewBlock>) -> Result<(), ConsensusError> {
+        if block.td != DIFF_INTURN && block.td != DIFF_NOTURN && block.td != DIFF_NOVOTE {
+            return Err(ConsensusError::AuthorityDifficultyInvalid)
+        }
+        self.validate_header(block.block.header)?;
+        Ok(())
+    }
+}
+
+impl<C> BlockImport for ProofOfAuthorityBlockImport<C>
+where
+    C: Consensus,
+{
+    fn on_new_block(&mut self, peer_id: PeerId, incoming_block: NewBlockMessage) {
+        self.queue.push_back((peer_id, incoming_block));
+    }
+
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
+        if let Some(pair) = self.queue.pop_front() {
+            let block = pair.1.block;
+            let result = self
+                .validate_new_block(block)
+                .map_err(|e| BlockImportError::Consensus(e))
+                .map(|_| BlockValidation::ValidHeader { block: pair.1 });
+            
+            return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
+        }
         Poll::Pending
     }
 }

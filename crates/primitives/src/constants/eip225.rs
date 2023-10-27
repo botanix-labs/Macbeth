@@ -21,3 +21,6 @@ pub const DIFF_NOTURN: U256 = uint!(1_U256);
 /// Block score (difficulty) for blocks containing in-turn signatures.
 pub const DIFF_INTURN: U256 = uint!(2_U256);
 
+/// Block score (difficulty) for blocks containing no signatures.
+pub const DIFF_NOVOTE: U256 = uint!(0_U256);
+

@@ -1,5 +1,5 @@
 [package]
-name = "authority-consensus"
+name = "reth-authority-consensus"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -27,6 +27,7 @@ reth-prune = { path = "../../prune" }
 reth-payload-builder.workspace = true
 reth-tasks.workspace = true
 reth-rpc-types.workspace = true
+reth-network.workspace = true
 
 # async
 futures-util.workspace = true

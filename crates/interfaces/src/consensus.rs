@@ -121,6 +121,8 @@ pub enum ConsensusError {
     TransactionSignerRecoveryError,
     #[error("Extra data {len} exceeds max length: ")]
     ExtraDataExceedsMax { len: usize },
+    #[error("Difficulty is not DIFF_INTURN or DIFF_NOTURN or 0")]
+    AuthorityDifficultyInvalid,
     #[error("Difficulty after merge is not zero")]
     TheMergeDifficultyIsNotZero,
     #[error("Nonce after merge is not zero")]
