@@ -12,16 +12,21 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 mod admin;
+mod botanix;
 mod eth;
 mod mev;
+mod net;
 mod otterscan;
+mod peer;
 mod rpc;
-mod botanix;
+mod serde_helpers;
 
 pub use admin::*;
+pub use botanix::*;
 pub use eth::*;
 pub use mev::*;
+pub use net::*;
 pub use otterscan::*;
+pub use peer::*;
 pub use rpc::*;
-pub use botanix::*;
-
+pub use serde_helpers::*;
