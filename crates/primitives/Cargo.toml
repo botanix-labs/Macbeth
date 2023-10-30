@@ -80,6 +80,10 @@ criterion.workspace = true
 pprof = { workspace = true, features = ["flamegraph", "frame-pointer", "criterion"] }
 secp256k1.workspace = true
 
+
+# Botanix
+botanix-lib = { path = "../../../botanix-lib" }
+
 [features]
 default = ["c-kzg"]
 arbitrary = [

@@ -8,7 +8,7 @@ use reth_primitives::{
 };
 
 /// Repersenting a vote to add or remove an authority
-#[derive(Error, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Vote {
     Add,
     Remove,
