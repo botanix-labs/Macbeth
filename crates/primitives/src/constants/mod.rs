@@ -190,6 +190,12 @@ pub const BEACON_ROOTS_ADDRESS: Address = address!("000F3df6D732807Ef1319fB7B8bB
 /// The caller to be used when calling the EIP-4788 beacon roots contract at the beginning of the
 /// block.
 pub const SYSTEM_ADDRESS: Address = address!("fffffffffffffffffffffffffffffffffffffffe");
+/// Address of the staking contract.
+/// TODO(armins) this is a dummy staking address, we need to update this to the real staking contract address
+pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e084575b334";
+
+/// Storage slot index of list of stakers
+pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u8 = 1;
 
 #[cfg(test)]
 mod tests {
