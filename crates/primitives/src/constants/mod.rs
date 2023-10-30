@@ -93,6 +93,7 @@ pub const DEV_GENESIS: H256 =
     H256(hex!("2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c"));
     
 // TODO include botanix and botanix testnet genesis hash 
+/// Botanix testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: H256 =
     H256(hex!("25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9"));
 

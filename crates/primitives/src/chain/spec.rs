@@ -1090,6 +1090,7 @@ mod tests {
     use bytes::BytesMut;
     use ethers_core::types as EtherType;
     use reth_rlp::Encodable;
+    use botanix_lib::extra_data_header::{self, ExtraDataHeader};
 
     use super::BOTANIX_TESTNET;
     fn test_fork_ids(spec: &ChainSpec, cases: &[(Head, ForkId)]) {
@@ -1398,32 +1399,21 @@ Post-merge hard forks (timestamp based):
         )
     }
 
+    #[test]
     fn botanix_testnet_forkids() {
         test_fork_ids(
             &BOTANIX_TESTNET,
-            &[
-                (
-                    Head { number: 0, ..Default::default() },
-                    ForkId { hash: ForkHash([0xfe, 0x33, 0x66, 0xe7]), next: 1735371 },
-                ),
-                (
-                    Head { number: 1735370, ..Default::default() },
-                    ForkId { hash: ForkHash([0xfe, 0x33, 0x66, 0xe7]), next: 1735371 },
-                ),
-                (
-                    Head { number: 1735371, ..Default::default() },
-                    ForkId { hash: ForkHash([0xb9, 0x6c, 0xbd, 0x13]), next: 1677557088 },
-                ),
-                (
-                    Head { number: 1735372, timestamp: 1677557087, ..Default::default() },
-                    ForkId { hash: ForkHash([0xb9, 0x6c, 0xbd, 0x13]), next: 1677557088 },
-                ),
-                (
-                    Head { number: 1735372, timestamp: 1677557088, ..Default::default() },
-                    ForkId { hash: ForkHash([0xf7, 0xf9, 0xbc, 0x08]), next: 0 },
-                ),
-            ],
+            &[(
+                Head { number: 0, ..Default::default() },
+                ForkId { hash: ForkHash([0xba, 0xfb, 0xbb, 0x2f]), next: 0 },
+            )],
         );
+    }
+
+    #[test]
+    fn botanix_testnet_should_have_valid_extradata() {
+        let extra_data = BOTANIX_TESTNET.genesis_header().extra_data;
+        let extra_data_header = ExtraDataHeader::deserialize(&extra_data).unwrap();
     }
 
     /// Checks that time-based forks work
