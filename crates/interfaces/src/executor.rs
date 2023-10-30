@@ -5,6 +5,8 @@ use reth_primitives::{
 };
 use thiserror::Error;
 
+use crate::blockchain_tree::error;
+
 /// Transaction validation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum BlockValidationError {
@@ -121,6 +123,10 @@ pub enum BlockExecutionError {
     /// Failed to get bitcoin header
     #[error("Failed to get bitcoin header")]
     FailedToGetBitcoinHeader,
+
+    /// Cannot add and existing federation memeber to the federation
+    #[error("Cannot add and existing federation memeber to the federation")]
+    CannotAddExistingFederationMember,
 
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]
