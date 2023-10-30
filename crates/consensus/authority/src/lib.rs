@@ -19,7 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use botanix_lib::extra_data_header::ExtraDataHeader;
+use botanix_lib::extra_data_header::{self, ExtraDataHeader};
 use reth_consensus_common::validation;
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
@@ -30,9 +30,9 @@ use reth_primitives::{
         ALLOWED_FUTURE_BLOCK_TIME_SECONDS, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS,
         ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
     },
-    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Chain,
-    ChainSpec, Hardfork, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT, H256, U256, Bytes,
+    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
+    Chain, ChainSpec, Hardfork, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
+    TransactionSigned, EMPTY_OMMER_ROOT, H256, U256,
 };
 use reth_provider::{PostState, StateProvider};
 use reth_revm::executor::Executor;
@@ -42,7 +42,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use voting::{AuthorityVote, Vote};
+use voting::{AuthorityVote, Vote, AuthorityVoteCollection};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
@@ -87,51 +87,16 @@ impl Consensus for AuthorityConsensus {
         header: &Header,
         total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        if self.chain_spec.fork(Hardfork::Paris).active_at_ttd(total_difficulty, header.difficulty)
-        {
-            // EIP-3675: Upgrade consensus to Proof-of-Stake:
-            // https://eips.ethereum.org/EIPS/eip-3675#replacing-difficulty-with-0
-            if header.difficulty != U256::ZERO {
-                return Err(ConsensusError::TheMergeDifficultyIsNotZero)
-            }
-
-            if header.nonce != 0 {
-                return Err(ConsensusError::TheMergeNonceIsNotZero)
-            }
-
-            if header.ommers_hash != EMPTY_OMMER_ROOT {
-                return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
-            }
-
-            // Post-merge, the consensus layer is expected to perform checks such that the block
-            // timestamp is a function of the slot. This is different from pre-merge, where blocks
-            // are only allowed to be in the future (compared to the system's clock) by a certain
-            // threshold.
-            //
-            // Block validation with respect to the parent should ensure that the block timestamp
-            // is greater than its parent timestamp.
-
-            // validate header extradata for all networks post merge
-            validate_header_extradata(header)?;
-
-            // mixHash is used instead of difficulty inside EVM
-            // https://eips.ethereum.org/EIPS/eip-4399#using-mixhash-field-instead-of-difficulty
-        } else {
-            // TODO Consensus checks for old blocks:
-            //  * difficulty, mix_hash & nonce aka PoW stuff
-            // low priority as syncing is done in reverse order
-
-            // Check if timestamp is in future. Clock can drift but this can be consensus issue.
-            let present_timestamp =
-                SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-
-            if header.timestamp > present_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS {
-                return Err(ConsensusError::TimestampIsInFuture {
-                    timestamp: header.timestamp,
-                    present_timestamp,
-                })
-            }
+        if header.difficulty != U256::ZERO {
+            return Err(ConsensusError::TheMergeDifficultyIsNotZero)
         }
+
+        if header.ommers_hash != EMPTY_OMMER_ROOT {
+            return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
+        }
+
+        // validate header extradata
+        validate_header_extradata(header)?;
 
         Ok(())
     }
@@ -149,9 +114,12 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
         Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     } else {
-        let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data).map_err(|_e| {
-            ConsensusError::ExtraDataInvalid();
-        })?;
+        // 0. Validate that the block was signed by a federation member
+        let extra_data =
+            botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data)
+                .map_err(|_e| {
+                    ConsensusError::ExtraDataInvalid();
+                })?;
 
         let sig_hash = utils::create_authority_sighash(header, &extra_data).map_err(|_e| {
             ConsensusError::ExtraDataInvalid();
@@ -160,6 +128,10 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         header.validate_authority_signature(sig_hash).map_err(|_e| {
             ConsensusError::InvalidAuthoritySignature();
         })?;
+        // 1. Validate that is a federation memeber was added or removed that that actions
+        // was signed off by a 2/3 majority of votes
+        // TODO
+
         Ok(())
     }
 }
@@ -212,7 +184,7 @@ pub(crate) struct StorageInner {
     /// The total difficulty of the chain until this block
     pub(crate) total_difficulty: U256,
     /// Keep track of current votes
-    pub(crate) authority_votes: Vec<AuthorityVote>,
+    pub(crate) authority_votes: AuthorityVoteCollection,
 }
 
 // === impl StorageInner ===
@@ -256,9 +228,9 @@ impl StorageInner {
         &self,
         transactions: &Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        authority_secret_key: &secp256k1::SecretKey,
-        authority_to_vote_on: Option<secp256k1::PublicKey>,
-        vote: Option<Vote>,
+        vote: Option<(secp256k1::PublicKey, Vote)>,
+        sk: &secp256k1::SecretKey,
+        secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         // check previous block for base fee
         let base_fee_per_gas = self
@@ -289,22 +261,30 @@ impl StorageInner {
             parent_beacon_block_root: None,
         };
 
-        let extra_header_content_no_sig =
+        let authority_to_vote_on = vote
+            .is_some()
+            .then(|| vote.expect("valid vote").0.serialize().expect("valid authority to vote on"));
+
+        // Serialize the header without signature
+        let extra_header_content_no_signature =
             ExtraDataHeader::new(0u32, None, chain_spec.authority_signer, authority_to_vote_on);
-        header.extra_data = extra_header_content_no_sig.serialize_without_signature();
+        header.extra_data = extra_header_content_no_signature.serialize_without_signature();
 
         let sig_hash = header.hash_slow();
-        let signature = secp256k1::Secp256k1::new().sign_ecdsa(sig_hash.as_slice(), sk);
-        let extra_data_header_with_signature =
-            ExtraDataHeader::new(0u32, Some(signature), chain_spec.authority_signers, authority_to_vote_on);
+
+        // Sign the header and append to extra data header
+        let signature: secp256k1::schnorr::Signature = secp.sign_schnorr(sig_hash.as_slice(), sk);
+        let extra_data_header_with_signature = ExtraDataHeader::new(
+            0u32,
+            Some(signature),
+            chain_spec.authority_signers,
+            authority_to_vote_on,
+        );
         header.extra_data = extra_data_header_with_signature.serialize();
 
-        if let Some(authority_to_vote_on) = authority_to_vote_on {
-            if let Some(vote) = vote {
-                header.nonce = vote as u64;
-            } else {
-                return Err(BlockExecutionError::Validation(BlockValidationError::MissingVote))
-            }
+        // Add the vote to the header using the nonce field
+        if let Some(vote) = vote {
+            header.nonce = vote.1 as u64;
         }
 
         header.transactions_root = if transactions.is_empty() {
@@ -374,8 +354,11 @@ impl StorageInner {
         executor: &mut Executor<DB>,
         chain_spec: Arc<ChainSpec>,
         recent_block_header: Option<bitcoin::block::Header>,
+        vote: Option<(secp256k1::PublicKey, Vote)>,
+        sk: &secp256k1::SecretKey,
+        secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
-        let header = self.build_header_template(&transactions, chain_spec);
+        let header = self.build_header_template(&transactions, chain_spec, vote, sk, secp)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
 
@@ -392,6 +375,33 @@ impl StorageInner {
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
 
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
+
+        // TODO check if the new header includes any votes and add to storage
+        if vote.is_some() {
+            let vote = vote.expect("valid vote");
+            let authority_to_vote_on = vote.expect("authority to vote on").0;
+            let extra_data_header =
+                extra_data_header::ExtraDataHeader::deserialize(header.extra_data.as_slice())
+                    .map_err(|e| {
+                        BlockExecutionError::Validation(
+                            BlockValidationError::ExtraDataHeaderDeserialzeError(e),
+                        )
+                    })?;
+
+            // TODO(armins) Should we be verbose and fail the block or just ignore?
+            if let Some(_) = extra_data_header
+                .authority_signers
+                .iter()
+                .any(|signer| signer == authority_to_vote_on)
+            {
+                return Err(BlockExecutionError::CannotAddExistingFederationMember)
+            }
+            // Keep track of votes
+            self.authority_votes.vote_for(&sk.public_key(secp), vote.1, vote.0);
+            trace!(target: "consensus::authority", vote, "casted vote");
+        }
+
+        // TODO(armins) check if the authority being voted on has staked in the staking contract
 
         // fill in the rest of the fields
         let header = self.complete_header(header, &post_state, executor, gas_used);
