@@ -5989,6 +5989,7 @@ dependencies = [
  "hyper",
  "jemalloc-ctl",
  "jemallocator",
+ "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-process",
