@@ -1,8 +1,6 @@
 use reth_primitives::{BlockHash, BlockNumHash, Bloom, H256};
 use thiserror::Error;
 
-use crate::blockchain_tree::error;
-
 /// Transaction validation errors
 #[allow(missing_docs)]
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

@@ -201,7 +201,7 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     pub auto_mine: bool,
 
     /// The path to the POA secret key file.
-    #[arg(long, value_name = "SECRET_KEY_DIR", verbatim_doc_comment, default_value_t)]
+    #[arg(long, value_name = "SECRET_KEY_DIR", verbatim_doc_comment)]
     pub secret_key_dir: Option<PathBuf>,
 }
 
@@ -258,7 +258,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         // add network name to data dir
         let data_dir = self.datadir.unwrap_or_chain_default(self.chain.chain);
-        let secret_key_dir = self.secret_key_dir.expect("secret key dir");
+        let secret_key_dir = self.secret_key_dir.clone().expect("secret key dir");
         let config_path = self.config.clone().unwrap_or(data_dir.config_path());
 
         let mut config: Config = self.load_config(config_path.clone())?;
