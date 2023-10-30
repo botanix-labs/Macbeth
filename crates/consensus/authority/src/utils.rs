@@ -11,6 +11,12 @@ pub(crate) enum StorageAccessError {
     FailedAccess(&'static str),
 }
 
+#[derive(Debug, Error)]
+pub enum StateProviderError {
+    #[error("Storage Access Error")]
+    StorageAccessError(&'static str),
+}
+
 /// Create sighash for authority to sign
 pub(crate) fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
     header.extra_data = Bytes::from(extra_data.serialize_without_signature().as_slice());
@@ -34,5 +40,18 @@ pub(crate) fn read_staker_balance(
         .storage(staking_contract_address, storage_key)
         .map_err(|_e| StorageAccessError::FailedAccess("Failed to retrieve storage"))?.unwrap();
 
+    Ok(balance)
+}
+
+/// Read staker balance from staking contract storage
+pub fn read_staker_balance(provider: StateProvider, staker_address: Address) -> Result<U256, StorageAccessError> {
+    let staking_contract_address = Address::from_slice(&STAKING_CONTRACT_ADDRESS);
+    let staker_balance_mapping_storage_slot_index = STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX;
+
+    let storage_key = keccak256(&[staker_address, staker_balance_mapping_storage_slot_index]);
+    let balance = provider.storage(staking_contract_address, storage_key).map_err(|_e| {
+        StateProviderError::StorageAccessError("Failed to access staking contract mapping storage slot");
+    })?;
+    
     Ok(balance)
 }
