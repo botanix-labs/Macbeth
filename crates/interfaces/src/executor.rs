@@ -5,6 +5,8 @@ use reth_primitives::{
 };
 use thiserror::Error;
 
+use crate::blockchain_tree::error;
+
 /// Transaction validation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum BlockValidationError {
