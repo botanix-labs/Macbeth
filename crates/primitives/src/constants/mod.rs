@@ -137,6 +137,12 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 /// <https://github.com/ethereum/go-ethereum/blob/a196f3e8a22b6ad22ced5c2e3baf32bc3ebd4ec9/consensus/ethash/consensus.go#L227-L229>
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
+/// Address of the staking contract.
+pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e084575b334";
+
+/// Storage slot index of list of stakers
+pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u8 = 1;
+
 #[cfg(test)]
 mod tests {
     use super::*;
