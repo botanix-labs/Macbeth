@@ -1,6 +1,8 @@
 use reth_primitives::{BlockHash, BlockNumHash, Bloom, H256};
 use thiserror::Error;
 
+use crate::blockchain_tree::error;
+
 /// Transaction validation errors
 #[allow(missing_docs)]
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -64,6 +66,10 @@ pub enum BlockExecutionError {
     /// Failed to get bitcoin header
     #[error("Failed to get bitcoin header")]
     FailedToGetBitcoinHeader,
+
+    /// Cannot add and existing federation memeber to the federation
+    #[error("Cannot add and existing federation memeber to the federation")]
+    CannotAddExistingFederationMember,
 }
 
 impl BlockExecutionError {

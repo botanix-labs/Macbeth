@@ -8,6 +8,7 @@ use reth_primitives::{
 };
 
 /// Repersenting a vote to add or remove an authority
+#[derive(Error, Debug, Clone)]
 pub enum Vote {
     Add,
     Remove,
@@ -25,11 +26,43 @@ impl TryFrom<u64> for Vote {
 }
 
 /// A collection of votes from federation member to add/remove a particular authority
+#[derive(Debug, Clone)]
 pub struct AuthorityVote {
     /// Authority to add/remove
-    authority: secp256k1::PublicKey,
+    pub authority: secp256k1::PublicKey,
     /// Votes for this authority
-    votes: HashMap<secp256k1::PublicKey, Vote>,
+    pub votes: HashMap<secp256k1::PublicKey, Vote>,
+}
+
+impl AuthorityVote {
+    pub fn add_vote(&self, authority_voting: secp256k1::PublicKey, vote: Vote) {
+        // Check vote from this authority does not already exist
+        if self.votes.contains_key(&authority_voting) {
+            return
+        }
+        self.votes.insert(authority_voting, vote);
+    }
+}
+
+/// Utility struct to keep track of votes for a epoch
+#[derive(Debug, Clone)]
+pub struct AuthorityVoteCollection {
+    /// Votes for this epoch
+    pub votes: Vec<AuthorityVote>,
+    /// Starting of epoch
+    pub epoch_start_block_height: u64,  
+}
+
+impl AuthorityVoteCollection {
+    pub fn vote_for(&self, authority_voting: secp256k1::PublicKey, vote: Vote, authority_vote_for: secp256k1::PublicKey) {
+        if let Some(vote) = self.votes.iter().find(|vote: &&AuthorityVote| vote.authority == authority_vote_for) {
+            vote.add_vote(authority_voting, vote);
+        } else {
+            let mut votes = HashMap::new();
+            votes.insert(authority_voting, vote);
+            self.votes.push(AuthorityVote { authority: authority_vote_for, votes });
+        }
+    }
 }
 
 pub enum GetVotesError {
@@ -121,5 +154,3 @@ pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
         Vote::Remove
     }
 }
-
-// pub fn construct_vote(authority_to_vote_on: secp256k1::PublicKey, vote: Vote, )
