@@ -195,6 +195,7 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
                     BlockExecutionError::UnavailableForTest => false ,
                     &BlockExecutionError::FailedToGetBitcoinHeader => true, 
+                    &BlockExecutionError::CannotAddExistingFederationMember => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

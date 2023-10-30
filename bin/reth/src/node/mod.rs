@@ -201,7 +201,7 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     pub auto_mine: bool,
 
     /// The path to the POA secret key file.
-    #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
+    #[arg(long, value_name = "SECRET_KEY_DIR", verbatim_doc_comment, default_value_t)]
     pub secret_key_dir: Option<PathBuf>,
 }
 
