@@ -117,7 +117,12 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
         Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     } else {
-        // TODO (armins) check that no vote is occuring during an epoch header
+        // 0. Validate that the block was signed by a federation member
+        let extra_data =
+            botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data)
+                .map_err(|_e| {
+                    ConsensusError::ExtraDataInvalid();
+                })?;
 
         // 0. Validate that the block was signed by a federation member
         let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
@@ -133,6 +138,13 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         // 1. Validate that is a federation memeber was added or removed that that actions
         // was signed off by a 2/3 majority of votes
         // This can only happnen during an end of a epoch
+        // TODO
+
+        header.validate_authority_signature(sig_hash).map_err(|_e| {
+            ConsensusError::InvalidAuthoritySignature();
+        })?;
+        // 1. Validate that is a federation memeber was added or removed that that actions
+        // was signed off by a 2/3 majority of votes
         // TODO
 
         Ok(())
@@ -231,7 +243,7 @@ impl StorageInner {
         &self,
         transactions: &Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        vote: &Option<(secp256k1::PublicKey, Vote)>,
+        vote: Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
@@ -359,7 +371,7 @@ impl StorageInner {
         executor: &mut Executor<DB>,
         chain_spec: Arc<ChainSpec>,
         recent_block_header: Option<bitcoin::block::Header>,
-        vote: &Option<(secp256k1::PublicKey, Vote)>,
+        vote: Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
@@ -379,6 +391,33 @@ impl StorageInner {
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
 
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
+
+        // TODO check if the new header includes any votes and add to storage
+        if vote.is_some() {
+            let vote = vote.expect("valid vote");
+            let authority_to_vote_on = vote.expect("authority to vote on").0;
+            let extra_data_header =
+                extra_data_header::ExtraDataHeader::deserialize(header.extra_data.as_slice())
+                    .map_err(|e| {
+                        BlockExecutionError::Validation(
+                            BlockValidationError::ExtraDataHeaderDeserialzeError(e),
+                        )
+                    })?;
+
+            // TODO(armins) Should we be verbose and fail the block or just ignore?
+            if let Some(_) = extra_data_header
+                .authority_signers
+                .iter()
+                .any(|signer| signer == authority_to_vote_on)
+            {
+                return Err(BlockExecutionError::CannotAddExistingFederationMember)
+            }
+            // Keep track of votes
+            self.authority_votes.vote_for(&sk.public_key(secp), vote.1, vote.0);
+            trace!(target: "consensus::authority", vote, "casted vote");
+        }
+
+        // TODO(armins) check if the authority being voted on has staked in the staking contract
 
         // fill in the rest of the fields
         let header = self.complete_header(header, &post_state, executor, gas_used);
