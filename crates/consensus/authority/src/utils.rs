@@ -1,5 +1,5 @@
 use botanix_lib::extra_data_header::ExtraDataHeader;
-use reth_primitives::{constants::{ STAKING_CONTRACT_ADDRESS, STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX }, Address, Header, H256};
+use reth_primitives::{constants::{ STAKING_CONTRACT_ADDRESS, STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX }, Address, Header, H256, keccak256, U256};
 use reth_provider::StateProvider;
 
 pub enum CreateSigHashError {
@@ -7,9 +7,9 @@ pub enum CreateSigHashError {
 }
 
 #[derive(Debug, Error)]
-pub enum StateProviderError {
-    #[error("Storage Access Error")]
-    StorageAccessError(&'static str),
+pub enum StorageAccessError {
+    #[error("Failed to access staking contract mapping storage slot")]
+    FailedAccess(&'static str),
 }
 
 /// Create sighash for authority to sign
@@ -26,7 +26,7 @@ pub fn read_staker_balance(provider: StateProvider, staker_address: Address) -> 
 
     let storage_key = keccak256(&[staker_address, staker_balance_mapping_storage_slot_index]);
     let balance = provider.storage(staking_contract_address, storage_key).map_err(|_e| {
-        StateProviderError::StorageAccessError("Failed to access staking contract mapping storage slot");
+        StorageAccessError::FailedAccess(());
     })?;
     
     Ok(balance)
