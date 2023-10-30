@@ -84,6 +84,9 @@ use reth_transaction_pool::{
 use secp256k1::SecretKey;
 use std::{
     net::{SocketAddr, SocketAddrV4},
+    fs::File,
+    io::Read,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -93,9 +96,15 @@ use tracing::*;
 
 use client::BtcServerClient;
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+use lazy_static::lazy_static;
 
 pub mod cl_events;
 pub mod events;
+
+/// Root most secp instance. All uses of secp will import this one
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+}
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -199,6 +208,10 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// Enable auto mining
     #[clap(long)]
     pub auto_mine: bool,
+
+    /// The path to the POA secret key file.
+    #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
+    pub secret_key_dir: Option<PathBuf>,
 }
 
 impl<Ext: RethCliExt> NodeCommand<Ext> {
@@ -222,6 +235,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             auto_mine,
             #[cfg(feature = "optimism")]
             rollup,
+            secret_key_dir,
             ..
         } = self;
         NodeCommand {
@@ -243,6 +257,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             rollup,
             ext,
             auto_mine,
+            secret_key_dir,
         }
     }
 
@@ -256,6 +271,15 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         // get config
         let config = self.load_config()?;
+        // add network name to data dir
+        let data_dir = self.datadir.unwrap_or_chain_default(self.chain.chain);
+        let secret_key_dir = self.secret_key_dir.expect("secret key dir");
+        let config_path = self.config.clone().unwrap_or(data_dir.config_path());
+
+        let mut config: Config = self.load_config(config_path.clone())?;
+
+        let secret_key = self.load_secret_key(secret_key_dir)?;
+
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
             BtcServerClient::connect(self.rpc.btc_server.clone())
@@ -909,7 +933,21 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         }
     }
 
-    fn load_network_config<DB: Database>(
+    fn load_secret_key(&self, secret_key_path: PathBuf) -> eyre::Result<SecretKey> {
+        let mut file = File::open(secret_key_path)?;
+        // Read the contents of the file into a Vec<u8>
+        let mut hex_data: Vec<_> = Vec::new();
+        file.read_to_end(&mut hex_data)?;
+
+        // Parse the hex data into bytes
+        let secret_bytes = Vec::from_hex(hex_data)?;
+        let sk = secp256k1::SecretKey::from_slice(&secret_bytes)
+            .map_err(|_| eyre::eyre!("Invalid secret key file"))?;
+
+        Ok(sk)
+    }
+
+    fn load_network_config(
         &self,
         config: &Config,
         db: DB,
