@@ -6263,6 +6263,7 @@ dependencies = [
  "itertools 0.11.0",
  "jemalloc-ctl",
  "jemallocator",
+ "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-process",
