@@ -250,6 +250,7 @@ impl InsertBlockErrorKind {
                     &BlockExecutionError::FailedToGetBitcoinHeader => true,
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
+                    &BlockExecutionError::CannotAddExistingFederationMember => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {
