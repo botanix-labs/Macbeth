@@ -114,6 +114,8 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
         Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     } else {
+        // TODO (armins) check that no vote is occuring during an epoch header
+
         // 0. Validate that the block was signed by a federation member
         let extra_data =
             botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data)
@@ -130,6 +132,7 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         })?;
         // 1. Validate that is a federation memeber was added or removed that that actions
         // was signed off by a 2/3 majority of votes
+        // This can only happnen during an end of a epoch
         // TODO
 
         Ok(())
@@ -361,7 +364,6 @@ impl StorageInner {
         let header = self.build_header_template(&transactions, chain_spec, vote, sk, secp)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
-
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
@@ -400,8 +402,8 @@ impl StorageInner {
             self.authority_votes.vote_for(&sk.public_key(secp), vote.1, vote.0);
             trace!(target: "consensus::authority", vote, "casted vote");
         }
-
         // TODO(armins) check if the authority being voted on has staked in the staking contract
+        // TODO(armins) check if withdrawl is valid
 
         // fill in the rest of the fields
         let header = self.complete_header(header, &post_state, executor, gas_used);
