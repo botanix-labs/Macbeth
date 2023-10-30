@@ -26,7 +26,7 @@ pub fn read_staker_balance(provider: StateProvider, staker_address: Address) -> 
 
     let storage_key = keccak256(&[staker_address, staker_balance_mapping_storage_slot_index]);
     let balance = provider.storage(staking_contract_address, storage_key).map_err(|_e| {
-        StorageAccessError::FailedAccess(());
+        StorageAccessError::FailedAccess(())
     })?;
     
     Ok(balance)
