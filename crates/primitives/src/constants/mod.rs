@@ -138,7 +138,7 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
 /// Address of the staking contract.
-pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e084575b334";
+pub const STAKING_CONTRACT_ADDRESS: &str = "0xC580e0032B5446fDC45A912C68869b512cc699C7";
 
 /// Storage slot index of list of stakers
 pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u8 = 1;
