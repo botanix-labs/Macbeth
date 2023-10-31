@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use url::Url;
 
 use crate::AuthorityConsensus;
 use client::BtcServerClient;
@@ -19,6 +20,8 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
+    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+    bitcoin_block_source_address: Url,
 }
 
 // ===== impl AuthorityConsensusBuilder =====
@@ -35,6 +38,8 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
+        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+        bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -50,6 +55,8 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
+            bitcoin_block_header,
+            bitcoin_block_source_address
         }
     }
 
@@ -63,6 +70,8 @@ where
             storage,
             to_engine,
             canon_state_notification,
+            bitcoin_block_header,
+            bitcoin_block_source_address,
         } = self;
 
         //TODO: instantiate a new mining task
