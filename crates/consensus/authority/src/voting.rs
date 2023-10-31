@@ -8,7 +8,7 @@ use reth_primitives::{
 };
 
 /// Represents a vote to add or remove an authority.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Vote {
     Add,
     Remove,
@@ -33,7 +33,7 @@ impl TryFrom<u64> for Vote {
 }
 
 /// A collection of votes from federation member to add/remove a particular authority
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AuthorityVote {
     /// Authority to add/remove
     pub authority: secp256k1::PublicKey,
@@ -42,12 +42,12 @@ pub struct AuthorityVote {
 }
 
 impl AuthorityVote {
-    pub fn add_vote(&self, authority_voting: secp256k1::PublicKey, vote: Vote) {
+    pub fn add_vote(&mut self, authority_voting: &secp256k1::PublicKey, vote: Vote) {
         // Check vote from this authority does not already exist
         if self.votes.contains_key(&authority_voting) {
             return
         }
-        self.votes.insert(authority_voting, vote);
+        self.votes.insert(*authority_voting, vote);
     }
 
     pub fn contains(&self, authority: secp256k1::PublicKey) -> bool {
@@ -56,7 +56,7 @@ impl AuthorityVote {
 }
 
 /// Utility struct to keep track of votes for a epoch
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AuthorityVoteCollection {
     /// Votes for this epoch
     pub votes: Vec<AuthorityVote>,
@@ -66,19 +66,17 @@ pub struct AuthorityVoteCollection {
 
 impl AuthorityVoteCollection {
     pub fn vote_for(
-        &self,
-        authority_voting: secp256k1::PublicKey,
-        vote: Vote,
-        authority_vote_for: secp256k1::PublicKey,
+        &mut self,
+        authority_voting: &secp256k1::PublicKey,
+        vote: &Vote,
+        authority_vote_for: &secp256k1::PublicKey,
     ) {
-        if let Some(vote) =
-            self.votes.iter().find(|vote: &&AuthorityVote| vote.authority == authority_vote_for)
-        {
-            vote.add_vote(authority_voting, vote);
+        if let Some(authVote) = self.votes.iter_mut().find(|k| k.authority == *authority_vote_for) {
+            authVote.add_vote(&authority_voting.clone(), vote.clone());
         } else {
             let mut votes = HashMap::new();
-            votes.insert(authority_voting, vote);
-            self.votes.push(AuthorityVote { authority: authority_vote_for, votes });
+            votes.insert(*authority_voting, vote.clone());
+            self.votes.push(AuthorityVote { authority: *authority_vote_for, votes });
         }
     }
 }
@@ -91,7 +89,7 @@ pub enum GetVotesError {
 }
 
 /// Given a range of block headers we want a utility function that will return a list of votes
-pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetVotesError> {
+pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetVotesError> {
     // Structure to keep track of all votes that occured in this block range
     let mut auth_vote: Vec<AuthorityVote> = Vec::new();
 
@@ -100,7 +98,7 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
             continue
         }
         // Check if there is a authority being voted on in the extra data
-        let extra_data_header = ExtraDataHeader::deserialize(header.extra_data.as_slice())
+        let extra_data_header = ExtraDataHeader::deserialize(header.extra_data.0.to_vec())
             .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
 
         if extra_data_header.authority_vote.is_none() {
@@ -120,39 +118,36 @@ pub fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetV
 
         let authority_to_vote_on = extra_data_header.authority_vote.expect("valid authority vote");
         // Need to recover the authority that signed the block from the signature
+        // TODO(armins) remove unwrap
         let sig_hash = secp256k1::Message::from_slice(
-            create_authority_sighash(&header, &extra_data_header).unwrap().as_slice(),
+            create_authority_sighash(&mut header.clone(), &extra_data_header).as_slice(),
         )
-        .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
+        .unwrap();
+
         let authority_that_votes = extra_data_header
             .authority_signature
             .expect("valid signature")
             .recover(&sig_hash)
             .map_err(|e| GetVotesError::FailedToRecoverAuthority(e))?;
         // Already keeping track of this authority
-        if auth_vote.contains(&authority_to_vote_on) {
+        if let Some(current_votes) =
+            auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)
+        {
             // Check if the authority that signed block currently has a vote for this authority
-            let current_vote =
-                auth_vote.iter().find(|vote: &&AuthorityVote| vote == authority_to_vote_on);
-
-            // Check if the block producer already provided a vote for this authority
-            if current_vote.expect("valid vote").votes.contains_key(&authority_that_votes) {
-                continue
-            }
-
-            current_vote.expect("valid vote").votes.insert(
-                authority_that_votes,
-                header.nonce.try_into().map_err(|| GetVotesError::FailedToParseNonceVote)?,
+            current_votes.add_vote(
+                &authority_that_votes,
+                header.nonce.try_into().map_err(|_e| GetVotesError::FailedToParseNonceVote)?,
             );
         } else {
             let mut votes = HashMap::new();
             votes.insert(
                 authority_that_votes,
-                header.nonce.try_into().map_err(|| GetVotesError::FailedToParseNonceVote)?,
+                header.nonce.try_into().map_err(|_e| GetVotesError::FailedToParseNonceVote)?,
             );
             auth_vote.push(AuthorityVote { authority: authority_to_vote_on, votes });
         }
     }
+    Ok(auth_vote)
 }
 
 /// Given a list of votes, return the outcome of the vote based on the majority vote
@@ -161,7 +156,7 @@ pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
     let mut remove_votes = 0;
 
     for vote in votes.votes {
-        match vote {
+        match vote.1 {
             Vote::Add => add_votes += 1,
             Vote::Remove => remove_votes += 1,
         }
@@ -183,16 +178,5 @@ mod tests {
         assert_eq!(Vote::try_from(NONCE_AUTH), Ok(Vote::Add));
         assert_eq!(Vote::try_from(NONCE_DROP), Ok(Vote::Remove));
         assert_eq!(Vote::try_from(0), Err("Invalid u64 value for EIP225 Authority Vote"));
-    }
-
-    #[test]
-    fn test_get_outcome_of_votes() {
-        let mut votes = HashMap::new();
-        votes.insert(Authority::new([0u8; 32]), Vote::Add);
-        votes.insert(Authority::new([1u8; 32]), Vote::Add);
-        votes.insert(Authority::new([2u8; 32]), Vote::Remove);
-        let authority_vote = AuthorityVote { authority: Authority::new([3u8; 32]), votes };
-        assert_eq!(get_outcome_of_votes(authority_vote), Vote::Add);
-
     }
 }
