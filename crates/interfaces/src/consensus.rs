@@ -165,4 +165,6 @@ pub enum ConsensusError {
     InvalidTransaction(#[from] InvalidTransactionError),
     #[error("Invalid authority signature")]
     InvalidAuthoritySignature,
+    #[error("Invalid extra data")]
+    ExtraDataInvalid,
 }
