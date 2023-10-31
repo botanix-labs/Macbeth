@@ -20,12 +20,14 @@ use crate::{
     utils::get_single_header,
     version::SHORT_VERSION,
 };
+
 use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
 use hex::FromHex;
-use reth_auto_seal_consensus::{AutoSealBuilder, AutoSealConsensus, MiningMode};
+use reth_authority_consensus::{AuthorityConsensus, AuthorityConsensusBuilder};
+
 use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
@@ -51,7 +53,7 @@ use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
     kzg::KzgSettings,
     stage::StageId,
-    BlockHashOrNumber, BlockNumber, ChainSpec, DisplayHardforks, Head, SealedHeader, H256,
+    BlockHashOrNumber, BlockNumber, ChainSpec, DisplayHardforks, Head, SealedHeader, H256, BOTANIX_TESTNET,
 };
 use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, BlockReader, CanonStateSubscriptions,
@@ -88,8 +90,8 @@ use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
 use lazy_static::lazy_static;
 
-pub mod cl_events;
-pub mod events;
+use crate::node::cl_events;
+use crate::node::events;
 
 // Root most secp instance. All uses of secp will import this one
 lazy_static::lazy_static! {
@@ -112,27 +114,6 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// The path to the configuration file to use.
     #[arg(long, value_name = "FILE", verbatim_doc_comment)]
     pub config: Option<PathBuf>,
-
-    /// The chain this node is running.
-    ///
-    /// Possible values are either a built-in chain or the path to a chain specification file.
-    ///
-    /// Built-in chains:
-    /// - mainnet
-    /// - goerli
-    /// - sepolia
-    /// - dev
-    /// - botanix_testnet
-    #[arg(
-        long,
-        value_name = "CHAIN_OR_PATH",
-        verbatim_doc_comment,
-        default_value = "mainnet",
-        default_value_if("dev", "true", "dev"),
-        value_parser = genesis_value_parser,
-        required = false,
-    )]
-    pub chain: Arc<ChainSpec>,
 
     /// Enable Prometheus metrics.
     ///
@@ -184,21 +165,14 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     #[clap(flatten)]
     pub db: DatabaseArgs,
 
-    /// All dev related arguments with --dev prefix
+    /// Additional cli arguments
     #[clap(flatten)]
-    pub dev: DevArgs,
+    pub ext: Ext::Node,
 
     /// All pruning related arguments
     #[clap(flatten)]
     pub pruning: PruningArgs,
 
-    /// Additional cli arguments
-    #[clap(flatten)]
-    pub ext: Ext::Node,
-
-    /// Enable auto mining
-    #[clap(long)]
-    pub auto_mine: bool,
 
     /// The path to the POA secret key file.
     #[arg(long, value_name = "SECRET_KEY_DIR", verbatim_doc_comment)]
@@ -211,7 +185,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let Self {
             datadir,
             config,
-            chain,
             metrics,
             trusted_setup_file,
             instance,
@@ -221,16 +194,13 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             builder,
             debug,
             db,
-            dev,
-            pruning,
-            auto_mine,
             secret_key_dir,
+            pruning,
             ..
         } = self;
         NodeCommand {
             datadir,
             config,
-            chain,
             metrics,
             instance,
             trusted_setup_file,
@@ -240,10 +210,8 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             builder,
             debug,
             db,
-            dev,
-            pruning,
             ext,
-            auto_mine,
+            pruning,
             secret_key_dir,
         }
     }
@@ -257,13 +225,18 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         raise_fd_limit();
 
         // add network name to data dir
-        let data_dir = self.datadir.unwrap_or_chain_default(self.chain.chain);
+        let botanix_chain_spec = BOTANIX_TESTNET;
+        let data_dir = self.datadir.unwrap_or_chain_default(botanix_chain_spec.clone().chain);
         let secret_key_dir = self.secret_key_dir.clone().expect("secret key dir");
         let config_path = self.config.clone().unwrap_or(data_dir.config_path());
 
         let mut config: Config = self.load_config(config_path.clone())?;
-
+        // Read the trusted setup file
+        // TODO this should be moved to HSM abstraction
         let secret_key = self.load_secret_key(secret_key_dir)?;
+
+        let prune_config =
+            self.pruning.prune_config(Arc::clone(&botanix_chain_spec))?.or(config.prune.clone());
 
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
@@ -277,6 +250,9 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
         let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
 
+        // Spawns a critical task that asynchronously retrieves Bitcoin block headers.
+        // The retrieved block headers are stored in a shared `RwLock` for later use.
+        // The task runs indefinitely with a sleep time of 5 seconds between each iteration.
         ctx.task_executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
@@ -310,35 +286,24 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         self.start_metrics_endpoint(Arc::clone(&db)).await?;
 
-        debug!(target: "reth::cli", chain=%self.chain.chain, genesis=?self.chain.genesis_hash(), "Initializing genesis");
-
-        let genesis_hash = init_genesis(db.clone(), self.chain.clone())?;
-
-        info!(target: "reth::cli", "{}", DisplayHardforks::from(self.chain.hardforks().clone()));
-
-        let consensus: Arc<dyn Consensus> = if self.dev.dev || self.auto_mine {
-            debug!(target: "reth::cli", "Using auto seal");
-            Arc::new(AutoSealConsensus::new(Arc::clone(&self.chain)))
-        } else {
-            Arc::new(BeaconConsensus::new(Arc::clone(&self.chain)))
-        };
+        let genesis_hash = init_genesis(db.clone(), botanix_chain_spec.clone())?;
+        let consensus = Arc::new(AuthorityConsensus::new(Arc::clone(&botanix_chain_spec)));
 
         self.init_trusted_nodes(&mut config);
 
+
+        // Start mentrics listener task
         debug!(target: "reth::cli", "Spawning metrics listener task");
         let (metrics_tx, metrics_rx) = unbounded_channel();
         let metrics_listener = MetricsListener::new(metrics_rx);
         ctx.task_executor.spawn_critical("metrics listener task", metrics_listener);
 
-        let prune_config =
-            self.pruning.prune_config(Arc::clone(&self.chain))?.or(config.prune.clone());
-
         // configure blockchain tree
         let tree_externals = TreeExternals::new(
             db.clone(),
             Arc::clone(&consensus),
-            Factory::new(self.chain.clone()),
-            Arc::clone(&self.chain),
+            Factory::new(botanix_chain_spec.clone()),
+            Arc::clone(&botanix_chain_spec),
         );
         let tree_config = BlockchainTreeConfig::default();
         // The size of the broadcast is twice the maximum reorg depth, because at maximum reorg
@@ -356,10 +321,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         );
 
         // setup the blockchain provider
-        let factory = ProviderFactory::new(Arc::clone(&db), Arc::clone(&self.chain));
+        let factory = ProviderFactory::new(Arc::clone(&db), Arc::clone(&botanix_chain_spec));
         let blockchain_db = BlockchainProvider::new(factory, blockchain_tree.clone())?;
         let blob_store = InMemoryBlobStore::default();
-        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&self.chain))
+        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&botanix_chain_spec))
             .kzg_settings(self.kzg_settings()?)
             .with_additional_tasks(1)
             .build_with_tasks(blockchain_db.clone(), ctx.task_executor.clone(), blob_store.clone());
@@ -392,7 +357,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
         let default_peers_path = data_dir.known_peers_path();
-        let head = self.lookup_head(Arc::clone(&db)).expect("the head block is missing");
+        let head = self.lookup_head(Arc::clone(&db), &botanix_chain_spec).expect("the head block is missing");
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -400,6 +365,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             head,
             secret_key,
             default_peers_path.clone(),
+            &botanix_chain_spec
         );
         let network = self
             .start_network(
@@ -421,33 +387,31 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             blockchain_db.clone(),
             transaction_pool.clone(),
             ctx.task_executor.clone(),
-            Arc::clone(&self.chain),
+            Arc::clone(&botanix_chain_spec),
         )?;
 
         let max_block = if let Some(block) = self.debug.max_block {
             Some(block)
         } else if let Some(tip) = self.debug.tip {
-            Some(self.lookup_or_fetch_tip(&db, &network_client, tip).await?)
+            Some(self.lookup_or_fetch_tip(&db, &network_client, tip, &botanix_chain_spec).await?)
         } else {
             None
         };
 
         // Configure the pipeline
-        let (mut pipeline, client) = if self.dev.dev || self.auto_mine {
-            info!(target: "reth::cli", "Starting Reth in dev mode");
+        let x = AuthorityConsensusBuilder::new(
+            Arc::clone(&botanix_chain_spec),
+            network_client.clone(),
+            transaction_pool.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            self.rpc.btc_block_source.clone(),
+        );
 
-            let mining_mode = if let Some(interval) = self.dev.block_time {
-                MiningMode::interval(interval)
-            } else if let Some(max_transactions) = self.dev.block_max_transactions {
-                MiningMode::instant(
-                    max_transactions,
-                    transaction_pool.pending_transactions_listener(),
-                )
-            } else {
-                info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
-                MiningMode::instant(1, transaction_pool.pending_transactions_listener())
-            };
-
+        // TODO change this for authority epoch manager consensus
+        let (mut pipeline, client) = {
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
@@ -480,22 +444,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             ctx.task_executor.spawn(Box::pin(task));
 
             (pipeline, EitherDownloader::Left(client))
-        } else {
-            let pipeline = self
-                .build_networked_pipeline(
-                    &config,
-                    network_client.clone(),
-                    Arc::clone(&consensus),
-                    db.clone(),
-                    &ctx.task_executor,
-                    metrics_tx,
-                    prune_config.clone(),
-                    max_block,
-                )
-                .await?;
-
-            (pipeline, EitherDownloader::Right(network_client))
-        };
+        } 
 
         let pipeline_events = pipeline.events();
 
@@ -516,10 +465,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             info!(target: "reth::cli", "Pruner initialized");
             reth_prune::Pruner::new(
                 db.clone(),
-                self.chain.clone(),
+                botanix_chain_spec.clone(),
                 prune_config.block_interval,
                 prune_config.parts,
-                self.chain.prune_batch_sizes,
+                botanix_chain_spec.prune_batch_sizes,
             )
         });
 
@@ -561,7 +510,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         let engine_api = EngineApi::new(
             blockchain_db.clone(),
-            self.chain.clone(),
+            botanix_chain_spec.clone(),
             beacon_engine_handle,
             payload_builder.into(),
             Box::new(ctx.task_executor.clone()),
@@ -623,6 +572,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         metrics_tx: MetricEventsSender,
         prune_config: Option<PruneConfig>,
         max_block: Option<BlockNumber>,
+        chain_spec: &Arc<ChainSpec>
     ) -> eyre::Result<Pipeline<DB>>
     where
         DB: Database + Unpin + Clone + 'static,
@@ -648,6 +598,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 self.debug.continuous,
                 metrics_tx,
                 prune_config,
+                chain_spec,
             )
             .await?;
 
@@ -724,8 +675,8 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         Ok(handle)
     }
 
-    fn lookup_head(&self, db: Arc<DatabaseEnv>) -> Result<Head, reth_interfaces::Error> {
-        let factory = ProviderFactory::new(db, self.chain.clone());
+    fn lookup_head(&self, db: Arc<DatabaseEnv>, chain_spec: &Arc<ChainSpec>) -> Result<Head, reth_interfaces::Error> {
+        let factory = ProviderFactory::new(db, chain_spec.clone());
         let provider = factory.provider()?;
 
         let head = provider.get_stage_checkpoint(StageId::Finish)?.unwrap_or_default().block_number;
@@ -760,12 +711,13 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         db: &DB,
         client: Client,
         tip: H256,
+        chain_spec: &Arc<ChainSpec>,
     ) -> Result<u64, reth_interfaces::Error>
     where
         DB: Database,
         Client: HeadersClient,
     {
-        Ok(self.fetch_tip(db, client, BlockHashOrNumber::Hash(tip)).await?.number)
+        Ok(self.fetch_tip(db, client, BlockHashOrNumber::Hash(tip), chain_spec).await?.number)
     }
 
     /// Attempt to look up the block with the given number and return the header.
@@ -776,12 +728,13 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         db: &DB,
         client: Client,
         tip: BlockHashOrNumber,
+        chain_spec: &Arc<ChainSpec>,
     ) -> Result<SealedHeader, reth_interfaces::Error>
     where
         DB: Database,
         Client: HeadersClient,
     {
-        let factory = ProviderFactory::new(db, self.chain.clone());
+        let factory = ProviderFactory::new(db, chain_spec.clone());
         let provider = factory.provider()?;
 
         let header = provider.header_by_hash_or_number(tip)?;
@@ -828,9 +781,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         head: Head,
         secret_key: SecretKey,
         default_peers_path: PathBuf,
+        chain_spec: &Arc<ChainSpec>
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
-            .network_config(config, self.chain.clone(), secret_key, default_peers_path)
+            .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor))
             .set_head(head)
             .listener_addr(SocketAddr::V4(SocketAddrV4::new(
@@ -849,7 +803,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                     None => DEFAULT_DISCOVERY_PORT + self.instance - 1,
                 },
             )))
-            .build(ProviderFactory::new(db, self.chain.clone()))
+            .build(ProviderFactory::new(db, chain_spec.clone()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -864,6 +818,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         continuous: bool,
         metrics_tx: MetricEventsSender,
         prune_config: Option<PruneConfig>,
+        chain_spec: &Arc<ChainSpec>,
     ) -> eyre::Result<Pipeline<DB>>
     where
         DB: Database + Clone + 'static,
@@ -881,7 +836,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         let (tip_tx, tip_rx) = watch::channel(H256::zero());
         use reth_revm_inspectors::stack::InspectorStackConfig;
-        let factory = reth_revm::Factory::new(self.chain.clone());
+        let factory = reth_revm::Factory::new(chain_spec.clone());
 
         let stack_config = InspectorStackConfig {
             use_printer_tracer: self.debug.print_inspector,
@@ -958,7 +913,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                     prune_modes,
                 )),
             )
-            .build(db, self.chain.clone());
+            .build(db, chain_spec.clone());
 
         Ok(pipeline)
     }
@@ -1004,136 +959,5 @@ async fn run_network_until_shutdown<C>(
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use reth_primitives::DEV;
-    use std::{net::IpAddr, path::Path};
-
-    #[test]
-    fn parse_help_node_command() {
-        let err = NodeCommand::<()>::try_parse_from(["reth", "--help"]).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
-    }
-
-    #[test]
-    fn parse_common_node_command_chain_args() {
-        for chain in ["mainnet", "sepolia", "goerli", "botanix_testnet"] {
-            let args: NodeCommand = NodeCommand::<()>::parse_from(["reth", "--chain", chain]);
-            assert_eq!(args.chain.chain, chain.parse().unwrap());
-        }
-    }
-
-    #[test]
-    fn parse_discovery_port() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--discovery.port", "300"]).unwrap();
-        assert_eq!(cmd.network.discovery.port, Some(300));
-    }
-
-    #[test]
-    fn parse_port() {
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--discovery.port", "300", "--port", "99"])
-                .unwrap();
-        assert_eq!(cmd.network.discovery.port, Some(300));
-        assert_eq!(cmd.network.port, Some(99));
-    }
-
-    #[test]
-    fn parse_metrics_port() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--metrics", "9001"]).unwrap();
-        assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
-
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--metrics", ":9001"]).unwrap();
-        assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
-
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--metrics", "localhost:9001"]).unwrap();
-        assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
-    }
-
-    #[test]
-    fn parse_config_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--config", "my/path/to/reth.toml"])
-            .unwrap();
-        // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.unwrap_or(data_dir.config_path());
-        assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
-
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
-
-        // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.clone().unwrap_or(data_dir.config_path());
-        assert!(config_path.ends_with("reth/mainnet/reth.toml"), "{:?}", cmd.config);
-    }
-
-    #[test]
-    fn parse_db_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let db_path = data_dir.db_path();
-        assert!(db_path.ends_with("reth/mainnet/db"), "{:?}", cmd.config);
-
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--datadir", "my/custom/path"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let db_path = data_dir.db_path();
-        assert_eq!(db_path, Path::new("my/custom/path/db"));
-    }
-
-    #[test]
-    fn parse_dev() {
-        let cmd = NodeCommand::<()>::parse_from(["reth", "--dev"]);
-        let chain = DEV.clone();
-        assert_eq!(cmd.chain.chain, chain.chain);
-        assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
-        assert_eq!(
-            cmd.chain.paris_block_and_final_difficulty,
-            chain.paris_block_and_final_difficulty
-        );
-        assert_eq!(cmd.chain.hardforks, chain.hardforks);
-
-        assert!(cmd.rpc.http);
-        assert!(cmd.network.discovery.disable_discovery);
-
-        assert!(cmd.dev.dev);
-    }
-
-    #[test]
-    fn parse_instance() {
-        let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
-        cmd.adjust_instance_ports();
-        cmd.network.port = Some(DEFAULT_DISCOVERY_PORT + cmd.instance - 1);
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8551);
-        assert_eq!(cmd.rpc.http_port, 8545);
-        assert_eq!(cmd.rpc.ws_port, 8546);
-        // check network listening port number
-        assert_eq!(cmd.network.port.unwrap(), 30303);
-
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "2"]);
-        cmd.adjust_instance_ports();
-        cmd.network.port = Some(DEFAULT_DISCOVERY_PORT + cmd.instance - 1);
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8651);
-        assert_eq!(cmd.rpc.http_port, 8544);
-        assert_eq!(cmd.rpc.ws_port, 8548);
-        // check network listening port number
-        assert_eq!(cmd.network.port.unwrap(), 30304);
-
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "3"]);
-        cmd.adjust_instance_ports();
-        cmd.network.port = Some(DEFAULT_DISCOVERY_PORT + cmd.instance - 1);
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8751);
-        assert_eq!(cmd.rpc.http_port, 8543);
-        assert_eq!(cmd.rpc.ws_port, 8550);
-        // check network listening port number
-        assert_eq!(cmd.network.port.unwrap(), 30305);
     }
 }
