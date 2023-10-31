@@ -758,6 +758,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn load_network_config(
         &self,
         config: &Config,
@@ -789,7 +790,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                     None => DEFAULT_DISCOVERY_PORT + self.instance - 1,
                 },
             )))
-            .build(ProviderFactory::new(db, self.chain.clone()))
+            .build_with_block_import(ProviderFactory::new(db, self.chain.clone()), block_import)
     }
 
     #[allow(clippy::too_many_arguments)]

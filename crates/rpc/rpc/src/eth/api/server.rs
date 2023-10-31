@@ -9,7 +9,6 @@ use crate::{
     },
     result::{internal_rpc_err, ToRpcResult},
 };
-use futures::TryFutureExt;
 use jsonrpsee::core::RpcResult as Result;
 use reth_network_api::NetworkInfo;
 use reth_primitives::{

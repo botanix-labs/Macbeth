@@ -78,23 +78,29 @@ impl BlockImport for ProofOfStakeBlockImport {
 #[non_exhaustive]
 pub struct ProofOfAuthorityBlockImport<C> {
     queue: VecDeque<(PeerId, NewBlockMessage)>,
-    consensus: C,
+    // TODO(networking) Maybe use Concensus, maybe not. Still not sure how this should be coded
+    _consensus: C,
 }
 
 impl<C> ProofOfAuthorityBlockImport<C> {
-    pub fn new(consensus: C) -> Self {
-        Self { queue: VecDeque::new(), consensus }
+    /// Creates Proof of Authority Block Import with the provided consensus mechanism
+    pub fn new(_consensus: C) -> Self {
+        Self { queue: VecDeque::new(), _consensus }
     }
 
-    fn validate_header(&mut self, header: Header) -> Result<(), ConsensusError> {
+    /// Vaidates a header on block import
+    fn validate_header(&mut self, _header: Header) -> Result<(), ConsensusError> {
+        // TODO (networking) This will need to be updated with more checks
         Ok(())
     }
 
+    /// Validates a block on block import
     fn validate_new_block(&mut self, block: Arc<NewBlock>) -> Result<(), ConsensusError> {
         if block.td != DIFF_INTURN && block.td != DIFF_NOTURN && block.td != DIFF_NOVOTE {
             return Err(ConsensusError::AuthorityDifficultyInvalid)
         }
         self.validate_header(block.block.header.clone())?;
+        // TODO (networking) This will need to be updated with more checks
         Ok(())
     }
 }
@@ -107,12 +113,12 @@ where
         self.queue.push_back((peer_id, incoming_block));
     }
 
-    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
+    fn poll(&mut self, _cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
         if let Some(pair) = self.queue.pop_front() {
             let block = pair.1.block.clone();
             let result = self
                 .validate_new_block(block)
-                .map_err(|e| BlockImportError::Consensus(e))
+                .map_err(BlockImportError::Consensus)
                 .map(|_| BlockValidation::ValidHeader { block: pair.1.clone() });
             
             return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
