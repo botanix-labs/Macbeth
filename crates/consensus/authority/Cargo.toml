@@ -1,5 +1,5 @@
 [package]
-name = "authority-consensus"
+name = "reth-authority-consensus"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
