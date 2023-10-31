@@ -7,15 +7,22 @@ use reth_primitives::{
     Header,
 };
 
-/// Repersenting a vote to add or remove an authority
+/// Represents a vote to add or remove an authority.
 #[derive(Debug, Clone)]
 pub enum Vote {
     Add,
     Remove,
 }
 
+/// Tries to convert a u64 value to a Vote.
+/// * `value` - The u64 value to convert.
+///
+/// # Errors
+///
+/// Returns an error if the u64 value is not valid for an EIP225 Authority Vote.
 impl TryFrom<u64> for Vote {
     type Error = &'static str;
+
     fn try_from(value: u64) -> Result<Self, Self::Error> {
         match value {
             NONCE_AUTH => Ok(Vote::Add),
@@ -42,6 +49,10 @@ impl AuthorityVote {
         }
         self.votes.insert(authority_voting, vote);
     }
+
+    pub fn contains(&self, authority: secp256k1::PublicKey) -> bool {
+        self.votes.contains_key(&authority)
+    }
 }
 
 /// Utility struct to keep track of votes for a epoch
@@ -50,12 +61,19 @@ pub struct AuthorityVoteCollection {
     /// Votes for this epoch
     pub votes: Vec<AuthorityVote>,
     /// Starting of epoch
-    pub epoch_start_block_height: u64,  
+    pub epoch_start_block_height: u64,
 }
 
 impl AuthorityVoteCollection {
-    pub fn vote_for(&self, authority_voting: secp256k1::PublicKey, vote: Vote, authority_vote_for: secp256k1::PublicKey) {
-        if let Some(vote) = self.votes.iter().find(|vote: &&AuthorityVote| vote.authority == authority_vote_for) {
+    pub fn vote_for(
+        &self,
+        authority_voting: secp256k1::PublicKey,
+        vote: Vote,
+        authority_vote_for: secp256k1::PublicKey,
+    ) {
+        if let Some(vote) =
+            self.votes.iter().find(|vote: &&AuthorityVote| vote.authority == authority_vote_for)
+        {
             vote.add_vote(authority_voting, vote);
         } else {
             let mut votes = HashMap::new();
@@ -65,6 +83,7 @@ impl AuthorityVoteCollection {
     }
 }
 
+#[derive(Debug)]
 pub enum GetVotesError {
     FailedToDeserializeBlockHeaderExtraData(ExtraDataHeaderDeserialzeError),
     FailedToRecoverAuthority(secp256k1::Error),
@@ -152,5 +171,28 @@ pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
         Vote::Add
     } else {
         Vote::Remove
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vote_try_from() {
+        assert_eq!(Vote::try_from(NONCE_AUTH), Ok(Vote::Add));
+        assert_eq!(Vote::try_from(NONCE_DROP), Ok(Vote::Remove));
+        assert_eq!(Vote::try_from(0), Err("Invalid u64 value for EIP225 Authority Vote"));
+    }
+
+    #[test]
+    fn test_get_outcome_of_votes() {
+        let mut votes = HashMap::new();
+        votes.insert(Authority::new([0u8; 32]), Vote::Add);
+        votes.insert(Authority::new([1u8; 32]), Vote::Add);
+        votes.insert(Authority::new([2u8; 32]), Vote::Remove);
+        let authority_vote = AuthorityVote { authority: Authority::new([3u8; 32]), votes };
+        assert_eq!(get_outcome_of_votes(authority_vote), Vote::Add);
+
     }
 }

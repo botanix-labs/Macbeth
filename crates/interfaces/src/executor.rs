@@ -26,6 +26,8 @@ pub enum BlockValidationError {
     MissingTotalDifficulty { hash: H256 },
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
+    #[error("Invalid Mint contract invocation")]
+    InvalidExtraData,
 }
 
 /// BlockExecutor Errors
