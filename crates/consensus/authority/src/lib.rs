@@ -229,6 +229,7 @@ impl StorageInner {
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
+        bitcoin_block_hash: &bitcoin::hash_types::BlockHash,
     ) -> Result<Header, BlockExecutionError> {
         // check previous block for base fee
         let base_fee_per_gas = self
@@ -265,7 +266,12 @@ impl StorageInner {
         // Serialize the header without signature
         // TODO signing list should come from prev blocl header
         let extra_header_content_no_signature =
-            ExtraDataHeader::new(0u32, None, vec![], authority_to_vote_on);
+            ExtraDataHeader::new(
+                0u32, 
+                None, 
+                vec![], 
+                authority_to_vote_on,
+            bitcoin_block_hash);
         header.extra_data =
             Bytes::from(extra_header_content_no_signature.serialize_without_signature());
 
