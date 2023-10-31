@@ -18,7 +18,6 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     client: Client,
     consensus: AuthorityConsensus,
     pool: Pool,
-    mode: MiningMode,
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
