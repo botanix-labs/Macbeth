@@ -22,14 +22,28 @@ pub struct EpochManager {
 }
 
 impl EpochManager {
-    pub fn new(storage: Storage, network: NetworkHandle) -> Self {
+    pub fn new(public_key: [u8; 32], storage: Storage, network: NetworkHandle) -> Self {
         // get the header for the best known block
         let header = storage.headers.get(&storage.best_block);
 
         if header.extra_data.len() > 97 {
-            //TODO: handle when there are signers in the `extra_data` field
+            let signature = &header.extra_data[header.extra_data.len() - 65..];
+            let signer_slice = &header.extra_data[32..header.extradata.len() - 65];
+            let extra = &header.extra_data[0..32];
+
+            self.storage = storage;
+            // `signer_count` = `signer_slice % 32`
+            self.signer_count = &signer_slice.len() / 32;
+
+            // `signer_limit` = floor(signer_count / 2) + 1
+            self.signer_limit = (self.signer_count / 2) + 1;
+
+            self.signer_index = &signer_slice.chunks().position(|&x| x == public_key);
+
+            self.block_number = storage.best_block ;
         } else {
             // TODO: handle when there are no signers
+            // NOTE: this shouldn't be a case unless genesis config is setup incorrectly
             todo!()
         }
     }
