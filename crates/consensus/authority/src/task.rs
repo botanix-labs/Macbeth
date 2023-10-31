@@ -36,8 +36,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The client used to interact with the state
     client: Client,
     /// The active epoch
-    // TODO(armins)
-    // epoch: EpochManager,
+    epoch: EpochManager,
     /// Single active future that inserts a new block into `storage`
     insert_task: Option<BoxFuture<'static, Option<UnboundedReceiverStream<PipelineEvent>>>>,
     /// Shared storage to insert new blocks
