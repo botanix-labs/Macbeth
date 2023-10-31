@@ -27,12 +27,11 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{
-        ALLOWED_FUTURE_BLOCK_TIME_SECONDS, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS,
-        ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
+        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
     },
-    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
-    Chain, ChainSpec, Hardfork, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
-    TransactionSigned, EMPTY_OMMER_ROOT, H256, U256,
+    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, ChainSpec,
+    Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT, H256,
+    U256,
 };
 use reth_provider::{PostState, StateProvider};
 use reth_revm::executor::Executor;
@@ -42,7 +41,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use voting::{AuthorityVote, Vote, AuthorityVoteCollection};
+use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
@@ -378,7 +377,16 @@ impl StorageInner {
 
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
 
-        // TODO check if the new header includes any votes and add to storage
+        // fill in the rest of the fields
+        let header = self.complete_header(header, &post_state, executor, gas_used);
+
+        // TODO(armins) check if the authority being voted on has staked in the staking contract
+        // TODO(armins) check if withdrawl is valid
+
+        validate_header_extradata(&header).map_err(|e| {
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData())
+        })?;
+
         if vote.is_some() {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.expect("authority to vote on").0;
@@ -402,11 +410,6 @@ impl StorageInner {
             self.authority_votes.vote_for(&sk.public_key(secp), vote.1, vote.0);
             trace!(target: "consensus::authority", vote, "casted vote");
         }
-        // TODO(armins) check if the authority being voted on has staked in the staking contract
-        // TODO(armins) check if withdrawl is valid
-
-        // fill in the rest of the fields
-        let header = self.complete_header(header, &post_state, executor, gas_used);
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
 
