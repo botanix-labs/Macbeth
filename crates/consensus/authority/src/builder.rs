@@ -1,14 +1,20 @@
+use std::sync::Arc;
+
 use crate::AuthorityConsensus;
+use client::BtcServerClient;
+use reth_beacon_consensus::BeaconEngineMessage;
 use reth_primitives::ChainSpec;
-use reth_provider::{BlockReaderIdExt, PostState, StateProvider};
+use reth_provider::{BlockReaderIdExt, PostState, StateProvider, CanonStateNotificationSender};
+use reth_transaction_pool::TransactionPool;
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use crate::StorageInner;
+use crate::Storage;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
     client: Client,
     consensus: AuthorityConsensus,
     pool: Pool,
-    mode: MiningMode,
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
@@ -28,7 +34,6 @@ where
         pool: Pool,
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
-        mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
     ) -> Self {
         let latest_header = client
@@ -40,9 +45,8 @@ where
         Self {
             storage: Storage::new(latest_header),
             client,
-            consensus: AutoSealConsensus::new(chain_spec),
+            consensus: AuthorityConsensus::new(chain_spec),
             pool,
-            mode,
             to_engine,
             canon_state_notification,
             btc_server,
@@ -50,13 +54,12 @@ where
     }
 
     #[track_caller]
-    pub fn build(self) -> (AuthorityConsensus, MiningTask<Client, Pool>) {
+    pub fn build(self) -> AuthorityConsensus {
         let Self {
             btc_server,
             client,
             consensus,
             pool,
-            mode,
             storage,
             to_engine,
             canon_state_notification,
@@ -64,11 +67,6 @@ where
 
         //TODO: instantiate a new mining task
 
-        (consensus)
+        consensus
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Storage {
-    inner: Arc<RwLock<StorageInner>>,
 }

@@ -205,7 +205,6 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         genesis_hash: None,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         fork_timestamps: ForkTimestamps::default().shanghai(0),
-        // TODO set hardfork configs
         hardforks: BTreeMap::from([
             (Hardfork::Frontier, ForkCondition::Block(0)),
             (Hardfork::Homestead, ForkCondition::Block(0)),
