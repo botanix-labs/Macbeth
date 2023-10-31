@@ -282,7 +282,7 @@ impl StorageInner {
         let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
         let extra_data_header_with_signature =
-            ExtraDataHeader::new(0u32, Some(signature), vec![], authority_to_vote_on);
+            ExtraDataHeader::new(0u32, Some(signature), vec![], authority_to_vote_on, bitcoin_block_hash);
         header.extra_data =
             Bytes::from(extra_data_header_with_signature.serialize().map_err(|_e| {
                 BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
@@ -363,8 +363,9 @@ impl StorageInner {
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
+        bitcoin_block_hash: &bitcoin::hash_types::BlockHash,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
-        let header = self.build_header_template(&transactions, chain_spec, vote, sk, secp)?;
+        let header = self.build_header_template(&transactions, chain_spec, vote, sk, secp, bitcoin_block_hash)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
