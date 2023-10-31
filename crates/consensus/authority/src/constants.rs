@@ -44,3 +44,9 @@ impl PerBlockConstants {
         Self { inner: Arc::new(RwLock::new(constants))}
     }
 }
+
+impl PerBlockConstantsInner {
+    pub(crate) fn new_block(&mut self, mut header: Header) {
+        header.number = self.best_block + 1
+    }
+}
