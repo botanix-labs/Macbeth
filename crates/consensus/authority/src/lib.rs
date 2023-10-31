@@ -54,6 +54,10 @@ pub use builder::AuthorityConsensusBuilder;
 mod builder;
 pub use builder::AuthorityConsensusBuilder;
 
+mod storage;
+
+mod epoch_manager;
+
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.
