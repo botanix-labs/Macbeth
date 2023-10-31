@@ -6,6 +6,7 @@ pub enum CreateSigHashError {
     
 }
 
+
 #[derive(Debug, Error)]
 pub enum StorageAccessError {
     #[error("Failed to access staking contract mapping storage slot")]
@@ -13,10 +14,10 @@ pub enum StorageAccessError {
 }
 
 /// Create sighash for authority to sign
-pub fn create_authority_sighash(header: &Header, extra_data: &ExtraDataHeader) -> Result<H256, CreateSigHashError> {
-    header.extra_data = extra_data.serialize_without_signature().as_slice();
+pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
+    header.extra_data = Bytes::from(extra_data.serialize_without_signature().as_slice());
 
-    Ok(header.hash_slow())
+    header.hash_slow()
 }
 
 /// Read staker balance from staking contract storage
