@@ -271,7 +271,7 @@ impl StorageInner {
                 None, 
                 vec![], 
                 authority_to_vote_on,
-            bitcoin_block_hash);
+                bitcoin_block_hash);
         header.extra_data =
             Bytes::from(extra_header_content_no_signature.serialize_without_signature());
 
