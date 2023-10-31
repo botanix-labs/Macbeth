@@ -76,6 +76,8 @@ pub enum BlockValidationError {
     },
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
+    #[error("Invalid Mint contract invocation")]
+    InvalidExtraData,
 }
 
 /// BlockExecutor Errors
