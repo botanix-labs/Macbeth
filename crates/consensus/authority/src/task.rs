@@ -30,7 +30,13 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The client used to interact with the state
     client: Client,
     /// The active epoch
+<<<<<<< HEAD
     epoch_manager: EpochManager,
+=======
+    epoch: EpochManager,
+    /// Single active future that inserts a new block into `storage`
+    insert_task: Option<BoxFuture<'static, Option<UnboundedReceiverStream<PipelineEvent>>>>,
+>>>>>>> 8c08932fe (WIP: main task)
     /// Shared storage to insert new blocks
     storage: Storage,
     /// Pool where transactions are stored
