@@ -395,7 +395,16 @@ impl StorageInner {
 
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
 
-        // TODO check if the new header includes any votes and add to storage
+        // fill in the rest of the fields
+        let header = self.complete_header(header, &post_state, executor, gas_used);
+
+        // TODO(armins) check if the authority being voted on has staked in the staking contract
+        // TODO(armins) check if withdrawl is valid
+
+        validate_header_extradata(&header).map_err(|e| {
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData())
+        })?;
+
         if vote.is_some() {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.expect("authority to vote on").0;
@@ -419,11 +428,6 @@ impl StorageInner {
             self.authority_votes.vote_for(&sk.public_key(secp), vote.1, vote.0);
             trace!(target: "consensus::authority", vote, "casted vote");
         }
-        // TODO(armins) check if the authority being voted on has staked in the staking contract
-        // TODO(armins) check if withdrawl is valid
-
-        // fill in the rest of the fields
-        let header = self.complete_header(header, &post_state, executor, gas_used);
 
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
