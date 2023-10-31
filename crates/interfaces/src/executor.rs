@@ -76,8 +76,10 @@ pub enum BlockValidationError {
     },
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
-    #[error("Invalid Mint contract invocation")]
+    #[error("Invalid extra header")]
     InvalidExtraData,
+    #[error("Failed to serialize extra header")]
+    ExtraDataSerializeError,
 }
 
 /// BlockExecutor Errors
