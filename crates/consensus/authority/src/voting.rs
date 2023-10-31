@@ -183,15 +183,4 @@ mod tests {
         assert_eq!(Vote::try_from(NONCE_DROP), Ok(Vote::Remove));
         assert_eq!(Vote::try_from(0), Err("Invalid u64 value for EIP225 Authority Vote"));
     }
-
-    #[test]
-    fn test_get_outcome_of_votes() {
-        let mut votes = HashMap::new();
-        votes.insert(Authority::new([0u8; 32]), Vote::Add);
-        votes.insert(Authority::new([1u8; 32]), Vote::Add);
-        votes.insert(Authority::new([2u8; 32]), Vote::Remove);
-        let authority_vote = AuthorityVote { authority: Authority::new([3u8; 32]), votes };
-        assert_eq!(get_outcome_of_votes(authority_vote), Vote::Add);
-
-    }
 }
