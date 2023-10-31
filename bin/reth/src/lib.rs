@@ -23,6 +23,7 @@
 //! - `min-debug-logs`: Disables all logs below `debug` level.
 //! - `min-trace-logs`: Disables all logs below `trace` level.
 
+pub mod poa;
 pub mod args;
 pub mod chain;
 pub mod cli;
