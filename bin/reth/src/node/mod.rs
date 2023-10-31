@@ -101,7 +101,7 @@ use lazy_static::lazy_static;
 pub mod cl_events;
 pub mod events;
 
-/// Root most secp instance. All uses of secp will import this one
+// Root most secp instance. All uses of secp will import this one
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
