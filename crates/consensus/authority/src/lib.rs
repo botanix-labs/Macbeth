@@ -49,10 +49,10 @@ mod utils;
 mod voting;
 mod task;
 mod client;
+mod constants;
+
 pub use builder::AuthorityConsensusBuilder;
 
-mod builder;
-pub use builder::AuthorityConsensusBuilder;
 
 mod storage;
 
