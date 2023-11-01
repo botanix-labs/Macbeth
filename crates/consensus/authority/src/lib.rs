@@ -47,6 +47,8 @@ use tracing::{trace, warn};
 mod builder;
 mod utils;
 mod voting;
+mod task;
+mod client;
 pub use builder::AuthorityConsensusBuilder;
 
 /// Ethereum authority consensus
