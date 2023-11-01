@@ -4,7 +4,7 @@ use url::Url;
 
 use crate::{
     client::AuthorityClient, task::BlockProductionTask, voting::AuthorityVote, AuthorityConsensus,
-    Storage,
+    Storage, epoch_manager::EpochManager,
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -27,6 +27,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
     vote: Option<AuthorityVote>,
+    epoch_manager: EpochManager,
 }
 
 // ===== impl AuthorityConsensusBuilder =====
@@ -48,7 +49,7 @@ where
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected   
         sk: secp256k1::SecretKey,
-        vote: Option<AuthorityVote>,
+        vote: Option<AuthorityVote>
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -56,8 +57,15 @@ where
             .flatten()
             .unwrap_or_else(|| chain_spec.sealed_genesis_header());
 
+        // Instantiate storage
+        // TODO(armins) this should be wrapped in arc
+        let storage = Storage::new(latest_header);
+
+        // Instantiate epoch manager
+        let epoch_manager = EpochManager::naive_inverval(storage.clone());
+
         Self {
-            storage: Storage::new(latest_header),
+            storage,
             client,
             consensus: AuthorityConsensus::new(chain_spec),
             pool,
@@ -69,6 +77,7 @@ where
             secp,
             sk,
             vote,
+            epoch_manager
         }
     }
 
@@ -87,6 +96,7 @@ where
             secp,
             sk,
             vote,
+            epoch_manager,
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -102,6 +112,7 @@ where
             bitcoin_block_source_address,
             secp,
             sk,
+            epoch_manager,
         );
 
         (consensus, auth_client, task)

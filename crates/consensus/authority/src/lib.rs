@@ -45,18 +45,14 @@ use voting::{AuthorityVoteCollection, Vote};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
 mod builder;
-mod utils;
-mod voting;
-mod task;
 mod client;
 mod constants;
+mod epoch_manager;
+mod task;
+mod utils;
+mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
-
-
-mod storage;
-
-mod epoch_manager;
 
 /// Ethereum authority consensus
 ///
@@ -160,7 +156,7 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
 /// In memory storage
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Storage {
-    inner: Arc<RwLock<StorageInner>>,
+    pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
 // == impl Storage ===
