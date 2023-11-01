@@ -5,7 +5,7 @@ use revm_primitives::U256;
 pub const EPOCH_LENGTH: u64 = 30;
 
 /// Minimum difference between two consecutive block’s timestamps.
-pub const BLOCK_PERIOD: u64 = 1000;
+pub const BLOCK_PERIOD: u64 = 15;
 
 /// Magic nonce number 0xffffffffffffffff to vote on adding a new signer. Used in PoA
 pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
