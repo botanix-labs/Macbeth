@@ -1,12 +1,10 @@
-//! Main node command
+//! Poa node executable
 //!
-//! Starts the client
+//! Starts the poa client
 use crate::{
     args::{
-        get_secret_key,
-        utils::{genesis_value_parser, parse_socket_address},
-        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
-        RpcServerArgs, TxPoolArgs,
+        get_secret_key, utils::parse_socket_address, DatabaseArgs, DebugArgs, NetworkArgs,
+        PayloadBuilderArgs, PruningArgs, RpcServerArgs, TxPoolArgs,
     },
     cli::{
         config::RethRpcConfig,
@@ -28,7 +26,7 @@ use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
 use hex::FromHex;
 use reth_authority_consensus::{AuthorityConsensus, AuthorityConsensusBuilder};
 
-use reth_beacon_consensus::{BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
+use reth_beacon_consensus::{BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
 };
@@ -43,7 +41,6 @@ use reth_interfaces::{
     consensus::Consensus,
     p2p::{
         bodies::{client::BodiesClient, downloader::BodyDownloader},
-        either::EitherDownloader,
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
 };
@@ -53,7 +50,7 @@ use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
     kzg::KzgSettings,
     stage::StageId,
-    BlockHashOrNumber, BlockNumber, ChainSpec, DisplayHardforks, Head, SealedHeader, H256, BOTANIX_TESTNET,
+    BlockHashOrNumber, BlockNumber, ChainSpec, Head, SealedHeader, BOTANIX_TESTNET, H256,
 };
 use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, BlockReader, CanonStateSubscriptions,
@@ -88,19 +85,12 @@ use tracing::*;
 
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
-use lazy_static::lazy_static;
 
-use crate::node::cl_events;
 use crate::node::events;
-
-// Root most secp instance. All uses of secp will import this one
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 /// Start the node
 #[derive(Debug, Parser)]
-pub struct NodeCommand<Ext: RethCliExt = ()> {
+pub struct PoaNodeCommand<Ext: RethCliExt = ()> {
     /// The path to the data dir for all reth files and subdirectories.
     ///
     /// Defaults to the OS-specific data directory:
@@ -172,16 +162,11 @@ pub struct NodeCommand<Ext: RethCliExt = ()> {
     /// All pruning related arguments
     #[clap(flatten)]
     pub pruning: PruningArgs,
-
-
-    /// The path to the POA secret key file.
-    #[arg(long, value_name = "SECRET_KEY_DIR", verbatim_doc_comment)]
-    pub secret_key_dir: Option<PathBuf>,
 }
 
-impl<Ext: RethCliExt> NodeCommand<Ext> {
+impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
     /// Replaces the extension of the node command
-    pub fn with_ext<E: RethCliExt>(self, ext: E::Node) -> NodeCommand<E> {
+    pub fn with_ext<E: RethCliExt>(self, ext: E::Node) -> PoaNodeCommand<E> {
         let Self {
             datadir,
             config,
@@ -194,11 +179,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             builder,
             debug,
             db,
-            secret_key_dir,
             pruning,
             ..
         } = self;
-        NodeCommand {
+        PoaNodeCommand {
             datadir,
             config,
             metrics,
@@ -212,7 +196,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             db,
             ext,
             pruning,
-            secret_key_dir,
         }
     }
 
@@ -225,15 +208,17 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         raise_fd_limit();
 
         // add network name to data dir
-        let botanix_chain_spec = BOTANIX_TESTNET;
+        let botanix_chain_spec = BOTANIX_TESTNET.clone();
         let data_dir = self.datadir.unwrap_or_chain_default(botanix_chain_spec.clone().chain);
-        let secret_key_dir = self.secret_key_dir.clone().expect("secret key dir");
         let config_path = self.config.clone().unwrap_or(data_dir.config_path());
 
         let mut config: Config = self.load_config(config_path.clone())?;
         // Read the trusted setup file
         // TODO this should be moved to HSM abstraction
-        let secret_key = self.load_secret_key(secret_key_dir)?;
+        let network_secret_path =
+            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
+        let secret_key = get_secret_key(&network_secret_path)?;
 
         let prune_config =
             self.pruning.prune_config(Arc::clone(&botanix_chain_spec))?.or(config.prune.clone());
@@ -291,7 +276,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         self.init_trusted_nodes(&mut config);
 
-
         // Start mentrics listener task
         debug!(target: "reth::cli", "Spawning metrics listener task");
         let (metrics_tx, metrics_rx) = unbounded_channel();
@@ -324,10 +308,15 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         let factory = ProviderFactory::new(Arc::clone(&db), Arc::clone(&botanix_chain_spec));
         let blockchain_db = BlockchainProvider::new(factory, blockchain_tree.clone())?;
         let blob_store = InMemoryBlobStore::default();
-        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&botanix_chain_spec))
-            .kzg_settings(self.kzg_settings()?)
-            .with_additional_tasks(1)
-            .build_with_tasks(blockchain_db.clone(), ctx.task_executor.clone(), blob_store.clone());
+        let validator =
+            TransactionValidationTaskExecutor::eth_builder(Arc::clone(&botanix_chain_spec))
+                .kzg_settings(self.kzg_settings()?)
+                .with_additional_tasks(1)
+                .build_with_tasks(
+                    blockchain_db.clone(),
+                    ctx.task_executor.clone(),
+                    blob_store.clone(),
+                );
 
         let transaction_pool =
             reth_transaction_pool::Pool::eth_pool(validator, blob_store, self.txpool.pool_config());
@@ -352,12 +341,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         }
 
         info!(target: "reth::cli", "Connecting to P2P network");
-        let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
-        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
-        let secret_key = get_secret_key(&network_secret_path)?;
+
         let default_peers_path = data_dir.known_peers_path();
-        let head = self.lookup_head(Arc::clone(&db), &botanix_chain_spec).expect("the head block is missing");
+        let head = self
+            .lookup_head(Arc::clone(&db), &botanix_chain_spec)
+            .expect("the head block is missing");
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -365,7 +353,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             head,
             secret_key,
             default_peers_path.clone(),
-            &botanix_chain_spec
+            &botanix_chain_spec,
         );
         let network = self
             .start_network(
@@ -398,53 +386,42 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             None
         };
 
+        let authority_consensus: Arc<dyn Consensus> =
+            Arc::new(AuthorityConsensus::new(botanix_chain_spec.clone()));
         // Configure the pipeline
-        let x = AuthorityConsensusBuilder::new(
+        let (_, authority_client, mut block_production_task) = AuthorityConsensusBuilder::new(
             Arc::clone(&botanix_chain_spec),
-            network_client.clone(),
+            blockchain_db.clone(),
             transaction_pool.clone(),
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
             btc_server_client.clone(),
             bitcoin_block_headers_clone,
             self.rpc.btc_block_source.clone(),
-        );
+            secp256k1::Secp256k1::new(),
+            secret_key,
+            None,
+        )
+        .build();
 
-        // TODO change this for authority epoch manager consensus
-        let (mut pipeline, client) = {
-            let (_, client, mut task) = AutoSealBuilder::new(
-                Arc::clone(&self.chain),
-                blockchain_db.clone(),
-                transaction_pool.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender,
-                mining_mode,
-                btc_server_client,
-                bitcoin_block_headers_clone,
-                self.rpc.btc_block_source.clone(),
+        let mut pipeline = self
+            .build_networked_pipeline(
+                &config,
+                authority_client.clone(),
+                Arc::clone(&authority_consensus),
+                db.clone(),
+                &ctx.task_executor,
+                metrics_tx,
+                prune_config.clone(),
+                max_block,
+                &botanix_chain_spec.clone(),
             )
-            .build();
+            .await?;
 
-            let mut pipeline = self
-                .build_networked_pipeline(
-                    &config,
-                    client.clone(),
-                    Arc::clone(&consensus),
-                    db.clone(),
-                    &ctx.task_executor,
-                    metrics_tx,
-                    prune_config.clone(),
-                    max_block,
-                )
-                .await?;
-
-            let pipeline_events = pipeline.events();
-            task.set_pipeline_events(pipeline_events);
-            debug!(target: "reth::cli", "Spawning auto mine task");
-            ctx.task_executor.spawn(Box::pin(task));
-
-            (pipeline, EitherDownloader::Left(client))
-        } 
+        let pipeline_events = pipeline.events();
+        block_production_task.set_pipeline_events(pipeline_events);
+        debug!(target: "reth::cli", "Spawning block production task task");
+        ctx.task_executor.spawn(Box::pin(block_production_task));
 
         let pipeline_events = pipeline.events();
 
@@ -474,7 +451,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         // Configure the consensus engine
         let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
-            client,
+            authority_client,
             pipeline,
             blockchain_db.clone(),
             Box::new(ctx.task_executor.clone()),
@@ -572,7 +549,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         metrics_tx: MetricEventsSender,
         prune_config: Option<PruneConfig>,
         max_block: Option<BlockNumber>,
-        chain_spec: &Arc<ChainSpec>
+        chain_spec: &Arc<ChainSpec>,
     ) -> eyre::Result<Pipeline<DB>>
     where
         DB: Database + Unpin + Clone + 'static,
@@ -675,7 +652,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         Ok(handle)
     }
 
-    fn lookup_head(&self, db: Arc<DatabaseEnv>, chain_spec: &Arc<ChainSpec>) -> Result<Head, reth_interfaces::Error> {
+    fn lookup_head(
+        &self,
+        db: Arc<DatabaseEnv>,
+        chain_spec: &Arc<ChainSpec>,
+    ) -> Result<Head, reth_interfaces::Error> {
         let factory = ProviderFactory::new(db, chain_spec.clone());
         let provider = factory.provider()?;
 
@@ -781,7 +762,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         head: Head,
         secret_key: SecretKey,
         default_peers_path: PathBuf,
-        chain_spec: &Arc<ChainSpec>
+        chain_spec: &Arc<ChainSpec>,
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
             .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
