@@ -53,5 +53,11 @@ pub fn read_staker_balance(provider: StateProvider, staker_address: Address) -> 
         StateProviderError::StorageAccessError("Failed to access staking contract mapping storage slot");
     })?;
     
+
+    let storage_key = keccak256(payload.into_iter().flatten().collect::<Vec<u8>>());
+    let balance = provider
+        .storage(staking_contract_address, storage_key)
+        .map_err(|_e| StorageAccessError::FailedAccess("Failed to retrieve storage"))?.unwrap();
+
     Ok(balance)
 }
