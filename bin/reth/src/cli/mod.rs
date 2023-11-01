@@ -8,7 +8,7 @@ use crate::{
     node, p2p, recover,
     runner::CliRunner,
     stage, test_vectors,
-    version::{LONG_VERSION, SHORT_VERSION},
+    version::{LONG_VERSION, SHORT_VERSION}, poa,
 };
 use clap::{value_parser, ArgAction, Args, Parser, Subcommand, ValueEnum};
 use reth_primitives::ChainSpec;
@@ -86,6 +86,7 @@ impl<Ext: RethCliExt> Cli<Ext> {
         let runner = CliRunner;
         match self.command {
             Commands::Node(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
+            Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
             Commands::Init(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::Import(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::Db(command) => runner.run_blocking_until_ctrl_c(command.execute()),
@@ -135,6 +136,9 @@ pub enum Commands<Ext: RethCliExt = ()> {
     /// Start the node
     #[command(name = "node")]
     Node(node::NodeCommand<Ext>),
+    /// Start the POA node
+    #[command(name = "poa")]
+    Poa(poa::PoaNodeCommand<Ext>),
     /// Initialize the database from a genesis file.
     #[command(name = "init")]
     Init(chain::InitCommand),
