@@ -4,6 +4,9 @@ use crate::{
     revm_primitives::{address, b256},
     Address, B256, U256,
 };
+use crate::{H256, U256};
+use ethers_core::types::H160;
+use hex_literal::hex;
 use std::time::Duration;
 
 /// [EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#parameters) constants.
@@ -195,7 +198,7 @@ pub const SYSTEM_ADDRESS: Address = address!("ffffffffffffffffffffffffffffffffff
 pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e084575b334";
 
 /// Storage slot index of list of stakers
-pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u8 = 1;
+pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u64 = 1u64;
 
 #[cfg(test)]
 mod tests {

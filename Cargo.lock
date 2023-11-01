@@ -592,7 +592,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
 name = "aurora-engine-modexp"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,8 +602,6 @@ dependencies = [
 ]
 
 [[package]]
-=======
->>>>>>> b148dd2da (fix: misc fixes to dyan fed voting)
 name = "auto_impl"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6274,12 +6271,9 @@ dependencies = [
  "pin-project",
  "pretty_assertions",
  "proptest",
-<<<<<<< HEAD
  "rand 0.8.5",
  "rayon",
-=======
  "reth-authority-consensus",
->>>>>>> b148dd2da (fix: misc fixes to dyan fed voting)
  "reth-auto-seal-consensus",
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
