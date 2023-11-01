@@ -1,6 +1,7 @@
 //! Ethereum protocol-related constants
 
 use crate::{H256, U256};
+use ethers_core::types::H160;
 use hex_literal::hex;
 use std::time::Duration;
 
@@ -141,7 +142,7 @@ pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 pub const STAKING_CONTRACT_ADDRESS: &str = "0xC580e0032B5446fDC45A912C68869b512cc699C7";
 
 /// Storage slot index of list of stakers
-pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u8 = 1;
+pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u64 = 1u64;
 
 #[cfg(test)]
 mod tests {
