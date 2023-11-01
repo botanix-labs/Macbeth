@@ -56,11 +56,10 @@ mod client;
 mod epoch_manager;
 mod task;
 mod voting;
+mod constants;
 
 pub use builder::AuthorityConsensusBuilder;
 
-mod builder;
-pub use builder::AuthorityConsensusBuilder;
 
 mod storage;
 
