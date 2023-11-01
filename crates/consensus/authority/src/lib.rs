@@ -57,13 +57,12 @@ mod epoch_manager;
 mod task;
 mod voting;
 mod constants;
+mod epoch_manager;
+mod task;
+mod utils;
+mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
-
-
-mod storage;
-
-mod epoch_manager;
 
 /// Ethereum authority consensus
 ///
