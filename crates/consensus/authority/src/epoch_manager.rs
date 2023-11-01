@@ -1,30 +1,34 @@
+use reth_primitives::constants::eip225::BLOCK_PERIOD;
+use reth_transaction_pool::{ValidPoolTransaction, TransactionPool};
+use tokio::time::Interval;
+
+use crate::constants;
 use crate::storage::Storage;
 use std::{
-    fmt,
-    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
 };
 
 #[derive(Debug)]
+/// Manages the block production epochs
 pub struct EpochManager {
-    /// access to storage to fetch headers
+    /// Access to storage to fetch headers.
+    // TODO (armins) this should be protected by an Arc.
     storage: Storage,
 
-    /// pollable interval to lock nodes proposing for a min time defined by `BLOCK_PERIOD`
+    /// Pollable interval to lock nodes proposing for a min time defined by `BLOCK_PERIOD`.
     proposal: Interval,
 }
 
 impl EpochManager {
-    pub fn new(storage: Storage) -> Self {
+    pub fn new(&mut self, storage: Storage) -> Self {
         let timestamp = storage.headers.get(&storage.best_block).timestamp;
-        let proposal = Self::calculate_optimal_time_naively(timestamp);
+        let proposal = self.calculate_optimal_time_naively(timestamp);
         Self { storage, proposal }
     }
 
-    fn calculate_optimal_time_naively(timestamp: u64) {
-        self.proposal = tokio::time::interval_at(timestamp, constants::BLOCK_PERIOD);
+    fn calculate_optimal_time_naively(&mut self, timestamp: u64) {
+        self.proposal = tokio::time::interval_at(timestamp, BLOCK_PERIOD);
     }
 
     pub(crate) fn poll<Pool>(

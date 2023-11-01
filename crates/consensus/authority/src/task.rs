@@ -1,4 +1,4 @@
-use crate::Storage;
+use crate::{epoch_manager::{EpochManager, self}, Storage};
 use botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
@@ -36,7 +36,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The client used to interact with the state
     client: Client,
     /// The active epoch
-    epoch: EpochManager,
+    epoch_manager: EpochManager,
     /// Single active future that inserts a new block into `storage`
     insert_task: Option<BoxFuture<'static, Option<UnboundedReceiverStream<PipelineEvent>>>>,
     /// Shared storage to insert new blocks
@@ -77,6 +77,7 @@ impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool> {
         bitcoin_block_source_address: Url,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
+        epoch_manager: EpochManager,
     ) -> Self {
         Self {
             chain_spec,
@@ -93,6 +94,7 @@ impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool> {
             bitcoin_block_source_address,
             secp,
             sk,
+            epoch_manager,
         }
     }
 
@@ -115,16 +117,16 @@ where
 
         // this drives block production
         loop {
-            // TODO this piece needs to get replaced by polling the epoch manager
-            // if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-            //     info!("Adding to the list of transctions, {:?}, {:?}", transactions,
-            // this.queued);     // miner returned a set of transaction that we feed to
-            // the producer     this.queued.push_back(transactions.clone());
-            //     let mining_pool = this.pool.clone();
-            //     mining_pool.remove_transactions(
-            //         transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
-            //     );
-            // }
+            if let Poll::Ready(transactions) = this.epoch_manager.poll(&this.pool, cx) {
+                info!("Adding to the list of transctions, {:?}, {:?}", transactions, this.queued);
+                // miner returned a set of transaction that we feed to
+                // the producer
+                this.queued.push_back(transactions.clone());
+                let mining_pool = this.pool.clone();
+                mining_pool.remove_transactions(
+                    transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
+                );
+            }
 
             // If insert task is not none executinon of async task is on going
             if this.insert_task.is_none() {
