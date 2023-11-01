@@ -51,9 +51,6 @@ mod task;
 mod client;
 pub use builder::AuthorityConsensusBuilder;
 
-mod builder;
-pub use builder::AuthorityConsensusBuilder;
-
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.

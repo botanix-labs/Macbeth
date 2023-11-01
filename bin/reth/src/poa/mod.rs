@@ -355,7 +355,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             default_peers_path.clone(),
             &botanix_chain_spec,
             Box::new(ProofOfAuthorityBlockImport::new(
-                consensus_engine_tx.clone())
+                consensus_engine_tx.clone())),
         );
         let network = self
             .start_network(
