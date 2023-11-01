@@ -8,7 +8,6 @@ pub const EPOCH_LENGTH: u64 = 30000;
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 15;
 
-
 /// Magic nonce number 0xffffffffffffffff to vote on adding a new signer. Used in PoA
 pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
 

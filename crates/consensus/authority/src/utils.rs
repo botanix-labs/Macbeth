@@ -3,8 +3,7 @@ use reth_primitives::{
     constants::{STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX, STAKING_CONTRACT_ADDRESS},
     keccak256, Address, Bytes, Header, H160, H256, U256,
 };
-use reth_provider::{BlockReaderIdExt, StateProvider};
-use reth_revm::precompile::B160;
+use reth_provider::StateProvider;
 
 #[derive(Debug)]
 pub(crate) enum StorageAccessError {
