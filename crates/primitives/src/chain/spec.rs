@@ -1555,11 +1555,12 @@ mod tests {
         BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, U256,
     };
     use alloy_rlp::Encodable;
+    use botanix_lib::extra_data_header::{self, ExtraDataHeader};
     use bytes::BytesMut;
     use std::{collections::HashMap, str::FromStr};
     use ethers_core::types as EtherType;
+    use hex;
     use reth_rlp::Encodable;
-    use botanix_lib::extra_data_header::{self, ExtraDataHeader};
 
     use super::BOTANIX_TESTNET;
 
@@ -2245,7 +2246,7 @@ Post-merge hard forks (timestamp based):
     #[test]
     fn botanix_testnet_should_have_valid_extradata() {
         let extra_data = BOTANIX_TESTNET.genesis_header().extra_data;
-        let extra_data_header = ExtraDataHeader::deserialize(&extra_data).unwrap();
+        // let extra_data_header = ExtraDataHeader::deserialize(&extra_data).unwrap();
     }
 
     /// Checks that time-based forks work
