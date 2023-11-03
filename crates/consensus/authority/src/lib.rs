@@ -44,6 +44,7 @@ use reth_revm::{
 };
 use std::{
     collections::HashMap,
+    f32::consts::E,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -133,6 +134,36 @@ impl AuthorityConsensus {
         if prev_headers.into_iter().any(|prev_header| {
             let prev_signer = utils::recovery_authority(&prev_header);
             prev_signer.is_err() || signer == prev_signer.expect("valid signer")
+        }) {
+            return Err(ConsensusError::SignerLimitReached)
+        }
+        Ok(())
+    }
+}
+
+// POA specific functions
+impl AuthorityConsensus {
+    /// Validates that the number of signers is within the allowed limit.
+    ///
+    /// # Returns
+    /// `Ok(())` if the number of signers is within the allowed limit, otherwise
+    /// returns an error indicating the validation failed.
+    fn validate_signer_limit(
+        &self,
+        header: &SealedHeader,
+        prev_headers: Vec<Header>,
+    ) -> Result<(), ConsensusError> {
+        if prev_headers.len() < SIGNER_LIMIT as usize {
+            return Ok(())
+        }
+
+        let signer = utils::recovery_authority(header)
+            .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+        if prev_headers.into_iter().any(|prev_header| {
+            let prev_signer = utils::recovery_authority(&prev_header)
+                .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+
+            signer == prev_signer
         }) {
             return Err(ConsensusError::SignerLimitReached)
         }
@@ -529,8 +560,11 @@ impl StorageInner {
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
 
-        validate_header_extradata(&header)
-            .map_err(|_e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
+        validate_header_extradata(&header).map_err(|_e| {
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
+
+        // TODO(armins) Validate signer limit
 
         if vote.is_some() {
             let vote = vote.expect("valid vote");
