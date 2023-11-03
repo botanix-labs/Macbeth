@@ -13,7 +13,6 @@ pub(crate) enum StorageAccessError {
 /// Create sighash for authority to sign
 pub(crate) fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
     header.extra_data = Bytes::from(extra_data.serialize_without_signature().as_slice());
-
     header.hash_slow()
 }
 

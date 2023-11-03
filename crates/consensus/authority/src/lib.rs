@@ -166,8 +166,10 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
             &mut header.extra_data.0.to_vec().as_slice(),
         )
-        .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
-
+        .map_err(|e| {
+            info!("Failed to deserialize extra data header {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
         let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_data);
         extra_data.validate_authority_signature(&sig_hash.to_vec()).map_err(|e| {
             info!("Failed to validate authority signature, {:?} ", e);
@@ -528,7 +530,7 @@ impl StorageInner {
         // TODO(armins) check if withdrawl is valid
 
         validate_header_extradata(&header)
-            .map_err(|e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
+            .map_err(|_e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
 
         if vote.is_some() {
             let vote = vote.expect("valid vote");
