@@ -742,20 +742,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         }
     }
 
-    fn load_secret_key(&self, secret_key_path: PathBuf) -> eyre::Result<SecretKey> {
-        let mut file = File::open(secret_key_path)?;
-        // Read the contents of the file into a Vec<u8>
-        let mut hex_data: Vec<_> = Vec::new();
-        file.read_to_end(&mut hex_data)?;
-
-        // Parse the hex data into bytes
-        let secret_bytes = Vec::from_hex(hex_data)?;
-        let sk = secp256k1::SecretKey::from_slice(&secret_bytes)
-            .map_err(|_| eyre::eyre!("Invalid secret key file"))?;
-
-        Ok(sk)
-    }
-
     fn load_network_config(
         &self,
         config: &Config,
