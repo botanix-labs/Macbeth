@@ -251,6 +251,7 @@ impl InsertBlockErrorKind {
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
                     &BlockExecutionError::CannotAddExistingFederationMember => true,
+                    &BlockExecutionError::FailedToDeserializePreviousBlockHeader => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

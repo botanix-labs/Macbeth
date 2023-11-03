@@ -1,11 +1,13 @@
 use reth_primitives::constants::eip225::BLOCK_PERIOD;
-use reth_transaction_pool::{ValidPoolTransaction, TransactionPool};
-use tokio::time::{Interval, Instant};
+use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+use tokio::time::{Instant, Interval};
+use tracing::{debug, info};
 
 use crate::Storage;
 use std::{
     sync::Arc,
-    task::{Context, Poll}, time::Duration,
+    task::{Context, Poll},
+    time::Duration,
 };
 
 #[derive(Debug)]
@@ -14,7 +16,7 @@ use std::{
 /// If the signer is inturn then we broadcast the block
 /// If the signer is not inturn then we wait random amount time
 ///
-/// Blocks will be rejected by consensus if 
+/// Blocks will be rejected by consensus if
 /// 1. The signer is not in the federation
 /// 2. The signer has broadcasted > 1 in SIGNER_LIMIT consecutive blocks
 pub(crate) struct EpochManager {
@@ -24,13 +26,17 @@ pub(crate) struct EpochManager {
 
     /// Pollable interval to lock nodes proposing for a min time defined by `BLOCK_PERIOD`.
     pub(crate) proposal_interval: Interval,
+
+    /// stores whether there are pending transactions (if known)
+    has_pending_txs: Option<bool>,
 }
 
 impl EpochManager {
     pub fn naive_inverval(storage: Storage) -> Self {
-        let start = Instant::now();
-        let proposal_interval = tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD) );
-        Self { storage, proposal_interval }
+        let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
+        let proposal_interval =
+            tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
+        Self { storage, proposal_interval, has_pending_txs: None }
     }
 
     pub(crate) fn poll<Pool>(
@@ -42,9 +48,21 @@ impl EpochManager {
         Pool: TransactionPool,
     {
         if self.proposal_interval.poll_tick(cx).is_ready() {
+            self.proposal_interval.reset();
             println!("Time going off");
+            let transactions =
+                pool.best_transactions().collect::<Vec<_>>();
+            info!("Miner processing txs {:?}", transactions);
+
+            // there are pending transactions if we didn't drain the pool
+            self.has_pending_txs = Some(transactions.len() >= 1);
+
+            if transactions.is_empty() {
+                return Poll::Pending
+            }
+
             // drain the pool
-            return Poll::Ready(pool.best_transactions().collect())
+            return Poll::Ready(transactions)
         }
         Poll::Pending
     }

@@ -43,7 +43,7 @@ use std::{
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{trace, warn};
+use tracing::{trace, warn, info};
 mod builder;
 mod client;
 mod constants;
@@ -90,10 +90,6 @@ impl Consensus for AuthorityConsensus {
         header: &Header,
         total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        if header.difficulty != U256::ZERO {
-            return Err(ConsensusError::TheMergeDifficultyIsNotZero)
-        }
-
         if header.ommers_hash != EMPTY_OMMER_ROOT {
             return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
         }
@@ -114,11 +110,17 @@ impl Consensus for AuthorityConsensus {
 /// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
 /// This must be 32 bytes or fewer; formally Hx.
 fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
-    if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
-        Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
-    } else {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(())
+    }
+    // TODO (armins) calculate worst case max size
+    // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
+    //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
+    // } else
+    
+     {
         // TODO (armins) check that no vote is occuring during an epoch header
-
         // 0. Validate that the block was signed by a federation member
         let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
             header.extra_data.to_vec(),
@@ -132,10 +134,12 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
 
         let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_data);
-
         extra_data
             .validate_authority_signature(&sig_hash.to_vec())
-            .map_err(|_e| ConsensusError::InvalidAuthoritySignature)?;
+            .map_err(|e| {
+                info!("Failed to validate authority signature, {:?} ", e);
+                ConsensusError::InvalidAuthoritySignature
+            })?;
         // 1. Validate that is a federation memeber was added or removed that that actions
         // was signed off by a 2/3 majority of votes
         // This can only happnen during an end of a epoch
@@ -169,8 +173,10 @@ impl Storage {
             best_block: header.number,
             ..Default::default()
         };
-        storage.headers.insert(0, header);
+        storage.headers.insert(header.number, header);
         storage.bodies.insert(best_hash, BlockBody::default());
+        trace!(target: "consensus::authority", storage=storage, "Starting storage");
+
         Self { inner: Arc::new(RwLock::new(storage)) }
     }
 
@@ -246,8 +252,6 @@ impl StorageInner {
         transactions: &Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
-        sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         // check previous block for base fee
         let base_fee_per_gas = self
@@ -277,29 +281,6 @@ impl StorageInner {
             extra_data: Default::default(),
             parent_beacon_block_root: None,
         };
-
-        let authority_to_vote_on =
-            if vote.is_some() { Some(vote.expect("valid vote").0) } else { None };
-
-        // Serialize the header without signature
-        // TODO signing list should come from prev blocl header
-        let extra_header_content_no_signature =
-            ExtraDataHeader::new(0u32, None, vec![], authority_to_vote_on);
-        header.extra_data =
-            Bytes::from(extra_header_content_no_signature.serialize_without_signature());
-
-        let sig_hash = header.hash_slow();
-
-        // Sign the header and append to extra data header
-        // TODO remove unwrap
-        let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
-        let signature = secp.sign_ecdsa_recoverable(&message, sk);
-        let extra_data_header_with_signature =
-            ExtraDataHeader::new(0u32, Some(signature), vec![], authority_to_vote_on);
-        header.extra_data =
-            Bytes::from(extra_data_header_with_signature.serialize().map_err(|_e| {
-                BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
-            })?);
 
         // Add the vote to the header using the nonce field
         if let Some(vote) = vote {
@@ -344,6 +325,10 @@ impl StorageInner {
         post_state: &PostState,
         executor: &mut Executor<DB>,
         gas_used: u64,
+        sk: &secp256k1::SecretKey,
+        secp: &secp256k1::Secp256k1<secp256k1::All>,
+        authorities: &Vec<secp256k1::PublicKey>,
+        authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
     ) -> Header {
         let receipts = post_state.receipts(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -358,9 +343,32 @@ impl StorageInner {
 
         header.gas_used = gas_used;
 
+        let vote_for = if let Some(vote) = authority_to_vote_on {
+            Some(vote.0)
+        } else {
+            None
+        };
+
         // calculate the state root
         let state_root = executor.db().db.0.state_root(post_state.clone()).unwrap();
         header.state_root = state_root;
+
+        // Sign the header
+        // Serialize the header without signature
+        // TODO signing list should come from prev blocl header
+        let extra_header_content_no_signature =
+            ExtraDataHeader::new(0u32, None, authorities.clone(), vote_for);
+
+        let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_header_content_no_signature);
+        // Sign the header and append to extra data header
+        // TODO remove unwrap
+        let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
+        let signature = secp.sign_ecdsa_recoverable(&message, sk);
+        let extra_data_header_with_signature =
+            ExtraDataHeader::new(0u32, Some(signature), authorities.clone(), vote_for);
+        header.extra_data =
+            Bytes::from(extra_data_header_with_signature.serialize().unwrap());
+
         header
     }
 
@@ -377,7 +385,17 @@ impl StorageInner {
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
-        let header = self.build_header_template(&transactions, chain_spec, vote, sk, secp)?;
+        // Retrieve previous block header
+        let prev_header = self.headers.get(&self.best_block).expect("checked empty");
+        let signers = ExtraDataHeader::deserialize(prev_header.extra_data.to_vec())
+            .map_err(|e| {
+                println!("deserialize error {:?}", e);
+                BlockExecutionError::FailedToDeserializePreviousBlockHeader
+            })?
+            .authority_signers;
+
+        let header =
+            self.build_header_template(&transactions, chain_spec, vote)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -395,13 +413,13 @@ impl StorageInner {
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
 
         // fill in the rest of the fields
-        let header = self.complete_header(header, &post_state, executor, gas_used);
+        let header = self.complete_header(header, &post_state, executor, gas_used, sk, secp, &signers, vote);
 
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
 
         validate_header_extradata(&header)
-            .map_err(|e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
+            .map_err(|_e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
 
         if vote.is_some() {
             let vote = vote.expect("valid vote");
