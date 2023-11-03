@@ -43,7 +43,7 @@ pub fn validate_header_standalone(
     // TODO(armins) refactor this to be more readable
     if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
         header.withdrawals_root.is_none() &&
-        chain_spec.chain.id() != 444 &&
+        chain_spec.chain.id() != 3636 &&
         wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing)
