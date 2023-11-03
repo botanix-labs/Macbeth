@@ -47,13 +47,14 @@ impl EpochManager {
     where
         Pool: TransactionPool,
     {
+        // let tip = self.storage.read().await.best_block;
+
         if self.proposal_interval.poll_tick(cx).is_ready() {
             self.proposal_interval.reset();
             println!("Time going off");
             let transactions =
                 pool.best_transactions().collect::<Vec<_>>();
             info!("Miner processing txs {:?}", transactions);
-
             // there are pending transactions if we didn't drain the pool
             self.has_pending_txs = Some(transactions.len() >= 1);
 
