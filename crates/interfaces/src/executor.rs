@@ -130,6 +130,10 @@ pub enum BlockExecutionError {
     #[error("Cannot add and existing federation memeber to the federation")]
     CannotAddExistingFederationMember,
 
+    /// Failed to deserialize previous block header
+    #[error("Failed to deserialize previous block header")]
+    FailedToDeserializePreviousBlockHeader,
+
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]
     #[error(transparent)]
