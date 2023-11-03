@@ -22,3 +22,5 @@ pub const DIFF_INTURN: U128 = uint!(2_U128);
 
 /// Block score (difficulty) for blocks containing no signatures.
 pub const DIFF_NOVOTE: U128 = uint!(0_U128);
+
+pub const SIGNER_LIMIT: u64 = 10;

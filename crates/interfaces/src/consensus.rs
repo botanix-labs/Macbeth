@@ -277,4 +277,8 @@ pub enum ConsensusError {
     InvalidAuthoritySignature,
     #[error("Invalid extra data")]
     ExtraDataInvalid,
+    #[error("Failed to recover authority")]
+    FailedToRecoverAuthority,
+    #[error("SignerLimitExceeded")]
+    SignerLimitReached,
 }

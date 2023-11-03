@@ -27,7 +27,8 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{
-        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
+        eip225::SIGNER_LIMIT, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT,
+        MAXIMUM_EXTRA_DATA_SIZE,
     },
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
     ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
@@ -37,13 +38,14 @@ use reth_provider::{PostState, StateProvider};
 use reth_revm::executor::Executor;
 use std::{
     collections::HashMap,
+    f32::consts::E,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{trace, warn, info};
+use tracing::{info, trace, warn};
 mod builder;
 mod client;
 mod constants;
@@ -73,6 +75,8 @@ impl AuthorityConsensus {
 impl Consensus for AuthorityConsensus {
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validation::validate_header_standalone(header, &self.chain_spec)?;
+        // TODO (armins) get prev headers from storage and validate signer limit
+        // self.validate_signer_limit(header, prev_headers)?;
         Ok(())
     }
 
@@ -93,7 +97,6 @@ impl Consensus for AuthorityConsensus {
         if header.ommers_hash != EMPTY_OMMER_ROOT {
             return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
         }
-
         // validate header extradata
         validate_header_extradata(header)?;
 
@@ -102,6 +105,36 @@ impl Consensus for AuthorityConsensus {
 
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
         validation::validate_block_standalone(block, &self.chain_spec)
+    }
+}
+
+// POA specific functions
+impl AuthorityConsensus {
+    /// Validates that the number of signers is within the allowed limit.
+    ///
+    /// # Returns
+    /// `Ok(())` if the number of signers is within the allowed limit, otherwise
+    /// returns an error indicating the validation failed.
+    fn validate_signer_limit(
+        &self,
+        header: &SealedHeader,
+        prev_headers: Vec<Header>,
+    ) -> Result<(), ConsensusError> {
+        if prev_headers.len() < SIGNER_LIMIT as usize {
+            return Ok(())
+        }
+
+        let signer = utils::recovery_authority(header)
+            .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+        if prev_headers.into_iter().any(|prev_header| {
+            let prev_signer = utils::recovery_authority(&prev_header)
+                .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+
+            signer == prev_signer
+        }) {
+            return Err(ConsensusError::SignerLimitReached)
+        }
+        Ok(())
     }
 }
 
@@ -118,8 +151,8 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     // } else
-    
-     {
+
+    {
         // TODO (armins) check that no vote is occuring during an epoch header
         // 0. Validate that the block was signed by a federation member
         let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
@@ -134,12 +167,10 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
         .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
 
         let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_data);
-        extra_data
-            .validate_authority_signature(&sig_hash.to_vec())
-            .map_err(|e| {
-                info!("Failed to validate authority signature, {:?} ", e);
-                ConsensusError::InvalidAuthoritySignature
-            })?;
+        extra_data.validate_authority_signature(&sig_hash.to_vec()).map_err(|e| {
+            info!("Failed to validate authority signature, {:?} ", e);
+            ConsensusError::InvalidAuthoritySignature
+        })?;
         // 1. Validate that is a federation memeber was added or removed that that actions
         // was signed off by a 2/3 majority of votes
         // This can only happnen during an end of a epoch
@@ -175,7 +206,6 @@ impl Storage {
         };
         storage.headers.insert(header.number, header);
         storage.bodies.insert(best_hash, BlockBody::default());
-        trace!(target: "consensus::authority", storage=storage, "Starting storage");
 
         Self { inner: Arc::new(RwLock::new(storage)) }
     }
@@ -343,11 +373,7 @@ impl StorageInner {
 
         header.gas_used = gas_used;
 
-        let vote_for = if let Some(vote) = authority_to_vote_on {
-            Some(vote.0)
-        } else {
-            None
-        };
+        let vote_for = if let Some(vote) = authority_to_vote_on { Some(vote.0) } else { None };
 
         // calculate the state root
         let state_root = executor.db().db.0.state_root(post_state.clone()).unwrap();
@@ -359,15 +385,17 @@ impl StorageInner {
         let extra_header_content_no_signature =
             ExtraDataHeader::new(0u32, None, authorities.clone(), vote_for);
 
-        let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_header_content_no_signature);
+        let sig_hash = utils::create_authority_sighash(
+            &mut header.clone(),
+            &extra_header_content_no_signature,
+        );
         // Sign the header and append to extra data header
         // TODO remove unwrap
         let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
         let extra_data_header_with_signature =
             ExtraDataHeader::new(0u32, Some(signature), authorities.clone(), vote_for);
-        header.extra_data =
-            Bytes::from(extra_data_header_with_signature.serialize().unwrap());
+        header.extra_data = Bytes::from(extra_data_header_with_signature.serialize().unwrap());
 
         header
     }
@@ -394,8 +422,7 @@ impl StorageInner {
             })?
             .authority_signers;
 
-        let header =
-            self.build_header_template(&transactions, chain_spec, vote)?;
+        let header = self.build_header_template(&transactions, chain_spec, vote)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -413,13 +440,17 @@ impl StorageInner {
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
 
         // fill in the rest of the fields
-        let header = self.complete_header(header, &post_state, executor, gas_used, sk, secp, &signers, vote);
+        let header =
+            self.complete_header(header, &post_state, executor, gas_used, sk, secp, &signers, vote);
 
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
 
-        validate_header_extradata(&header)
-            .map_err(|_e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData))?;
+        validate_header_extradata(&header).map_err(|_e| {
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
+
+        // TODO(armins) Validate signer limit
 
         if vote.is_some() {
             let vote = vote.expect("valid vote");
