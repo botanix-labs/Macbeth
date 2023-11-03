@@ -36,7 +36,10 @@ pub fn validate_header_standalone(
     let wd_root_missing = header.withdrawals_root.is_none() && !chain_spec.is_optimism();
 
     // EIP-4895: Beacon chain push withdrawals as operations
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) && wd_root_missing
+    // Botanix chain will skip withdrawals root check
+    // TODO(armins) refactor this to be more readable
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
+        header.withdrawals_root.is_none() && chain_spec.chain.id() != 444 && wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing)
     } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
@@ -219,7 +222,9 @@ pub fn validate_block_standalone(
     }
 
     // EIP-4895: Beacon chain push withdrawals as operations
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) {
+    // Botanix chain will skip withdrawals root check
+    // TODO(armins) refactor this to be more readable
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) && chain_spec.chain.id() != 444  {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;
         let withdrawals_root = reth_primitives::proofs::calculate_withdrawals_root(withdrawals);
