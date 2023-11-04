@@ -98,10 +98,10 @@
 #![warn(missing_debug_implementations, missing_docs, unreachable_pub, rustdoc::all)]
 #![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
-
 use crate::{auth::AuthRpcModule, error::WsHttpSamePortError, metrics::RpcServerMetrics};
 use constants::*;
 use error::{RpcError, ServerKind};
+use hyper::{header::AUTHORIZATION, HeaderMap};
 use jsonrpsee::{
     server::{IdProvider, Server, ServerHandle},
     Methods, RpcModule,
@@ -118,8 +118,8 @@ use reth_rpc::{
         cache::{cache_new_blocks_task, EthStateCache},
         gas_oracle::GasPriceOracle,
     },
-    AdminApi, AuthLayer, BlockingTaskGuard, BlockingTaskPool, DebugApi, EngineEthApi, EthApi,
-    EthFilter, EthPubSub, EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret, NetApi,
+    AdminApi, AuthLayer, BlockingTaskGuard, BlockingTaskPool, Claims, DebugApi, EngineEthApi,
+    EthApi, EthFilter, EthPubSub, EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret, NetApi,
     OtterscanApi, RPCApi, RethApi, TraceApi, TxPoolApi, Web3Api,
 };
 use reth_rpc_api::{servers::*, EngineApiServer};
@@ -131,6 +131,7 @@ use std::{
     fmt,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     str::FromStr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use strum::{AsRefStr, EnumString, EnumVariantNames, ParseError, VariantNames};
 use tower::layer::util::{Identity, Stack};
@@ -1314,6 +1315,7 @@ impl RpcServerConfig {
             Ipv4Addr::LOCALHOST,
             DEFAULT_HTTP_RPC_PORT,
         )));
+        let jwt_secret = self.jwt_secret.clone();
 
         let ws_socket_addr = self
             .ws_addr
@@ -1360,6 +1362,7 @@ impl RpcServerConfig {
                 http_local_addr: Some(addr),
                 ws_local_addr: Some(addr),
                 server: WsHttpServers::SamePort(server),
+                jwt_secret,
             })
         }
 
@@ -1402,6 +1405,7 @@ impl RpcServerConfig {
             http_local_addr,
             ws_local_addr,
             server: WsHttpServers::DifferentPort { http: http_server, ws: ws_server },
+            jwt_secret,
         })
     }
 
@@ -1621,6 +1625,8 @@ struct WsHttpServer {
     ws_local_addr: Option<SocketAddr>,
     /// Configured ws,http servers
     server: WsHttpServers,
+    /// The jwt secret.
+    jwt_secret: Option<JwtSecret>,
 }
 
 /// Enum for holding the http and ws servers in all possible combinations.
@@ -1795,6 +1801,10 @@ impl RpcServer {
     pub fn http_local_addr(&self) -> Option<SocketAddr> {
         self.ws_http.http_local_addr
     }
+    /// Return the JwtSecret of the the server
+    pub fn jwt(&self) -> Option<JwtSecret> {
+        self.ws_http.jwt_secret.clone()
+    }
 
     /// Returns the [`SocketAddr`] of the ws server if started.
     pub fn ws_local_addr(&self) -> Option<SocketAddr> {
@@ -1822,6 +1832,7 @@ impl RpcServer {
             ws: None,
             ipc_endpoint: None,
             ipc: None,
+            jwt_secret: None,
         };
 
         let (http, ws) = ws_http.server.start(http, ws, &config).await?;
@@ -1862,11 +1873,28 @@ pub struct RpcServerHandle {
     ws: Option<ServerHandle>,
     ipc_endpoint: Option<String>,
     ipc: Option<ServerHandle>,
+    jwt_secret: Option<JwtSecret>,
 }
 
 // === impl RpcServerHandle ===
 
 impl RpcServerHandle {
+    /// Configures the JWT secret for authentication.
+    fn bearer_token(&self) -> Option<String> {
+        self.jwt_secret.as_ref().map(|secret| {
+            format!(
+                "Bearer {}",
+                secret
+                    .encode(&Claims {
+                        iat: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap() +
+                            Duration::from_secs(60))
+                        .as_secs(),
+                        exp: None,
+                    })
+                    .unwrap()
+            )
+        })
+    }
     /// Returns the [`SocketAddr`] of the http server if started.
     pub fn http_local_addr(&self) -> Option<SocketAddr> {
         self.http_local_addr
@@ -1912,19 +1940,28 @@ impl RpcServerHandle {
     /// Returns a http client connected to the server.
     pub fn http_client(&self) -> Option<jsonrpsee::http_client::HttpClient> {
         let url = self.http_url()?;
-        let client = jsonrpsee::http_client::HttpClientBuilder::default()
-            .build(url)
-            .expect("Failed to create http client");
-        Some(client)
-    }
 
+        let client = if let Some(token) = self.bearer_token() {
+            jsonrpsee::http_client::HttpClientBuilder::default()
+                .set_headers(HeaderMap::from_iter([(AUTHORIZATION, token.parse().unwrap())]))
+                .build(url)
+        } else {
+            jsonrpsee::http_client::HttpClientBuilder::default().build(url)
+        };
+
+        client.expect("failed to create http client").into()
+    }
     /// Returns a ws client connected to the server.
     pub async fn ws_client(&self) -> Option<jsonrpsee::ws_client::WsClient> {
         let url = self.ws_url()?;
-        let client = jsonrpsee::ws_client::WsClientBuilder::default()
-            .build(url)
-            .await
-            .expect("Failed to create ws client");
+        let mut builder = jsonrpsee::ws_client::WsClientBuilder::default();
+
+        if let Some(token) = self.bearer_token() {
+            let headers = HeaderMap::from_iter([(AUTHORIZATION, token.parse().unwrap())]);
+            builder = builder.set_headers(headers);
+        }
+
+        let client = builder.build(url).await.expect("failed to create ws client");
         Some(client)
     }
 }
