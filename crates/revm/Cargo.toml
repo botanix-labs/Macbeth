@@ -33,3 +33,11 @@ tracing.workspace = true
 
 # Bitcoin
 bitcoin = "0.30.1"
+
+[features]
+optimism = [
+  "revm/optimism",
+  "reth-primitives/optimism",
+  "reth-consensus-common/optimism",
+  "reth-interfaces/optimism",
+]
