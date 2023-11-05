@@ -244,6 +244,9 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
                     BlockExecutionError::UnavailableForTest => false ,
                     &BlockExecutionError::FailedToGetBitcoinHeader => true, 
+                    BlockExecutionError::UnavailableForTest => false,
+                    #[cfg(feature = "optimism")]
+                    BlockExecutionError::OptimismBlockExecution(_) => false,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {
