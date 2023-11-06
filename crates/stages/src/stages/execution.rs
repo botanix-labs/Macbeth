@@ -163,7 +163,7 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
             // TODO (armins) we need to pass the recent bitcoin block header to the executor
             executor.execute_and_verify_receipt(&block, td, Some(senders), None).map_err(|error| {
                 StageError::Block {
-                    block: block.header.clone().seal_slow(),
+                    block: Box::new(block.header.clone().seal_slow()),
                     error: BlockErrorKind::Execution(error),
                 }
             })?;
