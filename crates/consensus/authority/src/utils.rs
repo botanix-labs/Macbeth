@@ -36,6 +36,7 @@ pub(crate) fn read_staker_balance(
     Ok(balance)
 }
 
+#[derive(Debug)]
 pub(crate) enum RecoverAuthorityError {
     NoSignaturePresentInExtraData,
     FailedToRecoverSigner(secp256k1::Error),
@@ -62,4 +63,19 @@ pub(crate) fn recovery_authority(
     }
 
     Err(RecoverAuthorityError::NoSignaturePresentInExtraData)
+}
+
+#[derive(Debug)]
+pub(crate) enum GetAuthoritiesError {
+    FailedToRecoverAuthorityList(botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError),
+}
+
+pub(crate) fn get_authority_list(
+    header: &Header,
+) -> Result<Vec<secp256k1::PublicKey>, GetAuthoritiesError> {
+    let extra_data =
+        botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
+            .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
+
+    Ok(extra_data.authority_signers)
 }

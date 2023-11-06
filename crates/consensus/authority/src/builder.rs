@@ -44,6 +44,15 @@ pub enum AuthorityConsensusBuilderError {
     FailedToRetrieveEopchHeader,
 }
 
+/// Errors that can occur when building an authority consensus.
+#[derive(Debug)]    
+pub enum AuthorityConsensusBuilderError {
+    InvalidStorage,
+    FailedToRecoverAuthorityList,
+    FailedToFindSignerIndex,
+    FailedToRetrieveEopchHeader,
+}
+
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
 where
