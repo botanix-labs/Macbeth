@@ -10,7 +10,7 @@ use crate::{
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_primitives::ChainSpec;
-use reth_provider::{BlockReaderIdExt, CanonStateNotificationSender};
+use reth_provider::{BlockReaderIdExt, CanonStateNotificationSender, StateProviderFactory, CanonChainTracker};
 use reth_transaction_pool::TransactionPool;
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 
@@ -43,7 +43,7 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
 where
-    Client: BlockReaderIdExt,
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker,
     Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
