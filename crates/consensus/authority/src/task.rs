@@ -117,7 +117,8 @@ where
 
         // this drives block production
         loop {
-            if let Poll::Ready(transactions) = this.epoch_manager.poll(&this.pool, cx) {
+            this.epoch_manager.poll(&this.pool, cx);
+            if this.epoch_manager.has_pending_txs {
                 info!("Adding to the list of transctions, {:?}, {:?}", transactions, this.queued);
                 // miner returned a set of transaction that we feed to
                 // the producer

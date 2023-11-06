@@ -3,7 +3,7 @@ use crate::U128;
 use ruint::uint;
 
 /// The number of blocks to reset pending votes.
-pub const EPOCH_LENGTH: u64 = 30000;
+pub const EPOCH_LENGTH: u64 = 30;
 
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;
@@ -20,7 +20,7 @@ pub const DIFF_NOTURN: U128 = uint!(1_U128);
 /// Block score (difficulty) for blocks containing in-turn signatures.
 pub const DIFF_INTURN: U128 = uint!(2_U128);
 
-/// Block score (difficulty) for blocks containing no signatures.
-pub const DIFF_NOVOTE: U128 = uint!(0_U128);
+/// Block score (difficulty) for blocks containing no votes
+pub const DIFF_NOVOTE: U256 = uint!(0_U256);
 
 pub const SIGNER_LIMIT: u64 = 10;

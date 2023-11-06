@@ -65,6 +65,7 @@ pub struct AuthorityVoteCollection {
     /// Votes for this epoch
     pub votes: Vec<AuthorityVote>,
     /// Starting of epoch
+    // TODO we dont need this anymore manager by storage
     pub epoch_start_block_height: u64,
 }
 
