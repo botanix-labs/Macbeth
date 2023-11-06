@@ -43,7 +43,6 @@ pub trait EthApi {
     async fn gateway_address(
         &self,
         eth_address: Address,
-        nonce: u64,
     ) -> RpcResult<Option<GatewayAddress>>;
 
     /// Returns the Bitcoin pegin gateway address

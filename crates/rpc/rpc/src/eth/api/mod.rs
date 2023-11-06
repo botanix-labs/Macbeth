@@ -66,7 +66,6 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     async fn get_gateway_address(
         &self,
         eth_address: Address,
-        nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
 
     /// Returns the merkle proof for a given block hash
@@ -379,9 +378,8 @@ where
     async fn get_gateway_address(
         &self,
         eth_address: Address,
-        nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
-        let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address, nonce).await?;
+        let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address).await?;
         Ok(pegin_info)
     }
 

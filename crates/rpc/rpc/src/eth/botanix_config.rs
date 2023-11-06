@@ -144,7 +144,6 @@ impl Botanix {
     pub async fn get_gateway_address(
         &self,
         eth_address: reth_primitives::Address,
-        nonce: u64,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         let mut client =
             client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
@@ -164,7 +163,6 @@ impl Botanix {
             &pk,
             &eth_address.as_slice().to_vec(),
             network,
-            nonce,
         )
         .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 

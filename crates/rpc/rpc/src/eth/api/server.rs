@@ -103,14 +103,12 @@ where
     async fn gateway_address(
         &self,
         eth_address: Address,
-        nonce: u64,
     ) -> Result<Option<GatewayAddress>> {
-        trace!(target: "rpc::eth", ?eth_address, ?nonce, "Serving eth_getGateWayAddress");
-        let address = match EthApi::get_gateway_address(self, eth_address, nonce).await {
+        trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
+        let address = match EthApi::get_gateway_address(self, eth_address).await {
             Ok(value) => Some(GatewayAddress {
                 gateway_address: value.0.to_string(),
                 aggregate_public_key: value.1.to_string(),
-                nonce,
                 eth_address,
             }),
             Err(_) => None,
