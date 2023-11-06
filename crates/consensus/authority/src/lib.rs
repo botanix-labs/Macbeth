@@ -160,10 +160,8 @@ impl AuthorityConsensus {
         let signer = utils::recovery_authority(header)
             .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
         if prev_headers.into_iter().any(|prev_header| {
-            let prev_signer = utils::recovery_authority(&prev_header)
-                .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
-
-            signer == prev_signer
+            let prev_signer = utils::recovery_authority(&prev_header);
+            prev_signer.is_err() || signer == prev_signer.expect("valid signer")
         }) {
             return Err(ConsensusError::SignerLimitReached)
         }
