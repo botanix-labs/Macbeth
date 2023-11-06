@@ -5,9 +5,8 @@ use tracing::info;
 
 use crate::Storage;
 use std::{
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::{Context, Poll},
+    sync::Arc,
+    task::Poll,
     time::Duration,
 };
 
@@ -46,7 +45,6 @@ impl EpochManager {
     pub(crate) async fn poll<Pool>(
         &mut self,
         pool: &Pool,
-        cx: &mut Context<'_>,
     ) -> Poll<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>
     where
         Pool: TransactionPool,
@@ -59,29 +57,23 @@ impl EpochManager {
 
         match random_delay {
             Some(mut delay) => {
-                if delay.poll_tick(cx).is_ready() {
-                    self.random_delay = None;
-                    let transactions = pool.best_transactions().collect::<Vec<_>>();
-                    info!("Miner processing txs {:?}", transactions);
-                    // there are pending transactions if we didn't drain the pool
-                    self.has_pending_txs = transactions.len() >= 1;
+                delay.tick().await;
+                self.random_delay = None;
+                let transactions = pool.best_transactions().collect::<Vec<_>>();
+                info!("Miner processing txs {:?}", transactions);
+                // there are pending transactions if we didn't drain the pool
+                self.has_pending_txs = transactions.len() >= 1;
 
-                    if transactions.is_empty() {
-                        return Poll::Pending
-                    }
-
-                    // drain the pool
-                    return Poll::Ready(transactions)
-                }
-                return Poll::Pending
-            }
-            None => {
-                if self.proposal_interval.poll_tick(cx).is_pending() {
+                if transactions.is_empty() {
                     return Poll::Pending
                 }
 
+                // drain the pool
+                return Poll::Ready(transactions)
+            }
+            None => {
+                self.proposal_interval.tick().await;
                 if is_inturn {
-                    self.proposal_interval.reset();
                     let transactions = pool.best_transactions().collect::<Vec<_>>();
                     info!("Miner processing txs {:?}", transactions);
                     // there are pending transactions if we didn't drain the pool

@@ -311,7 +311,7 @@ impl StorageInner {
     pub(crate) fn build_header_template(
         &self,
         transactions: &Vec<TransactionSigned>,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
     ) -> Result<Header, BlockExecutionError> {
         // check previous block for base fee
@@ -438,7 +438,7 @@ impl StorageInner {
         &mut self,
         transactions: Vec<TransactionSigned>,
         executor: &mut Executor<DB>,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: &Arc<ChainSpec>,
         recent_block_header: Option<bitcoin::block::Header>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
