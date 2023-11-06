@@ -8,8 +8,6 @@ pub struct GatewayAddress {
     pub gateway_address: String,
     /// Aggregated public key used as internal taproot key
     pub aggregate_public_key: String,
-    /// User provided nonce
-    pub nonce: u64,
     /// User Eth account
     pub eth_address: Address,
 }
