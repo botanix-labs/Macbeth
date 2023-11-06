@@ -44,7 +44,7 @@ use reth_interfaces::{
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
 };
-use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager};
+use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager, import::ProofOfAuthorityBlockImport};
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -354,6 +354,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             secret_key,
             default_peers_path.clone(),
             &botanix_chain_spec,
+            Box::new(ProofOfAuthorityBlockImport::new(
+                consensus_engine_tx.clone())
         );
         let network = self
             .start_network(
@@ -763,6 +765,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         secret_key: SecretKey,
         default_peers_path: PathBuf,
         chain_spec: &Arc<ChainSpec>,
+        block_import: Box<dyn BlockImport>
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
             .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
@@ -784,7 +787,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
                     None => DEFAULT_DISCOVERY_PORT + self.instance - 1,
                 },
             )))
-            .build(ProviderFactory::new(db, chain_spec.clone()))
+            .network_mode(reth_network::config::NetworkMode::Authority)
+            .build_with_block_import(ProviderFactory::new(db, chain_spec.clone()), block_import)
     }
 
     #[allow(clippy::too_many_arguments)]
