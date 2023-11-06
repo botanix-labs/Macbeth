@@ -12,12 +12,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 mod admin;
+pub mod beacon;
 mod botanix;
 mod eth;
 mod mev;
 mod net;
 mod otterscan;
 mod peer;
+pub mod relay;
 mod rpc;
 mod serde_helpers;
 
