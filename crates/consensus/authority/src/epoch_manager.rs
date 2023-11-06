@@ -1,11 +1,12 @@
 use reth_primitives::constants::eip225::BLOCK_PERIOD;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use tokio::time::{Instant, Interval};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::Storage;
 use std::{
-    sync::Arc,
+    pin::Pin,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
@@ -28,7 +29,10 @@ pub(crate) struct EpochManager {
     pub(crate) proposal_interval: Interval,
 
     /// stores whether there are pending transactions (if known)
-    has_pending_txs: Option<bool>,
+    pub(crate) has_pending_txs: bool,
+
+    /// Random delay to wait before proposing a block out of turn
+    random_delay: Option<Interval>,
 }
 
 impl EpochManager {
@@ -36,10 +40,10 @@ impl EpochManager {
         let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
         let proposal_interval =
             tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
-        Self { storage, proposal_interval, has_pending_txs: None }
+        Self { storage, proposal_interval, has_pending_txs: false, random_delay: None }
     }
 
-    pub(crate) fn poll<Pool>(
+    pub(crate) async fn poll<Pool>(
         &mut self,
         pool: &Pool,
         cx: &mut Context<'_>,
@@ -47,24 +51,62 @@ impl EpochManager {
     where
         Pool: TransactionPool,
     {
-        // let tip = self.storage.read().await.best_block;
+        let random_delay = self.random_delay.take();
+        let storage = self.storage.inner.read().await;
+        let signer_index = storage.signer_index;
+        let is_inturn =
+            storage.best_block % (storage.authorities.len() as u64) == signer_index as u64;
 
-        if self.proposal_interval.poll_tick(cx).is_ready() {
-            self.proposal_interval.reset();
-            println!("Time going off");
-            let transactions =
-                pool.best_transactions().collect::<Vec<_>>();
-            info!("Miner processing txs {:?}", transactions);
-            // there are pending transactions if we didn't drain the pool
-            self.has_pending_txs = Some(transactions.len() >= 1);
+        match random_delay {
+            Some(mut delay) => {
+                if delay.poll_tick(cx).is_ready() {
+                    self.random_delay = None;
+                    let transactions = pool.best_transactions().collect::<Vec<_>>();
+                    info!("Miner processing txs {:?}", transactions);
+                    // there are pending transactions if we didn't drain the pool
+                    self.has_pending_txs = transactions.len() >= 1;
 
-            if transactions.is_empty() {
+                    if transactions.is_empty() {
+                        return Poll::Pending
+                    }
+
+                    // drain the pool
+                    return Poll::Ready(transactions)
+                }
                 return Poll::Pending
             }
+            None => {
+                if self.proposal_interval.poll_tick(cx).is_pending() {
+                    return Poll::Pending
+                }
 
-            // drain the pool
-            return Poll::Ready(transactions)
+                if is_inturn {
+                    self.proposal_interval.reset();
+                    let transactions = pool.best_transactions().collect::<Vec<_>>();
+                    info!("Miner processing txs {:?}", transactions);
+                    // there are pending transactions if we didn't drain the pool
+                    self.has_pending_txs = transactions.len() >= 1;
+
+                    if transactions.is_empty() {
+                        return Poll::Pending
+                    }
+
+                    // drain the pool
+                    return Poll::Ready(transactions)
+                }
+
+                // Your not in turn wait a bit then produce a block
+                // NOTE: verify if network can/should be handled here or in the main task
+                // TODO: check network handle for gossiped block
+                // TODO: set gossiped block header in storage or...
+                // TODO: if `None` do the following
+
+                // TODO this should be random
+                let duration = Duration::from_secs(6);
+                self.random_delay =
+                    Some(tokio::time::interval_at(Instant::now() + duration, duration));
+                return Poll::Pending
+            }
         }
-        Poll::Pending
     }
 }

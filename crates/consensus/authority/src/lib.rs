@@ -27,8 +27,8 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{
-        eip225::SIGNER_LIMIT, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT,
-        MAXIMUM_EXTRA_DATA_SIZE,
+        eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE, SIGNER_LIMIT},
+        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
     },
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
     ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
@@ -68,6 +68,7 @@ pub struct AuthorityConsensus {
 impl AuthorityConsensus {
     /// Create a new instance of [AuthorityConsensus]
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
+        // TODO(armins) most likely we need to pass storage here
         Self { chain_spec }
     }
 }
@@ -97,9 +98,16 @@ impl Consensus for AuthorityConsensus {
         if header.ommers_hash != EMPTY_OMMER_ROOT {
             return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
         }
+
+        if header.difficulty != DIFF_INTURN &&
+            header.difficulty != DIFF_NOTURN &&
+            header.difficulty != DIFF_NOVOTE
+        {
+            return Err(ConsensusError::AuthorityDifficultyInvalid)
+        }
+
         // validate header extradata
         validate_header_extradata(header)?;
-
         Ok(())
     }
 
@@ -127,10 +135,8 @@ impl AuthorityConsensus {
         let signer = utils::recovery_authority(header)
             .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
         if prev_headers.into_iter().any(|prev_header| {
-            let prev_signer = utils::recovery_authority(&prev_header)
-                .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
-
-            signer == prev_signer
+            let prev_signer = utils::recovery_authority(&prev_header);
+            prev_signer.is_err() || signer == prev_signer.expect("valid signer")
         }) {
             return Err(ConsensusError::SignerLimitReached)
         }
@@ -194,20 +200,40 @@ pub(crate) struct Storage {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
+#[derive(Debug)]
+pub(crate) enum StorageCreationError {
+    /// empty headers
+    EmptyHeaders,
+}
+
 // == impl Storage ===
 impl Storage {
-    fn new(header: SealedHeader) -> Self {
-        let (header, best_hash) = header.split();
+    fn try_new(
+        headers: &mut Vec<SealedHeader>,
+        authorities: Vec<secp256k1::PublicKey>,
+        signer_index: usize,
+    ) -> Result<Self, StorageCreationError> {
+        if headers.len() == 0 {
+            return Err(StorageCreationError::EmptyHeaders)
+        }
+        // sort the headers by block numbers
+        headers.sort_by(|a, b| a.number.cmp(&b.number));
+
+        // We need to start storing headers from the start of the epoch
+        let (header, best_hash) = headers.get(0).expect("valid index").clone().split();
+
         let mut storage = StorageInner {
             best_hash,
             total_difficulty: header.difficulty,
             best_block: header.number,
+            authorities,
+            signer_index,
             ..Default::default()
         };
         storage.headers.insert(header.number, header);
         storage.bodies.insert(best_hash, BlockBody::default());
 
-        Self { inner: Arc::new(RwLock::new(storage)) }
+        Ok(Self { inner: Arc::new(RwLock::new(storage)) })
     }
 
     /// Returns the write lock of the storage
@@ -238,6 +264,11 @@ pub(crate) struct StorageInner {
     pub(crate) total_difficulty: U256,
     /// Keep track of current votes
     pub(crate) authority_votes: AuthorityVoteCollection,
+    /// Keep track of the  signers
+    pub(crate) authorities: Vec<secp256k1::PublicKey>,
+    /// keep track of my place among the singer
+    /// This will change as new signers are removed
+    pub(crate) signer_index: usize,
 }
 
 // === impl StorageInner ===

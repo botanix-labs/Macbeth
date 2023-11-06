@@ -501,6 +501,12 @@ impl SealedHeader {
     pub fn size(&self) -> usize {
         self.header.size() + mem::size_of::<BlockHash>()
     }
+
+    /// Returns true if header repersents the start of an epoch
+    #[inline]
+    pub fn is_poa_epoch(&self) -> bool {
+        self.header.number % EPOCH_LENGTH == 0
+    }
 }
 
 #[cfg(any(test, feature = "arbitrary"))]
