@@ -6881,6 +6881,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "pin-project",
  "rand 0.8.5",
+ "reth-beacon-consensus",
  "reth-discv4",
  "reth-dns-discovery",
  "reth-ecies",
