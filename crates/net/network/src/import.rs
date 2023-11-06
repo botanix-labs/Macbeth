@@ -1,6 +1,15 @@
 use crate::message::NewBlockMessage;
-use reth_primitives::PeerId;
-use std::task::{Context, Poll};
+use reth_beacon_consensus::BeaconEngineMessage;
+use reth_eth_wire::NewBlock;
+use reth_interfaces::consensus::{Consensus, ConsensusError};
+use reth_primitives::{
+    constants::eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE},
+    Header, PeerId,
+};
+use std::{
+    collections::VecDeque,
+    task::{Context, Poll}, sync::Arc,
+};
 
 /// Abstraction over block import.
 pub trait BlockImport: Send + Sync {
@@ -61,6 +70,60 @@ impl BlockImport for ProofOfStakeBlockImport {
     fn on_new_block(&mut self, _peer_id: PeerId, _incoming_block: NewBlockMessage) {}
 
     fn poll(&mut self, _cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
+        Poll::Pending
+    }
+}
+
+/// An implementation of `BlockImport` used in Proof-of-Authority consensus
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ProofOfAuthorityBlockImport<C> {
+    queue: VecDeque<(PeerId, NewBlockMessage)>,
+    // TODO(networking) Maybe use Concensus, maybe not. Still not sure how this should be coded
+    _consensus: C,
+}
+
+impl<C> ProofOfAuthorityBlockImport<C> {
+    /// Creates Proof of Authority Block Import with the provided consensus mechanism
+    pub fn new(consensus: C) -> Self {
+        Self { queue: VecDeque::new(), _consensus: consensus }
+    }
+
+    /// Vaidates a header on block import
+    fn validate_header(&mut self, _header: Header) -> Result<(), ConsensusError> {
+        // TODO (networking) This will need to be updated with more checks
+        Ok(())
+    }
+
+    /// Validates a block on block import
+    fn validate_new_block(&mut self, block: Arc<NewBlock>) -> Result<(), ConsensusError> {
+        if block.td != DIFF_INTURN && block.td != DIFF_NOTURN && block.td != DIFF_NOVOTE {
+            return Err(ConsensusError::AuthorityDifficultyInvalid)
+        }
+        self.validate_header(block.block.header.clone())?;
+        // TODO (networking) This will need to be updated with more checks
+        Ok(())
+    }
+}
+
+impl<C> BlockImport for ProofOfAuthorityBlockImport<C>
+where
+    C: Consensus,
+{
+    fn on_new_block(&mut self, peer_id: PeerId, incoming_block: NewBlockMessage) {
+        self.queue.push_back((peer_id, incoming_block));
+    }
+
+    fn poll(&mut self, _cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
+        if let Some(pair) = self.queue.pop_front() {
+            let block = pair.1.block.clone();
+            let result = self
+                .validate_new_block(block)
+                .map_err(BlockImportError::Consensus)
+                .map(|_| BlockValidation::ValidHeader { block: pair.1 });
+
+            return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
+        }
         Poll::Pending
     }
 }
