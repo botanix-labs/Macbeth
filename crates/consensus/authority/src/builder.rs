@@ -1,10 +1,11 @@
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
+use tracing::error;
 use url::Url;
 
 use crate::{
-    client::AuthorityClient, task::BlockProductionTask, voting::AuthorityVote, AuthorityConsensus,
-    Storage, epoch_manager::EpochManager,
+    client::AuthorityClient, epoch_manager::EpochManager, task::BlockProductionTask,
+    utils::get_authority_list, voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -30,6 +31,15 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     epoch_manager: EpochManager,
 }
 
+/// Errors that can occur when building an authority consensus.
+#[derive(Debug)]    
+pub enum AuthorityConsensusBuilderError {
+    InvalidStorage,
+    FailedToRecoverAuthorityList,
+    FailedToFindSignerIndex,
+    FailedToRetrieveEopchHeader,
+}
+
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
 where
@@ -37,7 +47,7 @@ where
     Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
-    pub fn new(
+    pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
         pool: Pool,
@@ -47,24 +57,51 @@ where
         bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
         bitcoin_block_source_address: Url,
         secp: Secp256k1<All>,
-        // TODO (armins) This should be Arc protected   
+        // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
-        vote: Option<AuthorityVote>
-    ) -> Self {
-        let latest_header = client
+        vote: Option<AuthorityVote>,
+    ) -> Result<Self, AuthorityConsensusBuilderError> {
+        let mut latest_header = client
             .latest_header()
             .ok()
             .flatten()
             .unwrap_or_else(|| chain_spec.sealed_genesis_header());
+        let mut headers = vec![latest_header.clone()];
 
-        // Instantiate storage
-        // TODO(armins) this should be wrapped in arc
-        let storage = Storage::new(latest_header);
+        while !latest_header.is_poa_epoch() {
+            let parent_hash = latest_header.parent_hash;
+            
+            if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
+                let old_latest_header = std::mem::replace(&mut latest_header, new_header.seal_slow());
+                headers.push(old_latest_header);
+            } else {
+                return Err(AuthorityConsensusBuilderError::FailedToRetrieveEopchHeader);
+            }
+        }
+
+        // Latest epoch header is the last header in the vector
+        let authorities = get_authority_list(&latest_header).map_err(|e| {
+            error!("Failed to retrieve authority list: {:?}", e);
+            AuthorityConsensusBuilderError::FailedToRecoverAuthorityList
+        })?;
+
+        let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
+
+        if signer_index.is_none() {
+            return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex)
+        }
+
+        // Try to instantiate storage
+        let storage = Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"))
+            .map_err(|e| {
+                error!("Failed to instantiate storage: {:?}", e);
+                AuthorityConsensusBuilderError::InvalidStorage
+            })?;
 
         // Instantiate epoch manager
         let epoch_manager = EpochManager::naive_inverval(storage.clone());
 
-        Self {
+        Ok(Self {
             storage,
             client,
             consensus: AuthorityConsensus::new(chain_spec),
@@ -77,8 +114,8 @@ where
             secp,
             sk,
             vote,
-            epoch_manager
-        }
+            epoch_manager,
+        })
     }
 
     #[track_caller]

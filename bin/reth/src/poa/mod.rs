@@ -391,7 +391,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let authority_consensus: Arc<dyn Consensus> =
             Arc::new(AuthorityConsensus::new(botanix_chain_spec.clone()));
         // Configure the pipeline
-        let (_, authority_client, mut block_production_task) = AuthorityConsensusBuilder::new(
+        let (_, authority_client, mut block_production_task) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&botanix_chain_spec),
             blockchain_db.clone(),
             transaction_pool.clone(),
@@ -404,6 +404,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             secret_key,
             None,
         )
+        .expect("failed to build authority consensus")
         .build();
 
         let mut pipeline = self
