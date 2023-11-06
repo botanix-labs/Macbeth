@@ -16,7 +16,6 @@ use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use ruint::Uint;
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc, task::Poll};
-
 use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
@@ -234,7 +233,7 @@ where
                                                         }
                                                     }
                                                     Err(err) => {
-                                                        error!("Warning: Failed to send BTC server withdrawal request, {:?}", err);
+                                                        error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
                                                     }
                                                 }
                                             }

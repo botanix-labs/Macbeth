@@ -330,7 +330,7 @@ impl StorageInner {
     pub(crate) fn build_header_template(
         &self,
         transactions: &Vec<TransactionSigned>,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
     ) -> Result<Header, BlockExecutionError> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
