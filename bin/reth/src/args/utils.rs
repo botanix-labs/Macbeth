@@ -1,9 +1,6 @@
 //! Clap parser utilities
 
-use reth_primitives::{
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256, DEV, GOERLI, HOLESKY, MAINNET, BOTANIX_TESTNET
-    SEPOLIA,
-};
+use reth_primitives::{fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::PathBuf,
@@ -16,6 +13,16 @@ use url::Url;
 #[cfg(feature = "optimism")]
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET};
 
+#[cfg(not(feature = "optimism"))]
+use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET};
+
+#[cfg(feature = "optimism")]
+/// Chains supported by op-reth. First value should be used as the default.
+pub const SUPPORTED_CHAINS: &[&str] = &["base", "base_goerli"];
+#[cfg(not(feature = "optimism"))]
+/// Chains supported by reth. First value should be used as the default.
+pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
+
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {
     let seconds = arg.parse()?;
@@ -26,14 +33,19 @@ pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::P
 /// to a custom one.
 pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     Ok(match s {
+        #[cfg(not(feature = "optimism"))]
         "mainnet" => MAINNET.clone(),
+        #[cfg(not(feature = "optimism"))]
         "goerli" => GOERLI.clone(),
+        #[cfg(not(feature = "optimism"))]
         "sepolia" => SEPOLIA.clone(),
+        #[cfg(not(feature = "optimism"))]
         "holesky" => HOLESKY.clone(),
+        #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
         "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
-        "base-goerli" => BASE_GOERLI.clone(),
+        "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
         _ => {
@@ -43,6 +55,11 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
     })
 }
 
+/// The help info for the --chain flag
+pub fn chain_help() -> String {
+    format!("The chain this node is running.\nPossible values are either a built-in chain or the path to a chain specification file.\n\nBuilt-in chains:\n    {}", SUPPORTED_CHAINS.join(", "))
+}
+
 /// Clap value parser for [ChainSpec]s.
 ///
 /// The value parser matches either a known chain, the path
@@ -50,14 +67,19 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
 /// a serialized [ChainSpec] or Genesis struct.
 pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     Ok(match s {
+        #[cfg(not(feature = "optimism"))]
         "mainnet" => MAINNET.clone(),
+        #[cfg(not(feature = "optimism"))]
         "goerli" => GOERLI.clone(),
+        #[cfg(not(feature = "optimism"))]
         "sepolia" => SEPOLIA.clone(),
+        #[cfg(not(feature = "optimism"))]
         "holesky" => HOLESKY.clone(),
+        #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
         "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
-        "base-goerli" => BASE_GOERLI.clone(),
+        "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
         _ => {
@@ -174,18 +196,9 @@ mod tests {
     use secp256k1::rand::thread_rng;
     use std::collections::HashMap;
 
-    #[cfg(feature = "optimism")]
-    #[test]
-    fn parse_optimism_chain_spec() {
-        for chain in ["base-goerli", "base"] {
-            chain_spec_value_parser(chain).unwrap();
-            genesis_value_parser(chain).unwrap();
-        }
-    }
-
     #[test]
     fn parse_known_chain_spec() {
-        for chain in ["mainnet", "sepolia", "goerli", "holesky", "botanix_testnet"] {
+        for chain in SUPPORTED_CHAINS {
             chain_spec_value_parser(chain).unwrap();
             genesis_value_parser(chain).unwrap();
         }
