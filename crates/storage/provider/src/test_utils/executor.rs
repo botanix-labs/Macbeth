@@ -29,10 +29,7 @@ impl BlockExecutor for TestExecutor {
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
-<<<<<<< HEAD
         _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
-=======
-        _recent_block_headers: Option<bitcoin::block::Header>,
     ) -> Result<(), BlockExecutionError> {
         Ok(())
     }

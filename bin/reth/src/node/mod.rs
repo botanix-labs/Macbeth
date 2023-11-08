@@ -303,16 +303,16 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 .expect("connect to btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
-        let bitcoin_block_headers: Arc<RwLock<Option<bitcoin::block::Header>>> =
+        let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
-        let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
+        let bitcoin_block_header_clone = bitcoin_block_headers.clone();
         let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
 
         ctx.task_executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
                 let sleep_ms = tokio::time::Duration::from_millis(5000);
-                let mut tip = 0u64;
+                let mut tip = 0u32;
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
                     let current_tip = block_source.get_tip().await.unwrap();
@@ -322,7 +322,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                         let block_header = block_source.get_block_header(block_hash).await.unwrap();
 
                         // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some(block_header);
+                        *header_write = Some((block_header, current_tip));
                         tip = current_tip;
                     }
                     tokio::time::sleep(sleep_ms).await;
