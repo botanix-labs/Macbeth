@@ -1,5 +1,5 @@
 //! EIP-225: Clique Proof-of-Authority consensus protocol.
-use crate::U128;
+use revm_primitives::U256;
 use ruint::uint;
 
 /// The number of blocks to reset pending votes.
@@ -15,12 +15,13 @@ pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
 pub const NONCE_DROP: u64 = 0x0000000000000000;
 
 /// Block score (difficulty) for blocks containing out-of-turn signatures.
-pub const DIFF_NOTURN: U128 = uint!(1_U128);
+pub const DIFF_NOTURN: U256 = uint!(1_U256);
 
 /// Block score (difficulty) for blocks containing in-turn signatures.
-pub const DIFF_INTURN: U128 = uint!(2_U128);
+pub const DIFF_INTURN: U256 = uint!(2_U256);
 
 /// Block score (difficulty) for blocks containing no votes
 pub const DIFF_NOVOTE: U256 = uint!(0_U256);
 
+/// Number of times a signer can sign in a row before being blocks being rejected
 pub const SIGNER_LIMIT: u64 = 10;

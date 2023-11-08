@@ -98,10 +98,6 @@ impl<C> ProofOfAuthorityBlockImport<C> {
 
     /// Validates a block on block import
     fn validate_new_block(&mut self, block: Arc<NewBlock>) -> Result<(), ConsensusError> {
-        if block.td != DIFF_INTURN && block.td != DIFF_NOTURN && block.td != DIFF_NOVOTE {
-            return Err(ConsensusError::AuthorityDifficultyInvalid)
-        }
-        self.validate_header(block.block.header.clone())?;
         // TODO (networking) This will need to be updated with more checks
         Ok(())
     }
@@ -112,6 +108,7 @@ where
     C: Consensus,
 {
     fn on_new_block(&mut self, peer_id: PeerId, incoming_block: NewBlockMessage) {
+        println!("on_new_block, peer_id: {:?}, incoming_block: {:?}", peer_id, incoming_block);
         self.queue.push_back((peer_id, incoming_block));
     }
 
