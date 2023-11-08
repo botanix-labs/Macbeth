@@ -12,6 +12,7 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_primitives::ChainSpec;
 use reth_provider::{BlockReaderIdExt, CanonStateNotificationSender, StateProviderFactory, CanonChainTracker};
 use reth_transaction_pool::TransactionPool;
+use reth_network::NetworkHandle;
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 
 /// Builder type for confirguring the setup
@@ -29,6 +30,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     sk: secp256k1::SecretKey,
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager,
+    network_handle: NetworkHandle,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -60,6 +62,7 @@ where
         // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
+        network_handle: NetworkHandle,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -115,6 +118,7 @@ where
             sk,
             vote,
             epoch_manager,
+            network_handle,
         })
     }
 
@@ -134,6 +138,7 @@ where
             sk,
             vote,
             epoch_manager,
+            network_handle
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -150,6 +155,7 @@ where
             secp,
             sk,
             epoch_manager,
+            network_handle,
         );
 
         (consensus, auth_client, task)

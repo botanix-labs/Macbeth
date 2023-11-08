@@ -86,6 +86,10 @@ impl EpochManager {
                     // drain the pool
                     return Poll::Ready(transactions)
                 }
+                else {
+                    // TODO remove this later
+                    return Poll::Pending;
+                }
 
                 // Your not in turn wait a bit then produce a block
                 // NOTE: verify if network can/should be handled here or in the main task

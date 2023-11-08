@@ -6,12 +6,14 @@ use botanix_lib::mint_validation::{
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use futures_util::future::BoxFuture;
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
+use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
+use reth_network::NetworkHandle;
 use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_revm::{
     database::{State, SubState},
-    executor::Executor,
+    executor::Executor, primitives::uint,
 };
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
@@ -55,6 +57,8 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     secp: Secp256k1<All>,
     /// Key of authority
     sk: secp256k1::SecretKey,
+    /// Network Handler
+    network_handle: NetworkHandle,
 }
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool> 
@@ -76,6 +80,7 @@ where
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager,
+        network_handle: NetworkHandle,
     ) -> Self {
         Self {
             chain_spec,
@@ -93,6 +98,7 @@ where
             secp,
             sk,
             epoch_manager,
+            network_handle,
         }
     }
 
@@ -276,7 +282,7 @@ where
                         ommers: vec![],
                         withdrawals: None,
                     };
-                    let sealed_block = block.seal_slow();
+                    let sealed_block = block.clone().seal_slow();
 
                     let sealed_block_with_senders =
                         SealedBlockWithSenders::new(sealed_block, senders)
@@ -287,7 +293,9 @@ where
                     self.client.set_safe(new_header.clone());
                     self.client.set_finalized(new_header.clone());
 
-                    info!(target: "consensus::authority", header=?sealed_block_with_senders.hash(), "sending block notification");
+                    let block_hash = sealed_block_with_senders.hash();
+
+                    info!(target: "consensus::authority", header=?block_hash, "sending block notification");
 
                     let chain = Arc::new(Chain::new(vec![(sealed_block_with_senders, post_state)]));
 
@@ -295,6 +303,10 @@ where
                     let _ = self
                         .canon_state_notification
                         .send(reth_provider::CanonStateNotification::Commit { new: chain });
+
+                    let new_block = NewBlock { block, td: uint!(1_U128) }; 
+                    // Notify peers
+                    self.network_handle.announce_block(new_block, block_hash);
                 }
                 Err(err) => {
                     warn!(target: "consensus::authority", ?err, "failed to execute block")
