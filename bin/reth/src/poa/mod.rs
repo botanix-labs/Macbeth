@@ -23,7 +23,6 @@ use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, pin_mut, stream, stream_select, StreamExt};
-use hex::FromHex;
 use reth_authority_consensus::{AuthorityConsensus, AuthorityConsensusBuilder};
 
 use reth_beacon_consensus::{BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN};
@@ -44,7 +43,7 @@ use reth_interfaces::{
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
 };
-use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager, import::ProofOfAuthorityBlockImport};
+use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager, import::ProofOfAuthorityBlockImport, import::BlockImport};
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -341,6 +340,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         }
 
         info!(target: "reth::cli", "Connecting to P2P network");
+        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
+
 
         let default_peers_path = data_dir.known_peers_path();
         let head = self
@@ -357,6 +358,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             Box::new(ProofOfAuthorityBlockImport::new(
                 consensus_engine_tx.clone())),
         );
+
         let network = self
             .start_network(
                 network_config,
@@ -368,8 +370,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), "Connected to P2P network");
         debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
         let network_client = network.fetch_client().await?;
-
-        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
         debug!(target: "reth::cli", "Spawning payload builder service");
         let payload_builder = self.ext.spawn_payload_builder_service(
@@ -403,6 +403,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             secp256k1::Secp256k1::new(),
             secret_key,
             None,
+            network.clone(),
         )
         .expect("failed to build authority consensus")
         .build();
