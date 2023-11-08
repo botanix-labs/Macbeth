@@ -281,6 +281,4 @@ pub enum ConsensusError {
     FailedToRecoverAuthority,
     #[error("SignerLimitExceeded")]
     SignerLimitReached,
-    #[error("SignerLimitExceeded")]
-    AuthorityDifficultyInvalid,
 }
