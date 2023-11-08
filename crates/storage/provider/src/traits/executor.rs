@@ -33,7 +33,7 @@ pub trait BlockExecutor<SP: StateProvider> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<PostState, BlockExecutionError>;
 
     /// Executes the block and checks receipts
@@ -42,6 +42,6 @@ pub trait BlockExecutor<SP: StateProvider> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<bitcoin::block::Header>
+        recent_block_header: Option<(bitcoin::block::Header, u32)>
     ) -> Result<PostState, BlockExecutionError>;
 }

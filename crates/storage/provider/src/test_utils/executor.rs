@@ -12,7 +12,7 @@ impl<SP: StateProvider> BlockExecutor<SP> for TestExecutor {
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
-        _recent_block_headers: Option<bitcoin::block::Header>,
+        _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<PostState, BlockExecutionError> {
         self.0.clone().ok_or(BlockExecutionError::UnavailableForTest)
     }
@@ -22,7 +22,7 @@ impl<SP: StateProvider> BlockExecutor<SP> for TestExecutor {
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
-        _recent_block_headers: Option<bitcoin::block::Header>,
+        _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<PostState, BlockExecutionError> {
         self.0.clone().ok_or(BlockExecutionError::UnavailableForTest)
     }
