@@ -104,7 +104,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
-    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_source_address: Url,
 }
 
@@ -124,7 +124,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
     ) -> Self {
         let latest_header = client
@@ -323,7 +323,7 @@ impl StorageInner {
         block: &Block,
         executor: &mut Executor<DB>,
         senders: Vec<Address>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
 
@@ -376,7 +376,7 @@ impl StorageInner {
         transactions: Vec<TransactionSigned>,
         executor: &mut Executor<DB>,
         chain_spec: Arc<ChainSpec>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
         let header = self.build_header_template(&transactions, chain_spec);
 

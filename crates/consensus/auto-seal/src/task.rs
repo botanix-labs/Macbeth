@@ -54,7 +54,7 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
-    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Bitcoin block source url
     bitcoin_block_source_address: Url,
 }
@@ -72,7 +72,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
     ) -> Self {
         Self {
@@ -208,7 +208,6 @@ where
                                                             )
                                                             .unwrap(),
                                                     ),
-                                                    nonce: pegin_data.nonce,
                                                 };
                                                 btc_server.notify_pegin(request).await.unwrap();
                                                 info!("notifying btc server about pegin utxo");

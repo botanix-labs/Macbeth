@@ -59,7 +59,7 @@ where
 
 fn botanix_mint_contract_checks(
     result: &ExecutionResult,
-    recent_block_header: Option<bitcoin::block::Header>,
+    recent_block_header: Option<(bitcoin::block::Header, u32)>,
 ) -> Result<(), BlockExecutionError> {
     for log in result.logs() {
         if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
@@ -69,7 +69,7 @@ fn botanix_mint_contract_checks(
             })?;
 
             if let Err(e) =
-                pegin_data.validate(&SECP, &recent_block_header.expect("valid header").block_hash())
+                pegin_data.validate(&SECP, &recent_block_header.expect("valid header").0.block_hash(), &recent_block_header.expect("valid header").1)
             {
                 warn!("Failed pegin attempt! {:?}", e);
                 return Err(BlockValidationError::MintContractViolation.into())
@@ -217,7 +217,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         fill_tx_env(&mut self.evm.env.tx, transaction, sender);
@@ -262,7 +262,7 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(PostState, u64), BlockExecutionError> {
         // perf: do not execute empty blocks
         if block.body.is_empty() {
@@ -356,7 +356,7 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<PostState, BlockExecutionError> {
         let (post_state, cumulative_gas_used) =
             self.execute_transactions(block, total_difficulty, senders, recent_block_header)?;
@@ -378,7 +378,7 @@ where
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<PostState, BlockExecutionError> {
         let post_state = self.execute(block, total_difficulty, senders, recent_block_header)?;
 
