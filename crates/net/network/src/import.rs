@@ -1,15 +1,13 @@
 use crate::message::NewBlockMessage;
-use reth_beacon_consensus::BeaconEngineMessage;
-use reth_eth_wire::NewBlock;
-use reth_interfaces::consensus::{Consensus, ConsensusError};
-use reth_primitives::{
-    constants::eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE},
-    Header, PeerId,
-};
+use reth_consensus_common::validation;
+use reth_interfaces::consensus::ConsensusError;
+use reth_primitives::{ChainSpec, Header, PeerId, SealedBlock};
+
 use std::{
     collections::VecDeque,
-    task::{Context, Poll}, sync::Arc,
+    task::{Context, Poll},
 };
+use tracing::info;
 
 /// Abstraction over block import.
 pub trait BlockImport: std::fmt::Debug + Send + Sync {
@@ -78,45 +76,44 @@ impl BlockImport for ProofOfStakeBlockImport {
 /// An implementation of `BlockImport` used in Proof-of-Authority consensus
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct ProofOfAuthorityBlockImport<C> {
+pub struct ProofOfAuthorityBlockImport {
     queue: VecDeque<(PeerId, NewBlockMessage)>,
-    // TODO(networking) Maybe use Concensus, maybe not. Still not sure how this should be coded
-    _consensus: C,
+
+    chain_spec: ChainSpec,
 }
 
-impl<C> ProofOfAuthorityBlockImport<C> {
+impl ProofOfAuthorityBlockImport {
     /// Creates Proof of Authority Block Import with the provided consensus mechanism
-    pub fn new(consensus: C) -> Self {
-        Self { queue: VecDeque::new(), _consensus: consensus }
+    pub fn new(chain_spec: ChainSpec) -> Self {
+        Self { queue: VecDeque::new(), chain_spec }
     }
 
     /// Vaidates a header on block import
-    fn validate_header(&mut self, _header: Header) -> Result<(), ConsensusError> {
-        // TODO (networking) This will need to be updated with more checks
+    fn validate_header(&mut self, header: &Header) -> Result<(), ConsensusError> {
+        validation::validate_header_with_total_difficulty(header, header.difficulty)?;
         Ok(())
     }
 
-    /// Validates a block on block import
-    fn validate_new_block(&mut self, block: Arc<NewBlock>) -> Result<(), ConsensusError> {
-        // TODO (networking) This will need to be updated with more checks
+    /// Fully Validates a block on block import
+    fn validate_new_block(&mut self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
+        validation::validate_block_standalone(new_block, &self.chain_spec)?;
         Ok(())
     }
 }
 
-impl<C> BlockImport for ProofOfAuthorityBlockImport<C>
-where
-    C: Consensus,
-{
+impl BlockImport for ProofOfAuthorityBlockImport {
     fn on_new_block(&mut self, peer_id: PeerId, incoming_block: NewBlockMessage) {
-        println!("on_new_block, peer_id: {:?}, incoming_block: {:?}", peer_id, incoming_block);
+        info!("on_new_block, peer_id: {:?}, incoming_block: {:?}", peer_id, incoming_block);
         self.queue.push_back((peer_id, incoming_block));
     }
 
     fn poll(&mut self, _cx: &mut Context<'_>) -> Poll<BlockImportOutcome> {
         if let Some(pair) = self.queue.pop_front() {
             let block = pair.1.block.clone();
-            let result = self
-                .validate_new_block(block)
+            let result: Result<BlockValidation, BlockImportError> = self
+                // TODO(armins) is is possible not to clone the block again
+                // TODO(armins) validate header
+                .validate_new_block(&block.block.clone().seal_slow())
                 .map_err(BlockImportError::Consensus)
                 .map(|_| BlockValidation::ValidHeader { block: pair.1 });
 

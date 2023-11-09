@@ -6,7 +6,7 @@ use reth_primitives::{
 use reth_provider::StateProvider;
 
 #[derive(Debug)]
-pub(crate) enum StorageAccessError {
+pub enum StorageAccessError {
     FailedAccess(&'static str),
 }
 
@@ -17,13 +17,13 @@ pub enum StateProviderError {
 }
 
 /// Create sighash for authority to sign
-pub(crate) fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
+pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
     header.extra_data = Bytes::from(extra_data.serialize_without_signature().as_slice());
     header.hash_slow()
 }
 
 /// Read staker balance from staking contract storage
-pub(crate) fn read_staker_balance(
+pub fn read_staker_balance(
     provider: impl StateProvider,
     staker_address: Address,
 ) -> Result<U256, StorageAccessError> {
@@ -43,14 +43,14 @@ pub(crate) fn read_staker_balance(
 }
 
 #[derive(Debug)]
-pub(crate) enum RecoverAuthorityError {
+pub enum RecoverAuthorityError {
     NoSignaturePresentInExtraData,
     FailedToRecoverSigner(secp256k1::Error),
     FailedToDerserializeExtraData(botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError),
     FailedToCreateSigHash(secp256k1::Error),
 }
 
-pub(crate) fn recovery_authority(
+pub fn recovery_authority(
     header: &Header,
 ) -> Result<secp256k1::PublicKey, RecoverAuthorityError> {
     let extra_data =
@@ -72,11 +72,11 @@ pub(crate) fn recovery_authority(
 }
 
 #[derive(Debug)]
-pub(crate) enum GetAuthoritiesError {
+pub enum GetAuthoritiesError {
     FailedToRecoverAuthorityList(botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError),
 }
 
-pub(crate) fn get_authority_list(
+pub fn get_authority_list(
     header: &Header,
 ) -> Result<Vec<secp256k1::PublicKey>, GetAuthoritiesError> {
     let extra_data =
