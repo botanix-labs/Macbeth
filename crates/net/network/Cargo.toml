@@ -30,7 +30,7 @@ reth-provider.workspace = true
 reth-rpc-types.workspace = true
 reth-tokio-util.workspace = true
 alloy-rlp.workspace = true
-
+reth-consensus-common = {path = "../../consensus/common"}
 # async/futures
 futures.workspace = true
 pin-project.workspace = true

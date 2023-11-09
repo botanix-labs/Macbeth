@@ -6537,10 +6537,12 @@ version = "0.1.0-alpha.13"
 dependencies = [
  "assert_matches",
  "cfg-if",
+ "botanix-lib",
  "mockall",
  "reth-interfaces",
  "reth-primitives",
  "reth-provider",
+ "secp256k1 0.27.0",
 ]
 
 [[package]]
@@ -6885,6 +6887,7 @@ dependencies = [
  "pin-project",
  "rand 0.8.5",
  "reth-beacon-consensus",
+ "reth-consensus-common",
  "reth-discv4",
  "reth-dns-discovery",
  "reth-ecies",
