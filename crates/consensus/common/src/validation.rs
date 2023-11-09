@@ -13,6 +13,9 @@ use reth_primitives::{
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
+use reth_primitives::constants::eip225::{DIFF_NOTURN, DIFF_INTURN, DIFF_NOVOTE};
+
+use crate::utils::create_authority_sighash;
 
 use crate::utils::create_authority_sighash;
 
