@@ -121,10 +121,6 @@ pub enum BlockExecutionError {
     /// Note: this is not feature gated for convenience.
     #[error("execution unavailable for tests")]
     UnavailableForTest,
-    //TODO(stevenroose) this should be removed in later versions
-    /// Failed to get bitcoin header
-    #[error("Failed to get bitcoin header")]
-    FailedToGetBitcoinHeader,
 
     /// Cannot add and existing federation memeber to the federation
     #[error("Cannot add and existing federation memeber to the federation")]
