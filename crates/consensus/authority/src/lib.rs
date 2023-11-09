@@ -20,15 +20,14 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 use botanix_lib::extra_data_header::{self, ExtraDataHeader};
-use reth_consensus_common::validation;
+use reth_consensus_common::{utils, validation};
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
 use reth_primitives::{
     constants::{
-        eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE, SIGNER_LIMIT},
-        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, MAXIMUM_EXTRA_DATA_SIZE,
+        eip225::SIGNER_LIMIT, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT,
     },
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
     ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
@@ -51,7 +50,6 @@ mod client;
 mod constants;
 mod epoch_manager;
 mod task;
-mod utils;
 mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
@@ -90,29 +88,17 @@ impl Consensus for AuthorityConsensus {
         Ok(())
     }
 
+    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+        validation::validate_block_standalone(block, &self.chain_spec)
+    }
+
     fn validate_header_with_total_difficulty(
         &self,
         header: &Header,
         total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        if header.ommers_hash != EMPTY_OMMER_ROOT {
-            return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
-        }
-
-        if header.difficulty != DIFF_INTURN &&
-            header.difficulty != DIFF_NOTURN &&
-            header.difficulty != DIFF_NOVOTE
-        {
-            return Err(ConsensusError::AuthorityDifficultyInvalid)
-        }
-
-        // validate header extradata
-        validate_header_extradata(header)?;
+        validation::validate_header_with_total_difficulty(header, total_difficulty)?;
         Ok(())
-    }
-
-    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        validation::validate_block_standalone(block, &self.chain_spec)
     }
 }
 
@@ -132,8 +118,8 @@ impl AuthorityConsensus {
             return Ok(())
         }
 
-        let signer = utils::recovery_authority(header)
-            .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+        let signer =
+            utils:: recovery_authority(header).map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
         if prev_headers.into_iter().any(|prev_header| {
             let prev_signer = utils::recovery_authority(&prev_header);
             prev_signer.is_err() || signer == prev_signer.expect("valid signer")
@@ -477,7 +463,7 @@ impl StorageInner {
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
 
-        validate_header_extradata(&header).map_err(|_e| {
+        validation::validate_header_extradata(&header).map_err(|_e| {
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
 

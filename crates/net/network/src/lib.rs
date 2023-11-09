@@ -125,7 +125,7 @@ mod flattened_response;
 pub mod import;
 mod listener;
 mod manager;
-mod message;
+pub mod message;
 mod metrics;
 mod network;
 pub mod peers;
