@@ -7,7 +7,6 @@ use std::{
     collections::VecDeque,
     sync::Arc,
     task::{Context, Poll},
-    sync::Arc,
 };
 use tracing::info;
 
