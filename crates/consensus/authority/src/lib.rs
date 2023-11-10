@@ -118,8 +118,8 @@ impl AuthorityConsensus {
             return Ok(())
         }
 
-        let signer =
-            utils:: recovery_authority(header).map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
+        let signer = utils::recovery_authority(header)
+            .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
         if prev_headers.into_iter().any(|prev_header| {
             let prev_signer = utils::recovery_authority(&prev_header);
             prev_signer.is_err() || signer == prev_signer.expect("valid signer")
@@ -376,6 +376,7 @@ impl StorageInner {
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &Vec<secp256k1::PublicKey>,
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
+        recent_block_hash: bitcoin::BlockHash,
     ) -> Header {
         let receipts = post_state.receipts(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -400,7 +401,7 @@ impl StorageInner {
         // Serialize the header without signature
         // TODO signing list should come from prev blocl header
         let extra_header_content_no_signature =
-            ExtraDataHeader::new(0u32, None, authorities.clone(), vote_for);
+            ExtraDataHeader::new(0u32, None, authorities.clone(), vote_for, recent_block_hash);
 
         let sig_hash = utils::create_authority_sighash(
             &mut header.clone(),
@@ -410,8 +411,13 @@ impl StorageInner {
         // TODO remove unwrap
         let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
-        let extra_data_header_with_signature =
-            ExtraDataHeader::new(0u32, Some(signature), authorities.clone(), vote_for);
+        let extra_data_header_with_signature = ExtraDataHeader::new(
+            0u32,
+            Some(signature),
+            authorities.clone(),
+            vote_for,
+            recent_block_hash,
+        );
         header.extra_data = Bytes::from(extra_data_header_with_signature.serialize().unwrap());
 
         header
@@ -430,6 +436,10 @@ impl StorageInner {
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
+        if recent_block_header.is_none() {
+            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
+        }
+
         // Retrieve previous block header
         let prev_header = self.headers.get(&self.best_block).expect("checked empty");
         let signers = ExtraDataHeader::deserialize(prev_header.extra_data.to_vec())
@@ -457,8 +467,18 @@ impl StorageInner {
         trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
 
         // fill in the rest of the fields
-        let header =
-            self.complete_header(header, &post_state, executor, gas_used, sk, secp, &signers, vote);
+        let header = self.complete_header(
+            header,
+            &post_state,
+            executor,
+            gas_used,
+            sk,
+            secp,
+            &signers,
+            vote,
+            // This is checked to be Some above
+            recent_block_header.expect("valid header").block_hash(),
+        );
 
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
