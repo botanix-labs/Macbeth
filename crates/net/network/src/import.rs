@@ -5,8 +5,8 @@ use reth_primitives::{ChainSpec, Header, PeerId, SealedBlock};
 
 use std::{
     collections::VecDeque,
-    task::{Context, Poll},
     sync::Arc,
+    task::{Context, Poll},
 };
 use tracing::info;
 
@@ -89,14 +89,10 @@ impl ProofOfAuthorityBlockImport {
         Self { queue: VecDeque::new(), chain_spec }
     }
 
-    /// Vaidates a header on block import
-    fn validate_header(&mut self, header: &Header) -> Result<(), ConsensusError> {
-        validation::validate_header_with_total_difficulty(header, header.difficulty)?;
-        Ok(())
-    }
-
     /// Fully Validates a block on block import
-    fn validate_new_block(&mut self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
+    fn validate(&self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
+        let header = new_block.header.clone();
+        validation::validate_header_with_total_difficulty(&header, header.difficulty)?;
         validation::validate_block_standalone(new_block, &self.chain_spec)?;
         Ok(())
     }
@@ -113,8 +109,7 @@ impl BlockImport for ProofOfAuthorityBlockImport {
             let block = pair.1.block.clone();
             let result: Result<BlockValidation, BlockImportError> = self
                 // TODO(armins) is is possible not to clone the block again
-                // TODO(armins) validate header
-                .validate_new_block(&block.block.clone().seal_slow())
+                .validate(&block.block.clone().seal_slow())
                 .map_err(BlockImportError::Consensus)
                 .map(|_| BlockValidation::ValidHeader { block: pair.1 });
 
