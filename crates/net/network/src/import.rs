@@ -6,6 +6,7 @@ use reth_primitives::{ChainSpec, Header, PeerId, SealedBlock};
 use std::{
     collections::VecDeque,
     task::{Context, Poll},
+    sync::Arc,
 };
 use tracing::info;
 
@@ -79,12 +80,12 @@ impl BlockImport for ProofOfStakeBlockImport {
 pub struct ProofOfAuthorityBlockImport {
     queue: VecDeque<(PeerId, NewBlockMessage)>,
 
-    chain_spec: ChainSpec,
+    chain_spec: Arc<ChainSpec>,
 }
 
 impl ProofOfAuthorityBlockImport {
     /// Creates Proof of Authority Block Import with the provided consensus mechanism
-    pub fn new(chain_spec: ChainSpec) -> Self {
+    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self { queue: VecDeque::new(), chain_spec }
     }
 

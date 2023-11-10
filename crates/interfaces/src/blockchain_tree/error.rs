@@ -251,6 +251,7 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::OptimismBlockExecution(_) => false,
                     &BlockExecutionError::CannotAddExistingFederationMember => true,
                     &BlockExecutionError::FailedToDeserializePreviousBlockHeader => true,
+                    &BlockExecutionError::BitcoinRecentHeaderNotAvailable => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

@@ -130,6 +130,10 @@ pub enum BlockExecutionError {
     #[error("Failed to deserialize previous block header")]
     FailedToDeserializePreviousBlockHeader,
 
+    /// Bitcoin recent header is not available
+    #[error("Bitcoin recent header is not available")]
+    BitcoinRecentHeaderNotAvailable,
+
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]
     #[error(transparent)]
