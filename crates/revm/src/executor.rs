@@ -69,7 +69,7 @@ fn botanix_mint_contract_checks(
             })?;
 
             if let Err(e) =
-                pegin_data.validate(&SECP, &recent_block_header.expect("valid header").0.block_hash(), &recent_block_header.expect("valid header").1)
+            pegin_data.validate(&SECP, &recent_block_header.expect("valid header"))
             {
                 warn!("Failed pegin attempt! {:?}", e);
                 return Err(BlockValidationError::MintContractViolation.into())
