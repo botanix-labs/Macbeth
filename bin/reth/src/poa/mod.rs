@@ -43,7 +43,11 @@ use reth_interfaces::{
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
 };
-use reth_network::{error::NetworkError, NetworkConfig, NetworkHandle, NetworkManager, import::ProofOfAuthorityBlockImport, import::BlockImport};
+use reth_network::{
+    error::NetworkError,
+    import::{BlockImport, ProofOfAuthorityBlockImport},
+    NetworkConfig, NetworkHandle, NetworkManager,
+};
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -342,8 +346,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         info!(target: "reth::cli", "Connecting to P2P network");
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
-
         let default_peers_path = data_dir.known_peers_path();
+        let block_import = ProofOfAuthorityBlockImport::new(botanix_chain_spec.clone());
         let head = self
             .lookup_head(Arc::clone(&db), &botanix_chain_spec)
             .expect("the head block is missing");
@@ -425,9 +429,12 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let pipeline_events = pipeline.events();
         block_production_task.set_pipeline_events(pipeline_events);
         debug!(target: "reth::cli", "Spawning block production task task");
-        ctx.task_executor.spawn_critical("Block Production Task", Box::pin(async move {
-            block_production_task.start_task().await;
-        }));
+        ctx.task_executor.spawn_critical(
+            "Block Production Task",
+            Box::pin(async move {
+                block_production_task.start_task().await;
+            }),
+        );
 
         let pipeline_events = pipeline.events();
 
@@ -755,7 +762,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         secret_key: SecretKey,
         default_peers_path: PathBuf,
         chain_spec: &Arc<ChainSpec>,
-        block_import: Box<dyn BlockImport>
+        block_import: Box<dyn BlockImport>,
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
             .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
