@@ -401,6 +401,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
         let default_peers_path = self.data_dir().known_peers_path();
+        let block_import = ProofOfAuthorityBlockImport::new(botanix_chain_spec.clone());
+        
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -408,6 +410,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             head,
             secret_key,
             default_peers_path.clone(),
+            &self.chain,
+            Box::new(block_import),
         );
 
         let network_client = network_config.client.clone();
@@ -486,9 +490,12 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let pipeline_events = pipeline.events();
         block_production_task.set_pipeline_events(pipeline_events);
         debug!(target: "reth::cli", "Spawning block production task task");
-        ctx.task_executor.spawn_critical("Block Production Task", Box::pin(async move {
-            block_production_task.start_task().await;
-        }));
+        ctx.task_executor.spawn_critical(
+            "Block Production Task",
+            Box::pin(async move {
+                block_production_task.start_task().await;
+            }),
+        );
 
         let pipeline_events = pipeline.events();
 
@@ -834,10 +841,11 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         head: Head,
         secret_key: SecretKey,
         default_peers_path: PathBuf,
-    ) -> NetworkConfig<ProviderFactory<DB>> {
-        let cfg_builder = self
-            .network
-            .network_config(config, self.chain.clone(), secret_key, default_peers_path)
+        chain_spec: &Arc<ChainSpec>,
+        block_import: Box<dyn BlockImport>,
+    ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
+        self.network
+            .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor))
             .set_head(head)
             .listener_addr(SocketAddr::V4(SocketAddrV4::new(
