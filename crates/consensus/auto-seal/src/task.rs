@@ -187,30 +187,32 @@ where
                                                     "passed evm check should pass this parse attempt",
                                                 );
 
-                                                let request = NotifyPeginRequest {
-                                                    utxo_txid: pegin_data
-                                                        .meta
-                                                        .outpoint
-                                                        .txid
-                                                        .to_string(),
-                                                    utxo_vout: pegin_data.meta.outpoint.vout,
-                                                    eth_address: hex::encode(
-                                                        pegin_data.meta.address.to_vec(),
-                                                    ),
-                                                    output: bitcoin::consensus::serialize(
-                                                        &pegin_data
-                                                            .meta
-                                                            .tx
-                                                            .output
-                                                            .get(
-                                                                pegin_data.meta.outpoint.vout
-                                                                    as usize,
-                                                            )
-                                                            .unwrap(),
-                                                    ),
-                                                };
-                                                btc_server.notify_pegin(request).await.unwrap();
-                                                info!("notifying btc server about pegin utxo");
+                                                for pegin in &pegin_data.meta {
+                                                    let request = NotifyPeginRequest {
+                                                        utxo_txid: pegin
+                                                            .outpoint
+                                                            .txid
+                                                            .to_string(),
+                                                        utxo_vout: pegin.outpoint.vout,
+                                                        eth_address: hex::encode(
+                                                            pegin.address.to_vec(),
+                                                        ),
+                                                        output: bitcoin::consensus::serialize(
+                                                            pegin
+                                                                .tx
+                                                                .output
+                                                                .get(
+                                                                    pegin.outpoint.vout
+                                                                        as usize,
+                                                                )
+                                                                .unwrap(),
+                                                        ),
+                                                    };
+
+                                                    btc_server.notify_pegin(request).await.unwrap();
+                                                    info!("notifying btc server about pegin utxo");
+                                                }
+
                                             }
                                             Ok(GenesisContractEvents::BurnEvent) => {
                                                 // TODO (armins): obv
