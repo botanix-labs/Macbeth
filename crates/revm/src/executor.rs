@@ -68,11 +68,17 @@ fn botanix_mint_contract_checks(
                 BlockValidationError::MintContractViolation
             })?;
 
-            if let Err(e) =
-            pegin_data.validate(&SECP, &recent_block_header.expect("valid header"))
-            {
-                warn!("Failed pegin attempt! {:?}", e);
-                return Err(BlockValidationError::MintContractViolation.into())
+            match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
+                Ok(aggregate_value) => {
+                    if aggregate_value != pegin_data.amount {
+                        warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                        return Err(BlockValidationError::MintContractViolation.into())
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed pegin attempt! {:?}", e);
+                    return Err(BlockValidationError::MintContractViolation.into())
+                },
             }
         }
 
