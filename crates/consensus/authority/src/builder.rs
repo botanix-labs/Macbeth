@@ -1,3 +1,4 @@
+use reth_eth_wire::NewBlock;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 use tracing::error;
@@ -9,13 +10,13 @@ use crate::{
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_network::{import::ProofOfAuthorityBlockImport, NetworkHandle};
+use reth_network::{NetworkHandle, message::NewBlockMessage};
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_transaction_pool::TransactionPool;
-use tokio::sync::{mpsc::UnboundedSender, Mutex, RwLock};
+use tokio::sync::{mpsc::{UnboundedSender, UnboundedReceiver}, Mutex, RwLock};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
@@ -33,6 +34,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager,
     network_handle: NetworkHandle,
+    block_import_rx: UnboundedReceiver<NewBlockMessage>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -74,6 +76,7 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
+        block_import_rx: UnboundedReceiver<NewBlockMessage>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -132,6 +135,7 @@ where
             vote,
             epoch_manager,
             network_handle,
+            block_import_rx,
         })
     }
 
@@ -155,6 +159,7 @@ where
             vote,
             epoch_manager,
             network_handle,
+            block_import_rx,
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -172,6 +177,7 @@ where
             sk,
             epoch_manager,
             network_handle,
+            block_import_rx,
         );
 
         (consensus, auth_client, task)

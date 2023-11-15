@@ -263,6 +263,7 @@ impl Storage {
 }
 
 /// In-memory storage for the chain the authority seal engine is building.
+/// Headers from the most current epoch to the tip
 #[derive(Default, Debug)]
 pub(crate) struct StorageInner {
     /// Headers buffered for download.

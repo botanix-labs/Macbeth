@@ -8,8 +8,10 @@ use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
-use reth_network::NetworkHandle;
-use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
+use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_primitives::{
+    hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
+};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
@@ -17,7 +19,10 @@ use ruint::Uint;
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc, task::Poll};
 
-use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
+use tokio::sync::{
+    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    oneshot, RwLock,
+};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 use url::Url;
@@ -55,6 +60,8 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     sk: secp256k1::SecretKey,
     /// Network Handler
     network_handle: NetworkHandle,
+    /// Events from block import
+    block_import_rx: UnboundedReceiver<NewBlockMessage>,
 }
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
@@ -77,6 +84,7 @@ where
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager,
         network_handle: NetworkHandle,
+        block_import_rx: UnboundedReceiver<NewBlockMessage>,
     ) -> Self {
         Self {
             chain_spec,
@@ -94,6 +102,7 @@ where
             sk,
             epoch_manager,
             network_handle,
+            block_import_rx,
         }
     }
 
@@ -101,6 +110,79 @@ where
         // this drives block production
         loop {
             let mut storage = self.storage.write().await;
+
+            match self.block_import_rx.try_recv() {
+                Ok(new_block) => {
+                    // Recieved a new block from a peer. Block import has ran consensus validation
+                    // against this block Update internal cache and notify the
+                    // engine
+                    loop {
+                        let block = new_block.block.block.clone();
+                        // send the new update to the engine, this will trigger the engine
+                        // to download and execute the block we just inserted
+                        let (tx, rx) = oneshot::channel();
+                        let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
+                            payload: block.clone().seal_slow().into(),
+                            cancun_fields: None,
+                            tx,
+                        });
+
+                        match rx.await.unwrap() {
+                            Ok(payload_status) => {
+                                match payload_status.status {
+                                    PayloadStatusEnum::Accepted => {
+                                        todo!();
+                                    }
+                                    PayloadStatusEnum::Valid => {
+                                        // Update internal cache
+                                        let body = BlockBody {
+                                            transactions: block.body,
+                                            ommers: vec![],
+                                            withdrawals: None,
+                                        };
+
+                                        storage.insert_new_block(block.header, body);
+                                        let mining_pool = self.pool.clone();
+                                        // Lastly remove confirmed txs from the mempool
+                                        mining_pool.remove_transactions(
+                                            new_block.block.block
+                                                .body
+                                                .iter()
+                                                .map(|tx| tx.hash().to_owned())
+                                                .collect(),
+                                        );
+
+                                        break
+                                    }
+                                    PayloadStatusEnum::Invalid {validation_error} => {
+                                        error!(target: "consensus::authority", ?validation_error, "Autoseal fork new payload returned invalid response");
+                                        return ()
+                                    }
+                                    PayloadStatusEnum::Syncing => {
+                                        debug!(target: "consensus::authority", ?payload_status, "Autoseal fork new payload returned SYNCING, waiting for VALID");
+                                        // wait for the next fork choice update
+                                        continue
+                                    }
+                                }
+                            }
+                            Err(status_err) => {
+                                error!(target: "consensus::authority", ?status_err, "Autoseal fork new payload failed");
+                                return ()
+                            }
+                        }
+                    }
+                }
+                Err(error) => match error {
+                    TryRecvError::Empty => {
+                        debug!(target: "consensus::authority", "No new blocks from peers");
+                        break
+                    }
+                    TryRecvError::Disconnected => {
+                        error!(target: "consensus::authority", "Block import channel disconnected");
+                        return ()
+                    }
+                },
+            }
 
             if let Poll::Ready(transactions) = self.epoch_manager.poll(&self.pool).await {
                 info!("Adding to the list of transctions, {:?}, {:?}", transactions, self.queued);
@@ -275,7 +357,7 @@ where
                                 }
                             }
                             Err(err) => {
-                                error!(target: "consensus::authority", ?err, "Autoseal fork choice update failed");
+                                error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
                                 return ()
                             }
                         }
