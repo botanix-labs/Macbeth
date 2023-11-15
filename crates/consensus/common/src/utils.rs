@@ -18,7 +18,9 @@ pub enum StateProviderError {
 
 /// Create sighash for authority to sign
 pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
-    header.extra_data = Bytes::from(extra_data.serialize_without_signature().as_slice());
+    let mut writer: Vec<u8> = vec![];
+    extra_data.encode_into_without_signature(&mut writer).expect("Valid extra data header");
+    header.extra_data = Bytes::from(writer.as_slice());
     header.hash_slow()
 }
 
@@ -37,6 +39,7 @@ pub fn read_staker_balance(
     let balance = provider
         .storage(staking_contract_address, storage_key)
         .map_err(|_e| StorageAccessError::FailedAccess("Failed to retrieve storage"))?
+        // TODO remove unwrap
         .unwrap();
 
     Ok(balance)
@@ -50,12 +53,11 @@ pub enum RecoverAuthorityError {
     FailedToCreateSigHash(secp256k1::Error),
 }
 
-pub fn recovery_authority(
-    header: &Header,
-) -> Result<secp256k1::PublicKey, RecoverAuthorityError> {
-    let extra_data =
-        botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
-            .map_err(|e| RecoverAuthorityError::FailedToDerserializeExtraData(e))?;
+pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, RecoverAuthorityError> {
+    let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+        &mut header.extra_data.to_vec().as_slice(),
+    )
+    .map_err(|e| RecoverAuthorityError::FailedToDerserializeExtraData(e))?;
 
     let sighash = create_authority_sighash(&mut header.clone(), &extra_data);
     let message = secp256k1::Message::from_slice(sighash.as_bytes())
@@ -79,9 +81,10 @@ pub enum GetAuthoritiesError {
 pub fn get_authority_list(
     header: &Header,
 ) -> Result<Vec<secp256k1::PublicKey>, GetAuthoritiesError> {
-    let extra_data =
-        botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
-            .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
+    let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+        &mut header.extra_data.to_vec().as_slice(),
+    )
+    .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
 
     Ok(extra_data.authority_signers)
 }
