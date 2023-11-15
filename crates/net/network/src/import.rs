@@ -122,6 +122,8 @@ impl BlockImport for ProofOfAuthorityBlockImport {
             if let Ok(validation) = result.as_ref() {
                 if let BlockValidation::ValidBlock { block } = validation {
                     self.sender_stream.send(block.clone()).unwrap();
+                } else if let BlockValidation::ValidHeader { block } = validation {
+                    self.sender_stream.send(block.clone()).unwrap();
                 }
             }
 
