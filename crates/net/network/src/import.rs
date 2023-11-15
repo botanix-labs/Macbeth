@@ -1,7 +1,7 @@
 use crate::message::NewBlockMessage;
 use reth_consensus_common::validation;
 use reth_interfaces::consensus::ConsensusError;
-use reth_primitives::{ChainSpec, Header, PeerId, SealedBlock};
+use reth_primitives::{ChainSpec, PeerId, SealedBlock};
 
 use std::{
     collections::VecDeque,
@@ -75,7 +75,7 @@ impl BlockImport for ProofOfStakeBlockImport {
 }
 
 /// An implementation of `BlockImport` used in Proof-of-Authority consensus
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ProofOfAuthorityBlockImport {
     queue: VecDeque<(PeerId, NewBlockMessage)>,

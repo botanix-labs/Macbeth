@@ -83,7 +83,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, Mutex, RwLock};
 use tracing::*;
 
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
@@ -429,12 +429,10 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let pipeline_events = pipeline.events();
         block_production_task.set_pipeline_events(pipeline_events);
         debug!(target: "reth::cli", "Spawning block production task task");
-        ctx.task_executor.spawn_critical(
-            "Block Production Task",
-            Box::pin(async move {
-                block_production_task.start_task().await;
-            }),
-        );
+
+        ctx.task_executor.spawn(Box::pin(async move {
+            block_production_task.start_task().await;
+        }));
 
         let pipeline_events = pipeline.events();
 
