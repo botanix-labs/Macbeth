@@ -54,9 +54,6 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{info, trace, warn};
 mod builder;
 mod client;
-mod epoch_manager;
-mod task;
-mod voting;
 mod constants;
 mod epoch_manager;
 mod task;
@@ -574,11 +571,7 @@ impl StorageInner {
             })?;
 
             // TODO(armins) Should we be verbose and fail the block or just ignore?
-            if extra_data_header
-                .authority_signers
-                .iter()
-                .any(|signer| signer == &authority_to_vote_on)
-            {
+            if signers.iter().any(|signer| signer == &authority_to_vote_on) {
                 return Err(BlockExecutionError::CannotAddExistingFederationMember)
             }
             // Keep track of votes

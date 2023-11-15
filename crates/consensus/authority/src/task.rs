@@ -8,23 +8,15 @@ use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
-use reth_network::{
-    import::{BlockImport, BlockImportError, BlockValidation, ProofOfAuthorityBlockImport},
-    NetworkHandle,
-};
-use reth_primitives::{
-    hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
-};
+use reth_network::NetworkHandle;
+use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use ruint::Uint;
 use secp256k1::{All, Secp256k1};
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-    task::{self, Poll},
-};
+use std::{collections::VecDeque, sync::Arc, task::Poll};
+
 use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
@@ -39,8 +31,6 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     client: Client,
     /// The active epoch
     epoch_manager: EpochManager,
-    /// Single active future that inserts a new block into `storage`
-    insert_task: Option<BoxFuture<'static, Option<UnboundedReceiverStream<PipelineEvent>>>>,
     /// Shared storage to insert new blocks
     storage: Storage,
     /// Pool where transactions are stored
@@ -65,8 +55,6 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     sk: secp256k1::SecretKey,
     /// Network Handler
     network_handle: NetworkHandle,
-    /// Block import from network manager
-    block_import: ProofOfAuthorityBlockImport,
 }
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
@@ -89,7 +77,6 @@ where
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager,
         network_handle: NetworkHandle,
-        block_import: ProofOfAuthorityBlockImport,
     ) -> Self {
         Self {
             chain_spec,
@@ -107,36 +94,13 @@ where
             sk,
             epoch_manager,
             network_handle,
-            block_import,
         }
     }
 
     pub async fn start_task(&mut self) -> () {
         // this drives block production
         loop {
-            let waker = task::Waker::noop();
-            let mut cx = task::Context::from_waker(&waker);
-
-            if let Poll::Ready(block_result) = self.block_import.poll(&mut cx) {
-                match block_result.result {
-                    Ok(BlockValidation::ValidHeader { block: new_block_message }) |
-                    Ok(BlockValidation::ValidBlock { block: new_block_message }) => {
-                        info!(target: "consensus::authority", ?new_block_message, "recieved valid block from peer, inserting into storage");
-                        let mut storage = self.storage.write().await;
-                        let body = BlockBody {
-                            transactions: new_block_message.block.block.body.clone(),
-                            withdrawals: None,
-                            ommers: vec![],
-                        };
-
-                        storage
-                            .insert_new_block(new_block_message.block.block.header.clone(), body);
-                    }
-                    Err(BlockImportError::Consensus(err)) => {
-                        warn!(target: "consensus::authority", ?err, "recieved invalid block from peer");
-                    }
-                }
-            }
+            let mut storage = self.storage.write().await;
 
             if let Poll::Ready(transactions) = self.epoch_manager.poll(&self.pool).await {
                 info!("Adding to the list of transctions, {:?}, {:?}", transactions, self.queued);

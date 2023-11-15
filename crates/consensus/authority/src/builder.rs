@@ -33,8 +33,6 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager,
     network_handle: NetworkHandle,
-    /// Block import from network manager
-    block_import: ProofOfAuthorityBlockImport,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -76,7 +74,6 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
-        block_import: ProofOfAuthorityBlockImport
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -135,7 +132,6 @@ where
             vote,
             epoch_manager,
             network_handle,
-            block_import,
         })
     }
 
@@ -159,7 +155,6 @@ where
             vote,
             epoch_manager,
             network_handle,
-            block_import,
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -177,7 +172,6 @@ where
             sk,
             epoch_manager,
             network_handle,
-            block_import,
         );
 
         (consensus, auth_client, task)
