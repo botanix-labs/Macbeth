@@ -311,7 +311,7 @@ pub fn validate_header_regarding_parent(
 
         let expected_base_fee =
             if chain_spec.fork(Hardfork::London).transitions_at_block(child.number) {
-                constants::EIP1559_INITIAL_BASE_FEE
+                constants::BOTANIX_INITIAL_BASE_FEE
             } else {
                 // This BaseFeeMissing will not happen as previous blocks are checked to have them.
                 parent
