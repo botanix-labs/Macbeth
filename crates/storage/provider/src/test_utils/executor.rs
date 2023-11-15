@@ -16,11 +16,7 @@ impl BlockExecutor for TestExecutor {
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
-<<<<<<< HEAD
         _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
-=======
-        _recent_block_headers: Option<bitcoin::block::Header>,
->>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest)
@@ -37,11 +33,7 @@ impl BlockExecutor for TestExecutor {
         _recent_block_headers: Option<(bitcoin::block::Header, u32)>,
 =======
         _recent_block_headers: Option<bitcoin::block::Header>,
->>>>>>> 53c9d3fa2 (refactor(async_worker): only store most recent bitcoin block header)
     ) -> Result<(), BlockExecutionError> {
-        if self.0.is_none() {
-            return Err(BlockExecutionError::UnavailableForTest)
-        }
         Ok(())
     }
 
