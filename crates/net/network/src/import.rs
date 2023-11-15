@@ -2,6 +2,7 @@ use crate::message::NewBlockMessage;
 use reth_consensus_common::validation;
 use reth_interfaces::consensus::ConsensusError;
 use reth_primitives::{ChainSpec, PeerId, SealedBlock};
+use tokio::sync::mpsc::UnboundedSender;
 
 use std::{
     collections::VecDeque,
@@ -81,12 +82,17 @@ pub struct ProofOfAuthorityBlockImport {
     queue: VecDeque<(PeerId, NewBlockMessage)>,
 
     chain_spec: Arc<ChainSpec>,
+
+    sender_stream: UnboundedSender<NewBlockMessage>,
 }
 
 impl ProofOfAuthorityBlockImport {
     /// Creates Proof of Authority Block Import with the provided consensus mechanism
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        Self { queue: VecDeque::new(), chain_spec }
+    pub fn new(
+        chain_spec: Arc<ChainSpec>,
+        sender_stream: UnboundedSender<NewBlockMessage>,
+    ) -> Self {
+        Self { queue: VecDeque::new(), chain_spec, sender_stream }
     }
 
     /// Fully Validates a block on block import
@@ -112,6 +118,12 @@ impl BlockImport for ProofOfAuthorityBlockImport {
                 .validate(&block.block.clone().seal_slow())
                 .map_err(BlockImportError::Consensus)
                 .map(|_| BlockValidation::ValidHeader { block: pair.1 });
+            // Notify listeners on valid events
+            if let Ok(validation) = result.as_ref() {
+                if let BlockValidation::ValidBlock { block } = validation {
+                    self.sender_stream.send(block.clone()).unwrap();
+                }
+            }
 
             return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
         }
