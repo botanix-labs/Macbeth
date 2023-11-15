@@ -3,16 +3,16 @@ use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::{
         self,
+        eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE},
         eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     },
     eip4844::calculate_excess_blob_gas,
-    BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
-    SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
-    TxLegacy,
+    BlockNumber, ChainSpec, Hardfork, Header, InvalidTransactionError, SealedBlock, SealedHeader,
+    Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844, TxLegacy,
+    EMPTY_OMMER_ROOT, U256,
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
-use reth_primitives::constants::eip225::{DIFF_NOTURN, DIFF_INTURN, DIFF_NOVOTE};
 
 use crate::utils::create_authority_sighash;
 
@@ -509,9 +509,10 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
 
     // TODO (armins) check that no vote is occuring during an epoch header
     // 0. Validate that the block was signed by a federation member
-    let extra_data =
-        botanix_lib::extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
-            .map_err(|e| ConsensusError::ExtraDataInvalid)?;
+    let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+        &mut header.extra_data.to_vec().as_slice(),
+    )
+    .map_err(|e| ConsensusError::ExtraDataInvalid)?;
     let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
     extra_data
         .validate_authority_signature(&sig_hash.to_vec())

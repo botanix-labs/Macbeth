@@ -9,11 +9,13 @@ use crate::{
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_network::{import::ProofOfAuthorityBlockImport, NetworkHandle};
 use reth_primitives::ChainSpec;
-use reth_provider::{BlockReaderIdExt, CanonStateNotificationSender, StateProviderFactory, CanonChainTracker};
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
+};
 use reth_transaction_pool::TransactionPool;
-use reth_network::NetworkHandle;
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, RwLock, Mutex};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
@@ -31,12 +33,10 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager,
     network_handle: NetworkHandle,
-    /// Block import from network manager
-    block_import: ProofOfAuthorityBlockImport,
 }
 
 /// Errors that can occur when building an authority consensus.
-#[derive(Debug)]    
+#[derive(Debug)]
 pub enum AuthorityConsensusBuilderError {
     InvalidStorage,
     FailedToRecoverAuthorityList,
@@ -65,7 +65,6 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
-        block_import: ProofOfAuthorityBlockImport
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -76,12 +75,13 @@ where
 
         while !latest_header.is_poa_epoch() {
             let parent_hash = latest_header.parent_hash;
-            
+
             if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
-                let old_latest_header = std::mem::replace(&mut latest_header, new_header.seal_slow());
+                let old_latest_header =
+                    std::mem::replace(&mut latest_header, new_header.seal_slow());
                 headers.push(old_latest_header);
             } else {
-                return Err(AuthorityConsensusBuilderError::FailedToRetrieveEopchHeader);
+                return Err(AuthorityConsensusBuilderError::FailedToRetrieveEopchHeader)
             }
         }
 
@@ -98,11 +98,12 @@ where
         }
 
         // Try to instantiate storage
-        let storage = Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"))
-            .map_err(|e| {
-                error!("Failed to instantiate storage: {:?}", e);
-                AuthorityConsensusBuilderError::InvalidStorage
-            })?;
+        let storage =
+            Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"))
+                .map_err(|e| {
+                    error!("Failed to instantiate storage: {:?}", e);
+                    AuthorityConsensusBuilderError::InvalidStorage
+                })?;
 
         // Instantiate epoch manager
         let epoch_manager = EpochManager::naive_inverval(storage.clone());
@@ -122,11 +123,13 @@ where
             vote,
             epoch_manager,
             network_handle,
-            block_import,
         })
     }
 
     #[track_caller]
+    /// Builds and returns the necessary components for the authority consensus, including the
+    /// consensus itself, the client used to interact with the consensus, and the block
+    /// production task.
     pub fn build(self) -> (AuthorityConsensus, AuthorityClient, BlockProductionTask<Client, Pool>) {
         let Self {
             btc_server,
@@ -143,7 +146,6 @@ where
             vote,
             epoch_manager,
             network_handle,
-            block_import,
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -161,7 +163,6 @@ where
             sk,
             epoch_manager,
             network_handle,
-            block_import,
         );
 
         (consensus, auth_client, task)

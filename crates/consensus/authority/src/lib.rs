@@ -48,7 +48,6 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{info, trace, warn};
 mod builder;
 mod client;
-mod constants;
 mod epoch_manager;
 mod task;
 mod voting;
@@ -409,8 +408,7 @@ impl StorageInner {
             &extra_header_content_no_signature,
         );
         // Sign the header and append to extra data header
-        // TODO remove unwrap
-        let message = secp256k1::Message::from_slice(sig_hash.as_slice()).unwrap();
+        let message = secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
         let extra_data_header_with_signature = ExtraDataHeader::new(
             0u32,
@@ -419,7 +417,7 @@ impl StorageInner {
             vote_for,
             recent_block_hash,
         );
-        header.extra_data = Bytes::from(extra_data_header_with_signature.serialize().unwrap());
+        header.extra_data = Bytes::from(extra_data_header_with_signature.serialize());
 
         header
     }
@@ -443,12 +441,10 @@ impl StorageInner {
 
         // Retrieve previous block header
         let prev_header = self.headers.get(&self.best_block).expect("checked empty");
-        let signers = ExtraDataHeader::deserialize(prev_header.extra_data.to_vec())
-            .map_err(|e| {
-                println!("deserialize error {:?}", e);
-                BlockExecutionError::FailedToDeserializePreviousBlockHeader
-            })?
-            .authority_signers;
+        let signers = utils::get_authority_list(prev_header).map_err(|e| {
+            println!("deserialize error {:?}", e);
+            BlockExecutionError::FailedToDeserializePreviousBlockHeader
+        })?;
 
         let header = self.build_header_template(&transactions, chain_spec, vote)?;
 
@@ -493,20 +489,9 @@ impl StorageInner {
         if vote.is_some() {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.0;
-            let extra_data_header =
-                extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
-                    .map_err(|e| {
-                        BlockExecutionError::Validation(
-                            BlockValidationError::ExtraDataSerializeError,
-                        )
-                    })?;
 
             // TODO(armins) Should we be verbose and fail the block or just ignore?
-            if extra_data_header
-                .authority_signers
-                .iter()
-                .any(|signer| signer == &authority_to_vote_on)
-            {
+            if signers.iter().any(|signer| signer == &authority_to_vote_on) {
                 return Err(BlockExecutionError::CannotAddExistingFederationMember)
             }
             // Keep track of votes
