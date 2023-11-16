@@ -11,6 +11,10 @@ use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
+    TransactionSigned, U256,
+};
+use reth_provider::{
+    CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_stages::PipelineEvent;
@@ -33,6 +37,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
     chain_spec: Arc<ChainSpec>,
     /// The client used to interact with the state
+    /// Note this is a database client
     client: Client,
     /// The active epoch
     epoch_manager: EpochManager,
@@ -107,9 +112,14 @@ where
     }
 
     pub async fn start_task(&mut self) -> () {
+        let block_source = MempoolSpace::new(self.bitcoin_block_source_address.clone().to_string());
+        let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+
         // this drives block production
         loop {
-            let mut storage = self.storage.write().await;
+            // Instantiate the executor
+            let substate = SubState::new(State::new(self.client.latest().unwrap()));
+            let mut executor = Executor::new(Arc::clone(&self.chain_spec), substate);
 
             match self.block_import_rx.try_recv() {
                 Ok(new_block) => {
@@ -118,11 +128,13 @@ where
                     // engine
                     loop {
                         let block = new_block.block.block.clone();
+                        info!(target: "consensus::authority", ?block, "Recieved new block from peer");
                         // send the new update to the engine, this will trigger the engine
                         // to download and execute the block we just inserted
                         let (tx, rx) = oneshot::channel();
+                        let sealed_block = block.clone().seal_slow();
                         let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
-                            payload: block.clone().seal_slow().into(),
+                            payload: sealed_block.clone().into(),
                             cancun_fields: None,
                             tx,
                         });
@@ -134,18 +146,98 @@ where
                                         todo!();
                                     }
                                     PayloadStatusEnum::Valid => {
+                                        let senders = TransactionSigned::recover_signers(
+                                            &block.body,
+                                            block.body.len(),
+                                        )
+                                        .unwrap();
+
+                                        let (post_state, _) = executor
+                                            .execute_transactions(
+                                                &block,
+                                                U256::ZERO,
+                                                Some(senders.clone()),
+                                                recent_bitcoin_block_header,
+                                            )
+                                            .unwrap();
+
+                                        let new_header = sealed_block.header.clone();  
+                                        let state = ForkchoiceState {
+                                            head_block_hash: new_header.hash,
+                                            finalized_block_hash: new_header.hash,
+                                            safe_block_hash: new_header.hash,
+                                        };
+
+                                        loop {
+                                            // send the new update to the engine, this will trigger the engine
+                                            // to download and execute the block we just inserted
+                                            let (tx, rx) = oneshot::channel();
+                                            let _ = self.to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
+                                                state,
+                                                payload_attrs: None,
+                                                tx,
+                                            });
+                                            debug!(target: "consensus::authority", ?state, "Sent fork choice update");
+                    
+                                            match rx.await.unwrap() {
+                                                Ok(fcu_response) => {
+                                                    match fcu_response.forkchoice_status() {
+                                                        ForkchoiceStatus::Valid => break,
+                                                        ForkchoiceStatus::Invalid => {
+                                                            error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
+                                                            return ()
+                                                        }
+                                                        ForkchoiceStatus::Syncing => {
+                                                            debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
+                                                            // wait for the next fork choice update
+                                                            continue
+                                                        }
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
+                                                    return ()
+                                                }
+                                            }
+                                        }
+
+                                        // update canon chain for rpc
+                                        self.client.set_canonical_head(sealed_block.header.clone());
+                                        self.client.set_safe(sealed_block.header.clone());
+                                        self.client.set_finalized(sealed_block.header.clone());
+
+                                        let sealed_block_with_senders =
+                                            SealedBlockWithSenders::new(sealed_block, senders)
+                                                .expect("senders are valid");
+                                        let chain = Arc::new(Chain::new(vec![(
+                                            sealed_block_with_senders,
+                                            post_state,
+                                        )]));
+
+                                        info!(target: "consensus::authority", "sending block notification to block chain tree");
+                                        // send block notification
+                                        let _ = self.canon_state_notification.send(
+                                            reth_provider::CanonStateNotification::Commit {
+                                                new: chain,
+                                            },
+                                        );
+
                                         // Update internal cache
                                         let body = BlockBody {
                                             transactions: block.body,
                                             ommers: vec![],
                                             withdrawals: None,
                                         };
-
+                                        let mut storage = self.storage.write().await;
                                         storage.insert_new_block(block.header, body);
+                                        drop(storage);
+
                                         let mining_pool = self.pool.clone();
                                         // Lastly remove confirmed txs from the mempool
                                         mining_pool.remove_transactions(
-                                            new_block.block.block
+                                            new_block
+                                                .block
+                                                .block
                                                 .body
                                                 .iter()
                                                 .map(|tx| tx.hash().to_owned())
@@ -154,19 +246,19 @@ where
 
                                         break
                                     }
-                                    PayloadStatusEnum::Invalid {validation_error} => {
-                                        error!(target: "consensus::authority", ?validation_error, "Autoseal fork new payload returned invalid response");
-                                        return ()
+                                    PayloadStatusEnum::Invalid { validation_error } => {
+                                        error!(target: "consensus::authority", ?validation_error, "Authority fork new payload returned invalid response");
+                                        break
                                     }
                                     PayloadStatusEnum::Syncing => {
-                                        debug!(target: "consensus::authority", ?payload_status, "Autoseal fork new payload returned SYNCING, waiting for VALID");
+                                        debug!(target: "consensus::authority", ?payload_status, "Authority fork new payload returned SYNCING, waiting for VALID");
                                         // wait for the next fork choice update
                                         continue
                                     }
                                 }
                             }
                             Err(status_err) => {
-                                error!(target: "consensus::authority", ?status_err, "Autoseal fork new payload failed");
+                                error!(target: "consensus::authority", ?status_err, "Authority fork new payload failed");
                                 return ()
                             }
                         }
@@ -175,7 +267,6 @@ where
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         debug!(target: "consensus::authority", "No new blocks from peers");
-                        break
                     }
                     TryRecvError::Disconnected => {
                         error!(target: "consensus::authority", "Block import channel disconnected");
@@ -207,14 +298,11 @@ where
             let transactions = self.queued.pop_front().expect("not empty");
 
             let events = self.pipe_line_events.take();
-            let block_source =
-                MempoolSpace::new(self.bitcoin_block_source_address.clone().to_string());
 
             let client = self.client.clone();
 
             // Create the mining future that creates a block, notifies the engine that drives
             // the pipeline
-            let recent_block_header = self.bitcoin_block_header.read().await.clone();
 
             let (transactions, senders): (Vec<_>, Vec<_>) = transactions
                 .into_iter()
