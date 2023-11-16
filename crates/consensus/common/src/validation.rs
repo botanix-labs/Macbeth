@@ -13,6 +13,7 @@ use reth_primitives::{
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
+use tracing::error;
 
 use crate::utils::create_authority_sighash;
 
@@ -516,11 +517,19 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
     )
-    .map_err(|e| ConsensusError::ExtraDataInvalid)?;
+    .map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+
     let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
+
     extra_data
         .validate_authority_signature(&sig_hash.to_vec())
-        .map_err(|e| ConsensusError::InvalidAuthoritySignature)?;
+        .map_err(|e| {
+            error!("Failed to validate authority signature: {:?}", e);
+            ConsensusError::InvalidAuthoritySignature
+        })?;
     // 1. Validate that is a federation memeber was added or removed that that actions
     // was signed off by a 2/3 majority of votes
     // This can only happnen during an end of a epoch
@@ -529,9 +538,16 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
     Ok(())
 }
 
+/// Validates the header with the given total difficulty.
+/// Note: Used to validate PoA extra data header
+/// 
+/// # Arguments
+/// 
+/// * `header` - The header to validate.
+/// * `total_difficulty` - The total difficulty to validate against.
 pub fn validate_header_with_total_difficulty(
     header: &Header,
-    total_difficulty: U256,
+    _total_difficulty: U256,
 ) -> Result<(), ConsensusError> {
     if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
         return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
