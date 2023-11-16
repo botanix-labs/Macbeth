@@ -309,9 +309,12 @@ pub fn validate_header_regarding_parent(
     if chain_spec.fork(Hardfork::London).active_at_block(child.number) {
         let base_fee = child.base_fee_per_gas.ok_or(ConsensusError::BaseFeeMissing)?;
 
+        // Determine initial base fee by chain id
+        let initial_base_fee_by_chain_id = chain_spec.chain().initial_base_fee_by_chain_id();
+
         let expected_base_fee =
             if chain_spec.fork(Hardfork::London).transitions_at_block(child.number) {
-                constants::BOTANIX_INITIAL_BASE_FEE
+                initial_base_fee_by_chain_id
             } else {
                 // This BaseFeeMissing will not happen as previous blocks are checked to have them.
                 parent
