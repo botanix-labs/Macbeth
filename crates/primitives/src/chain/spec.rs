@@ -1,6 +1,6 @@
 use crate::{
     constants::{
-        BOTANIX_INITIAL_BASE_FEE, EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR, EIP1559_DEFAULT_ELASTICITY_MULTIPLIER, EMPTY_WITHDRAWALS,
+        BOTANIX_INITIAL_BASE_FEE, EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR, EIP1559_DEFAULT_ELASTICITY_MULTIPLIER, EMPTY_WITHDRAWALS, EIP1559_INITIAL_BASE_FEE,
     },
     forkid::ForkFilterKey,
     header::Head,
@@ -360,8 +360,11 @@ impl ChainSpec {
 
     /// Get the initial base fee of the genesis block.
     pub fn initial_base_fee(&self) -> Option<u64> {
+        // Determine initial base fee by chain id
+        let initial_base_fee_by_chain_id = self.chain.initial_base_fee_by_chain_id();
+        
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
-        (self.fork(Hardfork::London).active_at_block(0)).then_some(BOTANIX_INITIAL_BASE_FEE)
+        (self.fork(Hardfork::London).active_at_block(0)).then_some(initial_base_fee_by_chain_id)
     }
 
     /// Get the hash of the genesis block.

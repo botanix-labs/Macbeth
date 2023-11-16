@@ -1,6 +1,6 @@
 use crate::{
     net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
-    NodeRecord, U256, U64,
+    NodeRecord, U256, U64, constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
 };
 use reth_codecs::add_arbitrary_tests;
 use reth_rlp::{Decodable, Encodable};
@@ -96,6 +96,11 @@ impl Chain {
             // TODO (armins) Set up boot nodes
             _ => None,
         }
+    }
+
+    /// Returns the initial base fee based on chain id
+    pub fn initial_base_fee_by_chain_id(self) -> u64 {
+        if self.id() == Chain::botanix_testnet().id() { BOTANIX_INITIAL_BASE_FEE} else { EIP1559_INITIAL_BASE_FEE }
     }
 }
 
