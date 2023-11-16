@@ -2,7 +2,7 @@ use crate::{
     constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
     holesky_nodes,
     net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
-    NodeRecord, U256, U64,
+    NodeRecord, U256, U64, constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
 };
 use alloy_rlp::{Decodable, Encodable};
 use num_enum::TryFromPrimitive;
