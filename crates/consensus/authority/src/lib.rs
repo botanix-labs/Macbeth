@@ -44,14 +44,13 @@ use reth_revm::{
 };
 use std::{
     collections::HashMap,
-    f32::consts::E,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{info, trace, warn};
+use tracing::{trace, warn};
 mod builder;
 mod client;
 mod constants;
@@ -235,7 +234,7 @@ impl Storage {
         headers.sort_by(|a, b| a.number.cmp(&b.number));
 
         // We need to start storing headers from the start of the epoch
-        let (header, best_hash) = headers.get(0).expect("valid index").clone().split();
+        let (header, best_hash) = headers.last().expect("valid index").clone().split();
 
         let mut storage = StorageInner {
             best_hash,
@@ -346,7 +345,8 @@ impl StorageInner {
             receipts_root: Default::default(),
             withdrawals_root: None,
             logs_bloom: Default::default(),
-            difficulty: U256::from(2),
+            // TODO remove later to inturn or outturn signal
+            difficulty: Default::default(),
             number: self.best_block + 1,
             gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             gas_used: 0,
@@ -491,10 +491,8 @@ impl StorageInner {
 
         // Retrieve previous block header
         let prev_header = self.headers.get(&self.best_block).expect("checked empty");
-        let signers = utils::get_authority_list(prev_header).map_err(|e| {
-            println!("deserialize error {:?}", e);
-            BlockExecutionError::FailedToDeserializePreviousBlockHeader
-        })?;
+        let signers = utils::get_authority_list(prev_header)
+            .map_err(|e| BlockExecutionError::FailedToDeserializePreviousBlockHeader)?;
 
         let header = self.build_header_template(&transactions, chain_spec.clone(), vote)?;
 

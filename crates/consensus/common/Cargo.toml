@@ -8,6 +8,8 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
+
+tracing.workspace = true
 # reth 
 reth-primitives.workspace = true
 reth-interfaces.workspace = true

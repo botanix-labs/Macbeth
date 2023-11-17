@@ -31,7 +31,7 @@ pub(crate) struct EpochManager {
 }
 
 impl EpochManager {
-    pub fn naive_inverval(storage: Storage) -> Self {
+    pub(crate) fn naive_inverval(storage: Storage) -> Self {
         let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
         let proposal_interval =
             tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
@@ -87,7 +87,7 @@ impl EpochManager {
                 }
                 else {
                     // TODO remove this later
-                    return Poll::Pending;
+                    return Poll::Pending
                 }
 
                 // Your not in turn wait a bit then produce a block
