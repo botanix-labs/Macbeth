@@ -1,4 +1,3 @@
-use reth_eth_wire::NewBlock;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 use tracing::error;
@@ -10,13 +9,13 @@ use crate::{
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_network::{NetworkHandle, message::NewBlockMessage};
+use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_transaction_pool::TransactionPool;
-use tokio::sync::{mpsc::{UnboundedSender, UnboundedReceiver}, Mutex, RwLock};
+use tokio::sync::{mpsc::{UnboundedSender, UnboundedReceiver}, RwLock};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
