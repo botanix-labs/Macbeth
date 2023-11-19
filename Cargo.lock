@@ -6757,6 +6757,7 @@ dependencies = [
  "reth-primitives",
  "reth-provider",
  "reth-revm-inspectors",
+ "reth-trie",
  "revm",
  "secp256k1 0.27.0",
  "tokio",

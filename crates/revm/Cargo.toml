@@ -35,6 +35,9 @@ tracing.workspace = true
 # Bitcoin
 bitcoin = "0.30.1"
 
+[dev-dependencies]
+reth-trie.workspace = true
+
 [features]
 optimism = [
   "revm/optimism",
