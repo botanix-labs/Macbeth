@@ -29,10 +29,10 @@ pub struct BotanixConfig {
 impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
-            bitcoin_network: bitcoin::Network::Testnet,
+            bitcoin_network: bitcoin::Network::Signet,
             btc_server: "http://localhost:8080".to_string(),
-            // Use a public testnet endpoint by default
-            mempool_space_url: "https://mempool.space/testnet/api".to_string(),
+            // Use a public signet endpoint by default
+            mempool_space_url: "https://mempool.space/signet/api".to_string(),
         }
     }
 }
@@ -40,6 +40,7 @@ impl Default for BotanixConfig {
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     fn new(bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
+        // TODO(armins) Update these to point to botanix mempool instances
         let mempool_space_api = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://mempool.space/api",
             bitcoin::Network::Testnet => "https://mempool.space/api/testnet",
