@@ -6743,7 +6743,6 @@ dependencies = [
  "alloy-sol-types",
  "boa_engine",
  "boa_gc",
- "reth-primitives",
  "reth-rpc-types",
  "revm",
  "serde",
