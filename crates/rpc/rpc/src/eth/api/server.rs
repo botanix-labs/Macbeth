@@ -430,7 +430,10 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, botanix_config::Botanix},
+        eth::{
+            cache::EthStateCache, gas_oracle::GasPriceOracle, FeeHistoryCache,
+            FeeHistoryCacheConfig, botanix_config::Botanix,
+        },
         BlockingTaskPool, EthApi,
     };
     use jsonrpsee::types::error::INVALID_PARAMS_CODE;
@@ -461,14 +464,19 @@ mod tests {
         provider: P,
     ) -> EthApi<P, TestPool, NoopNetwork> {
         let cache = EthStateCache::spawn(provider.clone(), Default::default());
+
+        let fee_history_cache =
+            FeeHistoryCache::new(cache.clone(), FeeHistoryCacheConfig::default());
+
         EthApi::new(
             provider.clone(),
             testing_pool(),
             NoopNetwork::default(),
             cache.clone(),
-            GasPriceOracle::new(provider, Default::default(), cache),
+            GasPriceOracle::new(provider.clone(), Default::default(), cache.clone()),
             ETHEREUM_BLOCK_GAS_LIMIT,
             BlockingTaskPool::build().expect("failed to build tracing pool"),
+            fee_history_cache,
             // TODO (armins) reading default config
             Botanix::new(Default::default()),
         )
@@ -487,6 +495,7 @@ mod tests {
         let mut gas_used_ratios = Vec::new();
         let mut base_fees_per_gas = Vec::new();
         let mut last_header = None;
+        let mut parent_hash = B256::default();
 
         for i in (0..block_count).rev() {
             let hash = rng.gen();
@@ -500,9 +509,11 @@ mod tests {
                 gas_limit,
                 gas_used,
                 base_fee_per_gas,
+                parent_hash,
                 ..Default::default()
             };
             last_header = Some(header.clone());
+            parent_hash = hash;
 
             let mut transactions = vec![];
             for _ in 0..100 {
