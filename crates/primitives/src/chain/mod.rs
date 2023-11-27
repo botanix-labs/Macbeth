@@ -14,8 +14,9 @@ use strum::{AsRefStr, EnumCount, EnumIter, EnumString, EnumVariantNames};
 // The chain spec module.
 mod spec;
 pub use spec::{
-    AllGenesisFormats, BaseFeeParams, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkCondition,
-    ForkTimestamps, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
+    DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps, BOTANIX_TESTNET, DEV,
+    GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 
 #[cfg(feature = "optimism")]
@@ -152,7 +153,7 @@ impl Chain {
     pub const fn botanix_testnet() -> Self {
         Chain::Id(3636)
     }
-    
+
     /// Returns true if the chain contains Optimism configuration.
     pub fn is_optimism(self) -> bool {
         self.named().map_or(false, |c| {
