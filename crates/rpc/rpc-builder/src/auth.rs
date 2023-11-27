@@ -16,7 +16,10 @@ use reth_provider::{
     StateProviderFactory,
 };
 use reth_rpc::{
-    eth::{cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, botanix_config::{BotanixConfig, Botanix}},
+    eth::{
+        cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache,
+        FeeHistoryCacheConfig, botanix_config::{BotanixConfig, Botanix},
+    },
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
 };
@@ -57,8 +60,11 @@ where
     // spawn a new cache task
     let eth_cache =
         EthStateCache::spawn_with(provider.clone(), Default::default(), executor.clone());
+
     let gas_oracle = GasPriceOracle::new(provider.clone(), Default::default(), eth_cache.clone());
     let botanix_provider = Botanix::new(BotanixConfig::default());
+    let fee_history_cache =
+        FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
     let eth_api = EthApi::with_spawner(
         provider.clone(),
         pool.clone(),
@@ -68,6 +74,7 @@ where
         EthConfig::default().rpc_gas_cap,
         Box::new(executor.clone()),
         BlockingTaskPool::build().expect("failed to build tracing pool"),
+        fee_history_cache,
         botanix_provider,
     );
     let config = EthFilterConfig::default()
