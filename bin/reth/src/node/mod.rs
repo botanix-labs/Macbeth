@@ -13,7 +13,7 @@ use crate::{
         config::RethRpcConfig,
         ext::{RethCliExt, RethNodeCommandConfig},
     },
-    dirs::{DataDirPath, MaybePlatformPath},
+    dirs::{ChainPath, DataDirPath, MaybePlatformPath},
     init::init_genesis,
     node::cl_events::ConsensusLayerHealthEvents,
     prometheus_exporter,
@@ -251,12 +251,8 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         // Does not do anything on windows.
         raise_fd_limit();
 
-        // add network name to data dir
-        let data_dir = self.datadir.unwrap_or_chain_default(self.chain.chain);
-        let config_path = self.config.clone().unwrap_or(data_dir.config_path());
-
-        let mut config: Config = self.load_config(config_path.clone())?;
-
+        // get config
+        let config = self.load_config()?;
         // Connect to btc signining server
         let btc_server_client: BtcServerClient<tonic::transport::Channel> =
             BtcServerClient::connect(self.rpc.btc_server.clone())
@@ -292,12 +288,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         );
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
-        // always store reth.toml in the data dir, not the chain specific data dir
-        info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
-
         let prometheus_handle = self.install_prometheus_recorder()?;
 
+        let data_dir = self.data_dir();
         let db_path = data_dir.db_path();
+
         info!(target: "reth::cli", path = ?db_path, "Opening database");
         let db = Arc::new(init_db(&db_path, self.db.log_level)?.with_metrics());
         info!(target: "reth::cli", "Database opened");
@@ -318,13 +313,11 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         debug!(target: "reth::cli", chain=%self.chain.chain, genesis=?self.chain.genesis_hash(), "Initializing genesis");
 
-        let genesis_hash = init_genesis(db.clone(), self.chain.clone())?;
+        let genesis_hash = init_genesis(Arc::clone(&db), self.chain.clone())?;
 
         info!(target: "reth::cli", "{}", DisplayHardforks::new(self.chain.hardforks()));
 
         let consensus = self.consensus();
-
-        self.init_trusted_nodes(&mut config);
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
@@ -696,10 +689,35 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         Ok(pipeline)
     }
 
+    /// Returns the chain specific path to the data dir.
+    fn data_dir(&self) -> ChainPath<DataDirPath> {
+        self.datadir.unwrap_or_chain_default(self.chain.chain)
+    }
+
+    /// Returns the path to the config file.
+    fn config_path(&self) -> PathBuf {
+        self.config.clone().unwrap_or_else(|| self.data_dir().config_path())
+    }
+
     /// Loads the reth config with the given datadir root
-    fn load_config(&self, config_path: PathBuf) -> eyre::Result<Config> {
-        confy::load_path::<Config>(config_path.clone())
-            .wrap_err_with(|| format!("Could not load config file {:?}", config_path))
+    fn load_config(&self) -> eyre::Result<Config> {
+        let config_path = self.config_path();
+        let mut config = confy::load_path::<Config>(&config_path)
+            .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
+
+        info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
+
+        // Update the config with the command line arguments
+        config.peers.connect_trusted_nodes_only = self.network.trusted_only;
+
+        if !self.network.trusted_peers.is_empty() {
+            info!(target: "reth::cli", "Adding trusted nodes");
+            self.network.trusted_peers.iter().for_each(|peer| {
+                config.peers.trusted_nodes.insert(*peer);
+            });
+        }
+
+        Ok(config)
     }
 
     /// Loads the trusted setup params from a given file path or falls back to
@@ -711,17 +729,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             Ok(Arc::new(trusted_setup))
         } else {
             Ok(Arc::clone(&MAINNET_KZG_TRUSTED_SETUP))
-        }
-    }
-
-    fn init_trusted_nodes(&self, config: &mut Config) {
-        config.peers.connect_trusted_nodes_only = self.network.trusted_only;
-
-        if !self.network.trusted_peers.is_empty() {
-            info!(target: "reth::cli", "Adding trusted nodes");
-            self.network.trusted_peers.iter().for_each(|peer| {
-                config.peers.trusted_nodes.insert(*peer);
-            });
         }
     }
 
