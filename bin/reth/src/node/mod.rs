@@ -333,9 +333,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             Arc::clone(&consensus),
             EvmProcessorFactory::new(self.chain.clone()),
         );
+        let tree_config = BlockchainTreeConfig::default();
         let tree = BlockchainTree::new(
             tree_externals,
-            BlockchainTreeConfig::default(),
+            tree_config,
             prune_config.clone().map(|config| config.segments),
         )?
         .with_sync_metrics_tx(sync_metrics_tx.clone());
@@ -521,6 +522,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             let mut pruner = self.build_pruner(
                 &prune_config,
                 db.clone(),
+                tree_config,
                 snapshotter.highest_snapshot_receiver(),
             );
 
@@ -1023,6 +1025,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         &self,
         config: &PruneConfig,
         db: DB,
+        tree_config: BlockchainTreeConfig,
         highest_snapshots_rx: HighestSnapshotsTracker,
     ) -> Pruner<DB> {
         let segments = SegmentSet::default()
@@ -1060,6 +1063,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             segments.into_vec(),
             config.block_interval,
             self.chain.prune_delete_limit,
+            tree_config.max_reorg_depth() as usize,
             highest_snapshots_rx,
         )
     }
