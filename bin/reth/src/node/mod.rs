@@ -80,6 +80,7 @@ use std::{
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
+use std::time::{Instant, Duration};
 
 use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
@@ -427,7 +428,8 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 )
             } else {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
-                MiningMode::instant(1, transaction_pool.pending_transactions_listener())
+                let mining_interval =  Duration::from_secs(30);
+                MiningMode::interval(mining_interval)
             };
 
             let (_, client, mut task) = AutoSealBuilder::new(
