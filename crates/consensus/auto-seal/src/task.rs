@@ -12,6 +12,7 @@ use reth_revm::{
     database::{State, SubState},
     executor::Executor,
 };
+use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use std::{
@@ -116,9 +117,6 @@ where
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions.clone());
                 let mining_pool = this.pool.clone();
-                mining_pool.remove_transactions(
-                    transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
-                );
             }
 
             // If insert task is not none executinon of async task is on going
@@ -173,6 +171,9 @@ where
                                 finalized_block_hash: new_header.hash,
                                 safe_block_hash: new_header.hash,
                             };
+                            pool.remove_transactions(
+                                transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
+                            );
                             drop(storage);
                             for reciept in post_state.receipts(new_header.number) {
                                 if !reciept.success {
@@ -317,6 +318,18 @@ where
                                 .send(reth_provider::CanonStateNotification::Commit { new: chain });
                         }
                         Err(err) => {
+                            match err {
+                                BlockExecutionError::Validation(ref evm_err) => {
+                                    match evm_err {
+                                        BlockValidationError::EVM { hash, message } => {
+                                            pool.remove_transactions(vec![*hash]);
+                                            warn!(target: "consensus::auto", ?hash, ?message, "failed to execute block")
+                                        }
+                                        _ => {}
+                                    }
+                                },
+                                _ => {},
+                            }
                             warn!(target: "consensus::auto", ?err, "failed to execute block")
                         }
                     }
