@@ -428,7 +428,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 )
             } else {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
-                let mining_interval =  Duration::from_secs(30);
+                let mining_interval =  Duration::from_secs(10);
                 MiningMode::interval(mining_interval)
             };
 
