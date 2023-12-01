@@ -323,7 +323,7 @@ where
                                     match evm_err {
                                         BlockValidationError::EVM { hash, message } => {
                                             pool.remove_transactions(vec![*hash]);
-                                            warn!(target: "consensus::auto", ?hash, ?message, "failed to execute block")
+                                            warn!(target: "consensus::auto", ?hash, ?message, "tx failed to execute, removing from pool")
                                         }
                                         _ => {}
                                     }
