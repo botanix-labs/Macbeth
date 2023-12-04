@@ -19,6 +19,7 @@ use reth_provider::{BlockExecutor, PostState, StateProvider};
 use revm::{
     db::{AccountState, CacheDB, DatabaseRef},
     primitives::{
+        bytes,
         hash_map::{self, Entry},
         Account as RevmAccount, AccountInfo, ExecutionResult, ResultAndState,
     },
@@ -26,7 +27,7 @@ use revm::{
 };
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::Arc,
+    sync::Arc, str::FromStr,
 };
 use tracing::{error, warn};
 
@@ -71,10 +72,10 @@ fn botanix_mint_contract_checks(
             match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
                 Ok(aggregate_value) => {
                     tracing::trace!("Pegin aggregate value: {}", aggregate_value);
-                    // if aggregate_value != pegin_data.amount {
-                    //     warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
-                    //     return Err(BlockValidationError::MintContractViolation.into())
-                    // }
+                    if aggregate_value != pegin_data.amount {
+                        warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                        return Err(BlockValidationError::MintContractViolation.into())
+                    }
                 },
                 Err(e) => {
                     warn!("Failed pegin attempt! {:?}", e);
@@ -245,11 +246,26 @@ where
         };
 
         // Botanix mint contract validation
-        if let Ok(ResultAndState { ref result, .. }) = out {
-            if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                botanix_mint_contract_checks(&result, recent_block_header)?;
+        let out = match out {
+            Ok(ResultAndState { ref result, ref state }) => {
+                if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                    match botanix_mint_contract_checks(&result, recent_block_header) {
+                        Ok(()) => out,
+                        Err(e) => Ok({
+                            error!("Botanix mint contract validation failed: {:?}", e);
+                            let new_result = ExecutionResult::Revert { gas_used: result.gas_used(), output: bytes::Bytes::new() };
+                            ResultAndState { result: new_result, state: state.clone() }
+                        }),
+                    }
+                } else {
+                    out
+                }
+            },
+            Err(ref evm_error) => {
+                error!("EVM error: {:?}", evm_error);
+                out
             }
-        }
+        };
 
         out.map_err(|e| BlockValidationError::EVM { hash, message: format!("{e:?}") }.into())
     }
