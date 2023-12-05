@@ -179,19 +179,6 @@ pub struct RpcServerArgs {
     /// Gas price oracle configuration.
     #[clap(flatten)]
     pub gas_price_oracle: GasPriceOracleArgs,
-<<<<<<< HEAD
-
-    /// Maximum number of block cache entries.
-    #[arg(long, default_value_t = DEFAULT_BLOCK_CACHE_MAX_LEN)]
-    pub block_cache_len: u32,
-
-    /// Maximum number of receipt cache entries.
-    #[arg(long, default_value_t = DEFAULT_RECEIPT_CACHE_MAX_LEN)]
-    pub receipt_cache_len: u32,
-
-    /// Maximum number of env cache entries.
-    #[arg(long, default_value_t = DEFAULT_ENV_CACHE_MAX_LEN)]
-    pub env_cache_len: u32,
 
     /// Btc signing service
     ///
@@ -204,8 +191,6 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
     pub btc_block_source: Url,
-=======
->>>>>>> 6b06382d0 (feat(cli): eth state cache args (#5664))
 }
 
 impl RpcServerArgs {
