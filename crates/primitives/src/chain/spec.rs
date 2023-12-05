@@ -4,7 +4,7 @@ use crate::{
         EIP1559_DEFAULT_ELASTICITY_MULTIPLIER, EIP1559_INITIAL_BASE_FEE, EMPTY_RECEIPTS,
         EMPTY_TRANSACTIONS, EMPTY_WITHDRAWALS,
     },
-    proofs::genesis_state_root,
+    proofs::state_root_ref_unhashed,
     revm_primitives::{address, b256},
     Address, BlockNumber, Chain, ForkFilter, ForkFilterKey, ForkHash, ForkId, Genesis, Hardfork,
     Head, Header, SealedHeader, B256, EMPTY_OMMER_ROOT_HASH, U256,
@@ -640,7 +640,7 @@ impl ChainSpec {
             difficulty: self.genesis.difficulty,
             nonce: self.genesis.nonce,
             extra_data: self.genesis.extra_data.clone(),
-            state_root: genesis_state_root(&self.genesis.alloc),
+            state_root: state_root_ref_unhashed(&self.genesis.alloc),
             timestamp: self.genesis.timestamp,
             mix_hash: self.genesis.mix_hash,
             beneficiary: self.genesis.coinbase,
@@ -1551,8 +1551,8 @@ impl DepositContract {
 mod tests {
     use super::*;
     use crate::{
-        b256, hex, ChainConfig, GenesisAccount, NamedChain, B256, DEV, GOERLI, HOLESKY, MAINNET, BOTANIX_TESTNET,
-        SEPOLIA, U256,
+        b256, hex, trie::TrieAccount, ChainConfig, GenesisAccount, NamedChain, B256,
+        BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, U256,
     };
     use alloy_rlp::Encodable;
     use bytes::BytesMut;
@@ -2554,7 +2554,7 @@ Post-merge hard forks (timestamp based):
         for (key, expected_rlp) in key_rlp {
             let account = chainspec.genesis.alloc.get(&key).expect("account should exist");
             let mut account_rlp = BytesMut::new();
-            account.encode(&mut account_rlp);
+            TrieAccount::from(account.clone()).encode(&mut account_rlp);
             assert_eq!(account_rlp, expected_rlp)
         }
 
