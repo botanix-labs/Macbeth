@@ -253,7 +253,12 @@ where
                         Ok(()) => out,
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);
-                            let new_result = ExecutionResult::Revert { gas_used: result.gas_used(), output: bytes::Bytes::new() };
+                            let output_match = match result {
+                                ExecutionResult::Success { output, .. } => output.clone().into_data().clone(),
+                                ExecutionResult::Revert { output, .. } => output.clone(),
+                                ExecutionResult::Halt { .. } => bytes::Bytes::new(),
+                            };
+                            let new_result = ExecutionResult::Revert { gas_used: result.gas_used(), output: output_match };
                             ResultAndState { result: new_result, state: state.clone() }
                         }),
                     }
