@@ -1,0 +1,25 @@
+[package]
+name = "btc-wallet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1.0.71"
+bitcoin = {version = "0.30.1", features = ["serde", "rand"]}
+secp256k1 = { version = "0.27.0", features = ["rand", "rand-std"]}
+rand = { version = "0.6", features = ["std"] }
+miniscript = "10.0.0"
+hex = "0.4.3"
+lazy_static = "1.4.0"
+reqwest = { version = "0.11.18", features = ["blocking", "json"] }
+async-trait = "0.1.73"
+ethers = "2.0.10"
+
+
+[features]
+# Included solely to ignore certain tests.
+optimism = []
