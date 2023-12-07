@@ -1592,8 +1592,6 @@ mod tests {
     use alloy_rlp::Encodable;
     use bytes::BytesMut;
     use std::{collections::HashMap, str::FromStr};
-    use ethers_core::types as EtherType;
-    use reth_rlp::Encodable;
 
     use super::BOTANIX_TESTNET;
 
