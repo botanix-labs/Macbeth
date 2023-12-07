@@ -15,16 +15,14 @@ reth-interfaces.workspace = true
 reth-provider.workspace = true
 reth-revm-inspectors.workspace = true
 reth-consensus-common.workspace = true
+reth-btc-wallet.workspace = true
+reth-botanix-lib.workspace = true
 
 # Lazy static   
 lazy_static = "*"
 
 # revm
 revm.workspace = true
-
-# Botanix
-btc-wallet = { path = "../../../btc-wallet" }
-botanix-lib = { path = "../../../botanix-lib" }
 
 # Secp256k1
 secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
