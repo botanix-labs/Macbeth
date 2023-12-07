@@ -6,8 +6,10 @@ use reth_botanix_lib::mint_validation::{
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_interfaces::consensus::ForkchoiceState;
+use reth_payload_builder::{PayloadBuilderAttributes, PayloadBuilderHandle, PayloadId};
 use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
+use reth_rpc_types::engine::PayloadAttributes;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use std::{
@@ -16,6 +18,8 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    thread,
+    time::Duration,
 };
 use url::Url;
 
@@ -53,6 +57,8 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Bitcoin block source url
     bitcoin_block_source_address: Url,
+    /// Payload store
+    payload_store: PayloadBuilderHandle,
 }
 
 // === impl MiningTask ===
@@ -70,6 +76,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
+        payload_store: PayloadBuilderHandle,
     ) -> Self {
         Self {
             chain_spec,
@@ -85,6 +92,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source_address,
+            payload_store,
         }
     }
 
@@ -108,7 +116,11 @@ where
         // this drives block production
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
-                info!("Adding to the list of transctions, {:?}, {:?}", transactions, this.queued);
+                // Should check the payload builder here before adding to the queue
+                info!(
+                    "Adding to the list of transctions, transactions: {:?}, queued: {:?}",
+                    transactions, this.queued
+                );
                 // miner returned a set of transaction that we feed to the producer
                 this.queued.push_back(transactions.clone());
             }
@@ -135,21 +147,70 @@ where
                 let bitcoin_block_header = this.bitcoin_block_header.clone();
                 let block_source =
                     MempoolSpace::new(this.bitcoin_block_source_address.clone().to_string());
+
+                let payload_store = this.payload_store.clone();
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
                     let recent_block_header = bitcoin_block_header.read().await.clone();
                     let mut storage = storage.write().await;
+                    // Get a random payload of 8 bytes
+                    let attr = PayloadBuilderAttributes::new(
+                        storage.best_hash,
+                        PayloadAttributes {
+                            timestamp: 0u64.into(),
+                            prev_randao: H256::zero(),
+                            suggested_fee_recipient: Address::zero(),
+                            withdrawals: None,
+                            parent_beacon_block_root: None,
+                        },
+                    );
+                    let mut id: PayloadId = attr.id;
+                    let recv = payload_store.send_new_payload(attr);
 
-                    let (transactions, senders): (Vec<_>, Vec<_>) = transactions
+                    match recv.await {
+                        Ok(res) => match res {
+                            Ok(payload_id) => {
+                                info!("Payload builder sent new payload, {:?}", payload_id);
+                                id = payload_id;
+                            }
+                            Err(err) => {
+                                error!(
+                                    "Payload builder failed to send new payload, err: {:?}",
+                                    err
+                                );
+                            }
+                        },
+                        Err(err) => {
+                            error!("Payload builder failed to send new payload, err: {:?}", err);
+                        }
+                    }
+
+                    let mut best_txs = vec![];
+                    match payload_store.best_payload(id).await {
+                        Some(binding) => {
+                            let payload = binding.unwrap();
+                            best_txs = payload.block().clone().body;
+                        }
+                        None => {
+                            println!("No payload found");
+                            // Handle the case when no payload is found if needed
+                        }
+                    }
+
+                    let (transactions, senders): (Vec<_>, Vec<_>) = best_txs
                         .into_iter()
                         .map(|tx| {
-                            let recovered = tx.to_recovered_transaction();
+                            let recovered = tx.clone().try_into_ecrecovered().unwrap();
                             let signer = recovered.signer();
-                            (recovered.into_signed(), signer)
+                            (tx, signer)
                         })
                         .unzip();
 
+                    println!("FINAL::::: Transactions: {:?}", transactions);
+                    if transactions.len() == 0 {
+                        return None;
+                    }
                     // execute the new block
                     // let substate = SubState::new(State::new(client.latest().unwrap()));
                     // let mut executor = Executor::new(Arc::clone(&chain_spec), substate);
@@ -189,7 +250,6 @@ where
                                                         let pegin_data = parse_pegin_reth_log_topic(&log).expect(
                                                         "passed evm check should pass this parse attempt",
                                                     );
-
                                                         for pegin in &pegin_data.meta {
                                                             let request = NotifyPeginRequest {
                                                                 utxo_txid: pegin
@@ -240,7 +300,6 @@ where
                                                                 let raw_tx =
                                                                     response.into_inner().tx;
                                                                 info!("Pegout tx from btc signer service {:?}", raw_tx.clone());
-
                                                                 match block_source
                                                                     .broadcast_tx(&hex::encode(
                                                                         raw_tx,

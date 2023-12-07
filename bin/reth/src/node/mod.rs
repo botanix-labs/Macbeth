@@ -465,7 +465,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 let mining_interval = Duration::from_secs(10);
                 MiningMode::interval(mining_interval)
             };
-
             let (_, client, mut task) = AutoSealBuilder::new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
@@ -476,6 +475,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 btc_server_client,
                 bitcoin_block_header_clone,
                 self.rpc.btc_block_source.clone(),
+                payload_builder.clone(),
             )
             .build();
 

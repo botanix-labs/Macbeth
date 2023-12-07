@@ -19,6 +19,8 @@ reth-revm.workspace = true
 reth-transaction-pool.workspace = true
 reth-btc-wallet.workspace = true
 reth-botanix-lib.workspace = true
+reth-payload-builder = { workspace = true, features = ["test-utils"] }
+reth-rpc-types.workspace = true
 
 # async
 futures-util.workspace = true

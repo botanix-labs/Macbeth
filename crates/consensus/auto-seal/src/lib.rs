@@ -44,6 +44,8 @@ use std::{
 };
 use url::Url;
 
+use reth_payload_builder::PayloadBuilderHandle;
+
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
 
@@ -109,6 +111,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_source_address: Url,
+    payload_store: PayloadBuilderHandle,
 }
 
 // === impl AutoSealBuilder ===
@@ -129,6 +132,7 @@ where
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
+        payload_store: PayloadBuilderHandle,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -147,6 +151,7 @@ where
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source_address,
+            payload_store,
         }
     }
 
@@ -170,6 +175,7 @@ where
             canon_state_notification,
             bitcoin_block_header,
             bitcoin_block_source_address,
+            payload_store,
         } = self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
@@ -183,6 +189,7 @@ where
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source_address,
+            payload_store,
         );
         (consensus, auto_client, task)
     }
