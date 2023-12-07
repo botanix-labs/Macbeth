@@ -799,6 +799,8 @@ where
     Client: StateProviderFactory,
     Pool: TransactionPool,
 {
+    println!("[DOING THIIIS]");
+    let txs = args.pool.all_transactions();
     let BuildArguments { client, pool, mut cached_reads, config, cancel, best_payload } = args;
 
     let state_provider = client.state_by_block_hash(config.parent_block.hash)?;
@@ -1006,6 +1008,8 @@ where
 
         blob_gas_used = Some(sum_blob_gas_used);
     }
+
+    println!("transaction selected: {:?}", executed_txs);
 
     let header = Header {
         parent_hash: parent_block.hash,
