@@ -1,4 +1,5 @@
-use reth_primitives::Address;
+use alloy_primitives::Address;
+
 use serde::{Serialize, Deserialize};
 
 /// Information about the Botanix Pegin Gateway Address
