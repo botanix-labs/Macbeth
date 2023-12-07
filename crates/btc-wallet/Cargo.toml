@@ -1,5 +1,5 @@
 [package]
-name = "btc-wallet"
+name = "reth-btc-wallet"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "reth-botanix-lib"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitcoin = "0.30.1"
+secp256k1 = "0.27.0"
+thiserror = "1.0.43"
+lazy_static = "1.4.0"
+hex = "0.4.3"
+ethers = "2.0.9"
+ethabi = "18.0.0"
+
+
+## Reth
+reth-primitives.workspace = true
+reth-interfaces.workspace = true
+alloy-rlp.workspace = true
+reth-btc-wallet.workspace = true
+revm.workspace = true
+

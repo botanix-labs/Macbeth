@@ -70,9 +70,8 @@ tracing-futures = "0.2"
 schnellru.workspace = true
 futures.workspace = true
 derive_more = "0.99"
+reth-btc-wallet.workspace = true
 
-# Botanix Btc wallet
-btc-wallet = { path = "../../../../btc-wallet" }
 # Botanix Btc server gRPC client
 client = {path = "../../../../btc-server/client"}
 

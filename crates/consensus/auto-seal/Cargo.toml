@@ -17,6 +17,8 @@ reth-provider.workspace = true
 reth-stages.workspace = true
 reth-revm.workspace = true
 reth-transaction-pool.workspace = true
+reth-btc-wallet.workspace = true
+reth-botanix-lib.workspace = true
 
 # async
 futures-util.workspace = true
@@ -25,8 +27,6 @@ tokio-stream.workspace = true
 tracing.workspace = true
 
 ## Botanix
-botanix-lib = { path = "../../../../botanix-lib" }
-btc-wallet = { path = "../../../../btc-wallet" }
 btc-server = { path = "../../../../btc-server" }
 client = {path = "../../../../btc-server/client"}
 
