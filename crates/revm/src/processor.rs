@@ -286,11 +286,12 @@ impl<'a> EVMProcessor<'a> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used) =
-            self.execute_transactions(block, total_difficulty, senders)?;
+            self.execute_transactions(block, total_difficulty, senders, recent_block_header)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -402,8 +403,9 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
+        let receipts = self.execute_inner(block, total_difficulty, senders, recent_block_header)?;
         self.save_receipts(receipts)
     }
 
@@ -412,9 +414,10 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
+        let receipts = self.execute_inner(block, total_difficulty, senders, recent_block_header)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -439,6 +442,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
@@ -701,6 +705,7 @@ mod tests {
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
                 None,
+                None,
             )
             .expect_err(
                 "Executing cancun block without parent beacon block root field should fail",
@@ -718,6 +723,7 @@ mod tests {
             .execute(
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
+                None,
                 None,
             )
             .unwrap();
@@ -779,6 +785,7 @@ mod tests {
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
                 None,
+                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -836,6 +843,7 @@ mod tests {
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
                 None,
+                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -883,6 +891,7 @@ mod tests {
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
                 None,
+                None,
             )
             .expect_err(
                 "Executing genesis cancun block with non-zero parent beacon block root field should fail",
@@ -897,6 +906,7 @@ mod tests {
             .execute(
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
+                None,
                 None,
             )
             .unwrap();
@@ -960,6 +970,7 @@ mod tests {
             .execute(
                 &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
                 U256::ZERO,
+                None,
                 None,
             )
             .unwrap();
