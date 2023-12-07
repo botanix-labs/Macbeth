@@ -135,6 +135,8 @@ reth-tokio-util = { path = "crates/tokio-util" }
 reth-tracing = { path = "crates/tracing" }
 reth-transaction-pool = { path = "crates/transaction-pool" }
 reth-trie = { path = "crates/trie" }
+reth-btc-wallet = {path = "crates/btc-wallet"}
+reth-botanix-lib = {path = "crates/botanix-lib"}
 
 # revm
 revm = { git = "https://github.com/bluealloy/revm", branch = "reth_freeze",  features = ["std", "secp256k1"], default-features = false }
