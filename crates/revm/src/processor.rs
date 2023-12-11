@@ -7,7 +7,7 @@ use crate::{
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
     revm::env::{fill_cfg_and_block_env, fill_tx_env},
-    Address, Block, BlockNumber, Bloom, ChainSpec, GotExpected, Hardfork, Header, PruneMode,
+    Address, Block, BlockNumber, Bloom, Bytes, ChainSpec, GotExpected, Hardfork, Header, PruneMode,
     PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts, TransactionSigned, B256,
     MINIMUM_PRUNING_DISTANCE, U256,
 };
@@ -16,8 +16,11 @@ use reth_provider::{
 };
 use revm::{
     db::{states::bundle_state::BundleRetention, StateDBBox},
-    primitives::ResultAndState,
+    primitives::{ExecutionResult, ResultAndState},
     State, EVM,
+};
+use reth_botanix_lib::mint_validation::{
+    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use std::{sync::Arc, time::Instant};
 
@@ -28,7 +31,11 @@ use reth_provider::BundleStateWithReceipts;
 #[cfg(not(feature = "optimism"))]
 use revm::DatabaseCommit;
 #[cfg(not(feature = "optimism"))]
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn, error};
+
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+}
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.
 ///
@@ -243,6 +250,44 @@ impl<'a> EVMProcessor<'a> {
         Ok(())
     }
 
+    /// Performs additional checks on mint contract transactions.
+    fn botanix_mint_contract_checks(
+        result: &ExecutionResult,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+    ) -> Result<(), BlockExecutionError> {
+        for log in result.logs() {
+            if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
+                let pegin_data = parse_pegin_topic(&log).map_err(|e| {
+                    error!("Failed to parse pegin topic! {:?}", e);
+                    BlockValidationError::MintContractViolation
+                })?;
+    
+                match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
+                    Ok(aggregate_value) => {
+                        tracing::trace!("Pegin aggregate value: {}", aggregate_value);
+                        if aggregate_value != pegin_data.amount {
+                            warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                            return Err(BlockValidationError::MintContractViolation.into())
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed pegin attempt! {:?}", e);
+                        return Err(BlockValidationError::MintContractViolation.into())
+                    },
+                }
+            }
+    
+            if log.topics.get(0) == Some(&BURN_TOPIC) {
+                if let Err(e) = parse_pegout_topic(&log) {
+                    error!("Failed to parse pegout topic! {:?}", e);
+                    return Err(BlockValidationError::MintContractViolation.into())
+                }
+            }
+        }
+    
+        Ok(())
+    }
+
     /// Runs a single transaction in the configured environment and proceeds
     /// to return the result and state diff (without applying it).
     ///
@@ -251,6 +296,7 @@ impl<'a> EVMProcessor<'a> {
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
@@ -277,6 +323,33 @@ impl<'a> EVMProcessor<'a> {
             // main execution.
             self.evm.transact()
         };
+
+        let out = match out {
+            Ok(ResultAndState { ref result, ref state }) => {
+                if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                    match Self::botanix_mint_contract_checks(&result, recent_block_header) {
+                        Ok(()) => out,
+                        Err(e) => Ok({
+                            error!("Botanix mint contract validation failed: {:?}", e);
+                            let output_match = match result {
+                                ExecutionResult::Success { output, .. } => output.clone().into_data().clone(),
+                                ExecutionResult::Revert { output, .. } => output.clone(),
+                                ExecutionResult::Halt { .. } => Bytes::new(),
+                            };
+                            let new_result = ExecutionResult::Revert { gas_used: result.gas_used(), output: output_match };
+                            ResultAndState { result: new_result, state: state.clone() }
+                        }),
+                    }
+                } else {
+                    out
+                }
+            },
+            Err(ref evm_error) => {
+                error!("EVM error: {:?}", evm_error);
+                out
+            }
+        };
+
         out.map_err(|e| BlockValidationError::EVM { hash, error: e.into() }.into())
     }
 
@@ -468,7 +541,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 .into())
             }
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, sender)?;
+            let ResultAndState { result, state } = self.transact(transaction, sender, recent_block_header)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
