@@ -39,7 +39,7 @@ impl BlockExecutor for TestExecutor {
         _block: &Block,
         _total_difficulty: U256,
         _senders: Option<Vec<Address>>,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        _recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         Err(BlockExecutionError::UnavailableForTest)
     }

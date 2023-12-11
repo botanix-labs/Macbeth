@@ -2,7 +2,7 @@ use crate::{
     constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
     holesky_nodes,
     net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
-    NodeRecord, U256, U64, constants::{BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE},
+    NodeRecord, U256, U64,
 };
 use alloy_rlp::{Decodable, Encodable};
 use num_enum::TryFromPrimitive;
@@ -15,8 +15,8 @@ use strum::{AsRefStr, EnumCount, EnumIter, EnumString, EnumVariantNames};
 mod spec;
 pub use spec::{
     AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
-    DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps, DEV, GOERLI, HOLESKY,
-    MAINNET, SEPOLIA, BOTANIX_TESTNET,
+    DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps, BOTANIX_TESTNET, DEV,
+    GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 
 #[cfg(feature = "optimism")]
@@ -174,11 +174,6 @@ impl Chain {
             Chain::Named(chain) => Some(*chain),
             Chain::Id(id) => NamedChain::try_from(*id).ok(),
         }
-    }
-
-    /// Returns the botanix testnet chain.
-    pub const fn botanix_testnet() -> Self {
-        Chain::Id(444)
     }
 
     /// The id of the chain

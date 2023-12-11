@@ -10,7 +10,6 @@ use std::{
 };
 use url::Url;
 
-use url::Url;
 #[cfg(feature = "optimism")]
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET};
 
@@ -49,7 +48,6 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
-        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             let raw = fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned()))?;
             serde_json::from_str(&raw)?
@@ -185,7 +183,7 @@ pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressPars
 
 /// Parse a [URL] from a `str` value
 pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
-    let url = Url::parse(value).map_err(|e| UrlParsingError::Parse(value.to_owned()))?;
+    let url = Url::parse(value).map_err(|_e| UrlParsingError::Parse(value.to_owned()))?;
     Ok(url)
 }
 

@@ -86,16 +86,13 @@ use std::{
     net::{SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
+    time::{Duration, Instant},
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
-use std::time::{Instant, Duration};
 
-use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use client::BtcServerClient;
-
-use btc_wallet::block_source::{BlockSource, MempoolSpace};
-use client::BtcServerClient;
+use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 
 pub mod cl_events;
 pub mod events;
@@ -225,7 +222,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             auto_mine,
             #[cfg(feature = "optimism")]
             rollup,
-            auto_mine,
             ..
         } = self;
         NodeCommand {
@@ -296,45 +292,10 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
         let prometheus_handle = self.install_prometheus_recorder()?;
-        // Connect to btc signining server
-        let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.rpc.btc_server.clone())
-                .await
-                .expect("connect to btc_server");
-        info!(target: "reth::cli", "Btc server connected");
-
-        let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
-            Arc::new(RwLock::new(None));
-        let bitcoin_block_header_clone = bitcoin_block_headers.clone();
-        let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
-
-        ctx.task_executor.spawn_critical(
-            "async bitcoin block header task",
-            Box::pin(async move {
-                let sleep_ms = tokio::time::Duration::from_millis(5000);
-                let mut tip = 0u32;
-                loop {
-                    let mut header_write = bitcoin_block_headers.write().await;
-                    let current_tip = block_source.get_tip().await.unwrap();
-                    if current_tip != tip {
-                        info!("Async bitcoin worker tip mismatch");
-                        let block_hash = block_source.get_block_hash(current_tip).await.unwrap();
-                        let block_header = block_source.get_block_header(block_hash).await.unwrap();
-
-                        // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some((block_header, current_tip));
-                        tip = current_tip;
-                    }
-                    tokio::time::sleep(sleep_ms).await;
-                }
-            }),
-        );
-        info!(target: "reth::cli", "Spawned async bitcoin block header task");
-
         // always store reth.toml in the data dir, not the chain specific data dir
-        info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
+        info!(target: "reth::cli", path = ?self.config_path(), "Configuration loaded");
 
-        let db_path = data_dir.db_path();
+        let db_path = self.data_dir().db_path();
 
         info!(target: "reth::cli", path = ?db_path, "Opening database");
         let db = Arc::new(init_db(&db_path, self.db.log_level)?.with_metrics());
@@ -345,12 +306,14 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         // configure snapshotter
         let snapshotter = reth_snapshot::Snapshotter::new(
             provider_factory.clone(),
-            data_dir.snapshots_path(),
+            self.data_dir().snapshots_path(),
             self.chain.snapshot_block_interval,
         )?;
 
-        provider_factory = provider_factory
-            .with_snapshots(data_dir.snapshots_path(), snapshotter.highest_snapshot_receiver());
+        provider_factory = provider_factory.with_snapshots(
+            self.data_dir().snapshots_path(),
+            snapshotter.highest_snapshot_receiver(),
+        );
 
         self.start_metrics_endpoint(prometheus_handle, Arc::clone(&db)).await?;
 
@@ -428,11 +391,14 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         }
 
         info!(target: "reth::cli", "Connecting to P2P network");
-        let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+        let network_secret_path = self
+            .network
+            .p2p_secret_key
+            .clone()
+            .unwrap_or_else(|| self.data_dir().p2p_secret_path());
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
-        let default_peers_path = data_dir.known_peers_path();
+        let default_peers_path = self.data_dir().known_peers_path();
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -496,7 +462,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 )
             } else {
                 info!(target: "reth::cli", "No mining mode specified, defaulting to ReadyTransaction");
-                let mining_interval =  Duration::from_secs(10);
+                let mining_interval = Duration::from_secs(10);
                 MiningMode::interval(mining_interval)
             };
 
@@ -630,7 +596,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         info!(target: "reth::cli", "Engine API handler initialized");
 
         // extract the jwt secret from the args if possible
-        let default_jwt_path = data_dir.jwt_path();
+        let default_jwt_path = self.data_dir().jwt_path();
         let jwt_secret = self.rpc.auth_jwt_secret(default_jwt_path)?;
 
         // adjust rpc port numbers based on instance number
