@@ -117,12 +117,12 @@ where
         loop {
             if let Poll::Ready(transactions) = this.miner.poll(&this.pool, cx) {
                 // Should check the payload builder here before adding to the queue
+                // miner returned a set of transaction that we feed to the producer
+                this.queued.push_back(transactions.clone());
                 info!(
                     "Adding to the list of transctions, transactions: {:?}, queued: {:?}",
                     transactions, this.queued
                 );
-                // miner returned a set of transaction that we feed to the producer
-                this.queued.push_back(transactions.clone());
             }
 
             // If insert task is not none executinon of async task is on going
@@ -207,7 +207,6 @@ where
                         })
                         .unzip();
 
-                    println!("FINAL::::: Transactions: {:?}", transactions);
                     if transactions.len() == 0 {
                         return None;
                     }
