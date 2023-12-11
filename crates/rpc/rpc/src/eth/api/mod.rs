@@ -26,6 +26,7 @@ use reth_provider::{
 use reth_rpc_types::{SyncInfo, SyncStatus};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::TransactionPool;
+
 use std::{
     fmt::Debug,
     future::Future,
@@ -50,8 +51,6 @@ use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeesRPCError};
-use btc_wallet::address::gateway_address;
-use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -86,14 +85,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
 
     /// Returns the BTC fee rate for a pegout transaction in sat/vb.
     async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
-
-    /// Returns the merkle proof for a given block hash
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
-
+  
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
 

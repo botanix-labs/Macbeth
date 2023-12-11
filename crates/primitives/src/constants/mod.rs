@@ -129,8 +129,8 @@ pub const DEV_GENESIS_HASH: B256 =
 
 // TODO include botanix and botanix testnet genesis hash
 /// Botanix Testnet genesis hash.
-pub const BOTANIX_TESTNET_GENESIS: H256 =
-    H256(hex!("25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9"));
+pub const BOTANIX_TESTNET_GENESIS: B256 =
+    b256!("25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9");
 
 /// Optimism goerli genesis hash.
 pub const GOERLI_OP_GENESIS: B256 =

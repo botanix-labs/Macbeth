@@ -51,9 +51,6 @@ pub enum BlockValidationError {
         /// The hash of the block
         hash: B256,
     },
-    /// Error for validating botanix Mint contract invocation
-    #[error("Invalid Mint contract invocation")]
-    MintContractViolation,
     /// Error for missing total difficulty
     #[error("missing total difficulty for block {hash}")]
     MissingTotalDifficulty {
@@ -115,11 +112,6 @@ pub enum BlockExecutionError {
         /// The fork on the other chain
         other_chain_fork: Box<BlockNumHash>,
     },
-
-    //TODO(stevenroose) this should be removed in later versions
-    /// Failed to get bitcoin header
-    #[error("Failed to get bitcoin header")]
-    FailedToGetBitcoinHeader,
     /// Only used for TestExecutor
     ///
     /// Note: this is not feature gated for convenience.

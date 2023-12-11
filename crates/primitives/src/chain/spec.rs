@@ -1,8 +1,7 @@
 use crate::{
     constants::{
-        BOTANIX_INITIAL_BASE_FEE, EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR,
-        EIP1559_DEFAULT_ELASTICITY_MULTIPLIER, EIP1559_INITIAL_BASE_FEE, EMPTY_RECEIPTS,
-        EMPTY_TRANSACTIONS, EMPTY_WITHDRAWALS,
+        EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR, EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, EMPTY_WITHDRAWALS,
     },
     proofs::state_root_ref_unhashed,
     revm_primitives::{address, b256},
@@ -235,39 +234,6 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
         ]),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        deposit_contract: None, // TODO: do we even have?
-        ..Default::default()
-    }
-    .into()
-});
-
-pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
-    ChainSpec {
-        chain: Chain::dev(),
-        genesis: serde_json::from_str(include_str!("../../res/genesis/botanix_testnet.json"))
-            .expect("Can't deserialize botanix testnet genesis json"),
-        genesis_hash: None,
-        paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        fork_timestamps: ForkTimestamps::default().shanghai(0),
-        hardforks: BTreeMap::from([
-            (Hardfork::Frontier, ForkCondition::Block(0)),
-            (Hardfork::Homestead, ForkCondition::Block(0)),
-            (Hardfork::Dao, ForkCondition::Block(0)),
-            (Hardfork::Tangerine, ForkCondition::Block(0)),
-            (Hardfork::SpuriousDragon, ForkCondition::Block(0)),
-            (Hardfork::Byzantium, ForkCondition::Block(0)),
-            (Hardfork::Constantinople, ForkCondition::Block(0)),
-            (Hardfork::Petersburg, ForkCondition::Block(0)),
-            (Hardfork::Istanbul, ForkCondition::Block(0)),
-            (Hardfork::MuirGlacier, ForkCondition::Block(0)),
-            (Hardfork::Berlin, ForkCondition::Block(0)),
-            (Hardfork::London, ForkCondition::Block(0)),
-            (
-                Hardfork::Paris,
-                ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::from(0) },
-            ),
-            (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
-        ]),
         deposit_contract: None, // TODO: do we even have?
         ..Default::default()
     }

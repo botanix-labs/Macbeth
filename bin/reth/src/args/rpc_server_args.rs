@@ -23,7 +23,10 @@ use reth_provider::{
     EvmEnvProvider, HeaderProvider, StateProviderFactory,
 };
 use reth_rpc::{
-    eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig, },
+    eth::{
+        botanix_config::BotanixConfig, cache::EthStateCacheConfig,
+        gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP,
+    },
     JwtError, JwtSecret,
 };
 use reth_rpc_builder::{
@@ -505,6 +508,8 @@ impl Default for RpcServerArgs {
             rpc_gas_cap: RPC_DEFAULT_GAS_CAP.into(),
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
+            btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
+            btc_block_source: Url::parse("https://mempool.space/signet/api").expect("valid url"),
         }
     }
 }

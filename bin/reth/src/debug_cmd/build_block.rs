@@ -269,9 +269,11 @@ impl Command {
 
                 let executor_factory = EvmProcessorFactory::new(self.chain.clone());
                 let mut executor = executor_factory.with_state(blockchain_db.latest()?);
+                // TODO (armins) leaving bitcoin block header out of this for now as this is a debug util
                 executor.execute_and_verify_receipt(
                     &block_with_senders.block.clone().unseal(),
                     U256::MAX,
+                    None,
                     None,
                 )?;
                 let state = executor.take_output_state();

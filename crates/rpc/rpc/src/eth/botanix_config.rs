@@ -2,7 +2,9 @@
 
 use std::{fmt, str::FromStr};
 
-use btc_wallet::block_source::BlockSource;
+use alloy_primitives::hex;
+use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+
 use reth_primitives::U256;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -159,7 +161,7 @@ impl Botanix {
             GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
         })?;
         let network = self.botanix_rpc_config.bitcoin_network;
-        let address = btc_wallet::address::gateway_address(
+        let address = reth_btc_wallet::address::gateway_address(
             &SECP,
             &pk,
             &eth_address.as_slice().to_vec(),
@@ -178,8 +180,7 @@ impl Botanix {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
         let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
             .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
-        let mempool =
-            btc_wallet::block_source::MempoolSpace::new(self.config().mempool_space_url.clone());
+        let mempool = MempoolSpace::new(self.config().mempool_space_url.clone());
 
         let txids = mempool
             .get_txids(
