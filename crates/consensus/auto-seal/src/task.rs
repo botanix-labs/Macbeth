@@ -216,7 +216,7 @@ where
                         })
                         .unzip();
 
-                    if transactions.len() == 0 {
+                    if transactions.is_empty() {
                         return None;
                     }
                     // execute the new block

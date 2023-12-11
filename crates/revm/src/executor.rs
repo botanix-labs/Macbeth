@@ -71,10 +71,10 @@ fn botanix_mint_contract_checks(
             match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
                 Ok(aggregate_value) => {
                     tracing::trace!("Pegin aggregate value: {}", aggregate_value);
-                    // if aggregate_value != pegin_data.amount {
-                    //     warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
-                    //     return Err(BlockValidationError::MintContractViolation.into())
-                    // }
+                    if aggregate_value != pegin_data.amount {
+                        warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                        return Err(BlockValidationError::MintContractViolation.into())
+                    }
                 },
                 Err(e) => {
                     warn!("Failed pegin attempt! {:?}", e);
