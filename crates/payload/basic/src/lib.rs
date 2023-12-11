@@ -376,7 +376,6 @@ where
         while this.interval.poll_tick(cx).is_ready() {
             // start a new job if there is no pending block and we haven't reached the deadline
             if this.pending_block.is_none() {
-                trace!(target: "payload_builder", "spawn new payload build task");
                 let (tx, rx) = oneshot::channel();
                 let client = this.client.clone();
                 let pool = this.pool.clone();
@@ -799,8 +798,6 @@ where
     Client: StateProviderFactory,
     Pool: TransactionPool,
 {
-    println!("[DOING THIIIS]");
-    let txs = args.pool.all_transactions();
     let BuildArguments { client, pool, mut cached_reads, config, cancel, best_payload } = args;
 
     let state_provider = client.state_by_block_hash(config.parent_block.hash)?;
