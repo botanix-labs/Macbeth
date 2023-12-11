@@ -7,19 +7,21 @@ use reth_botanix_lib::mint_validation::{
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_payload_builder::{PayloadBuilderAttributes, PayloadBuilderHandle, PayloadId};
-use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
+use reth_primitives::{
+    hex, Address, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
+    B256,
+};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+
 use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    thread,
-    time::Duration,
 };
 use url::Url;
 
@@ -135,7 +137,8 @@ where
 
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
-                let transactions = this.queued.pop_front().expect("not empty");
+                // Tech debt: these txs never end up getting used, the real txs are getting pulled from the payload builder
+                let _transactions = this.queued.pop_front().expect("not empty");
 
                 let to_engine = this.to_engine.clone();
                 let client = this.client.clone();
@@ -155,16 +158,22 @@ where
                     let recent_block_header = bitcoin_block_header.read().await.clone();
                     let mut storage = storage.write().await;
                     // Get a random payload of 8 bytes
-                    let attr = PayloadBuilderAttributes::new(
+                    let attr_result = PayloadBuilderAttributes::try_new(
                         storage.best_hash,
                         PayloadAttributes {
                             timestamp: 0u64.into(),
-                            prev_randao: H256::zero(),
-                            suggested_fee_recipient: Address::zero(),
+                            prev_randao: B256::ZERO,
+                            suggested_fee_recipient: Address::default(),
                             withdrawals: None,
                             parent_beacon_block_root: None,
                         },
                     );
+                    if let Err(err) = attr_result {
+                        error!("Failed to create payload attributes, err: {:?}", err);
+                        return None;
+                    }
+
+                    let attr = attr_result.expect("valid payload attributes");
                     let mut id: PayloadId = attr.id;
                     let recv = payload_store.send_new_payload(attr);
 
