@@ -1,0 +1,123 @@
+use std::io;
+use std::path::Path;
+
+use bitcoin::{OutPoint, TxOut};
+use ciborium;
+use serde::{Deserialize, Serialize};
+use sled;
+use thiserror::Error;
+
+use crate::util::OutPointExt;
+
+/// sled tree id for the utxos tree.
+const TREE_UTXOS: &[u8; 5] = b"utxos";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Utxo {
+    #[serde(skip)]
+    pub outpoint: OutPoint,
+    pub output: TxOut,
+    /// If this is a pegin UTXO, the user's pegin address.
+    pub eth_address: Option<[u8; 20]>,
+}
+
+pub struct Db {
+    /// NB a db is also a "default tree" so maybe here we could store some
+    /// metadata if we wanted to. But I think it makes sense to have a different
+    /// tree for the UTXOs.
+    _db: sled::Db,
+
+    /// A tree of UTXOs.
+    ///
+    /// Indexed by serialized outpoint.
+    utxos: sled::Tree,
+}
+
+impl Db {
+    pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
+        let db = sled::open(path)?;
+        Ok(Db {
+            utxos: db.open_tree(&TREE_UTXOS)?,
+            _db: db,
+        })
+    }
+
+    pub fn flush(&self) -> Result<(), Error> {
+        self.utxos.flush()?;
+        Ok(())
+    }
+
+    pub fn get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
+        if let Some(b) = self.utxos.get(&op.to_bytes())? {
+            let mut ret = ciborium::from_reader::<Utxo, _>(b.as_ref())?;
+            ret.outpoint = op;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn iter_utxos(&self) -> impl Iterator<Item = Result<Utxo, Error>> {
+        self.utxos.iter().map(|res| {
+            let (k, v) = res?;
+            let mut ret = ciborium::from_reader::<Utxo, _>(v.as_ref())?;
+            ret.outpoint = OutPoint::from_slice(&k).expect("db very broken");
+            Ok(ret)
+        })
+    }
+
+    pub fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
+        let op = utxo.outpoint;
+        if !self.utxos.contains_key(&op.to_bytes())? {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
+            self.utxos.insert(&op.to_bytes(), &bytes[..])?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Add new utxos and remove some utxos in one atomic transaction.
+    pub fn add_remove_utxos<'a>(
+        &self,
+        remove: impl Iterator<Item = OutPoint> + Clone,
+        new: impl Iterator<Item = &'a Utxo> + Clone,
+    ) -> Result<(), Error> {
+        // NB the clones on the args is because the closure in the
+        // transaction can be called multiple times in the case where
+        // the transaction is aborted because of a conflict.
+        // But since it's outpoints (small) and references (very small),
+        // the clone operation is really cheap.
+
+        self.utxos.transaction(move |utxos| {
+            for r in remove.clone() {
+                utxos.remove(&r.to_bytes()[..])?;
+            }
+            for n in new.clone() {
+                let mut bytes = Vec::new();
+                ciborium::into_writer(&n, &mut bytes).expect("writing to buffer");
+                utxos.insert(&n.outpoint.to_bytes()[..], &bytes[..])?;
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("internal BD error")]
+    Db(#[from] sled::Error),
+    #[error("data corruption error")]
+    DataCorruption(#[from] ciborium::de::Error<io::Error>),
+}
+
+impl From<sled::transaction::TransactionError<sled::Error>> for Error {
+    fn from(e: sled::transaction::TransactionError<sled::Error>) -> Error {
+        match e {
+            sled::transaction::TransactionError::Abort(e) => Error::Db(e),
+            sled::transaction::TransactionError::Storage(e) => Error::Db(e),
+        }
+    }
+}

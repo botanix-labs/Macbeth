@@ -29,8 +29,8 @@ tokio-stream.workspace = true
 tracing.workspace = true
 
 ## Botanix
-btc-server = { path = "../../../../btc-server" }
-client = {path = "../../../../btc-server/client"}
+btc-server = { path = "../../../bin/btc-server" }
+client = {path = "../../../bin/btc-server/client"}
 
 ## url
 url = "2.2"
