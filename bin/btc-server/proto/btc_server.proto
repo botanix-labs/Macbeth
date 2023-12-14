@@ -1,0 +1,42 @@
+
+syntax = "proto3";
+
+package btc_server;
+
+service BtcServer {
+    rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
+
+    rpc MakeTx(MakeTxRequest) returns (MakeTxResponse) {}
+
+    rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
+}
+
+message NotifyPeginRequest {
+    // The txid of the utxo in hex.
+    string utxo_txid = 1;
+    // The output index of the utxo.
+    uint32 utxo_vout = 2;
+    // The user's ethereum address.
+    string eth_address = 3;
+    // The txout of the utxo.
+    bytes output = 4;
+}
+
+message MakeTxRequest {
+    string address = 1;
+    uint64 value = 2;
+    // Fee rate in satoshi per vbyte.
+    uint32 fee_rate = 3;
+}
+
+message MakeTxResponse {
+    string txid = 1;
+    bytes tx = 2;
+}
+
+message GetPublicKeyResponse {
+    // hex encoded
+    string publickey = 1; 
+}
+
+message Empty {}

@@ -93,7 +93,7 @@ pin-project.workspace = true
 hyper = "0.14.25"
 
 # Botanix
-client = {path = "../../../btc-server/client"}
+client = {path = "../btc-server/client"}
 
 # Grpc
 tonic = "0.9.2"
