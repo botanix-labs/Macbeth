@@ -1,4 +1,6 @@
 [workspace]
+resolver = "2"
+
 members = [
     "bin/reth/",
     "bin/btc-server",
@@ -61,7 +63,6 @@ default-members = ["bin/reth"]
 
 # Explicitly set the resolver to version 2, which is the default for packages with edition >= 2021
 # https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html
-resolver = "2"
 
 [workspace.package]
 version = "0.1.0-alpha.13"

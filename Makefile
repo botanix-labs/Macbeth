@@ -232,3 +232,35 @@ update-book-cli: ## Update book cli documentation.
 .PHONY: maxperf
 maxperf:
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
+
+fmt:
+	@cargo fmt --all --
+
+fmt-check:
+	@cargo fmt --all -- --check
+
+lint:
+	@cargo clippy --bins --lib --tests --examples --all-features --fix -- -D warnings
+
+doc:
+	@cargo doc --no-deps --open
+
+start-btc-server:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --pkey ./key.hex --db "./db"
+
+start-reth-server:
+	cd ./bin/reth && \
+	cargo run --bin reth node \
+	--chain botanix_testnet \
+	--disable-discovery \
+	--http \
+	--http.corsdomain "*" \
+	-vvv \
+	--metrics 127.0.0.1:9001 \
+	--authrpc.addr 127.0.0.1 \
+	--authrpc.port 8551 \
+	--datadir ${DB_DIR} \
+	--auto-mine \
+	--btc-server localhost:8080 \
+	--btc-block-source "https://mempool.space/signet/api"
