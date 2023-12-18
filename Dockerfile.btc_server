@@ -4,8 +4,8 @@ FROM rust:1.74.0 AS builder
 WORKDIR /app
 
 # Copy your Rust project files into the container
-COPY crates/btc-wallet /app/btc-wallet
-COPY bin/btc-server /app/server
+COPY crates/btc-wallet /app/crates/btc-wallet
+COPY bin/btc-server /app/server/btc-server
 
 WORKDIR /app/server/btc-server
 

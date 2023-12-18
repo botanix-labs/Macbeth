@@ -6449,7 +6449,7 @@ dependencies = [
 
 [[package]]
 name = "reth-btc-wallet"
-version = "0.1.0-alpha.13"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",

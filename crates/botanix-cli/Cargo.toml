@@ -1,0 +1,17 @@
+[package]
+name = "botanix-cli"
+version = "0.1.0"
+edition = "2021"
+
+
+[[bin]]
+name = "btx"
+path = "src/main.rs"
+
+[dependencies]
+botanix-lib = { path = "../botanix-lib" }
+hex = "0.4.3"
+
+# CLI
+clap = { version = "4", features = [ "derive" ] }
+anyhow = "1.0.75"
