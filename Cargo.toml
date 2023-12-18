@@ -5,6 +5,7 @@ members = [
     "bin/reth/",
     "bin/btc-server",
     "crates/blockchain-tree/",
+    "crates/btc-wallet",
     "crates/config/",
     "crates/consensus/auto-seal/",
     "crates/consensus/beacon/",
