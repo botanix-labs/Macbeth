@@ -141,3 +141,21 @@ None of this would have been possible without them, so big shoutout to the teams
 
 [book]: https://paradigmxyz.github.io/reth/
 [tg-url]: https://t.me/paradigm_reth
+
+### Requirements
+
+To run the stack locally, please go through the following steps to ensure you have all necessary prerequisites:
+
+1. Install rust (best way to install it is through the rustup toolchain: `https://rustup.rs/` - for any OS). Default to nightly version.
+2. Install docker on your OS - simply follow the instructions here: `https://docs.docker.com/engine/install/`
+3. Install foundry on your system - simply follow the instructions here: `https://book.getfoundry.sh/getting-started/installation`
+4. Set up git to use ssh. Currently all git submodules are set up via ssh and other authentication methods wont work.
+5. Once you have cloned the Botanix monorepo, initialize gitmodules: `git submodule init`
+6. Pull the git submodules and their deps recursively: `git submodule update --init --recursive`
+7. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
+8. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+
+### Run locally the stack
+
+1. Run: `start-btc-server` to spin up the btc server
+2. Run: `start-reth-server` to spin up the EVM Botanix node
