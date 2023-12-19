@@ -4,6 +4,9 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
+use reth_botanix_lib::mint_validation::{
+    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
     revm::env::{fill_cfg_and_block_env, fill_tx_env},
@@ -19,9 +22,6 @@ use revm::{
     primitives::{ExecutionResult, ResultAndState},
     State, EVM,
 };
-use reth_botanix_lib::mint_validation::{
-    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
-};
 use std::{sync::Arc, time::Instant};
 
 #[cfg(not(feature = "optimism"))]
@@ -31,7 +31,7 @@ use reth_provider::BundleStateWithReceipts;
 #[cfg(not(feature = "optimism"))]
 use revm::DatabaseCommit;
 #[cfg(not(feature = "optimism"))]
-use tracing::{debug, trace, warn, error};
+use tracing::{debug, error, trace, warn};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -261,7 +261,7 @@ impl<'a> EVMProcessor<'a> {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
                 })?;
-    
+
                 match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
                     Ok(aggregate_value) => {
                         tracing::trace!("Pegin aggregate value: {}", aggregate_value);
@@ -269,14 +269,14 @@ impl<'a> EVMProcessor<'a> {
                             warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
                             return Err(BlockValidationError::MintContractViolation.into())
                         }
-                    },
+                    }
                     Err(e) => {
                         warn!("Failed pegin attempt! {:?}", e);
                         return Err(BlockValidationError::MintContractViolation.into())
-                    },
+                    }
                 }
             }
-    
+
             if log.topics.get(0) == Some(&BURN_TOPIC) {
                 if let Err(e) = parse_pegout_topic(&log) {
                     error!("Failed to parse pegout topic! {:?}", e);
@@ -284,7 +284,7 @@ impl<'a> EVMProcessor<'a> {
                 }
             }
         }
-    
+
         Ok(())
     }
 
@@ -332,18 +332,23 @@ impl<'a> EVMProcessor<'a> {
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);
                             let output_match = match result {
-                                ExecutionResult::Success { output, .. } => output.clone().into_data().clone(),
+                                ExecutionResult::Success { output, .. } => {
+                                    output.clone().into_data().clone()
+                                }
                                 ExecutionResult::Revert { output, .. } => output.clone(),
                                 ExecutionResult::Halt { .. } => Bytes::new(),
                             };
-                            let new_result = ExecutionResult::Revert { gas_used: result.gas_used(), output: output_match };
+                            let new_result = ExecutionResult::Revert {
+                                gas_used: result.gas_used(),
+                                output: output_match,
+                            };
                             ResultAndState { result: new_result, state: state.clone() }
                         }),
                     }
                 } else {
                     out
                 }
-            },
+            }
             Err(ref evm_error) => {
                 error!("EVM error: {:?}", evm_error);
                 out
@@ -541,7 +546,8 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 .into())
             }
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, sender, recent_block_header)?;
+            let ResultAndState { result, state } =
+                self.transact(transaction, sender, recent_block_header)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,

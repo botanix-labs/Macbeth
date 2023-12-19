@@ -169,7 +169,7 @@ impl Command {
             &block.clone().unseal(),
             merkle_block_td + block.difficulty,
             None,
-            None
+            None,
         )?;
         let block_state = executor.take_output_state();
 

@@ -1,6 +1,4 @@
-use bitcoin::consensus::encode as btcencode;
-use bitcoin::hashes::Hash;
-use bitcoin::OutPoint;
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
@@ -30,10 +28,7 @@ pub trait OutPointExt: Into<OutPoint> {
     }
 
     fn from_bdk(outpoint: bdk::bitcoin::OutPoint) -> OutPoint {
-        bitcoin::OutPoint {
-            txid: outpoint.txid,
-            vout: outpoint.vout,
-        }
+        bitcoin::OutPoint { txid: outpoint.txid, vout: outpoint.vout }
     }
 }
 

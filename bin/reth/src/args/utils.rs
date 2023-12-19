@@ -14,14 +14,15 @@ use url::Url;
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET};
 
 #[cfg(not(feature = "optimism"))]
-use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET};
+use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] = &["base", "base_goerli"];
 #[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
-pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
+pub const SUPPORTED_CHAINS: &[&str] =
+    &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
 
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {

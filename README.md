@@ -1,4 +1,4 @@
-# reth 
+# Botanix Protocol 
 
 [![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)][gh-ci]
 [![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)][gh-deny]
@@ -141,6 +141,21 @@ None of this would have been possible without them, so big shoutout to the teams
 
 [book]: https://paradigmxyz.github.io/reth/
 [tg-url]: https://t.me/paradigm_reth
+
+#### Building and pushing the Botanix images
+
+Build the testnet image
+`docker build -t botanix_testnet -f Dockerfile.testnet .`
+
+Tag the image
+`docker tag botanix_testnet:latest {region}-docker.pkg.dev/{project_id}/{repo_name}/botanix_testnet_node:latest`
+
+For example: `docker tag botanix_testnet:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest`
+
+Push the image
+
+`docker push {region}-docker.pkg.dev/{project_id}/{repo_name}/botanix_testnet:latest`
+For example: `docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest`
 
 ### Requirements
 

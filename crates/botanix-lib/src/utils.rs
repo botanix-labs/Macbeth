@@ -1,4 +1,3 @@
-
 use ethabi::ethereum_types::U256;
 
 /// One satoshi expressed in wei.
@@ -47,7 +46,6 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
     }
 }
 impl AmountExt for bitcoin::Amount {}
-
 
 #[cfg(test)]
 mod test {

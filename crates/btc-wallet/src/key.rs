@@ -1,8 +1,10 @@
-use secp256k1::hashes::{sha256, Hash};
-use secp256k1::rand::rngs::OsRng;
-use secp256k1::scalar::OutOfRangeError;
-use secp256k1::schnorr::Signature;
-use secp256k1::{KeyPair, Message, PublicKey, Scalar, SecretKey};
+use secp256k1::{
+    hashes::{sha256, Hash},
+    rand::rngs::OsRng,
+    scalar::OutOfRangeError,
+    schnorr::Signature,
+    KeyPair, Message, PublicKey, Scalar, SecretKey,
+};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -104,7 +106,6 @@ mod tests {
 
         let sig = secp.sign_schnorr(&message, &tweaked_prv.keypair(&secp));
 
-        secp.verify_schnorr(&sig, &message, &tweaked_pk.x_only_public_key().0)
-            .unwrap();
+        secp.verify_schnorr(&sig, &message, &tweaked_pk.x_only_public_key().0).unwrap();
     }
 }

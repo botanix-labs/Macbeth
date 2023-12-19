@@ -55,7 +55,7 @@ pub use bytes::{self, Buf, BufMut, BytesMut};
 pub use chain::{
     AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain, ChainInfo, ChainSpec,
     ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps,
-    NamedChain, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET
+    NamedChain, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 pub use compression::*;
 pub use constants::{

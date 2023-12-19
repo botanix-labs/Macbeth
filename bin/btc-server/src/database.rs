@@ -1,5 +1,4 @@
-use std::io;
-use std::path::Path;
+use std::{io, path::Path};
 
 use bitcoin::{OutPoint, TxOut};
 use ciborium;
@@ -36,10 +35,7 @@ pub struct Db {
 impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
         let db = sled::open(path)?;
-        Ok(Db {
-            utxos: db.open_tree(&TREE_UTXOS)?,
-            _db: db,
-        })
+        Ok(Db { utxos: db.open_tree(&TREE_UTXOS)?, _db: db })
     }
 
     pub fn flush(&self) -> Result<(), Error> {

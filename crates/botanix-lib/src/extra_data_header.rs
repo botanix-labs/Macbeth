@@ -1,7 +1,9 @@
 use std::io::{self, Write};
 
-use bitcoin::consensus::encode::{self, Decodable, Encodable};
-use bitcoin::secp256k1;
+use bitcoin::{
+    consensus::encode::{self, Decodable, Encodable},
+    secp256k1,
+};
 use secp256k1::ecdsa::RecoveryId;
 use thiserror::Error;
 
@@ -15,10 +17,10 @@ lazy_static::lazy_static! {
 const EXTRA_HEADER_VERSION: u32 = 0;
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
-/// A block producer will sign `Hash(block_hash || extra_data_version || authority_signers || authority_vote || bitcoin_block_hash ... )`
-/// This sighash excludes the authority signature field. Use `encode_into_without_signature` to serialize the extradata
-/// header with out the signature field
-/// Note: the order of the struct properties is important for serialization/deserialization
+/// A block producer will sign `Hash(block_hash || extra_data_version || authority_signers ||
+/// authority_vote || bitcoin_block_hash ... )` This sighash excludes the authority signature field.
+/// Use `encode_into_without_signature` to serialize the extradata header with out the signature
+/// field Note: the order of the struct properties is important for serialization/deserialization
 #[derive(Debug, Clone)]
 pub struct ExtraDataHeader {
     pub version: u32,
@@ -61,19 +63,14 @@ pub enum ExtraDataHeaderSerializeError {
 impl ExtraDataHeader {
     pub fn new(
         version: u32,
-        // This field is only optional b/c the block producer will need to sign the extra header data without a signature appended at the end
+        // This field is only optional b/c the block producer will need to sign the extra header
+        // data without a signature appended at the end
         authority_signature: Option<secp256k1::ecdsa::RecoverableSignature>,
         authority_signers: Vec<secp256k1::PublicKey>,
         authority_vote: Option<secp256k1::PublicKey>,
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     ) -> Self {
-        Self {
-            version,
-            authority_signature,
-            authority_signers,
-            authority_vote,
-            bitcoin_block_hash,
-        }
+        Self { version, authority_signature, authority_signers, authority_vote, bitcoin_block_hash }
     }
 
     pub fn authority_vote(&self) -> Option<secp256k1::PublicKey> {
@@ -113,15 +110,14 @@ impl ExtraDataHeader {
     /// Serialize the extra data header
     pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        self.encode_into(&mut buf)
-            .expect("buffers produce no io errors");
+        self.encode_into(&mut buf).expect("buffers produce no io errors");
         buf
     }
 
     pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtraDataHeaderDeserialzeError> {
         let version = u32::consensus_decode(reader)?;
         if version > EXTRA_HEADER_VERSION {
-            return Err(ExtraDataHeaderDeserialzeError::InvalidVersion);
+            return Err(ExtraDataHeaderDeserialzeError::InvalidVersion)
         }
 
         let signers_len = u32::consensus_decode(reader)?;
@@ -146,7 +142,7 @@ impl ExtraDataHeader {
                     authority_vote: None,
                     authority_signature: None,
                     bitcoin_block_hash,
-                });
+                })
             }
             Err(e) => return Err(e.into()),
             Ok(()) => {}
@@ -159,7 +155,7 @@ impl ExtraDataHeader {
                 .map_err(|_| encode::Error::ParseFailed("invalid signer public key"))?;
             Some(pk)
         } else {
-            return Err(encode::Error::ParseFailed("invalid authority vote presence byte").into());
+            return Err(encode::Error::ParseFailed("invalid authority vote presence byte").into())
         };
 
         let mut signature: Option<secp256k1::ecdsa::RecoverableSignature> = None;
@@ -188,7 +184,7 @@ impl ExtraDataHeader {
         message: &Vec<u8>,
     ) -> Result<(), ValidateAuthoritySignatureError> {
         if self.authority_signature.is_none() {
-            return Err(ValidateAuthoritySignatureError::MissingSignature);
+            return Err(ValidateAuthoritySignatureError::MissingSignature)
         }
 
         let msg = secp256k1::Message::from_slice(message.as_slice())
@@ -200,7 +196,7 @@ impl ExtraDataHeader {
                 .verify(&msg, &signer)
                 .is_ok()
         }) {
-            return Ok(());
+            return Ok(())
         }
 
         Err(ValidateAuthoritySignatureError::InvalidSignature)
@@ -210,9 +206,11 @@ impl ExtraDataHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::hashes::{sha256, Hash};
-    use secp256k1::rand::rngs::OsRng;
-    use secp256k1::{Message, Secp256k1};
+    use secp256k1::{
+        hashes::{sha256, Hash},
+        rand::rngs::OsRng,
+        Message, Secp256k1,
+    };
 
     // Test case for creating a new ExtraDataHeader
     #[test]
@@ -229,10 +227,7 @@ mod tests {
         assert_eq!(header.authority_signature, None);
         assert_eq!(header.authority_signers, authority_signers);
         assert_eq!(header.authority_vote, None);
-        assert_eq!(
-            header.bitcoin_block_hash,
-            bitcoin::hash_types::BlockHash::all_zeros()
-        );
+        assert_eq!(header.bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
     }
 
     // Test case for serializing without a signature
@@ -267,10 +262,7 @@ mod tests {
         // Check the bitcoin block hash
         let bitcoin_block_hash: bitcoin::hash_types::BlockHash =
             bitcoin::consensus::deserialize(&buf[41..73]).expect("a bitcoin block hash");
-        assert_eq!(
-            bitcoin_block_hash,
-            bitcoin::hash_types::BlockHash::all_zeros()
-        );
+        assert_eq!(bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
     }
 
     // Test case for serializing with a signature
@@ -309,10 +301,7 @@ mod tests {
         assert_eq!(deserialized_header.authority_signature.is_some(), true);
 
         assert_eq!(
-            deserialized_header
-                .authority_signature
-                .unwrap()
-                .to_standard(),
+            deserialized_header.authority_signature.unwrap().to_standard(),
             signature.to_standard()
         );
 
@@ -362,10 +351,7 @@ mod tests {
         assert_eq!(deserialized_header.authority_signature.is_some(), true);
 
         assert_eq!(
-            deserialized_header
-                .authority_signature
-                .unwrap()
-                .to_standard(),
+            deserialized_header.authority_signature.unwrap().to_standard(),
             signature.to_standard()
         );
 
@@ -408,9 +394,7 @@ mod tests {
             bitcoin::hash_types::BlockHash::all_zeros(),
         );
 
-        header
-            .validate_authority_signature(&hello_world_hash.as_byte_array().to_vec())
-            .unwrap()
+        header.validate_authority_signature(&hello_world_hash.as_byte_array().to_vec()).unwrap()
     }
 
     // Test case for validating with an invalid signature
@@ -434,10 +418,7 @@ mod tests {
         );
         let invalid_hash = sha256::Hash::hash("Not hello world!".as_bytes());
         let result = header.validate_authority_signature(&invalid_hash.as_byte_array().to_vec());
-        assert_eq!(
-            result.unwrap_err(),
-            ValidateAuthoritySignatureError::InvalidSignature
-        )
+        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidSignature)
     }
 
     // Test case for validating without a signature
@@ -459,10 +440,7 @@ mod tests {
         let message = vec![0u8; 32];
 
         let result = header_without_signature.validate_authority_signature(&message);
-        assert_eq!(
-            result.unwrap_err(),
-            ValidateAuthoritySignatureError::MissingSignature
-        );
+        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
     }
 
     #[test]
@@ -488,9 +466,6 @@ mod tests {
             bitcoin::hash_types::BlockHash::all_zeros(),
         );
 
-        println!(
-            "serialized header: {}",
-            hex::encode(extra_data_header.serialize())
-        );
+        println!("serialized header: {}", hex::encode(extra_data_header.serialize()));
     }
 }

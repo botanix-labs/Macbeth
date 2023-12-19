@@ -23,8 +23,8 @@ use reth_provider::{
 use reth_rpc_api::EthApiServer;
 use reth_rpc_types::{
     state::StateOverride, AccessListWithGasUsed, BlockOverrides, Bundle, CallRequest,
-    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Index, RichBlock, StateContext,
-    SyncStatus, TransactionReceipt, TransactionRequest, Work, GatewayAddress,
+    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, GatewayAddress, Index, RichBlock,
+    StateContext, SyncStatus, TransactionReceipt, TransactionRequest, Work,
 };
 use reth_transaction_pool::TransactionPool;
 use serde_json::Value;
@@ -99,10 +99,7 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> Result<Option<GatewayAddress>> {
+    async fn gateway_address(&self, eth_address: Address) -> Result<Option<GatewayAddress>> {
         trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
         let address = match EthApi::get_gateway_address(self, eth_address).await {
             Ok(value) => Some(GatewayAddress {
@@ -130,7 +127,7 @@ where
         trace!(target: "rpc::eth", "Serving eth_getBtcFeeRate");
         let fee_rate = match EthApi::get_btc_fee_rate(self).await {
             Ok(value) => Some(value),
-            Err(_) => None
+            Err(_) => None,
         };
         Ok(fee_rate)
     }
@@ -431,8 +428,8 @@ where
 mod tests {
     use crate::{
         eth::{
-            cache::EthStateCache, gas_oracle::GasPriceOracle, FeeHistoryCache,
-            FeeHistoryCacheConfig, botanix_config::Botanix,
+            botanix_config::Botanix, cache::EthStateCache, gas_oracle::GasPriceOracle,
+            FeeHistoryCache, FeeHistoryCacheConfig,
         },
         BlockingTaskPool, EthApi,
     };

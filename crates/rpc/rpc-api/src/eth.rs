@@ -5,8 +5,8 @@ use reth_primitives::{
 };
 use reth_rpc_types::{
     state::StateOverride, AccessListWithGasUsed, BlockOverrides, Bundle, CallRequest,
-    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Index, RichBlock, StateContext,
-    SyncStatus, Transaction, TransactionReceipt, TransactionRequest, Work, GatewayAddress
+    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, GatewayAddress, Index, RichBlock,
+    StateContext, SyncStatus, Transaction, TransactionReceipt, TransactionRequest, Work,
 };
 
 /// Eth rpc interface: <https://ethereum.github.io/execution-apis/api-documentation/>
@@ -40,18 +40,11 @@ pub trait EthApi {
 
     /// Returns the Bitcoin pegin gateway address
     #[method(name = "getGatewayAddress")]
-    async fn gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> RpcResult<Option<GatewayAddress>>;
+    async fn gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>>;
 
     /// Returns the Bitcoin pegin gateway address
     #[method(name = "merkleProof")]
-    async fn merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> RpcResult<Bytes>;
+    async fn merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes>;
 
     /// Returns the Bitcoin fee rate for a pegout transaction in sat/vb.
     #[method(name = "getBtcFeeRate")]

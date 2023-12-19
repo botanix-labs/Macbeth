@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Information about the Botanix Pegin Gateway Address
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
