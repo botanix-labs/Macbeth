@@ -1,10 +1,9 @@
-
 extern crate anyhow;
 extern crate hex;
 
 pub mod address;
-pub mod key;
 pub mod block_source;
+pub mod key;
 pub mod transaction;
 
 use bitcoin::Weight;
@@ -16,8 +15,7 @@ pub const TAPROOT_KEYSPEND_SATISFACTION_WEIGHT: Weight = Weight::from_wu(71);
 mod test {
     use super::*;
 
-    use bitcoin::secp256k1::rand;
-    use bitcoin::secp256k1::{self, KeyPair};
+    use bitcoin::secp256k1::{self, rand, KeyPair};
     use miniscript::{self, Descriptor};
 
     #[test]

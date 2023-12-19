@@ -8,8 +8,7 @@ use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_payload_builder::{PayloadBuilderAttributes, PayloadBuilderHandle, PayloadId};
 use reth_primitives::{
-    hex, Address, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
-    B256,
+    hex, Address, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders, B256,
 };
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
@@ -137,7 +136,8 @@ where
 
                 // ready to queue in new insert task
                 let storage = this.storage.clone();
-                // Tech debt: these txs never end up getting used, the real txs are getting pulled from the payload builder
+                // Tech debt: these txs never end up getting used, the real txs are getting pulled
+                // from the payload builder
                 let _transactions = this.queued.pop_front().expect("not empty");
 
                 let to_engine = this.to_engine.clone();
@@ -170,7 +170,7 @@ where
                     );
                     if let Err(err) = attr_result {
                         error!("Failed to create payload attributes, err: {:?}", err);
-                        return None;
+                        return None
                     }
 
                     let attr = attr_result.expect("valid payload attributes");
@@ -217,7 +217,7 @@ where
                         .unzip();
 
                     if transactions.is_empty() {
-                        return None;
+                        return None
                     }
                     // execute the new block
                     // let substate = SubState::new(State::new(client.latest().unwrap()));
@@ -243,7 +243,7 @@ where
                                 for reciept in reciepts {
                                     if index == 0 && reciept.is_none() {
                                         // Prunning block, skip
-                                        break;
+                                        break
                                     }
                                     if let Some(reciept) = reciept {
                                         if !reciept.success {

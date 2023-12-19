@@ -50,7 +50,9 @@ mod transactions;
 use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
-use super::botanix_config::{Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeesRPCError};
+use super::botanix_config::{
+    Botanix, BtcFeesRPCError, GatewayAddressRPCError, MerkleProofRPCError,
+};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -85,7 +87,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
 
     /// Returns the BTC fee rate for a pegout transaction in sat/vb.
     async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
-  
+
     /// Returns a list of addresses owned by provider.
     fn accounts(&self) -> Vec<Address>;
 

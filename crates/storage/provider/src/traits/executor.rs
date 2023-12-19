@@ -62,7 +62,7 @@ pub trait BlockExecutor {
         block: &Block,
         total_difficulty: U256,
         senders: Option<Vec<Address>>,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError>;
 
     /// Return bundle state. This is output of executed blocks.

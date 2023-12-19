@@ -17,8 +17,10 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
-        cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache,
-        FeeHistoryCacheConfig, botanix_config::{BotanixConfig, Botanix},
+        botanix_config::{Botanix, BotanixConfig},
+        cache::EthStateCache,
+        gas_oracle::GasPriceOracle,
+        EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig,
     },
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
@@ -65,7 +67,7 @@ where
     let fee_history_cache =
         FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
     let botanix_provider = Botanix::new(BotanixConfig::default());
-    
+
     let eth_api = EthApi::with_spawner(
         provider.clone(),
         pool.clone(),

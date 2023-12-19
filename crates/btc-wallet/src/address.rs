@@ -1,10 +1,13 @@
 use std::io::Write;
 
-use bitcoin::absolute::LockTime;
-use bitcoin::hashes::{sha256, Hash};
-use bitcoin::script::Builder;
-use bitcoin::taproot::{Error, TaprootBuilder, TaprootSpendInfo};
-use bitcoin::{opcodes, Address, Network, ScriptBuf};
+use bitcoin::{
+    absolute::LockTime,
+    hashes::{sha256, Hash},
+    opcodes,
+    script::Builder,
+    taproot::{Error, TaprootBuilder, TaprootSpendInfo},
+    Address, Network, ScriptBuf,
+};
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
@@ -55,28 +58,24 @@ fn _build_safe_spend_path_script_check_sig_add(
     quorum: i64,
 ) -> Result<ScriptBuf, SafeSpendPathError> {
     if public_keys.len() < 2 {
-        return Err(SafeSpendPathError::InvalidLengthOfPublicKeys);
+        return Err(SafeSpendPathError::InvalidLengthOfPublicKeys)
     }
 
     if public_keys.len() > usize::try_from(quorum).expect("Quorum should always be a valid usize") {
-        return Err(SafeSpendPathError::QuorumCannotBeLessThanPublicKeys);
+        return Err(SafeSpendPathError::QuorumCannotBeLessThanPublicKeys)
     }
 
     let mut script = Builder::new()
         .push_lock_time(lock_time)
         .push_key(&bitcoin::PublicKey::new(
-            *public_keys
-                .get(0)
-                .expect("There is always a 0th public key"),
+            *public_keys.get(0).expect("There is always a 0th public key"),
         ))
         .push_opcode(opcodes::all::OP_CHECKSIG);
 
     for i in 1..public_keys.len() {
         script = script
             .push_key(&bitcoin::PublicKey::new(
-                *(public_keys
-                    .get(i)
-                    .expect(format!("should find pubkey at {}", i).as_str())),
+                *(public_keys.get(i).expect(format!("should find pubkey at {}", i).as_str())),
             ))
             .push_opcode(opcodes::all::OP_CHECKSIGADD);
     }
@@ -110,9 +109,8 @@ pub fn generate_taproot_spend_info(
         )
         .expect("Couldn't add timelock leaf");
 
-    let finalized_taproot = builder
-        .finalize(&secp, tweaked_public_key.x_only_public_key().0)
-        .unwrap();
+    let finalized_taproot =
+        builder.finalize(&secp, tweaked_public_key.x_only_public_key().0).unwrap();
 
     Ok(finalized_taproot)
 }
@@ -225,9 +223,7 @@ mod tests {
         let secp = Secp256k1::new();
         let network: Network = Network::Testnet;
         let eth_addr = ethers::abi::Address::from_slice(
-            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D")
-                .expect("hex decode")
-                .as_slice(),
+            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").expect("hex decode").as_slice(),
         );
         let key_pair = KeyPair::from_seckey_str(
             &SECP,
@@ -235,8 +231,7 @@ mod tests {
         )
         .unwrap();
 
-        let gateway =
-            gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
+        let gateway = gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
         assert_eq!(
             gateway.to_string(),
             "tb1pjutmjkwrwjejxn988mt35528schetrrsgexhv24fxhn7nk6pvs7qd66dne"

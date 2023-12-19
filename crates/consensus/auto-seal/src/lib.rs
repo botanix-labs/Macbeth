@@ -428,7 +428,8 @@ impl StorageInner {
             .build();
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
 
-        let (bundle_state, gas_used) = self.execute(&block, &mut executor, senders, recent_block_header)?;
+        let (bundle_state, gas_used) =
+            self.execute(&block, &mut executor, senders, recent_block_header)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };

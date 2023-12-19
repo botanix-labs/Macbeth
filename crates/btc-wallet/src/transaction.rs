@@ -1,9 +1,9 @@
-use bitcoin::secp256k1::{KeyPair, SecretKey};
 use bitcoin::{
     psbt::{self, PartiallySignedTransaction},
+    secp256k1::{KeyPair, SecretKey},
     sighash::TapSighashType,
+    OutPoint, TxOut,
 };
-use bitcoin::{OutPoint, TxOut};
 
 use crate::address::{generate_taproot_spend_info, generate_tweaked_secret_key};
 
@@ -93,8 +93,7 @@ pub fn sign_psbt(
                 &eth_address_tweak.expect("eth address tweak").as_slice(),
             );
 
-            internal_sk =
-                generate_tweaked_secret_key(&eth_address, &aggregate_pk, &secret_key);
+            internal_sk = generate_tweaked_secret_key(&eth_address, &aggregate_pk, &secret_key);
         }
 
         let internal = KeyPair::from_secret_key(&secp, &internal_sk);
@@ -106,11 +105,8 @@ pub fn sign_psbt(
             taproot_spend_info.merkle_root(),
         );
         let signature = {
-            let prevouts = psbt
-                .inputs
-                .iter()
-                .map(|i| i.witness_utxo.as_ref().unwrap())
-                .collect::<Vec<_>>();
+            let prevouts =
+                psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
             let sighash = sighashcache
                 .taproot_signature_hash(
                     i,
@@ -122,10 +118,7 @@ pub fn sign_psbt(
                 .expect("error calculating taproot keyspend sighash");
             let msg = bitcoin::secp256k1::Message::from_slice(&sighash[..]).expect("sane sighash");
             let sig = secp.sign_schnorr(&msg, &keypair.to_inner());
-            bitcoin::taproot::Signature {
-                sig,
-                hash_ty: TapSighashType::All,
-            }
+            bitcoin::taproot::Signature { sig, hash_ty: TapSighashType::All }
         };
         // modify the psbt input by placing the signature
         psbt.inputs.get_mut(i).unwrap().sighash_type = Some(TapSighashType::All.into());

@@ -1,12 +1,12 @@
 //! `eth` namespace handler implementation.
 
 mod api;
+pub mod botanix_config;
 pub mod bundle;
 pub mod cache;
 pub mod error;
 mod filter;
 pub mod gas_oracle;
-pub mod botanix_config;
 mod id_provider;
 mod logs_utils;
 mod pubsub;

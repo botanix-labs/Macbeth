@@ -213,7 +213,7 @@ impl AppendableChain {
         let provider = BundleStateProvider::new(state_provider, bundle_state_data_provider);
 
         let mut executor = externals.executor_factory.with_state(&provider);
-        // TODO (armins) we should be passing recent bitcoin block header here 
+        // TODO (armins) we should be passing recent bitcoin block header here
         executor.execute_and_verify_receipt(&block, U256::MAX, Some(senders), None)?;
         let bundle_state = executor.take_output_state();
 
