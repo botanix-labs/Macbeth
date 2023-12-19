@@ -1,0 +1,53 @@
+# Runs benchmarks.
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+name: bench
+jobs:
+  iai:
+    runs-on:
+      group: Reth
+    # Only run benchmarks in merge groups
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout main sources
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - name: Checkout PR sources
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          path: pr
+      - name: Install Valgrind
+        run: sudo apt update && sudo apt install valgrind
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            main -> target
+            pr -> target
+          cache-on-failure: true
+      - name: Generate test vectors
+        run: |
+          cargo run --bin reth --manifest-path main/Cargo.toml -- test-vectors tables
+          cp -r testdata main
+          mv testdata pr
+      - name: Set main baseline
+        run: cargo bench --package reth-db --bench iai --features test-utils --manifest-path main/Cargo.toml
+      - name: Compare PR benchmark
+        shell: 'script -q -e -c "bash {0}"' # required to workaround /dev/tty not being available
+        run: .github/scripts/compare_iai.sh
+        working-directory: pr
