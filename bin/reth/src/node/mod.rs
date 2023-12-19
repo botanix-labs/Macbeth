@@ -275,14 +275,38 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                 let mut tip = 0u32;
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
-                    let current_tip = block_source.get_tip().await.unwrap();
+                    let current_tip = match block_source.get_tip().await {
+                        Ok(current_tip) => current_tip,
+                        Err(_) => {
+                            drop(header_write);
+                            error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            continue;
+                        }
+                    };
                     if current_tip != tip {
                         info!("Async bitcoin worker tip mismatch");
-                        let block_hash = block_source.get_block_hash(current_tip).await.unwrap();
-                        let block_header = block_source.get_block_header(block_hash).await.unwrap();
-
+                        let block_hash = match block_source.get_block_hash(current_tip).await {
+                            Ok(block_hash) => block_hash,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch a block hash. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
+                        let block_header = match block_source.get_block_header(block_hash).await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch a block header. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
                         // TODO (armins) in v1 we will need the nth deep block header not tip
                         *header_write = Some((block_header, current_tip));
+                        drop(header_write);
                         tip = current_tip;
                     }
                     tokio::time::sleep(sleep_ms).await;
