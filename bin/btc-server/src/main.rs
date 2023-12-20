@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate anyhow;
-#[macro_use]
 extern crate log;
 
 mod database;
@@ -42,6 +40,22 @@ lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
 
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Database error: {0}")]
+    Db(#[from] DbError),
+    #[error("Coin Selection error: {0}")]
+    CoinSelection(#[from] BdkError),
+    #[error("Pbst error: {0}")]
+    Pbst(#[from] PsbtError),
+    #[error("Invalid resulting transaction")]
+    InvaildResultingTx,
+    #[error("Failed to sign pbst")]
+    FailedToSignPbst,
+    #[error("PSBT finalization failed : {0:?}")]
+    PbstFinalizationFailed(Vec<PsbtError>),
+}
+
 struct App {
     db: database::Db,
     key: KeyPair,
@@ -53,9 +67,9 @@ struct App {
 }
 
 impl App {
-    fn add_pegin(&self, utxo: &Utxo) -> anyhow::Result<()> {
-        if self.db.store_utxo(&utxo).context("db error")? {
-            self.db.flush().context("db error")?;
+    fn add_pegin(&self, utxo: &Utxo) -> Result<(), Error> {
+        if self.db.store_utxo(&utxo).map_err(Error::Db)? {
+            self.db.flush().map_err(Error::Db)?;
             debug!("Stored utxo {}", utxo.outpoint);
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
@@ -63,7 +77,7 @@ impl App {
         Ok(())
     }
 
-    fn make_tx(&self, output: TxOut, fee_rate: FeeRate) -> anyhow::Result<Transaction> {
+    fn make_tx(&self, output: TxOut, fee_rate: FeeRate) -> Result<Transaction, Error> {
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
         let _tx_lock = self.tx_lock.lock();
@@ -79,7 +93,7 @@ impl App {
                 }
                 ret
             })
-            .context("db error")?;
+            .map_err(Error::Db)?;
 
         // Now we're going to hijack BDK coin selection real quick..
         let bdk_utxos = utxos
@@ -115,11 +129,12 @@ impl App {
                 output.value,
                 self.change_script.as_script(), // drain_script
             )
-            .context("coin selection")?;
+            .map_err(Error::CoinSelection)?;
         let selected = selection
             .selected
             .iter()
-            .map(|u| utxos.get(&OutPoint::from_bdk(u.outpoint())).unwrap())
+            .map(|u| utxos.get(&OutPoint::from_bdk(u.outpoint())))
+            .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
             bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
@@ -146,7 +161,7 @@ impl App {
             reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
         {
             error!("Failed to sign psbt {:?}", err);
-            bail!("Failed to sign psbt");
+            return Err(Error::FailedToSignPbst)
         }
 
         // try finalize tx
@@ -155,12 +170,12 @@ impl App {
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);
             }
-            bail!("PSBT finalization failed: {:?}", errs);
+            return Err(Error::PbstFinalizationFailed(errs))
         }
         // could do this once we are confident our code works and we don't
         // want to do the effort of tx verification
         // let tx = psbt.clone().extract_tx();
-        let tx = psbt.extract(&SECP).context("invalid resulting tx")?;
+        let tx = psbt.extract(&SECP).map_err(|_| Error::InvaildResultingTx)?;
 
         // then we should remove the utxos from the db and add the change one
         let txid = tx.txid();
@@ -175,7 +190,7 @@ impl App {
                     })
                     .iter(),
             )
-            .context("db error after signing")?;
+            .map_err(Error::Db)?;
 
         Ok(tx)
     }
@@ -193,12 +208,11 @@ macro_rules! _internal {
     }};
 }
 
-/// Just a trait to easily convert some kind of errors to tonic things.
 trait ToStatus<T> {
     fn to_status(self) -> Result<T, tonic::Status>;
 }
 
-impl<T> ToStatus<T> for anyhow::Result<T> {
+impl<T> ToStatus<T> for Result<T, Error> {
     fn to_status(self) -> Result<T, tonic::Status> {
         self.map_err(|e| tonic::Status::internal(format!("internal error: {}", e)))
     }
@@ -247,7 +261,8 @@ impl rpc::BtcServer for App {
             .require_network(self.network)
             .map_err(|e| badarg!("address for wrong network: {}", e))?;
         let output = TxOut { script_pubkey: address.script_pubkey(), value: req.value };
-        let fee_rate = FeeRate::from_sat_per_vb(req.fee_rate as u64).expect("can't overflow");
+        let fee_rate =
+            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(_internal!("overflowed value"))?;
         let tx = self.make_tx(output, fee_rate).to_status()?;
 
         Ok(tonic::Response::new(rpc::MakeTxResponse {
@@ -316,7 +331,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_lock: Arc::new(Mutex::new(())),
     };
 
-    let addr = "0.0.0.0:8080".parse().unwrap();
+    let addr = "0.0.0.0:8080".parse().context("Unparsable address")?;
     info!("SignerServer starting on: {}...", addr);
 
     let server = rpc::BtcServerServer::new(app);
