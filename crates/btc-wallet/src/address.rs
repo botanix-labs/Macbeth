@@ -1,10 +1,13 @@
 use std::io::Write;
 
-use bitcoin::absolute::LockTime;
-use bitcoin::hashes::{sha256, Hash};
-use bitcoin::script::Builder;
-use bitcoin::taproot::{Error, TaprootBuilder, TaprootSpendInfo};
-use bitcoin::{opcodes, Address, Network, ScriptBuf};
+use bitcoin::{
+    absolute::LockTime,
+    hashes::{sha256, Hash},
+    opcodes,
+    script::Builder,
+    taproot::{Error as TaprootError, TaprootBuilder, TaprootSpendInfo},
+    Address, Network, ScriptBuf,
+};
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
@@ -25,8 +28,9 @@ impl EthAddress for Vec<u8> {
 
 // Unused, spend safe path only requires a single signer for now
 // Keep commented out till we use a multisig
-// const SAFE_SPEND_PATH_QUORUM: i64 = 3;
+const SAFE_SPEND_PATH_QUORUM: i64 = 3;
 const SAFE_SPEND_TIMELOCK_SECOND: u32 = 1653195600;
+const SAFE_SPEND_PATH_TAP_LEAF_DEPTH: u8 = 0u8;
 
 lazy_static::lazy_static! {
     /// Compressed 33 byte public key of the recovery signer
@@ -65,18 +69,14 @@ fn _build_safe_spend_path_script_check_sig_add(
     let mut script = Builder::new()
         .push_lock_time(lock_time)
         .push_key(&bitcoin::PublicKey::new(
-            *public_keys
-                .get(0)
-                .expect("There is always a 0th public key"),
+            *public_keys.get(0).expect("There is always a 0th public key"),
         ))
         .push_opcode(opcodes::all::OP_CHECKSIG);
 
     for i in 1..public_keys.len() {
         script = script
             .push_key(&bitcoin::PublicKey::new(
-                *(public_keys
-                    .get(i)
-                    .expect(format!("should find pubkey at {}", i).as_str())),
+                *(public_keys.get(i).expect(format!("should find pubkey at {}", i).as_str())),
             ))
             .push_opcode(opcodes::all::OP_CHECKSIGADD);
     }
@@ -98,21 +98,24 @@ fn build_safe_spend_path_script_check_sig_verify(
     Ok(script.into_script())
 }
 
+pub fn build_safe_spend_path_scriptbuf() -> Result<ScriptBuf, SafeSpendPathError> {
+    let lock_time = LockTime::from_time(SAFE_SPEND_TIMELOCK_SECOND).expect("valid time");
+    let recovery_key = *RECOVERY_PK;
+    let script = build_safe_spend_path_script_check_sig_verify(lock_time, recovery_key)?;
+
+    Ok(script)
+}
+
 pub fn generate_taproot_spend_info(
     secp: &Secp256k1<impl Verification>,
     tweaked_public_key: &PublicKey,
-) -> Result<TaprootSpendInfo, Error> {
-    let lock_time = LockTime::from_time(SAFE_SPEND_TIMELOCK_SECOND).expect("valid time");
+) -> Result<TaprootSpendInfo, TaprootError> {
     let builder = TaprootBuilder::new()
-        .add_leaf(
-            0u8,
-            build_safe_spend_path_script_check_sig_verify(lock_time, *RECOVERY_PK).unwrap(),
-        )
+        .add_leaf(SAFE_SPEND_PATH_TAP_LEAF_DEPTH, build_safe_spend_path_scriptbuf()?)
         .expect("Couldn't add timelock leaf");
 
-    let finalized_taproot = builder
-        .finalize(&secp, tweaked_public_key.x_only_public_key().0)
-        .unwrap();
+    let finalized_taproot =
+        builder.finalize(&secp, tweaked_public_key.x_only_public_key().0).unwrap();
 
     Ok(finalized_taproot)
 }
@@ -189,7 +192,6 @@ pub fn generate_taproot_change_scriptpubkey(
     secp: &Secp256k1<impl Verification>,
     public_key: &PublicKey,
 ) -> ScriptBuf {
-    // Address::p2tr(secp, public_key.x_only_public_key().0, None, network).script_pubkey()
     let taproot_spend_info =
         generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
     bitcoin::ScriptBuf::new_v1_p2tr(secp, (*public_key).into(), taproot_spend_info.merkle_root())
@@ -225,9 +227,7 @@ mod tests {
         let secp = Secp256k1::new();
         let network: Network = Network::Testnet;
         let eth_addr = ethers::abi::Address::from_slice(
-            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D")
-                .expect("hex decode")
-                .as_slice(),
+            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").expect("hex decode").as_slice(),
         );
         let key_pair = KeyPair::from_seckey_str(
             &SECP,
@@ -235,8 +235,7 @@ mod tests {
         )
         .unwrap();
 
-        let gateway =
-            gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
+        let gateway = gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
         assert_eq!(
             gateway.to_string(),
             "tb1pjutmjkwrwjejxn988mt35528schetrrsgexhv24fxhn7nk6pvs7qd66dne"
