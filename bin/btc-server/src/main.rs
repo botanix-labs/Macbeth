@@ -23,6 +23,7 @@ use bitcoin::{
 };
 use clap::Parser;
 use hex::FromHex;
+use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 use std::{
     collections::HashMap,
     fs::File,
@@ -31,14 +32,12 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex},
 };
-
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use thiserror::Error;
 
 use crate::{database::Utxo, util::OutPointExt};
 
 use bdk::{miniscript::psbt::Error as PsbtError, Error as BdkError};
 use database::Error as DbError;
-use thiserror::Error;
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();

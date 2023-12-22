@@ -1,0 +1,15 @@
+{{ if not .Values.botanixSharedMnt.enableHostPath }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: botanix-shared-mnt
+spec:
+  accessModes:
+  - "{{ .Values.botanixSharedMnt.accessModes.value }}"
+  resources:
+    requests:
+      storage: 1Gi
+  {{ if .Values.botanixSharedMnt.storageClassName.enabled }}
+  storageClassName: "{{ .Values.botanixSharedMnt.storageClassName.value }}"
+  {{ end }}
+{{ end }}

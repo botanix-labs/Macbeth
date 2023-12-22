@@ -1,0 +1,82 @@
+{{ if not .Values.onlyRequiredBaseServices }}
+{{ if .Values.testnet.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: testnet
+  name: testnet
+spec:
+  ports:
+    - name: reth-p2p-tcp
+      port: 30303
+      protocol: TCP
+      targetPort: 30303
+    - name: reth-p2p-udp
+      port: 30303
+      protocol: UDP
+      targetPort: 30303
+    - name: reth-metrics
+      port: 9001
+      protocol: TCP
+      targetPort: 9001
+    - name: reth-jsonrpc
+      port: 8545
+      protocol: TCP
+      targetPort: 8545
+    - name: reth-jsonrpc2
+      port: 8546
+      protocol: TCP
+      targetPort: 8546
+  selector:
+    service: testnet
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testnet
+  labels:
+    service: testnet
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      service: testnet
+  template:
+    metadata:
+      labels:
+        service: testnet
+    spec:
+      containers:
+      - env:
+        - name: BTC_SERVER_URL
+          value: btcserver.botanix-local.svc.cluster.local:8080
+        - name: BTC_BLOCK_SOURCE_URL
+          value: https://mempool.space/signet/api
+        - name: BTC_NETWORK
+          value: signet
+        - name: METRICS_SERVER_URL
+          value: 127.0.0.1:9001
+        name: testnet
+        imagePullPolicy: Always
+        image: "{{ .Values.testnet.image }}:{{ .Values.testnet.tag }}"
+        ports:
+          - containerPort: 30303
+          - containerPort: 9001
+          - containerPort: 8545
+          - containerPort: 8546
+        {{- if not .Values.disableResourceLimits }}
+        resources:
+        {{- .Values.resourceProfile.btcServer | toYaml | nindent 12 }}
+        {{- end }}
+      enableServiceLinks: false
+      restartPolicy: Always
+    {{ end }}
+    {{ end }}

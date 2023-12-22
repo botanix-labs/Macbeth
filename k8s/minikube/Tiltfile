@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+load('ext://restart_process', 'docker_build_with_restart')
+load('ext://color', 'color')
+
+analytics_settings(True) # Disable telemetry dialogue in web UI
+disable_snapshots()      # Disable TiltCloud Snapshots
+version_settings(True)   # Disable 'new version' banner
+
+# load ingresses
+k8s_yaml('./crds/traefik-resources.yaml')
+k8s_kind('IngressRoute')
+
+# define the helm chart
+namespace = "botanix-local"
+chart_name = "botanix-local-chart"
+chart_dir = "."
+values = "values.yaml"
+
+# define helm chart overrides
+overrides = [
+
+    "testnet.enabled=true",
+    "testnet.image=testnet",
+    'testnet.tag=latest',
+
+    "btcServer.enabled=true",
+    "btcServer.image=btcserver",
+    'btcServer.tag=latest',
+
+    "dashboard.enabled=true",
+    "dashboard.image=dashboard",
+    'dashboard.tag=latest',
+
+    "mongo.enabled=true",
+
+    "sidecar.enabled=true",
+    "sidecar.image=sidecar",
+    'sidecar.tag=latest',
+
+    "monitoring.enabled=true",
+    "grafana.image=grafana/grafana",
+    "grafana.tag=7.2.1",
+    "prometheus.image=prom/prometheus",
+    "prometheus.tag=v2.22.0",
+
+    "elasticsearch.enabled=true",
+    "elasticsearch.image=docker.elastic.co/elasticsearch/elasticsearch",
+    "elasticsearch.tag=7.10.2",
+
+    "kibana.enabled=true",
+    "kibana.image=docker.elastic.co/kibana/kibana",
+    "kibana.tag=7.6.2",
+]
+
+# load the helm chart and its values (overwrites)
+k8s_yaml(helm(chart_dir, name=chart_name, namespace=namespace, values=[values], set=overrides))
+
+# build testnet image
+ref1 = 'testnet'
+tag1 = 'latest'
+command1 = 'cd ../../ && docker build -f Dockerfile.testnet -t testnet . && docker tag testnet:latest $EXPECTED_REF'
+deps1 = []
+custom_build(ref=ref1, tag=tag1, command=command1, deps=deps1)
+
+# build btcserver image
+ref2 = 'btcserver'
+tag2 = 'latest'
+command2 = 'cd ../../ && docker build -f Dockerfile.btc_server -t btcserver . && docker tag btcserver:latest $EXPECTED_REF'
+deps2 = []
+custom_build(ref=ref2, tag=tag2, command=command2, deps=deps2)
+
+# build dashboard image
+ref3 = 'dashboard'
+tag3 = 'latest'
+command3 = 'cd ../../../ && cd ./dApp && docker build -f Dockerfile -t dashboard . && docker tag dashboard:latest $EXPECTED_REF'
+deps3 = []
+custom_build(ref=ref3, tag=tag3, command=command3, deps=deps3)
+
+# build sidecar image
+ref4 = 'sidecar'
+tag4 = 'latest'
+command4 = 'cd ../../../ && cd ./Side-Car && docker build -f Dockerfile -t sidecar . && docker tag sidecar:latest $EXPECTED_REF'
+deps4 = []
+custom_build(ref=ref4, tag=tag4, command=command4, deps=deps4)
+
+# k8s resources
+ports = {
+    "monitoring": ["9090:9090", "3001:3000"],
+    "elasticsearch": ["9200:9200", "9300:9300"],
+    "kibana": ["5601:5601"],
+    "dashboard": ["3000:3000"],
+    "testnet": ["30303:30303", "9001:9001", "8545:8545", "8546:8546"],
+    "btcserver": ["8080:8080"],
+    "sidecar": ["8500:8500"],
+    "mongo": ["27017:27017"],
+}
+deps = {
+    "monitoring": [],
+    "elasticsearch": [],
+    "kibana": ["elasticsearch"],
+    "dashboard": ["sidecar"],
+    "testnet": ["monitoring", "elasticsearch", "btcserver"],
+    "btcserver": [],
+    "sidecar": ["testnet", "init_mongo_rs"],
+    "mongo": [],
+}
+
+k8s_resource("mongo", port_forwards=ports["mongo"], resource_deps=deps["mongo"], labels="database")
+k8s_resource("sidecar", port_forwards=ports["sidecar"], resource_deps=deps["sidecar"], labels="node")
+k8s_resource("btcserver", port_forwards=ports["btcserver"], resource_deps=deps["btcserver"], labels="node")
+k8s_resource("testnet", port_forwards=ports["testnet"], resource_deps=deps["testnet"], labels="node")
+k8s_resource("dashboard", port_forwards=ports["dashboard"], resource_deps=deps["dashboard"], labels="frontend")
+k8s_resource("monitoring", port_forwards=ports["monitoring"], resource_deps=deps["monitoring"], labels="monitoring")
+k8s_resource("elasticsearch", port_forwards=ports["elasticsearch"], resource_deps=deps["elasticsearch"], labels="logging")
+k8s_resource("kibana", port_forwards=ports["kibana"], resource_deps=deps["kibana"], labels="logging")
+
+local_resource(
+    'init_mongo_rs',
+    'kubectl exec -n botanix-local -it mongo-0 -- mongosh < init_mongo.js',
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+    labels="database"
+)
