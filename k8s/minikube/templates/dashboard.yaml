@@ -1,0 +1,65 @@
+{{ if not .Values.onlyRequiredBaseServices }}
+{{ if .Values.dashboard.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: dashboard
+  name: dashboard
+spec:
+  ports:
+    - name: "dashboard-port"
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    service: dashboard
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: dashboard
+  name: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: dashboard
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        service: dashboard
+      creationTimestamp: null
+      labels:
+        service: dashboard
+    spec:
+      containers:
+        - env:
+            - name: REACT_APP_BOTANIX_TESTNET_CHAID_ID
+              value: "3636"
+            - name: REACT_APP_PROVIDER_URL
+              value: "http://localhost:8545"
+            - name: REACT_APP_BLOCK_EXPLORER_URL
+              value: "https://testnet.btxtestchain.com"
+            - name: REACT_APP_SIDE_CAR_URL
+              value: "http://localhost:8500/api/gatewayAddress"
+            - name: CHOKIDAR_USEPOLLING
+              value: 'true'
+            - name: CI
+              value: 'true'
+          image: "{{ .Values.dashboard.image }}:{{ .Values.dashboard.tag }}"
+          name: dashboard
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          resources: {}
+      restartPolicy: Always
+status: {}
+{{ end }}
+{{ end }}

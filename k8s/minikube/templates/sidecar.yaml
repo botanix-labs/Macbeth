@@ -1,0 +1,85 @@
+{{ if not .Values.onlyRequiredBaseServices }}
+{{ if .Values.sidecar.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: sidecar
+  name: sidecar
+spec:
+  ports:
+    - name: grpc-api
+      port: 8500
+      protocol: TCP
+      targetPort: 8500
+  selector:
+    service: sidecar
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidecar
+  labels:
+    service: sidecar
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      service: sidecar
+  template:
+    metadata:
+      labels:
+        service: sidecar
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "8500"
+        - name: ELECTRUM_HOST
+          value: "blockstream.info"
+        - name: ELECTRUM_PORT
+          value: "143"
+        - name: ELECTRUM_PROTOCOL
+          value: "tcp"
+        - name: BOTANIX_RPC_HOST
+          value: "testnet.botanix-local.svc.cluster.local"
+        - name: BOTANIX_RPC_PORT
+          value: "8545"
+        - name: NETWORK
+          value: "signet"
+        - name: MINT_CONTRACT_ADDRESS
+          value: "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78"
+        - name: FAUCET_CONTRACT_ADDRESS
+          value: "0x10fec8E29F7F8D3F3627380D6D0e0260d76Fdf7c"
+        - name: HOT_WALLET_PRV_KEY
+          value: "0x52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29"
+        - name: ETH_CHAIN_ID
+          value: "0xe34"
+        - name: REFRESH_UTXOS_INTERVAL_MS
+          value: "30s"
+        - name: MONGO_URI
+          value: "mongodb://mongo-0.mongo:27017/botanix?replicaSet=rs0"
+        - name: MAX_PEGIN_DEPTH
+          value: "200"
+        - name: REQUEST_FAUCET_FUNDS_INTERVAL_MS
+          value: "1m"
+        name: sidecar
+        imagePullPolicy: Always
+        image: "{{ .Values.sidecar.image }}:{{ .Values.sidecar.tag }}"
+        ports:
+          - containerPort: 8500
+        {{- if not .Values.disableResourceLimits }}
+        resources:
+        {{- .Values.resourceProfile.sidecar | toYaml | nindent 12 }}
+        {{- end }}
+      enableServiceLinks: false
+      restartPolicy: Always
+    {{ end }}
+    {{ end }}

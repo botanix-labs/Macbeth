@@ -1,0 +1,57 @@
+{{ if not .Values.onlyRequiredBaseServices }}
+{{ if .Values.btcServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    service: btcserver
+  name: btcserver
+spec:
+  ports:
+    - name: public
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    service: btcserver
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: btcserver
+  labels:
+    service: btcserver
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      service: btcserver
+  template:
+    metadata:
+      labels:
+        service: btcserver
+    spec:
+      containers:
+      - env:
+        - name: RUST_LOG
+          value: "info"
+        name: btcserver
+        imagePullPolicy: Always
+        image: "{{ .Values.btcServer.image }}:{{ .Values.btcServer.tag }}"
+        ports:
+          - containerPort: 8080
+        {{- if not .Values.disableResourceLimits }}
+        resources:
+        {{- .Values.resourceProfile.testnet | toYaml | nindent 12 }}
+        {{- end }}
+      enableServiceLinks: false
+      restartPolicy: Always
+    {{ end }}
+    {{ end }}
