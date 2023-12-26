@@ -27,7 +27,7 @@ contract Minting {
     ) public {
         // Check that the user bitcoin block height is the same or increasing.
         require(
-            bitcoinBlockHeight >= peginBitcoinBlockHeight[destination],
+            bitcoinBlockHeight > peginBitcoinBlockHeight[destination],
             "user bitcoinBlockHeight needs to increase"
         );
         peginBitcoinBlockHeight[destination] = bitcoinBlockHeight;
