@@ -14,17 +14,14 @@ Pegin procedure
 
 # Steps
 
-1. Alice creates her **ethereum public key** and a **pegin nonce** which can either be an increasing
-   counter or just the current time in milliseconds. Current time will be simpler, as it wouldn't require application state.
+1. Alice creates her **ethereum public key**.
 
-1. Alice signs her nonce to create a **nonceCommitment** by signing the nonce + pegin tag. `nonceCommitment = H( "botanix-pegin::" | nonce)`
-
-1. Alice sends `[nonce, nonceCommitment, ethAddrress]` to SideCar. SideCar will query the Botanix network via RPC to get the current aggregated public key i.e FROST pubkey.
+1. Alice sends `[ethAddrress]` to SideCar. SideCar will query the Botanix network via RPC to get the current aggregated public key i.e FROST pubkey.
 
 1. SideCar will send all neccecary components for a GA to Botanix via RPC to get a Gateway address. Note that the RPC to get a GA is purely a utility that abstracts away the complexity of generating the taproot address. To verify, SideCar can generate the same taproot address. Additinally this RPC node should be authenticated or rate-limited. Without a rate-limiting method this utlity method is subject to spam attack.
 
 1. Botanix Protocol will  combines this info with the FROST pubkey to create the internal key for her taproot
-    gateway address: `I = FROST + H(FROST | ethAddress | nonce) * G`. The taproot would then be
+    gateway address: `I = FROST + H(FROST | ethAddress ) * G`. The taproot would then be
     calculated using the taproot equation `Q = I + TapTweak(I | S) * G`.
     And she sends her pegin transaction to that taproot address on the Bitcoin chain. Additional tapscripts will include the safe spend path. More to come on that in a different spec.
 
@@ -32,8 +29,8 @@ Pegin procedure
 
 1. Alice constructs a pegin tx which calls the mint method in the mint contract. Signs the tx and delivers it to SideCar.
 
-1. After the bitcoin transaction reaches 6 confirmations, the SideCar takes the transaction
-   and constructs the pegin proof by combining the tx, the block it was confirmed (merkle proof) and
+1. After the bitcoin transaction reaches N confirmations, the SideCar takes the transaction
+   and constructs the pegin proof by combining the tx, the block it was confirmed (merkle proof), the block height at which the tx was confirmed and
    the most recent block headers between the block the tx got confirmed in and the tip.
 
 1. The SideCar generates a Botanix pegin tx calling into the Minting contract providing Alice's
@@ -44,7 +41,7 @@ Pegin procedure
    and doesn't need to know how to call into the Minting contract. Advanced peginners might want to
    do this themselves, but in this simple UX flow, some stateless helper can easily do it.
 
-1. The contract will check if the pegin increments Alice's pegin nonce and emit a `Mint` event
+1. The contract will check if the pegin increments Alice's pegin block height and emit a `Mint` event
    containing the pegin data on success. It will also mint the amount to Alice.
 
 1. Any chain validator, both when applying the tx to mempool or when validating a block, monitors for 
