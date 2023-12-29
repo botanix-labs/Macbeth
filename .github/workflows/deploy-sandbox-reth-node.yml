@@ -3,7 +3,7 @@ name: Build, Tag, and Deploy Docker Reth Node Image to GCP
 on:
   push:
     branches:
-      - main
+      - sandbox
 
 jobs:
   build_and_deploy:
@@ -24,13 +24,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --platform linux/amd64 -t botanix_testnet -f Dockerfile.testnet .
+          docker build --platform linux/amd64 -t botanix_sandbox -f Dockerfile.testnet .
         working-directory: ./
 
       - name: Tag Docker image
         run: |
-          docker tag botanix_testnet:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest
+          docker tag botanix_sandbox:latest us-central1-docker.pkg.dev/botanix-391913/botanix-sandbox-node/botanix_sandbox:latest
 
       - name: Push Docker image to Google Container Registry
         run: |
-          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest
+          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-sandbox-node/botanix_sandbox:latest
