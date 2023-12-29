@@ -18,7 +18,7 @@ jobs:
 
       - name: Log in to Google Container Registry
         run: |
-          echo ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }} | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
+          echo ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }} | docker login -u _json_key_base64 --password-stdin https://us-central1-docker.pkg.dev
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }}
 
