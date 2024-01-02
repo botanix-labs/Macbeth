@@ -12,17 +12,24 @@ use std::sync::Arc;
 pub struct EvmProcessorFactory {
     chain_spec: Arc<ChainSpec>,
     stack: Option<InspectorStack>,
+    btc_network: Option<bitcoin::Network>,
 }
 
 impl EvmProcessorFactory {
     /// Create new factory
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        Self { chain_spec, stack: None }
+        Self { chain_spec, stack: None, btc_network: None }
     }
 
     /// Sets the inspector stack for all generated executors.
     pub fn with_stack(mut self, stack: InspectorStack) -> Self {
         self.stack = Some(stack);
+        self
+    }
+
+    /// adds bitcoin network information
+    pub fn with_bitcoin_config(mut self, btc_network: bitcoin::Network) -> Self {
+        self.btc_network = Some(btc_network);
         self
     }
 
@@ -39,7 +46,11 @@ impl ExecutorFactory for EvmProcessorFactory {
         sp: SP,
     ) -> Box<dyn PrunableBlockExecutor + 'a> {
         let database_state = StateProviderDatabase::new(sp);
-        let mut evm = Box::new(EVMProcessor::new_with_db(self.chain_spec.clone(), database_state));
+        let mut evm = Box::new(EVMProcessor::new_with_db(
+            self.chain_spec.clone(),
+            database_state,
+            self.btc_network.clone(),
+        ));
         if let Some(ref stack) = self.stack {
             evm.set_stack(stack.clone());
         }

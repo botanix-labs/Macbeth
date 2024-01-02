@@ -263,4 +263,5 @@ start-reth-server:
 	--datadir ${DB_DIR} \
 	--auto-mine \
 	--btc-server localhost:8080 \
-	--btc-block-source "https://mempool.space/signet/api"
+	--btc-block-source "https://mempool.space/signet/api" \
+	--btc-network "signet"

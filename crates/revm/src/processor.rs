@@ -81,6 +81,8 @@ pub struct EVMProcessor<'a> {
     pruning_address_filter: Option<(u64, Vec<Address>)>,
     /// Execution stats
     pub(crate) stats: BlockExecutorStats,
+    /// Bitcoin network configuration
+    pub btc_network: Option<bitcoin::Network>,
 }
 
 impl<'a> EVMProcessor<'a> {
@@ -102,6 +104,7 @@ impl<'a> EVMProcessor<'a> {
             prune_modes: PruneModes::none(),
             pruning_address_filter: None,
             stats: BlockExecutorStats::default(),
+            btc_network: None,
         }
     }
 
@@ -109,19 +112,21 @@ impl<'a> EVMProcessor<'a> {
     pub fn new_with_db<DB: StateProvider + 'a>(
         chain_spec: Arc<ChainSpec>,
         db: StateProviderDatabase<DB>,
+        btc_network: Option<bitcoin::Network>,
     ) -> Self {
         let state = State::builder()
             .with_database_boxed(Box::new(db))
             .with_bundle_update()
             .without_state_clear()
             .build();
-        EVMProcessor::new_with_state(chain_spec, state)
+        EVMProcessor::new_with_state(chain_spec, state, btc_network)
     }
 
     /// Create a new EVM processor with the given revm state.
     pub fn new_with_state(
         chain_spec: Arc<ChainSpec>,
         revm_state: StateDBBox<'a, ProviderError>,
+        btc_network: Option<bitcoin::Network>,
     ) -> Self {
         let mut evm = EVM::new();
         evm.database(revm_state);
@@ -135,6 +140,7 @@ impl<'a> EVMProcessor<'a> {
             prune_modes: PruneModes::none(),
             pruning_address_filter: None,
             stats: BlockExecutorStats::default(),
+            btc_network,
         }
     }
 
@@ -254,6 +260,7 @@ impl<'a> EVMProcessor<'a> {
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        btc_network: Option<bitcoin::Network>,
     ) -> Result<(), BlockExecutionError> {
         for log in result.logs() {
             if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
@@ -278,7 +285,7 @@ impl<'a> EVMProcessor<'a> {
             }
 
             if log.topics.get(0) == Some(&BURN_TOPIC) {
-                if let Err(e) = parse_pegout_topic(&log) {
+                if let Err(e) = parse_pegout_topic(&log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
                     return Err(BlockValidationError::MintContractViolation.into())
                 }
@@ -327,7 +334,11 @@ impl<'a> EVMProcessor<'a> {
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(&result, recent_block_header) {
+                    match Self::botanix_mint_contract_checks(
+                        &result,
+                        recent_block_header,
+                        self.btc_network,
+                    ) {
                         Ok(()) => out,
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);
@@ -776,7 +787,8 @@ mod tests {
         );
 
         // execute invalid header (no parent beacon block root)
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor =
+            EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db), None);
 
         // attempt to execute a block without parent beacon block root, expect err
         let err = executor
@@ -852,7 +864,8 @@ mod tests {
                 .build(),
         );
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor =
+            EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db), None);
         executor.init_env(&header, U256::ZERO);
 
         // get the env
@@ -903,7 +916,8 @@ mod tests {
                 .build(),
         );
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor =
+            EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db), None);
 
         // construct the header for block one
         let header = Header {
@@ -960,7 +974,8 @@ mod tests {
 
         let mut header = chain_spec.genesis_header();
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor =
+            EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db), None);
         executor.init_env(&header, U256::ZERO);
 
         // attempt to execute the genesis block with non-zero parent beacon block root, expect err
@@ -1038,7 +1053,8 @@ mod tests {
         );
 
         // execute header
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor =
+            EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db), None);
         executor.init_env(&header, U256::ZERO);
 
         // ensure that the env is configured with a base fee

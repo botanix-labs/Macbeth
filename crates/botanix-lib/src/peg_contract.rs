@@ -218,9 +218,13 @@ pub struct PegoutData {
 }
 
 impl PegoutData {
-    pub fn new(amount: bitcoin::Amount, address: String) -> Result<Self, PegoutError> {
+    pub fn new(
+        amount: bitcoin::Amount,
+        address: String,
+        btc_network: Option<bitcoin::Network>,
+    ) -> Result<Self, PegoutError> {
         // TODO (armins) This should be coming from config
-        let network = bitcoin::Network::Signet;
+        let network = btc_network.unwrap_or(bitcoin::Network::Signet);
         // Check for valid addres
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
