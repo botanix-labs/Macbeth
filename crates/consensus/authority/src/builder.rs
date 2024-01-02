@@ -15,7 +15,7 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_transaction_pool::TransactionPool;
-use tokio::sync::{mpsc::UnboundedSender, RwLock, Mutex};
+use tokio::sync::{mpsc::UnboundedSender, Mutex, RwLock};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
@@ -26,7 +26,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
-    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_source_address: Url,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
@@ -47,7 +47,7 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker,
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
@@ -58,7 +58,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected

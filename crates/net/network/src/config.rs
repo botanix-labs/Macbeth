@@ -486,7 +486,11 @@ impl NetworkConfigBuilder {
         }
     }
 
-    pub fn build_with_block_import<C>(self, client: C, block_import: Box<dyn BlockImport>) -> NetworkConfig<C> {
+    pub fn build_with_block_import<C>(
+        self,
+        client: C,
+        block_import: Box<dyn BlockImport>,
+    ) -> NetworkConfig<C> {
         let mut config = self.build(client);
         config.block_import = block_import;
         config

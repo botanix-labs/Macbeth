@@ -7,9 +7,9 @@ use reth_primitives::{
         eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     },
     eip4844::calculate_excess_blob_gas,
-    BlockNumber, ChainSpec, Hardfork, Header, InvalidTransactionError, SealedBlock, SealedHeader,
-    Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844, TxLegacy,
-    EMPTY_OMMER_ROOT, U256,
+    BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
+    SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
+    TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
@@ -42,7 +42,9 @@ pub fn validate_header_standalone(
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
     if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_none() && chain_spec.chain.id() != 444 && wd_root_missing
+        header.withdrawals_root.is_none() &&
+        chain_spec.chain.id() != 444 &&
+        wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing)
     } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
@@ -228,7 +230,7 @@ pub fn validate_block_standalone(
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
     if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != 444
+        chain_spec.chain.id() != 3636
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;
@@ -509,7 +511,7 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
 
     // TODO (armins) check that no vote is occuring during an epoch header
     // 0. Validate that the block was signed by a federation member
-    let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
     )
     .map_err(|e| ConsensusError::ExtraDataInvalid)?;
@@ -529,7 +531,7 @@ pub fn validate_header_with_total_difficulty(
     header: &Header,
     total_difficulty: U256,
 ) -> Result<(), ConsensusError> {
-    if header.ommers_hash != EMPTY_OMMER_ROOT {
+    if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
         return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
     }
 
@@ -555,8 +557,8 @@ mod tests {
     };
     use reth_primitives::{
         constants::eip4844::DATA_GAS_PER_BLOB, hex_literal::hex, proofs, Account, Address,
-        BlockBody, BlockHash, BlockHashOrNumber, Bytes, ChainSpecBuilder, Header, Signature,
-        TransactionKind, TransactionSigned, Withdrawal, MAINNET, U256,
+        BlockBody, BlockHash, BlockHashOrNumber, Bytes, ChainSpecBuilder, GotExpected, Header,
+        Signature, TransactionKind, TransactionSigned, Withdrawal, MAINNET, U256,
     };
     use std::ops::RangeBounds;
 

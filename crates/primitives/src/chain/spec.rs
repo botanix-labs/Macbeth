@@ -1557,10 +1557,10 @@ mod tests {
     use alloy_rlp::Encodable;
     use botanix_lib::extra_data_header::{self, ExtraDataHeader};
     use bytes::BytesMut;
-    use std::{collections::HashMap, str::FromStr};
     use ethers_core::types as EtherType;
     use hex;
     use reth_rlp::Encodable;
+    use std::{collections::HashMap, str::FromStr};
 
     use super::BOTANIX_TESTNET;
 

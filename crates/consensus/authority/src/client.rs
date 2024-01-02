@@ -20,7 +20,7 @@ pub struct AuthorityClient {
     storage: Storage,
 }
 
-// TODO this is a copy of the AutoSealClient, we need to rewrite most of this 
+// TODO this is a copy of the AutoSealClient, we need to rewrite most of this
 impl AuthorityClient {
     pub(crate) fn new(storage: Storage) -> Self {
         Self { storage }

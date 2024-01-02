@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::utils::create_authority_sighash;
-use botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
     Header,
@@ -48,10 +48,6 @@ impl AuthorityVote {
             return
         }
         self.votes.insert(*authority_voting, vote);
-    }
-
-    pub fn contains(&self, authority: secp256k1::PublicKey) -> bool {
-        self.votes.contains_key(&authority)
     }
 
     pub fn contains(&self, authority: secp256k1::PublicKey) -> bool {

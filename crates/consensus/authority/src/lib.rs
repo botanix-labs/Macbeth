@@ -20,7 +20,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use botanix_lib::extra_data_header::{self, ExtraDataHeader};
+use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader};
 use reth_consensus_common::{utils, validation};
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
@@ -32,13 +32,18 @@ use reth_primitives::{
     },
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
     ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT, H256, U256,
+    EMPTY_OMMER_ROOT_HASH, H256, U256,
 };
-use reth_provider::{PostState, StateProvider};
-use reth_revm::executor::Executor;
+use reth_provider::{
+    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonStateNotificationSender,
+    StateProviderFactory,
+};
+use reth_revm::{
+    database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
+    processor::EVMProcessor, State,
+};
 use std::{
     collections::HashMap,
-    f32::consts::E,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -147,14 +152,14 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     {
         // TODO (armins) check that no vote is occuring during an epoch header
         // 0. Validate that the block was signed by a federation member
-        let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-            header.extra_data.to_vec(),
+        let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+            &mut header.extra_data.0.to_vec().as_slice(),
         )
         .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
 
         // 0. Validate that the block was signed by a federation member
-        let extra_data = botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-            header.extra_data.to_vec(),
+        let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+            &mut header.extra_data.0.to_vec().as_slice(),
         )
         .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
 
@@ -163,14 +168,6 @@ fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
             info!("Failed to validate authority signature, {:?} ", e);
             ConsensusError::InvalidAuthoritySignature
         })?;
-        // 1. Validate that is a federation memeber was added or removed that that actions
-        // was signed off by a 2/3 majority of votes
-        // This can only happnen during an end of a epoch
-        // TODO
-
-        extra_data
-            .validate_authority_signature(&sig_hash.to_vec())
-            .map_err(|_e| ConsensusError::InvalidAuthoritySignature)?;
         // 1. Validate that is a federation memeber was added or removed that that actions
         // was signed off by a 2/3 majority of votes
         // This can only happnen during an end of a epoch
@@ -297,18 +294,19 @@ impl StorageInner {
     pub(crate) fn build_header_template(
         &self,
         transactions: &Vec<TransactionSigned>,
-        chain_spec: &Arc<ChainSpec>,
+        chain_spec: Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
     ) -> Result<Header, BlockExecutionError> {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         // check previous block for base fee
         let base_fee_per_gas = self
             .headers
             .get(&self.best_block)
-            .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params));
+            .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
 
         let mut header = Header {
             parent_hash: self.best_hash,
-            ommers_hash: EMPTY_OMMER_ROOT,
+            ommers_hash: EMPTY_OMMER_ROOT_HASH,
             beneficiary: Default::default(),
             state_root: Default::default(),
             transactions_root: Default::default(),
@@ -346,46 +344,57 @@ impl StorageInner {
     /// Executes the block with the given block and senders, on the provided [Executor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    pub(crate) fn execute<DB: StateProvider>(
+    pub(crate) fn execute(
         &mut self,
         block: &Block,
-        executor: &mut Executor<DB>,
+        executor: &mut EVMProcessor<'_>,
         senders: Vec<Address>,
-        recent_block_header: Option<bitcoin::block::Header>,
-    ) -> Result<(PostState, u64), BlockExecutionError> {
-        trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
+        // set the first block to find the correct index in bundle state
+        executor.set_first_block(block.number);
 
-        let (post_state, gas_used) =
+        let (receipts, gas_used) =
             executor.execute_transactions(block, U256::ZERO, Some(senders), recent_block_header)?;
 
-        // apply post block changes
-        let post_state = executor.apply_post_block_changes(block, U256::ZERO, post_state)?;
+        // Save receipts.
+        executor.save_receipts(receipts)?;
 
-        Ok((post_state, gas_used))
+        // add post execution state change
+        // Withdrawals, rewards etc.
+        executor.apply_post_execution_state_change(block, U256::ZERO)?;
+
+        // merge transitions
+        executor.db_mut().merge_transitions(BundleRetention::Reverts);
+
+        // apply post block changes
+        Ok((executor.take_output_state(), gas_used))
     }
 
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
-    pub(crate) fn complete_header<DB: StateProvider>(
+    pub(crate) fn complete_header<S: StateProviderFactory>(
         &self,
         mut header: Header,
-        post_state: &PostState,
-        executor: &mut Executor<DB>,
+        bundle_state: &BundleStateWithReceipts,
+        client: &S,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &Vec<secp256k1::PublicKey>,
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
         recent_block_hash: bitcoin::BlockHash,
-    ) -> Header {
-        let receipts = post_state.receipts(header.number);
+    ) -> Result<Header, BlockExecutionError> {
+        let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
             EMPTY_RECEIPTS
         } else {
-            let receipts_with_bloom =
-                receipts.iter().map(|r| r.clone().into()).collect::<Vec<ReceiptWithBloom>>();
+            let receipts_with_bloom = receipts
+                .iter()
+                .map(|r| (*r).clone().expect("receipts have not been pruned").into())
+                .collect::<Vec<ReceiptWithBloom>>();
             header.logs_bloom =
-                receipts_with_bloom.iter().fold(Bloom::zero(), |bloom, r| bloom | r.bloom);
+                receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | r.bloom);
             proofs::calculate_receipt_root(&receipts_with_bloom)
         };
 
@@ -394,8 +403,15 @@ impl StorageInner {
         let vote_for = if let Some(vote) = authority_to_vote_on { Some(vote.0) } else { None };
 
         // calculate the state root
-        let state_root = executor.db().db.0.state_root(post_state.clone()).unwrap();
+        // calculate the state root
+        let state_root = client
+            .latest()
+            .map_err(|_| BlockExecutionError::ProviderError)?
+            .state_root(bundle_state)
+            .unwrap();
         header.state_root = state_root;
+
+        // next up is POA specific stuff
 
         // Sign the header
         // Serialize the header without signature
@@ -408,7 +424,8 @@ impl StorageInner {
             &extra_header_content_no_signature,
         );
         // Sign the header and append to extra data header
-        let message = secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
+        let message =
+            secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
         let extra_data_header_with_signature = ExtraDataHeader::new(
             0u32,
@@ -419,22 +436,22 @@ impl StorageInner {
         );
         header.extra_data = Bytes::from(extra_data_header_with_signature.serialize());
 
-        header
+        Ok(header)
     }
 
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
-    pub(crate) fn build_and_execute<DB: StateProvider>(
+    pub(crate) fn build_and_execute(
         &mut self,
         transactions: Vec<TransactionSigned>,
-        executor: &mut Executor<DB>,
-        chain_spec: &Arc<ChainSpec>,
-        recent_block_header: Option<bitcoin::block::Header>,
+        client: &impl StateProviderFactory,
+        chain_spec: Arc<ChainSpec>,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
-    ) -> Result<(SealedHeader, PostState), BlockExecutionError> {
+    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
         if recent_block_header.is_none() {
             return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
         }
@@ -446,7 +463,7 @@ impl StorageInner {
             BlockExecutionError::FailedToDeserializePreviousBlockHeader
         })?;
 
-        let header = self.build_header_template(&transactions, chain_spec, vote)?;
+        let header = self.build_header_template(&transactions, chain_spec.clone(), vote)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -455,27 +472,33 @@ impl StorageInner {
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
         // now execute the block
-        let (post_state, gas_used) =
-            self.execute(&block, executor, senders, recent_block_header)?;
+        let db = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
+            .with_bundle_update()
+            .build();
+        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+
+        let (bundle_state, gas_used) =
+            self.execute(&block, &mut executor, senders, recent_block_header)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
 
-        trace!(target: "consensus::authority", ?post_state, ?header, ?body, "executed block, calculating state root and completing header");
+        trace!(target: "consensus::auto", ?bundle_state, ?header, ?body, "executed block, calculating state root and completing header");
 
         // fill in the rest of the fields
         let header = self.complete_header(
             header,
-            &post_state,
-            executor,
+            &bundle_state,
+            client,
             gas_used,
             sk,
             secp,
             &signers,
             vote,
             // This is checked to be Some above
-            recent_block_header.expect("valid header").block_hash(),
-        );
+            recent_block_header.expect("valid header").0.block_hash(),
+        )?;
 
         // TODO(armins) check if the authority being voted on has staked in the staking contract
         // TODO(armins) check if withdrawl is valid
@@ -483,8 +506,6 @@ impl StorageInner {
         validation::validate_header_extradata(&header).map_err(|_e| {
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
-
-        // TODO(armins) Validate signer limit
 
         if vote.is_some() {
             let vote = vote.expect("valid vote");
@@ -507,13 +528,12 @@ impl StorageInner {
         if vote.is_some() {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.0;
-            let extra_data_header =
-                extra_data_header::ExtraDataHeader::deserialize(header.extra_data.to_vec())
-                    .map_err(|e| {
-                        BlockExecutionError::Validation(
-                            BlockValidationError::ExtraDataSerializeError,
-                        )
-                    })?;
+            let extra_data_header = extra_data_header::ExtraDataHeader::deserialize(
+                &mut header.extra_data.0.to_vec().as_slice(),
+            )
+            .map_err(|e| {
+                BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
+            })?;
 
             // TODO(armins) Should we be verbose and fail the block or just ignore?
             if extra_data_header
@@ -535,6 +555,6 @@ impl StorageInner {
         // set new header with hash that should have been updated by insert_new_block
         let new_header = header.seal(self.best_hash);
 
-        Ok((new_header, post_state))
+        Ok((new_header, bundle_state))
     }
 }

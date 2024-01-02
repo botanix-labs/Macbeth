@@ -1,22 +1,19 @@
 use crate::{epoch_manager::EpochManager, Storage};
-use botanix_lib::mint_validation::{
+use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
+use reth_primitives::U256;
 
-use btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
+use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::NetworkHandle;
 use reth_primitives::{hex, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
-use reth_revm::{
-    database::{State, SubState},
-    executor::Executor,
-    primitives::uint,
-};
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+use ruint::Uint;
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc, task::Poll};
 
@@ -49,7 +46,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// BTC Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
-    bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Bitcoin block source url
     bitcoin_block_source_address: Url,
     /// Instance of secp
@@ -62,7 +59,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: StateProviderFactory + CanonChainTracker,
+    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
     /// Creates a new instance of the task
@@ -74,7 +71,7 @@ where
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<bitcoin::block::Header>>>,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
@@ -131,6 +128,8 @@ where
             let block_source =
                 MempoolSpace::new(self.bitcoin_block_source_address.clone().to_string());
 
+            let client = self.client.clone();
+
             // Create the mining future that creates a block, notifies the engine that drives
             // the pipeline
             let recent_block_header = self.bitcoin_block_header.read().await.clone();
@@ -145,97 +144,105 @@ where
                 .unzip();
 
             // execute the new block
-            let substate = SubState::new(State::new(self.client.latest().unwrap()));
-            let mut executor = Executor::new(Arc::clone(&self.chain_spec), substate);
             match storage.build_and_execute(
                 transactions.clone(),
-                &mut executor,
-                &self.chain_spec,
+                &client,
+                self.chain_spec.clone(),
                 recent_block_header,
                 // TODO(armins) read vote in as param
                 &None,
                 &self.sk,
                 &self.secp,
             ) {
-                Ok((new_header, post_state)) => {
+                Ok((new_header, bundle_state)) => {
                     let state = ForkchoiceState {
                         head_block_hash: new_header.hash,
                         finalized_block_hash: new_header.hash,
                         safe_block_hash: new_header.hash,
                     };
                     drop(storage);
-                    for reciept in post_state.receipts(new_header.number) {
-                        if !reciept.success {
-                            continue
-                        }
-                        for log in &reciept.logs {
-                            for topic in &log.topics {
-                                match GenesisContractEvents::try_from(topic.clone()) {
-                                    Ok(GenesisContractEvents::MintingEvent) => {
-                                        info!("Parsing and sending minting event to btc_server");
-                                        let pegin_data = parse_pegin_reth_log_topic(&log).expect(
-                                            "passed evm check should pass this parse attempt",
-                                        );
+                    let reciepts_bundle = bundle_state.receipts().iter();
+                    for (index, reciepts) in reciepts_bundle.enumerate() {
+                        for reciept in reciepts {
+                            if index == 0 && reciept.is_none() {
+                                // Prunning block, skip
+                                break
+                            }
+                            if let Some(reciept) = reciept {
+                                if !reciept.success {
+                                    continue
+                                }
+                                for log in &reciept.logs {
+                                    for topic in &log.topics {
+                                        match GenesisContractEvents::try_from(topic.clone()) {
+                                            Ok(GenesisContractEvents::MintingEvent) => {
+                                                info!("Parsing and sending minting event to btc_server");
+                                                let pegin_data = parse_pegin_reth_log_topic(&log).expect(
+                                                        "passed evm check should pass this parse attempt",
+                                                    );
+                                                for pegin in &pegin_data.meta {
+                                                    let request = NotifyPeginRequest {
+                                                        utxo_txid: pegin.outpoint.txid.to_string(),
+                                                        utxo_vout: pegin.outpoint.vout,
+                                                        eth_address: hex::encode(
+                                                            pegin.address.to_vec(),
+                                                        ),
+                                                        output: bitcoin::consensus::serialize(
+                                                            pegin
+                                                                .tx
+                                                                .output
+                                                                .get(pegin.outpoint.vout as usize)
+                                                                .unwrap(),
+                                                        ),
+                                                    };
 
-                                        let request = NotifyPeginRequest {
-                                            utxo_txid: pegin_data.meta.outpoint.txid.to_string(),
-                                            utxo_vout: pegin_data.meta.outpoint.vout,
-                                            eth_address: hex::encode(
-                                                pegin_data.meta.address.to_vec(),
-                                            ),
-                                            output: bitcoin::consensus::serialize(
-                                                &pegin_data
-                                                    .meta
-                                                    .tx
-                                                    .output
-                                                    .get(pegin_data.meta.outpoint.vout as usize)
-                                                    .unwrap(),
-                                            ),
-                                            nonce: pegin_data.nonce,
-                                        };
-                                        self.btc_server.notify_pegin(request).await.unwrap();
-                                        info!("notifying btc server about pegin utxo");
-                                    }
-                                    Ok(GenesisContractEvents::BurnEvent) => {
-                                        // TODO (armins): obv
-                                        let fee_rate = 30u32;
-                                        info!("Parsing and sending withdrawal event to btc_server");
-                                        let pegout = parse_pegout_reth_log_topic(&log)
-                                            .expect("valid pegout request");
-                                        let request = MakeTxRequest {
-                                            address: pegout.destination.to_string(),
-                                            value: pegout.amount.to_sat(),
-                                            fee_rate,
-                                        };
+                                                    self.btc_server
+                                                        .notify_pegin(request)
+                                                        .await
+                                                        .unwrap();
+                                                    info!("notifying btc server about pegin utxo");
+                                                }
+                                            }
+                                            Ok(GenesisContractEvents::BurnEvent) => {
+                                                // TODO (armins): obv
+                                                let fee_rate = 30u32;
+                                                info!("Parsing and sending withdrawal event to btc_server");
+                                                let pegout = parse_pegout_reth_log_topic(&log)
+                                                    .expect("valid pegout request");
+                                                let request = MakeTxRequest {
+                                                    address: pegout.destination.to_string(),
+                                                    value: pegout.amount.to_sat(),
+                                                    fee_rate,
+                                                };
 
-                                        match self.btc_server.make_tx(request).await {
-                                            Ok(response) => {
-                                                let raw_tx = response.into_inner().tx;
-                                                info!(
-                                                    "Pegout tx from btc signer service {:?}",
-                                                    raw_tx.clone()
-                                                );
-
-                                                match block_source
-                                                    .broadcast_tx(&hex::encode(raw_tx))
-                                                    .await
-                                                {
-                                                    Ok(tx_response) => {
-                                                        info!("Broadcasted withdrawal tx with txid: {}", tx_response);
+                                                match self.btc_server.make_tx(request).await {
+                                                    Ok(response) => {
+                                                        let raw_tx = response.into_inner().tx;
+                                                        info!("Pegout tx from btc signer service {:?}", raw_tx.clone());
+                                                        match block_source
+                                                            .broadcast_tx(&hex::encode(raw_tx))
+                                                            .await
+                                                        {
+                                                            Ok(tx_response) => {
+                                                                info!("Broadcasted withdrawal tx with txid: {}", tx_response);
+                                                            }
+                                                            Err(err) => {
+                                                                error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
+                                                            }
+                                                        }
                                                     }
                                                     Err(err) => {
-                                                        error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
+                                                        error!("Warning: Failed to send BTC server withdrawal request, {:?}", err);
                                                     }
                                                 }
                                             }
-                                            Err(err) => {
-                                                error!("Warning: Failed to send BTC server withdrawal request, {:?}", err);
-                                            }
+                                            _ => {}
                                         }
                                     }
-                                    _ => {}
                                 }
                             }
+
+                            info!("Reciept {:?}", reciept);
                         }
                     }
 
@@ -296,14 +303,13 @@ where
 
                     info!(target: "consensus::authority", header=?block_hash, "sending block notification");
 
-                    let chain = Arc::new(Chain::new(vec![(sealed_block_with_senders, post_state)]));
-
+                    let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
                     // send block notification
                     let _ = self
                         .canon_state_notification
                         .send(reth_provider::CanonStateNotification::Commit { new: chain });
 
-                    let new_block = NewBlock { block, td: uint!(1_U128) };
+                    let new_block = NewBlock { block, td: Uint::ZERO };
                     // Notify peers
                     self.network_handle.announce_block(new_block, block_hash);
                 }
