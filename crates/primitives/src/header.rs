@@ -1,6 +1,6 @@
 use crate::{
     basefee::calculate_next_block_base_fee,
-    constants::{EMPTY_OMMER_ROOT_HASH, EMPTY_ROOT_HASH},
+    constants::{eip225::EPOCH_LENGTH, EMPTY_OMMER_ROOT_HASH, EMPTY_ROOT_HASH},
     eip4844::{calc_blob_gasprice, calculate_excess_blob_gas},
     keccak256, Address, BaseFeeParams, BlockBodyRoots, BlockHash, BlockNumHash, BlockNumber, Bloom,
     Bytes, B256, B64, U256,

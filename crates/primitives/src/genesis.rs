@@ -436,7 +436,7 @@ mod ethers_compat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{hex_literal::hex, Address, Bytes, U256, BOTANIX_TESTNET};
+    use crate::{hex_literal::hex, Address, Bytes, BOTANIX_TESTNET, U256};
     use std::{collections::HashMap, str::FromStr};
 
     #[test]

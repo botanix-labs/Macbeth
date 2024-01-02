@@ -4,14 +4,11 @@ use crate::{
     revm_primitives::{address, b256},
     Address, B256, U256,
 };
-use crate::{H256, U256};
-use ethers_core::types::H160;
-use hex_literal::hex;
 use std::time::Duration;
 
+pub mod eip225;
 /// [EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#parameters) constants.
 pub mod eip4844;
-pub mod eip225;
 
 /// The client version: `reth/v{major}.{minor}.{patch}`
 pub const RETH_CLIENT_VERSION: &str = concat!("reth/v", env!("CARGO_PKG_VERSION"));
@@ -194,7 +191,8 @@ pub const BEACON_ROOTS_ADDRESS: Address = address!("000F3df6D732807Ef1319fB7B8bB
 /// block.
 pub const SYSTEM_ADDRESS: Address = address!("fffffffffffffffffffffffffffffffffffffffe");
 /// Address of the staking contract.
-/// TODO(armins) this is a dummy staking address, we need to update this to the real staking contract address
+/// TODO(armins) this is a dummy staking address, we need to update this to the real staking
+/// contract address
 pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e084575b334";
 
 /// Storage slot index of list of stakers
