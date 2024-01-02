@@ -5,10 +5,10 @@ use crate::{
     cli::ext::RethCliExt,
     db, debug_cmd,
     dirs::{LogsDir, PlatformPath},
-    node, p2p, recover,
+    node, p2p, poa, recover,
     runner::CliRunner,
     stage, test_vectors,
-    version::{LONG_VERSION, SHORT_VERSION}, poa,
+    version::{LONG_VERSION, SHORT_VERSION},
 };
 use clap::{value_parser, ArgAction, Args, Parser, Subcommand, ValueEnum};
 use reth_primitives::ChainSpec;

@@ -4,11 +4,7 @@ use tokio::time::{Instant, Interval};
 use tracing::info;
 
 use crate::Storage;
-use std::{
-    sync::Arc,
-    task::Poll,
-    time::Duration,
-};
+use std::{sync::Arc, task::Poll, time::Duration};
 
 #[derive(Debug)]
 /// Manages the block production epochs
@@ -85,8 +81,7 @@ impl EpochManager {
 
                     // drain the pool
                     return Poll::Ready(transactions)
-                }
-                else {
+                } else {
                     // TODO remove this later
                     return Poll::Pending;
                 }

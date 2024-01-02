@@ -28,7 +28,6 @@
 #![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-pub mod poa;
 pub mod args;
 pub mod chain;
 pub mod cli;
@@ -39,6 +38,7 @@ pub mod dirs;
 pub mod init;
 pub mod node;
 pub mod p2p;
+pub mod poa;
 pub mod prometheus_exporter;
 pub mod recover;
 pub mod runner;
