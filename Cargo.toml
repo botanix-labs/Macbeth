@@ -95,6 +95,7 @@ incremental = false
 # reth
 reth = { path = "bin/reth" }
 reth-auto-seal-consensus = { path = "crates/consensus/auto-seal" }
+reth-authority-consensus = { path = "crates/consensus/authority"}
 reth-basic-payload-builder = { path = "crates/payload/basic" }
 reth-beacon-consensus = { path = "crates/consensus/beacon" }
 reth-blockchain-tree = { path = "crates/blockchain-tree" }
