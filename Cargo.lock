@@ -6325,15 +6325,15 @@ dependencies = [
 
 [[package]]
 name = "reth-authority-consensus"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.13"
 dependencies = [
- "bitcoin 0.30.1",
- "botanix-lib",
+ "bitcoin",
  "btc-server",
- "btc-wallet",
  "client",
  "futures-util",
  "reth-beacon-consensus",
+ "reth-botanix-lib",
+ "reth-btc-wallet",
  "reth-consensus-common",
  "reth-db",
  "reth-eth-wire",
@@ -6537,8 +6537,8 @@ version = "0.1.0-alpha.13"
 dependencies = [
  "assert_matches",
  "cfg-if",
- "botanix-lib",
  "mockall",
+ "reth-botanix-lib",
  "reth-interfaces",
  "reth-primitives",
  "reth-provider",
@@ -6886,7 +6886,6 @@ dependencies = [
  "parking_lot 0.12.1",
  "pin-project",
  "rand 0.8.5",
- "reth-beacon-consensus",
  "reth-consensus-common",
  "reth-discv4",
  "reth-dns-discovery",
@@ -6981,7 +6980,6 @@ dependencies = [
  "arbitrary",
  "assert_matches",
  "byteorder",
- "botanix-lib",
  "bytes",
  "c-kzg",
  "clap",
@@ -6999,6 +6997,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "rayon",
+ "reth-botanix-lib",
  "reth-codecs",
  "reth-ethereum-forks",
  "reth-rpc-types",
