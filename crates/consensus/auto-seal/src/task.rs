@@ -60,6 +60,8 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     bitcoin_block_source_address: Url,
     /// Payload store
     payload_store: PayloadBuilderHandle,
+    /// Bitcoin network
+    btc_network: Option<bitcoin::Network>,
 }
 
 // === impl MiningTask ===
@@ -78,6 +80,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source_address: Url,
         payload_store: PayloadBuilderHandle,
+        btc_network: Option<bitcoin::Network>,
     ) -> Self {
         Self {
             chain_spec,
@@ -94,6 +97,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             bitcoin_block_header,
             bitcoin_block_source_address,
             payload_store,
+            btc_network,
         }
     }
 
@@ -152,6 +156,7 @@ where
                     MempoolSpace::new(this.bitcoin_block_source_address.clone().to_string());
 
                 let payload_store = this.payload_store.clone();
+                let btc_network = this.btc_network.clone();
                 // Create the mining future that creates a block, notifies the engine that drives
                 // the pipeline
                 this.insert_task = Some(Box::pin(async move {
@@ -294,9 +299,11 @@ where
                                                         // TODO (armins): obv
                                                         let fee_rate = 30u32;
                                                         info!("Parsing and sending withdrawal event to btc_server");
-                                                        let pegout =
-                                                            parse_pegout_reth_log_topic(&log)
-                                                                .expect("valid pegout request");
+                                                        let pegout = parse_pegout_reth_log_topic(
+                                                            &log,
+                                                            btc_network.clone(),
+                                                        )
+                                                        .expect("valid pegout request");
                                                         let request = MakeTxRequest {
                                                             address: pegout.destination.to_string(),
                                                             value: pegout.amount.to_sat(),

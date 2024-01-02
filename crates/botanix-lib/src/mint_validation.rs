@@ -84,14 +84,17 @@ pub fn parse_pegin_reth_log_topic(
 
 pub fn parse_pegout_reth_log_topic(
     log: &reth_primitives::Log,
+    btc_network: Option<bitcoin::Network>,
 ) -> Result<PegoutData, MintConsensusError> {
     let revm_log =
         Log { address: log.address, topics: log.topics.clone(), data: log.data.clone().into() };
 
-    parse_pegout_topic(&revm_log)
+    parse_pegout_topic(&revm_log, btc_network)
 }
 
-pub fn parse_pegin_topic(log: &Log) -> Result<PeginData, MintConsensusError> {
+pub fn parse_pegin_topic(
+    log: &Log,
+) -> Result<PeginData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         return Err(MintConsensusError::MintContractDidNotEmitMintTopic())
     }
@@ -158,7 +161,10 @@ pub fn parse_pegin_topic(log: &Log) -> Result<PeginData, MintConsensusError> {
     Err(MintConsensusError::MintContractDidNotEmitRelevantTopic())
 }
 
-pub fn parse_pegout_topic(log: &Log) -> Result<PegoutData, MintConsensusError> {
+pub fn parse_pegout_topic(
+    log: &Log,
+    btc_network: Option<bitcoin::Network>,
+) -> Result<PegoutData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         return Err(MintConsensusError::MintContractDidNotEmitMintTopic())
     }
@@ -199,7 +205,7 @@ pub fn parse_pegout_topic(log: &Log) -> Result<PegoutData, MintConsensusError> {
             let btc_amount = bitcoin::Amount::from_wei_floor(amount)
                 .ok_or(MintConsensusError::PegoutAmountIsInvalid())?;
 
-            let pegout = PegoutData::new(btc_amount, destination)
+            let pegout = PegoutData::new(btc_amount, destination, btc_network)
                 .map_err(|e| MintConsensusError::PegoutValidationFailed(e))?;
 
             return Ok(pegout)

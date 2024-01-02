@@ -1559,8 +1559,6 @@ mod tests {
     use bytes::BytesMut;
     use std::{collections::HashMap, str::FromStr};
 
-    use super::BOTANIX_TESTNET;
-
     #[cfg(feature = "optimism")]
     use crate::OP_GOERLI;
 

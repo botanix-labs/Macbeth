@@ -112,6 +112,7 @@ pub struct AutoSealBuilder<Client, Pool> {
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_source_address: Url,
     payload_store: PayloadBuilderHandle,
+    btc_network: Option<bitcoin::Network>,
 }
 
 // === impl AutoSealBuilder ===
@@ -152,6 +153,7 @@ where
             bitcoin_block_header,
             bitcoin_block_source_address,
             payload_store,
+            btc_network: None,
         }
     }
 
@@ -176,6 +178,7 @@ where
             bitcoin_block_header,
             bitcoin_block_source_address,
             payload_store,
+            btc_network,
         } = self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
@@ -190,6 +193,7 @@ where
             bitcoin_block_header,
             bitcoin_block_source_address,
             payload_store,
+            btc_network,
         );
         (consensus, auto_client, task)
     }
@@ -243,6 +247,8 @@ pub(crate) struct StorageInner {
     pub(crate) best_hash: B256,
     /// The total difficulty of the chain until this block
     pub(crate) total_difficulty: U256,
+    /// Bitcoin network
+    pub(crate) btc_network: Option<bitcoin::Network>,
 }
 
 // === impl StorageInner ===
@@ -426,7 +432,8 @@ impl StorageInner {
             .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+        let mut executor =
+            EVMProcessor::new_with_state(chain_spec.clone(), db, self.btc_network.clone());
 
         let (bundle_state, gas_used) =
             self.execute(&block, &mut executor, senders, recent_block_header)?;

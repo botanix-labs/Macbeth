@@ -987,7 +987,9 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             },
         };
 
-        let factory = factory.with_stack_config(stack_config);
+        let factory = factory
+            .with_stack_config(stack_config)
+            .with_bitcoin_config(self.rpc.btc_network.clone());
 
         let prune_modes = prune_config.map(|prune| prune.segments).unwrap_or_default();
 

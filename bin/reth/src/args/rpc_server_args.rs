@@ -194,6 +194,10 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
     pub btc_block_source: Url,
+
+    /// The bitcoin network to operate on.
+    #[arg(long, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network", required = true)]
+    pub btc_network: bitcoin::Network,
 }
 
 impl RpcServerArgs {
@@ -510,6 +514,7 @@ impl Default for RpcServerArgs {
             rpc_state_cache: RpcStateCacheArgs::default(),
             btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
             btc_block_source: Url::parse("https://mempool.space/signet/api").expect("valid url"),
+            btc_network: bitcoin::Network::Signet,
         }
     }
 }
