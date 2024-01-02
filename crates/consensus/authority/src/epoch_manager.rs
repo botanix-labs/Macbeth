@@ -1,10 +1,14 @@
 use reth_primitives::constants::eip225::BLOCK_PERIOD;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use tokio::time::{Instant, Interval};
-use tracing::info;
+use tracing::{info, error};
 
 use crate::Storage;
-use std::{sync::Arc, task::Poll, time::Duration};
+use std::{
+    sync::Arc,
+    task::Poll,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Debug)]
 /// Manages the block production epochs
@@ -48,8 +52,16 @@ impl EpochManager {
         let random_delay = self.random_delay.take();
         let storage = self.storage.inner.read().await;
         let signer_index = storage.signer_index;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        // sanity check timestamp is greater than previous best block timestamp
+        let prev_best_block_timestamp = storage.headers.get(&storage.best_block).expect("checked empty").timestamp;
+        if timestamp <= prev_best_block_timestamp {
+            error!("Timestamp is not greater than previous best block timestamp");
+            return Poll::Pending
+        }
+
         let is_inturn =
-            storage.best_block % (storage.authorities.len() as u64) == signer_index as u64;
+            timestamp % (storage.authorities.len() as u64) == signer_index as u64;
 
         match random_delay {
             Some(mut delay) => {
@@ -83,7 +95,7 @@ impl EpochManager {
                     return Poll::Ready(transactions)
                 } else {
                     // TODO remove this later
-                    return Poll::Pending;
+                    return Poll::Pending
                 }
 
                 // Your not in turn wait a bit then produce a block
