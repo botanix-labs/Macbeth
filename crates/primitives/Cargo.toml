@@ -82,11 +82,7 @@ secp256k1.workspace = true
 
 
 # Botanix
-botanix-lib = { path = "../../../botanix-lib" }
-
-
-# Botanix
-botanix-lib = { path = "../../../botanix-lib" }
+reth-botanix-lib.workspace = true
 
 [features]
 default = ["c-kzg"]

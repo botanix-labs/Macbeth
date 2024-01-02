@@ -39,10 +39,10 @@ tokio-stream.workspace = true
 tracing.workspace = true
 
 ## Botanix
-botanix-lib = { path = "../../../../botanix-lib" }
-btc-wallet = { path = "../../../../btc-wallet" }
-btc-server = { path = "../../../../btc-server" }
-client = {path = "../../../../btc-server/client"}
+reth-botanix-lib.workspace = true
+reth-btc-wallet.workspace = true
+btc-server = { path = "../../../bin/btc-server" }
+client = {path = "../../../bin/btc-server/client"}
 
 ## Bitcoin
 bitcoin = "0.30.0"
