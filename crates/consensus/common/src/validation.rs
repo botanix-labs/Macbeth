@@ -14,9 +14,6 @@ use reth_primitives::{
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
 use tracing::error;
-
-use crate::utils::create_authority_sighash;
-
 use crate::utils::create_authority_sighash;
 
 /// Validate header standalone

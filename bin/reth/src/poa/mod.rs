@@ -54,7 +54,10 @@ use reth_interfaces::{
     },
     RethResult,
 };
-use reth_network::{NetworkBuilder, NetworkConfig, NetworkEvents, NetworkHandle, NetworkManager};
+use reth_network::{
+    import::{BlockImport, ProofOfAuthorityBlockImport},
+    NetworkBuilder, NetworkConfig, NetworkEvents, NetworkHandle, NetworkManager, config::NetworkMode,
+};
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -401,8 +404,11 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
         let default_peers_path = self.data_dir().known_peers_path();
-        let block_import = ProofOfAuthorityBlockImport::new(botanix_chain_spec.clone());
-        
+
+        // Set up block import structures
+        let (block_import_tx, block_import_rx) = unbounded_channel();
+        let block_import = ProofOfAuthorityBlockImport::new(self.chain.clone(), block_import_tx);
+
         let network_config = self.load_network_config(
             &config,
             Arc::clone(&db),
@@ -412,6 +418,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             default_peers_path.clone(),
             &self.chain,
             Box::new(block_import.clone()),
+            provider_factory.clone(),
         );
 
         let network_client = network_config.client.clone();
@@ -437,25 +444,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             default_peers_path,
         );
 
-        info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
-        debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
-        let network_client = network.fetch_client().await?;
-
-        self.ext.on_components_initialized(&components)?;
-
-        debug!(target: "reth::cli", "Spawning payload builder service");
-        let payload_builder = self.ext.spawn_payload_builder_service(&self.builder, &components)?;
-
-        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
-        let max_block = if let Some(block) = self.debug.max_block {
-            Some(block)
-        } else if let Some(tip) = self.debug.tip {
-            Some(self.lookup_or_fetch_tip(&db, &network_client, tip).await?)
-        } else {
-            None
-        };
-
         // Configure the pipeline
+        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         let (_, authority_client, mut block_production_task) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),
@@ -473,6 +463,25 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         )
         .expect("Failed to create authority consensus builder")
         .build();
+
+        
+
+        info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
+        debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
+        let network_client = network.fetch_client().await?;
+
+        self.ext.on_components_initialized(&components)?;
+
+        debug!(target: "reth::cli", "Spawning payload builder service");
+        let payload_builder = self.ext.spawn_payload_builder_service(&self.builder, &components)?;
+
+        let max_block = if let Some(block) = self.debug.max_block {
+            Some(block)
+        } else if let Some(tip) = self.debug.tip {
+            Some(self.lookup_or_fetch_tip(&db, &network_client, tip).await?)
+        } else {
+            None
+        };
 
         // Configure the pipeline
         let mut pipeline = self
@@ -842,6 +851,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         default_peers_path: PathBuf,
         chain_spec: &Arc<ChainSpec>,
         block_import: Box<dyn BlockImport>,
+        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> NetworkConfig<ProviderFactory<Arc<DatabaseEnv>>> {
         self.network
             .network_config(config, chain_spec.clone(), secret_key, default_peers_path)
@@ -856,9 +866,9 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
                 self.network.addr,
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
-            )));
-
-        cfg_builder.build(ProviderFactory::new(db, self.chain.clone()))
+            )))
+            .network_mode(NetworkMode::Authority)
+            .build_with_block_import(provider_factory, block_import)
     }
 
     #[allow(clippy::too_many_arguments)]

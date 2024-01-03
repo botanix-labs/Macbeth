@@ -37,15 +37,6 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
 }
 
 /// Errors that can occur when building an authority consensus.
-#[derive(Debug)]
-pub enum AuthorityConsensusBuilderError {
-    InvalidStorage,
-    FailedToRecoverAuthorityList,
-    FailedToFindSignerIndex,
-    FailedToRetrieveEopchHeader,
-}
-
-/// Errors that can occur when building an authority consensus.
 #[derive(Debug)]    
 pub enum AuthorityConsensusBuilderError {
     InvalidStorage,

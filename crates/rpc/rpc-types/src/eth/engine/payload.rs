@@ -6,6 +6,7 @@ use crate::{
 use alloy_primitives::{Address, Bloom, Bytes, B256, B64, U256};
 use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
+
 /// The execution payload body response that allows for `null` values.
 pub type ExecutionPayloadBodiesV1 = Vec<Option<ExecutionPayloadBodyV1>>;
 
@@ -142,97 +143,67 @@ pub struct ExecutionPayloadV1 {
     pub transactions: Vec<Bytes>,
 }
 
-impl From<SealedBlock> for ExecutionPayloadV1 {
-    fn from(value: SealedBlock) -> Self {
-        let transactions = value
-            .body
-            .iter()
-            .map(|tx| {
-                let mut encoded = Vec::new();
-                tx.encode_enveloped(&mut encoded);
-                encoded.into()
-            })
-            .collect();
-        ExecutionPayloadV1 {
-            parent_hash: value.parent_hash,
-            fee_recipient: value.beneficiary,
-            state_root: value.state_root,
-            receipts_root: value.receipts_root,
-            logs_bloom: value.logs_bloom,
-            prev_randao: value.mix_hash,
-            block_number: value.number.into(),
-            gas_limit: value.gas_limit.into(),
-            gas_used: value.gas_used.into(),
-            timestamp: value.timestamp.into(),
-            extra_data: value.extra_data.clone(),
-            base_fee_per_gas: U256::from(value.base_fee_per_gas.unwrap_or_default()),
-            block_hash: value.hash(),
-            transactions,
-        }
-    }
-}
+// / Try to construct a block from given payload. Perform addition validation of `extra_data` and
+// / `base_fee_per_gas` fields.
+// /
+// / NOTE: The log bloom is assumed to be validated during serialization.
+// / NOTE: Empty ommers, nonce and difficulty values are validated upon computing block hash and
+// / comparing the value with `payload.block_hash`.
+// /
+// / See <https://github.com/ethereum/go-ethereum/blob/79a478bb6176425c2400e949890e668a3d9a3d05/core/beacon/types.go#L145>
+// impl TryFrom<ExecutionPayloadV1> for Block {
+//     type Error = PayloadError;
 
-/// Try to construct a block from given payload. Perform addition validation of `extra_data` and
-/// `base_fee_per_gas` fields.
-///
-/// NOTE: The log bloom is assumed to be validated during serialization.
-/// NOTE: Empty ommers, nonce and difficulty values are validated upon computing block hash and
-/// comparing the value with `payload.block_hash`.
-///
-/// See <https://github.com/ethereum/go-ethereum/blob/79a478bb6176425c2400e949890e668a3d9a3d05/core/beacon/types.go#L145>
-impl TryFrom<ExecutionPayloadV1> for Block {
-    type Error = PayloadError;
+//     fn try_from(payload: ExecutionPayloadV1) -> Result<Self, Self::Error> {
+//         // TODO (armins) re-introduce this when we have a upper limit for extra data
+//         // if payload.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
+//         //     return Err(PayloadError::ExtraData(payload.extra_data))
+//         // }
 
-    fn try_from(payload: ExecutionPayloadV1) -> Result<Self, Self::Error> {
-        // TODO (armins) re-introduce this when we have a upper limit for extra data
-        // if payload.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
-        //     return Err(PayloadError::ExtraData(payload.extra_data))
-        // }
+//         if payload.base_fee_per_gas < MIN_PROTOCOL_BASE_FEE_U256 {
+//             return Err(PayloadError::BaseFee(payload.base_fee_per_gas))
+//         }
 
-        if payload.base_fee_per_gas < MIN_PROTOCOL_BASE_FEE_U256 {
-            return Err(PayloadError::BaseFee(payload.base_fee_per_gas))
-        }
+//         let transactions = payload
+//             .transactions
+//             .iter()
+//             .map(|tx| TransactionSigned::decode(&mut tx.as_ref()))
+//             .collect::<Result<Vec<_>, _>>()?;
+//         let transactions_root = proofs::calculate_transaction_root(&transactions);
 
-        let transactions = payload
-            .transactions
-            .iter()
-            .map(|tx| TransactionSigned::decode(&mut tx.as_ref()))
-            .collect::<Result<Vec<_>, _>>()?;
-        let transactions_root = proofs::calculate_transaction_root(&transactions);
+//         let header = Header {
+//             parent_hash: payload.parent_hash,
+//             beneficiary: payload.fee_recipient,
+//             state_root: payload.state_root,
+//             transactions_root,
+//             receipts_root: payload.receipts_root,
+//             withdrawals_root: None,
+//             logs_bloom: payload.logs_bloom,
+//             number: payload.block_number.as_u64(),
+//             gas_limit: payload.gas_limit.as_u64(),
+//             gas_used: payload.gas_used.as_u64(),
+//             timestamp: payload.timestamp.as_u64(),
+//             mix_hash: payload.prev_randao,
+//             base_fee_per_gas: Some(
+//                 payload
+//                     .base_fee_per_gas
+//                     .uint_try_to()
+//                     .map_err(|_| PayloadError::BaseFee(payload.base_fee_per_gas))?,
+//             ),
+//             blob_gas_used: None,
+//             excess_blob_gas: None,
+//             parent_beacon_block_root: None,
+//             extra_data: payload.extra_data,
+//             // Defaults
+//             ommers_hash: EMPTY_LIST_HASH,
+//             // TODO (armins) this should be some non default value
+//             difficulty: Default::default(),
+//             nonce: Default::default(),
+//         };
 
-        let header = Header {
-            parent_hash: payload.parent_hash,
-            beneficiary: payload.fee_recipient,
-            state_root: payload.state_root,
-            transactions_root,
-            receipts_root: payload.receipts_root,
-            withdrawals_root: None,
-            logs_bloom: payload.logs_bloom,
-            number: payload.block_number.as_u64(),
-            gas_limit: payload.gas_limit.as_u64(),
-            gas_used: payload.gas_used.as_u64(),
-            timestamp: payload.timestamp.as_u64(),
-            mix_hash: payload.prev_randao,
-            base_fee_per_gas: Some(
-                payload
-                    .base_fee_per_gas
-                    .uint_try_to()
-                    .map_err(|_| PayloadError::BaseFee(payload.base_fee_per_gas))?,
-            ),
-            blob_gas_used: None,
-            excess_blob_gas: None,
-            parent_beacon_block_root: None,
-            extra_data: payload.extra_data,
-            // Defaults
-            ommers_hash: EMPTY_LIST_HASH,
-            // TODO (armins) this should be some non default value
-            difficulty: Default::default(),
-            nonce: Default::default(),
-        };
-
-        Ok(Block { header, body: transactions, withdrawals: None, ommers: Default::default() })
-    }
-}
+//         Ok(Block { header, body: transactions, withdrawals: None, ommers: Default::default() })
+//     }
+// }
 
 /// This structure maps on the ExecutionPayloadV2 structure of the beacon chain spec.
 ///
@@ -400,37 +371,6 @@ impl ExecutionPayload {
             ExecutionPayload::V2(payload) => payload.payload_inner.block_number,
             ExecutionPayload::V3(payload) => payload.payload_inner.payload_inner.block_number,
         }
-    }
-
-    /// Tries to create a new block from the given payload and optional parent beacon block root.
-    /// Perform additional validation of `extra_data` and `base_fee_per_gas` fields.
-    ///
-    /// NOTE: The log bloom is assumed to be validated during serialization.
-    /// NOTE: Empty ommers, nonce and difficulty values are validated upon computing block hash and
-    /// comparing the value with `payload.block_hash`.
-    ///
-    /// See <https://github.com/ethereum/go-ethereum/blob/79a478bb6176425c2400e949890e668a3d9a3d05/core/beacon/types.go#L145>
-    pub fn try_into_sealed_block(
-        self,
-        parent_beacon_block_root: Option<H256>,
-    ) -> Result<SealedBlock, PayloadError> {
-        let block_hash = self.block_hash();
-        let mut base_payload = match self {
-            ExecutionPayload::V1(payload) => Block::try_from(payload)?,
-            ExecutionPayload::V2(payload) => Block::try_from(payload)?,
-            ExecutionPayload::V3(payload) => Block::try_from(payload)?,
-        };
-
-        base_payload.header.parent_beacon_block_root = None;
-
-        let payload = base_payload.seal_slow();
-
-        // TODO (armins) uncomment this
-        // if block_hash != payload.hash() {
-        //     return Err(PayloadError::BlockHash { execution: payload.hash(), consensus: block_hash
-        // }) }
-
-        Ok(payload)
     }
 }
 

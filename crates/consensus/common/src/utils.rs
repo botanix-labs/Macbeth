@@ -14,7 +14,9 @@ pub enum StorageAccessError {
 pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
     let mut writer: Vec<u8> = vec![];
     extra_data.encode_into_without_signature(&mut writer).expect("Valid extra data header");
-    header.extra_data = Bytes::from(writer.as_slice());
+    // Take ownership of the data in writer and leave an empty Vec<u8>
+    let bytes_data = Bytes::from(writer.clone());
+    header.extra_data = bytes_data;
     header.hash_slow()
 }
 
