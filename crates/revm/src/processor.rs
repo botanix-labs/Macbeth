@@ -251,7 +251,7 @@ impl<'a> EVMProcessor<'a> {
     }
 
     /// Performs additional checks on mint contract transactions.
-    fn botanix_mint_contract_checks(
+    pub(crate) fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
@@ -292,7 +292,7 @@ impl<'a> EVMProcessor<'a> {
     /// to return the result and state diff (without applying it).
     ///
     /// Assumes the rest of the block environment has been filled via `init_block_env`.
-    pub fn transact(
+    fn transact(
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
@@ -647,6 +647,9 @@ pub fn verify_receipt<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ethabi::Uint;
+    use ethers::abi::encode;
+    use reth_botanix_lib::peg_contract::{test_utils::pegin_data_setup, PeginMeta};
     use reth_interfaces::provider::ProviderResult;
     use reth_primitives::{
         bytes,
@@ -659,8 +662,11 @@ mod tests {
         AccountReader, BlockHashReader, BundleStateWithReceipts, StateRootProvider,
     };
     use reth_trie::updates::TrieUpdates;
-    use revm::{Database, TransitionState};
-    use std::collections::HashMap;
+    use revm::{
+        primitives::{Eval, FixedBytes, Halt, Log, Output},
+        Database, TransitionState,
+    };
+    use std::{collections::HashMap, u128};
 
     static BEACON_ROOT_CONTRACT_CODE: Bytes = bytes!("3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500");
 
@@ -1075,5 +1081,265 @@ mod tests {
             .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
             .unwrap();
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
+    }
+
+    // =================================================================
+    // =========================GLOBAL=======================
+    // =================================================================
+
+    #[test]
+    fn botanix_mint_contract_checks_failures_test() {
+        let halt = ExecutionResult::Halt { reason: Halt::OpcodeNotFound, gas_used: 0 };
+        EVMProcessor::botanix_mint_contract_checks(&halt, None).expect("Test passed");
+
+        let revert = ExecutionResult::Revert { output: Bytes::new(), gas_used: 0 };
+        EVMProcessor::botanix_mint_contract_checks(&revert, None).expect("Test passed");
+    }
+
+    // =================================================================
+    // =========================MINT=======================
+    // =================================================================
+
+    #[test]
+    fn botanix_mint_contract_checks_pegin_no_logs_test() {
+        let success = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![],
+            output: Output::Call(Bytes::new()),
+        };
+        EVMProcessor::botanix_mint_contract_checks(&success, None).expect("Test passed");
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_pegin_no_header_test() {
+        let topic_address: FixedBytes<32> = reth_primitives::hex!(
+            "c79b5383458e63fb20c6a49d9ec7917195a59003a2af4b28a01d7c6fbbcd7e35"
+        )
+        .into();
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*MINT_TOPIC, topic_address],
+                data: Bytes::new(),
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        EVMProcessor::botanix_mint_contract_checks(&result, None).expect("Test passed");
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_pegin_wrong_log_topics_test() {
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*MINT_TOPIC, *MINT_TOPIC],
+                data: Bytes::new(),
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let pegin_data = pegin_data_setup(&secp, None, None);
+        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
+        let err = EVMProcessor::botanix_mint_contract_checks(&result, Some((*header, 1_u32)))
+            .expect_err("The topics count is incorrect");
+        assert_eq!(
+            err,
+            BlockExecutionError::Validation(BlockValidationError::MintContractViolation)
+        );
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_success_pegin_wrong_sc_address_test() {
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::default(),
+                topics: vec![*MINT_TOPIC, *MINT_TOPIC],
+                data: Bytes::new(),
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let pegin_data = pegin_data_setup(&secp, None, None);
+        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
+        let err = EVMProcessor::botanix_mint_contract_checks(&result, Some((*header, 1_u32)))
+            .expect_err("The address should be the MINT_CONTRACT_ADDRESS");
+        assert_eq!(
+            err,
+            BlockExecutionError::Validation(BlockValidationError::MintContractViolation)
+        );
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_success_pegin_logs_test() {
+        // pegin data setup
+        let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let pegin_data = pegin_data_setup(&secp, None, None);
+        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
+        let pegin_data_meta = pegin_data.meta.first().unwrap();
+
+        // encode the mint params
+        let encoded_params = encode(&[
+            ethabi::Token::Uint(pegin_data.amount),
+            ethabi::Token::Uint(Uint::from(pegin_data.bitcoin_block_height)),
+            ethabi::Token::Bytes(PeginMeta::serialize(pegin_data_meta).unwrap()),
+        ]);
+
+        // prepare the data
+        let data = Bytes::from(encoded_params);
+        let topic_address: FixedBytes<32> = reth_primitives::hex!(
+            "c79b5383458e63fb20c6a49d9ec7917195a59003a2af4b28a01d7c6fbbcd7e35"
+        )
+        .into();
+
+        // create a success result object
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*MINT_TOPIC, topic_address],
+                data,
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+
+        // run checks on the output
+        assert!(EVMProcessor::botanix_mint_contract_checks(&result, Some((*header, 1_u32))).is_ok());
+    }
+
+    // =================================================================
+    // =========================BURN=======================
+    // =================================================================
+
+    #[test]
+    fn botanix_mint_contract_checks_success_pegout_wrong_sc_address_test() {
+        // encode the burn params
+        let encoded_params = encode(&[
+            ethabi::Token::Uint(Uint::from(100 * 10000000000 as u128)),
+            ethabi::Token::String("tb1q65l5dp54qauzmkc5wejz0pzzkhwzcefv45l2hc".to_string()), /* btc signet address */
+        ]);
+        let data = Bytes::from(encoded_params);
+        let topic_address: FixedBytes<32> = reth_primitives::hex!(
+            "c79b5383458e63fb20c6a49d9ec7917195a59003a2af4b28a01d7c6fbbcd7e35"
+        )
+        .into();
+
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::default(),
+                topics: vec![*BURN_TOPIC, topic_address],
+                data,
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        let err = EVMProcessor::botanix_mint_contract_checks(&result, None)
+            .expect_err("The address should be the MINT_CONTRACT_ADDRESS");
+        assert_eq!(
+            err,
+            BlockExecutionError::Validation(BlockValidationError::MintContractViolation)
+        );
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_pegout_wrong_log_topics_test() {
+        // encode the burn params
+        let encoded_params = encode(&[
+            ethabi::Token::Uint(Uint::from(100 * 10000000000 as u128)),
+            ethabi::Token::String("tb1q65l5dp54qauzmkc5wejz0pzzkhwzcefv45l2hc".to_string()), /* btc signet address */
+        ]);
+        let data = Bytes::from(encoded_params);
+
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*BURN_TOPIC],
+                data,
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+
+        let err = EVMProcessor::botanix_mint_contract_checks(&result, None)
+            .expect_err("There should be exactly two topics in the log");
+        assert_eq!(
+            err,
+            BlockExecutionError::Validation(BlockValidationError::MintContractViolation)
+        );
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_pegout_good_receiver_address_test() {
+        // encode the burn params
+        let encoded_params = encode(&[
+            ethabi::Token::Uint(Uint::from(100 * 10000000000 as u128)),
+            ethabi::Token::String("tb1q65l5dp54qauzmkc5wejz0pzzkhwzcefv45l2hc".to_string()), /* btc signet address */
+        ]);
+        let data = Bytes::from(encoded_params);
+        let topic_address: FixedBytes<32> = reth_primitives::hex!(
+            "c79b5383458e63fb20c6a49d9ec7917195a59003a2af4b28a01d7c6fbbcd7e35"
+        )
+        .into();
+
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*BURN_TOPIC, topic_address],
+                data,
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        EVMProcessor::botanix_mint_contract_checks(&result, None).expect("Test passed");
+    }
+
+    #[test]
+    fn botanix_mint_contract_checks_pegout_bad_receiver_address_test() {
+        // encode the burn params
+        let encoded_params = encode(&[
+            ethabi::Token::Uint(Uint::from(100 * 10000000000 as u128)),
+            ethabi::Token::String("3QDnhpmzpKwKrFJjLUSPjgxY7aqmV2c2kP".to_string()), /* btc mainnet address */
+        ]);
+        let data = Bytes::from(encoded_params);
+        let topic_address: FixedBytes<32> = reth_primitives::hex!(
+            "c79b5383458e63fb20c6a49d9ec7917195a59003a2af4b28a01d7c6fbbcd7e35"
+        )
+        .into();
+
+        let result = ExecutionResult::Success {
+            reason: Eval::Return,
+            gas_used: 0,
+            gas_refunded: 0,
+            logs: vec![Log {
+                address: Address::from(*MINT_CONTRACT_ADDRESS),
+                topics: vec![*BURN_TOPIC, topic_address],
+                data,
+            }],
+            output: Output::Call(Bytes::new()),
+        };
+        let err = EVMProcessor::botanix_mint_contract_checks(&result, None)
+            .expect_err("Should fail because of bad address");
+        assert_eq!(
+            err,
+            BlockExecutionError::Validation(BlockValidationError::MintContractViolation)
+        );
     }
 }

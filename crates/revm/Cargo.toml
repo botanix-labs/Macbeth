@@ -18,6 +18,13 @@ reth-consensus-common.workspace = true
 reth-btc-wallet.workspace = true
 reth-botanix-lib.workspace = true
 
+# ethers
+ethers = "2.0.9"
+ethabi = "18.0.0"
+
+# hex
+hex = "0.4.3"
+
 # Lazy static   
 lazy_static = "*"
 

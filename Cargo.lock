@@ -7034,6 +7034,9 @@ name = "reth-revm"
 version = "0.1.0-alpha.13"
 dependencies = [
  "bitcoin",
+ "ethabi",
+ "ethers",
+ "hex",
  "lazy_static",
  "reth-botanix-lib",
  "reth-btc-wallet",
