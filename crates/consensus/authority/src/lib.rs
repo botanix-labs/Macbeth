@@ -48,12 +48,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use voting::{AuthorityVoteCollection, Vote};
+use tracing::info;
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
 mod builder;
 mod client;
-mod constants;
 mod epoch_manager;
 mod task;
 mod voting;
@@ -104,34 +104,6 @@ impl Consensus for AuthorityConsensus {
         total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
         validation::validate_header_with_total_difficulty(header, total_difficulty)?;
-        Ok(())
-    }
-}
-
-// POA specific functions
-impl AuthorityConsensus {
-    /// Validates that the number of signers is within the allowed limit.
-    ///
-    /// # Returns
-    /// `Ok(())` if the number of signers is within the allowed limit, otherwise
-    /// returns an error indicating the validation failed.
-    fn validate_signer_limit(
-        &self,
-        header: &SealedHeader,
-        prev_headers: Vec<Header>,
-    ) -> Result<(), ConsensusError> {
-        if prev_headers.len() < SIGNER_LIMIT as usize {
-            return Ok(())
-        }
-
-        let signer = utils::recovery_authority(header)
-            .map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
-        if prev_headers.into_iter().any(|prev_header| {
-            let prev_signer = utils::recovery_authority(&prev_header);
-            prev_signer.is_err() || signer == prev_signer.expect("valid signer")
-        }) {
-            return Err(ConsensusError::SignerLimitReached)
-        }
         Ok(())
     }
 }
@@ -494,7 +466,7 @@ impl StorageInner {
         let signers = utils::get_authority_list(prev_header)
             .map_err(|e| BlockExecutionError::FailedToDeserializePreviousBlockHeader)?;
 
-        let header = self.build_header_template(&transactions, chain_spec.clone(), vote)?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone(), vote)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -587,4 +559,5 @@ impl StorageInner {
 
         Ok((new_header, bundle_state))
     }
+    // TODO (armins) add utility function for executing a block recieved from the network and adding to cached blocks
 }

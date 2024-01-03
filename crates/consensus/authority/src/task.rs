@@ -1,10 +1,8 @@
 use crate::{epoch_manager::EpochManager, Storage};
+use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
-use reth_primitives::U256;
-
-use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
@@ -13,10 +11,12 @@ use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
     TransactionSigned, U256,
 };
-use reth_provider::{
-    CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
-};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
+use reth_revm::{
+    database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
+    processor::EVMProcessor, State,
+};
+use reth_rpc_types::engine::PayloadStatusEnum;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use ruint::Uint;
@@ -117,10 +117,6 @@ where
 
         // this drives block production
         loop {
-            // Instantiate the executor
-            let substate = SubState::new(State::new(self.client.latest().unwrap()));
-            let mut executor = Executor::new(Arc::clone(&self.chain_spec), substate);
-
             match self.block_import_rx.try_recv() {
                 Ok(new_block) => {
                     // Recieved a new block from a peer. Block import has ran consensus validation
@@ -152,16 +148,31 @@ where
                                         )
                                         .unwrap();
 
-                                        let (post_state, _) = executor
-                                            .execute_transactions(
+                                        let db = State::builder()
+                                            .with_database_boxed(Box::new(
+                                                StateProviderDatabase::new(
+                                                    self.client.latest().unwrap(),
+                                                ),
+                                            ))
+                                            .with_bundle_update()
+                                            .build();
+                                        let mut executor =
+                                            EVMProcessor::new_with_state(self.chain_spec.clone(), db);
+                                        let mut storage = self.storage.write().await;
+                                        let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+
+                                        let (bundle_state, gas_used) = storage
+                                            .execute(
                                                 &block,
-                                                U256::ZERO,
-                                                Some(senders.clone()),
+                                                &mut executor,
+                                                senders.clone(),
                                                 recent_bitcoin_block_header,
                                             )
-                                            .unwrap();
+                                            // TODO (armins) remove expect
+                                            .expect("block is valid");
+                                        drop(storage);
 
-                                        let new_header = sealed_block.header.clone();  
+                                        let new_header = sealed_block.header.clone();
                                         let state = ForkchoiceState {
                                             head_block_hash: new_header.hash,
                                             finalized_block_hash: new_header.hash,
@@ -169,16 +180,19 @@ where
                                         };
 
                                         loop {
-                                            // send the new update to the engine, this will trigger the engine
+                                            // send the new update to the engine, this will trigger
+                                            // the engine
                                             // to download and execute the block we just inserted
                                             let (tx, rx) = oneshot::channel();
-                                            let _ = self.to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
-                                                state,
-                                                payload_attrs: None,
-                                                tx,
-                                            });
+                                            let _ = self.to_engine.send(
+                                                BeaconEngineMessage::ForkchoiceUpdated {
+                                                    state,
+                                                    payload_attrs: None,
+                                                    tx,
+                                                },
+                                            );
                                             debug!(target: "consensus::authority", ?state, "Sent fork choice update");
-                    
+
                                             match rx.await.unwrap() {
                                                 Ok(fcu_response) => {
                                                     match fcu_response.forkchoice_status() {
@@ -209,10 +223,10 @@ where
                                         let sealed_block_with_senders =
                                             SealedBlockWithSenders::new(sealed_block, senders)
                                                 .expect("senders are valid");
-                                        let chain = Arc::new(Chain::new(vec![(
-                                            sealed_block_with_senders,
-                                            post_state,
-                                        )]));
+                                        let chain = Arc::new(Chain::new(
+                                            vec![sealed_block_with_senders],
+                                            bundle_state,
+                                        ));
 
                                         info!(target: "consensus::authority", "sending block notification to block chain tree");
                                         // send block notification
@@ -312,25 +326,26 @@ where
                     (recovered.into_signed(), signer)
                 })
                 .unzip();
-
+            let mut storage = self.storage.write().await;
+            let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
             // execute the new block
             match storage.build_and_execute(
                 transactions.clone(),
                 &client,
                 self.chain_spec.clone(),
-                recent_block_header,
+                recent_bitcoin_block_header,
                 // TODO(armins) read vote in as param
                 &None,
                 &self.sk,
                 &self.secp,
             ) {
                 Ok((new_header, bundle_state)) => {
+                    drop(storage);
                     let state = ForkchoiceState {
                         head_block_hash: new_header.hash,
                         finalized_block_hash: new_header.hash,
                         safe_block_hash: new_header.hash,
                     };
-                    drop(storage);
                     let reciepts_bundle = bundle_state.receipts().iter();
                     for (index, reciepts) in reciepts_bundle.enumerate() {
                         for reciept in reciepts {

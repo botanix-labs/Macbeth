@@ -48,8 +48,10 @@ impl EpochManager {
         let random_delay = self.random_delay.take();
         let storage = self.storage.inner.read().await;
         let signer_index = storage.signer_index;
+        println!("signer_index: {}", signer_index);
         let is_inturn =
             storage.best_block % (storage.authorities.len() as u64) == signer_index as u64;
+        println!("is_inturn: {}", is_inturn);
 
         match random_delay {
             Some(mut delay) => {
@@ -85,11 +87,7 @@ impl EpochManager {
                     // TODO remove this later
                     return Poll::Pending;
                 }
-                else {
-                    // TODO remove this later
-                    return Poll::Pending
-                }
-
+               
                 // Your not in turn wait a bit then produce a block
                 // NOTE: verify if network can/should be handled here or in the main task
                 // TODO: check network handle for gossiped block
