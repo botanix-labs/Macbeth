@@ -5,7 +5,7 @@ use crate::{
     args::{
         get_secret_key,
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
-        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
+        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::{
@@ -21,7 +21,6 @@ use crate::{
     utils::get_single_header,
     version::SHORT_VERSION,
 };
-use bitcoin::network;
 use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -31,7 +30,7 @@ use reth_authority_consensus::{AuthorityConsensus, AuthorityConsensusBuilder};
 
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
-    BeaconConsensus, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
+    BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
 };
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
@@ -49,21 +48,21 @@ use reth_interfaces::{
     consensus::Consensus,
     p2p::{
         bodies::{client::BodiesClient, downloader::BodyDownloader},
-        either::EitherDownloader,
         headers::{client::HeadersClient, downloader::HeaderDownloader},
     },
     RethResult,
 };
 use reth_network::{
+    config::NetworkMode,
     import::{BlockImport, ProofOfAuthorityBlockImport},
-    NetworkBuilder, NetworkConfig, NetworkEvents, NetworkHandle, NetworkManager, config::NetworkMode,
+    NetworkBuilder, NetworkConfig, NetworkEvents, NetworkHandle, NetworkManager,
 };
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
     kzg::KzgSettings,
     stage::StageId,
-    BlockHashOrNumber, BlockNumber, ChainSpec, DisplayHardforks, Head, SealedHeader, B256,
+    BlockHashOrNumber, BlockNumber, ChainSpec, Head, SealedHeader, B256,
 };
 use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, BlockReader, CanonStateSubscriptions,
@@ -91,9 +90,8 @@ use std::{
     net::{SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
-    time::{Duration, Instant},
 };
-use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, Mutex, RwLock};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
 
 use client::BtcServerClient;
@@ -253,7 +251,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
-        let bitcoin_block_header_clone = bitcoin_block_headers.clone();
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
         let block_source = MempoolSpace::new(self.rpc.btc_block_source.to_string().clone());
@@ -411,7 +408,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         let network_config = self.load_network_config(
             &config,
-            Arc::clone(&db),
             ctx.task_executor.clone(),
             head,
             secret_key,
@@ -463,8 +459,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         )
         .expect("Failed to create authority consensus builder")
         .build();
-
-        
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
         debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
@@ -841,10 +835,9 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         }
     }
 
-    fn load_network_config<DB: Database>(
+    fn load_network_config(
         &self,
         config: &Config,
-        db: DB,
         executor: TaskExecutor,
         head: Head,
         secret_key: SecretKey,
