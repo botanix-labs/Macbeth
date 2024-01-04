@@ -30,6 +30,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     bitcoin_block_source_address: Url,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
+    #[allow(dead_code)]
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager,
     network_handle: NetworkHandle,
@@ -146,7 +147,7 @@ where
             bitcoin_block_source_address,
             secp,
             sk,
-            vote,
+            vote: _,
             epoch_manager,
             network_handle,
             block_import_rx,

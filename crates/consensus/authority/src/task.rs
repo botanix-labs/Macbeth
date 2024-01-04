@@ -9,16 +9,13 @@ use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
-    TransactionSigned, U256,
+    TransactionSigned,
 };
 use reth_provider::{
     BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender, Chain,
     StateProviderFactory,
 };
-use reth_revm::{
-    database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-    processor::EVMProcessor, State,
-};
+use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::engine::PayloadStatusEnum;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
@@ -129,9 +126,7 @@ where
     }
 
     pub async fn start_task(&mut self) -> () {
-        let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
-
-        // this drives block production
+        // This drives block production
         loop {
             match self.block_import_rx.try_recv() {
                 Ok(new_block) => {
@@ -177,7 +172,7 @@ where
                                         let recent_bitcoin_block_header =
                                             self.bitcoin_block_header.read().await.clone();
 
-                                        let (bundle_state, gas_used) = storage
+                                        let (bundle_state, _gas_used) = storage
                                             .execute(
                                                 &block,
                                                 &mut executor,
@@ -279,11 +274,6 @@ where
             ) {
                 Ok((new_header, bundle_state)) => {
                     drop(storage);
-                    let state = ForkchoiceState {
-                        head_block_hash: new_header.hash,
-                        finalized_block_hash: new_header.hash,
-                        safe_block_hash: new_header.hash,
-                    };
                     let reciepts_bundle = bundle_state.receipts().iter();
                     for (index, reciepts) in reciepts_bundle.enumerate() {
                         for reciept in reciepts {
@@ -335,10 +325,7 @@ where
         }
     }
 
-    pub(crate) async fn process_botanix_log(
-        &mut self,
-        log: &Log,
-    ) -> Result<(), ProcessBotanixLogError> {
+    async fn process_botanix_log(&mut self, log: &Log) -> Result<(), ProcessBotanixLogError> {
         for topic in &log.topics {
             match GenesisContractEvents::try_from(topic.clone()) {
                 Ok(GenesisContractEvents::MintingEvent) => {

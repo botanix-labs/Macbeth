@@ -1,17 +1,20 @@
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_primitives::{
-    constants::{STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX, STAKING_CONTRACT_ADDRESS},
-    keccak256, Address, Bytes, Header, H160, H256, U256,
+    constants::STAKING_CONTRACT_ADDRESS,
+    keccak256, Address, Bytes, Header, B256, U256,
 };
 use reth_provider::StateProvider;
 
+/// Error that can occur while accessing EVM global storage
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum StorageAccessError {
+    /// Failed to access storage
     FailedAccess(&'static str),
 }
 
 /// Create sighash for authority to sign
-pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> H256 {
+pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> B256 {
     let mut writer: Vec<u8> = vec![];
     extra_data.encode_into_without_signature(&mut writer).expect("Valid extra data header");
     // Take ownership of the data in writer and leave an empty Vec<u8>
@@ -24,10 +27,10 @@ pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeade
 /// TODO(armins) refactor needed, read comment below    
 pub fn read_staker_balance(
     provider: impl StateProvider,
-    staker_address: Address,
+    _staker_address: Address,
 ) -> Result<U256, StorageAccessError> {
     let staking_contract_address = Address::from_slice(STAKING_CONTRACT_ADDRESS.as_bytes());
-    let mut payload: Vec<Vec<u8>> = vec![];
+    let payload: Vec<Vec<u8>> = vec![];
     // TODO (armins) commenting out for now, need to refactor to not use H160 as it is deprecated
     // And no longer supports `from_low_u64_le()`
     // payload
@@ -46,15 +49,21 @@ pub fn read_staker_balance(
 }
 
 #[derive(Debug)]
+/// Error that can occur while recovering the authority list
 pub enum RecoverAuthorityError {
+    /// Signature is missing in the extra data
     NoSignaturePresentInExtraData,
+    /// ecdsa Signature was not recoverable
     FailedToRecoverSigner(secp256k1::Error),
+    /// Failed to deserialize the extra data
     FailedToDerserializeExtraData(
         reth_botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError,
     ),
+    /// Failed to create the sighash that the authority signed
     FailedToCreateSigHash(secp256k1::Error),
 }
 
+/// Recover the authority that signed the block
 pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, RecoverAuthorityError> {
     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
@@ -76,12 +85,15 @@ pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, Recov
 }
 
 #[derive(Debug)]
+/// Errors that can occur while reading the authority list from the block header
 pub enum GetAuthoritiesError {
+    /// Failed to deserialize the extra data
     FailedToRecoverAuthorityList(
         reth_botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError,
     ),
 }
 
+/// Recover the authority list from the block header
 pub fn get_authority_list(
     header: &Header,
 ) -> Result<Vec<secp256k1::PublicKey>, GetAuthoritiesError> {

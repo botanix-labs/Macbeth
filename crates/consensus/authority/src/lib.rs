@@ -20,24 +20,19 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader};
+use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{utils, validation};
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
 use reth_primitives::{
-    constants::{
-        eip225::SIGNER_LIMIT, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT,
-    },
+    constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
     ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT_HASH, H256, U256,
+    EMPTY_OMMER_ROOT_HASH, B256, U256,
 };
-use reth_provider::{
-    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonStateNotificationSender,
-    StateProviderFactory,
-};
+use reth_provider::{BlockExecutor, BundleStateWithReceipts, StateProviderFactory};
 use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
@@ -48,7 +43,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use voting::{AuthorityVoteCollection, Vote};
-use tracing::info;
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
@@ -80,8 +74,6 @@ impl AuthorityConsensus {
 impl Consensus for AuthorityConsensus {
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validation::validate_header_standalone(header, &self.chain_spec)?;
-        // TODO (armins) get prev headers from storage and validate signer limit
-        // self.validate_signer_limit(header, prev_headers)?;
         Ok(())
     }
 
@@ -109,77 +101,6 @@ impl Consensus for AuthorityConsensus {
 }
 
 // POA specific functions
-impl AuthorityConsensus {
-    /// Validates that the number of signers is within the allowed limit.
-    ///
-    /// # Returns
-    /// `Ok(())` if the number of signers is within the allowed limit, otherwise
-    /// returns an error indicating the validation failed.
-    fn validate_signer_limit(
-        &self,
-        header: &SealedHeader,
-        prev_headers: Vec<Header>,
-    ) -> Result<(), ConsensusError> {
-        if prev_headers.len() < SIGNER_LIMIT as usize {
-            return Ok(())
-        }
-
-        let signer =
-            utils:: recovery_authority(header).map_err(|_| ConsensusError::FailedToRecoverAuthority)?;
-        if prev_headers.into_iter().any(|prev_header| {
-            let prev_signer = utils::recovery_authority(&prev_header);
-            prev_signer.is_err() || signer == prev_signer.expect("valid signer")
-        }) {
-            return Err(ConsensusError::SignerLimitReached)
-        }
-        Ok(())
-    }
-}
-
-/// Validates the header's extradata according to the authority consensus rules.
-///
-/// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
-/// This must be 32 bytes or fewer; formally Hx.
-fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
-    // Skip over genesis
-    if header.number == 0 {
-        return Ok(())
-    }
-    // TODO (armins) calculate worst case max size
-    // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
-    //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
-    // } else
-
-    {
-        // TODO (armins) check that no vote is occuring during an epoch header
-        // 0. Validate that the block was signed by a federation member
-        let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-            &mut header.extra_data.0.to_vec().as_slice(),
-        )
-        .map_err(|_e| ConsensusError::ExtraDataInvalid)?;
-
-        // 0. Validate that the block was signed by a federation member
-        let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-            &mut header.extra_data.0.to_vec().as_slice(),
-        )
-        .map_err(|e| {
-            info!("Failed to deserialize extra data header {:?}", e);
-            ConsensusError::ExtraDataInvalid
-        })?;
-        let sig_hash = utils::create_authority_sighash(&mut header.clone(), &extra_data);
-        extra_data.validate_authority_signature(&sig_hash.to_vec()).map_err(|e| {
-            info!("Failed to validate authority signature, {:?} ", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
-        // 1. Validate that is a federation memeber was added or removed that that actions
-        // was signed off by a 2/3 majority of votes
-        // This can only happnen during an end of a epoch
-        // TODO
-
-        Ok(())
-    }
-}
-
 /// In memory storage
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Storage {
@@ -246,7 +167,7 @@ pub(crate) struct StorageInner {
     /// Tracks best block
     pub(crate) best_block: u64,
     /// Tracks hash of best block
-    pub(crate) best_hash: H256,
+    pub(crate) best_hash: B256,
     /// The total difficulty of the chain until this block
     pub(crate) total_difficulty: U256,
     /// Keep track of current votes
@@ -464,7 +385,7 @@ impl StorageInner {
         // Retrieve previous block header
         let prev_header = self.headers.get(&self.best_block).expect("checked empty");
         let signers = utils::get_authority_list(prev_header)
-            .map_err(|e| BlockExecutionError::FailedToDeserializePreviousBlockHeader)?;
+            .map_err(|_| BlockExecutionError::FailedToDeserializePreviousBlockHeader)?;
 
         let header = self.build_header_template(&transactions, &chain_spec.clone(), vote)?;
 
@@ -529,18 +450,9 @@ impl StorageInner {
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
 
-        // TODO(armins) Validate signer limit
-
         if vote.is_some() {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.0;
-            let extra_data_header = extra_data_header::ExtraDataHeader::deserialize(
-                &mut header.extra_data.0.to_vec().as_slice(),
-            )
-            .map_err(|e| {
-                BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
-            })?;
-
             // TODO(armins) Should we be verbose and fail the block or just ignore?
             if signers.iter().any(|signer| signer == &authority_to_vote_on) {
                 return Err(BlockExecutionError::CannotAddExistingFederationMember)
@@ -559,5 +471,6 @@ impl StorageInner {
 
         Ok((new_header, bundle_state))
     }
-    // TODO (armins) add utility function for executing a block recieved from the network and adding to cached blocks
+    // TODO (armins) add utility function for executing a block recieved from the network and adding
+    // to cached blocks
 }
