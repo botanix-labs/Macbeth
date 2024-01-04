@@ -2,7 +2,6 @@
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::{
-        self,
         eip225::{DIFF_INTURN, DIFF_NOTURN, DIFF_NOVOTE},
         eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     },
