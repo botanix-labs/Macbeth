@@ -8,7 +8,7 @@ use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::{
-    hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders,
+    hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
     TransactionSigned, U256,
 };
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
@@ -32,6 +32,18 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
+
+/// Repersents an error while processing a botanix log
+#[derive(Debug, thiserror::Error)]
+enum ProcessBotanixLogError {
+    /// Failed to notify btc server about pegin
+    #[error("Failed to notify btc server about pegin")]
+    FailedToNotifyPegin(tonic::Status),
+    #[error("Failed to broadcast pegout tx")]
+    FailedToBroadcastPegout,
+    #[error("Failed to make pegout tx")]
+    FailedToMakePegoutTx(tonic::Status),
+}
 
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
@@ -57,8 +69,8 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Bitcoin block source url
-    bitcoin_block_source_address: Url,
+    /// Bitcoin block source
+    bitcoin_block_source: MempoolSpace,
     /// Instance of secp
     secp: Secp256k1<All>,
     /// Key of authority
@@ -102,7 +114,9 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source_address,
+            bitcoin_block_source: MempoolSpace::new(
+                bitcoin_block_source_address.clone().to_string(),
+            ),
             secp,
             sk,
             epoch_manager,
@@ -112,7 +126,6 @@ where
     }
 
     pub async fn start_task(&mut self) -> () {
-        let block_source = MempoolSpace::new(self.bitcoin_block_source_address.clone().to_string());
         let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
 
         // this drives block production
@@ -156,10 +169,13 @@ where
                                             ))
                                             .with_bundle_update()
                                             .build();
-                                        let mut executor =
-                                            EVMProcessor::new_with_state(self.chain_spec.clone(), db);
+                                        let mut executor = EVMProcessor::new_with_state(
+                                            self.chain_spec.clone(),
+                                            db,
+                                        );
                                         let mut storage = self.storage.write().await;
-                                        let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+                                        let recent_bitcoin_block_header =
+                                            self.bitcoin_block_header.read().await.clone();
 
                                         let (bundle_state, gas_used) = storage
                                             .execute(
@@ -358,70 +374,10 @@ where
                                     continue
                                 }
                                 for log in &reciept.logs {
-                                    for topic in &log.topics {
-                                        match GenesisContractEvents::try_from(topic.clone()) {
-                                            Ok(GenesisContractEvents::MintingEvent) => {
-                                                info!("Parsing and sending minting event to btc_server");
-                                                let pegin_data = parse_pegin_reth_log_topic(&log).expect(
-                                                        "passed evm check should pass this parse attempt",
-                                                    );
-                                                for pegin in &pegin_data.meta {
-                                                    let request = NotifyPeginRequest {
-                                                        utxo_txid: pegin.outpoint.txid.to_string(),
-                                                        utxo_vout: pegin.outpoint.vout,
-                                                        eth_address: hex::encode(
-                                                            pegin.address.to_vec(),
-                                                        ),
-                                                        output: bitcoin::consensus::serialize(
-                                                            pegin
-                                                                .tx
-                                                                .output
-                                                                .get(pegin.outpoint.vout as usize)
-                                                                .unwrap(),
-                                                        ),
-                                                    };
-
-                                                    self.btc_server
-                                                        .notify_pegin(request)
-                                                        .await
-                                                        .unwrap();
-                                                    info!("notifying btc server about pegin utxo");
-                                                }
-                                            }
-                                            Ok(GenesisContractEvents::BurnEvent) => {
-                                                // TODO (armins): obv
-                                                let fee_rate = 30u32;
-                                                info!("Parsing and sending withdrawal event to btc_server");
-                                                let pegout = parse_pegout_reth_log_topic(&log)
-                                                    .expect("valid pegout request");
-                                                let request = MakeTxRequest {
-                                                    address: pegout.destination.to_string(),
-                                                    value: pegout.amount.to_sat(),
-                                                    fee_rate,
-                                                };
-
-                                                match self.btc_server.make_tx(request).await {
-                                                    Ok(response) => {
-                                                        let raw_tx = response.into_inner().tx;
-                                                        info!("Pegout tx from btc signer service {:?}", raw_tx.clone());
-                                                        match block_source
-                                                            .broadcast_tx(&hex::encode(raw_tx))
-                                                            .await
-                                                        {
-                                                            Ok(tx_response) => {
-                                                                info!("Broadcasted withdrawal tx with txid: {}", tx_response);
-                                                            }
-                                                            Err(err) => {
-                                                                error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(err) => {
-                                                        error!("Warning: Failed to broadcast withdrawal request, err: {:?}", err);
-                                                    }
-                                                }
-                                            }
-                                            _ => {}
+                                    match self.process_botanix_log(log).await {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            error!(target: "consensus::authority", ?err, "Failed to process botanix log");
                                         }
                                     }
                                 }
@@ -505,6 +461,70 @@ where
 
             self.pipe_line_events = events;
         }
+    }
+
+    pub(crate) async fn process_botanix_log(
+        &mut self,
+        log: &Log,
+    ) -> Result<(), ProcessBotanixLogError> {
+        for topic in &log.topics {
+            match GenesisContractEvents::try_from(topic.clone()) {
+                Ok(GenesisContractEvents::MintingEvent) => {
+                    info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
+                    let pegin_data = parse_pegin_reth_log_topic(&log)
+                        .expect("passed evm check should pass this parse attempt");
+                    for pegin in &pegin_data.meta {
+                        let request = NotifyPeginRequest {
+                            utxo_txid: pegin.outpoint.txid.to_string(),
+                            utxo_vout: pegin.outpoint.vout,
+                            eth_address: hex::encode(pegin.address.to_vec()),
+                            output: bitcoin::consensus::serialize(
+                                pegin
+                                    .tx
+                                    .output
+                                    .get(pegin.outpoint.vout as usize)
+                                    .expect("valid vout"),
+                            ),
+                        };
+                        self.btc_server
+                            .notify_pegin(request)
+                            .await
+                            .map_err(|e| ProcessBotanixLogError::FailedToNotifyPegin(e))?;
+                        info!(target: "consensus::authority", "notifying btc server about pegin utxo");
+                    }
+                }
+                Ok(GenesisContractEvents::BurnEvent) => {
+                    // TODO (armins): obv
+                    let fee_rate = 30u32;
+                    info!(target: "consensus::authority", "Parsing and sending withdrawal event to btc_server");
+                    let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
+                    let request = MakeTxRequest {
+                        address: pegout.destination.to_string(),
+                        value: pegout.amount.to_sat(),
+                        fee_rate,
+                    };
+
+                    let response = self
+                        .btc_server
+                        .make_tx(request)
+                        .await
+                        .map_err(|e| ProcessBotanixLogError::FailedToMakePegoutTx(e))?;
+
+                    let raw_tx = response.into_inner().tx;
+                    info!(target: "consensus::authority", "broadcasting withdrawal tx");
+
+                    self.bitcoin_block_source
+                        .broadcast_tx(&hex::encode(raw_tx))
+                        .await
+                        .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
+                }
+                Err(e) => {
+                    debug!(target: "consensus::authority", ?e, "Non-genesis contract event");
+                    continue;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Sets the pipeline events to listen on.

@@ -6350,6 +6350,7 @@ dependencies = [
  "reth-transaction-pool",
  "ruint",
  "secp256k1 0.27.0",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
