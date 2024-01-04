@@ -86,7 +86,7 @@ use std::{
     net::{SocketAddr, SocketAddrV4},
     path::PathBuf,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot, watch, RwLock};
 use tracing::*;
