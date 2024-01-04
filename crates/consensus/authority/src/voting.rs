@@ -9,7 +9,7 @@ use reth_primitives::{
 
 /// Represents a vote to add or remove an authority.
 #[derive(Debug, Clone, PartialEq, Copy)]
-pub enum Vote {
+pub(crate) enum Vote {
     Add,
     Remove,
 }
@@ -36,13 +36,13 @@ impl TryFrom<u64> for Vote {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthorityVote {
     /// Authority to add/remove
-    pub authority: secp256k1::PublicKey,
+    pub(crate) authority: secp256k1::PublicKey,
     /// Votes for this authority
-    pub votes: HashMap<secp256k1::PublicKey, Vote>,
+    pub(crate) votes: HashMap<secp256k1::PublicKey, Vote>,
 }
 
 impl AuthorityVote {
-    pub fn add_vote(&mut self, authority_voting: &secp256k1::PublicKey, vote: Vote) {
+    pub(crate) fn add_vote(&mut self, authority_voting: &secp256k1::PublicKey, vote: Vote) {
         // Check vote from this authority does not already exist
         if self.votes.contains_key(&authority_voting) {
             return
@@ -50,30 +50,29 @@ impl AuthorityVote {
         self.votes.insert(*authority_voting, vote);
     }
 
-    pub fn contains(&self, authority: secp256k1::PublicKey) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn contains(&self, authority: secp256k1::PublicKey) -> bool {
         self.votes.contains_key(&authority)
     }
 }
 
 /// Utility struct to keep track of votes for a epoch
 #[derive(Debug, Clone, Default)]
-pub struct AuthorityVoteCollection {
+pub(crate) struct AuthorityVoteCollection {
     /// Votes for this epoch
-    pub votes: Vec<AuthorityVote>,
-    /// Starting of epoch
-    // TODO we dont need this anymore manager by storage
-    pub epoch_start_block_height: u64,
+    pub(crate) votes: Vec<AuthorityVote>,
 }
 
 impl AuthorityVoteCollection {
-    pub fn vote_for(
+    pub(crate) fn vote_for(
         &mut self,
         authority_voting: &secp256k1::PublicKey,
         vote: &Vote,
         authority_vote_for: &secp256k1::PublicKey,
     ) {
-        if let Some(authVote) = self.votes.iter_mut().find(|k| k.authority == *authority_vote_for) {
-            authVote.add_vote(&authority_voting.clone(), vote.clone());
+        if let Some(auth_vote) = self.votes.iter_mut().find(|k| k.authority == *authority_vote_for)
+        {
+            auth_vote.add_vote(&authority_voting.clone(), vote.clone());
         } else {
             let mut votes = HashMap::new();
             votes.insert(*authority_voting, vote.clone());
@@ -83,13 +82,14 @@ impl AuthorityVoteCollection {
 }
 
 #[derive(Debug)]
-pub enum GetVotesError {
+pub(crate) enum GetVotesError {
     FailedToDeserializeBlockHeaderExtraData(ExtraDataHeaderDeserialzeError),
     FailedToRecoverAuthority(secp256k1::Error),
     FailedToParseNonceVote,
 }
 
 /// Given a range of block headers we want a utility function that will return a list of votes
+#[allow(dead_code)]
 pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetVotesError> {
     // Structure to keep track of all votes that occured in this block range
     let mut auth_vote: Vec<AuthorityVote> = Vec::new();
@@ -153,7 +153,8 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
 }
 
 /// Given a list of votes, return the outcome of the vote based on the majority vote
-pub fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
+#[allow(dead_code)]
+pub(crate) fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
     let mut add_votes = 0;
     let mut remove_votes = 0;
 
