@@ -23,6 +23,3 @@ pub const DIFF_INTURN: U256 = U256::ZERO;
 
 /// Block score (difficulty) for blocks containing no votes
 pub const DIFF_NOVOTE: U256 = U256::ZERO;
-
-/// Number of times a signer can sign in a row before being blocks being rejected
-pub const SIGNER_LIMIT: u64 = 10;

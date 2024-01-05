@@ -14,7 +14,8 @@ use std::{sync::Arc, task::Poll, time::Duration};
 ///
 /// Blocks will be rejected by consensus if
 /// 1. The signer is not in the federation
-/// 2. The signer has broadcasted > 1 in SIGNER_LIMIT consecutive blocks
+/// 2. signer is not inturn
+/// 3. block fails common consensus checks
 pub(crate) struct EpochManager {
     /// Access to storage to fetch headers.
     // TODO (armins) this should be protected by an Arc.
