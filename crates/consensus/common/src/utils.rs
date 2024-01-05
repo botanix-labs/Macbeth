@@ -1,7 +1,6 @@
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS,
-    keccak256, Address, Bytes, Header, B256, U256,
+    constants::STAKING_CONTRACT_ADDRESS, keccak256, Address, Bytes, Header, B256, U256,
 };
 use reth_provider::StateProvider;
 

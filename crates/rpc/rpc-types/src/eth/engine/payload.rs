@@ -6,7 +6,6 @@ use crate::{
 use alloy_primitives::{Address, Bloom, Bytes, B256, B64, U256};
 use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
-
 /// The execution payload body response that allows for `null` values.
 pub type ExecutionPayloadBodiesV1 = Vec<Option<ExecutionPayloadBodyV1>>;
 

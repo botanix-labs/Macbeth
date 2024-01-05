@@ -15,7 +15,10 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_transaction_pool::TransactionPool;
-use tokio::sync::{mpsc::{UnboundedSender, UnboundedReceiver}, RwLock};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
@@ -38,7 +41,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
 }
 
 /// Errors that can occur when building an authority consensus.
-#[derive(Debug)]    
+#[derive(Debug)]
 pub enum AuthorityConsensusBuilderError {
     InvalidStorage,
     FailedToRecoverAuthorityList,

@@ -1,4 +1,5 @@
 //! Collection of methods for block validation.
+use crate::utils::create_authority_sighash;
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::{
@@ -13,7 +14,6 @@ use reth_primitives::{
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
 use tracing::error;
-use crate::utils::create_authority_sighash;
 
 /// Validate header standalone
 pub fn validate_header_standalone(
@@ -520,12 +520,10 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
 
     let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
 
-    extra_data
-        .validate_authority_signature(&sig_hash.to_vec())
-        .map_err(|e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
+    extra_data.validate_authority_signature(&sig_hash.to_vec()).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
     // 1. Validate that is a federation memeber was added or removed that that actions
     // was signed off by a 2/3 majority of votes
     // This can only happnen during an end of a epoch
@@ -536,9 +534,9 @@ pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> 
 
 /// Validates the header with the given total difficulty.
 /// Note: Used to validate PoA extra data header
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `header` - The header to validate.
 /// * `total_difficulty` - The total difficulty to validate against.
 pub fn validate_header_with_total_difficulty(
