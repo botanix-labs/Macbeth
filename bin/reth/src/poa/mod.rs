@@ -5,8 +5,8 @@ use crate::{
     args::{
         get_secret_key,
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
-        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
-        RpcServerArgs, TxPoolArgs,
+        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs, RpcServerArgs,
+        TxPoolArgs,
     },
     cli::{
         components::RethNodeComponentsImpl,

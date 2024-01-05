@@ -88,7 +88,7 @@ impl EpochManager {
                     // TODO remove this later
                     return Poll::Pending;
                 }
-               
+
                 // Your not in turn wait a bit then produce a block
                 // NOTE: verify if network can/should be handled here or in the main task
                 // TODO: check network handle for gossiped block

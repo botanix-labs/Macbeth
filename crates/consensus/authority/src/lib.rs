@@ -29,8 +29,8 @@ use reth_interfaces::{
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT_HASH, B256, U256,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{BlockExecutor, BundleStateWithReceipts, StateProviderFactory};
 use reth_revm::{
