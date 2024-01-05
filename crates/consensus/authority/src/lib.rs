@@ -327,8 +327,6 @@ impl StorageInner {
         header.gas_used = gas_used;
 
         let vote_for = if let Some(vote) = authority_to_vote_on { Some(vote.0) } else { None };
-
-        // calculate the state root
         // calculate the state root
         let state_root = client
             .latest()
@@ -338,7 +336,6 @@ impl StorageInner {
         header.state_root = state_root;
 
         // next up is POA specific stuff
-
         // Sign the header
         // Serialize the header without signature
         // TODO signing list should come from prev blocl header
@@ -424,9 +421,6 @@ impl StorageInner {
             recent_block_header.expect("valid header").0.block_hash(),
         )?;
 
-        // TODO(armins) check if the authority being voted on has staked in the staking contract
-        // TODO(armins) check if withdrawl is valid
-
         validation::validate_header_extradata(&header).map_err(|_e| {
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
@@ -435,24 +429,6 @@ impl StorageInner {
             let vote = vote.expect("valid vote");
             let authority_to_vote_on = vote.0;
 
-            // TODO(armins) Should we be verbose and fail the block or just ignore?
-            if signers.iter().any(|signer| signer == &authority_to_vote_on) {
-                return Err(BlockExecutionError::CannotAddExistingFederationMember)
-            }
-            // Keep track of votes
-            self.authority_votes.vote_for(&sk.public_key(secp), &vote.1, &vote.0);
-        }
-
-        // TODO(armins) check if the authority being voted on has staked in the staking contract
-        // TODO(armins) check if withdrawl is valid
-
-        validation::validate_header_extradata(&header).map_err(|_e| {
-            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-        })?;
-
-        if vote.is_some() {
-            let vote = vote.expect("valid vote");
-            let authority_to_vote_on = vote.0;
             // TODO(armins) Should we be verbose and fail the block or just ignore?
             if signers.iter().any(|signer| signer == &authority_to_vote_on) {
                 return Err(BlockExecutionError::CannotAddExistingFederationMember)
