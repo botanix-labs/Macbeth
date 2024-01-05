@@ -6,39 +6,42 @@ import "../src/Faucet.sol";
 
 contract FaucetTest is Test {
   Faucet public faucet;
-  address payable user;
+  address[] userList;
+  address payable user; 
 
   function setUp() public {
     faucet = new Faucet();
     user = payable(0x7d85b27c2Aa069eE3A4feFbE79F54a3260E3ff9B);
+    userList = new address[](1);
+    userList[0] = user;
   }
 
   // requestFunds() tests
   function test_RequestFunds() public {
     deal(address(faucet), 1 ether);
-    faucet.requestFunds(user);
+    faucet.requestFundsByList(userList);
   }
 
   function test_RevertWhen_CallerIsZeroAddress() public {
     deal(address(faucet), 1 ether);
     vm.expectRevert(bytes("Request must not be from zero address"));
-    faucet.requestFunds(address(0));
+    faucet.requestFundsByList(userList);
   }
 
   function test_RevertWhen_FaucetHasInsufficientFunds() public {
     vm.expectRevert(bytes("Faucet out of funds"));
-    faucet.requestFunds(user);
+    faucet.requestFundsByList(userList);
   }
 
   function test_RevertWhen_UserNeedsToWait() public {
     deal(address(faucet), 1 ether);
 
     // call 1
-    faucet.requestFunds(user);
+    faucet.requestFundsByList(userList);
 
     // call 2 with insufficient wait time
     vm.expectRevert(bytes("Insufficient time between requests"));
-    faucet.requestFunds(user);
+    faucet.requestFundsByList(userList);
   }
 
   // withdrawFunds() tests
@@ -61,7 +64,7 @@ contract FaucetTest is Test {
 
   function test_GetNextRequestAt() public {
     deal(address(faucet), 1 ether);
-    faucet.requestFunds(user);
+    faucet.requestFundsByList(userList);
 
     assertEq(61, faucet.getNextRequestAt(user));
   }
