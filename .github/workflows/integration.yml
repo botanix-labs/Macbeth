@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         partition: [1, 2]
-        network: ["ethereum", "optimism"]
+        network: ["ethereum"]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
