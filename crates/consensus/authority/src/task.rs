@@ -172,25 +172,30 @@ where
                                         let recent_bitcoin_block_header =
                                             self.bitcoin_block_header.read().await.clone();
 
-                                        let (bundle_state, _gas_used) = storage
-                                            .execute(
-                                                &block,
-                                                &mut executor,
-                                                senders.clone(),
-                                                recent_bitcoin_block_header,
-                                            )
-                                            // TODO (armins) remove expect
-                                            .expect("block is valid");
-                                        drop(storage);
-                                        let sealed_block_with_senders =
-                                            SealedBlockWithSenders::new(sealed_block, senders)
-                                                .expect("senders are valid");
-                                        self.persist_new_block(
-                                            sealed_block_with_senders.clone(),
-                                            bundle_state,
-                                        )
-                                        .await;
-
+                                        match storage.execute(
+                                            &block,
+                                            &mut executor,
+                                            senders.clone(),
+                                            recent_bitcoin_block_header,
+                                        ) {
+                                            Ok((bundle_state, _gas_used)) => {
+                                                drop(storage);
+                                                let sealed_block_with_senders =
+                                                    SealedBlockWithSenders::new(
+                                                        sealed_block,
+                                                        senders,
+                                                    )
+                                                    .expect("senders are valid");
+                                                self.persist_new_block(
+                                                    sealed_block_with_senders.clone(),
+                                                    bundle_state,
+                                                )
+                                                .await;
+                                            }
+                                            Err(err) => {
+                                                error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                                            }
+                                        }
                                         break
                                     }
                                     PayloadStatusEnum::Invalid { validation_error } => {
