@@ -38,6 +38,9 @@ RUN cp /app/target/$BUILD_PROFILE/reth /app/reth
 FROM ubuntu AS runtime
 WORKDIR /app
 
+# Install certificates
+RUN apt-get update && apt-get -y upgrade && apt-get install -y ca-certificates
+
 # Copy reth over from the build stage
 COPY --from=builder /app/reth /usr/local/bin
 
