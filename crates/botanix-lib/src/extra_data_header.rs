@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io;
 
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
@@ -15,6 +15,10 @@ lazy_static::lazy_static! {
 }
 
 const EXTRA_HEADER_VERSION: u32 = 0;
+const HAS_AUTHORTIES_POS: u8 = 0;
+const HAS_VOTE_POS: u8 = 1;
+const HAS_SIGNATURE_POS: u8 = 2;
+
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
 /// A block producer will sign `Hash(block_hash || extra_data_version || authority_signers ||
@@ -24,6 +28,7 @@ const EXTRA_HEADER_VERSION: u32 = 0;
 #[derive(Debug, Clone)]
 pub struct ExtraDataHeader {
     pub version: u32,
+    pub optional_fields: u8,
     pub authority_signers: Option<Vec<secp256k1::PublicKey>>,
     pub authority_vote: Option<secp256k1::PublicKey>,
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
@@ -72,7 +77,25 @@ impl ExtraDataHeader {
         authority_vote: Option<secp256k1::PublicKey>,
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     ) -> Self {
-        Self { version, authority_signers, authority_vote, bitcoin_block_hash, authority_signature }
+        let mut optional_fields = 0u8;
+        if authority_signers.is_some() {
+            optional_fields |= 1 << HAS_AUTHORTIES_POS;
+        }
+        if authority_vote.is_some() {
+            optional_fields |= 1 << HAS_VOTE_POS;
+        }
+        if authority_signature.is_some() {
+            optional_fields |= 1 << HAS_SIGNATURE_POS;
+        }
+
+        Self {
+            version,
+            authority_signers,
+            authority_vote,
+            bitcoin_block_hash,
+            authority_signature,
+            optional_fields,
+        }
     }
 
     pub fn authority_vote(&self) -> Option<secp256k1::PublicKey> {
@@ -84,20 +107,18 @@ impl ExtraDataHeader {
         writer: &mut impl io::Write,
     ) -> Result<(), io::Error> {
         self.version.consensus_encode(writer)?;
+        self.optional_fields.consensus_encode(writer)?;
         self.bitcoin_block_hash.consensus_encode(writer)?;
 
         if let Some(authorities) = &self.authority_signers {
             (authorities.len() as u32).consensus_encode(writer)?;
-            for k in authorities{
+            for k in authorities {
                 k.serialize().consensus_encode(writer)?;
             }
         }
 
         if let Some(vote) = self.authority_vote {
-            writer.write_all(&[1])?;
             vote.serialize().consensus_encode(writer)?;
-        } else {
-            writer.write_all(&[0])?;
         }
 
         Ok(())
@@ -124,80 +145,52 @@ impl ExtraDataHeader {
         if version > EXTRA_HEADER_VERSION {
             return Err(ExtraDataHeaderDeserialzeError::InvalidVersion)
         }
+        let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
 
         // Everything past the blockhash is optional and can be empty
-        // Parse authority signers
-        let mut signers_len = [0u8; 4];
-        match reader.read_exact(&mut signers_len) {
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                // we are done
-                return Ok(Self {
-                    version,
-                    authority_signers: None,
-                    authority_vote: None,
-                    authority_signature: None,
-                    bitcoin_block_hash,
-                })
-            }
-            Err(e) => return Err(e.into()),
-            Ok(()) => {}
-        }
-        let len = u32::from_le_bytes(signers_len);
-        let mut signers = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            let bytes: [u8; 33] = <[u8; 33]>::consensus_decode(reader)?;
-            let pk = secp256k1::PublicKey::from_slice(&bytes)
-                .map_err(|_| encode::Error::ParseFailed("invalid signer public key"))?;
-            signers.push(pk);
-        }
+        // use the optional bitmask field
 
-        let mut next = [0u8; 1];
-        match reader.read_exact(&mut next[..]) {
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                // we are done
-                return Ok(Self {
-                    version,
-                    authority_signers: None,
-                    authority_vote: None,
-                    authority_signature: None,
-                    bitcoin_block_hash,
-                })
+        let authority_signers = if optional_fields & (1u8 << HAS_AUTHORTIES_POS) != 0 {
+            let signer_len = u32::consensus_decode(reader)?;
+            let mut signers = Vec::with_capacity(signer_len as usize);
+            for _ in 0..signer_len {
+                let bytes: [u8; 33] = <[u8; 33]>::consensus_decode(reader)?;
+                let pk = secp256k1::PublicKey::from_slice(&bytes)
+                    .map_err(|_| encode::Error::ParseFailed("invalid signer public key"))?;
+                signers.push(pk);
             }
-            Err(e) => return Err(e.into()),
-            Ok(()) => {}
-        }
-        
-        // Parse authority vote
-        let authority_vote = if next[0] == 0 {
+            Some(signers)
+        } else {
             None
-        } else if next[0] == 1 {
-            let bytes = <[u8; 33]>::consensus_decode(reader)?;
+        };
+
+        let authority_vote = if optional_fields & (1u8 << HAS_VOTE_POS) != 0 {
+            let bytes: [u8; 33] = <[u8; 33]>::consensus_decode(reader)?;
             let pk = secp256k1::PublicKey::from_slice(&bytes)
                 .map_err(|_| encode::Error::ParseFailed("invalid signer public key"))?;
             Some(pk)
         } else {
-            return Err(encode::Error::ParseFailed("invalid authority vote presence byte").into())
+            None
         };
 
-        // Lastly parse the block signature
-        let mut signature: Option<secp256k1::ecdsa::RecoverableSignature> = None;
-        let mut buf = [0; 64];
-        match reader.read_exact(&mut buf) {
-            Err(_e) => (),
-            Ok(()) => {
-                signature = Some(
-                    secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, *ECDSA_RECOVERY_ID)
-                        .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?,
-                );
-            }
-        }
+        let signature = if optional_fields & (1u8 << HAS_SIGNATURE_POS) != 0 {
+            let mut buf = [0; 64];
+            reader.read_exact(&mut buf)?;
+            Some(
+                secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, *ECDSA_RECOVERY_ID)
+                    .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?,
+            )
+        } else {
+            None
+        };
 
         Ok(Self {
             version,
-            authority_signers: Some(signers),
-            authority_vote,
+            optional_fields,
             bitcoin_block_hash,
+            authority_signers,
+            authority_vote,
             authority_signature: signature,
         })
     }
@@ -289,7 +282,6 @@ mod tests {
         let pk = secp256k1::PublicKey::from_slice(&maybe_pk.as_slice()).expect("a public key");
         // Check the public key is the same as one provided
         assert_eq!(pk, public_key);
-        
     }
 
     // Test case for serializing with a signature
@@ -415,7 +407,6 @@ mod tests {
         let deserialized_header = ExtraDataHeader::deserialize(&mut serialized.as_slice())
             .expect("Deserialization failed");
 
-
         assert_eq!(deserialized_header.version, 0);
         assert_eq!(deserialized_header.authority_signers, None);
         assert_eq!(
@@ -438,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_header() {
+    fn test_deserialize_extra_data_header() {
         let header_extra_data = hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000001000000026f68a6bce2a082804edbc5be952de2a95d2bbf46f8e1f2a04b1a8a24ffd48abf00").unwrap();
         // Create a serialized header for testing
         let deserialized_header = ExtraDataHeader::deserialize(&mut header_extra_data.as_slice())
@@ -524,6 +515,57 @@ mod tests {
         let result =
             header_without_signature.validate_authority_signature(&message, &authority_signers);
         assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
+    }
+
+    #[test]
+    fn creates_correct_optional_fields_bitmask() {
+        let mut authority_signers = vec![];
+        let secp = Secp256k1::new();
+        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
+        authority_signers.push(public_key);
+
+        let message = Message::from_hashed_data::<sha256::Hash>("Hello World!".as_bytes());
+        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+
+        let header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            Some(signature),
+            Some(authority_signers),
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+
+        let optional_fields = header.optional_fields;
+        assert_ne!(optional_fields, 0);
+        assert_eq!(optional_fields & (1u8 << HAS_AUTHORTIES_POS), 1u8 << HAS_AUTHORTIES_POS,);
+        assert_eq!(optional_fields & (1u8 << HAS_VOTE_POS), 0);
+        assert_eq!(optional_fields & (1u8 << HAS_SIGNATURE_POS), 1u8 << HAS_SIGNATURE_POS);
+    }
+
+    #[test]
+    fn serialize_without_any_authorities() {
+        let header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            None,
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+
+        let serialized = header.serialize();
+
+        let deserialized_header = ExtraDataHeader::deserialize(&mut serialized.as_slice())
+            .expect("Deserialization failed");
+
+        assert_eq!(deserialized_header.version, 0);
+        assert_eq!(deserialized_header.optional_fields, 0);
+        assert_eq!(deserialized_header.authority_signers, None);
+        assert_eq!(
+            deserialized_header.bitcoin_block_hash,
+            bitcoin::hash_types::BlockHash::all_zeros()
+        );
+        assert_eq!(deserialized_header.authority_vote, None);
+        assert_eq!(deserialized_header.authority_signature, None);
     }
 
     #[test]
