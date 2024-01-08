@@ -26,7 +26,9 @@ pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeade
     extra_data_header_clone.set_optional_fields_bitmask();
 
     let mut writer: Vec<u8> = vec![];
-    extra_data_header_clone.encode_into_without_signature(&mut writer).expect("Valid extra data header");
+    extra_data_header_clone
+        .encode_into_without_signature(&mut writer)
+        .expect("Valid extra data header");
     // Take ownership of the data in writer and leave an empty Vec<u8>
     let bytes_data = Bytes::from(writer.clone());
     header.extra_data = bytes_data;
@@ -152,10 +154,69 @@ pub fn validate_poa_extra_data_header(
 
     Ok(())
 }
-
-
-#[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use secp256k1::ecdsa::RecoveryId;
+    use super::*;
+
+    const EDH_DEFAULT_SIGHASH: &str = "0x0a088807360d347e57b95b64d765266f9551acc33ecfcdb2d49003a66acbf192";
+    /* Tests for create authority sighash utility */
+    #[test]
+    fn create_default_edh_sighhash() {
+        let edh = ExtraDataHeader::default();
+        let mut header = Header::default();
+        let sighash = create_authority_sighash(&mut header, &edh);
+
+        assert_eq!(
+            sighash.to_string(),
+            EDH_DEFAULT_SIGHASH 
+        );
+    }
+
+    #[test]
+    fn create_sighash_with_authority_signature() {
+        // regarless of the signature, the sighash should be the same
+        // This is because we remove the signature from the extra data header before signing
+        let mut edh = ExtraDataHeader::default();
+        edh.authority_signature = Some(
+            secp256k1::ecdsa::RecoverableSignature::from_compact(
+                &[0u8; 64],
+                RecoveryId::from_i32(1i32).unwrap(),
+            )
+            .unwrap(),
+        );
+        let mut header = Header::default();
+        let sighash = create_authority_sighash(&mut header, &edh);
+
+        assert_eq!(
+            sighash.to_string(),
+            EDH_DEFAULT_SIGHASH
+        );
+    }
+    #[test]
+    fn create_sighash_with_authorities() {
+        // However adding something else such as authority members should result in a different sighash
+        let mut edh = ExtraDataHeader::default();
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str("1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap(),
+            ),
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str("1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap()
+            ),
+        ]);
+        let mut header = Header::default();
+        let sighash = create_authority_sighash(&mut header, &edh);
+
+        assert_ne!(
+            sighash.to_string(),
+            EDH_DEFAULT_SIGHASH
+        );
+    }
+
     #[test]
     fn unix_timestamp() {
         let timestamp = super::unix_timestamp();
