@@ -4,7 +4,7 @@ use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     secp256k1,
 };
-use secp256k1::ecdsa::RecoveryId;
+use secp256k1::{ecdsa::RecoveryId, hashes::Hash};
 use thiserror::Error;
 
 use lazy_static;
@@ -34,6 +34,19 @@ pub struct ExtraDataHeader {
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     // TODO add bitcoin fee
     pub authority_signature: Option<secp256k1::ecdsa::RecoverableSignature>,
+}
+
+impl Default for ExtraDataHeader {
+    fn default() -> Self {
+        Self {
+            version: EXTRA_HEADER_VERSION,
+            optional_fields: 0,
+            authority_signers: None,
+            authority_vote: None,
+            bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
+            authority_signature: None,
+        }
+    }
 }
 
 /// Errors that can occur when deserializing the extra data header
