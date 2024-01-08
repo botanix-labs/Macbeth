@@ -98,6 +98,23 @@ impl ExtraDataHeader {
         }
     }
 
+    pub fn set_optional_fields_bitmask(
+        &mut self,
+    ) -> () {
+        let mut optional_fields = 0u8;
+        if self.authority_signers.is_some() {
+            optional_fields |= 1 << HAS_AUTHORTIES_POS;
+        }
+        if self.authority_vote.is_some() {
+            optional_fields |= 1 << HAS_VOTE_POS;
+        }
+        if self.authority_signature.is_some() {
+            optional_fields |= 1 << HAS_SIGNATURE_POS;
+        }
+
+        self.optional_fields = optional_fields;
+    }
+
     pub fn authority_vote(&self) -> Option<secp256k1::PublicKey> {
         self.authority_vote
     }

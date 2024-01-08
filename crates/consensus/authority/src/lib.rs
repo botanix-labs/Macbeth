@@ -368,6 +368,8 @@ impl StorageInner {
         let message =
             secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
+        
+        // Only include authority signer if we are creating a poa epoch block
         let authority_signers =
             if header.is_poa_epoch() { Some(authorities.clone()) } else { None };
 
