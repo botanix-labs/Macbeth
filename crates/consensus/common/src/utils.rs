@@ -217,6 +217,48 @@ mod tests {
         );
     }
 
+   
+    // Get authority list tests
+    #[test]
+    fn should_recover_none_authorities() {
+        let edh = ExtraDataHeader::default();
+        let mut header = Header::default();
+        header.extra_data = Bytes::from(edh.serialize());
+        let signer_list = get_authority_list(&header).unwrap();
+
+        assert_eq!(signer_list, None);
+    }
+
+    #[test]
+    fn should_recovery_authorities() {
+        let mut edh = ExtraDataHeader::default();
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str("1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap(),
+            ),
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str("1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap()
+            ),
+        ]);
+        edh.set_optional_fields_bitmask();
+        let mut header = Header::default();
+        header.extra_data = Bytes::from(edh.serialize());
+        let signer_list = get_authority_list(&header).unwrap();
+
+        assert_eq!(signer_list, edh.authority_signers);
+    }
+
+    #[test]
+    fn fails_to_recover_when_edh_invalid() {
+        let mut header = Header::default();
+        header.extra_data = Bytes::from("foobar");
+        let signer_list = get_authority_list(&header);
+
+        assert!(signer_list.is_err());
+    }
+
     #[test]
     fn unix_timestamp() {
         let timestamp = super::unix_timestamp();
