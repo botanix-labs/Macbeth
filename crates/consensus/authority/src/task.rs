@@ -115,7 +115,7 @@ where
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source: MempoolSpace::new(
-                bitcoin_block_source_address.clone().to_string(),
+                bitcoin_block_source_address.to_string(),
             ),
             secp,
             sk,
