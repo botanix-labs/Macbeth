@@ -79,7 +79,7 @@ where
             .unwrap_or_else(|| chain_spec.sealed_genesis_header());
         let mut headers = vec![latest_header.clone()];
 
-        while !latest_header.is_poa_epoch() {
+        while !latest_header.header.is_poa_epoch() {
             let parent_hash = latest_header.parent_hash;
 
             if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
@@ -92,10 +92,13 @@ where
         }
 
         // Latest epoch header is the last header in the vector
-        let authorities = get_authority_list(&latest_header).map_err(|e| {
-            error!("Failed to retrieve authority list: {:?}", e);
-            AuthorityConsensusBuilderError::FailedToRecoverAuthorityList
-        })?;
+        // This header should include the authority list which is validated by consensus
+        let authorities = get_authority_list(&latest_header)
+            .map_err(|e| {
+                error!("Failed to retrieve authority list: {:?}", e);
+                AuthorityConsensusBuilderError::FailedToRecoverAuthorityList
+            })?
+            .expect("authority signer list in epoch block");
 
         let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 

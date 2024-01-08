@@ -1,10 +1,13 @@
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::validation;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+use reth_interfaces::consensus::ConsensusError;
 use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS, keccak256, Address, Bytes, Header, B256, U256,
 };
 use reth_provider::StateProvider;
+use tracing::error;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Error that can occur while accessing EVM global storage
 #[derive(Debug)]
@@ -97,7 +100,7 @@ pub enum GetAuthoritiesError {
 /// Recover the authority list from the block header
 pub fn get_authority_list(
     header: &Header,
-) -> Result<Vec<secp256k1::PublicKey>, GetAuthoritiesError> {
+) -> Result<Option<Vec<secp256k1::PublicKey>>, GetAuthoritiesError> {
     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
     )
@@ -110,6 +113,41 @@ pub fn get_authority_list(
 pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
+
+/// Validate poa extra data header
+pub fn validate_poa_extra_data_header(
+    header: &Header,
+    authority_signers: &Vec<secp256k1::PublicKey>,
+) -> Result<(), ConsensusError> {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(())
+    }
+    // First run the basic validation
+    validation::validate_header_extradata(header)?;
+
+    // Attempt to deserialize the extra data header
+    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
+        &mut header.extra_data.to_vec().as_slice(),
+    )
+    .map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+
+    // Validate the authority signature
+    let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
+    extra_data.validate_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
+        |e| {
+            error!("Failed to validate authority signature: {:?}", e);
+            ConsensusError::InvalidAuthoritySignature
+        },
+    )?;
+    // TODO (armins) in the future this is where we would validate federation votes
+
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {

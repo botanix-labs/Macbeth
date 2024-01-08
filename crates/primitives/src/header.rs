@@ -209,6 +209,12 @@ impl Header {
         self.seal(hash)
     }
 
+    /// Returns true if header repersents the start of an epoch
+    #[inline]
+    pub fn is_poa_epoch(&self) -> bool {
+        self.number % EPOCH_LENGTH == 0
+    }
+
     /// Calculate a heuristic for the in-memory size of the [Header].
     #[inline]
     pub fn size(&self) -> usize {
@@ -500,12 +506,6 @@ impl SealedHeader {
     #[inline]
     pub fn size(&self) -> usize {
         self.header.size() + mem::size_of::<BlockHash>()
-    }
-
-    /// Returns true if header repersents the start of an epoch
-    #[inline]
-    pub fn is_poa_epoch(&self) -> bool {
-        self.header.number % EPOCH_LENGTH == 0
     }
 }
 
