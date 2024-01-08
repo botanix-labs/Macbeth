@@ -19,8 +19,14 @@ pub enum StorageAccessError {
 
 /// Create sighash for authority to sign
 pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> B256 {
+    // Remove the signature from the extra data header
+    // And recalculate optional bitmask
+    let mut extra_data_header_clone = extra_data.clone();
+    extra_data_header_clone.authority_signature = None;
+    extra_data_header_clone.set_optional_fields_bitmask();
+
     let mut writer: Vec<u8> = vec![];
-    extra_data.encode_into_without_signature(&mut writer).expect("Valid extra data header");
+    extra_data_header_clone.encode_into_without_signature(&mut writer).expect("Valid extra data header");
     // Take ownership of the data in writer and leave an empty Vec<u8>
     let bytes_data = Bytes::from(writer.clone());
     header.extra_data = bytes_data;
@@ -134,8 +140,7 @@ pub fn validate_poa_extra_data_header(
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
-
-    // Validate the authority signature
+    // Validate the authority signature and signature came from one of the authorities
     let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
     extra_data.validate_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
         |e| {
