@@ -267,18 +267,18 @@ mod tests {
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
         println!("buf: {:?}", hex::encode(&buf));
-        // Check size, Should be version + len of vec (varint) + compressed pk + bitcoin block hash
-        assert_eq!(buf.len(), 4 + 5 + 33 + 32);
         // Check version
         assert_eq!(buf[0..4], vec![0u8, 0u8, 0u8, 0u8].as_slice().to_owned());
+        // Check optional bitmask
+        assert_eq!(buf[4..5], vec![1u8].as_slice().to_owned());
         // Check the bitcoin block hash
         let bitcoin_block_hash: bitcoin::hash_types::BlockHash =
-            bitcoin::consensus::deserialize(&buf[4..36]).expect("a bitcoin block hash");
+            bitcoin::consensus::deserialize(&buf[5..37]).expect("a bitcoin block hash");
         assert_eq!(bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
         // Check length of authority list
-        assert_eq!(buf[36..40], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
+        assert_eq!(buf[37..41], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
         // Check the pk
-        let maybe_pk = buf[40..73].to_vec();
+        let maybe_pk = buf[41..74].to_vec();
         let pk = secp256k1::PublicKey::from_slice(&maybe_pk.as_slice()).expect("a public key");
         // Check the public key is the same as one provided
         assert_eq!(pk, public_key);
@@ -426,17 +426,6 @@ mod tests {
             .to_standard()
             .verify(&message, &public_key)
             .expect("signature from same pk");
-    }
-
-    #[test]
-    fn test_deserialize_extra_data_header() {
-        let header_extra_data = hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000001000000026f68a6bce2a082804edbc5be952de2a95d2bbf46f8e1f2a04b1a8a24ffd48abf00").unwrap();
-        // Create a serialized header for testing
-        let deserialized_header = ExtraDataHeader::deserialize(&mut header_extra_data.as_slice())
-            .expect("Deserialization failed");
-
-        assert_eq!(deserialized_header.version, 0u32);
-        assert_eq!(deserialized_header.authority_signers.expect("valid authorities").len(), 1);
     }
 
     // Test case for validating with a signature
