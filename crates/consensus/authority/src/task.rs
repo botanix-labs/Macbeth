@@ -20,6 +20,7 @@ use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State}
 use reth_rpc_types::engine::PayloadStatusEnum;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+use reth_consensus_common::utils::validate_poa_extra_data_header;
 use ruint::Uint;
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc, task::Poll};
@@ -287,6 +288,7 @@ where
                 .unzip();
             let mut storage = self.storage.write().await;
             let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+            let authority_signers = storage.authorities.clone();
             // execute the new block
             match storage.build_and_execute(
                 transactions.clone(),
@@ -297,6 +299,7 @@ where
                 &None,
                 &self.sk,
                 &self.secp,
+                &authority_signers,
             ) {
                 Ok((new_header, bundle_state)) => {
                     drop(storage);
@@ -418,6 +421,13 @@ where
         bundled_state: BundleStateWithReceipts,
     ) -> () {
         let new_header = sealed_block.header.clone();
+        // perform PoA validation
+        let storage = self.storage.read().await;
+        let authority_signers = storage.authorities.clone();
+        drop(storage);
+        // TODO (armins) remove this unwrap
+        validate_poa_extra_data_header(&new_header, &authority_signers).unwrap();
+
         let state = ForkchoiceState {
             head_block_hash: new_header.hash,
             finalized_block_hash: new_header.hash,

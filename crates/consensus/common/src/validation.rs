@@ -498,36 +498,13 @@ pub fn validate_4844_header_standalone(header: &SealedHeader) -> Result<(), Cons
 ///
 /// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
 /// This must be 32 bytes or fewer; formally Hx.
-pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
-    // Skip over genesis
-    if header.number == 0 {
-        return Ok(())
-    }
+pub fn validate_header_extradata(
+    header: &Header,
+) -> Result<(), ConsensusError> {
     // TODO (armins) calculate worst case max size
     // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     // } else
-
-    // TODO (armins) check that no vote is occuring during an epoch header
-    // 0. Validate that the block was signed by a federation member
-    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-        &mut header.extra_data.to_vec().as_slice(),
-    )
-    .map_err(|e| {
-        error!("Failed to deserialize extra data header: {:?}", e);
-        ConsensusError::ExtraDataInvalid
-    })?;
-
-    let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
-
-    extra_data.validate_authority_signature(&sig_hash.to_vec()).map_err(|e| {
-        error!("Failed to validate authority signature: {:?}", e);
-        ConsensusError::InvalidAuthoritySignature
-    })?;
-    // 1. Validate that is a federation memeber was added or removed that that actions
-    // was signed off by a 2/3 majority of votes
-    // This can only happnen during an end of a epoch
-    // TODO
 
     Ok(())
 }
@@ -546,14 +523,6 @@ pub fn validate_header_with_total_difficulty(
     if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
         return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
     }
-
-    if header.difficulty != DIFF_INTURN &&
-        header.difficulty != DIFF_NOTURN &&
-        header.difficulty != DIFF_NOVOTE
-    {
-        return Err(ConsensusError::AuthorityDifficultyInvalid)
-    }
-
     // validate header extradata
     validate_header_extradata(header)?;
     Ok(())
