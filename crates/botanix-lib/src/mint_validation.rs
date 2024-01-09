@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use ethers::abi::decode;
-use reth_primitives::{keccak256, Address, H256};
-use revm::primitives::{Log, B256};
+use reth_primitives::{keccak256, Address, B256};
+use revm::primitives::Log;
 use secp256k1::{self, PublicKey};
 
 use crate::{
@@ -11,8 +11,8 @@ use crate::{
 };
 
 lazy_static::lazy_static! {
-    pub static ref MINT_TOPIC: H256 = keccak256("Mint(address,uint256,uint32,bytes)");
-    pub static ref BURN_TOPIC: H256 = keccak256("Burn(address,uint256,bytes,bytes)");
+    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
+    pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
     static ref FROST_PUB_KEY: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
 }
@@ -216,7 +216,7 @@ mod test {
     #[test]
     fn mint_topic() {
         let topic =
-            H256::from_str("0x9de7365c663dc09a824437fcfe283fde0349736c62570a07a36e47f9a5dcaf0f")
+            B256::from_str("0x9de7365c663dc09a824437fcfe283fde0349736c62570a07a36e47f9a5dcaf0f")
                 .unwrap();
         assert!(topic == *MINT_TOPIC);
     }
@@ -224,7 +224,7 @@ mod test {
     #[test]
     fn burn_topic_sanity_check() {
         let topic =
-            H256::from_str("0x17f87987da8ca71c697791dcfd190d07630cf17bf09c65c5a59b8277d9fe1715")
+            B256::from_str("0x17f87987da8ca71c697791dcfd190d07630cf17bf09c65c5a59b8277d9fe1715")
                 .unwrap();
         assert!(topic == *BURN_TOPIC);
     }
@@ -258,7 +258,7 @@ mod test {
     #[test]
     fn decode_address_topic() {
         let topic = "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a";
-        let decoded = topic_to_address(H256::from_str(topic).unwrap());
+        let decoded = topic_to_address(B256::from_str(topic).unwrap());
 
         assert!(decoded.is_ok());
         assert_eq!(
