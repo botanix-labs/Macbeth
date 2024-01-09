@@ -184,6 +184,8 @@ pub enum ConsensusError {
     ExtraDataExceedsMax { len: usize },
     #[error("Difficulty is not DIFF_INTURN or DIFF_NOTURN or 0")]
     AuthorityDifficultyInvalid,
+    #[error("Authority not in turn")]
+    AuthorityNotInTurn,
     #[error("Difficulty after merge is not zero")]
     TheMergeDifficultyIsNotZero,
 

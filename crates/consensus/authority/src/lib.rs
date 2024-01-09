@@ -40,9 +40,9 @@ use reth_revm::{
 use std::{
     collections::HashMap,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
 };
 use voting::{AuthorityVoteCollection, Vote};
+use tracing::{error, info};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{trace, warn};
@@ -68,6 +68,25 @@ impl AuthorityConsensus {
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         // TODO(armins) most likely we need to pass storage here
         Self { chain_spec }
+    }
+
+    /// Returns true if the authority is in turn
+    pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
+        // use minutes as time unit to determine in turn
+        let timestamp = utils::unix_timestamp() / 60;
+
+        (timestamp / authorities_len) % authorities_len == signer_index
+    }
+
+    /// Validates that the authority was in turn when producing the block
+    pub fn validate_inturn(block_timestamp: u64, authorities_len: u64, signer_index: u64) -> Result<(), ConsensusError> {
+        let block_timestamp_min = block_timestamp / 60;
+        if (block_timestamp_min / authorities_len) % authorities_len != signer_index {
+            error!("Authority was not in turn when producing block");
+            return Err(ConsensusError::AuthorityNotInTurn)
+        }
+
+        Ok(())
     }
 }
 
@@ -222,7 +241,7 @@ impl StorageInner {
         chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
     ) -> Result<Header, BlockExecutionError> {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let timestamp = utils::unix_timestamp();
         // check previous block for base fee
         let base_fee_per_gas = self
             .headers
@@ -243,7 +262,7 @@ impl StorageInner {
             number: self.best_block + 1,
             gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             gas_used: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            timestamp,
             mix_hash: Default::default(),
             nonce: 0,
             base_fee_per_gas,
@@ -449,4 +468,39 @@ impl StorageInner {
     }
     // TODO (armins) add utility function for executing a block recieved from the network and adding
     // to cached blocks
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::AuthorityConsensus;
+
+    #[test]
+    fn is_inturn() {
+        let authorities_len = 1;
+        let signer_index = 0;
+        assert!(AuthorityConsensus::is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn is_inturn_false() {
+        let authorities_len = 1;
+        let signer_index = 1;
+        assert!(!AuthorityConsensus::is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn validate_inturn() {
+        let block_timestamp = 10;
+        let authorities_len = 3;
+        let signer_index = 0;
+        assert!(AuthorityConsensus::validate_inturn(block_timestamp, authorities_len, signer_index).is_ok());
+    }
+
+    #[test]
+    fn validate_inturn_false() {
+        let block_timestamp = 10;
+        let authorities_len = 3;
+        let signer_index = 1;
+        assert!(AuthorityConsensus::validate_inturn(block_timestamp, authorities_len, signer_index).is_err());
+    }
 }
