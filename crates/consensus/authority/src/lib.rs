@@ -42,7 +42,6 @@ use std::{
     sync::Arc,
 };
 use voting::{AuthorityVoteCollection, Vote};
-use tracing::{error, info};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, info, trace, warn};

@@ -298,6 +298,86 @@ mod tests {
         assert_eq!(recovered, edh.authority_signers.unwrap()[0]);
     }
 
+    // Tests for validating poa extra data header
+    #[test]
+    fn should_skip_over_genesis() {
+        let mut header = Header::default();
+        header.number = 0;
+        let authority_signers = vec![];
+        let result = validate_poa_extra_data_header(&header, &authority_signers);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_invalid_signature() {
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(
+            "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+        let non_fed = secp256k1::SecretKey::from_str(
+            "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+
+        edh.authority_signers =
+            Some(vec![secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1)]);
+
+        let secp = secp256k1::Secp256k1::new();
+        let mut header = Header::default();
+        header.number = 1;
+
+        let sighash = create_authority_sighash(&mut header, &edh);
+        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &non_fed);
+
+        edh.authority_signature = Some(signature);
+        edh.set_optional_fields_bitmask();
+
+        header.extra_data = Bytes::from(edh.serialize());
+        let authority_signers = vec![];
+        let result = validate_poa_extra_data_header(&header, &authority_signers);
+        assert!(result.is_err());
+    }
+
+
+    #[test]
+    fn should_validate() {
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(
+            "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(
+            "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
+        ]);
+
+        let secp = secp256k1::Secp256k1::new();
+        let mut header = Header::default();
+        header.number = 1;
+
+        let sighash = create_authority_sighash(&mut header, &edh);
+        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &sk1);
+
+        edh.authority_signature = Some(signature);
+        edh.set_optional_fields_bitmask();
+
+        header.extra_data = Bytes::from(edh.serialize());
+        let authority_signers = edh.authority_signers.unwrap();
+        let result = validate_poa_extra_data_header(&header, &authority_signers);
+        assert!(result.is_ok());
+    }
+
     #[test]
     fn unix_timestamp() {
         let timestamp = super::unix_timestamp();

@@ -99,8 +99,6 @@ use client::BtcServerClient;
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 
 use rsntp::AsyncSntpClient;
-use std::time::UNIX_EPOCH;
-
 pub mod cl_events;
 pub mod events;
 
