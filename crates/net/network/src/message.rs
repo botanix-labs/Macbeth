@@ -159,11 +159,31 @@ impl PeerRequest {
 /// Corresponding variant for [`PeerRequest`].
 #[derive(Debug)]
 pub enum PeerResponse {
-    BlockHeaders { response: oneshot::Receiver<RequestResult<BlockHeaders>> },
-    BlockBodies { response: oneshot::Receiver<RequestResult<BlockBodies>> },
-    PooledTransactions { response: oneshot::Receiver<RequestResult<PooledTransactions>> },
-    NodeData { response: oneshot::Receiver<RequestResult<NodeData>> },
-    Receipts { response: oneshot::Receiver<RequestResult<Receipts>> },
+    /// Represents a response to a request for block headers.
+    BlockHeaders {
+        /// The receiver channel for the response to a block headers request.
+        response: oneshot::Receiver<RequestResult<BlockHeaders>>,
+    },
+    /// Represents a response to a request for block bodies.
+    BlockBodies {
+        /// The receiver channel for the response to a block bodies request.
+        response: oneshot::Receiver<RequestResult<BlockBodies>>,
+    },
+    /// Represents a response to a request for pooled transactions.
+    PooledTransactions {
+        /// The receiver channel for the response to a pooled transactions request.
+        response: oneshot::Receiver<RequestResult<PooledTransactions>>,
+    },
+    /// Represents a response to a request for NodeData.
+    NodeData {
+        /// The receiver channel for the response to a NodeData request.
+        response: oneshot::Receiver<RequestResult<NodeData>>,
+    },
+    /// Represents a response to a request for receipts.
+    Receipts {
+        /// The receiver channel for the response to a receipts request.
+        response: oneshot::Receiver<RequestResult<Receipts>>,
+    },
 }
 
 // === impl PeerResponse ===
