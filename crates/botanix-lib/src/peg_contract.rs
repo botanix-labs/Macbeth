@@ -9,7 +9,7 @@ use bitcoin::{
 
 use bitcoin::{self};
 use ethers::types::U256;
-use reth_primitives::{Address, H160};
+use reth_primitives::Address;
 use thiserror::Error;
 
 use reth_btc_wallet::address;
@@ -142,7 +142,7 @@ pub struct PeginMeta {
     pub version: u32,
     pub merkle_proof: PartialMerkleTree,
     pub outpoint: bitcoin::OutPoint,
-    pub address: H160,
+    pub address: Address,
     pub aggregate_publickey: secp256k1::PublicKey,
     /// Bitcoin block header containing the pegin transaction
     pub block_headers: Vec<Header>,

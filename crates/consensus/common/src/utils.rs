@@ -43,7 +43,6 @@ pub fn read_staker_balance(
 ) -> Result<U256, StorageAccessError> {
     let staking_contract_address = Address::from_slice(STAKING_CONTRACT_ADDRESS.as_bytes());
     let payload: Vec<Vec<u8>> = vec![];
-    // TODO (armins) commenting out for now, need to refactor to not use H160 as it is deprecated
     // And no longer supports `from_low_u64_le()`
     // payload
     // payload.push(staker_address.as_bytes().to_vec());
