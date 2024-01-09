@@ -186,11 +186,6 @@ pub enum ConsensusError {
         /// Max extra data length
         len: usize,
     },
-    /// Poa specifiic error when the difficulty is not DIFF_INTURN or DIFF_NOTURN or 0.
-    #[error("Difficulty is not DIFF_INTURN or DIFF_NOTURN or 0")]
-    AuthorityDifficultyInvalid,
-    #[error("Authority not in turn")]
-    AuthorityNotInTurn,
     #[error("Difficulty after merge is not zero")]
     /// Error when the difficulty after a merge is not zero.
     TheMergeDifficultyIsNotZero,
