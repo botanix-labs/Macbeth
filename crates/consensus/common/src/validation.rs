@@ -1,5 +1,4 @@
 //! Collection of methods for block validation.
-use crate::utils::create_authority_sighash;
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::{
@@ -13,7 +12,6 @@ use reth_primitives::{
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
-use tracing::error;
 
 /// Validate header standalone
 pub fn validate_header_standalone(

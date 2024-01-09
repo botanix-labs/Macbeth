@@ -83,7 +83,7 @@ pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, Recov
     .map_err(|e| RecoverAuthorityError::FailedToDerserializeExtraData(e))?;
 
     let sighash = create_authority_sighash(&mut header.clone(), &extra_data);
-    let message = secp256k1::Message::from_slice(&sighash.0)
+    let message = secp256k1::Message::from_slice(&sighash.as_slice())
         .map_err(|e| RecoverAuthorityError::FailedToCreateSigHash(e))?;
 
     if let Some(signature) = extra_data.authority_signature {
@@ -157,10 +157,11 @@ pub fn validate_poa_extra_data_header(
 mod tests {
     use std::str::FromStr;
 
-    use secp256k1::ecdsa::RecoveryId;
     use super::*;
+    use secp256k1::ecdsa::RecoveryId;
 
-    const EDH_DEFAULT_SIGHASH: &str = "0x0a088807360d347e57b95b64d765266f9551acc33ecfcdb2d49003a66acbf192";
+    const EDH_DEFAULT_SIGHASH: &str =
+        "0x0a088807360d347e57b95b64d765266f9551acc33ecfcdb2d49003a66acbf192";
     /* Tests for create authority sighash utility */
     #[test]
     fn create_default_edh_sighhash() {
@@ -168,10 +169,7 @@ mod tests {
         let mut header = Header::default();
         let sighash = create_authority_sighash(&mut header, &edh);
 
-        assert_eq!(
-            sighash.to_string(),
-            EDH_DEFAULT_SIGHASH 
-        );
+        assert_eq!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
     }
 
     #[test]
@@ -189,32 +187,33 @@ mod tests {
         let mut header = Header::default();
         let sighash = create_authority_sighash(&mut header, &edh);
 
-        assert_eq!(
-            sighash.to_string(),
-            EDH_DEFAULT_SIGHASH
-        );
+        assert_eq!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
     }
     #[test]
     fn create_sighash_with_authorities() {
-        // However adding something else such as authority members should result in a different sighash
+        // However adding something else such as authority members should result in a different
+        // sighash
         let mut edh = ExtraDataHeader::default();
         edh.authority_signers = Some(vec![
             secp256k1::PublicKey::from_secret_key(
                 &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str("1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap(),
+                &secp256k1::SecretKey::from_str(
+                    "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+                )
+                .unwrap(),
             ),
             secp256k1::PublicKey::from_secret_key(
                 &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str("1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap()
+                &secp256k1::SecretKey::from_str(
+                    "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+                )
+                .unwrap(),
             ),
         ]);
         let mut header = Header::default();
         let sighash = create_authority_sighash(&mut header, &edh);
 
-        assert_ne!(
-            sighash.to_string(),
-            EDH_DEFAULT_SIGHASH
-        );
+        assert_ne!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
     }
 
    
@@ -235,11 +234,17 @@ mod tests {
         edh.authority_signers = Some(vec![
             secp256k1::PublicKey::from_secret_key(
                 &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str("1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap(),
+                &secp256k1::SecretKey::from_str(
+                    "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+                )
+                .unwrap(),
             ),
             secp256k1::PublicKey::from_secret_key(
                 &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str("1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019").unwrap()
+                &secp256k1::SecretKey::from_str(
+                    "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+                )
+                .unwrap(),
             ),
         ]);
         edh.set_optional_fields_bitmask();
@@ -257,6 +262,40 @@ mod tests {
         let signer_list = get_authority_list(&header);
 
         assert!(signer_list.is_err());
+    }
+
+    // Tests for recover authority pk
+    #[test]
+    fn should_recover_authority() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(
+            "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(
+            "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
+        ]);
+
+        let mut header = Header::default();
+
+        let sighash = create_authority_sighash(&mut header, &edh);
+        let secp = secp256k1::Secp256k1::new();
+        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &sk1);
+
+        edh.authority_signature = Some(signature);
+        edh.set_optional_fields_bitmask();
+
+        header.extra_data = Bytes::from(edh.serialize());
+        let recovered = recovery_authority(&header).unwrap();
+
+        assert_eq!(recovered, edh.authority_signers.unwrap()[0]);
     }
 
     #[test]
