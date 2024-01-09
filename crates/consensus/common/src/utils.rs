@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS, keccak256, Address, Bytes, Header, B256, U256,
@@ -102,4 +104,18 @@ pub fn get_authority_list(
     .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
 
     Ok(extra_data.authority_signers)
+}
+
+/// Returns the unix timestamp in seconds
+pub fn unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unix_timestamp() {
+        let timestamp = super::unix_timestamp();
+        assert!(timestamp > 0);
+    }
 }

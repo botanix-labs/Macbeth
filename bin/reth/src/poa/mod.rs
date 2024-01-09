@@ -85,6 +85,7 @@ use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPool, TransactionValidationTaskExecutor,
 };
+use reth_consensus_common::utils;
 use secp256k1::SecretKey;
 use std::{
     net::{SocketAddr, SocketAddrV4},
@@ -96,6 +97,9 @@ use tracing::*;
 
 use client::BtcServerClient;
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+
+use rsntp::AsyncSntpClient;
+use std::time::UNIX_EPOCH;
 
 pub mod cl_events;
 pub mod events;
@@ -228,6 +232,27 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         }
     }
 
+    // get unix timsestamp in seconds from ntp server
+    async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
+        // create NTP client
+        let client = AsyncSntpClient::new();
+
+        // sync with NTP server
+        match client.synchronize(ntp_server).await {
+            Ok(sync_result) => match sync_result.datetime().unix_timestamp() {
+                Ok(duration) => Ok(duration.as_secs()),
+                Err(err) => {
+                    error!("Failed to get unix timestamp from NTP response: {}", err);
+                    Err(err.into())
+                }
+            },
+            Err(err) => {
+                error!("Failed to sync with NTP server: {}", err);
+                Err(err.into())
+            }
+        }
+    }
+
     /// Execute `node` command
     pub async fn execute(mut self, ctx: CliContext) -> eyre::Result<()> {
         info!(target: "reth::cli", "reth {} starting", SHORT_VERSION);
@@ -235,6 +260,32 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         // Raise the fd limit of the process.
         // Does not do anything on windows.
         raise_fd_limit();
+
+        // async task that checks system clock is in sync with NTP server
+        ctx.task_executor.spawn_critical(
+            "async system clock sync with ntp task",
+            Box::pin(async {
+                let sleep_sec = tokio::time::Duration::from_secs(15);
+                let acceptable_drift_sec = 1;
+                loop {
+                    // TODO (scott) pass in ntp url as arg
+                    match Self::ntp_unix_timestamp("time.cloudflare.com").await {
+                        Ok(ntp_timestamp) => {
+                            let system_timestamp = utils::unix_timestamp();
+                            if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
+                                error!("System clock is not in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            } else {
+                                info!("System clock is in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            }
+                        }
+                        Err(err) => {
+                            error!("NTP sync failed: {}", err);
+                        }
+                    }
+                    tokio::time::sleep(sleep_sec).await;
+                }
+            }),
+        );
 
         // get config
         let config = self.load_config()?;

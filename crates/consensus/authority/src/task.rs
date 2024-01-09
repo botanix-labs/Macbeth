@@ -1,9 +1,10 @@
-use crate::{epoch_manager::EpochManager, Storage};
+use crate::{epoch_manager::EpochManager, Storage, AuthorityConsensus};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+use reth_consensus_common::{utils, validation};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
@@ -136,6 +137,26 @@ where
                     loop {
                         let block = new_block.block.block.clone();
                         info!(target: "consensus::authority", ?block, "Recieved new block from peer");
+
+                        // extract signer pub key
+                        let signer = utils::recovery_authority(&block.header).expect("valid signer");
+                    
+                        let storage_inner = self.epoch_manager.storage.inner.read().await;
+                        let authorities = storage_inner.authorities.clone();
+                        drop(storage_inner);
+                        let signer_index = authorities.iter().position(|pk| *pk == signer).expect("valid signer");
+                        match AuthorityConsensus::validate_inturn(
+                            block.header.timestamp,
+                            authorities.len() as u64,
+                            signer_index as u64,
+                        ) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                error!(target: "consensus::authority", ?err, "Block import failed in turn check");
+                                continue 
+                            }
+                        }
+
                         // send the new update to the engine, this will trigger the engine
                         // to download and execute the block we just inserted
                         let (tx, rx) = oneshot::channel();

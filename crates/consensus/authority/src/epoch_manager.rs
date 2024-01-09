@@ -1,16 +1,19 @@
 use reth_primitives::constants::eip225::BLOCK_PERIOD;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use tokio::time::{Instant, Interval};
-use tracing::info;
+use tracing::{error, info};
 
-use crate::Storage;
-use std::{sync::Arc, task::Poll, time::Duration};
+use crate::{Storage, AuthorityConsensus};
+use std::{
+    sync::Arc,
+    task::Poll,
+    time::Duration,
+};
 
 #[derive(Debug)]
 /// Manages the block production epochs
 /// Signing time is the parent timestamp + BLOCK_PERIOD
 /// If the signer is inturn then we broadcast the block
-/// If the signer is not inturn then we wait random amount time
 ///
 /// Blocks will be rejected by consensus if
 /// 1. The signer is not in the federation
@@ -26,9 +29,6 @@ pub(crate) struct EpochManager {
 
     /// stores whether there are pending transactions (if known)
     pub(crate) has_pending_txs: bool,
-
-    /// Random delay to wait before proposing a block out of turn
-    random_delay: Option<Interval>,
 }
 
 impl EpochManager {
@@ -36,7 +36,7 @@ impl EpochManager {
         let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
         let proposal_interval =
             tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
-        Self { storage, proposal_interval, has_pending_txs: false, random_delay: None }
+        Self { storage, proposal_interval, has_pending_txs: false }
     }
 
     pub(crate) async fn poll<Pool>(
@@ -46,61 +46,38 @@ impl EpochManager {
     where
         Pool: TransactionPool,
     {
-        let random_delay = self.random_delay.take();
         let storage = self.storage.inner.read().await;
         let signer_index = storage.signer_index;
         println!("signer_index: {}", signer_index);
-        let is_inturn =
-            storage.best_block % (storage.authorities.len() as u64) == signer_index as u64;
+
+        let authority_len = storage.authorities.len() as u64;
+        let signer_index = storage.signer_index as u64;
+        drop(storage);
+
+        let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index);
         println!("is_inturn: {}", is_inturn);
 
-        match random_delay {
-            Some(mut delay) => {
-                delay.tick().await;
-                self.random_delay = None;
-                let transactions = pool.best_transactions().collect::<Vec<_>>();
-                info!("Miner processing txs {:?}", transactions);
-                // there are pending transactions if we didn't drain the pool
-                self.has_pending_txs = transactions.len() >= 1;
+        self.proposal_interval.tick().await;
+        if is_inturn {
+            let transactions = pool.best_transactions().collect::<Vec<_>>();
+            info!("Miner processing txs {:?}", transactions);
+            // there are pending transactions if we didn't drain the pool
+            self.has_pending_txs = !transactions.is_empty();
 
-                if transactions.is_empty() {
-                    return Poll::Pending
-                }
-
-                // drain the pool
-                return Poll::Ready(transactions)
-            }
-            None => {
-                self.proposal_interval.tick().await;
-                if is_inturn {
-                    let transactions = pool.best_transactions().collect::<Vec<_>>();
-                    info!("Miner processing txs {:?}", transactions);
-                    // there are pending transactions if we didn't drain the pool
-                    self.has_pending_txs = transactions.len() >= 1;
-
-                    if transactions.is_empty() {
-                        return Poll::Pending
-                    }
-
-                    // drain the pool
-                    return Poll::Ready(transactions)
-                } else {
-                    // TODO remove this later
-                    return Poll::Pending;
-                }
-
-                // Your not in turn wait a bit then produce a block
-                // NOTE: verify if network can/should be handled here or in the main task
-                // TODO: check network handle for gossiped block
-                // TODO: set gossiped block header in storage or...
-                // TODO: if `None` do the following
-
-                // TODO this should be random
-                let duration = Duration::from_secs(6);
-                self.random_delay =
-                    Some(tokio::time::interval_at(Instant::now() + duration, duration));
+            if transactions.is_empty() {
                 return Poll::Pending
             }
+
+            // drain the pool
+            Poll::Ready(transactions)
+        } else {
+            // TODO remove this later
+            Poll::Pending
         }
+
+        // NOTE: verify if network can/should be handled here or in the main task
+        // TODO: check network handle for gossiped block
+        // TODO: set gossiped block header in storage or...
+        // TODO: if `None` do the following
     }
 }

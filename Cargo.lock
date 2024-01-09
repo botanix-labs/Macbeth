@@ -6308,6 +6308,7 @@ dependencies = [
  "reth-tracing",
  "reth-transaction-pool",
  "reth-trie",
+ "rsntp",
  "secp256k1 0.27.0",
  "serde",
  "serde_json",
@@ -7594,6 +7595,16 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "reth",
+ "tokio",
+]
+
+[[package]]
+name = "rsntp"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95538ef5297284300da4c3048a60309027e33bc25d96220429609f3fdb01e188"
+dependencies = [
+ "chrono",
  "tokio",
 ]
 
