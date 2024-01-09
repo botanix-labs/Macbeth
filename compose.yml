@@ -49,7 +49,7 @@ services:
         '--btc-server',
         'btc_server:8080',
         '--btc-block-source',
-        'https://mempool.space/signet/api',
+        'https://esplora.botanixlabs.dev/signet/api',
       ]
     ports:
       - '30303:30303'
