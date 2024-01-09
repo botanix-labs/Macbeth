@@ -33,8 +33,8 @@ impl Default for BotanixConfig {
         BotanixConfig {
             bitcoin_network: bitcoin::Network::Signet,
             btc_server: "http://localhost:8080".to_string(),
-            // Use a public signet endpoint by default
-            mempool_space_url: "https://mempool.space/signet/api".to_string(),
+            // Use a private signet endpoint by default
+            mempool_space_url: "https://esplora.botanixlabs.dev/signet/api".to_string(),
         }
     }
 }

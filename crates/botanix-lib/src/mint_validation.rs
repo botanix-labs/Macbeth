@@ -92,9 +92,7 @@ pub fn parse_pegout_reth_log_topic(
     parse_pegout_topic(&revm_log, btc_network)
 }
 
-pub fn parse_pegin_topic(
-    log: &Log,
-) -> Result<PeginData, MintConsensusError> {
+pub fn parse_pegin_topic(log: &Log) -> Result<PeginData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         return Err(MintConsensusError::MintContractDidNotEmitMintTopic())
     }
