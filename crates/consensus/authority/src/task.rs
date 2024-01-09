@@ -33,7 +33,7 @@ use tokio::sync::{
     oneshot, RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use url::Url;
 
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
@@ -130,7 +130,7 @@ where
 
     pub async fn start_task(&mut self) -> () {
         // This drives block production
-        loop {
+        'main: loop {
             let new_block = match self.block_import_rx.try_recv() {
                 Ok(b) => b,
                 Err(error) => match error {
@@ -242,6 +242,14 @@ where
                         let sealed_block_with_senders =
                             SealedBlockWithSenders::new(sealed_block, senders)
                                 .expect("senders are valid");
+                        match self.process_reciepts(&bundle_state, false).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                continue 'main;
+                            }
+                        }
+
                         self.persist_new_block(sealed_block_with_senders.clone(), bundle_state)
                             .await;
                     }
@@ -319,28 +327,11 @@ where
                 }
             };
             drop(storage);
-            let reciepts_bundle = bundle_state.receipts().iter();
-            for (index, reciepts) in reciepts_bundle.enumerate() {
-                for reciept in reciepts {
-                    if index == 0 && reciept.is_none() {
-                        // Prunning block, skip
-                        break
-                    }
-                    if let Some(reciept) = reciept {
-                        if !reciept.success {
-                            continue
-                        }
-                        for log in &reciept.logs {
-                            match self.process_botanix_log(log).await {
-                                Ok(_) => {}
-                                Err(err) => {
-                                    error!(target: "consensus::authority", ?err, "Failed to process botanix log");
-                                }
-                            }
-                        }
-                    }
-
-                    info!("Reciept {:?}", reciept);
+            match self.process_reciepts(&bundle_state, false).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                    continue 'main;
                 }
             }
 
@@ -364,7 +355,38 @@ where
         }
     }
 
-    async fn process_botanix_log(&mut self, log: &Log) -> Result<(), ProcessBotanixLogError> {
+    /// Processes the reciepts of a block
+    async fn process_reciepts(
+        &mut self,
+        bundle_state: &BundleStateWithReceipts,
+        should_broadcast_pegout: bool,
+    ) -> Result<(), ProcessBotanixLogError> {
+        let reciepts_bundle = bundle_state.receipts().iter();
+        for (index, reciepts) in reciepts_bundle.enumerate() {
+            for reciept in reciepts {
+                if index == 0 && reciept.is_none() {
+                    // Prunning block, skip
+                    break
+                }
+                if let Some(reciept) = reciept {
+                    if !reciept.success {
+                        continue
+                    }
+                    for log in &reciept.logs {
+                        self.process_botanix_log(log, should_broadcast_pegout).await?;
+                    }
+                }
+                info!("Reciept {:?}", reciept);
+            }
+        }
+        Ok(())
+    }
+
+    async fn process_botanix_log(
+        &mut self,
+        log: &Log,
+        should_broadcast_pegout: bool,
+    ) -> Result<(), ProcessBotanixLogError> {
         for topic in &log.topics {
             match GenesisContractEvents::try_from(topic.clone()) {
                 Ok(GenesisContractEvents::MintingEvent) => {
@@ -392,6 +414,9 @@ where
                     }
                 }
                 Ok(GenesisContractEvents::BurnEvent) => {
+                    if !should_broadcast_pegout {
+                        continue;
+                    }
                     // TODO (armins): obv
                     let fee_rate = 30u32;
                     info!(target: "consensus::authority", "Parsing and sending withdrawal event to btc_server");
