@@ -7,13 +7,6 @@ use bitcoin::{
 use secp256k1::{ecdsa::RecoveryId, hashes::Hash};
 use thiserror::Error;
 
-use lazy_static;
-
-lazy_static::lazy_static! {
-    /// Signature Recovery Id
-    pub static ref ECDSA_RECOVERY_ID: RecoveryId = RecoveryId::from_i32(1i32).expect("recovery id");
-}
-
 const EXTRA_HEADER_VERSION: u32 = 0;
 const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
@@ -111,9 +104,7 @@ impl ExtraDataHeader {
         }
     }
 
-    pub fn set_optional_fields_bitmask(
-        &mut self,
-    ) -> () {
+    pub fn set_optional_fields_bitmask(&mut self) -> () {
         let mut optional_fields = 0u8;
         if self.authority_signers.is_some() {
             optional_fields |= 1 << HAS_AUTHORTIES_POS;
@@ -158,7 +149,9 @@ impl ExtraDataHeader {
     pub fn encode_into(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         self.encode_into_without_signature(writer)?;
         if let Some(sig) = self.authority_signature {
-            writer.write_all(&sig.serialize_compact().1[..])?;
+            let (recovery_id, sig) = &sig.serialize_compact();
+            i32::consensus_encode(&recovery_id.to_i32(), writer);
+            writer.write_all(&sig[..])?;
         }
         Ok(())
     }
@@ -180,7 +173,6 @@ impl ExtraDataHeader {
 
         // Everything past the blockhash is optional and can be empty
         // use the optional bitmask field
-
         let authority_signers = if optional_fields & (1u8 << HAS_AUTHORTIES_POS) != 0 {
             let signer_len = u32::consensus_decode(reader)?;
             let mut signers = Vec::with_capacity(signer_len as usize);
@@ -205,12 +197,14 @@ impl ExtraDataHeader {
         };
 
         let signature = if optional_fields & (1u8 << HAS_SIGNATURE_POS) != 0 {
+            let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
+
             let mut buf = [0; 64];
             reader.read_exact(&mut buf)?;
-            Some(
-                secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, *ECDSA_RECOVERY_ID)
-                    .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?,
-            )
+            let signature = secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, recovery_id)
+                .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?;
+
+            Some(signature)
         } else {
             None
         };
@@ -296,7 +290,6 @@ mod tests {
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
-        println!("buf: {:?}", hex::encode(&buf));
         // Check version
         assert_eq!(buf[0..4], vec![0u8, 0u8, 0u8, 0u8].as_slice().to_owned());
         // Check optional bitmask
@@ -347,13 +340,10 @@ mod tests {
             bitcoin::hash_types::BlockHash::all_zeros()
         );
         assert_eq!(deserialized_header.authority_vote, None);
+        assert_eq!(deserialized_header.authority_signature.unwrap(), signature);
 
-        assert_eq!(deserialized_header.authority_signature.is_some(), true);
-
-        assert_eq!(
-            deserialized_header.authority_signature.unwrap().to_standard(),
-            signature.to_standard()
-        );
+        let recovered_pk = signature.recover(&message).unwrap();
+        assert_eq!(recovered_pk, public_key);
 
         deserialized_header
             .authority_signature
