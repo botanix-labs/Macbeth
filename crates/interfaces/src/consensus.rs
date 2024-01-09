@@ -180,13 +180,19 @@ pub enum ConsensusError {
     /// Error when there is a transaction signer recovery error.
     #[error("transaction signer recovery error")]
     TransactionSignerRecoveryError,
+    /// Error when extra data length exceeds the maximum allowed.
     #[error("Extra data {len} exceeds max length: ")]
-    ExtraDataExceedsMax { len: usize },
+    ExtraDataExceedsMax {
+        /// Max extra data length
+        len: usize,
+    },
+    /// Poa specifiic error when the difficulty is not DIFF_INTURN or DIFF_NOTURN or 0.
     #[error("Difficulty is not DIFF_INTURN or DIFF_NOTURN or 0")]
     AuthorityDifficultyInvalid,
     #[error("Authority not in turn")]
     AuthorityNotInTurn,
     #[error("Difficulty after merge is not zero")]
+    /// Error when the difficulty after a merge is not zero.
     TheMergeDifficultyIsNotZero,
 
     /// Error when the nonce after a merge is not zero.
@@ -275,12 +281,13 @@ pub enum ConsensusError {
     /// Error for a transaction that violates consensus.
     #[error(transparent)]
     InvalidTransaction(#[from] InvalidTransactionError),
+    /// PoA specific: Invalid block signature
     #[error("Invalid authority signature")]
     InvalidAuthoritySignature,
+    /// PoA specific: extra data header does not follow consensus rules or is malformed
     #[error("Invalid extra data")]
     ExtraDataInvalid,
+    /// PoA specific: failed to recover authority from block signature
     #[error("Failed to recover authority")]
     FailedToRecoverAuthority,
-    #[error("SignerLimitExceeded")]
-    SignerLimitReached,
 }
