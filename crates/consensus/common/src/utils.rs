@@ -168,7 +168,7 @@ pub fn validate_poa_extra_data_header(
 
 /// Validate against parent header errors
 #[derive(Debug)]
-pub enum ValidateAgainstParrentError {
+pub enum ValidateAgainstParentError {
     /// Signer limit exceeded
     /// Could occur when signer is signings many blocks in the same turn
     SignerLimitExceeded,
@@ -176,11 +176,11 @@ pub enum ValidateAgainstParrentError {
     FailedToDerserializeExtraData(RecoverAuthorityError),
 }
 
-impl From<ValidateAgainstParrentError> for ConsensusError {
-    fn from(e: ValidateAgainstParrentError) -> Self {
+impl From<ValidateAgainstParentError> for ConsensusError {
+    fn from(e: ValidateAgainstParentError) -> Self {
         match e {
-            ValidateAgainstParrentError::SignerLimitExceeded => ConsensusError::SignerLimitExceeded,
-            ValidateAgainstParrentError::FailedToDerserializeExtraData(_) => {
+            ValidateAgainstParentError::SignerLimitExceeded => ConsensusError::SignerLimitExceeded,
+            ValidateAgainstParentError::FailedToDerserializeExtraData(_) => {
                 ConsensusError::ExtraDataInvalid
             }
         }
@@ -190,29 +190,37 @@ impl From<ValidateAgainstParrentError> for ConsensusError {
 pub fn validate_against_parent(
     parent: Header,
     current: Header,
-) -> Result<(), ValidateAgainstParrentError> {
+) -> Result<(), ValidateAgainstParentError> {
     // Gensis block does not have a federation signature, skip
     if parent.number == 0 {
         return Ok(())
     }
-    let parent_signer = recovery_authority(&parent)
-        .map_err(|e| ValidateAgainstParrentError::FailedToDerserializeExtraData(e))?;
+    let parent_signer = recovery_authority(&parent).map_err(|e: RecoverAuthorityError| {
+        ValidateAgainstParentError::FailedToDerserializeExtraData(e)
+    })?;
     let current_signer = recovery_authority(&current)
-        .map_err(|e| ValidateAgainstParrentError::FailedToDerserializeExtraData(e))?;
-    let is_same_signer = parent_signer == current_signer;
+        .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?;
     // Check if the parent block was mined in a different turn
     let parent_ts = parent.timestamp / 60;
     let current_ts = current.timestamp / 60;
 
-    if !is_same_signer {
-        return Ok(());
-    }
+    validate_current_signer_against_last((parent_signer, parent_ts), (current_signer, current_ts))?;
 
+    Ok(())
+}
+
+pub fn validate_current_signer_against_last(
+    last: (secp256k1::PublicKey, u64),
+    current: (secp256k1::PublicKey, u64),
+) -> Result<(), ValidateAgainstParentError> {
+    if last.0 == current.0 {
+        return Err(ValidateAgainstParentError::SignerLimitExceeded)
+    }
     // Last block should be greater that 1 minute in the worst cast
     // Even in the case of > 2 federation members the worst case time between blocks for the same
     // Signer should be 1 minute. Assuming 1 minute block times
-    if current_ts - parent_ts < 1 {
-        return Err(ValidateAgainstParrentError::SignerLimitExceeded)
+    if current.1 - last.1 < 1 {
+        return Err(ValidateAgainstParentError::SignerLimitExceeded)
     }
 
     Ok(())
@@ -258,9 +266,7 @@ mod tests {
                 secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &sk1)
             }
         };
-
-        edh.authority_signature = Some(signature);
-        edh.set_optional_fields_bitmask();
+        edh.set_signature(signature);
 
         header.extra_data = Bytes::from(edh.serialize());
     }
@@ -279,7 +285,7 @@ mod tests {
         // regarless of the signature, the sighash should be the same
         // This is because we remove the signature from the extra data header before signing
         let mut edh = ExtraDataHeader::default();
-        edh.authority_signature = Some(
+        edh.set_signature(
             secp256k1::ecdsa::RecoverableSignature::from_compact(
                 &[0u8; 64],
                 RecoveryId::from_i32(1i32).unwrap(),
@@ -395,8 +401,7 @@ mod tests {
         let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
         let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &non_fed);
 
-        edh.authority_signature = Some(signature);
-        edh.set_optional_fields_bitmask();
+        edh.set_signature(signature);
 
         header.extra_data = Bytes::from(edh.serialize());
         let authority_signers = vec![];

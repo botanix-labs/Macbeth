@@ -66,7 +66,7 @@ impl EpochManager {
         }
 
         drop(storage);
-        let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index);
+        let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index as u64);
         info!("is_inturn: {}", is_inturn);
 
         // drain the pool

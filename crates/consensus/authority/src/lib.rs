@@ -121,7 +121,7 @@ impl Consensus for AuthorityConsensus {
 }
 
 /// In memory storage
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct Storage {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
@@ -138,6 +138,7 @@ impl Storage {
         headers: &mut Vec<SealedHeader>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
+        pk: secp256k1::PublicKey,
     ) -> Result<Self, StorageCreationError> {
         if headers.len() == 0 {
             return Err(StorageCreationError::EmptyHeaders)
@@ -154,7 +155,11 @@ impl Storage {
             best_block: header.number,
             authorities,
             signer_index,
-            ..Default::default()
+            authority: pk,
+            headers: HashMap::new(),
+            hash_to_number: HashMap::new(),
+            bodies: HashMap::new(),
+            authority_votes: AuthorityVoteCollection::default(),
         };
         storage.headers.insert(header.number, header);
         storage.bodies.insert(best_hash, BlockBody::default());
@@ -175,7 +180,7 @@ impl Storage {
 
 /// In-memory storage for the chain the authority seal engine is building.
 /// Headers from the most current epoch to the tip
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub(crate) struct StorageInner {
     /// Headers buffered for download.
     pub(crate) headers: HashMap<BlockNumber, Header>,
@@ -196,6 +201,8 @@ pub(crate) struct StorageInner {
     /// keep track of my place among the singer
     /// This will change as new signers are removed
     pub(crate) signer_index: usize,
+    /// Authority Signer public key
+    pub(crate) authority: secp256k1::PublicKey,
 }
 
 // === impl StorageInner ===
@@ -227,7 +234,7 @@ impl StorageInner {
         self.best_block = header.number;
         self.total_difficulty += header.difficulty;
 
-        trace!(target: "consensus::authority", num=self.best_block, hash=?self.best_hash, "inserting new block");
+        info!(target: "consensus::authority", num=self.best_block, hash=?self.best_hash, "inserting new block");
         self.headers.insert(header.number, header);
         self.bodies.insert(self.best_hash, body);
         self.hash_to_number.insert(self.best_hash, self.best_block);
@@ -359,10 +366,10 @@ impl StorageInner {
         header.state_root = state_root;
 
         // Serialize the header without signature
-        let extra_header_content_no_signature = ExtraDataHeader::new(
+        let mut extra_header_content_no_signature = ExtraDataHeader::new(
             0u32,
             None,
-            Some(authorities.clone()),
+            if header.is_poa_epoch() { Some(authorities.clone()) } else { None },
             vote_for,
             recent_block_hash,
         );
@@ -376,16 +383,9 @@ impl StorageInner {
             secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
 
-        let extra_data_header_with_signature = ExtraDataHeader::new(
-            0u32,
-            Some(signature),
-            // Only include authority signer if we are creating a poa epoch block
-            if header.is_poa_epoch() { Some(authorities.clone()) } else { None },
-            vote_for,
-            recent_block_hash,
-        );
-        header.extra_data = Bytes::from(extra_data_header_with_signature.serialize());
+        extra_header_content_no_signature.set_signature(signature.clone());
 
+        header.extra_data = Bytes::from(extra_header_content_no_signature.serialize());
         Ok(header)
     }
 
