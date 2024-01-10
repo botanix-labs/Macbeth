@@ -520,11 +520,6 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        self.storage
-            .write()
-            .await
-            .insert_new_block(sealed_block.header.header.clone(), body.clone());
-
         let mining_pool = self.pool.clone();
         // Lastly remove confirmed txs from the mempool
         mining_pool
