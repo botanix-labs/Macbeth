@@ -293,4 +293,10 @@ pub enum ConsensusError {
     /// PoA specific: failed to recover authority from block signature
     #[error("Failed to recover authority")]
     FailedToRecoverAuthority,
+    /// PoA specific: same signer as previous block
+    #[error("Same signer as previous block")]
+    SignerLimitExceeded,
+    /// PoA specific: authority signer not in turn
+    #[error("Authority signer not in turn")]
+    AuthorityNotInTurn, 
 }

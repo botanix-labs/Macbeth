@@ -13,8 +13,6 @@ use std::{sync::Arc, task::Poll, time::Duration};
 
 #[derive(Debug)]
 /// Manages the block production epochs
-/// Signing time is the parent timestamp + BLOCK_PERIOD
-/// If the signer is inturn then we broadcast the block
 ///
 /// Blocks will be rejected by consensus if
 /// 1. The signer is not in the federation
@@ -53,6 +51,24 @@ impl EpochManager {
 
         let authority_len = storage.authorities.len() as u64;
         let signer_index = storage.signer_index as u64;
+
+        // Check if the last signer was us
+        // If so nothing to do anymore until the next timeslot
+        let latest_header = storage.headers.get(&storage.best_block).expect("best block");
+        if latest_header.number != 0 {
+            let latest_signer = utils::recovery_authority(&latest_header).unwrap();
+            let latest_signer_index =
+                storage.authorities.iter().position(|pk| pk == &latest_signer).unwrap() as u64;
+            println!("signer_index: {},  latest_signer_index: {}", signer_index, latest_signer_index);
+            if latest_signer_index == signer_index {
+                debug!(
+                    "latest signer index {} != signer index {}",
+                    latest_signer_index, signer_index
+                );
+                return Poll::Pending
+            }
+        }
+
         drop(storage);
 
         let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index);
@@ -67,10 +83,5 @@ impl EpochManager {
         } else {
             return (Poll::Pending, is_inturn)
         }
-
-        // NOTE: verify if network can/should be handled here or in the main task
-        // TODO: check network handle for gossiped block
-        // TODO: set gossiped block header in storage or...
-        // TODO: if `None` do the following
     }
 }

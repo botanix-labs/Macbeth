@@ -101,6 +101,7 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
+        utils::validate_against_parent(parent.header.clone(), header.header.clone())?;
         validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
         Ok(())
     }
