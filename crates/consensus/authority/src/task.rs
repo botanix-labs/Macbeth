@@ -1,10 +1,10 @@
-use crate::{epoch_manager::EpochManager, Storage, AuthorityConsensus};
+use crate::{epoch_manager::EpochManager, AuthorityConsensus, Storage};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
-use reth_consensus_common::{utils, validation};
+use reth_consensus_common::{utils, utils::validate_poa_extra_data_header, validation};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
@@ -20,7 +20,6 @@ use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State}
 use reth_rpc_types::engine::PayloadStatusEnum;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use reth_consensus_common::utils::validate_poa_extra_data_header;
 use ruint::Uint;
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc, task::Poll};
@@ -116,9 +115,7 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source: MempoolSpace::new(
-                bitcoin_block_source_address.to_string(),
-            ),
+            bitcoin_block_source: MempoolSpace::new(bitcoin_block_source_address.to_string()),
             secp,
             sk,
             epoch_manager,
@@ -140,12 +137,14 @@ where
                         info!(target: "consensus::authority", ?block, "Recieved new block from peer");
 
                         // extract signer pub key
-                        let signer = utils::recovery_authority(&block.header).expect("valid signer");
-                    
+                        let signer =
+                            utils::recovery_authority(&block.header).expect("valid signer");
+
                         let storage_inner = self.epoch_manager.storage.inner.read().await;
                         let authorities = storage_inner.authorities.clone();
                         drop(storage_inner);
-                        let signer_index = authorities.iter().position(|pk| *pk == signer).expect("valid signer");
+                        let signer_index =
+                            authorities.iter().position(|pk| *pk == signer).expect("valid signer");
                         match AuthorityConsensus::validate_inturn(
                             block.header.timestamp,
                             authorities.len() as u64,
@@ -154,7 +153,7 @@ where
                             Ok(_) => {}
                             Err(err) => {
                                 error!(target: "consensus::authority", ?err, "Block import failed in turn check");
-                                continue 
+                                continue
                             }
                         }
 
@@ -172,6 +171,15 @@ where
                             Ok(payload_status) => {
                                 match payload_status.status {
                                     PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {
+                                        // remove the tx which are now confirmed
+                                        info!("Removing txs from the pool upon recevied block");
+                                        let tx_hashes = block
+                                            .body
+                                            .iter()
+                                            .map(|tx| tx.hash().to_owned())
+                                            .collect::<Vec<_>>();
+                                        self.pool.remove_transactions(tx_hashes);
+
                                         let senders = TransactionSigned::recover_signers(
                                             &block.body,
                                             block.body.len(),
@@ -249,19 +257,24 @@ where
                 },
             }
 
-            if let Poll::Ready(transactions) = self.epoch_manager.poll(&self.pool).await {
-                info!("Adding to the list of transctions, {:?}, {:?}", transactions, self.queued);
-                // miner returned a set of transaction that we feed to
-                // the producer
-                self.queued.push_back(transactions.clone());
-                let mining_pool = self.pool.clone();
-                mining_pool.remove_transactions(
-                    transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
-                );
-            }
+            let is_inturn = match self.epoch_manager.poll(&self.pool).await {
+                (Poll::Pending, is_inturn) => is_inturn,
+                (Poll::Ready(transactions), is_inturn) => {
+                    info!(
+                        "Adding to the list of transctions, {:?}, {:?}",
+                        transactions, self.queued
+                    );
+                    self.queued.push_back(transactions.clone());
+                    let mining_pool = self.pool.clone();
+                    mining_pool.remove_transactions(
+                        transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
+                    );
+                    is_inturn
+                }
+            };
 
             // If insert task is not none executinon of async task is on going
-            if self.queued.is_empty() {
+            if self.queued.is_empty() || !is_inturn {
                 info!("Txs list is empty, skipping");
                 // nothing to insert
                 std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -408,7 +421,7 @@ where
                 }
                 Err(e) => {
                     debug!(target: "consensus::authority", ?e, "Non-genesis contract event");
-                    continue;
+                    continue
                 }
             }
         }

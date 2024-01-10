@@ -186,6 +186,9 @@ pub enum ConsensusError {
         /// Max extra data length
         len: usize,
     },
+    /// Error when the authority is not in turn.
+    #[error("Authority not in turn")]
+    AuthorityNotInTurn,
     #[error("Difficulty after merge is not zero")]
     /// Error when the difficulty after a merge is not zero.
     TheMergeDifficultyIsNotZero,
