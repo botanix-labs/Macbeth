@@ -186,10 +186,6 @@ pub enum ConsensusError {
         /// Max extra data length
         len: usize,
     },
-    /// Error when the authority is not in turn.
-    #[error("Authority not in turn")]
-    AuthorityNotInTurn,
-
     /// Error when the assigned block beneficiary is not within the authorized authorities.
     #[error("Block beneficiary is not within the authorities list")]
     BlockBeneficiaryIsNotAuthority,
@@ -298,5 +294,5 @@ pub enum ConsensusError {
     SignerLimitExceeded,
     /// PoA specific: authority signer not in turn
     #[error("Authority signer not in turn")]
-    AuthorityNotInTurn, 
+    AuthorityNotInTurn,
 }
