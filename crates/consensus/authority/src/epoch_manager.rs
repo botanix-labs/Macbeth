@@ -1,14 +1,15 @@
-use reth_primitives::constants::eip225::BLOCK_PERIOD;
+use futures_util::{stream::Fuse, StreamExt};
+use reth_primitives::{constants::eip225::BLOCK_PERIOD, TxHash};
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tokio::time::{Instant, Interval};
+use tokio::{
+    sync::mpsc::Receiver,
+    time::{Instant, Interval},
+};
+use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tracing::{error, info};
 
-use crate::{Storage, AuthorityConsensus};
-use std::{
-    sync::Arc,
-    task::Poll,
-    time::Duration,
-};
+use crate::{AuthorityConsensus, Storage};
+use std::{sync::Arc, task::Poll, time::Duration};
 
 #[derive(Debug)]
 /// Manages the block production epochs
@@ -42,7 +43,7 @@ impl EpochManager {
     pub(crate) async fn poll<Pool>(
         &mut self,
         pool: &Pool,
-    ) -> Poll<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>
+    ) -> (Poll<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>, bool)
     where
         Pool: TransactionPool,
     {
@@ -55,24 +56,16 @@ impl EpochManager {
         drop(storage);
 
         let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index);
-        println!("is_inturn: {}", is_inturn);
+        info!("is_inturn: {}", is_inturn);
 
-        self.proposal_interval.tick().await;
-        if is_inturn {
-            let transactions = pool.best_transactions().collect::<Vec<_>>();
-            info!("Miner processing txs {:?}", transactions);
-            // there are pending transactions if we didn't drain the pool
-            self.has_pending_txs = !transactions.is_empty();
-
-            if transactions.is_empty() {
-                return Poll::Pending
-            }
-
-            // drain the pool
-            Poll::Ready(transactions)
+        // drain the pool
+        let transactions = pool.best_transactions().collect::<Vec<_>>();
+        info!("Miner processing txs {:?}", transactions);
+        self.has_pending_txs = !transactions.is_empty();
+        if self.has_pending_txs {
+            return (Poll::Ready(transactions), is_inturn)
         } else {
-            // TODO remove this later
-            Poll::Pending
+            return (Poll::Pending, is_inturn)
         }
 
         // NOTE: verify if network can/should be handled here or in the main task

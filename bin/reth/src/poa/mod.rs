@@ -39,6 +39,7 @@ use reth_config::{
     config::{PruneConfig, StageConfig},
     Config,
 };
+use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_downloaders::{
     bodies::bodies::BodiesDownloaderBuilder,
@@ -85,7 +86,6 @@ use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPool, TransactionValidationTaskExecutor,
 };
-use reth_consensus_common::utils;
 use secp256k1::SecretKey;
 use std::{
     net::{SocketAddr, SocketAddrV4},

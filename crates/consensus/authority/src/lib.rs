@@ -37,10 +37,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -78,7 +75,11 @@ impl AuthorityConsensus {
     }
 
     /// Validates that the authority was in turn when producing the block
-    pub fn validate_inturn(block_timestamp: u64, authorities_len: u64, signer_index: u64) -> Result<(), ConsensusError> {
+    pub fn validate_inturn(
+        block_timestamp: u64,
+        authorities_len: u64,
+        signer_index: u64,
+    ) -> Result<(), ConsensusError> {
         let block_timestamp_min = block_timestamp / 60;
         if (block_timestamp_min / authorities_len) % authorities_len != signer_index {
             error!("Authority was not in turn when producing block");
@@ -367,7 +368,7 @@ impl StorageInner {
         let message =
             secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
-        
+
         let extra_data_header_with_signature = ExtraDataHeader::new(
             0u32,
             Some(signature),
@@ -491,7 +492,12 @@ mod tests {
         let block_timestamp = 10;
         let authorities_len = 3;
         let signer_index = 0;
-        assert!(AuthorityConsensus::validate_inturn(block_timestamp, authorities_len, signer_index).is_ok());
+        assert!(AuthorityConsensus::validate_inturn(
+            block_timestamp,
+            authorities_len,
+            signer_index
+        )
+        .is_ok());
     }
 
     #[test]
@@ -499,6 +505,11 @@ mod tests {
         let block_timestamp = 10;
         let authorities_len = 3;
         let signer_index = 1;
-        assert!(AuthorityConsensus::validate_inturn(block_timestamp, authorities_len, signer_index).is_err());
+        assert!(AuthorityConsensus::validate_inturn(
+            block_timestamp,
+            authorities_len,
+            signer_index
+        )
+        .is_err());
     }
 }

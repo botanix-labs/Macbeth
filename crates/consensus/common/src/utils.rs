@@ -1,4 +1,3 @@
-
 use crate::validation;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_interfaces::consensus::ConsensusError;
@@ -6,8 +5,8 @@ use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS, keccak256, Address, Bytes, Header, B256, U256,
 };
 use reth_provider::StateProvider;
-use tracing::error;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::error;
 
 /// Error that can occur while accessing EVM global storage
 #[derive(Debug)]
@@ -215,7 +214,6 @@ mod tests {
         assert_ne!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
     }
 
-   
     // Get authority list tests
     #[test]
     fn should_recover_none_authorities() {
@@ -340,7 +338,6 @@ mod tests {
         let result = validate_poa_extra_data_header(&header, &authority_signers);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn should_validate() {
