@@ -47,30 +47,25 @@ impl EpochManager {
     {
         let storage = self.storage.inner.read().await;
         let signer_index = storage.signer_index;
-        println!("signer_index: {}", signer_index);
-
+        let signer_pk = storage.authority;
         let authority_len = storage.authorities.len() as u64;
-        let signer_index = storage.signer_index as u64;
 
         // Check if the last signer was us
         // If so nothing to do anymore until the next timeslot
         let latest_header = storage.headers.get(&storage.best_block).expect("best block");
+        // Skip over genesis
         if latest_header.number != 0 {
             let latest_signer = utils::recovery_authority(&latest_header).unwrap();
-            let latest_signer_index =
-                storage.authorities.iter().position(|pk| pk == &latest_signer).unwrap() as u64;
-            println!("signer_index: {},  latest_signer_index: {}", signer_index, latest_signer_index);
-            if latest_signer_index == signer_index {
-                debug!(
-                    "latest signer index {} != signer index {}",
-                    latest_signer_index, signer_index
-                );
+            let current_ts = utils::unix_timestamp();
+            if let Err(_) = utils::validate_current_signer_against_last(
+                (latest_signer, latest_header.timestamp / 60),
+                (signer_pk, current_ts / 60),
+            ) {
                 return Poll::Pending
             }
         }
 
         drop(storage);
-
         let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index);
         info!("is_inturn: {}", is_inturn);
 
