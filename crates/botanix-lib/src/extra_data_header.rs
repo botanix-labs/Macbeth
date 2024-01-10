@@ -476,6 +476,39 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn can_recover_authority_after_serialize() {
+        let mut authority_signers = vec![];
+        let secp = Secp256k1::new();
+        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
+        authority_signers.push(public_key);
+
+        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
+        let message = Message::from(hello_world_hash);
+        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+
+        let header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            Some(signature),
+            Some(authority_signers.clone()),
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+
+        let serialized = header.serialize();
+
+        let deserialized_header = ExtraDataHeader::deserialize(&mut serialized.as_slice())
+            .expect("Deserialization failed");
+
+        let recovered_pk = deserialized_header
+            .authority_signature
+            .unwrap()
+            .recover(&message)
+            .unwrap();
+
+        assert_eq!(recovered_pk, public_key);
+    }
+
     // Test case for validating with an invalid signature
     #[test]
     fn test_validate_authority_signature_with_invalid_signature() {
