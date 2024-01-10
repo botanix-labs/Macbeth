@@ -105,10 +105,11 @@ where
         if signer_index.is_none() {
             return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex)
         }
+        let pk = sk.public_key(&secp);
 
         // Try to instantiate storage
         let storage =
-            Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"))
+            Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"), pk)
                 .map_err(|e| {
                     error!("Failed to instantiate storage: {:?}", e);
                     AuthorityConsensusBuilderError::InvalidStorage
