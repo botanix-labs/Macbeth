@@ -4,7 +4,7 @@ use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     secp256k1,
 };
-use secp256k1::{ecdsa::RecoveryId, hashes::Hash};
+use secp256k1::{ecdsa::{RecoveryId, RecoverableSignature}, hashes::Hash};
 use thiserror::Error;
 
 const EXTRA_HEADER_VERSION: u32 = 0;
@@ -102,6 +102,11 @@ impl ExtraDataHeader {
             authority_signature,
             optional_fields,
         }
+    }
+
+    pub fn set_signature(&mut self, signature: RecoverableSignature) -> () {
+        self.authority_signature = Some(signature);
+        self.set_optional_fields_bitmask();
     }
 
     pub fn set_optional_fields_bitmask(&mut self) -> () {
@@ -608,6 +613,24 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.authority_signature, None);
+    }
+
+    #[test]
+    fn can_set_signature() {
+        let mut edh = ExtraDataHeader::default();
+
+        assert_eq!(edh.authority_signature, None);
+        assert_eq!(edh.optional_fields, 0);
+        let secp = Secp256k1::new();
+        let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
+
+        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
+        let message = Message::from(hello_world_hash);
+        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+
+        edh.set_signature(signature);
+        assert_eq!(edh.authority_signature.is_some(), true);
+        assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 
     #[test]
