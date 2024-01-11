@@ -374,8 +374,9 @@ impl Transaction {
         let fee = max_fee_per_gas - base_fee;
 
         // Compare the fee with max_priority_fee_per_gas (or gas price for non-EIP1559 transactions)
+        // NOTE: Add the priority_fee to the base fee as we have to avoid lost BTC on Botanix
         if let Some(priority_fee) = self.max_priority_fee_per_gas() {
-            Some(fee.min(priority_fee))
+            Some(fee.min(priority_fee) + base_fee)
         } else {
             Some(fee)
         }
