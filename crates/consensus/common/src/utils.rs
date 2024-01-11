@@ -187,6 +187,7 @@ impl From<ValidateAgainstParentError> for ConsensusError {
     }
 }
 
+/// Validate current PoA header against parent header
 pub fn validate_against_parent(
     parent: Header,
     current: Header,
@@ -209,17 +210,16 @@ pub fn validate_against_parent(
     Ok(())
 }
 
+/// Validate current signer and its last block timestamp against the last signer and its last block timestamp
+/// Used to prevent a signer from signing multiple blocks in the same turn
 pub fn validate_current_signer_against_last(
     last: (secp256k1::PublicKey, u64),
     current: (secp256k1::PublicKey, u64),
 ) -> Result<(), ValidateAgainstParentError> {
-    if last.0 == current.0 {
-        return Err(ValidateAgainstParentError::SignerLimitExceeded)
-    }
     // Last block should be greater that 1 minute in the worst cast
     // Even in the case of > 2 federation members the worst case time between blocks for the same
     // Signer should be 1 minute. Assuming 1 minute block times
-    if current.1 - last.1 < 1 {
+    if last.0 == current.0 && current.1 - last.1 < 1 {
         return Err(ValidateAgainstParentError::SignerLimitExceeded)
     }
 
