@@ -10,7 +10,7 @@ use reth_consensus_common::{
     validation,
 };
 use reth_eth_wire::NewBlock;
-use reth_interfaces::consensus::ForkchoiceState;
+use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
@@ -50,6 +50,16 @@ enum ProcessBotanixLogError {
     FailedToMakePegoutTx(tonic::Status),
 }
 
+/// Errors
+#[derive(Debug, thiserror::Error)]
+enum PersistNewBlockError {
+    #[error("Failed to validate PoA header")]
+    FailedToValidatePoaHeader(ConsensusError),
+    #[error("Failed ForkchoiceUpdateV2")]
+    FailedForkchoiceUpdateV2(),
+    #[error("Failed to communicate with engine API")]
+    FailedToCommunicateWithEngine(),
+}
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
     chain_spec: Arc<ChainSpec>,
@@ -140,7 +150,7 @@ where
                     }
                     TryRecvError::Disconnected => {
                         error!(target: "consensus::authority", "Block import channel disconnected");
-                        return ()
+                        continue
                     }
                 },
             };
@@ -250,8 +260,15 @@ where
                             }
                         }
 
-                        self.persist_new_block(sealed_block_with_senders.clone(), bundle_state)
-                            .await;
+                        match self
+                            .persist_new_block(sealed_block_with_senders.clone(), bundle_state)
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(err) => {
+                                error!(target: "consensus::authority", ?err, "Failed to persist new block");
+                            }
+                        }
                     }
                     Err(err) => {
                         error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
@@ -345,7 +362,14 @@ where
             let sealed_block = block.clone().seal_slow();
             let sealed_block_with_senders =
                 SealedBlockWithSenders::new(sealed_block, senders).expect("senders are valid");
-            self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await;
+            match self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await {
+                Ok(_) => {}
+                Err(err) => {
+                    error!(target: "consensus::authority", ?err, "Failed to persist new block");
+                    // TODO(armins) failed txs should get retried
+                    continue
+                }
+            }
             // Notify peers
             let new_block = NewBlock { block, td: Uint::ZERO };
             let block_hash = sealed_block_with_senders.hash();
@@ -454,12 +478,14 @@ where
         &mut self,
         sealed_block: SealedBlockWithSenders,
         bundled_state: BundleStateWithReceipts,
-    ) -> () {
+    ) -> Result<(), PersistNewBlockError> {
         let new_header = sealed_block.header.clone();
         // perform PoA validation
-        let authority_signers = self.storage.read().await.authorities.clone();
-        // TODO (armins) remove this unwrap
-        validate_poa_extra_data_header(&new_header, &authority_signers).unwrap();
+        let storage = self.storage.read().await;
+        let authority_signers = storage.authorities.clone();
+        drop(storage);
+        validate_poa_extra_data_header(&new_header, &authority_signers)
+            .map_err(|e| PersistNewBlockError::FailedToValidatePoaHeader(e))?;
 
         let state = ForkchoiceState {
             head_block_hash: new_header.hash,
@@ -485,7 +511,7 @@ where
                         ForkchoiceStatus::Valid => break,
                         ForkchoiceStatus::Invalid => {
                             error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
-                            return ()
+                            return Err(PersistNewBlockError::FailedForkchoiceUpdateV2());
                         }
                         ForkchoiceStatus::Syncing => {
                             debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
@@ -496,7 +522,7 @@ where
                 }
                 Err(err) => {
                     error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
-                    return ()
+                    return Err(PersistNewBlockError::FailedToCommunicateWithEngine());
                 }
             }
         }
@@ -524,6 +550,8 @@ where
         // Lastly remove confirmed txs from the mempool
         mining_pool
             .remove_transactions(body.transactions.iter().map(|tx| tx.hash().to_owned()).collect());
+
+        Ok(())
     }
 
     /// Sets the pipeline events to listen on.

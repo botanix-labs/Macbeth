@@ -1,4 +1,5 @@
 use futures_util::{stream::Fuse, StreamExt};
+use reth_consensus_common::utils;
 use reth_primitives::{constants::eip225::BLOCK_PERIOD, TxHash};
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use tokio::{
@@ -61,13 +62,13 @@ impl EpochManager {
                 (latest_signer, latest_header.timestamp / 60),
                 (signer_pk, current_ts / 60),
             ) {
-                return Poll::Pending
+                return (Poll::Pending, false)
             }
         }
 
         drop(storage);
         let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index as u64);
-        info!("is_inturn: {}", is_inturn);
+        info!("Epoch manager inturn: {}", is_inturn);
 
         // drain the pool
         let transactions = pool.best_transactions().collect::<Vec<_>>();
