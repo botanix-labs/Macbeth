@@ -47,6 +47,7 @@ mod client;
 mod epoch_manager;
 mod task;
 mod voting;
+mod engine_util;
 
 pub use builder::AuthorityConsensusBuilder;
 
