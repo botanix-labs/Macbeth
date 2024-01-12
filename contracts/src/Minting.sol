@@ -25,7 +25,7 @@ contract Minting {
         uint32 bitcoinBlockHeight,
         bytes calldata metadata
     ) public {
-        // Check that the user bitcoin block height is the same or increasing.
+        // Check that the user bitcoin block height is increasing.
         require(
             bitcoinBlockHeight > peginBitcoinBlockHeight[destination],
             "user bitcoinBlockHeight needs to increase"
