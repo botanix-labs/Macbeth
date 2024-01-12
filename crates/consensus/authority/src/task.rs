@@ -127,125 +127,8 @@ where
     pub async fn start_task(&mut self) -> () {
         // This drives block production
         loop {
-            match self.block_import_rx.try_recv() {
-                Ok(new_block) => {
-                    // Recieved a new block from a peer. Block import has ran consensus validation
-                    // against this block Update internal cache and notify the
-                    // engine
-                    loop {
-                        let block = new_block.block.block.clone();
-                        info!(target: "consensus::authority", ?block, "Recieved new block from peer");
-
-                        // extract signer pub key
-                        let signer =
-                            utils::recovery_authority(&block.header).expect("valid signer");
-
-                        let storage_inner = self.epoch_manager.storage.inner.read().await;
-                        let authorities = storage_inner.authorities.clone();
-                        drop(storage_inner);
-                        let signer_index =
-                            authorities.iter().position(|pk| *pk == signer).expect("valid signer");
-                        match AuthorityConsensus::validate_inturn(
-                            block.header.timestamp,
-                            authorities.len() as u64,
-                            signer_index as u64,
-                        ) {
-                            Ok(_) => {}
-                            Err(err) => {
-                                error!(target: "consensus::authority", ?err, "Block import failed in turn check");
-                                continue
-                            }
-                        }
-
-                        // send the new update to the engine, this will trigger the engine
-                        // to download and execute the block we just inserted
-                        let (tx, rx) = oneshot::channel();
-                        let sealed_block = block.clone().seal_slow();
-                        let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
-                            payload: sealed_block.clone().into(),
-                            cancun_fields: None,
-                            tx,
-                        });
-
-                        match rx.await.unwrap() {
-                            Ok(payload_status) => {
-                                match payload_status.status {
-                                    PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {
-                                        // remove the tx which are now confirmed
-                                        info!("Removing txs from the pool upon recevied block");
-                                        let tx_hashes = block
-                                            .body
-                                            .iter()
-                                            .map(|tx| tx.hash().to_owned())
-                                            .collect::<Vec<_>>();
-                                        self.pool.remove_transactions(tx_hashes);
-
-                                        let senders = TransactionSigned::recover_signers(
-                                            &block.body,
-                                            block.body.len(),
-                                        )
-                                        .unwrap();
-
-                                        let db = State::builder()
-                                            .with_database_boxed(Box::new(
-                                                StateProviderDatabase::new(
-                                                    self.client.latest().unwrap(),
-                                                ),
-                                            ))
-                                            .with_bundle_update()
-                                            .build();
-                                        let mut executor = EVMProcessor::new_with_state(
-                                            self.chain_spec.clone(),
-                                            db,
-                                        );
-                                        let mut storage = self.storage.write().await;
-                                        let recent_bitcoin_block_header =
-                                            self.bitcoin_block_header.read().await.clone();
-
-                                        match storage.execute(
-                                            &block,
-                                            &mut executor,
-                                            senders.clone(),
-                                            recent_bitcoin_block_header,
-                                        ) {
-                                            Ok((bundle_state, _gas_used)) => {
-                                                drop(storage);
-                                                let sealed_block_with_senders =
-                                                    SealedBlockWithSenders::new(
-                                                        sealed_block,
-                                                        senders,
-                                                    )
-                                                    .expect("senders are valid");
-                                                self.persist_new_block(
-                                                    sealed_block_with_senders.clone(),
-                                                    bundle_state,
-                                                )
-                                                .await;
-                                            }
-                                            Err(err) => {
-                                                error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
-                                            }
-                                        }
-                                        break
-                                    }
-                                    PayloadStatusEnum::Invalid { validation_error } => {
-                                        error!(target: "consensus::authority", ?validation_error, "Authority fork new payload returned invalid response");
-                                        break
-                                    }
-                                    PayloadStatusEnum::Syncing => {
-                                        debug!(target: "consensus::authority", ?payload_status, "Authority fork new payload returned SYNCING, waiting for VALID");
-                                        // wait for the next fork choice update
-                                        continue
-                                    }
-                                }
-                            }
-                            Err(status_err) => {
-                                error!(target: "consensus::authority", ?status_err, "Authority fork new payload failed");
-                                return ()
-                            }
-                        }
-                    }
-                }
+            let new_block = match self.block_import_rx.try_recv() {
+                Ok(b) => b,
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         debug!(target: "consensus::authority", "No new blocks from peers");
@@ -255,6 +138,123 @@ where
                         return ()
                     }
                 },
+            };
+
+            // Recieved a new block from a peer. Block import has ran consensus validation
+            // against this block Update internal cache and notify the
+            // engine
+            loop {
+                let block = new_block.block.block.clone();
+                info!(target: "consensus::authority", ?block, "Recieved new block from peer");
+
+                // extract signer pub key
+                let signer =
+                    utils::recovery_authority(&block.header).expect("valid signer");
+
+                let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
+                let signer_index =
+                    authorities.iter().position(|pk| *pk == signer).expect("valid signer");
+                match AuthorityConsensus::validate_inturn(
+                    block.header.timestamp,
+                    authorities.len() as u64,
+                    signer_index as u64,
+                ) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!(target: "consensus::authority", ?err, "Block import failed in turn check");
+                        continue
+                    }
+                }
+
+                // send the new update to the engine, this will trigger the engine
+                // to download and execute the block we just inserted
+                let (tx, rx) = oneshot::channel();
+                let sealed_block = block.clone().seal_slow();
+                let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
+                    payload: sealed_block.clone().into(),
+                    cancun_fields: None,
+                    tx,
+                });
+
+                let payload_status = match rx.await.unwrap() {
+                    Ok(s) => s,
+                    Err(status_err) => {
+                        error!(target: "consensus::authority", ?status_err, "Authority fork new payload failed");
+                        return ()
+                    }
+                };
+                match payload_status.status {
+                    PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {},
+                    PayloadStatusEnum::Invalid { validation_error } => {
+                        error!(target: "consensus::authority", ?validation_error,
+                            "Authority fork new payload returned invalid response"
+                        );
+                        break
+                    }
+                    PayloadStatusEnum::Syncing => {
+                        debug!(target: "consensus::authority", ?payload_status,
+                            "Authority fork new payload returned SYNCING, waiting for VALID"
+                        );
+                        // wait for the next fork choice update
+                        continue
+                    }
+                };
+                // remove the tx which are now confirmed
+                info!("Removing txs from the pool upon recevied block");
+                let tx_hashes = block
+                    .body
+                    .iter()
+                    .map(|tx| tx.hash().to_owned())
+                    .collect::<Vec<_>>();
+                self.pool.remove_transactions(tx_hashes);
+
+                let senders = TransactionSigned::recover_signers(
+                    &block.body,
+                    block.body.len(),
+                )
+                .unwrap();
+
+                let db = State::builder()
+                    .with_database_boxed(Box::new(
+                        StateProviderDatabase::new(
+                            self.client.latest().unwrap(),
+                        ),
+                    ))
+                    .with_bundle_update()
+                    .build();
+                let mut executor = EVMProcessor::new_with_state(
+                    self.chain_spec.clone(),
+                    db,
+                );
+                let mut storage = self.storage.write().await;
+                let recent_bitcoin_block_header =
+                    self.bitcoin_block_header.read().await.clone();
+
+                match storage.execute(
+                    &block,
+                    &mut executor,
+                    senders.clone(),
+                    recent_bitcoin_block_header,
+                ) {
+                    Ok((bundle_state, _gas_used)) => {
+                        drop(storage);
+                        let sealed_block_with_senders =
+                            SealedBlockWithSenders::new(
+                                sealed_block,
+                                senders,
+                            )
+                            .expect("senders are valid");
+                        self.persist_new_block(
+                            sealed_block_with_senders.clone(),
+                            bundle_state,
+                        )
+                        .await;
+                    }
+                    Err(err) => {
+                        error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                    }
+                }
+                break
             }
 
             let is_inturn = match self.epoch_manager.poll(&self.pool).await {
@@ -303,7 +303,7 @@ where
             let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
             let authority_signers = storage.authorities.clone();
             // execute the new block
-            match storage.build_and_execute(
+            let (new_header, bundle_state) = match storage.build_and_execute(
                 transactions.clone(),
                 &client,
                 self.chain_spec.clone(),
@@ -314,54 +314,53 @@ where
                 &self.secp,
                 &authority_signers,
             ) {
-                Ok((new_header, bundle_state)) => {
-                    drop(storage);
-                    let reciepts_bundle = bundle_state.receipts().iter();
-                    for (index, reciepts) in reciepts_bundle.enumerate() {
-                        for reciept in reciepts {
-                            if index == 0 && reciept.is_none() {
-                                // Prunning block, skip
-                                break
-                            }
-                            if let Some(reciept) = reciept {
-                                if !reciept.success {
-                                    continue
-                                }
-                                for log in &reciept.logs {
-                                    match self.process_botanix_log(log).await {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            error!(target: "consensus::authority", ?err, "Failed to process botanix log");
-                                        }
-                                    }
-                                }
-                            }
-
-                            info!("Reciept {:?}", reciept);
-                        }
-                    }
-
-                    // seal the block
-                    let block = Block {
-                        header: new_header.clone().unseal(),
-                        body: transactions,
-                        ommers: vec![],
-                        withdrawals: None,
-                    };
-                    let sealed_block = block.clone().seal_slow();
-                    let sealed_block_with_senders =
-                        SealedBlockWithSenders::new(sealed_block, senders)
-                            .expect("senders are valid");
-                    self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await;
-                    // Notify peers
-                    let new_block = NewBlock { block, td: Uint::ZERO };
-                    let block_hash = sealed_block_with_senders.hash();
-                    self.network_handle.announce_block(new_block, block_hash);
-                }
+                Ok(ret) => ret,
                 Err(err) => {
                     warn!(target: "consensus::authority", ?err, "failed to execute block")
                 }
+            };
+            drop(storage);
+            let reciepts_bundle = bundle_state.receipts().iter();
+            for (index, reciepts) in reciepts_bundle.enumerate() {
+                for reciept in reciepts {
+                    if index == 0 && reciept.is_none() {
+                        // Prunning block, skip
+                        break
+                    }
+                    if let Some(reciept) = reciept {
+                        if !reciept.success {
+                            continue
+                        }
+                        for log in &reciept.logs {
+                            match self.process_botanix_log(log).await {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    error!(target: "consensus::authority", ?err, "Failed to process botanix log");
+                                }
+                            }
+                        }
+                    }
+
+                    info!("Reciept {:?}", reciept);
+                }
             }
+
+            // seal the block
+            let block = Block {
+                header: new_header.clone().unseal(),
+                body: transactions,
+                ommers: vec![],
+                withdrawals: None,
+            };
+            let sealed_block = block.clone().seal_slow();
+            let sealed_block_with_senders =
+                SealedBlockWithSenders::new(sealed_block, senders)
+                    .expect("senders are valid");
+            self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await;
+            // Notify peers
+            let new_block = NewBlock { block, td: Uint::ZERO };
+            let block_hash = sealed_block_with_senders.hash();
+            self.network_handle.announce_block(new_block, block_hash);
 
             self.pipe_line_events = events;
         }
@@ -435,9 +434,7 @@ where
     ) -> () {
         let new_header = sealed_block.header.clone();
         // perform PoA validation
-        let storage = self.storage.read().await;
-        let authority_signers = storage.authorities.clone();
-        drop(storage);
+        let authority_signers = self.storage.read().await.authorities.clone();
         // TODO (armins) remove this unwrap
         validate_poa_extra_data_header(&new_header, &authority_signers).unwrap();
 
@@ -500,9 +497,7 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        let mut storage = self.storage.write().await;
-        storage.insert_new_block(sealed_block.header.header.clone(), body.clone());
-        drop(storage);
+        self.storage.write().await.insert_new_block(sealed_block.header.header.clone(), body.clone());
 
         let mining_pool = self.pool.clone();
         // Lastly remove confirmed txs from the mempool
