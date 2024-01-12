@@ -5,7 +5,7 @@
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
 use reth_primitives::{SealedBlock, SealedHeader};
-use reth_rpc_types::engine::{ForkchoiceState, PayloadStatusEnum};
+use reth_rpc_types::engine::{ForkchoiceState, PayloadStatusEnum, PayloadStatus};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use tracing::{debug, error};
@@ -29,7 +29,7 @@ pub(crate) enum SendNewPayloadError {
 pub(crate) async fn send_beacon_new_payload(
     sealed_block: SealedBlock,
     to_engine: UnboundedSender<BeaconEngineMessage>,
-) -> Result<(), SendNewPayloadError> {
+) -> Result<PayloadStatus, SendNewPayloadError> {
     loop {
         let (tx, rx) = oneshot::channel();
         let payload = BeaconEngineMessage::NewPayload {
@@ -53,7 +53,7 @@ pub(crate) async fn send_beacon_new_payload(
                     }
                     PayloadStatusEnum::Valid | PayloadStatusEnum::Accepted => {
                         debug!(target: "consensus::authority", ?recv, "Authority fork new payload returned VALID");
-                        return Ok(())
+                        return Ok(recv)
                     }
                 }
             }
