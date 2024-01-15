@@ -28,9 +28,9 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, Bytes,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
-    EMPTY_OMMER_ROOT_HASH, U256,
+    proofs, public_key_to_address, Address, Block, BlockBody, BlockHash, BlockHashOrNumber,
+    BlockNumber, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
+    TransactionSigned, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{BlockExecutor, BundleStateWithReceipts, StateProviderFactory};
 use reth_revm::{
@@ -239,6 +239,8 @@ impl StorageInner {
         transactions: &Vec<TransactionSigned>,
         chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
+        sk: &secp256k1::SecretKey,
+        secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let timestamp = utils::unix_timestamp();
         // check previous block for base fee
@@ -247,10 +249,14 @@ impl StorageInner {
             .get(&self.best_block)
             .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
 
+        // derive beneficary address being the producuing block federation member address
+        let beneficiary_pub_key = secp256k1::PublicKey::from_secret_key(secp, sk);
+        let beneficiary_address = public_key_to_address(beneficiary_pub_key);
+
         let mut header = Header {
             parent_hash: self.best_hash,
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: Default::default(),
+            beneficiary: beneficiary_address,
             state_root: Default::default(),
             transactions_root: Default::default(),
             receipts_root: Default::default(),
@@ -400,7 +406,8 @@ impl StorageInner {
             return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
         }
 
-        let header = self.build_header_template(&transactions, &chain_spec.clone(), vote)?;
+        let header =
+            self.build_header_template(&transactions, &chain_spec.clone(), vote, sk, secp)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
