@@ -4,7 +4,11 @@ use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
-use reth_consensus_common::{utils, utils::validate_poa_extra_data_header, validation};
+use reth_consensus_common::{
+    utils,
+    utils::{validate_poa_block_beneficiary, validate_poa_extra_data_header},
+    validation,
+};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
@@ -132,6 +136,7 @@ where
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         debug!(target: "consensus::authority", "No new blocks from peers");
+                        continue
                     }
                     TryRecvError::Disconnected => {
                         error!(target: "consensus::authority", "Block import channel disconnected");
@@ -148,8 +153,7 @@ where
                 info!(target: "consensus::authority", ?block, "Recieved new block from peer");
 
                 // extract signer pub key
-                let signer =
-                    utils::recovery_authority(&block.header).expect("valid signer");
+                let signer = utils::recovery_authority(&block.header).expect("valid signer");
 
                 let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
                 let signer_index =
@@ -162,6 +166,15 @@ where
                     Ok(_) => {}
                     Err(err) => {
                         error!(target: "consensus::authority", ?err, "Block import failed in turn check");
+                        continue
+                    }
+                }
+
+                // validate beneficiary is within the authorities list
+                match validate_poa_block_beneficiary(&block.header, &authorities) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!(target: "consensus::authority", ?err, "Block beneficiary not found in authorities list");
                         continue
                     }
                 }
@@ -184,7 +197,7 @@ where
                     }
                 };
                 match payload_status.status {
-                    PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {},
+                    PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {}
                     PayloadStatusEnum::Invalid { validation_error } => {
                         error!(target: "consensus::authority", ?validation_error,
                             "Authority fork new payload returned invalid response"
@@ -201,34 +214,22 @@ where
                 };
                 // remove the tx which are now confirmed
                 info!("Removing txs from the pool upon recevied block");
-                let tx_hashes = block
-                    .body
-                    .iter()
-                    .map(|tx| tx.hash().to_owned())
-                    .collect::<Vec<_>>();
+                let tx_hashes =
+                    block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
                 self.pool.remove_transactions(tx_hashes);
 
-                let senders = TransactionSigned::recover_signers(
-                    &block.body,
-                    block.body.len(),
-                )
-                .unwrap();
+                let senders =
+                    TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
 
                 let db = State::builder()
-                    .with_database_boxed(Box::new(
-                        StateProviderDatabase::new(
-                            self.client.latest().unwrap(),
-                        ),
-                    ))
+                    .with_database_boxed(Box::new(StateProviderDatabase::new(
+                        self.client.latest().unwrap(),
+                    )))
                     .with_bundle_update()
                     .build();
-                let mut executor = EVMProcessor::new_with_state(
-                    self.chain_spec.clone(),
-                    db,
-                );
+                let mut executor = EVMProcessor::new_with_state(self.chain_spec.clone(), db);
                 let mut storage = self.storage.write().await;
-                let recent_bitcoin_block_header =
-                    self.bitcoin_block_header.read().await.clone();
+                let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
 
                 match storage.execute(
                     &block,
@@ -239,16 +240,10 @@ where
                     Ok((bundle_state, _gas_used)) => {
                         drop(storage);
                         let sealed_block_with_senders =
-                            SealedBlockWithSenders::new(
-                                sealed_block,
-                                senders,
-                            )
-                            .expect("senders are valid");
-                        self.persist_new_block(
-                            sealed_block_with_senders.clone(),
-                            bundle_state,
-                        )
-                        .await;
+                            SealedBlockWithSenders::new(sealed_block, senders)
+                                .expect("senders are valid");
+                        self.persist_new_block(sealed_block_with_senders.clone(), bundle_state)
+                            .await;
                     }
                     Err(err) => {
                         error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
@@ -283,6 +278,7 @@ where
 
             // ready to queue in new insert task
             let transactions = self.queued.pop_front().expect("not empty");
+            let txs_cloned = transactions.clone();
 
             let events = self.pipe_line_events.take();
 
@@ -316,7 +312,10 @@ where
             ) {
                 Ok(ret) => ret,
                 Err(err) => {
-                    warn!(target: "consensus::authority", ?err, "failed to execute block")
+                    error!(target: "consensus::authority", ?err, "failed to execute block");
+                    drop(storage);
+                    self.queued.push_front(txs_cloned);
+                    continue
                 }
             };
             drop(storage);
@@ -354,8 +353,7 @@ where
             };
             let sealed_block = block.clone().seal_slow();
             let sealed_block_with_senders =
-                SealedBlockWithSenders::new(sealed_block, senders)
-                    .expect("senders are valid");
+                SealedBlockWithSenders::new(sealed_block, senders).expect("senders are valid");
             self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await;
             // Notify peers
             let new_block = NewBlock { block, td: Uint::ZERO };
@@ -497,7 +495,10 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        self.storage.write().await.insert_new_block(sealed_block.header.header.clone(), body.clone());
+        self.storage
+            .write()
+            .await
+            .insert_new_block(sealed_block.header.header.clone(), body.clone());
 
         let mining_pool = self.pool.clone();
         // Lastly remove confirmed txs from the mempool

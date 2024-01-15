@@ -2,7 +2,8 @@ use crate::validation;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_interfaces::consensus::ConsensusError;
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS, keccak256, Address, Bytes, Header, B256, U256,
+    constants::STAKING_CONTRACT_ADDRESS, keccak256, public_key_to_address, Address, Bytes, Header,
+    B256, U256,
 };
 use reth_provider::StateProvider;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -118,6 +119,18 @@ pub fn get_authority_list(
 /// Returns the unix timestamp in seconds
 pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+/// Validate poa block beneficiary
+pub fn validate_poa_block_beneficiary(
+    header: &Header,
+    authority_signers: &Vec<secp256k1::PublicKey>,
+) -> Result<(), ConsensusError> {
+    authority_signers
+        .iter()
+        .find(|pk| public_key_to_address(**pk) == header.beneficiary)
+        .ok_or(ConsensusError::BlockBeneficiaryIsNotAuthority)?;
+    Ok(())
 }
 
 /// Validate poa extra data header
@@ -378,5 +391,42 @@ mod tests {
     fn unix_timestamp() {
         let timestamp = super::unix_timestamp();
         assert!(timestamp > 0);
+    }
+
+    #[test]
+    fn should_fail_on_unlisted_poa_beneficiary() {
+        let auth_signer1 = secp256k1::PublicKey::from_secret_key(
+            &secp256k1::Secp256k1::new(),
+            &secp256k1::SecretKey::from_str(
+                "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+            )
+            .unwrap(),
+        );
+        let auth_signer2 = secp256k1::PublicKey::from_secret_key(
+            &secp256k1::Secp256k1::new(),
+            &secp256k1::SecretKey::from_str(
+                "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+            )
+            .unwrap(),
+        );
+        let authority_signers = vec![auth_signer1, auth_signer2];
+
+        // test bad signer
+        let mut header = Header::default();
+        let secret_key = secp256k1::SecretKey::from_str(
+            "4646464646464646464646464646464646464646464646464646464646464646",
+        )
+        .unwrap();
+        let beneficiary_pub_key =
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret_key);
+        let beneficiary_address = public_key_to_address(beneficiary_pub_key);
+        header.beneficiary = beneficiary_address;
+        assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_err());
+
+        // test good signer
+        let mut header = Header::default();
+        let beneficiary_address = public_key_to_address(auth_signer2);
+        header.beneficiary = beneficiary_address;
+        assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_ok());
     }
 }
