@@ -1,24 +1,35 @@
-use crate::{engine_util, task::BlockProductionTask};
+use crate::engine_util;
 use futures_util::StreamExt;
-use reth_network::{NetworkEvent, NetworkEvents};
 
-use reth_provider::{CanonChainTracker, StateProviderFactory};
-use reth_transaction_pool::TransactionPool;
+use reth_primitives::revm_primitives::FixedBytes;
+
+use reth_network::NetworkEvent;
+
+use reth_beacon_consensus::BeaconEngineMessage;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
-impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
-where
-    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
-    Pool: TransactionPool,
-{
-    pub(crate) async fn try_sync_peer_tip(&self) {
-        let mut network_event_listener = self.network_handle.event_listener();
-        let _to_engine = self.to_engine.clone();
-        let local_peer_id = self.network_handle.peer_id().clone();
-        if let Some(event) = network_event_listener.next().await {
+pub(crate) struct SyncController {
+    network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+    peer_id: FixedBytes<64>,
+    to_engine: UnboundedSender<BeaconEngineMessage>,
+}
+
+impl SyncController {
+    pub(crate) fn new(
+        network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+        peer_id: FixedBytes<64>,
+        to_engine: UnboundedSender<BeaconEngineMessage>,
+    ) -> Self {
+        Self { network_event_listener, peer_id, to_engine }
+    }
+
+    pub(crate) async fn try_sync_peer_tip(&mut self) {
+        while let Some(event) = self.network_event_listener.next().await {
             if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
                 let blockhash = status.blockhash;
-                if peer_id == local_peer_id {
+                if peer_id == self.peer_id {
                     debug!(target: "consensus::authority", "Ignoring session established event from self");
                     return
                 }

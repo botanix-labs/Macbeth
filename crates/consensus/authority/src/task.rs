@@ -11,14 +11,14 @@ use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_consensus_common::utils::validate_poa_extra_data_header;
 
 
+use crate::sync::SyncController;
 use reth_interfaces::consensus::ConsensusError;
-use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::{hex, BlockBody, ChainSpec, Log, SealedBlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
     Chain, StateProviderFactory,
 };
-
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
@@ -56,6 +56,7 @@ pub(crate) enum PersistNewBlockError {
     #[error("Failed to communicate with engine API")]
     FailedToCommunicateWithEngine(SendForkChoiceUpdateError),
 }
+
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
@@ -142,11 +143,23 @@ where
     }
 
     pub async fn start_task(&mut self) -> () {
-        // This drives block production
+        let mut sync_controller = SyncController::new(
+            self.network_handle.event_listener(),
+            self.network_handle.peer_id().clone(),
+            self.to_engine.clone(),
+        );
+
+        self.task_executor.spawn_critical(
+            "Sync Controller",
+            Box::pin(async move {
+                sync_controller.try_sync_peer_tip().await;
+            }),
+        );
+
         loop {
-            self.try_sync_peer_tip().await;
             self.try_fetch_block().await;
             self.try_build_block().await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
