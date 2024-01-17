@@ -167,7 +167,7 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
-        botanix_config::{Botanix, BotanixConfig},
+        botanix_config::Botanix,
         cache::{cache_new_blocks_task, EthStateCache},
         fee_history_cache_new_blocks_task,
         gas_oracle::GasPriceOracle,
