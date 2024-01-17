@@ -1,16 +1,19 @@
-use crate::{epoch_manager::EpochManager, Storage};
-use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
+use crate::{
+    engine_util::{self, SendForkChoiceUpdateError},
+    epoch_manager::EpochManager,
+    Storage,
+};
+use reth_beacon_consensus::BeaconEngineMessage;
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_consensus_common::utils::validate_poa_extra_data_header;
 
-use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
-use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
-use reth_primitives::{
-    hex, BlockBody, ChainSpec, Log, SealedBlockWithSenders,
-};
+
+use reth_interfaces::consensus::ConsensusError;
+use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_primitives::{hex, BlockBody, ChainSpec, Log, SealedBlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
     Chain, StateProviderFactory,
@@ -25,7 +28,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
-    oneshot, RwLock,
+    RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
@@ -50,10 +53,8 @@ pub(crate) enum ProcessBotanixLogError {
 pub(crate) enum PersistNewBlockError {
     #[error("Failed to validate PoA header")]
     FailedToValidatePoaHeader(ConsensusError),
-    #[error("Failed ForkchoiceUpdateV2")]
-    FailedForkchoiceUpdateV2(),
     #[error("Failed to communicate with engine API")]
-    FailedToCommunicateWithEngine(),
+    FailedToCommunicateWithEngine(SendForkChoiceUpdateError),
 }
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
@@ -175,7 +176,7 @@ where
         Ok(())
     }
 
-    pub async fn process_botanix_log(
+    pub(crate) async fn process_botanix_log(
         &mut self,
         log: &Log,
         should_broadcast_pegout: bool,
@@ -256,45 +257,11 @@ where
         validate_poa_extra_data_header(&new_header, &authority_signers)
             .map_err(|e| PersistNewBlockError::FailedToValidatePoaHeader(e))?;
 
-        let state = ForkchoiceState {
-            head_block_hash: new_header.hash,
-            finalized_block_hash: new_header.hash,
-            safe_block_hash: new_header.hash,
-        };
 
-        loop {
-            // send the new update to the engine, this will trigger
-            // the engine
-            // to download and execute the block we just inserted
-            let (tx, rx) = oneshot::channel();
-            let _ = self.to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
-                state,
-                payload_attrs: None,
-                tx,
-            });
-            debug!(target: "consensus::authority", ?state, "Sent fork choice update");
-
-            match rx.await.unwrap() {
-                Ok(fcu_response) => {
-                    match fcu_response.forkchoice_status() {
-                        ForkchoiceStatus::Valid => break,
-                        ForkchoiceStatus::Invalid => {
-                            error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
-                            return Err(PersistNewBlockError::FailedForkchoiceUpdateV2())
-                        }
-                        ForkchoiceStatus::Syncing => {
-                            debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
-                            // wait for the next fork choice update
-                            continue
-                        }
-                    }
-                }
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
-                    return Err(PersistNewBlockError::FailedToCommunicateWithEngine())
-                }
-            }
-        }
+        // Try to notify the engine of the new block
+        engine_util::send_fork_choice_update_payload(new_header.clone(), self.to_engine.clone())
+            .await
+            .map_err(|e| PersistNewBlockError::FailedToCommunicateWithEngine(e))?;
 
         // update canon chain for rpc
         self.client.set_canonical_head(sealed_block.header.clone());
