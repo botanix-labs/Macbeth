@@ -76,11 +76,11 @@ where
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         debug!(target: "consensus::authority", "No new blocks from peers");
-                        continue;
+                        continue
                     }
                     TryRecvError::Disconnected => {
                         debug!(target: "consensus::authority", "Block import channel disconnected");
-                        continue;
+                        continue
                     }
                 },
             };
@@ -100,7 +100,7 @@ where
                 Ok(payload) => payload,
                 Err(err) => {
                     error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
-                    continue;
+                    continue
                 }
             };
 
@@ -130,7 +130,7 @@ where
                         Ok(_) => {}
                         Err(e) => {
                             error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                            continue;
+                            continue
                         }
                     }
                     // Notify engine api about new FCU

@@ -41,7 +41,7 @@ where
 
         if !is_inturn {
             info!(target: "consensus::authority", "Not in turn, skipping");
-            return;
+            return
         }
 
         // Check if we have transactions to insert
@@ -107,7 +107,7 @@ where
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                return;
+                return
             }
         }
 
@@ -131,7 +131,7 @@ where
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");
-                return;
+                return
             }
         }
         storage.client.set_canonical_head(sealed_block.header.clone());
@@ -146,7 +146,7 @@ where
             Err(e) => {
                 // This should fail if the insert was successful
                 error!(target: "consensus::authority", ?e, "Failed to send fork choice update");
-                return;
+                return
             }
         }
 

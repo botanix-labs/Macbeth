@@ -41,6 +41,9 @@ reth-btc-wallet.workspace = true
 btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
 
+## Ethereum
+ethers = "2.0.11"
+
 ## Bitcoin
 bitcoin = "0.30.0"
 
@@ -58,3 +61,13 @@ thiserror.workspace = true
 
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
+reth.workspace = true
+tempfile.workspace = true
+clap.workspace = true
+jsonrpsee.workspace = true
+eyre.workspace = true
+serde_json.workspace = true
+
+[features]
+# Included solely to ignore certain tests.
+optimism = []

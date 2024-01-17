@@ -351,7 +351,9 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         );
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
-        let prometheus_handle = self.install_prometheus_recorder()?;
+        let prometheus_handle =
+            if self.metrics.is_some() { Some(self.install_prometheus_recorder()?) } else { None };
+
         // always store reth.toml in the data dir, not the chain specific data dir
         info!(target: "reth::cli", path = ?self.config_path(), "Configuration loaded");
 
@@ -546,17 +548,26 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         block_production_task.set_pipeline_events(pipeline_events);
         debug!(target: "reth::cli", "Spawning block production task task");
 
-        ctx.task_executor.spawn_critical("PoA Block Production Task", Box::pin(async move {
-            block_production_task.start_task().await;
-        }));
+        ctx.task_executor.spawn_critical(
+            "PoA Block Production Task",
+            Box::pin(async move {
+                block_production_task.start_task().await;
+            }),
+        );
 
-        ctx.task_executor.spawn_critical("PoA Block Fetcher Task", Box::pin(async move {
-            block_fetcher_task.start_task().await;
-        }));
+        ctx.task_executor.spawn_critical(
+            "PoA Block Fetcher Task",
+            Box::pin(async move {
+                block_fetcher_task.start_task().await;
+            }),
+        );
 
-        ctx.task_executor.spawn_critical("PoA Block Sync Controller Task", Box::pin(async move {
-            sync_controller.start_task().await;
-        }));
+        ctx.task_executor.spawn_critical(
+            "PoA Block Sync Controller Task",
+            Box::pin(async move {
+                sync_controller.start_task().await;
+            }),
+        );
 
         let pipeline_events = pipeline.events();
 
@@ -763,14 +774,14 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
     async fn start_metrics_endpoint(
         &self,
-        prometheus_handle: PrometheusHandle,
+        prometheus_handle: Option<PrometheusHandle>,
         db: Arc<DatabaseEnv>,
     ) -> eyre::Result<()> {
         if let Some(listen_addr) = self.metrics {
             info!(target: "reth::cli", addr = %listen_addr, "Starting metrics endpoint");
             prometheus_exporter::serve(
                 listen_addr,
-                prometheus_handle,
+                prometheus_handle.expect("Prometheus handle should be provided"),
                 db,
                 metrics_process::Collector::default(),
             )
