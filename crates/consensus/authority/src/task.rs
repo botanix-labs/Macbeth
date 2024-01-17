@@ -259,7 +259,7 @@ where
 
 
         // Try to notify the engine of the new block
-        engine_util::send_fork_choice_update_payload(new_header.clone(), self.to_engine.clone())
+        engine_util::send_fork_choice_update_payload(new_header.clone().hash, self.to_engine.clone())
             .await
             .map_err(|e| PersistNewBlockError::FailedToCommunicateWithEngine(e))?;
 
