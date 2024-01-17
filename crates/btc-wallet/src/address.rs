@@ -46,7 +46,9 @@ lazy_static::lazy_static! {
 
 #[derive(Debug)]
 enum SafeSpendPathError {
+    #[allow(dead_code)]
     InvalidLengthOfPublicKeys,
+    #[allow(dead_code)]
     QuorumCannotBeLessThanPublicKeys,
 }
 
