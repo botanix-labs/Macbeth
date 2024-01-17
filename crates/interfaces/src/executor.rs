@@ -74,10 +74,13 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
+    /// Error when pegin/pegout fails consenus validation
     #[error("Invalid Mint contract invocation")]
     MintContractViolation,
+    /// Poa specific error when Extra data header is invalid
     #[error("Invalid extra header")]
     InvalidExtraData,
+    /// Poa specific error when Extra data header is failed to deserialize
     #[error("Failed to serialize extra header")]
     ExtraDataSerializeError,
 }

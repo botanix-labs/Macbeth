@@ -1,6 +1,5 @@
 /// ! Module for block import.
 /// Allows other components to import blocks from the network
-
 use crate::message::NewBlockMessage;
 use reth_consensus_common::validation;
 use reth_interfaces::consensus::ConsensusError;

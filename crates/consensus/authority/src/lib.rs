@@ -45,15 +45,17 @@ use std::sync::Arc;
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{error, trace, warn};
+
+use tracing::{error, info, trace, warn};
+mod block_builder;
+mod block_fetcher;
 mod builder;
+mod client;
 mod engine_util;
 mod epoch_manager;
 mod sync;
 mod task;
 mod voting;
-mod block_builder;
-mod block_fetcher;
 
 pub use builder::AuthorityConsensusBuilder;
 
