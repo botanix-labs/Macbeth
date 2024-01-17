@@ -2,7 +2,7 @@ use crate::{engine_util, task::BlockProductionTask, AuthorityConsensus};
 
 use reth_consensus_common::utils;
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{CanonChainTracker, StateProviderFactory};
+use reth_provider::{CanonChainTracker, StateProviderFactory, BlockReaderIdExt};
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 
 use reth_transaction_pool::TransactionPool;
@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
     pub(crate) async fn try_fetch_block(&mut self) {

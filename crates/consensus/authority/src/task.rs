@@ -1,12 +1,10 @@
-use crate::{epoch_manager::EpochManager, Storage, sync::sync_peer_tip};
+use crate::{epoch_manager::EpochManager, Storage};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
-use reth_consensus_common::{
-    utils::validate_poa_extra_data_header,
-};
+use reth_consensus_common::utils::validate_poa_extra_data_header;
 
 use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
@@ -17,7 +15,6 @@ use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
     Chain, StateProviderFactory,
 };
-
 
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
@@ -143,20 +140,9 @@ where
     }
 
     pub async fn start_task(&mut self) -> () {
-        let network_event_listener = self.network_handle.event_listener();
-        let to_engine = self.to_engine.clone();
-        let local_peer_id = self.network_handle.peer_id().clone();
-
-        // spawn the peer sync task
-        self.task_executor.spawn_critical(
-            "peer sync task",
-            Box::pin(async move {
-                sync_peer_tip(network_event_listener, to_engine, local_peer_id).await;
-            }),
-        );
-
         // This drives block production
         loop {
+            self.try_sync_peer_tip().await;
             self.try_fetch_block().await;
             self.try_build_block().await;
         }

@@ -1,7 +1,7 @@
 use crate::task::BlockProductionTask;
 use reth_eth_wire::NewBlock;
 use reth_primitives::{Block, IntoRecoveredTransaction, SealedBlockWithSenders};
-use reth_provider::{CanonChainTracker, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
 use ruint::Uint;
 use std::task::Poll;
@@ -9,7 +9,7 @@ use tracing::{error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
     pub(crate) async fn try_build_block(&mut self) {

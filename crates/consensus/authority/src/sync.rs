@@ -1,40 +1,48 @@
+use crate::task::BlockProductionTask;
 use futures_util::StreamExt;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_network::NetworkEvent;
-use reth_primitives::revm_primitives::FixedBytes;
+use reth_network::{NetworkEvent, NetworkEvents};
+
+use reth_provider::{CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::ForkchoiceState;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use reth_transaction_pool::TransactionPool;
+use tokio::sync::oneshot;
+
 use tracing::{debug, info};
 
-/// Sync with peer and send peer tip to beacon engine
-pub(crate) async fn sync_peer_tip(
-    mut network_event_listener: UnboundedReceiverStream<NetworkEvent>,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
-    local_peer_id: FixedBytes<64>,
-) {
-    while let Some(event) = network_event_listener.next().await {
-        if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
-            let blockhash = status.blockhash;
-            if peer_id == local_peer_id {
-                debug!("Ignoring session established event from self");
-                continue
+impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
+where
+    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Pool: TransactionPool,
+{
+    pub(crate) async fn try_sync_peer_tip(&self) {
+        let mut network_event_listener = self.network_handle.event_listener();
+        let to_engine = self.to_engine.clone();
+        let local_peer_id = self.network_handle.peer_id().clone();
+        if let Some(event) = network_event_listener.next().await {
+            if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
+                let blockhash = status.blockhash;
+                if peer_id == local_peer_id {
+                    debug!(target: "consensus::authority", "Ignoring session established event from self");
+                    return
+                }
+                let state = ForkchoiceState {
+                    head_block_hash: blockhash,
+                    finalized_block_hash: blockhash,
+                    safe_block_hash: blockhash,
+                };
+
+                info!(target: "consensus::authority", "Sending fork choice update with new tip {} from peer {}", blockhash, peer_id
+                );
+                let (tx, _rx) = oneshot::channel();
+                let _ = to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
+                    state,
+                    payload_attrs: None,
+                    tx,
+                });
+
+                // TODO (scott) use util function to handle _rx messages
             }
-            let state = ForkchoiceState {
-                head_block_hash: blockhash,
-                finalized_block_hash: blockhash,
-                safe_block_hash: blockhash,
-            };
-
-            info!("Sending fork choice update with new tip {} from peer {}", blockhash, peer_id);
-            let (tx, _rx) = oneshot::channel();
-            let _ = to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
-                state,
-                payload_attrs: None,
-                tx,
-            });
-
-            // TODO (scott) use util function to handle _rx messages
         }
     }
 }
