@@ -52,6 +52,10 @@ mod epoch_manager;
 mod sync;
 mod task;
 mod voting;
+mod engine_util;
+mod block_builder;
+mod block_fetcher;
+mod sync_controller;
 
 pub use builder::AuthorityConsensusBuilder;
 

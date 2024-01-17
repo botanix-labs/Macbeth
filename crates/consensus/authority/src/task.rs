@@ -1,35 +1,33 @@
-use crate::{epoch_manager::EpochManager, sync::sync_peer_tip, AuthorityConsensus, Storage};
+use crate::{epoch_manager::EpochManager, Storage, sync::sync_peer_tip};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_consensus_common::{
-    utils,
-    utils::{validate_poa_block_beneficiary, validate_poa_extra_data_header},
+    utils::validate_poa_extra_data_header,
 };
-use reth_eth_wire::NewBlock;
+
 use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::{
-    hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
-    TransactionSigned,
+    hex, BlockBody, ChainSpec, Log, SealedBlockWithSenders,
 };
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
     Chain, StateProviderFactory,
 };
-use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
-use reth_rpc_types::engine::PayloadStatusEnum;
+
+
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use ruint::Uint;
+
 use secp256k1::{All, Secp256k1};
-use std::{collections::VecDeque, sync::Arc, task::Poll};
+use std::{collections::VecDeque, sync::Arc};
 
 use tokio::sync::{
-    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    mpsc::{UnboundedReceiver, UnboundedSender},
     oneshot, RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -40,7 +38,7 @@ use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
-enum ProcessBotanixLogError {
+pub(crate) enum ProcessBotanixLogError {
     /// Failed to notify btc server about pegin
     #[error("Failed to notify btc server about pegin")]
     FailedToNotifyPegin(tonic::Status),
@@ -50,9 +48,9 @@ enum ProcessBotanixLogError {
     FailedToMakePegoutTx(tonic::Status),
 }
 
-/// Errors
+/// Persist new block Errors
 #[derive(Debug, thiserror::Error)]
-enum PersistNewBlockError {
+pub(crate) enum PersistNewBlockError {
     #[error("Failed to validate PoA header")]
     FailedToValidatePoaHeader(ConsensusError),
     #[error("Failed ForkchoiceUpdateV2")]
@@ -62,38 +60,39 @@ enum PersistNewBlockError {
 }
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
-    chain_spec: Arc<ChainSpec>,
+    pub(crate) chain_spec: Arc<ChainSpec>,
     /// The client used to interact with the state
     /// Note this is a database client
-    client: Client,
+    pub(crate) client: Client,
     /// The active epoch
-    epoch_manager: EpochManager<Client>,
+    pub(crate) epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
-    storage: Storage<Client>,
+    pub(crate) storage: Storage<Client>,
     /// Pool where transactions are stored
-    pool: Pool,
+    pub(crate) pool: Pool,
     /// backlog of sets of transactions ready to be mined
-    queued: VecDeque<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>,
+    pub(crate) queued:
+        VecDeque<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>,
     /// TODO: ideally this would just be a sender of hashes
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    pub(crate) to_engine: UnboundedSender<BeaconEngineMessage>,
     /// Used to notify consumers of new blocks
-    canon_state_notification: CanonStateNotificationSender,
+    pub(crate) canon_state_notification: CanonStateNotificationSender,
     /// The pipeline events to listen on
-    pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
+    pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
     /// BTC Server client
-    btc_server: BtcServerClient<tonic::transport::Channel>,
+    pub(crate) btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
-    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Bitcoin block source
-    bitcoin_block_source: MempoolSpace,
+    pub(crate) bitcoin_block_source: MempoolSpace,
     /// Instance of secp
-    secp: Secp256k1<All>,
+    pub(crate) secp: Secp256k1<All>,
     /// Key of authority
-    sk: secp256k1::SecretKey,
+    pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
-    network_handle: NetworkHandle,
+    pub(crate) network_handle: NetworkHandle,
     /// Events from block import
-    block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    pub(crate) block_import_rx: UnboundedReceiver<NewBlockMessage>,
     /// Task executor
     task_executor: TaskExecutor,
 }
@@ -157,247 +156,14 @@ where
         );
 
         // This drives block production
-        'main: loop {
-            let new_block = match self.block_import_rx.try_recv() {
-                Ok(b) => b,
-                Err(error) => match error {
-                    TryRecvError::Empty => {
-                        debug!(target: "consensus::authority", "No new blocks from peers");
-                        continue
-                    }
-                    TryRecvError::Disconnected => {
-                        error!(target: "consensus::authority", "Block import channel disconnected");
-                        continue
-                    }
-                },
-            };
-
-            // Recieved a new block from a peer. Block import has ran consensus validation
-            // against this block Update internal cache and notify the
-            // engine
-            loop {
-                let block = new_block.block.block.clone();
-                info!(target: "consensus::authority", ?block, "Recieved new block from peer");
-
-                // extract signer pub key
-                let signer = utils::recovery_authority(&block.header).expect("valid signer");
-
-                let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
-                let signer_index =
-                    authorities.iter().position(|pk| *pk == signer).expect("valid signer");
-                match AuthorityConsensus::validate_inturn(
-                    block.header.timestamp,
-                    authorities.len() as u64,
-                    signer_index as u64,
-                ) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!(target: "consensus::authority", ?err, "Block import failed in turn check");
-                        continue
-                    }
-                }
-
-                // validate beneficiary is within the authorities list
-                match validate_poa_block_beneficiary(&block.header, &authorities) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!(target: "consensus::authority", ?err, "Block beneficiary not found in authorities list");
-                        continue
-                    }
-                }
-
-                // send the new update to the engine, this will trigger the engine
-                // to download and execute the block we just inserted
-                let (tx, rx) = oneshot::channel();
-                let sealed_block = block.clone().seal_slow();
-                let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
-                    payload: sealed_block.clone().into(),
-                    cancun_fields: None,
-                    tx,
-                });
-
-                let payload_status = match rx.await.unwrap() {
-                    Ok(s) => s,
-                    Err(status_err) => {
-                        error!(target: "consensus::authority", ?status_err, "Authority fork new payload failed");
-                        return ()
-                    }
-                };
-                match payload_status.status {
-                    PayloadStatusEnum::Accepted | PayloadStatusEnum::Valid => {}
-                    PayloadStatusEnum::Invalid { validation_error } => {
-                        error!(target: "consensus::authority", ?validation_error,
-                            "Authority fork new payload returned invalid response"
-                        );
-                        break
-                    }
-                    PayloadStatusEnum::Syncing => {
-                        debug!(target: "consensus::authority", ?payload_status,
-                            "Authority fork new payload returned SYNCING, waiting for VALID"
-                        );
-                        // wait for the next fork choice update
-                        continue
-                    }
-                };
-                // remove the tx which are now confirmed
-                info!("Removing txs from the pool upon recevied block");
-                let tx_hashes =
-                    block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
-                self.pool.remove_transactions(tx_hashes);
-
-                let senders =
-                    TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
-
-                let db = State::builder()
-                    .with_database_boxed(Box::new(StateProviderDatabase::new(
-                        self.client.latest().unwrap(),
-                    )))
-                    .with_bundle_update()
-                    .build();
-                let mut executor = EVMProcessor::new_with_state(self.chain_spec.clone(), db);
-                let mut storage = self.storage.write().await;
-                let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
-
-                match storage.execute(
-                    &block,
-                    &mut executor,
-                    senders.clone(),
-                    recent_bitcoin_block_header,
-                ) {
-                    Ok((bundle_state, _gas_used)) => {
-                        drop(storage);
-                        let sealed_block_with_senders =
-                            SealedBlockWithSenders::new(sealed_block, senders)
-                                .expect("senders are valid");
-                        match self.process_reciepts(&bundle_state, false).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                continue 'main
-                            }
-                        }
-
-                        match self
-                            .persist_new_block(sealed_block_with_senders.clone(), bundle_state)
-                            .await
-                        {
-                            Ok(_) => {}
-                            Err(err) => {
-                                error!(target: "consensus::authority", ?err, "Failed to persist new block");
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
-                    }
-                }
-                break
-            }
-
-            let is_inturn = match self.epoch_manager.poll(&self.pool).await {
-                (Poll::Pending, is_inturn) => is_inturn,
-                (Poll::Ready(transactions), is_inturn) => {
-                    info!(
-                        "Adding to the list of transctions, {:?}, {:?}",
-                        transactions, self.queued
-                    );
-                    self.queued.push_back(transactions.clone());
-                    let mining_pool = self.pool.clone();
-                    mining_pool.remove_transactions(
-                        transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
-                    );
-                    is_inturn
-                }
-            };
-
-            // If insert task is not none executinon of async task is on going
-            if self.queued.is_empty() || !is_inturn {
-                info!("Txs list is empty, skipping");
-                // nothing to insert
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                continue
-            }
-
-            // ready to queue in new insert task
-            let transactions = self.queued.pop_front().expect("not empty");
-            let txs_cloned = transactions.clone();
-
-            let events = self.pipe_line_events.take();
-
-            let client = self.client.clone();
-
-            // Create the mining future that creates a block, notifies the engine that drives
-            // the pipeline
-
-            let (transactions, senders): (Vec<_>, Vec<_>) = transactions
-                .into_iter()
-                .map(|tx| {
-                    let recovered = tx.to_recovered_transaction();
-                    let signer = recovered.signer();
-                    (recovered.into_signed(), signer)
-                })
-                .unzip();
-            let mut storage = self.storage.write().await;
-            let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
-            let authority_signers = storage.authorities.clone();
-            // execute the new block
-            let (new_header, bundle_state) = match storage.build_and_execute(
-                transactions.clone(),
-                &client,
-                self.chain_spec.clone(),
-                recent_bitcoin_block_header,
-                // TODO(armins) read vote in as param
-                &None,
-                &self.sk,
-                &self.secp,
-                &authority_signers,
-            ) {
-                Ok(ret) => ret,
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "failed to execute block");
-                    drop(storage);
-                    self.queued.push_front(txs_cloned);
-                    continue
-                }
-            };
-            drop(storage);
-            match self.process_reciepts(&bundle_state, false).await {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                    continue 'main
-                }
-            }
-
-            // seal the block
-            let block = Block {
-                header: new_header.clone().unseal(),
-                body: transactions,
-                ommers: vec![],
-                withdrawals: None,
-            };
-            let sealed_block = block.clone().seal_slow();
-            let sealed_block_with_senders =
-                SealedBlockWithSenders::new(sealed_block, senders).expect("senders are valid");
-            match self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await {
-                Ok(_) => {}
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "Failed to persist new block");
-                    // TODO(armins) failed txs should get retried
-                    continue
-                }
-            }
-            // Notify peers
-            let new_block = NewBlock { block, td: Uint::ZERO };
-            let block_hash = sealed_block_with_senders.hash();
-            self.network_handle.announce_block(new_block, block_hash);
-
-            self.pipe_line_events = events;
+        loop {
+            self.try_fetch_block().await;
+            self.try_build_block().await;
         }
     }
 
     /// Processes the reciepts of a block
-    async fn process_reciepts(
+    pub(crate) async fn process_reciepts(
         &mut self,
         bundle_state: &BundleStateWithReceipts,
         should_broadcast_pegout: bool,
@@ -417,13 +183,13 @@ where
                         self.process_botanix_log(log, should_broadcast_pegout).await?;
                     }
                 }
-                info!("Reciept {:?}", reciept);
+                info!(target: "consensus::authority", "Reciept {:?}", reciept);
             }
         }
         Ok(())
     }
 
-    async fn process_botanix_log(
+    pub async fn process_botanix_log(
         &mut self,
         log: &Log,
         should_broadcast_pegout: bool,
@@ -491,7 +257,7 @@ where
         Ok(())
     }
 
-    async fn persist_new_block(
+    pub(crate) async fn persist_new_block(
         &mut self,
         sealed_block: SealedBlockWithSenders,
         bundled_state: BundleStateWithReceipts,
