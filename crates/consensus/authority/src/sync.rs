@@ -1,14 +1,10 @@
-use crate::task::BlockProductionTask;
+use crate::{engine_util, task::BlockProductionTask};
 use futures_util::StreamExt;
-use reth_beacon_consensus::BeaconEngineMessage;
 use reth_network::{NetworkEvent, NetworkEvents};
 
 use reth_provider::{CanonChainTracker, StateProviderFactory};
-use reth_rpc_types::engine::ForkchoiceState;
 use reth_transaction_pool::TransactionPool;
-use tokio::sync::oneshot;
-
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
@@ -17,7 +13,7 @@ where
 {
     pub(crate) async fn try_sync_peer_tip(&self) {
         let mut network_event_listener = self.network_handle.event_listener();
-        let to_engine = self.to_engine.clone();
+        let _to_engine = self.to_engine.clone();
         let local_peer_id = self.network_handle.peer_id().clone();
         if let Some(event) = network_event_listener.next().await {
             if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
@@ -26,22 +22,20 @@ where
                     debug!(target: "consensus::authority", "Ignoring session established event from self");
                     return
                 }
-                let state = ForkchoiceState {
-                    head_block_hash: blockhash,
-                    finalized_block_hash: blockhash,
-                    safe_block_hash: blockhash,
-                };
-
-                info!(target: "consensus::authority", "Sending fork choice update with new tip {} from peer {}", blockhash, peer_id
-                );
-                let (tx, _rx) = oneshot::channel();
-                let _ = to_engine.send(BeaconEngineMessage::ForkchoiceUpdated {
-                    state,
-                    payload_attrs: None,
-                    tx,
-                });
-
-                // TODO (scott) use util function to handle _rx messages
+                match engine_util::send_fork_choice_update_payload(
+                    blockhash,
+                    self.to_engine.clone(),
+                )
+                .await
+                {
+                    Ok(_) => {
+                        info!(target: "consensus::authority", "Sending fork choice update with new tip {} from peer {}", blockhash, peer_id);
+                    }
+                    Err(err) => {
+                        error!(target: "consensus::authority", "Failed to send fork choice update with new tip {} from peer {}: {:?}", blockhash, peer_id, err);
+                        return;
+                    }
+                }
             }
         }
     }
@@ -56,6 +50,7 @@ mod tests {
     };
 
     use super::*;
+    use reth_beacon_consensus::BeaconEngineMessage;
     use reth_eth_wire::{
         capability::{Capabilities, Capability},
         EthVersion, Status,

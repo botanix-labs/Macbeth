@@ -4,7 +4,7 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
-use reth_primitives::{SealedBlock, SealedHeader};
+use reth_primitives::{BlockHash, SealedBlock, SealedHeader};
 use reth_rpc_types::engine::{ForkchoiceState, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -80,13 +80,13 @@ pub(crate) enum SendForkChoiceUpdateError {
 
 /// Sends a FCU payload to the engine.
 pub(crate) async fn send_fork_choice_update_payload(
-    new_header: SealedHeader,
+    new_block_hash: BlockHash,
     to_engine: UnboundedSender<BeaconEngineMessage>,
 ) -> Result<(), SendForkChoiceUpdateError> {
     let state = ForkchoiceState {
-        head_block_hash: new_header.hash,
-        finalized_block_hash: new_header.hash,
-        safe_block_hash: new_header.hash,
+        head_block_hash: new_block_hash,
+        finalized_block_hash: new_block_hash,
+        safe_block_hash: new_block_hash,
     };
     let mut ctr = 0;
     loop {
