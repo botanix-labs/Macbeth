@@ -114,7 +114,7 @@ impl PeginData {
             // At this point the user proven that the proof is n blocks deep
             // (assuming that `block_header` is n blocks deep)
             // Now we must check the merkle proof is in one of the blocks provided
-            let confirmed_block_position = pegin
+            let _confirmed_block_position = pegin
                 .block_headers
                 .iter()
                 .position(|header| header.merkle_root == root)
@@ -125,7 +125,7 @@ impl PeginData {
             // TODO (armins) Most likely the user block is at position 0. Although this is not
             // guaranteed
 
-            let diff = (pegin.block_headers.len() - 1);
+            let diff = pegin.block_headers.len() - 1;
             // the latest block height minus the position of the user block in the list is the
             // height of the user block
             if bitcoin_block.1 - (diff as u32) != self.bitcoin_block_height {
