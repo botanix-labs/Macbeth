@@ -2918,9 +2918,9 @@ dependencies = [
 
 [[package]]
 name = "eyre"
-version = "0.6.10"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bbb8258be8305fb0237d7b295f47bb24ff1b136a535f473baf40e70468515aa"
+checksum = "b6267a1fa6f59179ea4afc8e50fd8612a3cc60bc858f786ff877a4a8cb042799"
 dependencies = [
  "indenter",
  "once_cell",
@@ -6330,8 +6330,13 @@ version = "0.1.0-alpha.13"
 dependencies = [
  "bitcoin",
  "btc-server",
+ "clap",
  "client",
+ "ethers",
+ "eyre",
  "futures-util",
+ "jsonrpsee",
+ "reth",
  "reth-beacon-consensus",
  "reth-botanix-lib",
  "reth-btc-wallet",
@@ -6348,6 +6353,8 @@ dependencies = [
  "reth-transaction-pool",
  "ruint",
  "secp256k1 0.27.0",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

@@ -121,7 +121,7 @@ async fn process_botanix_log(
             }
             Ok(GenesisContractEvents::BurnEvent) => {
                 if !should_broadcast_pegout {
-                    continue;
+                    continue
                 }
                 // TODO (armins): obv
                 let fee_rate = 30u32;
