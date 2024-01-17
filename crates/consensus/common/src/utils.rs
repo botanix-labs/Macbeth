@@ -230,18 +230,21 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use secp256k1::ecdsa::RecoveryId;
 
+    #[allow(dead_code)]
     const EDH_DEFAULT_SIGHASH: &str =
         "0x0a088807360d347e57b95b64d765266f9551acc33ecfcdb2d49003a66acbf192";
 
+    #[allow(dead_code)]
     const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+    #[allow(dead_code)]
     const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
 
+    #[allow(dead_code)]
     fn generate_secret_key(hex_string: &str) -> secp256k1::SecretKey {
         secp256k1::SecretKey::from_str(hex_string).expect("Invalid hex string for SecretKey")
     }
-
+    #[allow(dead_code)]
     fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) -> () {
         let mut edh = ExtraDataHeader::default();
         let sk1 = generate_secret_key(SK1);
@@ -288,7 +291,7 @@ mod tests {
         edh.set_signature(
             secp256k1::ecdsa::RecoverableSignature::from_compact(
                 &[0u8; 64],
-                RecoveryId::from_i32(1i32).unwrap(),
+                secp256k1::ecdsa::RecoveryId::from_i32(1i32).unwrap(),
             )
             .unwrap(),
         );

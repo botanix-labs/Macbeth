@@ -92,6 +92,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// Events from block import
     pub(crate) block_import_rx: UnboundedReceiver<NewBlockMessage>,
     /// Task executor
+    #[allow(dead_code)]
     task_executor: TaskExecutor,
 }
 
