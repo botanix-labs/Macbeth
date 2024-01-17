@@ -7,7 +7,7 @@ use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State}
 
 use reth_transaction_pool::TransactionPool;
 
-use tokio::sync::{mpsc::error::TryRecvError};
+use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
