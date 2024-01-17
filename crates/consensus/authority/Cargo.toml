@@ -22,7 +22,6 @@ reth-stages = { path = "../../stages" }
 reth-revm = { path = "../../revm" }
 reth-transaction-pool.workspace = true
 # reth-beacon-imports
-reth-db = { path = "../../storage/db" }
 reth-tasks.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }

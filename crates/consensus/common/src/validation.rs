@@ -493,7 +493,7 @@ pub fn validate_4844_header_standalone(header: &SealedHeader) -> Result<(), Cons
 ///
 /// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
 /// This must be 32 bytes or fewer; formally Hx.
-pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
+pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError> {
     // TODO (armins) calculate worst case max size
     // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
