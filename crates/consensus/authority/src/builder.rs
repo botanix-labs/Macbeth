@@ -1,3 +1,4 @@
+use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 use tracing::error;
@@ -38,6 +39,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     epoch_manager: EpochManager,
     network_handle: NetworkHandle,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    task_executor: TaskExecutor,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -56,6 +58,7 @@ where
     Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
+    #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
@@ -71,6 +74,7 @@ where
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        task_executor: TaskExecutor,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -134,6 +138,7 @@ where
             epoch_manager,
             network_handle,
             block_import_rx,
+            task_executor,
         })
     }
 
@@ -158,6 +163,7 @@ where
             epoch_manager,
             network_handle,
             block_import_rx,
+            task_executor,
         } = self;
         let auth_client = AuthorityClient::new(storage.clone());
 
@@ -176,6 +182,7 @@ where
             epoch_manager,
             network_handle,
             block_import_rx,
+            task_executor,
         );
 
         (consensus, auth_client, task)

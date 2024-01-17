@@ -45,6 +45,7 @@ use tracing::{error, info, trace, warn};
 mod builder;
 mod client;
 mod epoch_manager;
+mod sync;
 mod task;
 mod voting;
 mod engine_util;

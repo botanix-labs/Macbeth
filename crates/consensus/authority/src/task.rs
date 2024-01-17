@@ -1,4 +1,4 @@
-use crate::{epoch_manager::EpochManager, AuthorityConsensus, Storage};
+use crate::{epoch_manager::EpochManager, sync::sync_peer_tip, AuthorityConsensus, Storage};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
@@ -11,7 +11,7 @@ use reth_consensus_common::{
 };
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
-use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_network::{message::NewBlockMessage, NetworkEvent, NetworkEvents, NetworkHandle};
 use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
     TransactionSigned,
@@ -23,6 +23,7 @@ use reth_provider::{
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::engine::PayloadStatusEnum;
 use reth_stages::PipelineEvent;
+use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use ruint::Uint;
 use secp256k1::{All, Secp256k1};
@@ -94,6 +95,8 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     network_handle: NetworkHandle,
     /// Events from block import
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    /// Task executor
+    task_executor: TaskExecutor,
 }
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
@@ -102,6 +105,7 @@ where
     Pool: TransactionPool,
 {
     /// Creates a new instance of the task
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
@@ -117,6 +121,7 @@ where
         epoch_manager: EpochManager,
         network_handle: NetworkHandle,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         Self {
             chain_spec,
@@ -135,10 +140,23 @@ where
             epoch_manager,
             network_handle,
             block_import_rx,
+            task_executor,
         }
     }
 
     pub async fn start_task(&mut self) -> () {
+        let network_event_listener = self.network_handle.event_listener();
+        let to_engine = self.to_engine.clone();
+        let local_peer_id = self.network_handle.peer_id().clone();
+
+        // spawn the peer sync task
+        self.task_executor.spawn_critical(
+            "peer sync task",
+            Box::pin(async move {
+                sync_peer_tip(network_event_listener, to_engine, local_peer_id).await;
+            }),
+        );
+
         // This drives block production
         'main: loop {
             let new_block = match self.block_import_rx.try_recv() {
