@@ -1,4 +1,3 @@
-#![feature(is_some_and)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 //! Collection of traits and trait implementations for common database operations.
 //!

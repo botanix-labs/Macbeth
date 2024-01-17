@@ -158,7 +158,7 @@ impl ExtraDataHeader {
         self.encode_into_without_signature(writer)?;
         if let Some(sig) = self.authority_signature {
             let (recovery_id, sig) = &sig.serialize_compact();
-            i32::consensus_encode(&recovery_id.to_i32(), writer);
+            let _ = i32::consensus_encode(&recovery_id.to_i32(), writer);
             writer.write_all(&sig[..])?;
         }
         Ok(())
