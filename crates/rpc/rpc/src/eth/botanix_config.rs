@@ -41,7 +41,8 @@ impl Default for BotanixConfig {
 
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
-    fn new(bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
+    #[allow(dead_code)]
+    fn new(&self, bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let mempool_space_api = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://mempool.space/api",
