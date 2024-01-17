@@ -505,6 +505,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             None,
             network.clone(),
             block_import_rx,
+            ctx.task_executor.clone(),
         )
         .expect("Failed to create authority consensus builder")
         .build();
