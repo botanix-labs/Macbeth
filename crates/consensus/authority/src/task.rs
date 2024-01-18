@@ -1,16 +1,10 @@
-use crate::{
-    engine_util::{self, SendForkChoiceUpdateError},
-    epoch_manager::EpochManager,
-    Storage,
-};
+use crate::{epoch_manager::EpochManager, Storage};
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::block_source::MempoolSpace;
-use reth_consensus_common::utils::validate_poa_extra_data_header;
-
 
 use crate::sync::SyncController;
-use reth_interfaces::consensus::ConsensusError;
+
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::{BlockBody, ChainSpec, SealedBlockWithSenders};
 use reth_provider::{
@@ -29,19 +23,10 @@ use tokio::sync::{
     RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info};
+
 use url::Url;
 
 use client::BtcServerClient;
-
-/// Persist new block Errors
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum PersistNewBlockError {
-    #[error("Failed to validate PoA header")]
-    FailedToValidatePoaHeader(ConsensusError),
-    #[error("Failed to communicate with engine API")]
-    FailedToCommunicateWithEngine(SendForkChoiceUpdateError),
-}
 
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
@@ -147,55 +132,6 @@ where
             self.try_build_block().await;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
-    }
-
-    pub(crate) async fn persist_new_block(
-        &mut self,
-        sealed_block: SealedBlockWithSenders,
-        bundled_state: BundleStateWithReceipts,
-    ) -> Result<(), PersistNewBlockError> {
-        let new_header = sealed_block.header.clone();
-        // perform PoA validation
-        let storage = self.storage.read().await;
-        let authority_signers = storage.authorities.clone();
-        drop(storage);
-        validate_poa_extra_data_header(&new_header, &authority_signers)
-            .map_err(|e| PersistNewBlockError::FailedToValidatePoaHeader(e))?;
-
-
-        // Try to notify the engine of the new block
-        engine_util::send_fork_choice_update_payload(
-            new_header.clone().hash,
-            self.to_engine.clone(),
-        )
-        .await
-        .map_err(|e| PersistNewBlockError::FailedToCommunicateWithEngine(e))?;
-
-        // update canon chain for rpc
-        self.client.set_canonical_head(sealed_block.header.clone());
-        self.client.set_safe(sealed_block.header.clone());
-        self.client.set_finalized(sealed_block.header.clone());
-
-        let chain = Arc::new(Chain::new(vec![sealed_block.clone()], bundled_state));
-
-        info!(target: "consensus::authority", "sending block notification to block chain tree");
-        // send block notification
-        let _ = self
-            .canon_state_notification
-            .send(reth_provider::CanonStateNotification::Commit { new: chain });
-
-        // Update internal consensus cache
-        let body = BlockBody {
-            transactions: sealed_block.body.clone(),
-            ommers: vec![],
-            withdrawals: None,
-        };
-        let mining_pool = self.pool.clone();
-        // Lastly remove confirmed txs from the mempool
-        mining_pool
-            .remove_transactions(body.transactions.iter().map(|tx| tx.hash().to_owned()).collect());
-
-        Ok(())
     }
 
     /// Sets the pipeline events to listen on.
