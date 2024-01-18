@@ -491,7 +491,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         // Configure the pipeline
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
-        let (_, authority_client, mut block_production_task) = AuthorityConsensusBuilder::try_new(
+        let (_, mut block_production_task) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),
             transaction_pool.clone(),
@@ -531,7 +531,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let mut pipeline = self
             .build_networked_pipeline(
                 &config.stages,
-                authority_client.clone(),
+                network_client.clone(),
                 Arc::clone(&authority_consensus),
                 provider_factory.clone(),
                 &ctx.task_executor,
@@ -585,7 +585,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         // Configure the consensus engine
         let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
-            authority_client,
+            network_client,
             pipeline,
             blockchain_db.clone(),
             Box::new(ctx.task_executor.clone()),
