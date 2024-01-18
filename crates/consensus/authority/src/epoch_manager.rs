@@ -78,7 +78,7 @@ where
         }
 
         drop(storage);
-        let is_inturn = AuthorityConsensus::is_inturn(authority_len, signer_index as u64);
+        let is_inturn = utils::is_inturn(authority_len, signer_index as u64);
         info!("Epoch manager inturn: {}", is_inturn);
 
         // drain the pool

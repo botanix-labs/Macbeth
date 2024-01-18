@@ -22,8 +22,8 @@
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
-    utils::{unix_timestamp, validate_poa_extra_data_header},
-    validation,
+    utils::unix_timestamp,
+    validation::{self, validate_poa_header_standalone},
 };
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
@@ -53,7 +53,6 @@ use tracing::{error, info, trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
-mod client;
 mod engine_util;
 mod epoch_manager;
 mod sync;
@@ -77,29 +76,6 @@ impl AuthorityConsensus {
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         // TODO(armins) most likely we need to pass storage here
         Self { chain_spec }
-    }
-
-    /// Returns true if the authority is in turn
-    pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-        // use minutes as time unit to determine in turn
-        let timestamp = unix_timestamp() / 60;
-
-        (timestamp / authorities_len) % authorities_len == signer_index
-    }
-
-    /// Validates that the authority was in turn when producing the block
-    pub fn validate_inturn(
-        block_timestamp: u64,
-        authorities_len: u64,
-        signer_index: u64,
-    ) -> Result<(), ConsensusError> {
-        let block_timestamp_min = block_timestamp / 60;
-        if (block_timestamp_min / authorities_len) % authorities_len != signer_index {
-            error!("Authority was not in turn when producing block");
-            return Err(ConsensusError::AuthorityNotInTurn)
-        }
-
-        Ok(())
     }
 }
 
@@ -405,10 +381,13 @@ where
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
     ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
+        // Check if we have a recent block header
+        // Can't validate pegin without it
         if recent_block_header.is_none() {
             return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
         }
 
+        // Construct block and header
         let header =
             self.build_header_template(&transactions, &chain_spec.clone(), vote, sk, secp)?;
 
@@ -418,7 +397,7 @@ where
 
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
-        // now execute the block
+        // Now execute the block
         let db = State::builder()
             .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
@@ -449,8 +428,9 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        validate_poa_extra_data_header(&header, authority_signers).map_err(|e| {
-            warn!(target: "consensus::authority", "failed to validate extra data header: {:?}", e);
+        validate_poa_header_standalone(&header, &authority_signers).map_err(|e| {
+            warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+            // TODO(armins) return more expressive error
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
 
@@ -474,51 +454,52 @@ where
 
         Ok((new_header, bundle_state))
     }
+
+    // Execute and run poa validation on the block without inserting it into the storage
+    pub(crate) fn execute_imported_block(
+        &mut self,
+        client: &impl StateProviderFactory,
+        chain_spec: Arc<ChainSpec>,
+        sealed_block: SealedBlock,
+        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+    ) -> Result<BundleStateWithReceipts, BlockExecutionError> {
+        // Check if we have a recent block header
+        // Can't validate pegin without it
+        if recent_block_header.is_none() {
+            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
+        }
+        trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
+
+        // Now execute the block
+        let db = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
+            .with_bundle_update()
+            .build();
+        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+
+        let senders =
+            TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
+                BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
+            )?;
+
+        let (bundle_state, _gas_used) = self.execute(
+            &sealed_block.clone().unseal(),
+            &mut executor,
+            senders,
+            recent_block_header,
+        )?;
+
+        let authority_signers = self.authorities.clone();
+        validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(
+            |e| {
+                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+                // TODO(armins) return more expressive error
+                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+            },
+        )?;
+
+        return Ok(bundle_state)
+    }
     // TODO (armins) add utility function for executing a block recieved from the network and adding
     // to cached blocks
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::AuthorityConsensus;
-
-    #[test]
-    fn is_inturn() {
-        let authorities_len = 1;
-        let signer_index = 0;
-        assert!(AuthorityConsensus::is_inturn(authorities_len, signer_index));
-    }
-
-    #[test]
-    fn is_inturn_false() {
-        let authorities_len = 1;
-        let signer_index = 1;
-        assert!(!AuthorityConsensus::is_inturn(authorities_len, signer_index));
-    }
-
-    #[test]
-    fn validate_inturn() {
-        let block_timestamp = 10;
-        let authorities_len = 3;
-        let signer_index = 0;
-        assert!(AuthorityConsensus::validate_inturn(
-            block_timestamp,
-            authorities_len,
-            signer_index
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn validate_inturn_false() {
-        let block_timestamp = 10;
-        let authorities_len = 3;
-        let signer_index = 1;
-        assert!(AuthorityConsensus::validate_inturn(
-            block_timestamp,
-            authorities_len,
-            signer_index
-        )
-        .is_err());
-    }
 }

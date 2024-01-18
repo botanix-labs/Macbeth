@@ -95,6 +95,20 @@ pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, Recov
     Err(RecoverAuthorityError::NoSignaturePresentInExtraData)
 }
 
+impl From<RecoverAuthorityError> for ConsensusError {
+    fn from(e: RecoverAuthorityError) -> Self {
+        match e {
+            RecoverAuthorityError::FailedToRecoverSigner(_) => {
+                ConsensusError::TransactionSignerRecoveryError
+            }
+            RecoverAuthorityError::FailedToCreateSigHash(_) |
+            RecoverAuthorityError::FailedToDerserializeExtraData(_) |
+            RecoverAuthorityError::NoSignaturePresentInExtraData => {
+                ConsensusError::ExtraDataInvalid
+            }
+        }
+    }
+}
 #[derive(Debug)]
 /// Errors that can occur while reading the authority list from the block header
 pub enum GetAuthoritiesError {
@@ -221,6 +235,35 @@ pub fn validate_current_signer_against_last(
     // Signer should be 1 minute. Assuming 1 minute block times
     if last.0 == current.0 && current.1 - last.1 < 1 {
         return Err(ValidateAgainstParentError::SignerLimitExceeded)
+    }
+
+    Ok(())
+}
+
+/// Returns true if the authority is in turn
+pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
+    // use minutes as time unit to determine in turn
+    let timestamp = unix_timestamp() / 60;
+
+    (timestamp / authorities_len) % authorities_len == signer_index
+}
+
+/// Validates that the authority was in turn when producing the block
+pub fn validate_inturn(
+    header: &Header,
+    authority_signers: &Vec<secp256k1::PublicKey>,
+) -> Result<(), ConsensusError> {
+    let singer_pk = recovery_authority(header)?;
+    let signer_index = authority_signers
+        .iter()
+        .position(|pk| *pk == singer_pk)
+        .ok_or(ConsensusError::AuthorityNotInTurn)?;
+
+    let authorities_len = authority_signers.len() as u64;
+    let block_timestamp_min = header.timestamp / 60;
+    if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
+        error!(target = "authority_consensus", "Authority was not in turn when producing block");
+        return Err(ConsensusError::AuthorityNotInTurn)
     }
 
     Ok(())
@@ -519,5 +562,60 @@ mod tests {
 
         let result = validate_against_parent(parent, current);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_inturn_true() {
+        let authorities_len = 1;
+        let signer_index = 0;
+        assert!(is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn is_inturn_false() {
+        let authorities_len = 1;
+        let signer_index = 1;
+        assert!(!is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn validate_inturn_ok() {
+        let mut header = Header::default();
+        header.timestamp = 1705621229;
+        sign_block_helper(&mut header, Some(SK1));
+
+        assert!(validate_inturn(
+            &header,
+            &vec![
+                secp256k1::PublicKey::from_secret_key(
+                    &secp256k1::Secp256k1::new(),
+                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                ),
+                secp256k1::PublicKey::from_secret_key(
+                    &secp256k1::Secp256k1::new(),
+                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                ),
+            ]
+        )
+        .is_ok());
+
+        // Sign the same header with a different key should fail
+
+        sign_block_helper(&mut header, Some(SK2));
+
+        assert!(validate_inturn(
+            &header,
+            &vec![
+                secp256k1::PublicKey::from_secret_key(
+                    &secp256k1::Secp256k1::new(),
+                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                ),
+                secp256k1::PublicKey::from_secret_key(
+                    &secp256k1::Secp256k1::new(),
+                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                ),
+            ]
+        )
+        .is_err());
     }
 }
