@@ -1,10 +1,10 @@
-use crate::task::BlockProductionTask;
+use crate::{engine_util, task::BlockProductionTask};
 use reth_eth_wire::NewBlock;
 use reth_primitives::{Block, IntoRecoveredTransaction, SealedBlockWithSenders};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
 use ruint::Uint;
-use std::task::Poll;
+use std::{sync::Arc, task::Poll};
 use tracing::{error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
@@ -109,19 +109,36 @@ where
         };
         let sealed_block = block.clone().seal_slow();
         let sealed_block_with_senders =
-            SealedBlockWithSenders::new(sealed_block, senders).expect("senders are valid");
+            SealedBlockWithSenders::new(sealed_block.clone(), senders).expect("senders are valid");
 
-        match self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await {
-            Ok(_) => {}
-            Err(err) => {
-                error!(target: "consensus::authority", ?err, "Failed to persist new block");
-                self.queued.push_front(txs_cloned);
-                return
-            }
-        }
+        // Try to notify the engine of new FCU
+        engine_util::send_fork_choice_update_payload(
+            new_header.clone().hash,
+            self.to_engine.clone(),
+        )
+        .await
+        .unwrap();
+
+        // update canon chain for rpc
+        self.client.set_canonical_head(sealed_block.header.clone());
+        self.client.set_safe(sealed_block.header.clone());
+        self.client.set_finalized(sealed_block.header.clone());
+
+        let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+
+        info!(target: "consensus::authority", "sending block notification to block chain tree");
+        // send block notification
+        let _ = self
+            .canon_state_notification
+            .send(reth_provider::CanonStateNotification::Commit { new: chain });
+
+        // lastly prune mempool
+        info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
+        let tx_hashes = block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
+        self.pool.remove_transactions(tx_hashes);
         // Notify peers
         let new_block = NewBlock { block, td: Uint::ZERO };
-        let block_hash = sealed_block_with_senders.hash();
+        let block_hash = sealed_block.hash;
         self.network_handle.announce_block(new_block, block_hash);
 
         self.pipe_line_events = events;

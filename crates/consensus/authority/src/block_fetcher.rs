@@ -2,10 +2,11 @@ use crate::{engine_util, task::BlockProductionTask, AuthorityConsensus};
 
 use reth_consensus_common::utils;
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{CanonChainTracker, StateProviderFactory, BlockReaderIdExt};
+use reth_provider::{CanonChainTracker, Chain, StateProviderFactory, BlockReaderIdExt};
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 
 use reth_transaction_pool::TransactionPool;
+use std::sync::Arc;
 
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing::{debug, error, info};
@@ -92,7 +93,8 @@ where
             Ok((bundle_state, _gas_used)) => {
                 drop(storage);
                 let sealed_block_with_senders =
-                    SealedBlockWithSenders::new(sealed_block, senders).expect("senders are valid");
+                    SealedBlockWithSenders::new(sealed_block.clone(), senders)
+                        .expect("senders are valid");
                 // Process Botanix specific logs
                 match crate::utils::process_reciepts(
                     &self.bitcoin_block_source,
@@ -108,14 +110,26 @@ where
                         return
                     }
                 }
-                // Persist new block to storage
-                match self.persist_new_block(sealed_block_with_senders.clone(), bundle_state).await
-                {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!(target: "consensus::authority", ?err, "Failed to persist new block");
-                    }
-                }
+                // Notify engine api about new FCU
+                engine_util::send_fork_choice_update_payload(
+                    sealed_block.clone().hash,
+                    self.to_engine.clone(),
+                )
+                .await
+                .unwrap();
+
+                // update canon chain for rpc
+                self.client.set_canonical_head(sealed_block.header.clone());
+                self.client.set_safe(sealed_block.header.clone());
+                self.client.set_finalized(sealed_block.header.clone());
+
+                let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+
+                info!(target: "consensus::authority", "sending block notification to block chain tree");
+                // send block notification
+                let _ = self
+                    .canon_state_notification
+                    .send(reth_provider::CanonStateNotification::Commit { new: chain });
 
                 // lastly prune mempool
                 info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");

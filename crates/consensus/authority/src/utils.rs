@@ -22,7 +22,7 @@ pub(crate) enum ProcessBotanixLogError {
 }
 
 // TODO(armins) ideally processing these reciepts dont have sideeffects or make network calls
-// in the future the caller should be responsible for doing this 
+// in the future the caller should be responsible for doing this
 
 /// Processes the receipts in the given `bundle_state` and performs actions based on the receipt
 /// logs.

@@ -21,7 +21,10 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
-use reth_consensus_common::{utils::unix_timestamp, validation};
+use reth_consensus_common::{
+    utils::{unix_timestamp, validate_poa_extra_data_header},
+    validation,
+};
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
@@ -446,7 +449,7 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        reth_consensus_common::utils::validate_poa_extra_data_header(&header, authority_signers).map_err(|e| {
+        validate_poa_extra_data_header(&header, authority_signers).map_err(|e| {
             warn!(target: "consensus::authority", "failed to validate extra data header: {:?}", e);
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
