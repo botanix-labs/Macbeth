@@ -10,14 +10,14 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
-pub(crate) struct SyncController {
+pub struct SyncController {
     network_event_listener: UnboundedReceiverStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
     to_engine: UnboundedSender<BeaconEngineMessage>,
 }
 
 impl SyncController {
-    pub(crate) fn new(
+    pub fn new(
         network_event_listener: UnboundedReceiverStream<NetworkEvent>,
         peer_id: FixedBytes<64>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
@@ -25,29 +25,33 @@ impl SyncController {
         Self { network_event_listener, peer_id, to_engine }
     }
 
-    pub(crate) async fn try_sync_peer_tip(&mut self) {
-        while let Some(event) = self.network_event_listener.next().await {
-            if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
-                let blockhash = status.blockhash;
-                if peer_id == self.peer_id {
-                    debug!(target: "consensus::authority", "Ignoring session established event from self");
-                    return
-                }
-                match engine_util::send_fork_choice_update_payload(
-                    blockhash,
-                    self.to_engine.clone(),
-                )
-                .await
-                {
-                    Ok(_) => {
-                        info!(target: "consensus::authority", "Sending fork choice update with new tip {} from peer {}", blockhash, peer_id);
+    pub async fn start_task(&mut self) {
+        loop {
+            while let Some(event) = self.network_event_listener.next().await {
+                if let NetworkEvent::SessionEstablished { peer_id, status, .. } = event {
+                    let blockhash = status.blockhash;
+                    if peer_id == self.peer_id {
+                        debug!(target: "consensus::authority", "Ignoring session established event from self");
+                        return
                     }
-                    Err(err) => {
-                        error!(target: "consensus::authority", "Failed to send fork choice update with new tip {} from peer {}: {:?}", blockhash, peer_id, err);
-                        return;
+                    match engine_util::send_fork_choice_update_payload(
+                        blockhash,
+                        self.to_engine.clone(),
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            info!(target: "consensus::authority", "Sending fork choice update with new tip {} from peer {}", blockhash, peer_id);
+                        }
+                        Err(err) => {
+                            error!(target: "consensus::authority", "Failed to send fork choice update with new tip {} from peer {}: {:?}", blockhash, peer_id, err);
+                            //TODO(armins) If we cannot talk to the engine sould we panic?
+                            return
+                        }
                     }
                 }
             }
+            // Should never get here
         }
     }
 }

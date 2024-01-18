@@ -111,13 +111,11 @@ where
         let sealed_block_with_senders =
             SealedBlockWithSenders::new(sealed_block.clone(), senders).expect("senders are valid");
 
-        // Try to notify the engine of new FCU
-        engine_util::send_fork_choice_update_payload(
-            new_header.clone().hash,
-            self.to_engine.clone(),
-        )
-        .await
-        .unwrap();
+        // TODO(armins) Should this be a FCU update?
+        let _res =
+            engine_util::send_beacon_new_payload(sealed_block.clone(), self.to_engine.clone())
+                .await
+                .unwrap();
 
         // update canon chain for rpc
         self.client.set_canonical_head(sealed_block.header.clone());
