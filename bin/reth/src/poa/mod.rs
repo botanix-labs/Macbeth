@@ -491,7 +491,12 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         // Configure the pipeline
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
-        let (_, mut block_production_task) = AuthorityConsensusBuilder::try_new(
+        let (
+            _,
+            mut block_production_task,
+            mut block_fetcher_task,
+            mut sync_controller,
+        ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),
             transaction_pool.clone(),
@@ -547,6 +552,14 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         ctx.task_executor.spawn(Box::pin(async move {
             block_production_task.start_task().await;
+        }));
+
+        ctx.task_executor.spawn(Box::pin(async move {
+            block_fetcher_task.start_task().await;
+        }));
+
+        ctx.task_executor.spawn(Box::pin(async move {
+            sync_controller.start_task().await;
         }));
 
         let pipeline_events = pipeline.events();

@@ -1,144 +1,207 @@
-use crate::{engine_util, task::BlockProductionTask, AuthorityConsensus};
+use crate::engine_util;
 
-use reth_consensus_common::utils;
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{CanonChainTracker, Chain, StateProviderFactory, BlockReaderIdExt};
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 
+use crate::Storage;
+use client::BtcServerClient;
+use reth_beacon_consensus::BeaconEngineMessage;
+use reth_btc_wallet::block_source::MempoolSpace;
+use reth_network::message::NewBlockMessage;
+use reth_primitives::ChainSpec;
+use reth_provider::CanonStateNotificationSender;
 use reth_transaction_pool::TransactionPool;
-use std::sync::Arc;
 
-use tokio::sync::mpsc::error::TryRecvError;
+use std::sync::Arc;
+use tokio::sync::{
+    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
+
 use tracing::{debug, error, info};
 
-impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
+pub struct BlockFetcherTask<Client, Pool: TransactionPool> {
+    chain_spec: Arc<ChainSpec>,
+    block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage>,
+    /// The client used to interact with the state
+    /// Note this is a database client
+    client: Client,
+    /// Mempool
+    pool: Pool,
+    /// Used to notify consumers of new blocks
+    canon_state_notification: CanonStateNotificationSender,
+    /// Btc Server client
+    btc_server: BtcServerClient<tonic::transport::Channel>,
+    /// bitcoin block source
+    bitcoin_block_source: MempoolSpace,
+    /// Consensus cache
+    storage: Storage,
+    /// Recent bitcoin header
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+}
+
+impl<Client, Pool: TransactionPool> BlockFetcherTask<Client, Pool>
 where
     Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
-    pub(crate) async fn try_fetch_block(&mut self) {
-        let new_block = match self.block_import_rx.try_recv() {
-            Ok(b) => b,
-            Err(error) => match error {
-                TryRecvError::Empty => {
-                    debug!(target: "consensus::authority", "No new blocks from peers");
-                    return;
-                }
-                TryRecvError::Disconnected => {
-                    error!(target: "consensus::authority", "Block import channel disconnected");
-                    return;
-                }
-            },
-        };
-
-        let block = new_block.block.block.clone();
-        info!(target: "consensus::authority", ?block, "Recieved new block from peer");
-
-        // extract signer pub key
-        let signer = utils::recovery_authority(&block.header).expect("valid signer");
-
-        let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
-        let signer_index = authorities.iter().position(|pk| *pk == signer).expect("valid signer");
-        // TODO(armins) this should be a consensus check not standalone in the block fetcher
-        match AuthorityConsensus::validate_inturn(
-            block.header.timestamp,
-            authorities.len() as u64,
-            signer_index as u64,
-        ) {
-            Ok(_) => {}
-            Err(err) => {
-                error!(target: "consensus::authority", ?err, "Block import failed in turn check");
-                return
-            }
+    pub fn new(
+        chain_spec: Arc<ChainSpec>,
+        block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage>,
+        client: Client,
+        pool: Pool,
+        canon_state_notification: CanonStateNotificationSender,
+        btc_server: BtcServerClient<tonic::transport::Channel>,
+        bitcoin_block_source: MempoolSpace,
+        storage: Storage,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    ) -> Self {
+        Self {
+            chain_spec,
+            block_import_rx,
+            to_engine,
+            client,
+            pool,
+            canon_state_notification,
+            btc_server,
+            bitcoin_block_source,
+            storage,
+            bitcoin_block_header,
         }
+    }
 
-        // TODO(armins) this should be a consensus check not standalone in the block fetcher
-        // validate beneficiary is within the authorities list
-        match utils::validate_poa_block_beneficiary(&block.header, &authorities) {
-            Ok(_) => {}
-            Err(err) => {
-                error!(target: "consensus::authority", ?err, "Block beneficiary not found in authorities list");
-                return
-            }
-        }
-        // Seal the block
-        let sealed_block = block.clone().seal_slow();
-        // Notify the engine of the new block
-        let _payload_status = match engine_util::send_beacon_new_payload(
-            sealed_block.clone(),
-            self.to_engine.clone(),
-        )
-        .await
-        {
-            Ok(payload) => payload,
-            Err(err) => {
-                error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
-                return
-            }
-        };
-
-        let senders = TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
-
-        let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(
-                self.client.latest().unwrap(),
-            )))
-            .with_bundle_update()
-            .build();
-        let mut executor = EVMProcessor::new_with_state(self.chain_spec.clone(), db);
-        let mut storage = self.storage.write().await;
-        let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
-
-        match storage.execute(&block, &mut executor, senders.clone(), recent_bitcoin_block_header) {
-            Ok((bundle_state, _gas_used)) => {
-                drop(storage);
-                let sealed_block_with_senders =
-                    SealedBlockWithSenders::new(sealed_block.clone(), senders)
-                        .expect("senders are valid");
-                // Process Botanix specific logs
-                match crate::utils::process_reciepts(
-                    &self.bitcoin_block_source,
-                    &mut self.btc_server.clone(),
-                    &bundle_state,
-                    false,
-                )
-                .await
-                {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                        return
+    pub async fn start_task(&mut self) {
+        loop {
+            let new_block = match self.block_import_rx.try_recv() {
+                Ok(b) => b,
+                Err(error) => match error {
+                    TryRecvError::Empty => {
+                        debug!(target: "consensus::authority", "No new blocks from peers");
+                        continue;
                     }
+                    TryRecvError::Disconnected => {
+                        debug!(target: "consensus::authority", "Block import channel disconnected");
+                        continue;
+                    }
+                },
+            };
+
+            let block = new_block.block.block.clone();
+            info!(target: "consensus::authority", ?block, "Recieved new block from peer");
+
+            // extract signer pub key
+            // let signer = utils::recovery_authority(&block.header).expect("valid signer");
+            // let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
+            // let signer_index = authorities.iter().position(|pk| *pk == signer).expect("valid
+            // signer"); // TODO(armins) this should be a consensus check not standalone in the
+            // block fetcher match AuthorityConsensus::validate_inturn(
+            //     block.header.timestamp,
+            //     authorities.len() as u64,
+            //     signer_index as u64,
+            // ) {
+            //     Ok(_) => {}
+            //     Err(err) => {
+            //         error!(target: "consensus::authority", ?err, "Block import failed in turn
+            // check");         return
+            //     }
+            // }
+
+            // // TODO(armins) this should be a consensus check not standalone in the block fetcher
+            // // validate beneficiary is within the authorities list
+            // match utils::validate_poa_block_beneficiary(&block.header, &authorities) {
+            //     Ok(_) => {}
+            //     Err(err) => {
+            //         error!(target: "consensus::authority", ?err, "Block beneficiary not found in
+            // authorities list");         return
+            //     }
+            // }
+            // Seal the block
+            let sealed_block = block.clone().seal_slow();
+            // Notify the engine of the new block
+            let _payload_status = match engine_util::send_beacon_new_payload(
+                sealed_block.clone(),
+                self.to_engine.clone(),
+            )
+            .await
+            {
+                Ok(payload) => payload,
+                Err(err) => {
+                    error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
+                    continue;
                 }
-                // Notify engine api about new FCU
-                engine_util::send_fork_choice_update_payload(
-                    sealed_block.clone().hash,
-                    self.to_engine.clone(),
-                )
-                .await
-                .unwrap();
+            };
 
-                // update canon chain for rpc
-                self.client.set_canonical_head(sealed_block.header.clone());
-                self.client.set_safe(sealed_block.header.clone());
-                self.client.set_finalized(sealed_block.header.clone());
+            let senders =
+                TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
+            let db = State::builder()
+                .with_database_boxed(Box::new(StateProviderDatabase::new(
+                    self.client.latest().unwrap(),
+                )))
+                .with_bundle_update()
+                .build();
+            let mut executor = EVMProcessor::new_with_state(self.chain_spec.clone(), db);
+            let mut storage = self.storage.write().await;
+            let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
 
-                let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+            match storage.execute(
+                &block,
+                &mut executor,
+                senders.clone(),
+                recent_bitcoin_block_header,
+            ) {
+                Ok((bundle_state, _gas_used)) => {
+                    drop(storage);
+                    let sealed_block_with_senders =
+                        SealedBlockWithSenders::new(sealed_block.clone(), senders)
+                            .expect("senders are valid");
+                    // Process Botanix specific logs
+                    match crate::utils::process_reciepts(
+                        &self.bitcoin_block_source,
+                        &mut self.btc_server.clone(),
+                        &bundle_state,
+                        false,
+                    )
+                    .await
+                    {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                            continue;
+                        }
+                    }
+                    // Notify engine api about new FCU
+                    engine_util::send_fork_choice_update_payload(
+                        sealed_block.clone().hash,
+                        self.to_engine.clone(),
+                    )
+                    .await
+                    .unwrap();
 
-                info!(target: "consensus::authority", "sending block notification to block chain tree");
-                // send block notification
-                let _ = self
-                    .canon_state_notification
-                    .send(reth_provider::CanonStateNotification::Commit { new: chain });
+                    // update canon chain for rpc
+                    self.client.set_canonical_head(sealed_block.header.clone());
+                    self.client.set_safe(sealed_block.header.clone());
+                    self.client.set_finalized(sealed_block.header.clone());
 
-                // lastly prune mempool
-                info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
-                let tx_hashes =
-                    block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
-                self.pool.remove_transactions(tx_hashes);
-            }
-            Err(err) => {
-                error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                    let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+
+                    info!(target: "consensus::authority", "sending block notification to block chain tree");
+                    // send block notification
+                    let _ = self
+                        .canon_state_notification
+                        .send(reth_provider::CanonStateNotification::Commit { new: chain });
+
+                    // lastly prune mempool
+                    info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
+                    let tx_hashes =
+                        block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
+                    self.pool.remove_transactions(tx_hashes);
+                }
+                Err(err) => {
+                    error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                }
             }
         }
     }

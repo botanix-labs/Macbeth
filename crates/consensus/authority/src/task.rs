@@ -3,14 +3,9 @@ use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::block_source::MempoolSpace;
 
-use crate::sync::SyncController;
-
-use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
-use reth_primitives::{BlockBody, ChainSpec, SealedBlockWithSenders};
-use reth_provider::{
-    BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
-    Chain, StateProviderFactory,
-};
+use reth_network::NetworkHandle;
+use reth_primitives::ChainSpec;
+use reth_provider::{CanonChainTracker, CanonStateNotificationSender, StateProviderFactory, BlockReaderIdExt, Chain};
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
@@ -18,13 +13,8 @@ use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use secp256k1::{All, Secp256k1};
 use std::{collections::VecDeque, sync::Arc};
 
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-
-use url::Url;
 
 use client::BtcServerClient;
 
@@ -61,8 +51,6 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
-    /// Events from block import
-    pub(crate) block_import_rx: UnboundedReceiver<NewBlockMessage>,
     /// Task executor
     #[allow(dead_code)]
     task_executor: TaskExecutor,
@@ -84,12 +72,11 @@ where
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_source_address: Url,
+        bitcoin_block_source: MempoolSpace,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
-        block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
     ) -> Self {
         Self {
@@ -103,32 +90,17 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source: MempoolSpace::new(bitcoin_block_source_address.to_string()),
+            bitcoin_block_source,
             secp,
             sk,
             epoch_manager,
             network_handle,
-            block_import_rx,
             task_executor,
         }
     }
 
     pub async fn start_task(&mut self) -> () {
-        let mut sync_controller = SyncController::new(
-            self.network_handle.event_listener(),
-            self.network_handle.peer_id().clone(),
-            self.to_engine.clone(),
-        );
-
-        self.task_executor.spawn_critical(
-            "Sync Controller",
-            Box::pin(async move {
-                sync_controller.try_sync_peer_tip().await;
-            }),
-        );
-
         loop {
-            self.try_fetch_block().await;
             self.try_build_block().await;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }

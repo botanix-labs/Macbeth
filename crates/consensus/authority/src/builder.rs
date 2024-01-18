@@ -1,26 +1,29 @@
-use reth_tasks::TaskExecutor;
-use secp256k1::{All, Secp256k1};
-use std::sync::Arc;
-use tracing::error;
-use url::Url;
-
 use crate::{
-    epoch_manager::EpochManager, task::BlockProductionTask, utils::get_authority_list,
-    voting::AuthorityVote, AuthorityConsensus, Storage,
+    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, task::BlockProductionTask,
+    utils::get_authority_list, voting::AuthorityVote, AuthorityConsensus, Storage,
 };
+
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::get_authority_list;
-use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
+use reth_tasks::TaskExecutor;
 use reth_transaction_pool::TransactionPool;
+use secp256k1::{All, Secp256k1};
+use std::sync::Arc;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
+
+use crate::sync::SyncController;
+use tracing::error;
+use url::Url;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
@@ -152,7 +155,14 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub fn build(self) -> (AuthorityConsensus, BlockProductionTask<Client, Pool>) {
+    pub fn build(
+        self,
+    ) -> (
+        AuthorityConsensus,
+        BlockProductionTask<Client, Pool>,
+        BlockFetcherTask<Client, Pool>,
+        SyncController,
+    ) {
         let Self {
             btc_server,
             client,
@@ -171,7 +181,27 @@ where
             block_import_rx,
             task_executor,
         } = self;
-        let task = BlockProductionTask::new(
+        let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
+
+        let sync_task = SyncController::new(
+            network_handle.clone().event_listener(),
+            network_handle.peer_id().clone(),
+            to_engine.clone(),
+        );
+
+        let block_fetcher_task = crate::block_fetcher::BlockFetcherTask::new(
+            Arc::clone(&consensus.chain_spec),
+            block_import_rx,
+            to_engine.clone(),
+            client.clone(),
+            pool.clone(),
+            canon_state_notification.clone(),
+            btc_server.clone(),
+            bitcoin_block_source.clone(),
+            storage.clone(),
+            bitcoin_block_header.clone(),
+        );
+        let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
             to_engine,
             canon_state_notification,
@@ -180,15 +210,14 @@ where
             pool,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source_address,
+            bitcoin_block_source,
             secp,
             sk,
             epoch_manager,
             network_handle,
-            block_import_rx,
             task_executor,
         );
 
-        (consensus, task)
+        (consensus, block_production_task, block_fetcher_task, sync_task)
     }
 }

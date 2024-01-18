@@ -74,8 +74,6 @@ pub(crate) enum SendForkChoiceUpdateError {
     InvalidPayload,
     #[error("Engine recieve error")]
     RecvError,
-    #[error("Response timeout")]
-    Timeout,
 }
 
 /// Sends a FCU payload to the engine.
@@ -88,11 +86,7 @@ pub(crate) async fn send_fork_choice_update_payload(
         finalized_block_hash: new_block_hash,
         safe_block_hash: new_block_hash,
     };
-    let mut ctr = 0;
     loop {
-        if ctr == 5000 {
-            return Err(SendForkChoiceUpdateError::Timeout)
-        }
         // send the new update to the engine, this will trigger
         // the engine
         // to download and execute the block we just inserted
@@ -102,13 +96,14 @@ pub(crate) async fn send_fork_choice_update_payload(
             .map_err(|_| SendForkChoiceUpdateError::EngineError)?;
 
         let recv = rx.await.map_err(|_| SendForkChoiceUpdateError::RecvError)?;
-
         match recv {
             Ok(fcu_response) => {
                 match fcu_response.forkchoice_status() {
                     ForkchoiceStatus::Valid => return Ok(()),
                     ForkchoiceStatus::Invalid => {
                         error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
+                        // TODO(armins) maybe we should return the status here
+                        return Ok(())
                     }
                     ForkchoiceStatus::Syncing => {
                         debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
@@ -122,8 +117,6 @@ pub(crate) async fn send_fork_choice_update_payload(
                 return Err(SendForkChoiceUpdateError::InvalidPayload)
             }
         }
-        ctr += 1;
-        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
