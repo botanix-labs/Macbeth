@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::utils::create_authority_sighash;
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use reth_consensus_common::utils::create_authority_sighash;
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
     Header,

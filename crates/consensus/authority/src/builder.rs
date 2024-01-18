@@ -10,6 +10,7 @@ use crate::{
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_consensus_common::utils::get_authority_list;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{

@@ -85,7 +85,14 @@ where
         };
         drop(storage);
         // Process Botanix specific logs
-        match self.process_reciepts(&bundle_state, false).await {
+        match crate::utils::process_reciepts(
+            &self.bitcoin_block_source,
+            &mut self.btc_server.clone(),
+            &bundle_state,
+            false,
+        )
+        .await
+        {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");

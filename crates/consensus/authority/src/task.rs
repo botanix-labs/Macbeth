@@ -4,17 +4,15 @@ use crate::{
     Storage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_botanix_lib::mint_validation::{
-    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
-};
-use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+
+use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::validate_poa_extra_data_header;
 
 
 use crate::sync::SyncController;
 use reth_interfaces::consensus::ConsensusError;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
-use reth_primitives::{hex, BlockBody, ChainSpec, Log, SealedBlockWithSenders};
+use reth_primitives::{BlockBody, ChainSpec, SealedBlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
     Chain, StateProviderFactory,
@@ -31,22 +29,10 @@ use tokio::sync::{
     RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use url::Url;
 
-use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
-
-/// Repersents an error while processing a botanix log
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ProcessBotanixLogError {
-    /// Failed to notify btc server about pegin
-    #[error("Failed to notify btc server about pegin")]
-    FailedToNotifyPegin(tonic::Status),
-    #[error("Failed to broadcast pegout tx")]
-    FailedToBroadcastPegout,
-    #[error("Failed to make pegout tx")]
-    FailedToMakePegoutTx(tonic::Status),
-}
+use client::BtcServerClient;
 
 /// Persist new block Errors
 #[derive(Debug, thiserror::Error)]
@@ -161,101 +147,6 @@ where
             self.try_build_block().await;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
-    }
-
-    /// Processes the reciepts of a block
-    pub(crate) async fn process_reciepts(
-        &mut self,
-        bundle_state: &BundleStateWithReceipts,
-        should_broadcast_pegout: bool,
-    ) -> Result<(), ProcessBotanixLogError> {
-        let reciepts_bundle = bundle_state.receipts().iter();
-        for (index, reciepts) in reciepts_bundle.enumerate() {
-            for reciept in reciepts {
-                if index == 0 && reciept.is_none() {
-                    // Prunning block, skip
-                    break
-                }
-                if let Some(reciept) = reciept {
-                    if !reciept.success {
-                        continue
-                    }
-                    for log in &reciept.logs {
-                        self.process_botanix_log(log, should_broadcast_pegout).await?;
-                    }
-                }
-                info!(target: "consensus::authority", "Reciept {:?}", reciept);
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn process_botanix_log(
-        &mut self,
-        log: &Log,
-        should_broadcast_pegout: bool,
-    ) -> Result<(), ProcessBotanixLogError> {
-        for topic in &log.topics {
-            match GenesisContractEvents::try_from(topic.clone()) {
-                Ok(GenesisContractEvents::MintingEvent) => {
-                    info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                    let pegin_data = parse_pegin_reth_log_topic(&log)
-                        .expect("passed evm check should pass this parse attempt");
-                    for pegin in &pegin_data.meta {
-                        let request = NotifyPeginRequest {
-                            utxo_txid: pegin.outpoint.txid.to_string(),
-                            utxo_vout: pegin.outpoint.vout,
-                            eth_address: hex::encode(pegin.address.to_vec()),
-                            output: bitcoin::consensus::serialize(
-                                pegin
-                                    .tx
-                                    .output
-                                    .get(pegin.outpoint.vout as usize)
-                                    .expect("valid vout"),
-                            ),
-                        };
-                        self.btc_server
-                            .notify_pegin(request)
-                            .await
-                            .map_err(|e| ProcessBotanixLogError::FailedToNotifyPegin(e))?;
-                        info!(target: "consensus::authority", "notifying btc server about pegin utxo");
-                    }
-                }
-                Ok(GenesisContractEvents::BurnEvent) => {
-                    if !should_broadcast_pegout {
-                        continue
-                    }
-                    // TODO (armins): obv
-                    let fee_rate = 30u32;
-                    info!(target: "consensus::authority", "Parsing and sending withdrawal event to btc_server");
-                    let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
-                    let request = MakeTxRequest {
-                        address: pegout.destination.to_string(),
-                        value: pegout.amount.to_sat(),
-                        fee_rate,
-                    };
-
-                    let response = self
-                        .btc_server
-                        .make_tx(request)
-                        .await
-                        .map_err(|e| ProcessBotanixLogError::FailedToMakePegoutTx(e))?;
-
-                    let raw_tx = response.into_inner().tx;
-                    info!(target: "consensus::authority", "broadcasting withdrawal tx");
-
-                    self.bitcoin_block_source
-                        .broadcast_tx(&hex::encode(raw_tx))
-                        .await
-                        .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
-                }
-                Err(e) => {
-                    debug!(target: "consensus::authority", ?e, "Non-genesis contract event");
-                    continue
-                }
-            }
-        }
-        Ok(())
     }
 
     pub(crate) async fn persist_new_block(

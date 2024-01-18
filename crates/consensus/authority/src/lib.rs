@@ -21,7 +21,7 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
-use reth_consensus_common::{utils, validation};
+use reth_consensus_common::{utils::unix_timestamp, validation};
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
@@ -55,6 +55,7 @@ mod engine_util;
 mod epoch_manager;
 mod sync;
 mod task;
+mod utils;
 mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
@@ -78,7 +79,7 @@ impl AuthorityConsensus {
     /// Returns true if the authority is in turn
     pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
         // use minutes as time unit to determine in turn
-        let timestamp = utils::unix_timestamp() / 60;
+        let timestamp = unix_timestamp() / 60;
 
         (timestamp / authorities_len) % authorities_len == signer_index
     }
@@ -110,7 +111,10 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
-        utils::validate_against_parent(parent.header.clone(), header.header.clone())?;
+        reth_consensus_common::utils::validate_against_parent(
+            parent.header.clone(),
+            header.header.clone(),
+        )?;
         validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
         Ok(())
     }
@@ -243,8 +247,8 @@ where
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
+        let timestamp = unix_timestamp();
 
-        let timestamp = utils::unix_timestamp();
         // check previous block for base fee
         let base_fee_per_gas = self
             .client
@@ -368,7 +372,7 @@ where
             vote_for,
             recent_block_hash,
         );
-        let sig_hash = utils::create_authority_sighash(
+        let sig_hash = reth_consensus_common::utils::create_authority_sighash(
             &mut header.clone(),
             &extra_header_content_no_signature,
         );
@@ -442,7 +446,7 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        utils::validate_poa_extra_data_header(&header, authority_signers).map_err(|e| {
+        reth_consensus_common::utils::validate_poa_extra_data_header(&header, authority_signers).map_err(|e| {
             warn!(target: "consensus::authority", "failed to validate extra data header: {:?}", e);
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
