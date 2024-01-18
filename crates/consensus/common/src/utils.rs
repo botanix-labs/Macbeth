@@ -210,8 +210,8 @@ pub fn validate_against_parent(
     Ok(())
 }
 
-/// Validate current signer and its last block timestamp against the last signer and its last block timestamp
-/// Used to prevent a signer from signing multiple blocks in the same turn
+/// Validate current signer and its last block timestamp against the last signer and its last block
+/// timestamp Used to prevent a signer from signing multiple blocks in the same turn
 pub fn validate_current_signer_against_last(
     last: (secp256k1::PublicKey, u64),
     current: (secp256k1::PublicKey, u64),
@@ -461,7 +461,6 @@ mod tests {
         let beneficiary_address = public_key_to_address(auth_signer2);
         header.beneficiary = beneficiary_address;
         assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_ok());
-
     }
 
     #[test]

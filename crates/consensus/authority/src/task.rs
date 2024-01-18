@@ -17,8 +17,8 @@ use reth_primitives::{
     TransactionSigned,
 };
 use reth_provider::{
-    BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender, Chain,
-    StateProviderFactory,
+    BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, CanonStateNotificationSender,
+    Chain, StateProviderFactory,
 };
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::engine::PayloadStatusEnum;
@@ -68,9 +68,9 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// Note this is a database client
     client: Client,
     /// The active epoch
-    epoch_manager: EpochManager,
+    epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
-    storage: Storage,
+    storage: Storage<Client>,
     /// Pool where transactions are stored
     pool: Pool,
     /// backlog of sets of transactions ready to be mined
@@ -101,7 +101,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
     /// Creates a new instance of the task
@@ -110,7 +110,7 @@ where
         chain_spec: Arc<ChainSpec>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
-        storage: Storage,
+        storage: Storage<Client>,
         client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
@@ -118,7 +118,7 @@ where
         bitcoin_block_source_address: Url,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
-        epoch_manager: EpochManager,
+        epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
@@ -274,7 +274,7 @@ where
                             Ok(_) => {}
                             Err(e) => {
                                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                continue 'main;
+                                continue 'main
                             }
                         }
 
@@ -366,7 +366,7 @@ where
                 Ok(_) => {}
                 Err(e) => {
                     error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                    continue 'main;
+                    continue 'main
                 }
             }
 
@@ -457,7 +457,7 @@ where
                 }
                 Ok(GenesisContractEvents::BurnEvent) => {
                     if !should_broadcast_pegout {
-                        continue;
+                        continue
                     }
                     // TODO (armins): obv
                     let fee_rate = 30u32;
@@ -529,7 +529,7 @@ where
                         ForkchoiceStatus::Valid => break,
                         ForkchoiceStatus::Invalid => {
                             error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
-                            return Err(PersistNewBlockError::FailedForkchoiceUpdateV2());
+                            return Err(PersistNewBlockError::FailedForkchoiceUpdateV2())
                         }
                         ForkchoiceStatus::Syncing => {
                             debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
@@ -540,7 +540,7 @@ where
                 }
                 Err(err) => {
                     error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
-                    return Err(PersistNewBlockError::FailedToCommunicateWithEngine());
+                    return Err(PersistNewBlockError::FailedToCommunicateWithEngine())
                 }
             }
         }

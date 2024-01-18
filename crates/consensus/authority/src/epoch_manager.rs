@@ -19,10 +19,10 @@ use std::{sync::Arc, task::Poll, time::Duration};
 /// 1. The signer is not in the federation
 /// 2. signer is not inturn
 /// 3. block fails common consensus checks
-pub(crate) struct EpochManager {
+pub(crate) struct EpochManager<Client> {
     /// Access to storage to fetch headers.
     // TODO (armins) this should be protected by an Arc.
-    pub(crate) storage: Storage,
+    pub(crate) storage: Storage<Client>,
 
     /// Pollable interval to lock nodes proposing for a min time defined by `BLOCK_PERIOD`.
     pub(crate) proposal_interval: Interval,
@@ -31,8 +31,8 @@ pub(crate) struct EpochManager {
     pub(crate) has_pending_txs: bool,
 }
 
-impl EpochManager {
-    pub(crate) fn naive_inverval(storage: Storage) -> Self {
+impl<Client> EpochManager<Client> {
+    pub(crate) fn naive_inverval(storage: Storage<Client>) -> Self {
         let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
         let proposal_interval =
             tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
