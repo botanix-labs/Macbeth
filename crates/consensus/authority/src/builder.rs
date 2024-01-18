@@ -146,7 +146,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub fn build(self) -> (AuthorityConsensus, AuthorityClient, BlockProductionTask<Client, Pool>) {
+    pub fn build(self) -> (AuthorityConsensus, BlockProductionTask<Client, Pool>) {
         let Self {
             btc_server,
             client,
@@ -165,8 +165,6 @@ where
             block_import_rx,
             task_executor,
         } = self;
-        let auth_client = AuthorityClient::new(storage.clone());
-
         let task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
             to_engine,
@@ -185,6 +183,6 @@ where
             task_executor,
         );
 
-        (consensus, auth_client, task)
+        (consensus, task)
     }
 }
