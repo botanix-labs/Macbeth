@@ -32,23 +32,26 @@ use reth_primitives::{
     BlockNumber, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
     TransactionSigned, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
-use reth_provider::{BlockExecutor, BundleStateWithReceipts, StateProviderFactory};
+use reth_provider::{
+    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, ProviderError,
+    StateProviderFactory,
+};
 use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-    processor::EVMProcessor, State,
+    processor::EVMProcessor, Database, DatabaseRef, State,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, info, trace, warn};
 mod builder;
 mod client;
+mod engine_util;
 mod epoch_manager;
 mod sync;
 mod task;
 mod voting;
-mod engine_util;
 
 pub use builder::AuthorityConsensusBuilder;
 
@@ -123,9 +126,10 @@ impl Consensus for AuthorityConsensus {
 }
 
 /// In memory storage
-#[derive(Debug, Clone)]
-pub(crate) struct Storage {
-    pub(crate) inner: Arc<RwLock<StorageInner>>,
+#[derive(Clone, Debug)]
+pub(crate) struct Storage<Client> {
+    pub(crate) inner: Arc<RwLock<StorageInner<Client>>>,
+    _phantom_data: PhantomData<Client>,
 }
 
 #[derive(Debug)]
@@ -135,8 +139,12 @@ pub(crate) enum StorageCreationError {
 }
 
 // == impl Storage ===
-impl Storage {
+impl<Client> Storage<Client>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
     fn try_new(
+        client: Client,
         headers: &mut Vec<SealedHeader>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
@@ -152,44 +160,46 @@ impl Storage {
         let (header, best_hash) = headers.last().expect("valid index").clone().split();
 
         let mut storage = StorageInner {
+            client: client.clone(),
             best_hash,
             total_difficulty: header.difficulty,
             best_block: header.number,
             authorities,
             signer_index,
             authority: pk,
-            headers: HashMap::new(),
+            headers: HashMap::new(), // TODO: replace with db calls
             hash_to_number: HashMap::new(),
-            bodies: HashMap::new(),
+            bodies: HashMap::new(), // TODO: replace with db calls
             authority_votes: AuthorityVoteCollection::default(),
         };
         storage.headers.insert(header.number, header);
         storage.bodies.insert(best_hash, BlockBody::default());
 
-        Ok(Self { inner: Arc::new(RwLock::new(storage)) })
+        Ok(Self { inner: Arc::new(RwLock::new(storage)), _phantom_data: PhantomData })
     }
 
     /// Returns the write lock of the storage
-    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner> {
+    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner<Client>> {
         self.inner.write().await
     }
 
     /// Returns the read lock of the storage
-    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
+    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner<Client>> {
         self.inner.read().await
     }
 }
 
+#[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
 /// Headers from the most current epoch to the tip
-#[derive(Debug)]
-pub(crate) struct StorageInner {
+pub(crate) struct StorageInner<Client> {
+    client: Client,
     /// Headers buffered for download.
-    pub(crate) headers: HashMap<BlockNumber, Header>,
+    pub(crate) headers: HashMap<BlockNumber, Header>, // TODO: replace with db calls
     /// A mapping between block hash and number.
     pub(crate) hash_to_number: HashMap<BlockHash, BlockNumber>,
     /// Bodies buffered for download.
-    pub(crate) bodies: HashMap<BlockHash, BlockBody>,
+    pub(crate) bodies: HashMap<BlockHash, BlockBody>, // TODO: replace with db calls
     /// Tracks best block
     pub(crate) best_block: u64,
     /// Tracks hash of best block
@@ -209,7 +219,10 @@ pub(crate) struct StorageInner {
 
 // === impl StorageInner ===
 
-impl StorageInner {
+impl<Client> StorageInner<Client>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
     /// Returns the block hash for the given block number if it exists.
     pub(crate) fn block_hash(&self, num: u64) -> Option<BlockHash> {
         self.hash_to_number.iter().find_map(|(k, v)| num.eq(v).then_some(*k))
@@ -224,6 +237,16 @@ impl StorageInner {
             BlockHashOrNumber::Hash(hash) => self.hash_to_number.get(&hash).copied()?,
             BlockHashOrNumber::Number(num) => num,
         };
+
+        let db: State<Box<dyn Database<Error = ProviderError> + Send>> = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(
+                self.client.latest().unwrap(),
+            )))
+            .with_bundle_update()
+            .build();
+
+        
+
         self.headers.get(&num).cloned()
     }
 
@@ -423,6 +446,7 @@ impl StorageInner {
             .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
+
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
 
         let (bundle_state, gas_used) =

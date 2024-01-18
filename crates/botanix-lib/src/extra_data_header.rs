@@ -4,7 +4,10 @@ use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     secp256k1,
 };
-use secp256k1::{ecdsa::{RecoveryId, RecoverableSignature}, hashes::Hash};
+use secp256k1::{
+    ecdsa::{RecoverableSignature, RecoveryId},
+    hashes::Hash,
+};
 use thiserror::Error;
 
 const EXTRA_HEADER_VERSION: u32 = 0;
@@ -505,11 +508,8 @@ mod tests {
         let deserialized_header = ExtraDataHeader::deserialize(&mut serialized.as_slice())
             .expect("Deserialization failed");
 
-        let recovered_pk = deserialized_header
-            .authority_signature
-            .unwrap()
-            .recover(&message)
-            .unwrap();
+        let recovered_pk =
+            deserialized_header.authority_signature.unwrap().recover(&message).unwrap();
 
         assert_eq!(recovered_pk, public_key);
     }

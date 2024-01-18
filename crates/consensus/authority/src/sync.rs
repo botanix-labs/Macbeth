@@ -5,7 +5,7 @@ use reth_primitives::revm_primitives::FixedBytes;
 use reth_rpc_types::engine::ForkchoiceState;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Sync with peer and send peer tip to beacon engine
 pub(crate) async fn sync_peer_tip(

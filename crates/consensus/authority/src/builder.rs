@@ -5,8 +5,8 @@ use tracing::error;
 use url::Url;
 
 use crate::{
-    client::AuthorityClient, epoch_manager::EpochManager, task::BlockProductionTask,
-    utils::get_authority_list, voting::AuthorityVote, AuthorityConsensus, Storage,
+    epoch_manager::EpochManager, task::BlockProductionTask, utils::get_authority_list,
+    voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -26,7 +26,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     client: Client,
     consensus: AuthorityConsensus,
     pool: Pool,
-    storage: Storage,
+    storage: Storage<Client>,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
@@ -36,7 +36,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     sk: secp256k1::SecretKey,
     #[allow(dead_code)]
     vote: Option<AuthorityVote>,
-    epoch_manager: EpochManager,
+    epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
@@ -112,15 +112,20 @@ where
         let pk = sk.public_key(&secp);
 
         // Try to instantiate storage
-        let storage =
-            Storage::try_new(&mut headers, authorities, signer_index.expect("valid index"), pk)
-                .map_err(|e| {
-                    error!("Failed to instantiate storage: {:?}", e);
-                    AuthorityConsensusBuilderError::InvalidStorage
-                })?;
+        let storage = Storage::try_new(
+            client.clone(),
+            &mut headers,
+            authorities,
+            signer_index.expect("valid index"),
+            pk,
+        )
+        .map_err(|e| {
+            error!("Failed to instantiate storage: {:?}", e);
+            AuthorityConsensusBuilderError::InvalidStorage
+        })?;
 
         // Instantiate epoch manager
-        let epoch_manager = EpochManager::naive_inverval(storage.clone());
+        let epoch_manager = EpochManager::<Client>::naive_inverval(storage.clone());
 
         Ok(Self {
             storage,

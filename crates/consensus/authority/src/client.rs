@@ -11,9 +11,13 @@ use reth_primitives::{
 };
 use std::fmt::Debug;
 use tracing::{trace, warn};
+/*
+
+TODO: THIS IS TO BE REFACTORED
 
 /// A download client that polls the miner for transactions and assembles blocks to be returned in
 /// the download process.
+
 
 #[derive(Debug, Clone)]
 pub struct AuthorityClient {
@@ -126,3 +130,4 @@ impl DownloadClient for AuthorityClient {
         1
     }
 }
+*/
