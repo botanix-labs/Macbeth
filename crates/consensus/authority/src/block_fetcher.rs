@@ -1,8 +1,8 @@
 use crate::engine_util;
 
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{CanonChainTracker, Chain, StateProviderFactory, BlockReaderIdExt};
-use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
+use reth_revm::State;
 
 use crate::Storage;
 use client::BtcServerClient;
@@ -92,32 +92,6 @@ where
             let block = new_block.block.block.clone();
             info!(target: "consensus::authority", ?block, "Recieved new block from peer");
 
-            // extract signer pub key
-            // let signer = utils::recovery_authority(&block.header).expect("valid signer");
-            // let authorities = self.epoch_manager.storage.inner.read().await.authorities.clone();
-            // let signer_index = authorities.iter().position(|pk| *pk == signer).expect("valid
-            // signer"); // TODO(armins) this should be a consensus check not standalone in the
-            // block fetcher match AuthorityConsensus::validate_inturn(
-            //     block.header.timestamp,
-            //     authorities.len() as u64,
-            //     signer_index as u64,
-            // ) {
-            //     Ok(_) => {}
-            //     Err(err) => {
-            //         error!(target: "consensus::authority", ?err, "Block import failed in turn
-            // check");         return
-            //     }
-            // }
-
-            // // TODO(armins) this should be a consensus check not standalone in the block fetcher
-            // // validate beneficiary is within the authorities list
-            // match utils::validate_poa_block_beneficiary(&block.header, &authorities) {
-            //     Ok(_) => {}
-            //     Err(err) => {
-            //         error!(target: "consensus::authority", ?err, "Block beneficiary not found in
-            // authorities list");         return
-            //     }
-            // }
             // Seal the block
             let sealed_block = block.clone().seal_slow();
             // Notify the engine of the new block
@@ -134,26 +108,19 @@ where
                 }
             };
 
-            let senders =
-                TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
-            let db = State::builder()
-                .with_database_boxed(Box::new(StateProviderDatabase::new(
-                    self.client.latest().unwrap(),
-                )))
-                .with_bundle_update()
-                .build();
-            let mut executor = EVMProcessor::new_with_state(self.chain_spec.clone(), db);
-            let mut storage = self.storage.write().await;
             let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+            let mut storage = self.storage.write().await;
 
-            match storage.execute(
-                &block,
-                &mut executor,
-                senders.clone(),
+            match storage.execute_imported_block(
+                &self.client.clone(),
+                self.chain_spec.clone(),
+                sealed_block.clone(),
                 recent_bitcoin_block_header,
             ) {
-                Ok((bundle_state, _gas_used)) => {
+                Ok(bundle_state) => {
                     drop(storage);
+                    let senders =
+                        TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
                     let sealed_block_with_senders =
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");

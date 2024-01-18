@@ -10,6 +10,8 @@ use reth_primitives::{
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
 
+use crate::utils;
+
 /// Validate header standalone
 pub fn validate_header_standalone(
     header: &SealedHeader,
@@ -498,6 +500,23 @@ pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError>
     // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     // } else
+
+    Ok(())
+}
+
+/// Validates PoA header standalone according to the authority consensus rules.
+pub fn validate_poa_header_standalone(
+    header: &Header,
+    authority_signers: &Vec<secp256k1::PublicKey>,
+) -> Result<(), ConsensusError> {
+    // Validate EDH serialization and signature on block
+    utils::validate_poa_extra_data_header(header, authority_signers)?;
+
+    // Validate fee benificiary
+    utils::validate_poa_block_beneficiary(header, authority_signers)?;
+
+    // Validate signer is in turn
+    utils::validate_inturn(&header, authority_signers)?;
 
     Ok(())
 }
