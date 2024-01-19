@@ -5,7 +5,9 @@ use reth_btc_wallet::block_source::MempoolSpace;
 
 use reth_network::NetworkHandle;
 use reth_primitives::ChainSpec;
-use reth_provider::{CanonChainTracker, CanonStateNotificationSender, StateProviderFactory, BlockReaderIdExt, Chain};
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
+};
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};

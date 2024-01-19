@@ -491,29 +491,25 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
         // Configure the pipeline
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
-        let (
-            _,
-            mut block_production_task,
-            mut block_fetcher_task,
-            mut sync_controller,
-        ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&self.chain),
-            blockchain_db.clone(),
-            transaction_pool.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
-            btc_server_client.clone(),
-            bitcoin_block_headers_clone,
-            self.rpc.btc_block_source.clone(),
-            secp256k1::Secp256k1::new(),
-            secret_key,
-            None,
-            network.clone(),
-            block_import_rx,
-            ctx.task_executor.clone(),
-        )
-        .expect("Failed to create authority consensus builder")
-        .build();
+        let (_, mut block_production_task, mut block_fetcher_task, mut sync_controller) =
+            AuthorityConsensusBuilder::try_new(
+                Arc::clone(&self.chain),
+                blockchain_db.clone(),
+                transaction_pool.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender.clone(),
+                btc_server_client.clone(),
+                bitcoin_block_headers_clone,
+                self.rpc.btc_block_source.clone(),
+                secp256k1::Secp256k1::new(),
+                secret_key,
+                None,
+                network.clone(),
+                block_import_rx,
+                ctx.task_executor.clone(),
+            )
+            .expect("Failed to create authority consensus builder")
+            .build();
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
         debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");

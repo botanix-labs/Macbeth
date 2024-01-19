@@ -1,6 +1,6 @@
 use crate::{
     block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, task::BlockProductionTask,
-    utils::get_authority_list, voting::AuthorityVote, AuthorityConsensus, Storage,
+    voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 
 use client::BtcServerClient;

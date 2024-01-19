@@ -49,7 +49,7 @@ use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use tracing::{error, info, trace, warn};
+use tracing::{trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -158,6 +158,7 @@ where
         self.inner.write().await
     }
 
+    #[allow(dead_code)]
     /// Returns the read lock of the storage
     pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner<Client>> {
         self.inner.read().await
@@ -189,14 +190,6 @@ where
     #[allow(dead_code)]
     pub(crate) fn block_hash(&self, num: u64) -> Option<BlockHash> {
         self.client.block_hash(num).ok().flatten()
-    }
-
-    /// Returns the matching header if it exists.
-    pub(crate) fn header_by_hash_or_number(
-        &self,
-        hash_or_num: BlockHashOrNumber,
-    ) -> Option<Header> {
-        self.client.header_by_hash_or_number(hash_or_num).unwrap_or(None)
     }
 
     pub(crate) fn get_best_block_and_hash(
