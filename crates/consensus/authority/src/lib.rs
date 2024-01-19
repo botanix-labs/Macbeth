@@ -28,9 +28,9 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    proofs, public_key_to_address, Address, Block, BlockBody, BlockHash, BlockHashOrNumber,
-    BlockNumber, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
-    TransactionSigned, B256, EMPTY_OMMER_ROOT_HASH, U256,
+    proofs, public_key_to_address, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, Bloom,
+    Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -40,7 +40,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -166,7 +166,6 @@ where
             authorities,
             signer_index,
             authority: pk,
-            hash_to_number: HashMap::new(),
             authority_votes: AuthorityVoteCollection::default(),
         };
 
@@ -189,7 +188,6 @@ where
 pub(crate) struct StorageInner<Client> {
     client: Client,
     /// A mapping between block hash and number.
-    pub(crate) hash_to_number: HashMap<BlockHash, BlockNumber>,
     /// Tracks best block
     pub(crate) best_block: u64,
     /// Tracks hash of best block
@@ -214,8 +212,9 @@ where
     Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
 {
     /// Returns the block hash for the given block number if it exists.
+    #[allow(dead_code)]
     pub(crate) fn block_hash(&self, num: u64) -> Option<BlockHash> {
-        self.hash_to_number.iter().find_map(|(k, v)| num.eq(v).then_some(*k))
+        self.client.block_hash(num).ok().flatten()
     }
 
     /// Returns the matching header if it exists.
@@ -236,7 +235,6 @@ where
         self.total_difficulty += header.difficulty;
 
         info!(target: "consensus::authority", num=self.best_block, hash=?self.best_hash, "inserting new block");
-        self.hash_to_number.insert(self.best_hash, self.best_block);
     }
 
     /// Fills in pre-execution header fields based on the current best block and given
