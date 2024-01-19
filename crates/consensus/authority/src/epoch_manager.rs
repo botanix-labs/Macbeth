@@ -46,8 +46,15 @@ impl<Client: HeaderProvider> EpochManager<Client> {
         let latest_header = storage
             .client
             .header_by_hash_or_number(BlockHashOrNumber::Number(storage.best_block))
-            .expect("option to exist")
-            .expect("header to exist");
+            .ok()
+            .flatten();
+
+        if latest_header.is_none() {
+            return (Poll::Pending, false)
+        }
+
+        let latest_header = latest_header.unwrap();
+
         // Skip over genesis
         if latest_header.number != 0 {
             let latest_signer = utils::recovery_authority(&latest_header).unwrap();

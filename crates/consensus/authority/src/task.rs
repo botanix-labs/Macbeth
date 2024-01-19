@@ -7,11 +7,10 @@ use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_consensus_common::{
     utils,
     utils::{validate_poa_block_beneficiary, validate_poa_extra_data_header},
-    validation,
 };
 use reth_eth_wire::NewBlock;
 use reth_interfaces::consensus::{ConsensusError, ForkchoiceState};
-use reth_network::{message::NewBlockMessage, NetworkEvent, NetworkEvents, NetworkHandle};
+use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::{
     hex, Block, BlockBody, ChainSpec, IntoRecoveredTransaction, Log, SealedBlockWithSenders,
     TransactionSigned,
