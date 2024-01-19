@@ -94,9 +94,6 @@ pub enum BlockExecutionError {
     /// Error representing a provider error
     #[error("provider error")]
     ProviderError,
-    /// Unexpectedly missing block hash for an existent block
-    #[error("unexpectedly missing block hash for an existent block")]
-    MissingBlockHash,
     /// Transaction error on revert with inner details
     #[error("transaction error on revert: {inner}")]
     CanonicalRevert {
