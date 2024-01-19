@@ -33,12 +33,12 @@ use reth_primitives::{
     TransactionSigned, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
-    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, ProviderError,
+    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
     StateProviderFactory,
 };
 use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-    processor::EVMProcessor, Database, DatabaseRef, State,
+    processor::EVMProcessor, State,
 };
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
@@ -46,7 +46,6 @@ use voting::{AuthorityVoteCollection, Vote};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, info, trace, warn};
 mod builder;
-mod client;
 mod engine_util;
 mod epoch_manager;
 mod sync;
@@ -159,7 +158,7 @@ where
         // We need to start storing headers from the start of the epoch
         let (header, best_hash) = headers.last().expect("valid index").clone().split();
 
-        let mut storage = StorageInner {
+        let storage = StorageInner {
             client: client.clone(),
             best_hash,
             total_difficulty: header.difficulty,
@@ -167,13 +166,9 @@ where
             authorities,
             signer_index,
             authority: pk,
-            headers: HashMap::new(), // TODO: replace with db calls
             hash_to_number: HashMap::new(),
-            bodies: HashMap::new(), // TODO: replace with db calls
             authority_votes: AuthorityVoteCollection::default(),
         };
-        storage.headers.insert(header.number, header);
-        storage.bodies.insert(best_hash, BlockBody::default());
 
         Ok(Self { inner: Arc::new(RwLock::new(storage)), _phantom_data: PhantomData })
     }
@@ -191,15 +186,10 @@ where
 
 #[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
-/// Headers from the most current epoch to the tip
 pub(crate) struct StorageInner<Client> {
     client: Client,
-    /// Headers buffered for download.
-    pub(crate) headers: HashMap<BlockNumber, Header>, // TODO: replace with db calls
     /// A mapping between block hash and number.
     pub(crate) hash_to_number: HashMap<BlockHash, BlockNumber>,
-    /// Bodies buffered for download.
-    pub(crate) bodies: HashMap<BlockHash, BlockBody>, // TODO: replace with db calls
     /// Tracks best block
     pub(crate) best_block: u64,
     /// Tracks hash of best block
@@ -233,25 +223,11 @@ where
         &self,
         hash_or_num: BlockHashOrNumber,
     ) -> Option<Header> {
-        let num = match hash_or_num {
-            BlockHashOrNumber::Hash(hash) => self.hash_to_number.get(&hash).copied()?,
-            BlockHashOrNumber::Number(num) => num,
-        };
-
-        let db: State<Box<dyn Database<Error = ProviderError> + Send>> = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(
-                self.client.latest().unwrap(),
-            )))
-            .with_bundle_update()
-            .build();
-
-        
-
-        self.headers.get(&num).cloned()
+        self.client.header_by_hash_or_number(hash_or_num).unwrap_or(None)
     }
 
-    /// Inserts a new header+body pair
-    pub(crate) fn insert_new_block(&mut self, mut header: Header, body: BlockBody) {
+    /// Inserts a new header pair
+    pub(crate) fn insert_new_block(&mut self, mut header: Header) {
         header.number = self.best_block + 1;
         header.parent_hash = self.best_hash;
 
@@ -260,8 +236,6 @@ where
         self.total_difficulty += header.difficulty;
 
         info!(target: "consensus::authority", num=self.best_block, hash=?self.best_hash, "inserting new block");
-        self.headers.insert(header.number, header);
-        self.bodies.insert(self.best_hash, body);
         self.hash_to_number.insert(self.best_hash, self.best_block);
     }
 
@@ -278,8 +252,9 @@ where
         let timestamp = utils::unix_timestamp();
         // check previous block for base fee
         let base_fee_per_gas = self
-            .headers
-            .get(&self.best_block)
+            .client
+            .header_by_hash_or_number(BlockHashOrNumber::Number(self.best_block))
+            .expect("header to exist")
             .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
 
         // derive beneficary address being the producuing block federation member address
@@ -492,7 +467,7 @@ where
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
 
         // finally insert into storage
-        self.insert_new_block(header.clone(), body);
+        self.insert_new_block(header.clone());
 
         // set new header with hash that should have been updated by insert_new_block
         let new_header = header.seal(self.best_hash);
