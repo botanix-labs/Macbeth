@@ -221,7 +221,9 @@ where
             .client
             .block_hash(best_block)
             .map_err(|_| BlockExecutionError::ProviderError)?
-            .ok_or(BlockExecutionError::MissingBlockHash)?;
+            .unwrap_or_else(|| {
+                panic!("{}", format!("Missing block hash for best block {:?}", best_block))
+            });
 
         Ok((best_block, best_hash))
     }
