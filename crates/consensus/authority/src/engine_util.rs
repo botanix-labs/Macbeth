@@ -4,7 +4,7 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
-use reth_primitives::{BlockHash, SealedBlock, SealedHeader};
+use reth_primitives::{BlockHash, SealedBlock};
 use reth_rpc_types::engine::{ForkchoiceState, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 

@@ -2,7 +2,6 @@ use crate::engine_util;
 
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
-use reth_revm::State;
 
 use crate::Storage;
 use client::BtcServerClient;
@@ -37,7 +36,7 @@ pub struct BlockFetcherTask<Client, Pool: TransactionPool> {
     /// bitcoin block source
     bitcoin_block_source: MempoolSpace,
     /// Consensus cache
-    storage: Storage,
+    storage: Storage<Client>,
     /// Recent bitcoin header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
 }
@@ -47,7 +46,7 @@ where
     Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
     Pool: TransactionPool,
 {
-    pub fn new(
+    pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
@@ -56,7 +55,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_source: MempoolSpace,
-        storage: Storage,
+        storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     ) -> Self {
         Self {

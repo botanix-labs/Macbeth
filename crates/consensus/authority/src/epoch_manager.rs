@@ -1,11 +1,11 @@
 use reth_consensus_common::utils;
-use reth_primitives::{constants::eip225::BLOCK_PERIOD, BlockHashOrNumber};
+use reth_primitives::BlockHashOrNumber;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tokio::time::Instant;
+
 use tracing::info;
 
-use crate::{AuthorityConsensus, Storage};
+use crate::Storage;
 use reth_provider::StateProviderFactory;
 use std::{sync::Arc, task::Poll};
 
