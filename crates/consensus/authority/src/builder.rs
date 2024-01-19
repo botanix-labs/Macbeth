@@ -125,7 +125,7 @@ where
         })?;
 
         // Instantiate epoch manager
-        let epoch_manager = EpochManager::<Client>::naive_inverval(storage.clone());
+        let epoch_manager = EpochManager::<Client>::new(storage.clone());
 
         Ok(Self {
             storage,

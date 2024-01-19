@@ -1,14 +1,12 @@
 use reth_consensus_common::utils;
-use reth_primitives::constants::eip225::BLOCK_PERIOD;
 use reth_rpc_types::BlockHashOrNumber;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tokio::time::{Instant, Interval};
 use tracing::info;
 
 use reth_provider::HeaderProvider;
 
 use crate::{AuthorityConsensus, Storage};
-use std::{sync::Arc, task::Poll, time::Duration};
+use std::{sync::Arc, task::Poll};
 
 #[derive(Debug)]
 /// Manages the block production epochs
@@ -22,19 +20,13 @@ pub(crate) struct EpochManager<Client> {
     // TODO (armins) this should be protected by an Arc.
     pub(crate) storage: Storage<Client>,
 
-    /// Pollable interval to lock nodes proposing for a min time defined by `BLOCK_PERIOD`.
-    pub(crate) proposal_interval: Interval,
-
     /// stores whether there are pending transactions (if known)
     pub(crate) has_pending_txs: bool,
 }
 
 impl<Client: HeaderProvider> EpochManager<Client> {
-    pub(crate) fn naive_inverval(storage: Storage<Client>) -> Self {
-        let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
-        let proposal_interval =
-            tokio::time::interval_at(start, Duration::from_millis(BLOCK_PERIOD));
-        Self { storage, proposal_interval, has_pending_txs: false }
+    pub(crate) fn new(storage: Storage<Client>) -> Self {
+        Self { storage, has_pending_txs: false }
     }
 
     pub(crate) async fn poll<Pool>(
