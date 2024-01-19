@@ -45,7 +45,7 @@ use std::sync::Arc;
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{error, info, trace, warn};
+use tracing::{error, trace, warn};
 mod builder;
 mod engine_util;
 mod epoch_manager;
@@ -155,12 +155,8 @@ where
         // sort the headers by block numbers
         headers.sort_by(|a, b| a.number.cmp(&b.number));
 
-        // We need to start storing headers from the start of the epoch
-        let (header, _) = headers.last().expect("valid index").clone().split();
-
         let storage = StorageInner {
             client: client.clone(),
-            total_difficulty: header.difficulty,
             authorities,
             signer_index,
             authority: pk,
@@ -185,8 +181,6 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
-    /// The total difficulty of the chain until this block
-    pub(crate) total_difficulty: U256,
     /// Keep track of current votes
     pub(crate) authority_votes: AuthorityVoteCollection,
     /// Keep track of the  signers
@@ -230,19 +224,6 @@ where
             .ok_or(BlockExecutionError::MissingBlockHash)?;
 
         Ok((best_block, best_hash))
-    }
-
-    /// Inserts a new header pair
-    pub(crate) fn insert_new_block(
-        &mut self,
-        mut header: Header,
-    ) -> Result<(), BlockExecutionError> {
-        let (best_block, best_hash) = self.get_best_block_and_hash()?;
-        header.number = best_block + 1;
-        header.parent_hash = best_hash;
-        self.total_difficulty += header.difficulty;
-        info!(target: "consensus::authority", num=best_block, hash=?best_hash, "inserting new block");
-        Ok(())
     }
 
     /// Fills in pre-execution header fields based on the current best block and given
@@ -473,9 +454,6 @@ where
         }
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
-
-        // finally insert into storage
-        self.insert_new_block(header.clone())?;
 
         // set new header with hash that should have been updated by insert_new_block
         let (_, best_hash) = self.get_best_block_and_hash()?;
