@@ -1,9 +1,8 @@
 use reth_consensus_common::utils;
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider, StateProviderFactory};
 use reth_rpc_types::BlockHashOrNumber;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 use tracing::info;
-
-use reth_provider::HeaderProvider;
 
 use crate::{AuthorityConsensus, Storage};
 use std::{sync::Arc, task::Poll};
@@ -24,7 +23,10 @@ pub(crate) struct EpochManager<Client> {
     pub(crate) has_pending_txs: bool,
 }
 
-impl<Client: HeaderProvider> EpochManager<Client> {
+impl<Client: HeaderProvider> EpochManager<Client>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
     pub(crate) fn new(storage: Storage<Client>) -> Self {
         Self { storage, has_pending_txs: false }
     }
@@ -41,11 +43,17 @@ impl<Client: HeaderProvider> EpochManager<Client> {
         let signer_pk = storage.authority;
         let authority_len = storage.authorities.len() as u64;
 
+        // get best block and best hash
+        let (best_block, _) = match storage.get_best_block_and_hash() {
+            Ok((best_block, best_hash)) => (best_block, best_hash),
+            Err(_) => return (Poll::Pending, false),
+        };
+
         // Check if the last signer was us
         // If so nothing to do anymore until the next timeslot
         let latest_header = storage
             .client
-            .header_by_hash_or_number(BlockHashOrNumber::Number(storage.best_block))
+            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
             .ok()
             .flatten();
 

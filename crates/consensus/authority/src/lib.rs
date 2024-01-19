@@ -28,9 +28,10 @@ use reth_interfaces::{
 };
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    proofs, public_key_to_address, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, Bloom,
-    Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
-    EMPTY_OMMER_ROOT_HASH, U256,
+    proofs, public_key_to_address,
+    revm_primitives::FixedBytes,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, Bloom, Bytes, ChainSpec, Header,
+    ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -40,7 +41,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -124,16 +125,16 @@ impl Consensus for AuthorityConsensus {
     }
 }
 
-/// In memory storage
-#[derive(Clone, Debug)]
-pub(crate) struct Storage<Client> {
-    pub(crate) inner: Arc<RwLock<StorageInner<Client>>>,
-}
-
 #[derive(Debug)]
 pub(crate) enum StorageCreationError {
     /// empty headers
     EmptyHeaders,
+}
+
+/// In memory storage
+#[derive(Clone, Debug)]
+pub(crate) struct Storage<Client> {
+    pub(crate) inner: Arc<RwLock<StorageInner<Client>>>,
 }
 
 // == impl Storage ===
@@ -155,13 +156,11 @@ where
         headers.sort_by(|a, b| a.number.cmp(&b.number));
 
         // We need to start storing headers from the start of the epoch
-        let (header, best_hash) = headers.last().expect("valid index").clone().split();
+        let (header, _) = headers.last().expect("valid index").clone().split();
 
         let storage = StorageInner {
             client: client.clone(),
-            best_hash,
             total_difficulty: header.difficulty,
-            best_block: header.number,
             authorities,
             signer_index,
             authority: pk,
@@ -186,11 +185,6 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
-    /// A mapping between block hash and number.
-    /// Tracks best block
-    pub(crate) best_block: u64,
-    /// Tracks hash of best block
-    pub(crate) best_hash: B256,
     /// The total difficulty of the chain until this block
     pub(crate) total_difficulty: U256,
     /// Keep track of current votes
@@ -224,16 +218,31 @@ where
         self.client.header_by_hash_or_number(hash_or_num).unwrap_or(None)
     }
 
+    pub(crate) fn get_best_block_and_hash(
+        &self,
+    ) -> Result<(u64, FixedBytes<32>), BlockExecutionError> {
+        let best_block =
+            self.client.best_block_number().map_err(|_| BlockExecutionError::ProviderError)?;
+        let best_hash = self
+            .client
+            .block_hash(best_block)
+            .map_err(|_| BlockExecutionError::ProviderError)?
+            .ok_or(BlockExecutionError::MissingBlockHash)?;
+
+        Ok((best_block, best_hash))
+    }
+
     /// Inserts a new header pair
-    pub(crate) fn insert_new_block(&mut self, mut header: Header) {
-        header.number = self.best_block + 1;
-        header.parent_hash = self.best_hash;
-
-        self.best_hash = header.hash_slow();
-        self.best_block = header.number;
+    pub(crate) fn insert_new_block(
+        &mut self,
+        mut header: Header,
+    ) -> Result<(), BlockExecutionError> {
+        let (best_block, best_hash) = self.get_best_block_and_hash()?;
+        header.number = best_block + 1;
+        header.parent_hash = best_hash;
         self.total_difficulty += header.difficulty;
-
-        info!(target: "consensus::authority", num=self.best_block, hash=?self.best_hash, "inserting new block");
+        info!(target: "consensus::authority", num=best_block, hash=?best_hash, "inserting new block");
+        Ok(())
     }
 
     /// Fills in pre-execution header fields based on the current best block and given
@@ -246,11 +255,13 @@ where
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
+        let (best_block, best_hash) = self.get_best_block_and_hash()?;
+
         let timestamp = utils::unix_timestamp();
         // check previous block for base fee
         let base_fee_per_gas = self
             .client
-            .header_by_hash_or_number(BlockHashOrNumber::Number(self.best_block))
+            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
             .expect("header to exist")
             .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
 
@@ -259,7 +270,7 @@ where
         let beneficiary_address = public_key_to_address(beneficiary_pub_key);
 
         let mut header = Header {
-            parent_hash: self.best_hash,
+            parent_hash: best_hash,
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
             beneficiary: beneficiary_address,
             state_root: Default::default(),
@@ -268,7 +279,7 @@ where
             withdrawals_root: None,
             logs_bloom: Default::default(),
             difficulty: Default::default(),
-            number: self.best_block + 1,
+            number: best_block + 1,
             gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             gas_used: 0,
             timestamp,
@@ -464,10 +475,11 @@ where
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
 
         // finally insert into storage
-        self.insert_new_block(header.clone());
+        self.insert_new_block(header.clone())?;
 
         // set new header with hash that should have been updated by insert_new_block
-        let new_header = header.seal(self.best_hash);
+        let (_, best_hash) = self.get_best_block_and_hash()?;
+        let new_header = header.seal(best_hash);
 
         Ok((new_header, bundle_state))
     }

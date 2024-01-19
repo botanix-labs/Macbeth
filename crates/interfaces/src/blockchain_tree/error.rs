@@ -252,6 +252,7 @@ impl InsertBlockErrorKind {
                     &BlockExecutionError::CannotAddExistingFederationMember => true,
                     &BlockExecutionError::FailedToDeserializePreviousBlockHeader => true,
                     &BlockExecutionError::BitcoinRecentHeaderNotAvailable => true,
+                    BlockExecutionError::MissingBlockHash => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {
