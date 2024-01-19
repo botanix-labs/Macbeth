@@ -45,9 +45,9 @@ where
         let signer_pk = storage.authority;
         let authority_len = storage.authorities.len() as u64;
 
-        // get best block and best hash
-        let (best_block, _) = match storage.get_best_block_and_hash() {
-            Ok((best_block, best_hash)) => (best_block, best_hash),
+        // get best block
+        let best_block_number = match storage.client.best_block_number() {
+            Ok(best_block_number) => best_block_number,
             Err(_) => return (Poll::Pending, false),
         };
 
@@ -55,7 +55,7 @@ where
         // If so nothing to do anymore until the next timeslot
         let latest_header = storage
             .client
-            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
+            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block_number))
             .ok()
             .flatten();
 

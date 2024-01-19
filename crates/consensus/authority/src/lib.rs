@@ -197,6 +197,7 @@ where
     ) -> Result<(u64, FixedBytes<32>), BlockExecutionError> {
         let best_block =
             self.client.best_block_number().map_err(|_| BlockExecutionError::ProviderError)?;
+
         let best_hash = self
             .client
             .block_hash(best_block)
@@ -441,11 +442,7 @@ where
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
 
-        // set new header with hash that should have been updated by insert_new_block
-        let (_, best_hash) = self.get_best_block_and_hash()?;
-        let new_header = header.seal(best_hash);
-
-        Ok((new_header, bundle_state))
+        Ok((header.seal_slow(), bundle_state))
     }
 
     // Execute and run poa validation on the block without inserting it into the storage
