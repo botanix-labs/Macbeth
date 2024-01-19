@@ -1,13 +1,11 @@
-use futures_util::{stream::Fuse, StreamExt};
 use reth_consensus_common::utils;
-use reth_primitives::{constants::eip225::BLOCK_PERIOD, TxHash};
+use reth_primitives::constants::eip225::BLOCK_PERIOD;
+use reth_rpc_types::BlockHashOrNumber;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
-use tokio::{
-    sync::mpsc::Receiver,
-    time::{Instant, Interval},
-};
-use tokio_stream::{wrappers::ReceiverStream, Stream};
-use tracing::{error, info};
+use tokio::time::{Instant, Interval};
+use tracing::info;
+
+use reth_provider::HeaderProvider;
 
 use crate::{AuthorityConsensus, Storage};
 use std::{sync::Arc, task::Poll, time::Duration};
@@ -31,7 +29,7 @@ pub(crate) struct EpochManager<Client> {
     pub(crate) has_pending_txs: bool,
 }
 
-impl<Client> EpochManager<Client> {
+impl<Client: HeaderProvider> EpochManager<Client> {
     pub(crate) fn naive_inverval(storage: Storage<Client>) -> Self {
         let start = Instant::now() + Duration::from_millis(BLOCK_PERIOD);
         let proposal_interval =
@@ -53,7 +51,11 @@ impl<Client> EpochManager<Client> {
 
         // Check if the last signer was us
         // If so nothing to do anymore until the next timeslot
-        let latest_header = storage.headers.get(&storage.best_block).expect("best block");
+        let latest_header = storage
+            .client
+            .header_by_hash_or_number(BlockHashOrNumber::Number(storage.best_block))
+            .expect("option to exist")
+            .expect("header to exist");
         // Skip over genesis
         if latest_header.number != 0 {
             let latest_signer = utils::recovery_authority(&latest_header).unwrap();
