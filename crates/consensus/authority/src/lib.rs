@@ -128,7 +128,6 @@ impl Consensus for AuthorityConsensus {
 #[derive(Clone, Debug)]
 pub(crate) struct Storage<Client> {
     pub(crate) inner: Arc<RwLock<StorageInner<Client>>>,
-    _phantom_data: PhantomData<Client>,
 }
 
 #[derive(Debug)]
@@ -169,7 +168,7 @@ where
             authority_votes: AuthorityVoteCollection::default(),
         };
 
-        Ok(Self { inner: Arc::new(RwLock::new(storage)), _phantom_data: PhantomData })
+        Ok(Self { inner: Arc::new(RwLock::new(storage)) })
     }
 
     /// Returns the write lock of the storage
