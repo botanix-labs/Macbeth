@@ -7,6 +7,7 @@ use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::get_authority_list;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{
@@ -27,6 +28,7 @@ use url::Url;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, Pool> {
+    #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
     pool: Pool,
@@ -58,7 +60,12 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
     Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
@@ -165,7 +172,7 @@ where
     ) {
         let Self {
             btc_server,
-            client,
+            client: _,
             consensus,
             pool,
             storage,
@@ -193,7 +200,6 @@ where
             Arc::clone(&consensus.chain_spec),
             block_import_rx,
             to_engine.clone(),
-            client.clone(),
             pool.clone(),
             canon_state_notification.clone(),
             btc_server.clone(),
@@ -206,7 +212,6 @@ where
             to_engine,
             canon_state_notification,
             storage,
-            client,
             pool,
             btc_server,
             bitcoin_block_header,

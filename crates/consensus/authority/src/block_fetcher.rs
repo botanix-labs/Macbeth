@@ -26,7 +26,6 @@ pub struct BlockFetcherTask<Client, Pool: TransactionPool> {
     to_engine: UnboundedSender<BeaconEngineMessage>,
     /// The client used to interact with the state
     /// Note this is a database client
-    client: Client,
     /// Mempool
     pool: Pool,
     /// Used to notify consumers of new blocks
@@ -50,7 +49,6 @@ where
         chain_spec: Arc<ChainSpec>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
-        client: Client,
         pool: Pool,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
@@ -62,7 +60,6 @@ where
             chain_spec,
             block_import_rx,
             to_engine,
-            client,
             pool,
             canon_state_notification,
             btc_server,
@@ -111,13 +108,11 @@ where
             let mut storage = self.storage.write().await;
 
             match storage.execute_imported_block(
-                &self.client.clone(),
                 self.chain_spec.clone(),
                 sealed_block.clone(),
                 recent_bitcoin_block_header,
             ) {
                 Ok(bundle_state) => {
-                    drop(storage);
                     let senders =
                         TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
                     let sealed_block_with_senders =
@@ -144,12 +139,16 @@ where
                         self.to_engine.clone(),
                     )
                     .await
+                    // TODO remove unwrap
                     .unwrap();
 
                     // update canon chain for rpc
-                    self.client.set_canonical_head(sealed_block.header.clone());
-                    self.client.set_safe(sealed_block.header.clone());
-                    self.client.set_finalized(sealed_block.header.clone());
+                    // TODO do we need to insert the block here?
+                    storage.client.set_canonical_head(sealed_block.header.clone());
+                    storage.client.set_safe(sealed_block.header.clone());
+                    storage.client.set_finalized(sealed_block.header.clone());
+
+                    drop(storage);
 
                     let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
 

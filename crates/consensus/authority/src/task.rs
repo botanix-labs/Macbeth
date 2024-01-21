@@ -3,6 +3,7 @@ use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::block_source::MempoolSpace;
 
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
@@ -23,9 +24,6 @@ use client::BtcServerClient;
 pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
-    /// The client used to interact with the state
-    /// Note this is a database client
-    pub(crate) client: Client,
     /// The active epoch
     pub(crate) epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
@@ -60,7 +58,12 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
     Pool: TransactionPool,
 {
     /// Creates a new instance of the task
@@ -70,7 +73,6 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
-        client: Client,
         pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
@@ -83,7 +85,6 @@ where
     ) -> Self {
         Self {
             chain_spec,
-            client,
             storage,
             pool,
             to_engine,
