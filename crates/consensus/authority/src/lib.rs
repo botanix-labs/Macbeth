@@ -302,11 +302,10 @@ where
 
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
-    pub(crate) fn complete_header<S: StateProviderFactory>(
+    pub(crate) fn complete_header(
         &self,
         mut header: Header,
         bundle_state: &BundleStateWithReceipts,
-        client: &S,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
@@ -330,7 +329,8 @@ where
 
         let vote_for = if let Some(vote) = authority_to_vote_on { Some(vote.0) } else { None };
         // calculate the state root
-        let state_root = client
+        let state_root = self
+            .client
             .latest()
             .map_err(|_| BlockExecutionError::ProviderError)?
             .state_root(bundle_state)
@@ -367,7 +367,6 @@ where
     pub(crate) fn build_and_execute(
         &mut self,
         transactions: Vec<TransactionSigned>,
-        client: &impl StateProviderFactory,
         chain_spec: Arc<ChainSpec>,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
@@ -393,7 +392,9 @@ where
 
         // Now execute the block
         let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
+            .with_database_boxed(Box::new(StateProviderDatabase::new(
+                self.client.latest().unwrap(),
+            )))
             .with_bundle_update()
             .build();
 
@@ -411,7 +412,6 @@ where
         let header = self.complete_header(
             header,
             &bundle_state,
-            client,
             gas_used,
             sk,
             secp,
@@ -441,14 +441,14 @@ where
         }
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
-
-        Ok((header.seal_slow(), bundle_state))
+        let block_hash = header.hash_slow();
+        let new_header = header.seal(block_hash);
+        Ok((new_header, bundle_state))
     }
 
     // Execute and run poa validation on the block without inserting it into the storage
     pub(crate) fn execute_imported_block(
         &mut self,
-        client: &impl StateProviderFactory,
         chain_spec: Arc<ChainSpec>,
         sealed_block: SealedBlock,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
@@ -462,7 +462,9 @@ where
 
         // Now execute the block
         let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
+            .with_database_boxed(Box::new(StateProviderDatabase::new(
+                self.client.latest().unwrap(),
+            )))
             .with_bundle_update()
             .build();
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
@@ -490,6 +492,4 @@ where
 
         return Ok(bundle_state)
     }
-    // TODO (armins) add utility function for executing a block recieved from the network and adding
-    // to cached blocks
 }

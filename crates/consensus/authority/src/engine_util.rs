@@ -8,7 +8,7 @@ use reth_primitives::{BlockHash, SealedBlock};
 use reth_rpc_types::engine::{ForkchoiceState, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 #[derive(Debug, thiserror::Error)]
 /// Error type for sending a new payload to the engine
@@ -106,8 +106,9 @@ pub(crate) async fn send_fork_choice_update_payload(
                         return Ok(())
                     }
                     ForkchoiceStatus::Syncing => {
-                        debug!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
+                        trace!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
                         // wait for the next fork choice update
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue
                     }
                 }

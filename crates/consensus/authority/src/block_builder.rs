@@ -1,5 +1,8 @@
 use crate::{engine_util, task::BlockProductionTask};
 use reth_eth_wire::NewBlock;
+use reth_interfaces::blockchain_tree::{
+    BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
+};
 use reth_primitives::{Block, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
@@ -9,7 +12,12 @@ use tracing::{error, info};
 
 impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
     Pool: TransactionPool,
 {
     pub(crate) async fn try_build_block(&mut self) {
@@ -46,7 +54,7 @@ where
         let transactions = self.queued.pop_front().expect("not empty");
         let txs_cloned = transactions.clone();
         let events = self.pipe_line_events.take();
-        let client = self.client.clone();
+        // let client = self.client.clone();
 
         let (transactions, senders): (Vec<_>, Vec<_>) = transactions
             .into_iter()
@@ -64,7 +72,6 @@ where
         // Build and execute current block template
         let (new_header, bundle_state) = match storage.build_and_execute(
             transactions.clone(),
-            &client,
             self.chain_spec.clone(),
             recent_bitcoin_block_header,
             // TODO(armins) read vote in as param
@@ -83,7 +90,11 @@ where
                 return
             }
         };
-        drop(storage);
+
+        // lastly prune mempool
+        info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
+        let tx_hashes = transactions.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
+        self.pool.remove_transactions(tx_hashes);
         // Process Botanix specific logs
         match crate::utils::process_reciepts(
             &self.bitcoin_block_source,
@@ -109,18 +120,35 @@ where
         };
         let sealed_block = block.clone().seal_slow();
         let sealed_block_with_senders =
-            SealedBlockWithSenders::new(sealed_block.clone(), senders).expect("senders are valid");
-
-        // TODO(armins) Should this be a FCU update?
-        let _res =
-            engine_util::send_beacon_new_payload(sealed_block.clone(), self.to_engine.clone())
-                .await
-                .unwrap();
+            SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
+                .expect("senders are valid");
 
         // update canon chain for rpc
-        self.client.set_canonical_head(sealed_block.header.clone());
-        self.client.set_safe(sealed_block.header.clone());
-        self.client.set_finalized(sealed_block.header.clone());
+        match storage
+            .client
+            .insert_block(sealed_block_with_senders.clone(), SkipStateRootValidation)
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to insert block");
+                return;
+            }
+        }
+        storage.client.set_canonical_head(sealed_block.header.clone());
+        storage.client.set_safe(sealed_block.header.clone());
+        storage.client.set_finalized(sealed_block.header.clone());
+        drop(storage);
+
+        match engine_util::send_fork_choice_update_payload(new_header.hash, self.to_engine.clone())
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                // This should fail if the insert was successful
+                error!(target: "consensus::authority", ?e, "Failed to send fork choice update");
+                return;
+            }
+        }
 
         let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
 
@@ -130,10 +158,6 @@ where
             .canon_state_notification
             .send(reth_provider::CanonStateNotification::Commit { new: chain });
 
-        // lastly prune mempool
-        info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
-        let tx_hashes = block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
-        self.pool.remove_transactions(tx_hashes);
         // Notify peers
         let new_block = NewBlock { block, td: Uint::ZERO };
         let block_hash = sealed_block.hash;
