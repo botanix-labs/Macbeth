@@ -5,10 +5,11 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum BlockSourceError {
-    BlockHeaderRetrievalFailed,
-    BlockTipRetrievalFailed,
-    BlockHashRetrievalFailed,
+    BlockHeaderRetrievalFailed(String),
+    BlockTipRetrievalFailed(String),
+    BlockHashRetrievalFailed(String),
     TransactionBroadcastFailed(String),
+    GetTxIdsFailed(String),
     HexDecodeFailed,
     BitcoinEncodingFailed,
     ReqwestError(reqwest::Error),
@@ -80,7 +81,8 @@ impl BlockSource for MempoolSpace {
             let header: Header = deserialize(&header_bytes)?;
             return Ok(header)
         }
-        Err(BlockSourceError::BlockHeaderRetrievalFailed)
+        let error_message = response.text().await?;
+        Err(BlockSourceError::BlockHeaderRetrievalFailed(error_message))
     }
     async fn get_block_hash(&self, height: u32) -> Result<bitcoin::BlockHash, BlockSourceError> {
         let response = reqwest::get(format!("{}/block-height/{}", self.url, height)).await?;
@@ -94,7 +96,8 @@ impl BlockSource for MempoolSpace {
             return Ok(block_hash)
         }
 
-        Err(BlockSourceError::BlockHashRetrievalFailed)
+        let error_message = response.text().await?;
+        Err(BlockSourceError::BlockHashRetrievalFailed(error_message))
     }
 
     async fn get_tip(&self) -> Result<u32, BlockSourceError> {
@@ -107,7 +110,8 @@ impl BlockSource for MempoolSpace {
             return Ok(height)
         }
 
-        Err(BlockSourceError::BlockTipRetrievalFailed)
+        let error_message = response.text().await?;
+        Err(BlockSourceError::BlockTipRetrievalFailed(error_message))
     }
 
     async fn get_txids(
@@ -125,7 +129,9 @@ impl BlockSource for MempoolSpace {
 
             return Ok(txids)
         }
-        Err(BlockSourceError::BlockHeaderRetrievalFailed)
+
+        let error_message = response.text().await?;
+        Err(BlockSourceError::GetTxIdsFailed(error_message))
     }
 
     async fn broadcast_tx(&self, raw_tx: &String) -> Result<Txid, BlockSourceError> {
