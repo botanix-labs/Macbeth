@@ -277,9 +277,9 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                     let mut header_write = bitcoin_block_headers.write().await;
                     let current_tip = match block_source.get_tip().await {
                         Ok(current_tip) => current_tip,
-                        Err(_) => {
+                        Err(e) => {
                             drop(header_write);
-                            error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                            error!(target: "reth::cli", "Failed to fetch the tip. {:?}\nRetrying...", e);
                             tokio::time::sleep(sleep_ms).await;
                             continue;
                         }
@@ -288,18 +288,18 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
                         info!("Async bitcoin worker tip mismatch");
                         let block_hash = match block_source.get_block_hash(current_tip).await {
                             Ok(block_hash) => block_hash,
-                            Err(_) => {
+                            Err(e) => {
                                 drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch a block hash. Retrying...");
+                                error!(target: "reth::cli", "Failed to fetch a block hash. {:?}\nRetrying...", e);
                                 tokio::time::sleep(sleep_ms).await;
                                 continue;
                             }
                         };
                         let block_header = match block_source.get_block_header(block_hash).await {
                             Ok(block_header) => block_header,
-                            Err(_) => {
+                            Err(e) => {
                                 drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch a block header. Retrying...");
+                                error!(target: "reth::cli", "Failed to fetch a block header.{:?}\nRetrying...", e);
                                 tokio::time::sleep(sleep_ms).await;
                                 continue;
                             }
