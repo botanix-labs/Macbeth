@@ -546,15 +546,15 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         block_production_task.set_pipeline_events(pipeline_events);
         debug!(target: "reth::cli", "Spawning block production task task");
 
-        ctx.task_executor.spawn(Box::pin(async move {
+        ctx.task_executor.spawn_critical("PoA Block Production Task", Box::pin(async move {
             block_production_task.start_task().await;
         }));
 
-        ctx.task_executor.spawn(Box::pin(async move {
+        ctx.task_executor.spawn_critical("PoA Block Fetcher Task", Box::pin(async move {
             block_fetcher_task.start_task().await;
         }));
 
-        ctx.task_executor.spawn(Box::pin(async move {
+        ctx.task_executor.spawn_critical("PoA Block Sync Controller Task", Box::pin(async move {
             sync_controller.start_task().await;
         }));
 
