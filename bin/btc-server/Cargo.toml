@@ -10,6 +10,8 @@ reth-btc-wallet = { path = "../../crates/btc-wallet" }
 
 anyhow = "1.0.71"
 bitcoin = { version = "0.30.2", features = [ "base64", "rand", "serde" ] }
+# TODO update this to the zcash frost library when tr is merged in 
+frost-secp256k1-tr = { git = "https://github.com/mimoo/frost", branch = "mimoo/fix5" }
 bdk = "1.0.0-alpha.1" # maybe try remove this dep as it's quite big
 ciborium = "0.2.1"
 env_logger = "0.10.0"
