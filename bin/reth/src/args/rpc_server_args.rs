@@ -194,6 +194,12 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
     pub btc_block_source: Url,
+
+    /// Notifications Webhook Url
+    ///
+    /// Notifications webhook to send various reports to
+    #[arg(long, value_name = "SLACK_NOTIFICATIONS_WEBHOOK_URL", value_parser = parse_url, help_heading = "Notifications Webhook url", required = false)]
+    pub slack_notifications_webhook_url: Option<Url>,
 }
 
 impl RpcServerArgs {
@@ -510,6 +516,7 @@ impl Default for RpcServerArgs {
             rpc_state_cache: RpcStateCacheArgs::default(),
             btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
             btc_block_source: Url::parse("https://mempool.space/signet/api").expect("valid url"),
+            slack_notifications_webhook_url: None,
         }
     }
 }
