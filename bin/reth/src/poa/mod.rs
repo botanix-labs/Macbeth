@@ -491,6 +491,9 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             default_peers_path,
         );
 
+        debug!(target: "reth::cli", "Spawning payload builder service");
+        let payload_builder = self.ext.spawn_payload_builder_service(&self.builder, &components)?;
+
         // Configure the pipeline
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         let (_, mut block_production_task, mut block_fetcher_task, mut sync_controller) =
@@ -509,6 +512,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
                 network.clone(),
                 block_import_rx,
                 ctx.task_executor.clone(),
+                payload_builder.clone(),
             )
             .expect("Failed to create authority consensus builder")
             .build();
@@ -518,9 +522,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let network_client = network.fetch_client().await?;
 
         self.ext.on_components_initialized(&components)?;
-
-        debug!(target: "reth::cli", "Spawning payload builder service");
-        let payload_builder = self.ext.spawn_payload_builder_service(&self.builder, &components)?;
 
         let max_block = if let Some(block) = self.debug.max_block {
             Some(block)

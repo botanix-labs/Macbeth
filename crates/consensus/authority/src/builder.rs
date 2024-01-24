@@ -9,6 +9,7 @@ use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
@@ -46,6 +47,7 @@ pub struct AuthorityConsensusBuilder<Client, Pool> {
     network_handle: NetworkHandle,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
+    payload_store: PayloadBuilderHandle,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -86,6 +88,7 @@ where
         network_handle: NetworkHandle,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
+        payload_store: PayloadBuilderHandle,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -155,6 +158,7 @@ where
             network_handle,
             block_import_rx,
             task_executor,
+            payload_store,
         })
     }
 
@@ -166,7 +170,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        BlockProductionTask<Client, Pool>,
+        BlockProductionTask<Client>,
         BlockFetcherTask<Client, Pool>,
         SyncController,
     ) {
@@ -187,6 +191,7 @@ where
             network_handle,
             block_import_rx,
             task_executor,
+            payload_store,
         } = self;
         let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
 
@@ -212,7 +217,6 @@ where
             to_engine,
             canon_state_notification,
             storage,
-            pool,
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source,
@@ -221,6 +225,7 @@ where
             epoch_manager,
             network_handle,
             task_executor,
+            payload_store,
         );
 
         (consensus, block_production_task, block_fetcher_task, sync_task)
