@@ -32,6 +32,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use frost_secp256k1_tr as frost;
+
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 use crate::{database::Utxo, util::OutPointExt};
