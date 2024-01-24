@@ -48,8 +48,6 @@ pub struct BlockProductionTask<Client> {
     /// Task executor
     #[allow(dead_code)]
     task_executor: TaskExecutor,
-    /// Payload store
-    pub payload_store: PayloadBuilderHandle,
 }
 
 impl<Client> BlockProductionTask<Client>
@@ -76,7 +74,6 @@ where
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
         task_executor: TaskExecutor,
-        payload_store: PayloadBuilderHandle,
     ) -> Self {
         Self {
             chain_spec,
@@ -91,7 +88,6 @@ where
             epoch_manager,
             network_handle,
             task_executor,
-            payload_store,
         }
     }
 

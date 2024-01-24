@@ -1876,6 +1876,30 @@ where
                         }
                         BeaconEngineMessage::EventListener(tx) => {
                             this.listeners.push_listener(tx);
+                        },
+                        BeaconEngineMessage::StartNewPayload { payload_attributes, tx, parent } => {
+                            let payload_builder = this.payload_builder.clone();
+                            tokio::spawn(async move {
+                                let attributes_result = PayloadBuilderAttributes::try_new(parent, payload_attributes);
+                                let attributes = attributes_result.expect("valid payload attributes");
+                                let recv = payload_builder.send_new_payload(attributes);
+                                let result = recv.await.expect("payload builder channel to be open");
+                                let _ = tx.send(result);
+                            });
+                        },
+                        BeaconEngineMessage::BestPayload { tx, payload_id} => {
+                            info!(target: "consensus::engine", "Resolving payload {}", payload_id);
+                            let payload_builder = this.payload_builder.clone();
+                            tokio::spawn(async move {
+                                let best_payload = match payload_builder.best_payload(payload_id).await {
+                                    Some(payload) => match payload {
+                                        Ok(payload) => Some(payload),
+                                        Err(_) => None
+                                    },
+                                    None => None,
+                                };
+                                let _ = tx.send(best_payload);
+                            });
                         }
                         BeaconEngineMessage::StartNewPayload { payload_attributes, tx, parent } => {
                             let payload_builder = this.payload_builder.clone();
