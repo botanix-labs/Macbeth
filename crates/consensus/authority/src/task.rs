@@ -31,8 +31,6 @@ pub struct BlockProductionTask<Client> {
     pub(crate) storage: Storage<Client>,
     /// TODO: ideally this would just be a sender of hashes
     pub(crate) to_engine: UnboundedSender<BeaconEngineMessage>,
-    /// Used to notify consumers of new blocks
-    pub(crate) canon_state_notification: CanonStateNotificationSender,
     /// The pipeline events to listen on
     pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
     /// BTC Server client
@@ -50,8 +48,6 @@ pub struct BlockProductionTask<Client> {
     /// Task executor
     #[allow(dead_code)]
     task_executor: TaskExecutor,
-    /// Payload store
-    pub payload_store: PayloadBuilderHandle,
 }
 
 impl<Client> BlockProductionTask<Client>
@@ -78,13 +74,11 @@ where
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
         task_executor: TaskExecutor,
-        payload_store: PayloadBuilderHandle,
     ) -> Self {
         Self {
             chain_spec,
             storage,
             to_engine,
-            canon_state_notification,
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
@@ -94,7 +88,6 @@ where
             epoch_manager,
             network_handle,
             task_executor,
-            payload_store,
         }
     }
 

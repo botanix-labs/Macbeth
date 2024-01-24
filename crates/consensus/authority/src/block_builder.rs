@@ -1,14 +1,13 @@
 use crate::{engine_util, task::BlockProductionTask};
+use reth_beacon_consensus::BeaconEngineMessage;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
-use reth_payload_builder::{PayloadBuilderAttributes, PayloadId};
 use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
-use std::sync::Arc;
 use tracing::{error, info};
 
 impl<Client> BlockProductionTask<Client>
@@ -40,64 +39,86 @@ where
         let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
-        let attr_result = PayloadBuilderAttributes::try_new(
-            best_hash,
-            PayloadAttributes {
-                timestamp: 0u64,
-                prev_randao: B256::ZERO,
-                suggested_fee_recipient,
-                withdrawals: None,
-                parent_beacon_block_root: None,
-            },
-        );
-        if let Err(err) = attr_result {
-            error!("Failed to create payload attributes, err: {:?}", err);
+        let payload_attributes = PayloadAttributes {
+            timestamp: 0_u64,
+            prev_randao: B256::ZERO, // only relevant for PoS
+            suggested_fee_recipient,
+            withdrawals: None,              // only relevant for PoS
+            parent_beacon_block_root: None, // only relevant for PoS
+        };
+
+        // start a new payload job and get the id
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let result = self.to_engine.send(BeaconEngineMessage::StartNewPayload {
+            payload_attributes,
+            parent: best_hash,
+            tx,
+        });
+
+        let payload_id = match result {
+            Ok(_) => {
+                let recv = rx.await;
+                match recv {
+                    Ok(payload_id) => match payload_id {
+                        Ok(payload_id) => payload_id,
+                        Err(e) => {
+                            error!(target: "consensus::authority", ?e, "Failed to start new payload");
+                            return
+                        }
+                    },
+                    Err(e) => {
+                        error!(target: "consensus::authority", ?e, "Failed to receive payload id");
+                        return
+                    }
+                }
+            }
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to send start new payload request");
+                return
+            }
+        };
+
+        // get payload by id
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let result = self.to_engine.send(BeaconEngineMessage::BestPayload { tx, payload_id });
+
+        let best_transactions = match result {
+            Ok(_) => {
+                let recv = rx.await;
+                match recv {
+                    Ok(payload) => {
+                        if let Some(payload) = payload {
+                            payload.block().clone().body
+                        } else {
+                            info!(target: "consensus::authority", "No best payload received");
+                            return
+                        }
+                    }
+                    Err(e) => {
+                        error!(target: "consensus::authority", ?e, "Failed to receive best payload");
+                        return
+                    }
+                }
+            }
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to send best payload request");
+                return
+            }
+        };
+
+        if best_transactions.is_empty() {
+            info!(target: "consensus::authority", "No transactions in best payload");
             return
         }
 
-        let attr = attr_result.expect("valid payload attributes");
-        let mut id: PayloadId = attr.id;
-        let recv = self.payload_store.send_new_payload(attr);
-
-        match recv.await {
-            Ok(res) => match res {
-                Ok(payload_id) => {
-                    info!("Payload builder sent new payload, {:?}", payload_id);
-                    id = payload_id;
-                }
-                Err(err) => {
-                    error!("Payload builder failed to send new payload, err: {:?}", err);
-                }
-            },
-            Err(err) => {
-                error!("Payload builder failed to send new payload, err: {:?}", err);
-            }
-        }
-
-        let mut best_txs = vec![];
-        match self.payload_store.best_payload(id).await {
-            Some(binding) => {
-                let payload = binding.unwrap();
-                best_txs = payload.block().clone().body;
-            }
-            None => {
-                println!("No payload found");
-                // Handle the case when no payload is found if needed
-            }
-        }
-
-        let (transactions, senders): (Vec<_>, Vec<_>) = best_txs
+        let (transactions, senders): (Vec<_>, Vec<_>) = best_transactions
             .into_iter()
             .map(|tx| {
-                let recovered = tx.clone().try_into_ecrecovered().unwrap();
+                let recovered = tx.clone().try_into_ecrecovered().expect("valid tx");
                 let signer = recovered.signer();
                 (tx, signer)
             })
             .unzip();
-
-        if transactions.is_empty() {
-            return
-        }
 
         let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
         let authority_signers = storage.authorities.clone();

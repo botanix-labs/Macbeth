@@ -62,7 +62,9 @@ where
             if utils::validate_current_signer_against_last(
                 (latest_signer, latest_header.timestamp / 60),
                 (signer_pk, current_ts / 60),
-            ).is_err() {
+            )
+            .is_err()
+            {
                 return false
             }
         }

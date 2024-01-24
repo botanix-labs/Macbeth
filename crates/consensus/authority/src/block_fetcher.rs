@@ -20,14 +20,10 @@ use tokio::sync::{
 
 use tracing::{debug, error, info};
 
-pub struct BlockFetcherTask<Client, Pool: TransactionPool> {
+pub struct BlockFetcherTask<Client> {
     chain_spec: Arc<ChainSpec>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage>,
-    /// The client used to interact with the state
-    /// Note this is a database client
-    /// Mempool
-    pool: Pool,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
@@ -40,16 +36,14 @@ pub struct BlockFetcherTask<Client, Pool: TransactionPool> {
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
 }
 
-impl<Client, Pool: TransactionPool> BlockFetcherTask<Client, Pool>
+impl<Client> BlockFetcherTask<Client>
 where
     Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
-    Pool: TransactionPool,
 {
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
-        pool: Pool,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_source: MempoolSpace,
@@ -60,7 +54,6 @@ where
             chain_spec,
             block_import_rx,
             to_engine,
-            pool,
             canon_state_notification,
             btc_server,
             bitcoin_block_source,
@@ -157,12 +150,6 @@ where
                     let _ = self
                         .canon_state_notification
                         .send(reth_provider::CanonStateNotification::Commit { new: chain });
-
-                    // lastly prune mempool
-                    info!(target: "consensus::authority", "Removing txs from the pool upon recevied block");
-                    let tx_hashes =
-                        block.body.iter().map(|tx| tx.hash().to_owned()).collect::<Vec<_>>();
-                    self.pool.remove_transactions(tx_hashes);
                 }
                 Err(err) => {
                     error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
