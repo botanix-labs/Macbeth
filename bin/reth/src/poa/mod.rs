@@ -15,7 +15,7 @@ use crate::{
     },
     dirs::{ChainPath, DataDirPath, MaybePlatformPath},
     init::init_genesis,
-    node::cl_events::ConsensusLayerHealthEvents,
+    poa::{cl_events::ConsensusLayerHealthEvents, notifications::EventsNotificationClient},
     prometheus_exporter,
     runner::CliContext,
     utils::get_single_header,
@@ -101,6 +101,7 @@ use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use rsntp::AsyncSntpClient;
 pub mod cl_events;
 pub mod events;
+pub mod notifications;
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -621,6 +622,15 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         )?;
         info!(target: "reth::cli", "Consensus engine initialized");
 
+        let event_notification_client =
+            if let Some(webhook_url) = self.rpc.slack_notifications_webhook_url.clone() {
+                let pk = secret_key.public_key(&secp256k1::Secp256k1::new());
+                let event_notification_client = EventsNotificationClient::new(pk, webhook_url)?;
+                Some(event_notification_client)
+            } else {
+                None
+            };
+
         let events = stream_select!(
             network.event_listener().map(Into::into),
             beacon_engine_handle.event_listener().map(Into::into),
@@ -637,7 +647,13 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         );
         ctx.task_executor.spawn_critical(
             "events task",
-            events::handle_events(Some(network.clone()), Some(head.number), events, db.clone()),
+            events::handle_events(
+                Some(network.clone()),
+                Some(head.number),
+                events,
+                db.clone(),
+                event_notification_client,
+            ),
         );
 
         let engine_api = EngineApi::new(
@@ -1154,28 +1170,28 @@ mod tests {
 
     #[test]
     fn parse_help_node_command() {
-        let err = NodeCommand::<()>::try_parse_from(["reth", "--help"]).unwrap_err();
+        let err = PoaNodeCommand::<()>::try_parse_from(["reth", "--help"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
     }
 
     #[test]
     fn parse_common_node_command_chain_args() {
         for chain in SUPPORTED_CHAINS {
-            let args: NodeCommand = NodeCommand::<()>::parse_from(["reth", "--chain", chain]);
+            let args: PoaNodeCommand = PoaNodeCommand::<()>::parse_from(["reth", "--chain", chain]);
             assert_eq!(args.chain.chain, chain.parse().unwrap());
         }
     }
 
     #[test]
     fn parse_discovery_addr() {
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--discovery.addr", "127.0.0.1"]).unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from(["reth", "--discovery.addr", "127.0.0.1"])
+            .unwrap();
         assert_eq!(cmd.network.discovery.addr, Ipv4Addr::LOCALHOST);
     }
 
     #[test]
     fn parse_addr() {
-        let cmd = NodeCommand::<()>::try_parse_from([
+        let cmd = PoaNodeCommand::<()>::try_parse_from([
             "reth",
             "--discovery.addr",
             "127.0.0.1",
@@ -1189,42 +1205,49 @@ mod tests {
 
     #[test]
     fn parse_discovery_port() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--discovery.port", "300"]).unwrap();
+        let cmd =
+            PoaNodeCommand::<()>::try_parse_from(["reth", "--discovery.port", "300"]).unwrap();
         assert_eq!(cmd.network.discovery.port, 300);
     }
 
     #[test]
     fn parse_port() {
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--discovery.port", "300", "--port", "99"])
-                .unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from([
+            "reth",
+            "--discovery.port",
+            "300",
+            "--port",
+            "99",
+        ])
+        .unwrap();
         assert_eq!(cmd.network.discovery.port, 300);
         assert_eq!(cmd.network.port, 99);
     }
 
     #[test]
     fn parse_metrics_port() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--metrics", "9001"]).unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from(["reth", "--metrics", "9001"]).unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
 
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--metrics", ":9001"]).unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from(["reth", "--metrics", ":9001"]).unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
 
         let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--metrics", "localhost:9001"]).unwrap();
+            PoaNodeCommand::<()>::try_parse_from(["reth", "--metrics", "localhost:9001"]).unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
     }
 
     #[test]
     fn parse_config_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--config", "my/path/to/reth.toml"])
-            .unwrap();
+        let cmd =
+            PoaNodeCommand::<()>::try_parse_from(["reth", "--config", "my/path/to/reth.toml"])
+                .unwrap();
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let config_path = cmd.config.unwrap_or(data_dir.config_path());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from(["reth"]).unwrap();
 
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
@@ -1235,14 +1258,14 @@ mod tests {
 
     #[test]
     fn parse_db_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
+        let cmd = PoaNodeCommand::<()>::try_parse_from(["reth"]).unwrap();
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
         assert!(db_path.ends_with(end), "{:?}", cmd.config);
 
         let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--datadir", "my/custom/path"]).unwrap();
+            PoaNodeCommand::<()>::try_parse_from(["reth", "--datadir", "my/custom/path"]).unwrap();
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
@@ -1251,7 +1274,7 @@ mod tests {
     #[test]
     #[cfg(not(feature = "optimism"))] // dev mode not yet supported in op-reth
     fn parse_dev() {
-        let cmd = NodeCommand::<()>::parse_from(["reth", "--dev"]);
+        let cmd = PoaNodeCommand::<()>::parse_from(["reth", "--dev"]);
         let chain = reth_primitives::DEV.clone();
         assert_eq!(cmd.chain.chain, chain.chain);
         assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
@@ -1263,13 +1286,11 @@ mod tests {
 
         assert!(cmd.rpc.http);
         assert!(cmd.network.discovery.disable_discovery);
-
-        assert!(cmd.dev.dev);
     }
 
     #[test]
     fn parse_instance() {
-        let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
+        let mut cmd = PoaNodeCommand::<()>::parse_from(["reth"]);
         cmd.adjust_instance_ports();
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers
@@ -1279,7 +1300,7 @@ mod tests {
         // check network listening port number
         assert_eq!(cmd.network.port, 30303);
 
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "2"]);
+        let mut cmd = PoaNodeCommand::<()>::parse_from(["reth", "--instance", "2"]);
         cmd.adjust_instance_ports();
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers
@@ -1289,7 +1310,7 @@ mod tests {
         // check network listening port number
         assert_eq!(cmd.network.port, 30304);
 
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "3"]);
+        let mut cmd = PoaNodeCommand::<()>::parse_from(["reth", "--instance", "3"]);
         cmd.adjust_instance_ports();
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers

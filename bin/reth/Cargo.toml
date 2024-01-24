@@ -90,8 +90,12 @@ tokio = { workspace = true, features = ["sync", "macros", "time", "rt-multi-thre
 futures.workspace = true
 pin-project.workspace = true
 
+# slack
+slack-morphism = { version = "1.11", features = ["hyper"] }
+
 # http/rpc
 hyper = "0.14.25"
+hyper-rustls = "0.24.0"
 
 # Botanix
 client = {path = "../btc-server/client"}
@@ -104,6 +108,9 @@ bitcoin = "0.30.0"
 
 ## Url
 url = "2.2"
+
+# displaydoc
+displaydoc = "0.2"
 
 # misc
 aquamarine.workspace = true
