@@ -1,10 +1,6 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    io,
-    path::Path,
-};
+use std::{collections::BTreeMap, io, path::Path};
 
-use bitcoin::{key, secp256k1::Secp256k1, OutPoint, TxOut};
+use bitcoin::{OutPoint, TxOut};
 use ciborium;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
@@ -27,15 +23,17 @@ const TREE_KEYS: &[u8; 4] = b"keys";
 /// round2 packages (if DKG is occuring)
 /// Any secret packages (either personal or group) should be calculated on the fly
 /// and not stored in the database
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Keys {
     pub min_signers: u16,
     pub max_signers: u16,
     personal_identifier: frost::Identifier,
     personal_round_1: Option<frost::keys::dkg::round1::Package>,
+    #[serde(skip)]
     personal_secret_package: Option<frost::keys::dkg::round1::SecretPackage>,
     round1_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round1::Package>,
     round2_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+    #[serde(skip)]
     round2_secret_package: Option<frost::keys::dkg::round2::SecretPackage>,
     key_package: Option<frost::keys::KeyPackage>,
     public_key_package: Option<frost::keys::PublicKeyPackage>,
