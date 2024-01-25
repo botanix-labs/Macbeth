@@ -1,3 +1,5 @@
+use bitcoin::network::message;
+use frost::SigningPackage;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -14,7 +16,7 @@ use thiserror::Error;
 /// round2 packages (if DKG is occuring)
 /// Any secret packages (either personal or group) should be calculated on the fly
 /// and not stored in the database
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Dkg {
     pub min_signers: u16,
     pub max_signers: u16,
@@ -28,6 +30,11 @@ pub struct Dkg {
     round2_secret_package: Option<frost::keys::dkg::round2::SecretPackage>,
     key_package: Option<frost::keys::KeyPackage>,
     public_key_package: Option<frost::keys::PublicKeyPackage>,
+    #[serde(skip)]
+    signer_nonces: Option<frost::round1::SigningNonces>,
+    // Only available if we are the cordinator
+    signing_commitmentments: BTreeMap<frost::Identifier, frost::round1::SigningCommitments>,
+    signature_shares: BTreeMap<frost::Identifier, frost::round2::SignatureShare>,
 }
 
 #[derive(Debug, Error)]
@@ -38,6 +45,30 @@ pub enum DKGError {
     MissingRound2SecretPackage,
     #[error("missing key package")]
     MissingKeyPackage,
+    #[error("intenal frost error")]
+    Frost(#[from] frost::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum SigningError {
+    #[error("missing key package")]
+    MissingKeyPackage,
+    #[error("public key package")]
+    MissingPublicKeyPackage,
+    #[error("missing signer nonces")]
+    MissingSignerNonces,
+    #[error("intenal frost error")]
+    Frost(#[from] frost::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum CordinatorError {
+    #[error("exceeding max signing commitments")]
+    ExceedingMaxNonceCommitments,
+    #[error("duplicate signing commitment")]
+    DuplicateSigningCommitment,
+    #[error("duplicate signature share")]
+    DuplicateSignatureShare,
     #[error("intenal frost error")]
     Frost(#[from] frost::Error),
 }
@@ -85,6 +116,9 @@ impl Dkg {
             round2_secret_package: None,
             key_package: None,
             public_key_package: None,
+            signing_commitmentments: BTreeMap::new(),
+            signature_shares: BTreeMap::new(),
+            signer_nonces: None,
         }
     }
 
@@ -222,6 +256,41 @@ impl Dkg {
             Ok(())
         } else {
             Err(DKGError::MissingRound2SecretPackage)
+        }
+    }
+
+    pub fn create_round1_nonces(
+        &mut self,
+    ) -> Result<frost::round1::SigningCommitments, SigningError> {
+        // TODO calling this should abort the current signing process
+        if let Some(key_package) = &self.key_package {
+            let mut rng = thread_rng();
+            let nonces = frost::round1::commit(key_package.signing_share(), &mut rng);
+            self.signer_nonces = Some(nonces.0);
+            // caller does not need the nonce points
+            // better not to return them
+            return Ok(nonces.1)
+        } else {
+            Err(SigningError::MissingKeyPackage)
+        }
+    }
+
+    pub fn create_round2_signing_share(
+        &self,
+        signing_package: &SigningPackage,
+    ) -> Result<frost::round2::SignatureShare, SigningError> {
+        if let Some(key_package) = &self.key_package {
+            if let Some(signer_nonces) = &self.signer_nonces {
+                let mut rng = thread_rng();
+                let signature_share =
+                    frost::round2::sign(signing_package, &signer_nonces, key_package)?;
+                // TODO save signature
+                Ok(signature_share)
+            } else {
+                Err(SigningError::MissingSignerNonces)
+            }
+        } else {
+            Err(SigningError::MissingKeyPackage)
         }
     }
 }
