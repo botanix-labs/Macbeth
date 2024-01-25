@@ -1,9 +1,8 @@
-use bitcoin::network::message;
 use frost::SigningPackage;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, io, path::Path};
+use std::collections::BTreeMap;
 
 use thiserror::Error;
 
@@ -357,17 +356,9 @@ impl Dkg {
 mod test {
     use super::*;
 
-    #[test]
-    fn dkg_flow() {
+    fn dkg(dkg1: &mut Dkg, dkg2: &mut Dkg, id1: frost::Identifier, id2: frost::Identifier) {
         let min_signer = 2;
         let max_signer = 2;
-        let id1 = frost::Identifier::try_from(1u16).expect("identifier");
-        let id2 = frost::Identifier::try_from(2u16).expect("identifier");
-        assert_ne!(id1, id2);
-
-        let mut dkg1 = Dkg::new(min_signer, max_signer, id1);
-        let mut dkg2 = Dkg::new(min_signer, max_signer, id2);
-
         dkg1.generate_personal_round1_package().expect("generate round 1");
         dkg2.generate_personal_round1_package().expect("generate round 1");
 
@@ -400,6 +391,83 @@ mod test {
         // create public key package
         dkg1.create_pubkey_package().expect("create public key package");
         dkg2.create_pubkey_package().expect("create public key package");
+    }
+
+    #[test]
+    fn dkg_flow() {
+        let min_signer = 2;
+        let max_signer = 2;
+
+        let id1 = frost::Identifier::try_from(1u16).expect("identifier");
+        let id2 = frost::Identifier::try_from(2u16).expect("identifier");
+        assert_ne!(id1, id2);
+
+        let mut dkg1 = Dkg::new(min_signer, max_signer, id1);
+        let mut dkg2 = Dkg::new(min_signer, max_signer, id2);
+        dkg(&mut dkg1, &mut dkg2, id1, id2);
+
         assert_eq!(dkg1.public_key_package, dkg2.public_key_package);
+    }
+
+    #[test]
+    fn signing_flow() {
+        let min_signer = 2;
+        let max_signer = 2;
+
+        let id1 = frost::Identifier::try_from(1u16).expect("identifier");
+        let id2 = frost::Identifier::try_from(2u16).expect("identifier");
+        assert_ne!(id1, id2);
+
+        let mut dkg1 = Dkg::new(min_signer, max_signer, id1);
+        let mut dkg2 = Dkg::new(min_signer, max_signer, id2);
+        dkg(&mut dkg1, &mut dkg2, id1, id2);
+        // Create cordinator
+
+        let cord_id = frost::Identifier::try_from(3u16).expect("identifier");
+        let mut cord = Dkg::new(min_signer, max_signer, cord_id);
+
+        //////////////////
+        // Round 1
+        //////////////////
+
+        // Create round 1 nonces
+        let signing_commit1 = dkg1.create_round1_nonces().expect("create round 1 nonces");
+        let signing_commit2 = dkg2.create_round1_nonces().expect("create round 1 nonces");
+
+        // share with cord
+        cord.add_new_nonce_commitment(signing_commit1, id1).expect("add new nonce commitment");
+        cord.add_new_nonce_commitment(signing_commit2, id2).expect("add new nonce commitment");
+
+        //////////////////
+        // Round 2
+        //////////////////
+        cord.key_package = dkg1.key_package.clone();
+        cord.public_key_package = dkg1.public_key_package.clone();
+        let message = [1u8, 2u8, 3u8];
+        let signing_package =
+            cord.create_signing_package(&message).expect("create signing package");
+
+        // share message with signers
+        let signature_share1 = dkg1
+            .create_round2_signing_share(&signing_package)
+            .expect("create round 2 signing share");
+        let signature_share2 = dkg2
+            .create_round2_signing_share(&signing_package)
+            .expect("create round 2 signing share");
+
+        // share with cord
+        cord.add_new_signature_share(signature_share1, id1).expect("add new signature share");
+        cord.add_new_signature_share(signature_share2, id2).expect("add new signature share");
+
+        // Aggregate signatures
+        let signature =
+            cord.aggregate_signing_shares(&signing_package).expect("aggregate signatures");
+
+        // Verify message
+        cord.public_key_package
+            .unwrap()
+            .verifying_key()
+            .verify(&message, &signature)
+            .expect("verify signature");
     }
 }
