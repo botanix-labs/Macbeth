@@ -159,12 +159,8 @@ where
     /// production task.
     pub fn build(
         self,
-    ) -> (
-        AuthorityConsensus,
-        BlockProductionTask<Client>,
-        BlockFetcherTask<Client>,
-        SyncController,
-    ) {
+    ) -> (AuthorityConsensus, BlockProductionTask<Client>, BlockFetcherTask<Client>, SyncController)
+    {
         let Self {
             btc_server,
             client: _,

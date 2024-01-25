@@ -4,8 +4,10 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
-use reth_primitives::{BlockHash, SealedBlock};
-use reth_rpc_types::engine::{ForkchoiceState, PayloadStatus, PayloadStatusEnum};
+use reth_primitives::{revm_primitives::FixedBytes, BlockHash, SealedBlock, TransactionSigned};
+use reth_rpc_types::engine::{
+    ForkchoiceState, PayloadAttributes, PayloadId, PayloadStatus, PayloadStatusEnum,
+};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use tracing::{debug, error, trace};
@@ -121,10 +123,78 @@ pub(crate) async fn send_fork_choice_update_payload(
     }
 }
 
+/// Start a new payload job and returns the payload id if it exists.
+///
+/// This function creates a `BeaconEngineMessage::StartNewPayload` message and sends it to the
+/// Beacon Engine. The payload id is returned if received successfully, otherwise an error is
+/// logged and None is returned.
+///
+/// # Arguments
+///
+/// * `to_engine` - The sender to send the message to the Beacon Engine.
+/// * `payload_attributes` - The payload attributes.
+/// * `parent` - The parent block hash the payload will be built on.
+pub(crate) async fn start_new_payload(
+    to_engine: UnboundedSender<BeaconEngineMessage>,
+    payload_attributes: PayloadAttributes,
+    parent: FixedBytes<32>,
+) -> Option<PayloadId> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let result =
+        to_engine.send(BeaconEngineMessage::StartNewPayload { payload_attributes, parent, tx });
+
+    match result {
+        Ok(_) => match rx.await {
+            Ok(payload_id) => payload_id.ok(),
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Receiver error, channel closed");
+                None
+            }
+        },
+        Err(e) => {
+            error!(target: "consensus::authority", ?e, "Failed to send start new payload request");
+            None
+        }
+    }
+}
+
+/// Gets the best transactions from the payload with the given id.
+///
+/// This function creates a `BeaconEngineMessage::BestPayload` message and sends it to the
+/// Beacon Engine. The best transactions are returned if received successfully,
+/// otherwise an error is logged and None is returned.
+///
+/// # Arguments
+/// * `to_engine` - The sender to send the message to the Beacon Engine.
+/// * `payload_id` - The payload id to get the best transactions from.
+pub(crate) async fn get_best_transactions_from_payload(
+    to_engine: UnboundedSender<BeaconEngineMessage>,
+    payload_id: PayloadId,
+) -> Option<Vec<TransactionSigned>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let result = to_engine.send(BeaconEngineMessage::BestPayload { tx, payload_id });
+
+    let best_transactions = match result {
+        Ok(_) => match rx.await {
+            Ok(payload) => payload.map(|p| p.block().clone().body),
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to receive best payload");
+                None
+            }
+        },
+        Err(e) => {
+            error!(target: "consensus::authority", ?e, "Failed to send best payload request");
+            None
+        }
+    };
+
+    best_transactions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_primitives::{BlockBody, Header};
+    use reth_primitives::{Address, BlockBody, Header, SealedHeader};
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -133,7 +203,7 @@ mod tests {
 
         let header =
             SealedHeader { hash: Header::default().hash_slow(), header: Header::default() }; // Replace with actual values
-        tokio::spawn(send_fork_choice_update_payload(header.clone(), tx.clone()));
+        tokio::spawn(send_fork_choice_update_payload(header.hash, tx.clone()));
 
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
@@ -164,6 +234,46 @@ mod tests {
             BeaconEngineMessage::NewPayload { payload, cancun_fields, tx } => {
                 assert_eq!(payload.block_hash(), sealed_block.hash());
                 assert_eq!(cancun_fields, None);
+            }
+            _ => panic!("Unexpected message type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_start_new_payload() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let payload_attributes = PayloadAttributes {
+            timestamp: 0,
+            prev_randao: FixedBytes::default(),
+            suggested_fee_recipient: Address::default(),
+            withdrawals: None,
+            parent_beacon_block_root: None,
+        };
+        let parent = FixedBytes::default();
+        tokio::spawn(start_new_payload(tx.clone(), payload_attributes, parent));
+
+        // Ensure that the engine received the message
+        let msg = rx.recv().await.unwrap();
+        match msg {
+            BeaconEngineMessage::StartNewPayload { payload_attributes, parent, tx } => {
+                assert_eq!(payload_attributes, payload_attributes);
+                assert_eq!(parent, parent);
+            }
+            _ => panic!("Unexpected message type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_best_transactions_from_payload() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let payload_id = PayloadId::new([0; 8]);
+        tokio::spawn(get_best_transactions_from_payload(tx.clone(), payload_id));
+
+        // Ensure that the engine received the message
+        let msg = rx.recv().await.unwrap();
+        match msg {
+            BeaconEngineMessage::BestPayload { tx, payload_id } => {
+                assert_eq!(payload_id, payload_id);
             }
             _ => panic!("Unexpected message type"),
         }
