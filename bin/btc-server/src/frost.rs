@@ -293,6 +293,65 @@ impl Dkg {
             Err(SigningError::MissingKeyPackage)
         }
     }
+
+    /* Cordinator utilities */
+    // Recieving round 1 commitments from signers
+    pub fn add_new_nonce_commitment(
+        &mut self,
+        signing_commitment: frost::round1::SigningCommitments,
+        peer_identifier: frost::Identifier,
+    ) -> Result<(), CordinatorError> {
+        if self.signing_commitmentments.len() == self.max_signers as usize {
+            return Err(CordinatorError::ExceedingMaxNonceCommitments);
+        }
+
+        if self.signing_commitmentments.contains_key(&peer_identifier) {
+            return Err(CordinatorError::DuplicateSigningCommitment);
+        }
+
+        self.signing_commitmentments.insert(peer_identifier, signing_commitment);
+        Ok(())
+    }
+
+    // Recieving round 2 signature shares from signers
+    pub fn add_new_signature_share(
+        &mut self,
+        signature_share: frost::round2::SignatureShare,
+        peer_identifier: frost::Identifier,
+    ) -> Result<(), CordinatorError> {
+        if self.signature_shares.len() == self.max_signers as usize {
+            return Err(CordinatorError::ExceedingMaxNonceCommitments);
+        }
+
+        if self.signature_shares.contains_key(&peer_identifier) {
+            return Err(CordinatorError::DuplicateSignatureShare);
+        }
+
+        self.signature_shares.insert(peer_identifier, signature_share);
+        Ok(())
+    }
+
+    pub fn create_signing_package(&self, message: &[u8]) -> Result<SigningPackage, SigningError> {
+        if let Some(key_package) = &self.key_package {
+            let signing_package =
+                frost::SigningPackage::new(self.signing_commitmentments.clone(), message);
+            Ok(signing_package)
+        } else {
+            Err(SigningError::MissingKeyPackage)
+        }
+    }
+
+    pub fn aggregate_signing_shares(
+        &self,
+        signing_package: &SigningPackage,
+    ) -> Result<frost::Signature, SigningError> {
+        if let Some(pubkey_package) = &self.public_key_package {
+            let agg = frost::aggregate(signing_package, &self.signature_shares, &pubkey_package)?;
+            Ok(agg)
+        } else {
+            return Err(SigningError::MissingPublicKeyPackage)
+        }
+    }
 }
 
 mod test {
