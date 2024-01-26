@@ -2,7 +2,7 @@ use reth_consensus_common::utils;
 use reth_primitives::BlockHashOrNumber;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::Storage;
 use reth_provider::StateProviderFactory;
@@ -49,7 +49,7 @@ where
             .flatten();
 
         if latest_header.is_none() {
-            info!("No latest header found");
+            warn!("No latest header found");
             return false
         }
 
@@ -65,6 +65,7 @@ where
             )
             .is_err()
             {
+                error!("Current signer failed validation against last signer.");
                 return false
             }
         }
