@@ -1,5 +1,4 @@
 use crate::{engine_util, task::BlockProductionTask};
-use reth_beacon_consensus::BeaconEngineMessage;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
