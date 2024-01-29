@@ -4,6 +4,7 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
+use reth_payload_builder::error::PayloadBuilderError;
 use reth_primitives::{revm_primitives::FixedBytes, BlockHash, SealedBlock, TransactionSigned};
 use reth_rpc_types::engine::{
     ForkchoiceState, PayloadAttributes, PayloadId, PayloadStatus, PayloadStatusEnum,
@@ -123,6 +124,17 @@ pub(crate) async fn send_fork_choice_update_payload(
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+/// Error type for starting a new payload
+pub(crate) enum StartNewPayloadError {
+    #[error("Engine error")]
+    EngineError,
+    #[error("Engine recieve error")]
+    RecvError,
+    #[error("No payload error")]
+    NoPayload(PayloadBuilderError),
+}
+
 /// Start a new payload job and returns the payload id if it exists.
 ///
 /// This function creates a `BeaconEngineMessage::StartNewPayload` message and sends it to the
@@ -138,24 +150,35 @@ pub(crate) async fn start_new_payload(
     to_engine: UnboundedSender<BeaconEngineMessage>,
     payload_attributes: PayloadAttributes,
     parent: FixedBytes<32>,
-) -> Option<PayloadId> {
+) -> Result<PayloadId, StartNewPayloadError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result =
         to_engine.send(BeaconEngineMessage::StartNewPayload { payload_attributes, parent, tx });
 
     match result {
         Ok(_) => match rx.await {
-            Ok(payload_id) => payload_id.ok(),
+            Ok(payload_id) => payload_id.map_err(|e| StartNewPayloadError::NoPayload(e)),
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Receiver error, channel closed");
-                None
+                Err(StartNewPayloadError::RecvError)
             }
         },
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to send start new payload request");
-            None
+            Err(StartNewPayloadError::EngineError)
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+/// Error type for getting the best transactions from a payload
+pub(crate) enum BestTransactionsError {
+    #[error("Engine error")]
+    EngineError,
+    #[error("Engine recieve error")]
+    RecvError,
+    #[error("Empy payload error")]
+    PayloadEmptyError,
 }
 
 /// Gets the best transactions from the payload with the given id.
@@ -167,28 +190,29 @@ pub(crate) async fn start_new_payload(
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn get_best_transactions_from_payload(
+pub(crate) async fn best_transactions_from_payload(
     to_engine: UnboundedSender<BeaconEngineMessage>,
     payload_id: PayloadId,
-) -> Option<Vec<TransactionSigned>> {
+) -> Result<Vec<TransactionSigned>, BestTransactionsError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result = to_engine.send(BeaconEngineMessage::BestPayload { tx, payload_id });
 
-    let best_transactions = match result {
+    match result {
         Ok(_) => match rx.await {
-            Ok(payload) => payload.map(|p| p.block().clone().body),
+            Ok(payload) => {
+                let payload = payload.map(|p| p.block().clone().body);
+                payload.ok_or(BestTransactionsError::PayloadEmptyError)
+            }
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to receive best payload");
-                None
+                Err(BestTransactionsError::RecvError)
             }
         },
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to send best payload request");
-            None
+            Err(BestTransactionsError::EngineError)
         }
-    };
-
-    best_transactions
+    }
 }
 
 #[cfg(test)]
@@ -267,7 +291,7 @@ mod tests {
     async fn test_get_best_transactions_from_payload() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let payload_id = PayloadId::new([0; 8]);
-        tokio::spawn(get_best_transactions_from_payload(tx.clone(), payload_id));
+        tokio::spawn(best_transactions_from_payload(tx.clone(), payload_id));
 
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
