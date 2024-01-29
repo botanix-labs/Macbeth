@@ -11,7 +11,10 @@ use reth_rpc_types::engine::{
     ForkchoiceUpdated, PayloadAttributes, PayloadId, PayloadStatus, PayloadStatusEnum,
 };
 use std::{
-    future::Future, pin::Pin, sync::Arc, task::{ready, Context, Poll}
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 

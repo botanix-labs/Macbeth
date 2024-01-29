@@ -2,7 +2,7 @@ use reth_consensus_common::utils;
 use reth_primitives::BlockHashOrNumber;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::Storage;
 use reth_provider::StateProviderFactory;
@@ -49,28 +49,33 @@ where
             .flatten();
 
         if latest_header.is_none() {
-            info!("No latest header found");
+            warn!("No latest header found");
             return false
         }
 
         let latest_header = latest_header.unwrap();
 
+        let is_inturn = utils::is_inturn(authority_len, signer_index as u64);
+
         // Skip over genesis
         if latest_header.number != 0 {
             let latest_signer = utils::recovery_authority(&latest_header).unwrap();
             let current_ts = utils::unix_timestamp();
-            if utils::validate_current_signer_against_last(
-                (latest_signer, latest_header.timestamp / 60),
-                (signer_pk, current_ts / 60),
-            )
-            .is_err()
+            if is_inturn &&
+                utils::validate_current_signer_against_last(
+                    (latest_signer, latest_header.timestamp / 60),
+                    (signer_pk, current_ts / 60),
+                )
+                .is_err()
             {
+                // made info instead of warn since this prints as soon as
+                // a block is produced and the node is still in turn
+                info!("Current signer failed validation against last signer.");
                 return false
             }
         }
 
         drop(storage);
-        let is_inturn = utils::is_inturn(authority_len, signer_index as u64);
         info!("Epoch manager inturn: {}", is_inturn);
 
         is_inturn
