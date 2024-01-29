@@ -16,10 +16,12 @@ use thiserror::Error;
 /// Any secret packages (either personal or group) should be calculated on the fly
 /// and not stored in the database
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Dkg {
+pub struct FrostState {
     pub min_signers: u16,
     pub max_signers: u16,
     personal_identifier: frost::Identifier,
+    /// Dkg fields
+    /// Optional incase DKG is already completed and we have a key package
     personal_round_1: Option<frost::keys::dkg::round1::Package>,
     #[serde(skip)]
     personal_secret_package: Option<frost::keys::dkg::round1::SecretPackage>,
@@ -27,11 +29,13 @@ pub struct Dkg {
     round2_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
     #[serde(skip)]
     round2_secret_package: Option<frost::keys::dkg::round2::SecretPackage>,
+    /// Signing Fields
     key_package: Option<frost::keys::KeyPackage>,
     public_key_package: Option<frost::keys::PublicKeyPackage>,
     #[serde(skip)]
     signer_nonces: Option<frost::round1::SigningNonces>,
-    // Only available if we are the cordinator
+    /// Only available if we are the cordinator
+    /// And during a signing session sessions
     signing_commitmentments: BTreeMap<frost::Identifier, frost::round1::SigningCommitments>,
     signature_shares: BTreeMap<frost::Identifier, frost::round2::SignatureShare>,
 }
@@ -102,9 +106,13 @@ pub enum CordinatorError {
 /// keys.create_pubkey_package().unwrap();
 /// ```
 
-impl Dkg {
-    pub fn new(min_signers: u16, max_signers: u16, personal_identifier: frost::Identifier) -> Dkg {
-        Dkg {
+impl FrostState {
+    pub fn new(
+        min_signers: u16,
+        max_signers: u16,
+        personal_identifier: frost::Identifier,
+    ) -> FrostState {
+        FrostState {
             min_signers,
             max_signers,
             personal_identifier,
@@ -258,6 +266,10 @@ impl Dkg {
         }
     }
 
+    /** Signing Utils * */
+    /// Created round 1 nonce commitments
+    /// Returns the nonce commitment
+    /// Or Err(_) if key package is not set
     pub fn create_round1_nonces(
         &mut self,
     ) -> Result<frost::round1::SigningCommitments, SigningError> {
@@ -274,6 +286,10 @@ impl Dkg {
         }
     }
 
+    /// Creates a round 2 signing share
+    /// signs and provides partial signature
+    /// Or Err(_) if key package is not set
+    /// Or Err(_) if signer nonces are not set which should be set in `create_round1_nonces`
     pub fn create_round2_signing_share(
         &self,
         signing_package: &SigningPackage,
@@ -294,7 +310,7 @@ impl Dkg {
     }
 
     /* Cordinator utilities */
-    // Recieving round 1 commitments from signers
+    /// for Recieving round 1 commitments from signers
     pub fn add_new_nonce_commitment(
         &mut self,
         signing_commitment: frost::round1::SigningCommitments,
@@ -312,7 +328,7 @@ impl Dkg {
         Ok(())
     }
 
-    // Recieving round 2 signature shares from signers
+    /// For recieving round 2 signature shares from signers
     pub fn add_new_signature_share(
         &mut self,
         signature_share: frost::round2::SignatureShare,
@@ -330,6 +346,7 @@ impl Dkg {
         Ok(())
     }
 
+    /// Creates a signing package given a message (bitcoin transaction)
     pub fn create_signing_package(&self, message: &[u8]) -> Result<SigningPackage, SigningError> {
         if let Some(key_package) = &self.key_package {
             let signing_package =
@@ -340,6 +357,9 @@ impl Dkg {
         }
     }
 
+    /// Aggregates signing shares
+    /// returns Secp256k1 signature or
+    /// Err(_) if pubkey package is not set
     pub fn aggregate_signing_shares(
         &self,
         signing_package: &SigningPackage,
@@ -356,7 +376,12 @@ impl Dkg {
 mod test {
     use super::*;
 
-    fn dkg(dkg1: &mut Dkg, dkg2: &mut Dkg, id1: frost::Identifier, id2: frost::Identifier) {
+    fn dkg(
+        dkg1: &mut FrostState,
+        dkg2: &mut FrostState,
+        id1: frost::Identifier,
+        id2: frost::Identifier,
+    ) {
         let min_signer = 2;
         let max_signer = 2;
         dkg1.generate_personal_round1_package().expect("generate round 1");
@@ -402,8 +427,8 @@ mod test {
         let id2 = frost::Identifier::try_from(2u16).expect("identifier");
         assert_ne!(id1, id2);
 
-        let mut dkg1 = Dkg::new(min_signer, max_signer, id1);
-        let mut dkg2 = Dkg::new(min_signer, max_signer, id2);
+        let mut dkg1 = FrostState::new(min_signer, max_signer, id1);
+        let mut dkg2 = FrostState::new(min_signer, max_signer, id2);
         dkg(&mut dkg1, &mut dkg2, id1, id2);
 
         assert_eq!(dkg1.public_key_package, dkg2.public_key_package);
@@ -418,13 +443,13 @@ mod test {
         let id2 = frost::Identifier::try_from(2u16).expect("identifier");
         assert_ne!(id1, id2);
 
-        let mut dkg1 = Dkg::new(min_signer, max_signer, id1);
-        let mut dkg2 = Dkg::new(min_signer, max_signer, id2);
+        let mut dkg1 = FrostState::new(min_signer, max_signer, id1);
+        let mut dkg2 = FrostState::new(min_signer, max_signer, id2);
         dkg(&mut dkg1, &mut dkg2, id1, id2);
         // Create cordinator
 
         let cord_id = frost::Identifier::try_from(3u16).expect("identifier");
-        let mut cord = Dkg::new(min_signer, max_signer, cord_id);
+        let mut cord = FrostState::new(min_signer, max_signer, cord_id);
 
         //////////////////
         // Round 1

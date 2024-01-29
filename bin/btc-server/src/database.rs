@@ -2,8 +2,6 @@ use std::{collections::BTreeMap, io, path::Path};
 
 use bitcoin::{OutPoint, TxOut};
 use ciborium;
-use frost_secp256k1_tr as frost;
-use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
