@@ -28,8 +28,9 @@ where
         }
 
         let mut storage = self.storage.write().await;
+
         let (_best_block, best_hash) =
-            storage.get_best_block_and_hash().expect("best block exists");
+            storage.get_best_block_hash_with_fork_criteria().expect("best block exists");
 
         // use authority address as suggested fee recipient
         let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);

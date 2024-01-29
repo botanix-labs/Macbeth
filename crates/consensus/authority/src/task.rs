@@ -12,8 +12,6 @@ use reth_provider::{
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
-use reth_payload_builder::PayloadBuilderHandle;
-
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 
@@ -64,7 +62,7 @@ where
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         to_engine: UnboundedSender<BeaconEngineMessage>,
-        canon_state_notification: CanonStateNotificationSender,
+        _canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,

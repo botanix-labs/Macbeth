@@ -398,7 +398,8 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             Arc::clone(&authority_consensus),
             EvmProcessorFactory::new(self.chain.clone()),
         );
-        let tree_config = BlockchainTreeConfig::default();
+        let mut tree_config = BlockchainTreeConfig::default();
+        tree_config.set_max_reorg_depth(1);
         let tree = BlockchainTree::new(
             tree_externals,
             tree_config,

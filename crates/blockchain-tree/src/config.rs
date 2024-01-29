@@ -61,9 +61,19 @@ impl BlockchainTreeConfig {
         self.max_reorg_depth
     }
 
+    /// Set the maximum reorg depth.
+    pub fn set_max_reorg_depth(&mut self, max_reorg_depth: u64) {
+        self.max_reorg_depth = max_reorg_depth;
+    }
+
     /// Return the maximum number of blocks in one chain.
     pub fn max_blocks_in_chain(&self) -> u64 {
         self.max_blocks_in_chain
+    }
+
+    /// Set the maximum blocks in chain
+    pub fn set_max_blocks_in_chain(&mut self, max_blocks_in_chain: u64) {
+        self.max_blocks_in_chain = max_blocks_in_chain;
     }
 
     /// Return number of additional canonical block hashes that we need to retain
@@ -84,8 +94,27 @@ impl BlockchainTreeConfig {
         self.max_reorg_depth.max(self.num_of_additional_canonical_block_hashes)
     }
 
+    /// Set total number of canonical hashes that we need to retain in order to have enough
+    /// information for reorg and EVM execution.
+    ///
+    /// It is calculated as the maximum of `max_reorg_depth` (which is the number of blocks required
+    /// for the deepest reorg possible according to the consensus protocol) and
+    /// `num_of_additional_canonical_block_hashes` (which is the number of block hashes needed to
+    /// satisfy the `BLOCKHASH` opcode in the EVM. See [`crate::BundleStateDataRef`] and
+    /// [`crate::AppendableChain::new_canonical_head_fork`] where it's used).
+    pub fn set_num_of_canonical_hashes(&mut self, num_of_additional_canonical_block_hashes: u64) {
+        self.num_of_additional_canonical_block_hashes = num_of_additional_canonical_block_hashes;
+        self.max_reorg_depth =
+            self.max_reorg_depth.max(self.num_of_additional_canonical_block_hashes);
+    }
+
     /// Return max number of unconnected blocks that we are buffering
     pub fn max_unconnected_blocks(&self) -> usize {
         self.max_unconnected_blocks
+    }
+
+    /// Sets max number of unconnected blocks that we are buffering
+    pub fn set_max_unconnected_blocks(&mut self, max_unconnected_blocks: usize) {
+        self.max_unconnected_blocks = max_unconnected_blocks;
     }
 }

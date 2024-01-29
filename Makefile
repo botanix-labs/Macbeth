@@ -282,7 +282,7 @@ start-poa-server-1:
 	--btc-server "localhost:8080" \
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
-	--notifications-webhook-url "https://hooks.slack.com/services/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"
+	--slack-notifications-webhook-url "https://hooks.slack.com/services/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" \
 	--port 30303
 
 start-poa-server-2:
@@ -302,5 +302,5 @@ start-poa-server-2:
 	--btc-server "localhost:8080" \
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
-	--notifications-webhook-url "https://hooks.slack.com/services/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"
+	--slack-notifications-webhook-url "https://hooks.slack.com/services/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" \
 	--port 30304

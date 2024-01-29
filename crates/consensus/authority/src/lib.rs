@@ -20,13 +20,15 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
+use fork_selector::PoaForkBlockSelector;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
     utils::unix_timestamp,
     validation::{self, validate_poa_header_standalone},
 };
 use reth_interfaces::{
-    consensus::{Consensus, ConsensusError},
+    blockchain_tree::BlockchainTreeEngine,
+    consensus::{BlockForkSelectionCriteria, Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
 use reth_primitives::{
@@ -55,6 +57,7 @@ mod block_fetcher;
 mod builder;
 mod engine_util;
 mod epoch_manager;
+mod fork_selector;
 mod sync;
 mod task;
 mod utils;
@@ -184,12 +187,27 @@ pub(crate) struct StorageInner<Client> {
 
 impl<Client> StorageInner<Client>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockchainTreeEngine
+        + BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + Clone
+        + 'static,
 {
     /// Returns the block hash for the given block number if it exists.
     #[allow(dead_code)]
     pub(crate) fn block_hash(&self, num: u64) -> Option<BlockHash> {
         self.client.block_hash(num).ok().flatten()
+    }
+
+    pub(crate) fn get_best_block_hash_with_fork_criteria(
+        &self,
+    ) -> Result<(u64, FixedBytes<32>), BlockExecutionError> {
+        let poa_fork_block_criteria = PoaForkBlockSelector::new(self.client.clone());
+        let (_best_fork, best_block, best_hash) = poa_fork_block_criteria
+            .select()
+            .unwrap_or_else(|| panic!("{}", format!("Unable to find best fork block and hash")));
+        Ok((best_block, best_hash))
     }
 
     pub(crate) fn get_best_block_and_hash(

@@ -1,5 +1,6 @@
 use crate::engine_util;
 
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
@@ -10,7 +11,6 @@ use reth_btc_wallet::block_source::MempoolSpace;
 use reth_network::message::NewBlockMessage;
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
-use reth_transaction_pool::TransactionPool;
 
 use std::sync::Arc;
 use tokio::sync::{
@@ -38,7 +38,12 @@ pub struct BlockFetcherTask<Client> {
 
 impl<Client> BlockFetcherTask<Client>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockchainTreeEngine
+        + BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + Clone
+        + 'static,
 {
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
