@@ -121,6 +121,18 @@ impl BlockchainTreeViewer for NoopBlockchainTree {
     fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
         None
     }
+
+    fn chain_ids(&self) -> Vec<u64> {
+        vec![]
+    }
+
+    fn all_chain_hashes(&self, _chain_id: u64) -> BTreeMap<BlockNumber, BlockHash> {
+        BTreeMap::new()
+    }
+
+    fn canonical_fork(&self, _chain_id: u64) -> Option<reth_primitives::ForkBlock> {
+        None
+    }
 }
 
 impl BlockchainTreePendingStateProvider for NoopBlockchainTree {

@@ -3,6 +3,7 @@ use reth_primitives::{
     BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock, SealedBlockWithSenders,
     SealedHeader,
 };
+use reth_rpc_types::ForkBlock;
 use std::collections::{BTreeMap, HashSet};
 
 pub mod error;
@@ -324,4 +325,13 @@ pub trait BlockchainTreeViewer: Send + Sync {
     fn pending_header(&self) -> Option<SealedHeader> {
         self.header_by_hash(self.pending_block_num_hash()?.hash)
     }
+
+    /// Returns all chain ids in the tree
+    fn chain_ids(&self) -> Vec<u64>;
+
+    /// Returns the canonical fork
+    fn canonical_fork(&self, chain_id: u64) -> Option<ForkBlock>;
+
+    /// Returns all chain hashes in the tree
+    fn all_chain_hashes(&self, chain_id: u64) -> BTreeMap<BlockNumber, BlockHash>;
 }

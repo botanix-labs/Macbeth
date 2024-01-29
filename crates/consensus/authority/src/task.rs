@@ -12,8 +12,6 @@ use reth_provider::{
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
-use reth_payload_builder::PayloadBuilderHandle;
-
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 

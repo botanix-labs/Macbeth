@@ -47,6 +47,12 @@ impl TreeState {
         BlockChainId(id)
     }
 
+    /// Return all chains ids
+    #[inline]
+    pub(crate) fn chain_ids(&self) -> Vec<u64> {
+        self.chains.keys().copied().map(|id| id.into()).collect()
+    }
+
     /// Expose internal indices of the BlockchainTree.
     #[inline]
     pub(crate) fn block_indices(&self) -> &BlockIndices {
@@ -121,7 +127,6 @@ impl From<BlockChainId> for u64 {
     }
 }
 
-#[cfg(test)]
 impl From<u64> for BlockChainId {
     fn from(value: u64) -> Self {
         BlockChainId(value)

@@ -16,7 +16,7 @@ use reth_interfaces::{
 use reth_primitives::{
     stage::{StageCheckpoint, StageId},
     Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumber,
-    BlockNumberOrTag, BlockWithSenders, ChainInfo, ChainSpec, Header, PruneCheckpoint,
+    BlockNumberOrTag, BlockWithSenders, ChainInfo, ChainSpec, ForkBlock, Header, PruneCheckpoint,
     PruneSegment, Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, TransactionMeta,
     TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, B256, U256,
 };
@@ -687,6 +687,18 @@ where
 
     fn receipts_by_block_hash(&self, block_hash: BlockHash) -> Option<Vec<Receipt>> {
         self.tree.receipts_by_block_hash(block_hash)
+    }
+
+    fn chain_ids(&self) -> Vec<u64> {
+        self.tree.chain_ids()
+    }
+
+    fn all_chain_hashes(&self, chain_id: u64) -> BTreeMap<BlockNumber, BlockHash> {
+        self.tree.all_chain_hashes(chain_id)
+    }
+
+    fn canonical_fork(&self, chain_id: u64) -> Option<ForkBlock> {
+        self.tree.canonical_fork(chain_id)
     }
 }
 

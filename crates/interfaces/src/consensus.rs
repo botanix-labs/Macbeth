@@ -2,10 +2,22 @@ use reth_primitives::{
     BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header, InvalidTransactionError,
     SealedBlock, SealedHeader, B256, U256,
 };
+use revm_primitives::FixedBytes;
 use std::fmt::Debug;
 
 /// Re-export fork choice state
 pub use reth_rpc_types::engine::ForkchoiceState;
+
+use crate::blockchain_tree::BlockchainTreeEngine;
+
+/// Selection criteria for block forks
+pub trait BlockForkSelectionCriteria<Client>
+where
+    Client: BlockchainTreeEngine,
+{
+    /// the selection function
+    fn select(&self) -> Option<(u64, u64, FixedBytes<32>)>;
+}
 
 /// Consensus is a protocol that chooses canonical chain.
 #[auto_impl::auto_impl(&, Arc)]

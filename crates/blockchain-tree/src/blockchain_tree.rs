@@ -218,6 +218,12 @@ impl<DB: Database, EF: ExecutorFactory> BlockchainTree<DB, EF> {
         self.state.block_by_hash(block_hash)
     }
 
+    /// Returns the tree state
+    #[inline]
+    pub(crate) fn tree_state(&self) -> &TreeState {
+        &self.state
+    }
+
     /// Returns the block with matching hash from any side-chain.
     ///
     /// Caution: This will not return blocks from the canonical chain.
@@ -581,13 +587,18 @@ impl<DB: Database, EF: ExecutorFactory> BlockchainTree<DB, EF> {
         hashes
     }
 
+    /// A mapper for the method above
+    pub fn all_chain_hashes2(&self, chain_id: u64) -> BTreeMap<BlockNumber, BlockHash> {
+        self.all_chain_hashes(BlockChainId::from(chain_id))
+    }
+
     /// Get the block at which the given chain forks off the current canonical chain.
     ///
     /// This is used to figure out what kind of state provider the executor should use to execute
     /// the block on
     ///
     /// Returns `None` if the chain is unknown.
-    fn canonical_fork(&self, chain_id: BlockChainId) -> Option<ForkBlock> {
+    pub fn canonical_fork(&self, chain_id: BlockChainId) -> Option<ForkBlock> {
         let mut chain_id = chain_id;
         let mut fork;
         loop {
@@ -601,6 +612,16 @@ impl<DB: Database, EF: ExecutorFactory> BlockchainTree<DB, EF> {
             break
         }
         (self.block_indices().canonical_hash(&fork.number) == Some(fork.hash)).then_some(fork)
+    }
+
+    /// Get the block at which the given chain forks off the current canonical chain.
+    ///
+    /// This is used to figure out what kind of state provider the executor should use to execute
+    /// the block on
+    ///
+    /// Returns `None` if the chain is unknown.
+    pub fn canonical_fork2(&self, chain_id: u64) -> Option<ForkBlock> {
+        self.canonical_fork(BlockChainId::from(chain_id))
     }
 
     /// Insert a chain into the tree.

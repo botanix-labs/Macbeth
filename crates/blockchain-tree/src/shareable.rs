@@ -192,6 +192,18 @@ impl<DB: Database, EF: ExecutorFactory> BlockchainTreeViewer for ShareableBlockc
         let tree = self.tree.read();
         Some(tree.receipts_by_block_hash(block_hash)?.into_iter().cloned().collect())
     }
+
+    fn chain_ids(&self) -> Vec<u64> {
+        self.tree.read().tree_state().chain_ids()
+    }
+
+    fn all_chain_hashes(&self, chain_id: u64) -> BTreeMap<BlockNumber, BlockHash> {
+        self.tree.read().all_chain_hashes2(chain_id)
+    }
+
+    fn canonical_fork(&self, chain_id: u64) -> Option<reth_primitives::ForkBlock> {
+        self.tree.read().canonical_fork2(chain_id)
+    }
 }
 
 impl<DB: Database, EF: ExecutorFactory> BlockchainTreePendingStateProvider
