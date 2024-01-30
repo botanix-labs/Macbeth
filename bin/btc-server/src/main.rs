@@ -25,6 +25,7 @@ use bitcoin::{
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use hex::FromHex;
+use rand::thread_rng;
 use std::{
     collections::HashMap,
     fs::File,
@@ -68,8 +69,14 @@ struct App {
     network: bitcoin::Network,
     change_script: bitcoin::ScriptBuf,
     /// This lock is taken when we're making a tx so that we don't accidentally
-    /// spend the same UTXOs twice.
+    /// spend the same operations twice.
+    frost_state: frost_state::FrostState,
     tx_lock: Arc<Mutex<()>>,
+    identifier: frost::Identifier,
+    max_signers: u16,
+    min_signers: u16,
+    frost_round1_dkg:
+        Option<(frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package)>,
 }
 
 impl App {
@@ -208,7 +215,7 @@ macro_rules! badarg {
     }};
 }
 
-macro_rules! _internal {
+macro_rules! internal {
     ($($arg:tt)*) => {{
         tonic::Status::internal(format!($($arg)*))
     }};
@@ -268,7 +275,7 @@ impl rpc::BtcServer for App {
             .map_err(|e| badarg!("address for wrong network: {}", e))?;
         let output = TxOut { script_pubkey: address.script_pubkey(), value: req.value };
         let fee_rate =
-            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(_internal!("overflowed value"))?;
+            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
         let tx = self.make_tx(output, fee_rate).to_status()?;
 
         Ok(tonic::Response::new(rpc::MakeTxResponse {
@@ -284,6 +291,32 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::GetPublicKeyResponse {
             publickey: self.key.public_key().to_string(),
         }))
+    }
+
+    async fn get_round1_dkg_package(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Round1DkgResponse>, tonic::Status> {
+        if self.frost_state.key_package.is_some() {
+            warn!("recieved notification about round 1 DKG while having key package");
+            return Err(badarg!("already have key package"))
+        }
+        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
+            let res = rpc::Round1DkgResponse {
+                identifier: self.frost_state.personal_identifier.serialize().to_vec(),
+                payload: round1_dkg
+                    .1
+                    .serialize()
+                    .map_err(|e| internal!("Failed to serialize round 1 dkg: {}", e))?
+                    .to_vec(),
+            };
+
+            Ok(tonic::Response::new(res))
+        } else {
+            return Err(internal!("Missing round1 dkg package"))
+        }
+
+        // self.add_personal_round1_dkg(round1_dkg.clone()).to_status()?;
     }
 }
 
@@ -301,10 +334,6 @@ struct Config {
     /// Frost participant identifier
     #[arg(long)]
     identifier: u16,
-    /// Should we generate a new key
-    /// this will out a key to the default key path `./keys/key.json`
-    #[arg(long)]
-    should_generate_key: bool,
 }
 
 fn read_hex_file(file_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -331,14 +360,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("valid identifier");
     info!("Frost identifier: {:?}", frost_identifier);
 
-    let max_signers = 2;
-    let min_signers = 2;
-
     let key = read_hex_file(config.key.as_os_str().to_str().expect("valid key path"))
         .expect("valid key path");
 
     let sec_key =
         KeyPair::from_seckey_slice(&SECP, key.as_slice()).expect("valid secret key material");
+
+    let frost_state = frost_state::FrostState::new(2, 2, frost_identifier);
+    let min_signers = 2;
+    let max_signers = 2;
+
+    // TODO check if dkg has finished and if so load key package
+    let rng = thread_rng();
+    let round1_dkg =
+        frost::keys::dkg::part1(frost_identifier.clone(), max_signers, min_signers, rng)
+            .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?;
+    info!("Successfully generated round 1 dkg: {:?}", round1_dkg.1);
 
     let app = App {
         db: database::Db::open(&config.db).expect("failed to open db"),
@@ -349,6 +386,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &sec_key.public_key(),
         ),
         tx_lock: Arc::new(Mutex::new(())),
+        frost_state,
+        identifier: frost_identifier,
+        max_signers,
+        min_signers,
+        frost_round1_dkg: Some(round1_dkg),
     };
 
     let addr = "0.0.0.0:8080".parse().context("Unparsable address")?;
