@@ -32,22 +32,44 @@ pub struct Db {
     ///
     /// Indexed by serialized outpoint.
     utxos: sled::Tree,
+
+    /// A tree of round 1 commitments
+    ///
+    /// Indexed by peer id
+    round1_dkg_packages: sled::Tree,
 }
 
 impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
         let db = sled::open(path)?;
-        Ok(Db { utxos: db.open_tree(&TREE_UTXOS)?, db })
+        Ok(Db {
+            utxos: db.open_tree(&TREE_UTXOS)?,
+            round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
+            db,
+        })
     }
 
     pub fn flush(&self) -> Result<(), Error> {
         self.utxos.flush()?;
         self.db.flush()?;
+        self.round1_dkg_packages.flush()?;
         Ok(())
     }
 
-    pub fn contains_round1_personal_package(&self) -> Result<bool, Error> {
-        Ok(self.db.contains_key(&ROUND1_DKG_PERSONAL_PACKAGE)?)
+    pub fn add_round1_dkg(
+        &self,
+        peer_id: frost::Identifier,
+        dkg_round1: frost::keys::dkg::round1::Package,
+    ) -> Result<bool, Error> {
+        let peer_id_bytes = peer_id.serialize();
+
+        if self.round1_dkg_packages.contains_key(&peer_id_bytes[..])? {
+            return Ok(false);
+        }
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&dkg_round1, &mut bytes).expect("writing to buffer");
+        self.round1_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        Ok(true)
     }
 
     /* UTXO specific DB functions */

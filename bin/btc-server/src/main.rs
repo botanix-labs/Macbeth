@@ -86,7 +86,6 @@ struct App {
 impl App {
     fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
         let peer_id = payload.identifier;
-        println!("Received round1 dkg from peer: {:?}", peer_id);
         if peer_id.len() != 32 {
             return Err(Error::InvalidFrostPeerId);
         }
@@ -101,11 +100,15 @@ impl App {
             return Err(Error::InvalidFrostPeerId);
         }
 
-        let round1_dkg = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
+        let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
             .map_err(|e| Error::InvalidRound1DkgPayload(e))?;
 
-        println!("Received round1 dkg from peer: {:?}", frost_id);
-        println!("Received round1 dkg: {:?}", round1_dkg);
+        if self.db.add_round1_dkg(frost_id, dkg_round1).map_err(Error::Db)? {
+            self.db.flush().map_err(Error::Db)?;
+            debug!("Stored round1 dkg from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round1 dkg from peer: {:?}", frost_id);
+        }
 
         Ok(())
     }
