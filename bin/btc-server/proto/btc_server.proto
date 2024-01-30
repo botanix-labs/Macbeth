@@ -9,6 +9,8 @@ service BtcServer {
     rpc MakeTx(MakeTxRequest) returns (MakeTxResponse) {}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
+
+    rpc GetRound1DkgPackage(Empty) returns(Round1DkgResponse){}
 }
 
 message NotifyPeginRequest {
@@ -36,7 +38,13 @@ message MakeTxResponse {
 
 message GetPublicKeyResponse {
     // hex encoded
-    string publickey = 1; 
+    string publickey = 1;
 }
 
 message Empty {}
+
+// Frost things
+message Round1DkgResponse {
+    bytes identifier = 1;
+    bytes payload = 2;
+}

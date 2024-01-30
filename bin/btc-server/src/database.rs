@@ -1,16 +1,17 @@
 use std::{collections::BTreeMap, io, path::Path};
 
+use crate::util::OutPointExt;
 use bitcoin::{OutPoint, TxOut};
 use ciborium;
+use frost_secp256k1_tr as frost;
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
 
-use crate::util::OutPointExt;
-
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
 const TREE_KEYS: &[u8; 4] = b"keys";
+const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Utxo {
@@ -25,7 +26,7 @@ pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
     /// tree for the UTXOs.
-    _db: sled::Db,
+    db: sled::Db,
 
     /// A tree of UTXOs.
     ///
@@ -36,12 +37,17 @@ pub struct Db {
 impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
         let db = sled::open(path)?;
-        Ok(Db { utxos: db.open_tree(&TREE_UTXOS)?, _db: db })
+        Ok(Db { utxos: db.open_tree(&TREE_UTXOS)?, db })
     }
 
     pub fn flush(&self) -> Result<(), Error> {
         self.utxos.flush()?;
+        self.db.flush()?;
         Ok(())
+    }
+
+    pub fn contains_round1_personal_package(&self) -> Result<bool, Error> {
+        Ok(self.db.contains_key(&ROUND1_DKG_PERSONAL_PACKAGE)?)
     }
 
     /* UTXO specific DB functions */
