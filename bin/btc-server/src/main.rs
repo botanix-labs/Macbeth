@@ -61,6 +61,10 @@ pub enum Error {
     FailedToSignPbst,
     #[error("PSBT finalization failed : {0:?}")]
     PbstFinalizationFailed(Vec<PsbtError>),
+    #[error("Invalid Frost peer id")]
+    InvalidFrostPeerId,
+    #[error("Invalid round1 Dkg payload: {0}")]
+    InvalidRound1DkgPayload(#[from] frost::Error),
 }
 
 struct App {
@@ -80,6 +84,32 @@ struct App {
 }
 
 impl App {
+    fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
+        let peer_id = payload.identifier;
+        println!("Received round1 dkg from peer: {:?}", peer_id);
+        if peer_id.len() != 32 {
+            return Err(Error::InvalidFrostPeerId);
+        }
+        let peer_id_bytes: &[u8; 32] =
+            peer_id.as_slice().try_into().map_err(|_e| Error::InvalidFrostPeerId)?;
+
+        let frost_id = frost::Identifier::deserialize(&peer_id_bytes)
+            .map_err(|_e| Error::InvalidFrostPeerId)?;
+
+        // Can't add our selves
+        if frost_id == self.identifier {
+            return Err(Error::InvalidFrostPeerId);
+        }
+
+        let round1_dkg = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
+            .map_err(|e| Error::InvalidRound1DkgPayload(e))?;
+
+        println!("Received round1 dkg from peer: {:?}", frost_id);
+        println!("Received round1 dkg: {:?}", round1_dkg);
+
+        Ok(())
+    }
+
     fn add_pegin(&self, utxo: &Utxo) -> Result<(), Error> {
         if self.db.store_utxo(&utxo).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
@@ -293,16 +323,27 @@ impl rpc::BtcServer for App {
         }))
     }
 
+    async fn new_round1_dkg_package(
+        &self,
+        req: tonic::Request<rpc::Round1Dkg>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.add_round1_dkg(req.into_inner()).map_err(|e| {
+            error!("Failed to add round1 dkg: {}", e);
+            badarg!("Failed to add round1 dkg")
+        })?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn get_round1_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::Round1DkgResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::Round1Dkg>, tonic::Status> {
         if self.frost_state.key_package.is_some() {
             warn!("recieved notification about round 1 DKG while having key package");
             return Err(badarg!("already have key package"))
         }
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
-            let res = rpc::Round1DkgResponse {
+            let res = rpc::Round1Dkg {
                 identifier: self.frost_state.personal_identifier.serialize().to_vec(),
                 payload: round1_dkg
                     .1
@@ -315,8 +356,6 @@ impl rpc::BtcServer for App {
         } else {
             return Err(internal!("Missing round1 dkg package"))
         }
-
-        // self.add_personal_round1_dkg(round1_dkg.clone()).to_status()?;
     }
 }
 
