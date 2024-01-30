@@ -14,7 +14,6 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_tasks::TaskExecutor;
-use reth_transaction_pool::TransactionPool;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 use tokio::sync::{
@@ -27,11 +26,10 @@ use tracing::error;
 use url::Url;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, Pool> {
+pub struct AuthorityConsensusBuilder<Client> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
-    pool: Pool,
     storage: Storage<Client>,
     to_engine: UnboundedSender<BeaconEngineMessage>,
     canon_state_notification: CanonStateNotificationSender,
@@ -58,7 +56,7 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, Pool> AuthorityConsensusBuilder<Client, Pool>
+impl<Client> AuthorityConsensusBuilder<Client>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -66,14 +64,12 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    Pool: TransactionPool,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
-        pool: Pool,
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
@@ -142,7 +138,6 @@ where
             storage,
             client,
             consensus: AuthorityConsensus::new(chain_spec),
-            pool,
             to_engine,
             canon_state_notification,
             btc_server,
@@ -164,17 +159,12 @@ where
     /// production task.
     pub fn build(
         self,
-    ) -> (
-        AuthorityConsensus,
-        BlockProductionTask<Client, Pool>,
-        BlockFetcherTask<Client, Pool>,
-        SyncController,
-    ) {
+    ) -> (AuthorityConsensus, BlockProductionTask<Client>, BlockFetcherTask<Client>, SyncController)
+    {
         let Self {
             btc_server,
             client: _,
             consensus,
-            pool,
             storage,
             to_engine,
             canon_state_notification,
@@ -200,7 +190,6 @@ where
             Arc::clone(&consensus.chain_spec),
             block_import_rx,
             to_engine.clone(),
-            pool.clone(),
             canon_state_notification.clone(),
             btc_server.clone(),
             bitcoin_block_source.clone(),
@@ -212,7 +201,6 @@ where
             to_engine,
             canon_state_notification,
             storage,
-            pool,
             btc_server,
             bitcoin_block_header,
             bitcoin_block_source,

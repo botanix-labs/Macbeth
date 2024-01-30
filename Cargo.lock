@@ -6391,6 +6391,7 @@ dependencies = [
  "reth-eth-wire",
  "reth-interfaces",
  "reth-network",
+ "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
  "reth-revm",

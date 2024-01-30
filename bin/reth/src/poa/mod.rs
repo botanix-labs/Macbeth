@@ -498,7 +498,6 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             AuthorityConsensusBuilder::try_new(
                 Arc::clone(&self.chain),
                 blockchain_db.clone(),
-                transaction_pool.clone(),
                 consensus_engine_tx.clone(),
                 canon_state_notification_sender.clone(),
                 btc_server_client.clone(),

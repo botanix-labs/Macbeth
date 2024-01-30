@@ -1006,7 +1006,7 @@ where
         blob_gas_used = Some(sum_blob_gas_used);
     }
 
-    println!("transaction selected: {:?}", executed_txs);
+    println!("transactions selected: {:?}", executed_txs);
 
     let header = Header {
         parent_hash: parent_block.hash,

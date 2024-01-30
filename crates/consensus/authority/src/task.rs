@@ -11,32 +11,26 @@ use reth_provider::{
 };
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
-use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
+
+use reth_payload_builder::PayloadBuilderHandle;
 
 use secp256k1::{All, Secp256k1};
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use client::BtcServerClient;
 
-pub struct BlockProductionTask<Client, Pool: TransactionPool> {
+pub struct BlockProductionTask<Client> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
     /// The active epoch
     pub(crate) epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
     pub(crate) storage: Storage<Client>,
-    /// Pool where transactions are stored
-    pub(crate) pool: Pool,
-    /// backlog of sets of transactions ready to be mined
-    pub(crate) queued:
-        VecDeque<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>,
     /// TODO: ideally this would just be a sender of hashes
     pub(crate) to_engine: UnboundedSender<BeaconEngineMessage>,
-    /// Used to notify consumers of new blocks
-    pub(crate) canon_state_notification: CanonStateNotificationSender,
     /// The pipeline events to listen on
     pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
     /// BTC Server client
@@ -56,7 +50,7 @@ pub struct BlockProductionTask<Client, Pool: TransactionPool> {
     task_executor: TaskExecutor,
 }
 
-impl<Client, Pool: TransactionPool> BlockProductionTask<Client, Pool>
+impl<Client> BlockProductionTask<Client>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -64,7 +58,6 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    Pool: TransactionPool,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -73,7 +66,6 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage>,
         canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
-        pool: Pool,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_source: MempoolSpace,
@@ -86,10 +78,7 @@ where
         Self {
             chain_spec,
             storage,
-            pool,
             to_engine,
-            canon_state_notification,
-            queued: Default::default(),
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
@@ -115,7 +104,7 @@ where
     }
 }
 
-impl<Client, Pool: TransactionPool> std::fmt::Debug for BlockProductionTask<Client, Pool> {
+impl<Client> std::fmt::Debug for BlockProductionTask<Client> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlockProductionTask").finish_non_exhaustive()
     }
