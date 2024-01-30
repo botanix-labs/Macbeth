@@ -110,6 +110,22 @@ impl TestPayloadSender {
         let pending_tx = self.client.send_transaction(tx, None).await.unwrap();
         Ok(pending_tx.tx_hash())
     }
+
+    pub async fn send_invalid(&self, receiver_address: &str) {
+        let tx = Eip1559TransactionRequest::new()
+            .to(receiver_address)
+            .value(utils::parse_ether(0).unwrap())
+            .max_priority_fee_per_gas(U256::from(2000000000_u128)) // 2 GWEI
+            .nonce(0_u64); // nonce should be 1 when invoked
+
+        // send the tx with the initialized signer client
+        let err = self
+            .client
+            .send_transaction(tx, None)
+            .await
+            .expect_err("should fail with nonce too low");
+        println!("Error: {:?}", err);
+    }
 }
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
@@ -309,12 +325,18 @@ pub async fn test_poa_testnet() {
             break
         }
 
+        // after first successful tx, send invalid tx with too low nonce
+        if test_rounds == 1 {
+            println!("======>  Sending eoa transaction with too low nonce...");
+            payload_client.send_invalid(RECEIVER_ADDRESS).await;
+        }
+
         // block verfication
         let block_receipts = x.notification.block_receipts();
         println!("Block receipts? {:?}", block_receipts);
         assert_eq!(block_receipts.len(), 1);
         let block_payload = block_receipts.first().cloned().unwrap();
-        assert_eq!(block_payload.1, false);
+        assert!(!block_payload.1);
         assert_eq!(block_payload.0.tx_receipts.len(), 1);
         assert!(block_payload.0.block.number > 0);
 
