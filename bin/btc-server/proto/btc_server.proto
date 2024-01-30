@@ -10,7 +10,9 @@ service BtcServer {
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
 
-    rpc GetRound1DkgPackage(Empty) returns(Round1DkgResponse){}
+    rpc GetRound1DkgPackage(Empty) returns(Round1Dkg){}
+
+    rpc NewRound1DkgPackage(Round1Dkg) returns (Empty) {}
 }
 
 message NotifyPeginRequest {
@@ -44,7 +46,8 @@ message GetPublicKeyResponse {
 message Empty {}
 
 // Frost things
-message Round1DkgResponse {
+message Round1Dkg {
     bytes identifier = 1;
     bytes payload = 2;
 }
+
