@@ -167,6 +167,32 @@ impl FrostState {
     }
 
     /** Round 1 utils * */
+    /// Generates the personal round 1 package.
+    ///
+    /// # Returns
+    ///
+    /// An `Ok` result if the personal round 1 package is generated successfully,
+    /// Note: the secret package is not saved in the database nor should it leave the btc server
+    /// or an `Err` result with a `frost::Error` if an error occurs.
+    pub fn generate_personal_round1_package(
+        &self,
+    ) -> Result<
+        (frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package),
+        frost::Error,
+    > {
+        let rng = thread_rng();
+        let round1_dkg = frost::keys::dkg::part1(
+            self.personal_identifier,
+            self.max_signers,
+            self.min_signers,
+            rng,
+        )?;
+
+        // self.personal_round_1 = Some(round1_personal_package.clone());
+        // self.personal_secret_package = Some(secret_package);
+
+        Ok(round1_dkg)
+    }
 
     /// Adds a participant's round 1 package.
     ///

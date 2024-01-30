@@ -46,7 +46,7 @@ pub struct Empty {}
 /// Frost things
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Round1DkgResponse {
+pub struct Round1Dkg {
     #[prost(bytes = "vec", tag = "1")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
@@ -209,10 +209,7 @@ pub mod btc_server_client {
         pub async fn get_round1_dkg_package(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<
-            tonic::Response<super::Round1DkgResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Round1Dkg>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -229,6 +226,28 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetRound1DkgPackage"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn new_round1_dkg_package(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Round1Dkg>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/NewRound1DkgPackage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "NewRound1DkgPackage"));
             self.inner.unary(req, path, codec).await
         }
     }
