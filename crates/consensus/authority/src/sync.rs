@@ -56,68 +56,69 @@ impl SyncController {
     }
 }
 
-// Todo (scott) refactor test
-// #[cfg(test)]
-// mod tests {
-//     use std::{
-//         net::{Ipv4Addr, SocketAddrV4},
-//         sync::Arc,
-//         time::Duration,
-//     };
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{Ipv4Addr, SocketAddrV4},
+        sync::Arc,
+        time::Duration,
+    };
 
-//     use super::*;
-//     use reth_beacon_consensus::BeaconEngineMessage;
-//     use reth_eth_wire::{
-//         capability::{Capabilities, Capability},
-//         EthVersion, Status,
-//     };
-//     use reth_network::{message::PeerRequestSender, PeerRequest};
-//     use reth_rpc_types::PeerId;
-//     use tokio::sync::mpsc;
+    use super::*;
+    use reth_beacon_consensus::BeaconEngineMessage;
+    use reth_eth_wire::{
+        capability::{Capabilities, Capability},
+        EthVersion, Status,
+    };
+    use reth_network::{message::PeerRequestSender, PeerRequest};
+    use reth_rpc_types::PeerId;
+    use tokio::sync::mpsc;
 
-//     #[tokio::test]
-//     async fn test_sync_peer_tip() {
-//         // Create session established network event
-//         let peer_id = PeerId::random();
-//         let status = Status::default();
-//         let blockhash = status.blockhash;
-//         let capabilities: Capabilities = vec![Capability::new_static("eth", 66)].into();
-//         let (tx, _rx) = mpsc::channel::<PeerRequest>(1);
-//         let network_event = NetworkEvent::SessionEstablished {
-//             peer_id,
-//             status: Default::default(),
-//             remote_addr: std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0),
-// 0)),             client_version: Arc::from(""),
-//             capabilities: Arc::from(capabilities),
-//             messages: PeerRequestSender::new(peer_id, tx),
-//             version: EthVersion::Eth66,
-//         };
+    #[tokio::test]
+    async fn test_start_task() {
+        // create network stream
+        let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
+        let network_stream = UnboundedReceiverStream::new(rx);
+        let peer_id = PeerId::random();
+        let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage>();
 
-//         // create network stream
-//         let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
-//         let network_stream = UnboundedReceiverStream::new(rx);
+        // intialize the SyncController
+        let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);
 
-//         // create beacon engine channel
-//         let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage>();
+        // spawn start_task
+        let handle = tokio::spawn(async move {
+            sync_controller.start_task().await;
+        });
 
-//         // spawn sync_peer_tip task
-//         let handle = tokio::spawn(sync_peer_tip(network_stream, engine_tx, peer_id));
+        // Create session established network event
+        let status = Status::default();
+        let blockhash = status.blockhash;
+        let capabilities: Capabilities = vec![Capability::new_static("eth", 66)].into();
+        let (tx, _rx) = mpsc::channel::<PeerRequest>(1);
 
-//         // send network event
-//         network_tx.send(network_event.clone()).unwrap();
+        let network_event = NetworkEvent::SessionEstablished {
+            peer_id: PeerId::random(),
+            status: Default::default(),
+            remote_addr: std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0)),
+            client_version: Arc::from(""),
+            capabilities: Arc::from(capabilities),
+            messages: PeerRequestSender::new(peer_id, tx),
+            version: EthVersion::Eth66,
+        };
 
-//         // wait for task to run
-//         tokio::time::sleep(Duration::from_millis(100)).await;
+        // send network event
+        network_tx.send(network_event.clone()).unwrap();
 
-//         // Assert that the message with peer tip was sent
-//         if let BeaconEngineMessage::ForkchoiceUpdated { state, .. } =
-// engine_rx.try_recv().unwrap()         {
-//             assert_eq!(state.head_block_hash, blockhash);
-//         }
+        // wait for task to run
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-//         // Cancel the spawned task
-//         handle.abort();
+        // Assert that the message with peer tip was sent
+        if let BeaconEngineMessage::ForkchoiceUpdated { state, .. } = engine_rx.try_recv().unwrap()
+        {
+            assert_eq!(state.head_block_hash, blockhash);
+        }
 
-//         // TODO (scott) update test to check engine response when function is updated
-//     }
-// }
+        // Cancel the spawned task
+        handle.abort();
+    }
+}
