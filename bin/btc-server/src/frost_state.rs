@@ -19,7 +19,7 @@ use thiserror::Error;
 pub struct FrostState {
     pub min_signers: u16,
     pub max_signers: u16,
-    personal_identifier: frost::Identifier,
+    pub personal_identifier: frost::Identifier,
     /// Dkg fields
     /// Optional incase DKG is already completed and we have a key package
     personal_round_1: Option<frost::keys::dkg::round1::Package>,
@@ -30,7 +30,7 @@ pub struct FrostState {
     #[serde(skip)]
     round2_secret_package: Option<frost::keys::dkg::round2::SecretPackage>,
     /// Signing Fields
-    key_package: Option<frost::keys::KeyPackage>,
+    pub key_package: Option<frost::keys::KeyPackage>,
     public_key_package: Option<frost::keys::PublicKeyPackage>,
     #[serde(skip)]
     signer_nonces: Option<frost::round1::SigningNonces>,
@@ -167,26 +167,6 @@ impl FrostState {
     }
 
     /** Round 1 utils * */
-    /// Generates the personal round 1 package.
-    ///
-    /// # Returns
-    ///
-    /// An `Ok` result if the personal round 1 package is generated successfully,
-    /// or an `Err` result with a `frost::Error` if an error occurs.
-    pub fn generate_personal_round1_package(&mut self) -> Result<(), frost::Error> {
-        let mut rng = thread_rng();
-        let (secret_package, round1_personal_package) = frost::keys::dkg::part1(
-            self.personal_identifier,
-            self.max_signers,
-            self.min_signers,
-            rng,
-        )?;
-
-        self.personal_round_1 = Some(round1_personal_package);
-        self.personal_secret_package = Some(secret_package);
-
-        Ok(())
-    }
 
     /// Adds a participant's round 1 package.
     ///

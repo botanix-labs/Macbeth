@@ -112,7 +112,6 @@ reth-ethereum-forks = { path = "crates/ethereum-forks" }
 reth-interfaces = { path = "crates/interfaces" }
 reth-ipc = { path = "crates/rpc/ipc" }
 reth-libmdbx = { path = "crates/storage/libmdbx-rs" }
-reth-mdbx-sys = { path = "crates/storage/libmdbx-rs/mdbx-sys" }
 reth-metrics = { path = "crates/metrics" }
 reth-metrics-derive = { path = "crates/metrics/metrics-derive" }
 reth-net-common = { path = "crates/net/common" }
@@ -128,7 +127,6 @@ reth-revm = { path = "crates/revm" }
 reth-revm-inspectors = { path = "crates/revm/revm-inspectors" }
 reth-rpc = { path = "crates/rpc/rpc" }
 reth-rpc-api = { path = "crates/rpc/rpc-api" }
-reth-rpc-api-testing-util = { path = "crates/rpc/rpc-testing-util" }
 reth-rpc-builder = { path = "crates/rpc/rpc-builder" }
 reth-rpc-engine-api = { path = "crates/rpc/rpc-engine-api" }
 reth-rpc-types = { path = "crates/rpc/rpc-types" }
@@ -181,7 +179,6 @@ rayon = "1.7"
 itertools = "0.11"
 parking_lot = "0.12"
 metrics = "0.21.1" # Needed for `metrics-macro` to resolve the crate using `::metrics` notation
-hex-literal = "0.4"
 once_cell = "1.17"
 syn = "2.0"
 
