@@ -117,8 +117,5 @@ mod tests {
         {
             assert_eq!(state.head_block_hash, blockhash);
         }
-
-        // Cancel the spawned task
-        handle.abort();
     }
 }
