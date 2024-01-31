@@ -1,7 +1,4 @@
 use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
-use frost_secp256k1_tr as frost;
-use rand;
-use serde::Serialize;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io, path::Path};
+use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use crate::util::OutPointExt;
 use bitcoin::{OutPoint, TxOut};
@@ -72,6 +72,25 @@ impl Db {
         Ok(true)
     }
 
+    pub fn get_round1_dkg_packages(
+        &self,
+    ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round1::Package>, Error> {
+        let mut ret = BTreeMap::new();
+        for res in self.round1_dkg_packages.iter() {
+            let (k, v) = res?;
+            let peer_id_bytes: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+
+            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
+                .map_err(|e| Error::FrostSerialization(e))?;
+
+            let dkg_round1 =
+                ciborium::from_reader::<frost::keys::dkg::round1::Package, _>(v.as_ref())?;
+            ret.insert(peer_id, dkg_round1);
+        }
+        Ok(ret)
+    }
+
     /* UTXO specific DB functions */
     pub fn get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
         if let Some(b) = self.utxos.get(&op.to_bytes())? {
@@ -137,6 +156,10 @@ pub enum Error {
     Db(#[from] sled::Error),
     #[error("data corruption error")]
     DataCorruption(#[from] ciborium::de::Error<io::Error>),
+    #[error("Frost serialization error {0}")]
+    FrostSerialization(#[from] frost::Error),
+    #[error("Serialization error {0}")]
+    Serialization(#[from] TryFromSliceError),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {

@@ -13,6 +13,8 @@ service BtcServer {
     rpc GetRound1DkgPackage(Empty) returns(Round1Dkg){}
 
     rpc NewRound1DkgPackage(Round1Dkg) returns (Empty) {}
+
+    rpc GetRound2DkgPackage(Empty) returns (Round1Dkg) {}
 }
 
 message NotifyPeginRequest {
