@@ -64,7 +64,7 @@ pub enum Error {
     #[error("Invalid Frost peer id")]
     InvalidFrostPeerId,
     #[error("Invalid round1 Dkg payload: {0}")]
-    InvalidRound1DkgPayload(#[from] frost::Error),
+    InvalidRoundDkgPayload(#[from] frost::Error),
 }
 
 struct App {
@@ -81,6 +81,8 @@ struct App {
     min_signers: u16,
     frost_round1_dkg:
         Option<(frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package)>,
+
+    frost_round2_dkg: Arc<Mutex<Option<frost::keys::dkg::round2::SecretPackage>>>,
 }
 
 impl App {
@@ -101,7 +103,7 @@ impl App {
         }
 
         let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
-            .map_err(|e| Error::InvalidRound1DkgPayload(e))?;
+            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
 
         if self.db.add_round1_dkg(frost_id, dkg_round1).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
@@ -326,10 +328,53 @@ impl rpc::BtcServer for App {
         }))
     }
 
+    async fn get_round2_dkg_package(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Round1Dkg>, tonic::Status> {
+        // First check do we have our secret coef
+        if self.frost_state.key_package.is_some() {
+            warn!("recieved notification about round 1 DKG while having key package");
+            return Err(badarg!("already have key package"))
+        }
+        if let Some(personal_round1_package) = &self.frost_round1_dkg {
+            // Retrieve round 1 packages from peers
+            // Here we dont check we have enough that should be done by the frost lib
+            // So we just propogate the error
+            let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
+                error!("Failed to get round1 dkg packages: {}", e);
+                internal!("Failed to get round1 dkg packages")
+            })?;
+
+            let (round2_secret_package, round2_packages) =
+                frost::keys::dkg::part2(personal_round1_package.0.clone(), &round1_packages)
+                    .map_err(|e| badarg!("Failed to generate round 2 dkg: {:?}", e))?;
+
+            let json = serde_json::to_string(&round2_packages).unwrap();
+            let res = rpc::Round1Dkg {
+                identifier: self.frost_state.personal_identifier.serialize().to_vec(),
+                payload: json.as_bytes().to_vec(),
+            };
+
+            self.frost_round2_dkg.lock().unwrap().replace(round2_secret_package.clone());
+
+            Ok(tonic::Response::new(res))
+        } else {
+            return Err(internal!("Missing round1 dkg package"))
+        }
+
+        // Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn new_round1_dkg_package(
         &self,
         req: tonic::Request<rpc::Round1Dkg>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        if self.frost_state.key_package.is_some() {
+            warn!("recieved notification about round 1 DKG while having key package");
+            return Err(badarg!("already have key package"))
+        }
+
         self.add_round1_dkg(req.into_inner()).map_err(|e| {
             error!("Failed to add round1 dkg: {}", e);
             badarg!("Failed to add round1 dkg")
@@ -376,6 +421,8 @@ struct Config {
     /// Frost participant identifier
     #[arg(long)]
     identifier: u16,
+    #[arg(long)]
+    address: String,
 }
 
 fn read_hex_file(file_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -433,9 +480,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_signers,
         min_signers,
         frost_round1_dkg: Some(round1_dkg),
+        frost_round2_dkg: Arc::new(Mutex::new(None)),
     };
 
-    let addr = "0.0.0.0:8080".parse().context("Unparsable address")?;
+    let addr = config.address.parse().context("Unparsable address")?;
     info!("SignerServer starting on: {}...", addr);
 
     let server = rpc::BtcServerServer::new(app);

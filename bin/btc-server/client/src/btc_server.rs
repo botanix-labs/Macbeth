@@ -250,5 +250,27 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "NewRound1DkgPackage"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_round2_dkg_package(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Round1Dkg>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetRound2DkgPackage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetRound2DkgPackage"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
