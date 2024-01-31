@@ -1,4 +1,6 @@
+use crate::Error;
 use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
+use frost_secp256k1_tr as frost;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
@@ -33,3 +35,16 @@ pub trait OutPointExt: Into<OutPoint> {
 }
 
 impl OutPointExt for OutPoint {}
+
+pub fn serialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> {
+    if id.len() != 32 {
+        return Err(Error::InvalidFrostPeerId);
+    }
+    let peer_id_bytes: &[u8; 32] =
+        id.as_slice().try_into().map_err(|_e| Error::InvalidFrostPeerId)?;
+
+    let frost_id =
+        frost::Identifier::deserialize(&peer_id_bytes).map_err(|_e| Error::InvalidFrostPeerId)?;
+
+    Ok(frost_id)
+}

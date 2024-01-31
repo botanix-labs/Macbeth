@@ -27,7 +27,7 @@ use frost_secp256k1_tr as frost;
 use hex::FromHex;
 use rand::thread_rng;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::Read,
     path::PathBuf,
@@ -65,6 +65,8 @@ pub enum Error {
     InvalidFrostPeerId,
     #[error("Invalid round1 Dkg payload: {0}")]
     InvalidRoundDkgPayload(#[from] frost::Error),
+    #[error("Invalid Dkg serialization format: {0}")]
+    InvalidRoundDkgSerializationFormat(#[from] serde_json::Error),
 }
 
 struct App {
@@ -86,17 +88,29 @@ struct App {
 }
 
 impl App {
-    fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
-        let peer_id = payload.identifier;
-        if peer_id.len() != 32 {
+    fn add_round2_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
+        let frost_id = crate::util::serialize_frost_peer_id(payload.identifier.clone())?;
+        // Can't add our selves
+        if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
         }
-        let peer_id_bytes: &[u8; 32] =
-            peer_id.as_slice().try_into().map_err(|_e| Error::InvalidFrostPeerId)?;
+        // We serialize here to just validate the payload
+        let packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
+            serde_json::from_slice(payload.payload.as_slice())
+                .map_err(|e| Error::InvalidRoundDkgSerializationFormat(e))?;
 
-        let frost_id = frost::Identifier::deserialize(&peer_id_bytes)
-            .map_err(|_e| Error::InvalidFrostPeerId)?;
+        if self.db.add_round2_dkg(frost_id, packages).map_err(Error::Db)? {
+            self.db.flush().map_err(Error::Db)?;
+            debug!("Stored round2 dkg from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
+        }
 
+        Ok(())
+    }
+
+    fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
+        let frost_id = crate::util::serialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
@@ -328,6 +342,22 @@ impl rpc::BtcServer for App {
         }))
     }
 
+    async fn new_round2_dkg_package(
+        &self,
+        req: tonic::Request<rpc::Round1Dkg>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        if self.frost_state.key_package.is_some() {
+            warn!("recieved notification about round 1 DKG while having key package");
+            return Err(badarg!("already have key package"))
+        }
+
+        self.add_round2_dkg(req.into_inner()).map_err(|e| {
+            error!("Failed to add round2 dkg: {}", e);
+            badarg!("Failed to add round2 dkg")
+        })?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn get_round2_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -342,8 +372,8 @@ impl rpc::BtcServer for App {
             // Here we dont check we have enough that should be done by the frost lib
             // So we just propogate the error
             let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
-                error!("Failed to get round1 dkg packages: {}", e);
-                internal!("Failed to get round1 dkg packages")
+                error!("Failed to get round2 dkg packages: {}", e);
+                internal!("Failed to get round2 dkg packages: {}", e)
             })?;
 
             let (round2_secret_package, round2_packages) =
