@@ -245,11 +245,7 @@ lint:
 doc:
 	@cargo doc --no-deps --open
 
-start-btc-server:
-	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --pkey ./key.hex --db "./db"
-
-start-reth-server:
+start-auto-seal-server:
 	cd ./bin/reth && \
 	cargo run --bin reth node \
 	--chain botanix_testnet \
@@ -264,6 +260,14 @@ start-reth-server:
 	--auto-mine \
 	--btc-server localhost:8080 \
 	--btc-block-source "https://mempool.space/signet/api"
+
+start-btc-server-1:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8080 --db "./db1"
+
+start-btc-server-2:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 2 --address 0.0.0.0:8081 --db "./db2"
 
 start-poa-server-1:
 	cd ./bin/reth && \
@@ -282,7 +286,6 @@ start-poa-server-1:
 	--btc-server "localhost:8080" \
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
-	--notifications-webhook-url "https://hooks.slack.com/services/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"
 	--port 30303
 
 start-poa-server-2:
@@ -302,5 +305,4 @@ start-poa-server-2:
 	--btc-server "localhost:8080" \
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
-	--notifications-webhook-url "https://hooks.slack.com/services/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"
 	--port 30304

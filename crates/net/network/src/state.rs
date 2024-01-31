@@ -4,6 +4,7 @@ use crate::{
     cache::LruCache,
     discovery::{Discovery, DiscoveryEvent},
     fetch::{BlockResponseOutcome, FetchAction, StateFetcher},
+    frost::manager::FrostManager,
     manager::DiscoveredEvent,
     message::{
         BlockRequest, NewBlockMessage, PeerRequest, PeerRequestSender, PeerResponse,
@@ -77,6 +78,7 @@ where
         client: C,
         discovery: Discovery,
         peers_manager: PeersManager,
+        frost_manager: FrostManager,
         genesis_hash: B256,
         num_active_peers: Arc<AtomicUsize>,
     ) -> Self {

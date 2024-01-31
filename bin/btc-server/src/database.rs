@@ -259,4 +259,3 @@ impl From<Error> for tonic::Status {
         tonic::Status::internal(e.to_string())
     }
 }
-

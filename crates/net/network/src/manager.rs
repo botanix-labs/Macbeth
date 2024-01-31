@@ -20,6 +20,7 @@ use crate::{
     discovery::Discovery,
     error::{NetworkError, ServiceKind},
     eth_requests::IncomingEthRequest,
+    frost::manager::{FrostConfig, FrostManager},
     import::{BlockImport, BlockImportOutcome, BlockValidation},
     listener::ConnectionListener,
     message::{NewBlockMessage, PeerMessage, PeerRequest, PeerRequestSender},
@@ -57,7 +58,7 @@ use std::{
 };
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Manages the _entire_ state of the network.
 ///
@@ -218,7 +219,7 @@ where
         let num_active_peers = Arc::new(AtomicUsize::new(0));
         let bandwidth_meter: BandwidthMeter = BandwidthMeter::default();
 
-        let sessions = SessionManager::new(
+        let mut sessions = SessionManager::new(
             secret_key,
             sessions_config,
             executor,
@@ -228,11 +229,14 @@ where
             extra_protocols,
             bandwidth_meter.clone(),
         );
+        let frost_manager = FrostManager::new(FrostConfig::default(), &mut sessions);
+        let frost_handle = frost_manager.handle();
 
         let state = NetworkState::new(
             client,
             discovery,
             peers_manager,
+            frost_manager,
             chain_spec.genesis_hash(),
             Arc::clone(&num_active_peers),
         );
@@ -247,6 +251,7 @@ where
             to_manager_tx,
             local_peer_id,
             peers_handle,
+            frost_handle,
             network_mode,
             bandwidth_meter,
             Arc::new(AtomicU64::new(chain_spec.chain.id())),
@@ -605,6 +610,31 @@ where
                 let _ = tx.send(self.swarm.sessions().get_peer_infos_by_ids(peers));
             }
             NetworkHandleMessage::AddRlpxSubProtocol(proto) => self.add_rlpx_sub_protocol(proto),
+            NetworkHandleMessage::FrostMessage { peer_id, msg } => {
+                info!("======================= RECEIVED FROST MESSAGE (NETWORK HANDLE)================= {:?}", peer_id);
+                //self.swarm.sessions_mut().send_message(&peer_id, PeerMessage::Frost(msg));
+
+                //let num_active_peers = self.swarm.state_mut().num_active_peers();
+                //let connected_peers = self.swarm.sessions().get_peer_info();
+                //info!("=~~~~~~~~~~~~~~~~~~~~~  CONNECTED PEERS {:?} - {:?}-{:?}",
+                // connected_peers, self.num_active_peers.load(Ordering::Relaxed),
+                // self.swarm.state_mut().num_active_peers());
+
+                /*
+                for peer in connected_peers {
+                    let msg = msg.clone();
+                    let remote_id = peer.remote_id.to_string();
+                    let local_addr = peer.local_addr.unwrap().to_string();
+                    let remote_addr = peer.remote_addr.to_string();
+                    info!("PIER DATA {:?} {:?} {:?}", remote_id, local_addr, remote_addr);
+                    //self.swarm.sessions_mut().send_message(&peer.remote_id, PeerMessage::Frost(msg));
+                    //sessions.send_message(&peer.remote_id, PeerMessage::Frost(msg));
+                    //info!("=[++++++++++++++++++ SENDING MESSAGE ........ +++++++");
+                }
+                //let _ = tx.send(());
+                //info!("=[++++++++++++++++++ SENDING MESSAGE 2 ........ +++++++");
+                */
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::{
-    config::NetworkMode, discovery::DiscoveryEvent, manager::NetworkEvent, message::PeerRequest,
-    peers::PeersHandle, protocol::RlpxSubProtocol, FetchClient,
+    config::NetworkMode, discovery::DiscoveryEvent, frost::manager::FrostHandle,
+    manager::NetworkEvent, message::PeerRequest, peers::PeersHandle, protocol::RlpxSubProtocol,
+    FetchClient,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -43,6 +44,7 @@ impl NetworkHandle {
         to_manager_tx: UnboundedSender<NetworkHandleMessage>,
         local_peer_id: PeerId,
         peers: PeersHandle,
+        frost_handle: FrostHandle,
         network_mode: NetworkMode,
         bandwidth_meter: BandwidthMeter,
         chain_id: Arc<AtomicU64>,
@@ -116,6 +118,11 @@ impl NetworkHandle {
     /// broadcasting them is a considered a protocol violation..
     pub fn announce_block(&self, block: NewBlock, hash: B256) {
         self.send_message(NetworkHandleMessage::AnnounceBlock(block, hash))
+    }
+
+    /// Sends a [`PeerRequest`] to the given peer's session.
+    pub fn send_frost_msg(&self, peer_id: PeerId, msg: Vec<u8>) {
+        self.send_message(NetworkHandleMessage::FrostMessage { peer_id, msg })
     }
 
     /// Sends a [`PeerRequest`] to the given peer's session.
@@ -200,6 +207,19 @@ impl PeersInfo for NetworkHandle {
         NodeRecord::new(socket_addr, id)
     }
 }
+
+/*
+#[async_trait]
+impl FrostMessaging for NetworkHandle {
+    async fn send_frost_msg(&self, msg: Vec<u8>) -> Result<(), NetworkError> {
+        let trusted_peers = self.get_peers_by_kind(PeerKind::Trusted).await?;
+        info!("Trusted peers {:?}", trusted_peers);
+        let (tx, rx) = oneshot::channel();
+        let _ = self.manager().send(NetworkHandleMessage::FrostMessage(msg, tx));
+        Ok(rx.await?)
+    }
+}
+*/
 
 #[async_trait]
 impl Peers for NetworkHandle {
@@ -416,4 +436,6 @@ pub(crate) enum NetworkHandleMessage {
     DiscoveryListener(UnboundedSender<DiscoveryEvent>),
     /// Add an additional [RlpxSubProtocol].
     AddRlpxSubProtocol(RlpxSubProtocol),
+    /// FrostMessage
+    FrostMessage { peer_id: PeerId, msg: Vec<u8> },
 }

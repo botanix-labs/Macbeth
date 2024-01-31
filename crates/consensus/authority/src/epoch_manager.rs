@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 use crate::Storage;
 use reth_provider::StateProviderFactory;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// Manages the block production epochs
 ///
 /// Blocks will be rejected by consensus if

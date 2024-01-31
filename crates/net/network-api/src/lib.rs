@@ -67,6 +67,17 @@ pub trait PeersInfo: Send + Sync {
     fn local_node_record(&self) -> NodeRecord;
 }
 
+/// Provides general purpose information about Peers in the network.
+/*
+#[async_trait]
+pub trait FrostMessaging: Send + Sync {
+    /// Returns how many peers the network is currently connected to.
+    ///
+    /// Note: this should only include established connections and _not_ ongoing attempts.
+    async fn send_frost_msg(&self, msg: Vec<u8>) -> Result<(), NetworkError>;
+}
+*/
+
 /// Provides an API for managing the peers of the network.
 #[async_trait]
 pub trait Peers: PeersInfo {

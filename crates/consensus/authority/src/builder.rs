@@ -1,6 +1,6 @@
 use crate::{
-    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, task::BlockProductionTask,
-    voting::AuthorityVote, AuthorityConsensus, Storage,
+    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, frost_task::FrostTask,
+    task::BlockProductionTask, voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 
 use client::BtcServerClient;
@@ -159,8 +159,13 @@ where
     /// production task.
     pub fn build(
         self,
-    ) -> (AuthorityConsensus, BlockProductionTask<Client>, BlockFetcherTask<Client>, SyncController)
-    {
+    ) -> (
+        AuthorityConsensus,
+        BlockProductionTask<Client>,
+        BlockFetcherTask<Client>,
+        FrostTask,
+        SyncController,
+    ) {
         let Self {
             btc_server,
             client: _,
@@ -196,6 +201,9 @@ where
             storage.clone(),
             bitcoin_block_header.clone(),
         );
+
+        let frost_task = FrostTask::new(btc_server.clone(), network_handle.clone());
+
         let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
             to_engine,
@@ -210,7 +218,6 @@ where
             network_handle,
             task_executor,
         );
-
-        (consensus, block_production_task, block_fetcher_task, sync_task)
+        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)
     }
 }

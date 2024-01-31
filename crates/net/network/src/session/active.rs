@@ -38,7 +38,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::PollSender;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 // Constants for timeout updating.
 
@@ -127,6 +127,7 @@ impl ActiveSession {
     ///
     /// Returns an error if the message is considered to be in violation of the protocol.
     fn on_incoming_message(&mut self, msg: EthMessage) -> OnIncomingMessageOutcome {
+        info!("MESSSSSSSSSSSSSSSSAGESSSSSSSSSSSSS");
         /// A macro that handles an incoming request
         /// This creates a new channel and tries to send the sender half to the session while
         /// storing the receiver half internally so the pending response can be polled.

@@ -122,6 +122,7 @@ pub mod error;
 pub mod eth_requests;
 mod fetch;
 mod flattened_response;
+pub mod frost;
 /// Allows other components to import blocks from the network
 pub mod import;
 mod listener;
