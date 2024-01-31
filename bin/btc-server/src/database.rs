@@ -13,6 +13,8 @@ const TREE_UTXOS: &[u8; 5] = b"utxos";
 const TREE_KEYS: &[u8; 4] = b"keys";
 const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
+const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
+const KEY_PACKAGE: &[u8; 5] = b"keypk";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Utxo {
@@ -64,10 +66,47 @@ impl Db {
         Ok(())
     }
 
+    pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+        if let Some(b) = self.db.get(PUBKEY_PACKAGE)? {
+            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+        if let Some(b) = self.db.get(KEY_PACKAGE)? {
+            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_key_package(&self, key_package: frost::keys::KeyPackage) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
+
+        self.db.insert(KEY_PACKAGE, &bytes[..])?;
+        Ok(())
+    }
+
+    pub fn set_pubkey_package(
+        &self,
+        pk_package: frost::keys::PublicKeyPackage,
+    ) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
+
+        self.db.insert(PUBKEY_PACKAGE, &bytes[..])?;
+        Ok(())
+    }
+
     pub fn add_round2_dkg(
         &self,
         peer_id: frost::Identifier,
-        dkg_round2_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+        dkg_round2_package: frost::keys::dkg::round2::Package,
     ) -> Result<bool, Error> {
         let peer_id_bytes = peer_id.serialize();
 
@@ -75,9 +114,8 @@ impl Db {
             return Ok(false);
         }
         let mut bytes = Vec::new();
-        let json = serde_json::to_string(&dkg_round2_packages).expect("json serialization");
 
-        ciborium::into_writer(&json, &mut bytes).expect("writing to buffer");
+        ciborium::into_writer(&dkg_round2_package, &mut bytes).expect("writing to buffer");
         self.round2_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
         Ok(true)
     }
@@ -96,6 +134,25 @@ impl Db {
         ciborium::into_writer(&dkg_round1, &mut bytes).expect("writing to buffer");
         self.round1_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
         Ok(true)
+    }
+
+    pub fn get_round2_dkg_packages(
+        &self,
+    ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, Error> {
+        let mut ret = BTreeMap::new();
+        for res in self.round2_dkg_packages.iter() {
+            let (k, v) = res?;
+            let peer_id_bytes: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+
+            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
+                .map_err(|e| Error::FrostSerialization(e))?;
+
+            let dkg_round2 =
+                ciborium::from_reader::<frost::keys::dkg::round2::Package, _>(v.as_ref())?;
+            ret.insert(peer_id, dkg_round2);
+        }
+        Ok(ret)
     }
 
     pub fn get_round1_dkg_packages(
