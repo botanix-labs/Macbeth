@@ -391,10 +391,6 @@ impl rpc::BtcServer for App {
         }
         warn!("recieved get public key request while not having round 2 DKG");
         return Err(internal!("Missing round2 dkg package"))
-
-        // Ok(tonic::Response::new(rpc::GetPublicKeyResponse {
-        //     publickey: self.key.public_key().to_string(),
-        // }))
     }
 
     async fn new_round2_dkg_package(
@@ -529,6 +525,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_module("sled::", log::LevelFilter::Info)
         .init();
     let config = Config::parse();
+    let db = database::Db::open(&config.db).expect("failed to open db");
 
     let frost_identifier = frost::Identifier::derive(config.identifier.to_le_bytes().as_slice())
         .expect("valid identifier");
@@ -544,15 +541,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let min_signers = 2;
     let max_signers = 2;
 
-    // TODO check if dkg has finished and if so load key package
-    let rng = thread_rng();
-    let round1_dkg =
-        frost::keys::dkg::part1(frost_identifier.clone(), max_signers, min_signers, rng)
-            .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?;
-    info!("Successfully generated round 1 dkg: {:?}", round1_dkg.1);
+    let mut round1_dkg = None;
+    if db.get_public_key_package().expect("failed to get public key package").is_none() {
+        let rng = thread_rng();
+        let round1_dkg = Some(
+            frost::keys::dkg::part1(frost_identifier.clone(), max_signers, min_signers, rng)
+                .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?.1,
+        );
+        info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
+    } else {
+        info!("Already have key package, skipping round 1 dkg key generation");
+    }
 
     let app = App {
-        db: database::Db::open(&config.db).expect("failed to open db"),
+        db,
         key: sec_key,
         network: config.network,
         change_script: reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
@@ -564,7 +566,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         identifier: frost_identifier,
         max_signers,
         min_signers,
-        frost_round1_dkg: Some(round1_dkg),
+        frost_round1_dkg: round1_dkg,
         frost_round2_dkg: Arc::new(Mutex::new(None)),
     };
 
