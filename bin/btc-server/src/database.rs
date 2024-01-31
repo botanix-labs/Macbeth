@@ -12,6 +12,7 @@ use thiserror::Error;
 const TREE_UTXOS: &[u8; 5] = b"utxos";
 const TREE_KEYS: &[u8; 4] = b"keys";
 const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
+const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Utxo {
@@ -33,10 +34,15 @@ pub struct Db {
     /// Indexed by serialized outpoint.
     utxos: sled::Tree,
 
-    /// A tree of round 1 commitments
+    /// A tree of round 1 dkg commitments
     ///
     /// Indexed by peer id
     round1_dkg_packages: sled::Tree,
+
+    /// A tree of round 1 dkg commitments
+    ///
+    /// Indexed by peer id
+    round2_dkg_packages: sled::Tree,
 }
 
 impl Db {
@@ -45,6 +51,7 @@ impl Db {
         Ok(Db {
             utxos: db.open_tree(&TREE_UTXOS)?,
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
+            round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             db,
         })
     }
@@ -53,7 +60,26 @@ impl Db {
         self.utxos.flush()?;
         self.db.flush()?;
         self.round1_dkg_packages.flush()?;
+        self.round2_dkg_packages.flush()?;
         Ok(())
+    }
+
+    pub fn add_round2_dkg(
+        &self,
+        peer_id: frost::Identifier,
+        dkg_round2_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+    ) -> Result<bool, Error> {
+        let peer_id_bytes = peer_id.serialize();
+
+        if self.round2_dkg_packages.contains_key(&peer_id_bytes[..])? {
+            return Ok(false);
+        }
+        let mut bytes = Vec::new();
+        let json = serde_json::to_string(&dkg_round2_packages).expect("json serialization");
+
+        ciborium::into_writer(&json, &mut bytes).expect("writing to buffer");
+        self.round2_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        Ok(true)
     }
 
     pub fn add_round1_dkg(
