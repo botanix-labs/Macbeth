@@ -67,6 +67,8 @@ pub enum Error {
     InvalidRoundDkgPayload(#[from] frost::Error),
     #[error("Invalid Dkg serialization format: {0}")]
     InvalidRoundDkgSerializationFormat(#[from] serde_json::Error),
+    #[error("Invalid round 2 Dkg payload, missing our package")]
+    InvalidRound2DkgPayloadMissingPackage,
 }
 
 struct App {
@@ -99,14 +101,18 @@ impl App {
             serde_json::from_slice(payload.payload.as_slice())
                 .map_err(|e| Error::InvalidRoundDkgSerializationFormat(e))?;
 
-        if self.db.add_round2_dkg(frost_id, packages).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round2 dkg from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
+        for (id, package) in packages.iter() {
+            if self.identifier == *id {
+                if self.db.add_round2_dkg(frost_id, package.clone()).map_err(Error::Db)? {
+                    self.db.flush().map_err(Error::Db)?;
+                    debug!("Stored round2 dkg from peer: {:?}", frost_id);
+                } else {
+                    warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
+                }
+                return Ok(());
+            }
         }
-
-        Ok(())
+        return Err(Error::InvalidRound2DkgPayloadMissingPackage)
     }
 
     fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
@@ -337,9 +343,58 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
-        Ok(tonic::Response::new(rpc::GetPublicKeyResponse {
-            publickey: self.key.public_key().to_string(),
-        }))
+        // try to get pk package from db incase we already did dkg round 3
+        if let Some(pk_package) = self.db.get_public_key_package().map_err(|e| {
+            error!("Failed to get public key package: {}", e);
+            internal!("Failed to get public key package: {}", e)
+        })? {
+            let hex = hex::encode(pk_package.verifying_key().serialize());
+            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
+        }
+
+        // If we don't have a pubkey package we havent generated the group verifying key yet
+        if let Some(round2_secret) = self.frost_round2_dkg.lock().unwrap().clone() {
+            let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
+                error!("Failed to get round1 dkg packages: {}", e);
+                internal!("Failed to get round1 dkg packages: {}", e)
+            })?;
+
+            let round2_packages = self.db.get_round2_dkg_packages().map_err(|e| {
+                error!("Failed to get round2 dkg packages: {}", e);
+                internal!("Failed to get round2 dkg packages: {}", e)
+            })?;
+
+            let pk_res =
+                frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)
+                    .map_err(|e| {
+                        error!("Failed to generate public key package: {}", e);
+                        internal!("Failed to generate public key package: {}", e)
+                    })?;
+
+            self.db.set_key_package(pk_res.0.clone()).map_err(|e| {
+                error!("Failed to store key package: {}", e);
+                internal!("Failed to store key package: {}", e)
+            })?;
+
+            self.db.set_pubkey_package(pk_res.1.clone()).map_err(|e| {
+                error!("Failed to store public key package: {}", e);
+                internal!("Failed to store public key package: {}", e)
+            })?;
+
+            self.db.flush().map_err(|e| {
+                error!("Failed to flush db: {}", e);
+                internal!("Failed to persist pk to database: {}", e)
+            })?;
+
+            let hex = hex::encode(pk_res.1.verifying_key().serialize());
+            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
+        }
+        warn!("recieved get public key request while not having round 2 DKG");
+        return Err(internal!("Missing round2 dkg package"))
+
+        // Ok(tonic::Response::new(rpc::GetPublicKeyResponse {
+        //     publickey: self.key.public_key().to_string(),
+        // }))
     }
 
     async fn new_round2_dkg_package(
@@ -347,7 +402,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Round1Dkg>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         if self.frost_state.key_package.is_some() {
-            warn!("recieved notification about round 1 DKG while having key package");
+            warn!("recieved notification about round 2 DKG while having key package");
             return Err(badarg!("already have key package"))
         }
 
