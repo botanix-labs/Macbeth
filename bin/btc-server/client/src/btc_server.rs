@@ -46,7 +46,7 @@ pub struct Empty {}
 /// Frost things
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Round1Dkg {
+pub struct DkgPayload {
     #[prost(bytes = "vec", tag = "1")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
@@ -209,7 +209,7 @@ pub mod btc_server_client {
         pub async fn get_round1_dkg_package(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::Round1Dkg>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -230,7 +230,7 @@ pub mod btc_server_client {
         }
         pub async fn new_round1_dkg_package(
             &mut self,
-            request: impl tonic::IntoRequest<super::Round1Dkg>,
+            request: impl tonic::IntoRequest<super::DkgPayload>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
@@ -253,7 +253,7 @@ pub mod btc_server_client {
         pub async fn get_round2_dkg_package(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::Round1Dkg>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -274,7 +274,7 @@ pub mod btc_server_client {
         }
         pub async fn new_round2_dkg_package(
             &mut self,
-            request: impl tonic::IntoRequest<super::Round1Dkg>,
+            request: impl tonic::IntoRequest<super::DkgPayload>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()

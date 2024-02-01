@@ -3,8 +3,10 @@ name = "btc-server"
 version = "0.1.0"
 edition = "2021"
 
+
 [dependencies]
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
+client = {path = "./client"}
 
 anyhow = "1.0.71"
 bitcoin = { version = "0.30.2", features = [ "base64", "rand", "serde" ] }
