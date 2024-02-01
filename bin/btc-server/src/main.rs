@@ -73,7 +73,6 @@ struct App {
     change_script: Option<bitcoin::ScriptBuf>,
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
-    frost_state: frost_state::FrostState,
     tx_lock: Arc<Mutex<()>>,
     identifier: frost::Identifier,
     max_signers: u16,
@@ -85,7 +84,7 @@ struct App {
 }
 
 impl App {
-    fn add_round2_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
+    fn add_round2_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
@@ -110,7 +109,7 @@ impl App {
         return Err(Error::InvalidRound2DkgPayloadMissingPackage)
     }
 
-    fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
+    fn add_round1_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
@@ -267,6 +266,12 @@ macro_rules! badarg {
     }};
 }
 
+macro_rules! already_exists {
+    ($($arg:tt)*) => {{
+        tonic::Status::already_exists(format!($($arg)*))
+    }};
+}
+
 macro_rules! internal {
     ($($arg:tt)*) => {{
         tonic::Status::internal(format!($($arg)*))
@@ -392,11 +397,11 @@ impl rpc::BtcServer for App {
 
     async fn new_round2_dkg_package(
         &self,
-        req: tonic::Request<rpc::Round1Dkg>,
+        req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        if self.frost_state.key_package.is_some() {
+        if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
-            return Err(badarg!("already have key package"))
+            return Err(already_exists!("already have key package"))
         }
 
         self.add_round2_dkg(req.into_inner()).map_err(|e| {
@@ -409,12 +414,12 @@ impl rpc::BtcServer for App {
     async fn get_round2_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::Round1Dkg>, tonic::Status> {
-        // First check do we have our secret coef
-        if self.frost_state.key_package.is_some() {
-            warn!("recieved notification about round 1 DKG while having key package");
-            return Err(badarg!("already have key package"))
+    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        if self.db.get_public_key_package()?.is_some() {
+            warn!("recieved notification about round 2 DKG while having key package");
+            return Err(already_exists!("already have key package"))
         }
+        // Check do we have our secret coef
         if let Some(personal_round1_package) = &self.frost_round1_dkg {
             // Retrieve round 1 packages from peers
             // Here we dont check we have enough that should be done by the frost lib
@@ -429,8 +434,8 @@ impl rpc::BtcServer for App {
                     .map_err(|e| badarg!("Failed to generate round 2 dkg: {:?}", e))?;
 
             let json = serde_json::to_string(&round2_packages).unwrap();
-            let res = rpc::Round1Dkg {
-                identifier: self.frost_state.personal_identifier.serialize().to_vec(),
+            let res = rpc::DkgPayload {
+                identifier: self.identifier.serialize().to_vec(),
                 payload: json.as_bytes().to_vec(),
             };
 
@@ -446,11 +451,11 @@ impl rpc::BtcServer for App {
 
     async fn new_round1_dkg_package(
         &self,
-        req: tonic::Request<rpc::Round1Dkg>,
+        req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        if self.frost_state.key_package.is_some() {
-            warn!("recieved notification about round 1 DKG while having key package");
-            return Err(badarg!("already have key package"))
+        if self.db.get_public_key_package()?.is_some() {
+            warn!("recieved notification about round 2 DKG while having key package");
+            return Err(already_exists!("already have key package"))
         }
 
         self.add_round1_dkg(req.into_inner()).map_err(|e| {
@@ -463,14 +468,14 @@ impl rpc::BtcServer for App {
     async fn get_round1_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::Round1Dkg>, tonic::Status> {
-        if self.frost_state.key_package.is_some() {
-            warn!("recieved notification about round 1 DKG while having key package");
-            return Err(badarg!("already have key package"))
+    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        if self.db.get_public_key_package()?.is_some() {
+            warn!("recieved notification about round 2 DKG while having key package");
+            return Err(already_exists!("already have key package"))
         }
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
-            let res = rpc::Round1Dkg {
-                identifier: self.frost_state.personal_identifier.serialize().to_vec(),
+            let res = rpc::DkgPayload {
+                identifier: self.identifier.serialize().to_vec(),
                 payload: round1_dkg
                     .1
                     .serialize()
@@ -525,7 +530,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("valid identifier");
     info!("Frost identifier: {:?}", frost_identifier);
 
-    let frost_state = frost_state::FrostState::new(2, 2, frost_identifier);
     let min_signers = 2;
     let max_signers = 2;
 
@@ -542,10 +546,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pk_package = db.get_key_package().expect("pk package").expect("pk package");
         let pk = hex::encode(pk_package.verifying_key().serialize());
         let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
-        change_script = Some(reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
-            &SECP,
-            &secp_pk,
-        ));
+        change_script =
+            Some(reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk));
         info!("Already have key package, skipping round 1 dkg key generation");
     }
 
@@ -554,7 +556,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         network: config.network,
         change_script,
         tx_lock: Arc::new(Mutex::new(())),
-        frost_state,
         identifier: frost_identifier,
         max_signers,
         min_signers,
@@ -574,13 +575,148 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::process::Stdio;
 
-    use bitcoin::Amount;
+    use tokio::{
+        io::{self, AsyncBufReadExt},
+        process::Command,
+    };
+
+    use crate::rpc;
+
+    use bitcoin::{Amount, FeeRate};
+    use client;
     use test_log::test;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
     const FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
+
+    async fn spawn_server(id: u16, address: &str) -> () {
+        let mut working_directory = std::env::current_dir().unwrap();
+
+        let identifier = id.to_string();
+        let db_name = format!("db_{}", id);
+
+        let command = "cargo";
+        let args = vec![
+            "run",
+            "--",
+            "--network",
+            "testnet",
+            "--db",
+            db_name.as_str(),
+            "--identifier",
+            identifier.as_str(),
+            "--address",
+            address,
+        ];
+
+        // Create a Command instance and set the working directory
+        let mut cmd = Command::new(command);
+        cmd.args(&args).current_dir(working_directory).stdout(Stdio::piped());
+
+        // Spawn the command and handle its output
+        let mut child = cmd.spawn().unwrap();
+        let stdout = child.stdout.take().unwrap();
+
+        let mut lines = io::BufReader::new(stdout).lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            println!("** BTC SERVER ** >>> {:?}", line);
+        }
+    }
+
+    #[tokio::test]
+    pub async fn dkg_flow() {
+        tokio::spawn(spawn_server(0, "0.0.0.0:8080"));
+        tokio::spawn(spawn_server(1, "0.0.0.0:8081"));
+
+        // let servers come up
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
+        let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
+
+        // Getting public key should fail
+        let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
+        assert!(pk.is_err());
+        let err = pk.err().unwrap();
+        println!("err: {:?}", err);
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert_eq!(err.message(), "Missing round2 dkg package");
+
+        // Round 1 dkg
+        let c1_dkg1 = c1
+            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let c2_dkg1 = c2
+            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(c1_dkg1.identifier.len(), 32);
+        assert_eq!(c1_dkg1.payload.len(), 138);
+
+        assert_eq!(c2_dkg1.identifier.len(), 32);
+        assert_eq!(c2_dkg1.payload.len(), 138);
+
+        c1.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c2_dkg1.identifier.clone(),
+            payload: c2_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c2.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c1_dkg1.identifier.clone(),
+            payload: c1_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        // Round 2
+
+        let c1_dkg2 = c1
+            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let c2_dkg2 = c2
+            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(c1_dkg2.identifier.len(), 32);
+        assert_eq!(c1_dkg2.payload.len(), 221);
+        assert_eq!(c2_dkg2.identifier.len(), 32);
+        assert_eq!(c2_dkg2.payload.len(), 221);
+
+        c1.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c2_dkg2.identifier.clone(),
+            payload: c2_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c2.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c1_dkg2.identifier.clone(),
+            payload: c1_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+        //// Get the pubkey
+
+        let pk_1 =
+            c1.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        let pk_2 =
+            c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+
+        assert_eq!(pk_1.publickey, pk_2.publickey);
+    }
 
     // uncomment once frost signings is implemented
     // #[test]
