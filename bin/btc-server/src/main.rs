@@ -639,7 +639,6 @@ mod test {
         let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
-        println!("err: {:?}", err);
         assert_eq!(err.code(), tonic::Code::Internal);
         assert_eq!(err.message(), "Missing round2 dkg package");
 
@@ -716,6 +715,10 @@ mod test {
             c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
 
         assert_eq!(pk_1.publickey, pk_2.publickey);
+        // Test clean up 
+        // Remove db dirs
+        std::fs::remove_dir_all("db_0").unwrap();
+        std::fs::remove_dir_all("db_1").unwrap();
     }
 
     // uncomment once frost signings is implemented
