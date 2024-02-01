@@ -86,7 +86,7 @@ struct App {
 
 impl App {
     fn add_round2_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
-        let frost_id = crate::util::serialize_frost_peer_id(payload.identifier.clone())?;
+        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
@@ -111,7 +111,7 @@ impl App {
     }
 
     fn add_round1_dkg(&self, payload: rpc::Round1Dkg) -> Result<(), Error> {
-        let frost_id = crate::util::serialize_frost_peer_id(payload.identifier.clone())?;
+        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
@@ -190,7 +190,7 @@ impl App {
                 bdk_utxos,
                 bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
                 output.value,
-                self.change_script.expect("change script").as_script(), // drain_script
+                self.change_script.as_ref().expect("change script").as_script(), // drain_script
             )
             .map_err(Error::CoinSelection)?;
         let selected = selection
@@ -201,7 +201,7 @@ impl App {
             .collect::<Vec<_>>();
         let change = match selection.excess {
             bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
-                script_pubkey: self.change_script.expect("change script").clone(),
+                script_pubkey: self.change_script.as_ref().expect("change script").clone(),
                 value: amount,
             }),
             _ => None,
