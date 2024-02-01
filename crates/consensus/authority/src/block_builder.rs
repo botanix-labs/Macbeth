@@ -156,5 +156,10 @@ where
         let new_block = NewBlock { block, td: Uint::ZERO };
         let block_hash = sealed_block.hash;
         self.network_handle.announce_block(new_block, block_hash);
+
+        // TODO (scott) Process pegouts
+        // access pegouts from cache (need to add) or if cache empty
+        // bc busted when node went offline,
+        // use utils method to get all pegouts from epoch
     }
 }
