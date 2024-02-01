@@ -17,11 +17,7 @@ mod rpc {
 
 use anyhow::Context;
 use bdk::{miniscript::psbt::PsbtExt, wallet::coin_selection::CoinSelectionAlgorithm};
-use bitcoin::{
-    consensus::encode as btcencode,
-    secp256k1::{self, KeyPair},
-    FeeRate, OutPoint, Transaction, TxOut,
-};
+use bitcoin::{consensus::encode as btcencode, secp256k1, FeeRate, OutPoint, Transaction, TxOut};
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use hex::FromHex;
@@ -73,9 +69,8 @@ pub enum Error {
 
 struct App {
     db: database::Db,
-    key: KeyPair,
     network: bitcoin::Network,
-    change_script: bitcoin::ScriptBuf,
+    change_script: Option<bitcoin::ScriptBuf>,
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
     frost_state: frost_state::FrostState,
@@ -195,7 +190,7 @@ impl App {
                 bdk_utxos,
                 bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
                 output.value,
-                self.change_script.as_script(), // drain_script
+                self.change_script.expect("change script").as_script(), // drain_script
             )
             .map_err(Error::CoinSelection)?;
         let selected = selection
@@ -205,9 +200,10 @@ impl App {
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
-            bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
-                Some(TxOut { script_pubkey: self.change_script.clone(), value: amount })
-            }
+            bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
+                script_pubkey: self.change_script.expect("change script").clone(),
+                value: amount,
+            }),
             _ => None,
         };
 
@@ -225,12 +221,13 @@ impl App {
         );
 
         // Signing
-        if let Err(err) =
-            reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-        {
-            error!("Failed to sign psbt {:?}", err);
-            return Err(Error::FailedToSignPbst)
-        }
+        // TODO(armins) Replace this once we have frost signing working
+        // if let Err(err) =
+        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
+        // {
+        //     error!("Failed to sign psbt {:?}", err);
+        //     return Err(Error::FailedToSignPbst)
+        // }
 
         // try finalize tx
         if let Err(errs) = psbt.finalize_mut(&SECP) {
@@ -490,9 +487,6 @@ impl rpc::BtcServer for App {
 
 #[derive(Parser)]
 struct Config {
-    /// The location to private key of the server.
-    #[arg(long, long = "pkey")]
-    key: PathBuf,
     /// The path to the database.
     #[arg(long)]
     db: PathBuf,
@@ -531,36 +525,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("valid identifier");
     info!("Frost identifier: {:?}", frost_identifier);
 
-    let key = read_hex_file(config.key.as_os_str().to_str().expect("valid key path"))
-        .expect("valid key path");
-
-    let sec_key =
-        KeyPair::from_seckey_slice(&SECP, key.as_slice()).expect("valid secret key material");
-
     let frost_state = frost_state::FrostState::new(2, 2, frost_identifier);
     let min_signers = 2;
     let max_signers = 2;
 
     let mut round1_dkg = None;
+    let mut change_script = None;
     if db.get_public_key_package().expect("failed to get public key package").is_none() {
         let rng = thread_rng();
-        let round1_dkg = Some(
+        round1_dkg = Some(
             frost::keys::dkg::part1(frost_identifier.clone(), max_signers, min_signers, rng)
-                .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?.1,
+                .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?,
         );
         info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
     } else {
+        let pk_package = db.get_key_package().expect("pk package").expect("pk package");
+        let pk = hex::encode(pk_package.verifying_key().serialize());
+        let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
+        change_script = Some(reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
+            &SECP,
+            &secp_pk,
+        ));
         info!("Already have key package, skipping round 1 dkg key generation");
     }
 
     let app = App {
         db,
-        key: sec_key,
         network: config.network,
-        change_script: reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
-            &SECP,
-            &sec_key.public_key(),
-        ),
+        change_script,
         tx_lock: Arc::new(Mutex::new(())),
         frost_state,
         identifier: frost_identifier,
@@ -590,173 +582,176 @@ mod test {
     const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
     const FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
-    #[test]
-    fn test_tx() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let dbdir = tmpdir.path().to_path_buf().join("db.db");
-        println!("Starting app with db in '{}'", dbdir.display());
+    // uncomment once frost signings is implemented
+    // #[test]
+    // fn test_tx() {
+    //     let tmpdir = tempfile::tempdir().unwrap();
+    //     let dbdir = tmpdir.path().to_path_buf().join("db.db");
+    //     println!("Starting app with db in '{}'", dbdir.display());
 
-        let key = KeyPair::from_seckey_str(
-            &SECP,
-            "a2424e251ffb8ace719cc340271c0a0780fb02d209e707d3600061927c1b90fd",
-        )
-        .unwrap();
+    //     let key = KeyPair::from_seckey_str(
+    //         &SECP,
+    //         "a2424e251ffb8ace719cc340271c0a0780fb02d209e707d3600061927c1b90fd",
+    //     )
+    //     .unwrap();
 
-        let change_script = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
-            &SECP,
-            &key.public_key(),
-        );
+    //     let change_script = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
+    //         &SECP,
+    //         &key.public_key(),
+    //     );
 
-        let app = App {
-            db: database::Db::open(&dbdir).unwrap(),
-            key: key.clone(),
-            network: NETWORK,
-            change_script: change_script.clone(),
-            tx_lock: Arc::new(Mutex::new(())),
-        };
-        let eth1 = hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap();
-        let out1 =
-            "8f14fbdee5a62ffcedd2915b2616605a6b08c73dcadf9c43f3727038edcf991a:1".parse().unwrap();
+    //     let app = App {
+    //         db: database::Db::open(&dbdir).unwrap(),
+    //         key: key.clone(),
+    //         network: NETWORK,
+    //         change_script: change_script.clone(),
+    //         tx_lock: Arc::new(Mutex::new(())),
+    //     };
+    //     let eth1 = hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap();
+    //     let out1 =
+    //         "8f14fbdee5a62ffcedd2915b2616605a6b08c73dcadf9c43f3727038edcf991a:1".parse().
+    // unwrap();
 
-        let eth2 = hex::decode("2759bC7b8f9F2b47eEeFFB2f5751E0CFF3fF1aD8").unwrap();
-        let out2 =
-            "c0ea9dc0029bb844a231887655e4b9f80eab4d11804c8af28dd618d073eed7de:2".parse().unwrap();
+    //     let eth2 = hex::decode("2759bC7b8f9F2b47eEeFFB2f5751E0CFF3fF1aD8").unwrap();
+    //     let out2 =
+    //         "c0ea9dc0029bb844a231887655e4b9f80eab4d11804c8af28dd618d073eed7de:2".parse().
+    // unwrap();
 
-        app.add_pegin(&Utxo {
-            outpoint: out1,
-            output: TxOut {
-                script_pubkey: reth_btc_wallet::address::gateway_address(
-                    &SECP,
-                    &key.public_key(),
-                    &eth1,
-                    NETWORK,
-                )
-                .unwrap()
-                .script_pubkey(),
-                value: Amount::ONE_BTC.to_sat(),
-            },
-            eth_address: Some(eth1.clone().try_into().unwrap()),
-        })
-        .unwrap();
-        app.add_pegin(&Utxo {
-            outpoint: out2,
-            output: TxOut {
-                script_pubkey: reth_btc_wallet::address::gateway_address(
-                    &SECP,
-                    &key.public_key(),
-                    &eth2,
-                    NETWORK,
-                )
-                .unwrap()
-                .script_pubkey(),
-                value: Amount::ONE_BTC.to_sat(),
-            },
-            eth_address: Some(eth2.clone().try_into().unwrap()),
-        })
-        .unwrap();
+    //     app.add_pegin(&Utxo {
+    //         outpoint: out1,
+    //         output: TxOut {
+    //             script_pubkey: reth_btc_wallet::address::gateway_address(
+    //                 &SECP,
+    //                 &key.public_key(),
+    //                 &eth1,
+    //                 NETWORK,
+    //             )
+    //             .unwrap()
+    //             .script_pubkey(),
+    //             value: Amount::ONE_BTC.to_sat(),
+    //         },
+    //         eth_address: Some(eth1.clone().try_into().unwrap()),
+    //     })
+    //     .unwrap();
+    //     app.add_pegin(&Utxo {
+    //         outpoint: out2,
+    //         output: TxOut {
+    //             script_pubkey: reth_btc_wallet::address::gateway_address(
+    //                 &SECP,
+    //                 &key.public_key(),
+    //                 &eth2,
+    //                 NETWORK,
+    //             )
+    //             .unwrap()
+    //             .script_pubkey(),
+    //             value: Amount::ONE_BTC.to_sat(),
+    //         },
+    //         eth_address: Some(eth2.clone().try_into().unwrap()),
+    //     })
+    //     .unwrap();
 
-        let pegout_addr = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-            .unwrap()
-            .assume_checked();
-        let ret = app.make_tx(
-            TxOut {
-                script_pubkey: pegout_addr.script_pubkey(),
-                value: Amount::from_btc(0.5).unwrap().to_sat(),
-            },
-            FEE_RATE,
-        );
-        if let Err(ref e) = ret {
-            println!("err: {}", e);
-        }
-        let tx = ret.unwrap();
-        println!("txid: {}", tx.txid());
+    //     let pegout_addr = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+    //         .unwrap()
+    //         .assume_checked();
+    //     let ret = app.make_tx(
+    //         TxOut {
+    //             script_pubkey: pegout_addr.script_pubkey(),
+    //             value: Amount::from_btc(0.5).unwrap().to_sat(),
+    //         },
+    //         FEE_RATE,
+    //     );
+    //     if let Err(ref e) = ret {
+    //         println!("err: {}", e);
+    //     }
+    //     let tx = ret.unwrap();
+    //     println!("txid: {}", tx.txid());
 
-        // Make sure we have the new change utxo and one of the others disappeared.
-        let mut utxos = app.db.iter_utxos().collect::<Result<Vec<_>, _>>().unwrap();
+    //     // Make sure we have the new change utxo and one of the others disappeared.
+    //     let mut utxos = app.db.iter_utxos().collect::<Result<Vec<_>, _>>().unwrap();
 
-        let change_idx = utxos
-            .iter()
-            .position(|u| u.outpoint == OutPoint::new(tx.txid(), 1))
-            .expect("can't find our change");
-        let change = utxos.remove(change_idx);
-        assert!(change.eth_address.is_none());
-        assert_eq!(change.output.script_pubkey.to_hex_string(), change_script.to_hex_string());
+    //     let change_idx = utxos
+    //         .iter()
+    //         .position(|u| u.outpoint == OutPoint::new(tx.txid(), 1))
+    //         .expect("can't find our change");
+    //     let change = utxos.remove(change_idx);
+    //     assert!(change.eth_address.is_none());
+    //     assert_eq!(change.output.script_pubkey.to_hex_string(), change_script.to_hex_string());
 
-        let initial = utxos.remove(0);
-        match tx.input[0].previous_output {
-            v if v == out1 => {
-                assert_eq!(initial.outpoint, out2);
-                assert_eq!(initial.eth_address, Some(eth2.try_into().unwrap()));
-            }
-            v if v == out2 => {
-                assert_eq!(initial.outpoint, out1);
-                assert_eq!(initial.eth_address, Some(eth1.try_into().unwrap()));
-            }
-            _ => panic!("tx didn't spend one of our utxos??"),
-        }
-    }
+    //     let initial = utxos.remove(0);
+    //     match tx.input[0].previous_output {
+    //         v if v == out1 => {
+    //             assert_eq!(initial.outpoint, out2);
+    //             assert_eq!(initial.eth_address, Some(eth2.try_into().unwrap()));
+    //         }
+    //         v if v == out2 => {
+    //             assert_eq!(initial.outpoint, out1);
+    //             assert_eq!(initial.eth_address, Some(eth1.try_into().unwrap()));
+    //         }
+    //         _ => panic!("tx didn't spend one of our utxos??"),
+    //     }
+    // }
 
-    #[test]
-    fn test_spending_change() {
-        let tmpdir = tempfile::tempdir().unwrap();
-        let dbdir = tmpdir.path().to_path_buf().join("db.db");
-        println!("Starting app with db in '{}'", dbdir.display());
+    // #[test]
+    // fn test_spending_change() {
+    //     let tmpdir = tempfile::tempdir().unwrap();
+    //     let dbdir = tmpdir.path().to_path_buf().join("db.db");
+    //     println!("Starting app with db in '{}'", dbdir.display());
 
-        let key = KeyPair::from_seckey_str(
-            &SECP,
-            "a2424e251ffb8ace719cc340271c0a0780fb02d209e707d3600061927c1b90fd",
-        )
-        .unwrap();
-        let change_script = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
-            &SECP,
-            &key.public_key(),
-        );
+    //     let key = KeyPair::from_seckey_str(
+    //         &SECP,
+    //         "a2424e251ffb8ace719cc340271c0a0780fb02d209e707d3600061927c1b90fd",
+    //     )
+    //     .unwrap();
+    //     let change_script = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(
+    //         &SECP,
+    //         &key.public_key(),
+    //     );
 
-        let app = App {
-            db: database::Db::open(&dbdir).unwrap(),
-            key: key.clone(),
-            network: NETWORK,
-            change_script: change_script.clone(),
-            tx_lock: Arc::new(Mutex::new(())),
-        };
-        // Add change output
-        let out =
-            "8f14fbdee5a62ffcedd2915b2616605a6b08c73dcadf9c43f3727038edcf991a:1".parse().unwrap();
-        app.add_pegin(&Utxo {
-            outpoint: out,
-            output: TxOut { script_pubkey: change_script.clone(), value: Amount::ONE_BTC.to_sat() },
-            eth_address: None,
-        })
-        .unwrap();
+    //     let app = App {
+    //         db: database::Db::open(&dbdir).unwrap(),
+    //         key: key.clone(),
+    //         network: NETWORK,
+    //         change_script: change_script.clone(),
+    //         tx_lock: Arc::new(Mutex::new(())),
+    //     };
+    //     // Add change output
+    //     let out =
+    //         "8f14fbdee5a62ffcedd2915b2616605a6b08c73dcadf9c43f3727038edcf991a:1".parse().
+    // unwrap();     app.add_pegin(&Utxo {
+    //         outpoint: out,
+    //         output: TxOut { script_pubkey: change_script.clone(), value: Amount::ONE_BTC.to_sat()
+    // },         eth_address: None,
+    //     })
+    //     .unwrap();
 
-        let pegout_addr = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-            .unwrap()
-            .assume_checked();
-        let ret = app.make_tx(
-            TxOut {
-                script_pubkey: pegout_addr.script_pubkey(),
-                value: Amount::from_btc(0.5).unwrap().to_sat(),
-            },
-            FEE_RATE,
-        );
-        if let Err(ref e) = ret {
-            println!("err: {}", e);
-        }
-        let tx = ret.unwrap();
-        println!("txid: {}", tx.txid());
+    //     let pegout_addr = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+    //         .unwrap()
+    //         .assume_checked();
+    //     let ret = app.make_tx(
+    //         TxOut {
+    //             script_pubkey: pegout_addr.script_pubkey(),
+    //             value: Amount::from_btc(0.5).unwrap().to_sat(),
+    //         },
+    //         FEE_RATE,
+    //     );
+    //     if let Err(ref e) = ret {
+    //         println!("err: {}", e);
+    //     }
+    //     let tx = ret.unwrap();
+    //     println!("txid: {}", tx.txid());
 
-        // Make sure we have the new change utxo and one of the others disappeared.
-        let mut utxos = app.db.iter_utxos().collect::<Result<Vec<_>, _>>().unwrap();
-        println!("UTXOs: {:?}", utxos);
+    //     // Make sure we have the new change utxo and one of the others disappeared.
+    //     let mut utxos = app.db.iter_utxos().collect::<Result<Vec<_>, _>>().unwrap();
+    //     println!("UTXOs: {:?}", utxos);
 
-        let change_idx = utxos
-            .iter()
-            .position(|u| u.outpoint == OutPoint::new(tx.txid(), 1))
-            .expect("can't find our change");
+    //     let change_idx = utxos
+    //         .iter()
+    //         .position(|u| u.outpoint == OutPoint::new(tx.txid(), 1))
+    //         .expect("can't find our change");
 
-        let change = utxos.remove(change_idx);
+    //     let change = utxos.remove(change_idx);
 
-        assert!(change.eth_address.is_none());
-        assert_eq!(change.output.script_pubkey.to_hex_string(), change_script.to_hex_string());
-    }
+    //     assert!(change.eth_address.is_none());
+    //     assert_eq!(change.output.script_pubkey.to_hex_string(), change_script.to_hex_string());
+    // }
 }
