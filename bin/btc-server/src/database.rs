@@ -10,7 +10,6 @@ use thiserror::Error;
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
-const TREE_KEYS: &[u8; 4] = b"keys";
 const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
