@@ -2,7 +2,6 @@
 extern crate log;
 
 mod database;
-mod frost_state;
 mod util;
 
 mod rpc {
@@ -20,12 +19,9 @@ use bdk::{miniscript::psbt::PsbtExt, wallet::coin_selection::CoinSelectionAlgori
 use bitcoin::{consensus::encode as btcencode, secp256k1, FeeRate, OutPoint, Transaction, TxOut};
 use clap::Parser;
 use frost_secp256k1_tr as frost;
-use hex::FromHex;
 use rand::thread_rng;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::File,
-    io::Read,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -75,6 +71,7 @@ struct App {
     /// spend the same operations twice.
     tx_lock: Arc<Mutex<()>>,
     identifier: frost::Identifier,
+    // TODO (armins) check that you have threshold amount of signers when accepting dkg packages
     max_signers: u16,
     min_signers: u16,
     frost_round1_dkg:
@@ -505,18 +502,6 @@ struct Config {
     address: String,
 }
 
-fn read_hex_file(file_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut file = File::open(file_path)?;
-    // Read the contents of the file into a Vec<u8>
-    let mut hex_data = Vec::new();
-    file.read_to_end(&mut hex_data)?;
-
-    // Parse the hex data into bytes
-    let bytes = Vec::from_hex(hex_data)?;
-
-    Ok(bytes)
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
@@ -582,17 +567,14 @@ mod test {
         process::Command,
     };
 
-    use crate::rpc;
-
-    use bitcoin::{Amount, FeeRate};
+    use bitcoin::FeeRate;
     use client;
-    use test_log::test;
 
-    const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
-    const FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
+    const _NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
+    const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
     async fn spawn_server(id: u16, address: &str) -> () {
-        let mut working_directory = std::env::current_dir().unwrap();
+        let working_directory = std::env::current_dir().unwrap();
 
         let identifier = id.to_string();
         let db_name = format!("db_{}", id);
@@ -715,7 +697,7 @@ mod test {
             c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
 
         assert_eq!(pk_1.publickey, pk_2.publickey);
-        // Test clean up 
+        // Test clean up
         // Remove db dirs
         std::fs::remove_dir_all("db_0").unwrap();
         std::fs::remove_dir_all("db_1").unwrap();
