@@ -1,10 +1,11 @@
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
 use reth_botanix_lib::mint_validation::{
-    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
+    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
+    MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 
-use reth_primitives::{hex, Log};
+use reth_primitives::{hex, Bloom, BloomInput, Log};
 use reth_provider::BundleStateWithReceipts;
 
 use tracing::{debug, error, info};
@@ -91,6 +92,9 @@ pub(crate) async fn process_reciepts(
 /// Returns `Ok(())` if the processing is successful, otherwise returns an error of type
 /// `ProcessBotanixLogError`.
 
+// TODO (scott) remove `should_broadcast_pegout` since this only happens for epoch block
+// check if pegout and store in cache
+// create util method to send pegouts
 async fn process_botanix_log(
     bitcoin_block_source: &MempoolSpace,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
@@ -153,4 +157,59 @@ async fn process_botanix_log(
         }
     }
     Ok(())
+}
+
+fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
+    bloom.contains_input(BloomInput::Raw(MINT_CONTRACT_ADDRESS.as_ref()))
+}
+
+pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+}
+
+pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_bloom_contains_pegout() {
+        let mut bloom = Bloom::default();
+        assert!(!bloom_contains_pegout(bloom));
+
+        // add minting contract address to bloom
+        bloom.accrue(BloomInput::Raw(MINT_CONTRACT_ADDRESS.as_ref()));
+
+        // assert still false
+        assert!(!bloom_contains_pegout(bloom));
+
+        // add minting burn topic to bloom
+        bloom.accrue(BloomInput::Raw(BURN_TOPIC.as_ref()));
+
+        // assert true
+        assert!(bloom_contains_pegout(bloom))
+    }
+
+    #[test]
+    fn test_bloom_contains_pegin() {
+        let mut bloom = Bloom::default();
+        assert!(!bloom_contains_pegin(bloom));
+
+        // add minting contract address to bloom
+        bloom.accrue(BloomInput::Raw(MINT_CONTRACT_ADDRESS.as_ref()));
+
+        // assert still false
+        assert!(!bloom_contains_pegin(bloom));
+
+        // add minting mint topic to bloom
+        bloom.accrue(BloomInput::Raw(MINT_TOPIC.as_ref()));
+
+        // assert true
+        assert!(bloom_contains_pegin(bloom))
+    }
 }
