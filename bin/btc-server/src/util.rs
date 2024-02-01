@@ -36,7 +36,17 @@ pub trait OutPointExt: Into<OutPoint> {
 
 impl OutPointExt for OutPoint {}
 
-pub fn serialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> {
+// Deserializes a Frost peer ID.
+///
+/// # Arguments
+///
+/// * `id` - The peer ID to be decoded.
+///
+/// # Returns
+///
+/// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
+/// the peer ID is invalid.
+pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> {
     if id.len() != 32 {
         return Err(Error::InvalidFrostPeerId);
     }
@@ -47,4 +57,35 @@ pub fn serialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> 
         frost::Identifier::deserialize(&peer_id_bytes).map_err(|_e| Error::InvalidFrostPeerId)?;
 
     Ok(frost_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_frost_peer_id() {
+        // Valid peer ID, len = 32
+        let valid_id: Vec<u8> = vec![
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+            0x1D, 0x1E, 0x1F, 0x20,
+        ];
+        let result = deserialize_frost_peer_id(valid_id);
+        assert!(result.is_ok());
+        result.unwrap();
+
+        // Invalid peer ID (length is not 32)
+        let invalid_id: Vec<u8> = vec![0x01, 0x02, 0x03];
+        let result = deserialize_frost_peer_id(invalid_id);
+        assert!(result.is_err());
+
+        // encode and decode the id 0
+        let peer_id0 = 0u16;
+        let f = frost::Identifier::derive(&peer_id0.to_be_bytes().to_vec()).unwrap();
+        let f_bytes = f.serialize().to_vec();
+        let peer_id_decoded = deserialize_frost_peer_id(f_bytes.to_vec()).unwrap();
+
+        assert_eq!(f, peer_id_decoded);
+    }
 }
