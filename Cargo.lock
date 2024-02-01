@@ -1170,6 +1170,7 @@ dependencies = [
  "bitcoin",
  "ciborium",
  "clap",
+ "client",
  "env_logger",
  "frost-secp256k1-tr",
  "hex",

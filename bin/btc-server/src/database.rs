@@ -253,3 +253,11 @@ impl From<sled::transaction::TransactionError<sled::Error>> for Error {
         }
     }
 }
+
+// To make it easier to return tonic status error from the callers
+impl From<Error> for tonic::Status {
+    fn from(e: Error) -> tonic::Status {
+        tonic::Status::internal(e.to_string())
+    }
+}
+
