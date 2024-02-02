@@ -68,6 +68,8 @@ pub enum Error {
     InvalidRoundDkgSerializationFormat(#[from] serde_json::Error),
     #[error("Invalid round 2 Dkg payload, missing our package")]
     InvalidRound2DkgPayloadMissingPackage,
+    #[error("Invalid round2 Signing payload")]
+    InvalidRound2SigningPayload(),
 }
 
 struct App {
@@ -89,6 +91,31 @@ struct App {
 }
 
 impl App {
+    fn add_round2_signing(&self, payload: rpc::Round1SigningPackage) -> Result<(), Error> {
+        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
+        // Can't add our selves
+        if frost_id == self.identifier {
+            return Err(Error::InvalidFrostPeerId);
+        }
+
+        let signature_share: [u8; 32] = payload.payload.as_slice().try_into().map_err(|e| {
+            error!("Failed to deserialize round2 signing payload: {}", e);
+            Error::InvalidRound2SigningPayload()
+        })?;
+
+        let signing_round2 = frost::round2::SignatureShare::deserialize(signature_share)
+            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
+
+        if self.db.add_round2_signing(frost_id, signing_round2).map_err(Error::Db)? {
+            self.db.flush().map_err(Error::Db)?;
+            debug!("Stored round2 signing from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round2 signing from peer: {:?}", frost_id);
+        }
+
+        Ok(())
+    }
+
     fn add_round1_signing(&self, payload: rpc::Round1SigningPackage) -> Result<(), Error> {
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
@@ -241,7 +268,7 @@ impl App {
             _ => None,
         };
 
-        let mut psbt = reth_btc_wallet::transaction::create_psbt(
+        let psbt = reth_btc_wallet::transaction::create_psbt(
             selected
                 .iter()
                 .map(|s| reth_btc_wallet::transaction::Input {
@@ -449,7 +476,26 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
-    /// gets the public key in the final step of thd DKG process (needs round 1+2 packages)
+    async fn new_round2_signing_package(
+        &self,
+        req: tonic::Request<rpc::Round1SigningPackage>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.db
+            .get_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        self.add_round2_signing(req.into_inner()).map_err(|e| {
+            error!("Failed to add round1 signing: {}", e);
+            badarg!("Failed to add round1 signing")
+        })?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn get_public_key(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -1051,12 +1097,16 @@ mod test {
         c1.get_round2_signing_package(tonic::Request::new(client::SignPayload {
             payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
-        })).await.unwrap();
+        }))
+        .await
+        .unwrap();
 
         c2.get_round2_signing_package(tonic::Request::new(client::SignPayload {
             payload: signing_package.payload,
             psbt: signing_package.psbt,
-        })).await.unwrap();
+        }))
+        .await
+        .unwrap();
 
         // Test clean up
         // Remove db dirs

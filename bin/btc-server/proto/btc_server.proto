@@ -21,11 +21,13 @@ service BtcServer {
     rpc GetRound1SigningPackage(Empty) returns (Round1SigningPackage) {}
     
     rpc GetRound2SigningPackage(SignPayload) returns (Round1SigningPackage) {}
-    
+
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
 
     rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
+
+    rpc NewRound2SigningPackage(Round1SigningPackage) returns (Empty) {}
 
 }
 

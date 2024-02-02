@@ -428,5 +428,29 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetToSignPackage"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn new_round2_signing_package(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Round1SigningPackage>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/NewRound2SigningPackage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "NewRound2SigningPackage"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
