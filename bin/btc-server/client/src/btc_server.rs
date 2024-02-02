@@ -62,7 +62,7 @@ pub struct Round1SigningPackage {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ToSignPayload {
+pub struct SignPayload {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
@@ -332,6 +332,33 @@ pub mod btc_server_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_round2_signing_package(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SignPayload>,
+        ) -> std::result::Result<
+            tonic::Response<super::Round1SigningPackage>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetRound2SigningPackage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "GetRound2SigningPackage"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// only meant to be used by the cordinator
         pub async fn new_round1_signing_package(
             &mut self,
@@ -360,7 +387,7 @@ pub mod btc_server_client {
         pub async fn get_to_sign_package(
             &mut self,
             request: impl tonic::IntoRequest<super::ToSignRequest>,
-        ) -> std::result::Result<tonic::Response<super::ToSignPayload>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::SignPayload>, tonic::Status> {
             self.inner
                 .ready()
                 .await

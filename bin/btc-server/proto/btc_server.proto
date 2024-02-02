@@ -18,10 +18,13 @@ service BtcServer {
 
     rpc GetRound1SigningPackage(Empty) returns (Round1SigningPackage) {}
     
+    rpc GetRound2SigningPackage(SignPayload) returns (Round1SigningPackage) {}
+    
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
 
-    rpc GetToSignPackage(ToSignRequest) returns (ToSignPayload) {}
+    rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
+
 }
 
 message NotifyPeginRequest {
@@ -65,7 +68,7 @@ message Round1SigningPackage {
     bytes payload = 2;
 }
 
-message ToSignPayload {
+message SignPayload {
     bytes psbt = 1;
     bytes payload = 2;
 }
