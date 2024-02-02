@@ -60,6 +60,31 @@ pub struct Round1SigningPackage {
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToSignPayload {
+    #[prost(bytes = "vec", tag = "1")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Output {
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub value: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToSignRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub outputs: ::prost::alloc::vec::Vec<Output>,
+    /// Fee rate in satoshi per vbyte.
+    #[prost(uint32, tag = "2")]
+    pub fee_rate: u32,
+}
 /// Generated server implementations.
 pub mod btc_server_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -71,10 +96,6 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::NotifyPeginRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn make_tx(
-            &self,
-            request: tonic::Request<super::MakeTxRequest>,
-        ) -> std::result::Result<tonic::Response<super::MakeTxResponse>, tonic::Status>;
         async fn get_public_key(
             &self,
             request: tonic::Request<super::Empty>,
@@ -109,6 +130,15 @@ pub mod btc_server_server {
             tonic::Response<super::Round1SigningPackage>,
             tonic::Status,
         >;
+        /// only meant to be used by the cordinator
+        async fn new_round1_signing_package(
+            &self,
+            request: tonic::Request<super::Round1SigningPackage>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        async fn get_to_sign_package(
+            &self,
+            request: tonic::Request<super::ToSignRequest>,
+        ) -> std::result::Result<tonic::Response<super::ToSignPayload>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct BtcServerServer<T: BtcServer> {
@@ -220,48 +250,6 @@ pub mod btc_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = NotifyPeginSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/btc_server.BtcServer/MakeTx" => {
-                    #[allow(non_camel_case_types)]
-                    struct MakeTxSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::MakeTxRequest>
-                    for MakeTxSvc<T> {
-                        type Response = super::MakeTxResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::MakeTxRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).make_tx(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = MakeTxSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -570,6 +558,96 @@ pub mod btc_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetRound1SigningPackageSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/NewRound1SigningPackage" => {
+                    #[allow(non_camel_case_types)]
+                    struct NewRound1SigningPackageSvc<T: BtcServer>(pub Arc<T>);
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::Round1SigningPackage>
+                    for NewRound1SigningPackageSvc<T> {
+                        type Response = super::Empty;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Round1SigningPackage>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).new_round1_signing_package(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = NewRound1SigningPackageSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetToSignPackage" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetToSignPackageSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::ToSignRequest>
+                    for GetToSignPackageSvc<T> {
+                        type Response = super::ToSignPayload;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ToSignRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_to_sign_package(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetToSignPackageSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

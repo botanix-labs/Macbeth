@@ -186,7 +186,7 @@ version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=76c70fb#76c70fb9d44ace661bbf33408c2527e3874c964e"
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
  "serde",
 ]
 
@@ -270,7 +270,7 @@ source = "git+https://github.com/alloy-rs/alloy?rev=76c70fb#76c70fb9d44ace661bbf
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "jsonrpsee-types",
@@ -284,7 +284,18 @@ version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=76c70fb#76c70fb9d44ace661bbf33408c2527e3874c964e"
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "alloy-rpc-trace-types"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
  "serde",
  "serde_json",
 ]
@@ -404,9 +415,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.6"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8901269c6307e8d93993578286ac0edf7f195079ffff5ebdeea6a59ffb7e36bc"
+checksum = "2faccea4cc4ab4a667ce676a30e8ec13922a692c99bb8f5b11f1502c72e04220"
 
 [[package]]
 name = "anstyle-parse"
@@ -1586,14 +1597,14 @@ dependencies = [
  "anstream",
  "anstyle",
  "clap_lex",
- "strsim 0.11.0",
+ "strsim 0.10.0",
 ]
 
 [[package]]
 name = "clap_derive"
-version = "4.5.0"
+version = "4.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "307bc0538d5f0f83b8248db3087aa92fe504e4691294d0c96c0eabc33f47ba47"
+checksum = "cf9804afaaf59a91e75b022a30fb7229a7901f60c755489cc61c9b423b836442"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1603,9 +1614,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
+checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 
 [[package]]
 name = "cli-extension-event-hooks"
@@ -2051,9 +2062,9 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "4.1.2"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a677b8922c94e01bdbb12126b0bc852f00447528dee1782229af9c720c3f348"
+checksum = "e89b8c6a2e4b1f45971ad09761aafb85514a84744b67a95e32c3cc1352d1f65c"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -2548,9 +2559,9 @@ dependencies = [
 
 [[package]]
 name = "ed25519-dalek"
-version = "2.1.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a3daa8e81a3963a60642bcc1f90a670680bd4a77535faa384e9d1c79d620871"
+checksum = "1f628eaec48bfd21b865dc2950cfa014450c01d2fa2b69a86c2fd5844ec523c0"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
@@ -3204,9 +3215,9 @@ dependencies = [
 
 [[package]]
 name = "fiat-crypto"
-version = "0.2.6"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1676f435fc1dadde4d03e43f5d62b259e1ce5f40bd4ffb21db2b42ebe59c1382"
+checksum = "27573eac26f4dd11e2b1916c3fe1baa56407c83c71a773a8ba17ec0bca03b6b7"
 
 [[package]]
 name = "findshlibs"
@@ -3727,9 +3738,21 @@ checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "hermit-abi"
+<<<<<<< HEAD
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
+=======
+<<<<<<< HEAD
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "379dada1584ad501b383485dd706b8afb7a70fcbc7f4da7d780638a5a6124a60"
+=======
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d3d0e0f38255e7fa3cf31335b3a56f05febd18025f4db5ef7a0cfb4f8da651f"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 
 [[package]]
 name = "hex"
@@ -4402,18 +4425,24 @@ dependencies = [
 
 [[package]]
 name = "jobserver"
-version = "0.1.28"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab46a6e9526ddef3ae7f787c06f0f2600639ba80ea3eade3d8e670a2230f51d6"
+checksum = "8c37f63953c4c63420ed5fd3d6d398c719489b9f872b9fa683262f8edd363c7d"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "js-sys"
+<<<<<<< HEAD
 version = "0.3.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29c15563dc2726973df627357ce0c9ddddbea194836909d655df6a75d2cf296d"
+=======
+version = "0.3.67"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1d36f1235bc969acba30b7f5990b864423a6068a10f7c90ae8f0112e3a59d1"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "wasm-bindgen",
 ]
@@ -5221,9 +5250,9 @@ dependencies = [
 
 [[package]]
 name = "num-complex"
-version = "0.4.5"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23c6602fda94a57c990fe0df199a035d83576b496aa29f4e634a8ac6004e68a6"
+checksum = "1ba157ca0885411de85d6ca030ba7e2a83a28636056c7c699b07c8b6f7383214"
 dependencies = [
  "num-traits",
 ]
@@ -5246,18 +5275,19 @@ dependencies = [
 
 [[package]]
 name = "num-integer"
-version = "0.1.46"
+version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7969661fd2958a5cb096e56c8e1ad0444ac2bbcd0061bd28660485a44879858f"
+checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
 dependencies = [
+ "autocfg 1.1.0",
  "num-traits",
 ]
 
 [[package]]
 name = "num-iter"
-version = "0.1.44"
+version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d869c01cc0c455284163fd0092f1f93835385ccab5a98a0dcc497b2f8bf055a9"
+checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
 dependencies = [
  "autocfg 1.1.0",
  "num-integer",
@@ -5278,9 +5308,9 @@ dependencies = [
 
 [[package]]
 name = "num-traits"
-version = "0.2.18"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0df0e5185db44f69b44f26786fe401b6c293d1907744beaa7fa62b2e5a517a"
+checksum = "39e3200413f237f41ab11ad6d161bc7239c84dcb631773ccd7de3dfe4b5c267c"
 dependencies = [
  "autocfg 1.1.0",
  "libm",
@@ -5655,9 +5685,15 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "pest"
+<<<<<<< HEAD
 version = "2.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f8023d0fb78c8e03784ea1c7f3fa36e68a723138990b8d5a47d916b651e7a8"
+=======
+version = "2.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f200d8d83c44a45b21764d1916299752ca035d15ecd46faca3e9a2a2bf6ad06"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "memchr",
  "thiserror",
@@ -6803,7 +6839,7 @@ dependencies = [
  "reth-revm",
  "reth-tasks",
  "reth-transaction-pool",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "tokio",
  "tracing",
 ]
@@ -6891,7 +6927,7 @@ dependencies = [
  "reth-btc-wallet",
  "reth-interfaces",
  "reth-primitives",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "secp256k1 0.27.0",
  "thiserror",
 ]
@@ -7170,7 +7206,7 @@ dependencies = [
  "reth-provider",
  "reth-revm",
  "reth-transaction-pool",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "tracing",
 ]
 
@@ -7393,8 +7429,12 @@ version = "0.1.0-alpha.20"
 dependencies = [
  "reth-primitives",
  "reth-rpc-types",
+<<<<<<< HEAD
  "revm",
  "revm-primitives",
+=======
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
  "serde",
  "thiserror",
 ]
@@ -7558,7 +7598,7 @@ dependencies = [
  "reth-provider",
  "reth-revm",
  "reth-transaction-pool",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "thiserror",
  "tracing",
 ]
@@ -7580,8 +7620,8 @@ dependencies = [
  "reth-rpc-types-compat",
  "reth-tasks",
  "reth-transaction-pool",
- "revm",
- "revm-primitives",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "serde",
  "sha2",
  "thiserror",
@@ -7634,8 +7674,8 @@ dependencies = [
  "reth-codecs",
  "reth-ethereum-forks",
  "reth-rpc-types",
- "revm",
- "revm-primitives",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "secp256k1 0.27.0",
  "serde",
  "serde_json",
@@ -7673,7 +7713,7 @@ dependencies = [
  "reth-node-api",
  "reth-primitives",
  "reth-trie",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "strum 0.26.1",
  "tempfile",
  "tokio",
@@ -7718,7 +7758,7 @@ dependencies = [
  "reth-primitives",
  "reth-provider",
  "reth-trie",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "revm-inspectors",
  "secp256k1 0.27.0",
  "tokio",
@@ -7769,9 +7809,9 @@ dependencies = [
  "reth-rpc-types-compat",
  "reth-tasks",
  "reth-transaction-pool",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "revm-inspectors",
- "revm-primitives",
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "schnellru",
  "secp256k1 0.27.0",
  "serde",
@@ -7885,8 +7925,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-engine-types",
- "alloy-rpc-trace-types",
- "alloy-rpc-types",
+ "alloy-rpc-trace-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
  "arbitrary",
  "bytes",
  "ethereum_ssz",
@@ -7910,7 +7950,7 @@ name = "reth-rpc-types-compat"
 version = "0.1.0-alpha.20"
 dependencies = [
  "alloy-rlp",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
  "reth-primitives",
  "reth-rpc-types",
  "serde_json",
@@ -7966,7 +8006,7 @@ dependencies = [
  "reth-revm",
  "reth-tokio-util",
  "reth-trie",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "serde",
  "serde_json",
  "thiserror",
@@ -8038,7 +8078,7 @@ dependencies = [
  "reth-revm",
  "reth-tasks",
  "reth-tracing",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "schnellru",
  "serde",
  "serde_json",
@@ -8065,7 +8105,7 @@ dependencies = [
  "reth-interfaces",
  "reth-primitives",
  "reth-provider",
- "revm",
+ "revm 5.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "serde_json",
  "similar-asserts",
  "thiserror",
@@ -8077,14 +8117,33 @@ dependencies = [
 
 [[package]]
 name = "revm"
+<<<<<<< HEAD
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d35316fc02d99e42831356c71e882f5d385c77b78f64a44ae82f2f9a4b8b72f"
+=======
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "266f86bdefa6dac07d92e2f5c37d7d183f2575b2f9e0ee9cba9402dfde912524"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "auto_impl",
  "cfg-if",
- "revm-interpreter",
- "revm-precompile",
+ "revm-interpreter 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "revm-precompile 4.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "revm"
+version = "5.0.0"
+source = "git+https://github.com/bluealloy/revm?branch=main#5670ee4860c3f29e656408be53cc4b10407fe139"
+dependencies = [
+ "auto_impl",
+ "cfg-if",
+ "revm-interpreter 2.1.0 (git+https://github.com/bluealloy/revm?branch=main)",
+ "revm-precompile 4.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "serde",
  "serde_json",
 ]
@@ -8092,42 +8151,88 @@ dependencies = [
 [[package]]
 name = "revm-inspectors"
 version = "0.1.0"
+<<<<<<< HEAD
 source = "git+https://github.com/paradigmxyz/evm-inspectors?rev=75a187b#75a187ba967a29b30af2e5e848073c755068da06"
+=======
+source = "git+https://github.com/paradigmxyz/evm-inspectors?branch=main#5622ad5c6f221999d17982b95f7754cbd0493313"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-trace-types",
- "alloy-rpc-types",
+ "alloy-rpc-trace-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "alloy-sol-types",
  "anstyle",
  "boa_engine",
  "boa_gc",
+<<<<<<< HEAD
  "colorchoice",
  "revm",
+=======
+ "revm 5.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
 name = "revm-interpreter"
+<<<<<<< HEAD
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fa10c2dc1e8f4934bdc763a2c09371bcec29e50c22e55e3eb325ee0cba09064"
+=======
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a80b516cc706630e604e2fd47c281501d2fb222712be4328921361388b7d2df"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
- "revm-primitives",
+ "revm-primitives 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+]
+
+[[package]]
+name = "revm-interpreter"
+version = "2.1.0"
+source = "git+https://github.com/bluealloy/revm?branch=main#5670ee4860c3f29e656408be53cc4b10407fe139"
+dependencies = [
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "serde",
 ]
 
 [[package]]
 name = "revm-precompile"
+<<<<<<< HEAD
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db828d49d329560a70809d9d1fa0c74695edb49f50c5332db3eb24483076deac"
+=======
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6912fafe7f70a264ec5895875ce2f2d0621a39263844280c9ee7f85e35bbb9e"
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
  "k256",
  "once_cell",
- "revm-primitives",
+ "revm-primitives 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ripemd",
+ "secp256k1 0.28.2",
+ "sha2",
+ "substrate-bn",
+]
+
+[[package]]
+name = "revm-precompile"
+version = "4.0.0"
+source = "git+https://github.com/bluealloy/revm?branch=main#5670ee4860c3f29e656408be53cc4b10407fe139"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+dependencies = [
+ "aurora-engine-modexp",
+ "c-kzg",
+ "k256",
+ "once_cell",
+ "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "ripemd",
  "secp256k1 0.28.2",
  "sha2",
@@ -8136,9 +8241,31 @@ dependencies = [
 
 [[package]]
 name = "revm-primitives"
+<<<<<<< HEAD
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fecd125aad58e135e2ca5771ed6e4e7b1f05fa3a64e0dfb9cc643b7a800a8435"
+=======
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b3683a40f1e94e7389c8e81e5f26bb5d30875ed0b48ab07985ec32eb6d6c712"
+dependencies = [
+ "alloy-primitives",
+ "auto_impl",
+ "bitflags 2.4.2",
+ "bitvec",
+ "cfg-if",
+ "enumn",
+ "hashbrown 0.14.3",
+ "hex",
+ "serde",
+]
+
+[[package]]
+name = "revm-primitives"
+version = "2.0.0"
+source = "git+https://github.com/bluealloy/revm?branch=main#5670ee4860c3f29e656408be53cc4b10407fe139"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "alloy-primitives",
  "auto_impl",
@@ -9034,9 +9161,9 @@ checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "sketches-ddsketch"
-version = "0.2.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85636c14b73d81f541e525f585c0a2109e6744e1565b5c1668e31c70c10ed65c"
+checksum = "68a406c1882ed7f29cd5e248c9848a80e7cb6ae0fea82346d2746f2f941c07e1"
 
 [[package]]
 name = "slab"
@@ -9253,12 +9380,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
-name = "strsim"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee073c9e4cd00e28217186dbe12796d692868f432bf2e97ee73bed0c56dfa01"
-
-[[package]]
 name = "strum"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9463,12 +9584,19 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
+<<<<<<< HEAD
 version = "3.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85b77fafb263dd9d05cbeac119526425676db3784113aa9295c88498cbf8bff1"
+=======
+version = "3.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01ce4141aa927a6d1bd34a041795abd0db1cccba5d5f24b009f694bdf3a1f3fa"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "cfg-if",
  "fastrand 2.0.1",
+ "redox_syscall 0.4.1",
  "rustix",
  "windows-sys 0.52.0",
 ]
@@ -9827,14 +9955,18 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.10"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9aad4a3066010876e8dcf5a8a06e70a558751117a145c6ce2b82c2e2054290"
+checksum = "c6a4b9e8023eb94392d3dca65d717c53abc5dad49c07cb65bb8fcd87115fa325"
 dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
+<<<<<<< HEAD
  "toml_edit 0.22.6",
+=======
+ "toml_edit 0.21.1",
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
 ]
 
 [[package]]
@@ -9874,7 +10006,12 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
+<<<<<<< HEAD
  "indexmap 2.2.5",
+=======
+<<<<<<< HEAD
+ "indexmap 2.2.3",
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
  "toml_datetime",
  "winnow 0.5.40",
 ]
@@ -9885,7 +10022,14 @@ version = "0.22.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c1b5fd4128cc8d3e0cb74d4ed9a9cc7c7284becd4df68f5f940e1ad123606f6"
 dependencies = [
+<<<<<<< HEAD
  "indexmap 2.2.5",
+=======
+ "indexmap 2.2.3",
+=======
+ "indexmap 2.2.2",
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -10356,9 +10500,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.11.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
+checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
 
 [[package]]
 name = "unicode-width"
@@ -10540,9 +10684,15 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasm-bindgen"
+<<<<<<< HEAD
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4be2531df63900aeb2bca0daaaddec08491ee64ceecbee5076636a3b026795a8"
+=======
+version = "0.2.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1223296a201415c7fad14792dbefaace9bd52b62d33453ade1c5b5f07555406"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "cfg-if",
  "wasm-bindgen-macro",
@@ -10550,9 +10700,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-backend"
+<<<<<<< HEAD
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "614d787b966d3989fa7bb98a654e369c762374fd3213d212cfc0251257e747da"
+=======
+version = "0.2.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcdc935b63408d58a32f8cc9738a0bffd8f05cc7c002086c6ef20b7312ad9dcd"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "bumpalo",
  "log",
@@ -10565,9 +10721,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-futures"
+<<<<<<< HEAD
 version = "0.4.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76bc14366121efc8dbb487ab05bcc9d346b3b5ec0eaa76e46594cabbe51762c0"
+=======
+version = "0.4.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bde2032aeb86bdfaecc8b261eef3cba735cc426c1f3a3416d1e0791be95fc461"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "cfg-if",
  "js-sys",
@@ -10577,9 +10739,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
+<<<<<<< HEAD
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1f8823de937b71b9460c0c34e25f3da88250760bec0ebac694b49997550d726"
+=======
+version = "0.2.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e4c238561b2d428924c49815533a8b9121c664599558a5d9ec51f8a1740a999"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -10587,9 +10755,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
+<<<<<<< HEAD
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e94f17b526d0a461a191c78ea52bbce64071ed5c04c9ffe424dcb38f74171bb7"
+=======
+version = "0.2.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bae1abb6806dc1ad9e560ed242107c0f6c84335f1749dd4e8ddb012ebd5e25a7"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10600,9 +10774,15 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
+<<<<<<< HEAD
 version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af190c94f2773fdb3729c55b007a722abb5384da03bc0986df4c289bf5567e96"
+=======
+version = "0.2.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d91413b1c31d7539ba5ef2451af3f0b833a005eb27a631cec32bc0635a8602b"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 
 [[package]]
 name = "wasm-streams"
@@ -10619,9 +10799,15 @@ dependencies = [
 
 [[package]]
 name = "web-sys"
+<<<<<<< HEAD
 version = "0.3.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77afa9a11836342370f4817622a2f0f418b134426d91a82dfb48f532d2ec13ef"
+=======
+version = "0.3.67"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58cd2333b6e0be7a39605f0e255892fd7418a682d8da8fe042fe25128794d2ed"
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -10835,6 +11021,7 @@ checksum = "32b752e52a2da0ddfbdbcc6fceadfeede4c939ed16d13e648833a61dfb611ed8"
 
 [[package]]
 name = "winnow"
+<<<<<<< HEAD
 version = "0.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
@@ -10846,7 +11033,16 @@ dependencies = [
 name = "winnow"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 checksum = "dffa400e67ed5a4dd237983829e66475f0a4a26938c4b04c21baede6262215b8"
+=======
+checksum = "7a4191c47f15cc3ec71fcb4913cb83d58def65dd3787610213c649283b5ce178"
+=======
+version = "0.5.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7cad8365489051ae9f054164e459304af2e7e9bb407c958076c8bf4aef52da5"
+>>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+>>>>>>> 2f0501363 (feature(btc_server): add get signing package cordinator endpoint)
 dependencies = [
  "memchr",
 ]

@@ -14,6 +14,7 @@ const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
+const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Utxo {
@@ -44,6 +45,11 @@ pub struct Db {
     ///
     /// Indexed by peer id
     round2_dkg_packages: sled::Tree,
+
+    /// A tree of round 1 signing commitments
+    ///
+    /// Indexed by peer id
+    round1_signing_packages: sled::Tree,
 }
 
 impl Db {
@@ -53,6 +59,7 @@ impl Db {
             utxos: db.open_tree(&TREE_UTXOS)?,
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
+            round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
             db,
         })
     }
@@ -62,7 +69,42 @@ impl Db {
         self.db.flush()?;
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
+        self.round1_signing_packages.flush()?;
         Ok(())
+    }
+
+    pub fn add_round1_signing(
+        &self,
+        peer_id: frost::Identifier,
+        signing_round1: frost::round1::SigningCommitments,
+    ) -> Result<bool, Error> {
+        let peer_id_bytes = peer_id.serialize();
+
+        if self.round1_signing_packages.contains_key(&peer_id_bytes[..])? {
+            return Ok(false);
+        }
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&signing_round1, &mut bytes).expect("writing to buffer");
+        self.round1_signing_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        Ok(true)
+    }
+
+    pub fn get_round1_signing_packages(
+        &self,
+    ) -> Result<BTreeMap<frost::Identifier, frost::round1::SigningCommitments>, Error> {
+        let mut ret = BTreeMap::new();
+        for res in self.round1_signing_packages.iter() {
+            let (k, v) = res?;
+            let peer_id_bytes: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+
+            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
+                .map_err(|e| Error::FrostSerialization(e))?;
+            let signing_round1 =
+                ciborium::from_reader::<frost::round1::SigningCommitments, _>(v.as_ref())?;
+            ret.insert(peer_id, signing_round1);
+        }
+        Ok(ret)
     }
 
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
