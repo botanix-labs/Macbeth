@@ -74,9 +74,9 @@ impl Db {
         }
     }
 
-    pub fn get_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+    pub fn get_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
         if let Some(b) = self.db.get(KEY_PACKAGE)? {
-            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
             Ok(Some(ret))
         } else {
             Ok(None)
