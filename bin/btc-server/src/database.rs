@@ -50,6 +50,11 @@ pub struct Db {
     ///
     /// Indexed by peer id
     round1_signing_packages: sled::Tree,
+
+    /// A tree of round 2 partial signatures
+    ///
+    /// Indexed by peer id
+    round2_signing_packages: sled::Tree,
 }
 
 impl Db {
@@ -60,6 +65,7 @@ impl Db {
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
+            round2_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
             db,
         })
     }
@@ -70,7 +76,24 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.round1_signing_packages.flush()?;
+        self.round2_signing_packages.flush()?;
         Ok(())
+    }
+
+    pub fn add_round2_signing(
+        &self,
+        peer_id: frost::Identifier,
+        signing_round2: frost::round2::SignatureShare,
+    ) -> Result<bool, Error> {
+        let peer_id_bytes = peer_id.serialize();
+
+        if self.round2_signing_packages.contains_key(&peer_id_bytes[..])? {
+            return Ok(false);
+        }
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&signing_round2, &mut bytes).expect("writing to buffer");
+        self.round2_signing_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        Ok(true)
     }
 
     pub fn add_round1_signing(
@@ -103,6 +126,24 @@ impl Db {
             let signing_round1 =
                 ciborium::from_reader::<frost::round1::SigningCommitments, _>(v.as_ref())?;
             ret.insert(peer_id, signing_round1);
+        }
+        Ok(ret)
+    }
+
+    pub fn get_round2_signing_packages(
+        &self,
+    ) -> Result<BTreeMap<frost::Identifier, frost::round2::SignatureShare>, Error> {
+        let mut ret = BTreeMap::new();
+        for res in self.round2_signing_packages.iter() {
+            let (k, v) = res?;
+            let peer_id_bytes: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+
+            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
+                .map_err(|e| Error::FrostSerialization(e))?;
+            let signing_round2 =
+                ciborium::from_reader::<frost::round2::SignatureShare, _>(v.as_ref())?;
+            ret.insert(peer_id, signing_round2);
         }
         Ok(ret)
     }
