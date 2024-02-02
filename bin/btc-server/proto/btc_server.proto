@@ -17,6 +17,8 @@ service BtcServer {
     rpc GetRound2DkgPackage(Empty) returns (DkgPayload) {}
 
     rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
+
+    rpc GetRound1SigningPackage(Empty) returns (Round1SigningPackage) {}
 }
 
 message NotifyPeginRequest {
@@ -51,6 +53,11 @@ message Empty {}
 
 // Frost things
 message DkgPayload {
+    bytes identifier = 1;
+    bytes payload = 2;
+}
+
+message Round1SigningPackage {
     bytes identifier = 1;
     bytes payload = 2;
 }

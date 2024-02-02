@@ -80,6 +80,7 @@ struct App {
         Option<(frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package)>,
 
     frost_round2_dkg: Arc<Mutex<Option<frost::keys::dkg::round2::SecretPackage>>>,
+    frost_round1_signing_nonces: Arc<Mutex<Option<frost::round1::SigningNonces>>>,
 }
 
 impl App {
@@ -496,6 +497,40 @@ impl rpc::BtcServer for App {
             return Err(internal!("Missing round1 dkg package"));
         }
     }
+
+    async fn get_round1_signing_package(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
+        // Important note here is that we never re-use the same nonce pairs for a different signing
+        // request Should always generate new ones or if we are in a signing session refuse
+        // to provide new ones
+        let key_package = self
+            .db
+            .get_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        // Get our secret package
+        let secret = key_package.signing_share();
+
+        let mut rng = thread_rng();
+        let (signing_nonces, nonce_commitments) = frost::round1::commit(secret, &mut rng);
+        let res = rpc::Round1SigningPackage {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: nonce_commitments
+                .serialize()
+                .map_err(|_e| internal!("Failed to serialize round 1 signing nonce commitments"))?
+                .to_vec(),
+        };
+
+        self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
+
+        Ok(tonic::Response::new(res))
+    }
 }
 
 #[derive(Parser)]
@@ -557,6 +592,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         min_signers,
         frost_round1_dkg: round1_dkg,
         frost_round2_dkg: Arc::new(Mutex::new(None)),
+        frost_round1_signing_nonces: Arc::new(Mutex::new(None)),
     };
 
     let addr = config.address.parse().context("Unparsable address")?;
