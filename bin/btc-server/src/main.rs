@@ -49,6 +49,8 @@ pub enum Error {
     Pbst(#[from] PsbtError),
     #[error("Invalid resulting transaction")]
     InvaildResultingTx,
+    #[error("Invalid tx request, dkg has not been completed")]
+    InvalidTxRequestMissingDKG,
     #[error("Failed to sign pbst")]
     FailedToSignPbst,
     #[error("PSBT finalization failed : {0:?}")]
@@ -137,6 +139,14 @@ impl App {
     }
 
     fn make_tx(&self, output: TxOut, fee_rate: FeeRate) -> Result<Transaction, Error> {
+        if self.change_script.is_none() {
+            return Err(Error::InvalidTxRequestMissingDKG);
+        }
+
+        if self.db.get_public_key_package().map_err(Error::Db)?.is_none() {
+            return Err(Error::InvalidTxRequestMissingDKG);
+        }
+
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
         let _tx_lock = self.tx_lock.lock();
@@ -197,6 +207,7 @@ impl App {
             .collect::<Vec<_>>();
         let change = match selection.excess {
             bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
+                // change is checked at the start of the function
                 script_pubkey: self.change_script.as_ref().expect("change script").clone(),
                 value: amount,
             }),
