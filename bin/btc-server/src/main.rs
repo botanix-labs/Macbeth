@@ -359,7 +359,7 @@ impl rpc::BtcServer for App {
     async fn get_to_sign_package(
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
-    ) -> Result<tonic::Response<rpc::ToSignPayload>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
         let pk_package = self
             .db
             .get_key_package()
@@ -416,7 +416,7 @@ impl rpc::BtcServer for App {
             error!("Failed to serialize psbt: {}", e);
             internal!("Failed to serialize psbt: {}", e)
         })?;
-        let res = tonic::Response::new(rpc::ToSignPayload {
+        let res = tonic::Response::new(rpc::SignPayload {
             payload: signing_package
                 .serialize()
                 .map_err(|e| {
@@ -628,6 +628,63 @@ impl rpc::BtcServer for App {
                 .serialize()
                 .map_err(|_e| internal!("Failed to serialize round 1 signing nonce commitments"))?
                 .to_vec(),
+        };
+
+        self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
+
+        Ok(tonic::Response::new(res))
+    }
+
+    async fn get_round2_signing_package(
+        &self,
+        req: tonic::Request<rpc::SignPayload>,
+    ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
+        // Important note here is that we never re-use the same nonce pairs for a different signing
+        // request Should always generate new ones or if we are in a signing session refuse
+        // to provide new ones
+        let key_package = self
+            .db
+            .get_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        // Get signing nonces from round 1
+        let signing_nonces = self
+            .frost_round1_signing_nonces
+            .lock()
+            .map_err(|e| {
+                error!("Failed to get round1 signing nonces: {}", e);
+                internal!("Failed to get round1 signing nonces: {}", e)
+            })?
+            .clone()
+            .ok_or(internal!("missing round1 signing nonces"))?;
+
+        let req = req.into_inner();
+
+        let signing_package =
+            frost::SigningPackage::deserialize(req.payload.as_slice()).map_err(|e| {
+                error!("Failed to deserialize signing package: {}", e);
+                internal!("Failed to deserialize signing package: {}", e)
+            })?;
+
+        let _psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
+            error!("Failed to deserialize psbt: {}", e);
+            internal!("Failed to deserialize psbt: {}", e)
+        })?;
+        // TODO verify psbt
+
+        let partial_sig = frost::round2::sign(&signing_package, &signing_nonces, &key_package)
+            .map_err(|e| {
+                error!("Failed to sign psbt: {}", e);
+                internal!("Failed to sign psbt: {}", e)
+            })?;
+
+        let res = rpc::Round1SigningPackage {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: partial_sig.serialize().to_vec(),
         };
 
         self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
@@ -977,7 +1034,7 @@ mod test {
         .unwrap();
 
         // Get signing package
-        let signing_pacakge = c3
+        let signing_package = c3
             .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
                 fee_rate: 30,
                 outputs: vec![client::Output {
@@ -988,7 +1045,19 @@ mod test {
             .await
             .unwrap()
             .into_inner();
-        println!("signing package: {:?}", signing_pacakge);
+        println!("signing package: {:?}", signing_package);
+
+        // Round 2 signing
+        c1.get_round2_signing_package(tonic::Request::new(client::SignPayload {
+            payload: signing_package.clone().payload,
+            psbt: signing_package.clone().psbt,
+        })).await.unwrap();
+
+        c2.get_round2_signing_package(tonic::Request::new(client::SignPayload {
+            payload: signing_package.payload,
+            psbt: signing_package.psbt,
+        })).await.unwrap();
+
         // Test clean up
         // Remove db dirs
         std::fs::remove_dir_all("db_0").unwrap();
