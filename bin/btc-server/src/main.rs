@@ -16,7 +16,12 @@ mod rpc {
 
 use anyhow::Context;
 use bdk::{miniscript::psbt::PsbtExt, wallet::coin_selection::CoinSelectionAlgorithm};
-use bitcoin::{consensus::encode as btcencode, secp256k1, FeeRate, OutPoint, Transaction, TxOut};
+use bitcoin::{
+    blockdata::fee_rate,
+    consensus::{encode as btcencode, Encodable},
+    psbt::Psbt,
+    secp256k1, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut,
+};
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
@@ -84,6 +89,27 @@ struct App {
 }
 
 impl App {
+    fn add_round1_signing(&self, payload: rpc::Round1SigningPackage) -> Result<(), Error> {
+        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
+        // Can't add our selves
+        if frost_id == self.identifier {
+            return Err(Error::InvalidFrostPeerId);
+        }
+
+        let signing_round1 =
+            frost::round1::SigningCommitments::deserialize(payload.payload.as_slice())
+                .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
+
+        if self.db.add_round1_signing(frost_id, signing_round1).map_err(Error::Db)? {
+            self.db.flush().map_err(Error::Db)?;
+            debug!("Stored round1 signing from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round1 signing from peer: {:?}", frost_id);
+        }
+
+        Ok(())
+    }
+
     fn add_round2_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
@@ -190,14 +216,14 @@ impl App {
             })
             .collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-
+        let target_amount = outputs.iter().map(|o| o.value).sum();
         let selection = coin_select
             .coin_select(
                 vec![],
                 bdk_utxos,
                 bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
-                output.value,
-                self.change_script.as_ref().expect("change script").as_script(), // drain_script
+                target_amount,
+                change_script.clone().as_script(), // drain_script
             )
             .map_err(Error::CoinSelection)?;
         let selected = selection
@@ -224,9 +250,10 @@ impl App {
                     eth_address: s.eth_address,
                 })
                 .collect(),
-            vec![output],
+            outputs,
             change.clone(),
         );
+        Ok(psbt)
 
         // Signing
         // TODO(armins) Replace this once we have frost signing working
@@ -238,34 +265,34 @@ impl App {
         // }
 
         // try finalize tx
-        if let Err(errs) = psbt.finalize_mut(&SECP) {
-            error!("Had {} PSBT finalization errors:", errs.len());
-            for e in &errs {
-                error!("  PSBT finalization error: {}", e);
-            }
-            return Err(Error::PbstFinalizationFailed(errs));
-        }
+        // if let Err(errs) = psbt.finalize_mut(&SECP) {
+        //     error!("Had {} PSBT finalization errors:", errs.len());
+        //     for e in &errs {
+        //         error!("  PSBT finalization error: {}", e);
+        //     }
+        //     return Err(Error::PbstFinalizationFailed(errs))
+        // }
         // could do this once we are confident our code works and we don't
         // want to do the effort of tx verification
         // let tx = psbt.clone().extract_tx();
-        let tx = psbt.extract(&SECP).map_err(|_| Error::InvaildResultingTx)?;
+        // let tx = psbt.extract(&SECP).map_err(|_| Error::InvaildResultingTx)?;
 
         // then we should remove the utxos from the db and add the change one
-        let txid = tx.txid();
-        self.db
-            .add_remove_utxos(
-                selected.iter().map(|u| u.outpoint),
-                change
-                    .map(|utxo| Utxo {
-                        outpoint: OutPoint::new(txid, 1),
-                        output: utxo,
-                        eth_address: None,
-                    })
-                    .iter(),
-            )
-            .map_err(Error::Db)?;
-
-        Ok(tx)
+        // let txid = tx.txid();
+        // TODO (armins) when should this be done?
+        // After a batched pegout tx is confirmed?
+        // self.db
+        //     .add_remove_utxos(
+        //         selected.iter().map(|u| u.outpoint),
+        //         change
+        //             .map(|utxo| Utxo {
+        //                 outpoint: OutPoint::new(txid, 1),
+        //                 output: utxo,
+        //                 eth_address: None,
+        //             })
+        //             .iter(),
+        //     )
+        //     .map_err(Error::Db)?;
     }
 }
 
@@ -329,25 +356,97 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
-    // Spends from
-    async fn make_tx(
+    async fn get_to_sign_package(
         &self,
-        req: tonic::Request<rpc::MakeTxRequest>,
-    ) -> Result<tonic::Response<rpc::MakeTxResponse>, tonic::Status> {
+        req: tonic::Request<rpc::ToSignRequest>,
+    ) -> Result<tonic::Response<rpc::ToSignPayload>, tonic::Status> {
+        let pk_package = self
+            .db
+            .get_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        let signing_commitments = self.db.get_round1_signing_packages().map_err(|e| {
+            error!("Failed to get round1 signing packages: {}", e);
+            internal!("Failed to get round1 signing packages: {}", e)
+        })?;
+
+        if signing_commitments.len() < self.min_signers as usize {
+            return Err(internal!("Not enough signers"))
+        }
         let req = req.into_inner();
-        let address = bitcoin::Address::from_str(&req.address)
-            .map_err(|e| badarg!("invalid address: {}", e))?
-            .require_network(self.network)
-            .map_err(|e| badarg!("address for wrong network: {}", e))?;
-        let output = TxOut { script_pubkey: address.script_pubkey(), value: req.value };
         let fee_rate =
             FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
-        let tx = self.make_tx(output, fee_rate).to_status()?;
 
-        Ok(tonic::Response::new(rpc::MakeTxResponse {
-            txid: tx.txid().to_string(),
-            tx: btcencode::serialize(&tx),
-        }))
+        let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+            })
+            .collect();
+
+        let outputs = outputs_result?;
+        let pk = hex::encode(pk_package.verifying_key().serialize());
+        let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
+
+        let psbt = self.make_tx(outputs, fee_rate, change_script).map_err(|e| {
+            error!("Failed to make tx: {}", e);
+            internal!("Failed to make tx: {}", e)
+        })?;
+
+        let mut raw_tx: Vec<u8> = Vec::new();
+        psbt.clone().extract_tx().consensus_encode(&mut raw_tx).map_err(|e| {
+            error!("Failed to serialize tx: {}", e);
+            internal!("Failed to serialize tx: {}", e)
+        })?;
+
+        let signing_package = frost::SigningPackage::new(signing_commitments, raw_tx.as_slice());
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+        let res = tonic::Response::new(rpc::ToSignPayload {
+            payload: signing_package
+                .serialize()
+                .map_err(|e| {
+                    error!("Failed to serialize signing package: {}", e);
+                    internal!("Failed to serialize signing package: {}", e)
+                })?
+                .to_vec(),
+            psbt: psbt_bytes,
+        });
+        Ok(res)
+    }
+
+    async fn new_round1_signing_package(
+        &self,
+        req: tonic::Request<rpc::Round1SigningPackage>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.db
+            .get_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        self.add_round1_signing(req.into_inner()).map_err(|e| {
+            error!("Failed to add round1 signing: {}", e);
+            badarg!("Failed to add round1 signing")
+        })?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     /// gets the public key in the final step of thd DKG process (needs round 1+2 packages)
@@ -457,8 +556,6 @@ impl rpc::BtcServer for App {
         } else {
             return Err(internal!("Missing round1 dkg package"));
         }
-
-        // Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     /// Adds round 1 pkg received from another peer to our own state
@@ -568,7 +665,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
 
     let min_signers = 2;
-    let max_signers = 2;
+    let max_signers = 3;
 
     let mut round1_dkg = None;
     let mut change_script = None;
@@ -600,7 +697,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         frost_round2_dkg: Arc::new(Mutex::new(None)),
         frost_round1_signing_nonces: Arc::new(Mutex::new(None)),
     };
-
     let addr = config.address.parse().context("Unparsable address")?;
     info!("SignerServer starting on: {}...", addr);
 
@@ -620,10 +716,13 @@ mod test {
         process::Command,
     };
 
-    use bitcoin::FeeRate;
+    use bitcoin::{
+        consensus::{encode, Encodable},
+        Amount, FeeRate, TxOut,
+    };
     use client;
 
-    const _NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
+    const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
     const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
     async fn spawn_server(id: u16, address: &str) -> () {
@@ -662,13 +761,18 @@ mod test {
 
     #[tokio::test]
     pub async fn dkg_flow() {
+        let SECP = bitcoin::secp256k1::Secp256k1::new();
         tokio::spawn(spawn_server(0, "0.0.0.0:8080"));
         tokio::spawn(spawn_server(1, "0.0.0.0:8081"));
+        // Cordinator node
+        // They will also be part of the dkg but will serve as a cordinator during signing rounds
+        tokio::spawn(spawn_server(2, "0.0.0.0:8082"));
 
         // let servers come up
         tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
         let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
         let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
+        let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
 
         // Getting public key should fail
         let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
@@ -690,22 +794,61 @@ mod test {
             .unwrap()
             .into_inner();
 
+        let c3_dkg1 = c3
+            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
         assert_eq!(c1_dkg1.identifier.len(), 32);
         assert_eq!(c1_dkg1.payload.len(), 138);
 
         assert_eq!(c2_dkg1.identifier.len(), 32);
         assert_eq!(c2_dkg1.payload.len(), 138);
 
+        assert_eq!(c3_dkg1.identifier.len(), 32);
+        assert_eq!(c3_dkg1.payload.len(), 138);
+
+        // Send round 1 dkg to c1
         c1.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
             identifier: c2_dkg1.identifier.clone(),
             payload: c2_dkg1.payload.clone(),
         }))
         .await
         .unwrap();
+        c1.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c3_dkg1.identifier.clone(),
+            payload: c3_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
 
+        // Send round 1 dkg to c2
         c2.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
             identifier: c1_dkg1.identifier.clone(),
             payload: c1_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c2.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c3_dkg1.identifier.clone(),
+            payload: c3_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        // Send round 1 dkg to c3
+        c3.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c1_dkg1.identifier.clone(),
+            payload: c1_dkg1.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c3.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c2_dkg1.identifier.clone(),
+            payload: c2_dkg1.payload.clone(),
         }))
         .await
         .unwrap();
@@ -723,11 +866,17 @@ mod test {
             .unwrap()
             .into_inner();
 
-        assert_eq!(c1_dkg2.identifier.len(), 32);
-        assert_eq!(c1_dkg2.payload.len(), 221);
-        assert_eq!(c2_dkg2.identifier.len(), 32);
-        assert_eq!(c2_dkg2.payload.len(), 221);
+        let c3_dkg2 = c3
+            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
 
+        assert_eq!(c1_dkg2.identifier.len(), 32);
+        assert_eq!(c2_dkg2.identifier.len(), 32);
+        assert_eq!(c3_dkg2.identifier.len(), 32);
+        // TODO should we have assertion for the payload?
+        // Send round 2 dkg to c1
         c1.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
             identifier: c2_dkg2.identifier.clone(),
             payload: c2_dkg2.payload.clone(),
@@ -735,9 +884,39 @@ mod test {
         .await
         .unwrap();
 
+        c1.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c3_dkg2.identifier.clone(),
+            payload: c3_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        // Send round 2 dkg to c2
         c2.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
             identifier: c1_dkg2.identifier.clone(),
             payload: c1_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c2.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c3_dkg2.identifier.clone(),
+            payload: c3_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        // Send round 2 dkg to c3
+        c3.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c1_dkg2.identifier.clone(),
+            payload: c1_dkg2.payload.clone(),
+        }))
+        .await
+        .unwrap();
+
+        c3.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+            identifier: c2_dkg2.identifier.clone(),
+            payload: c2_dkg2.payload.clone(),
         }))
         .await
         .unwrap();
@@ -747,17 +926,74 @@ mod test {
             c1.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
         let pk_2 =
             c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        let pk_3 =
+            c3.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
 
+        // Everyone got the same pks
         assert_eq!(pk_1.publickey, pk_2.publickey);
+        assert_eq!(pk_1.publickey, pk_3.publickey);
+        assert_eq!(pk_2.publickey, pk_3.publickey);
 
-        // check public key decoding
-        let pub_key = secp256k1::PublicKey::from_str(&pk_1.publickey.clone()).unwrap();
-        assert_eq!(pk_1.publickey, pub_key.to_string());
+        // Round 1 signing
+        let c1_signing1 = c1
+            .get_round1_signing_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
 
+        let c2_signing1 = c2
+            .get_round1_signing_package(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
+        c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
+
+        // Notify peg in
+        let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
+        let prev_out = TxOut {
+            script_pubkey: reth_btc_wallet::address::gateway_address(
+                &SECP,
+                &bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap(),
+                &eth_1.as_bytes().to_vec(),
+                NETWORK,
+            )
+            .unwrap()
+            .script_pubkey(),
+            value: Amount::ONE_BTC.to_sat(),
+        };
+        let mut prev_out_bytes = Vec::new();
+        prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
+
+        c3.notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
+            utxo_txid: "c0ea9dc0029bb844a231887655e4b9f80eab4d11804c8af28dd618d073eed7de"
+                .to_string(),
+            utxo_vout: 0,
+            eth_address: eth_1,
+            output: prev_out_bytes,
+        }))
+        .await
+        .unwrap();
+
+        // Get signing package
+        let signing_pacakge = c3
+            .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+                fee_rate: 30,
+                outputs: vec![client::Output {
+                    address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+                    value: 100000,
+                }],
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        println!("signing package: {:?}", signing_pacakge);
         // Test clean up
         // Remove db dirs
         std::fs::remove_dir_all("db_0").unwrap();
         std::fs::remove_dir_all("db_1").unwrap();
+        std::fs::remove_dir_all("db_2").unwrap();
     }
 
     // uncomment once frost signings is implemented

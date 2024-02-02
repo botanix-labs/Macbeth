@@ -6,8 +6,6 @@ package btc_server;
 service BtcServer {
     rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
 
-    rpc MakeTx(MakeTxRequest) returns (MakeTxResponse) {}
-
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
 
     rpc GetRound1DkgPackage(Empty) returns(DkgPayload){}
@@ -21,6 +19,11 @@ service BtcServer {
     rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
 
     rpc GetRound1SigningPackage(Empty) returns (Round1SigningPackage) {}
+    
+    // only meant to be used by the cordinator
+    rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
+
+    rpc GetToSignPackage(ToSignRequest) returns (ToSignPayload) {}
 }
 
 message NotifyPeginRequest {
@@ -63,3 +66,20 @@ message Round1SigningPackage {
     bytes identifier = 1;
     bytes payload = 2;
 }
+
+message ToSignPayload {
+    bytes psbt = 1;
+    bytes payload = 2;
+}
+
+message Output {
+    string address = 1;
+    uint64 value = 2;
+}
+
+message ToSignRequest {
+    repeated Output outputs = 1;
+    // Fee rate in satoshi per vbyte.
+    uint32 fee_rate = 2;
+}
+
