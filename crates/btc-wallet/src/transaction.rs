@@ -1,9 +1,10 @@
 use bitcoin::{
-    psbt::{self, PartiallySignedTransaction},
+    psbt::{self, PartiallySignedTransaction, Psbt},
     secp256k1::{KeyPair, SecretKey},
-    sighash::TapSighashType,
+    sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
 };
+use thiserror::Error;
 
 use crate::address::{generate_taproot_spend_info, generate_tweaked_secret_key};
 
@@ -81,9 +82,7 @@ pub fn sign_psbt(
         let input = &psbt.inputs[i];
         // Get address tweaks if applicaple
         let eth_address_tweak = input.proprietary.get(&ETH_ADDRESS_FIELD);
-
         let aggregate_pk = secret_key.public_key(&secp);
-
         let mut internal_sk = secret_key.clone();
 
         // Not signing change
@@ -128,4 +127,27 @@ pub fn sign_psbt(
     }
 
     Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CalculateSighashError {
+    #[error("Failed to calculate sighash: {0}")]
+    FailedToCalculateSighash(#[from] bitcoin::sighash::Error),
+}
+
+/// Calculate the sighash for a taproot keyspend
+/// Using tapsighash type ALL
+pub fn calculate_sighash(psbt: Psbt) -> Result<TapSighash, CalculateSighashError> {
+    let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
+
+    let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
+    let sighash = sighashcache.taproot_signature_hash(
+        0,
+        &psbt::Prevouts::All(&prevouts),
+        None, // annex
+        None, // leaf_hash_code_separator
+        TapSighashType::All,
+    )?;
+
+    Ok(sighash)
 }
