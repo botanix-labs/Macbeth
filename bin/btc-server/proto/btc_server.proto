@@ -20,14 +20,16 @@ service BtcServer {
 
     rpc GetRound1SigningPackage(Empty) returns (Round1SigningPackage) {}
     
-    rpc GetRound2SigningPackage(SignPayload) returns (Round1SigningPackage) {}
+    rpc GetRound2SigningPackage(SignPayload) returns (Round2SigningPackage) {}
 
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
 
     rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
 
-    rpc NewRound2SigningPackage(Round1SigningPackage) returns (Empty) {}
+    rpc NewRound2SigningPackage(Round2SigningPackage) returns (Empty) {}
+
+    rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
 
 }
 
@@ -72,6 +74,12 @@ message Round1SigningPackage {
     bytes payload = 2;
 }
 
+message Round2SigningPackage {
+    bytes psbt = 1;
+    bytes identifier = 2;
+    bytes payload = 3;
+}
+
 message SignPayload {
     bytes psbt = 1;
     bytes payload = 2;
@@ -88,3 +96,10 @@ message ToSignRequest {
     uint32 fee_rate = 2;
 }
 
+message FinalizeSigningRequest {
+    bytes psbt = 1;
+}
+
+message FinalizeSigningResponse {
+    bytes psbt = 1;
+}

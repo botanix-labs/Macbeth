@@ -62,6 +62,16 @@ pub struct Round1SigningPackage {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Round2SigningPackage {
+    #[prost(bytes = "vec", tag = "1")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub identifier: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignPayload {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
@@ -84,6 +94,18 @@ pub struct ToSignRequest {
     /// Fee rate in satoshi per vbyte.
     #[prost(uint32, tag = "2")]
     pub fee_rate: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizeSigningRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizeSigningResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
 pub mod btc_server_client {
@@ -358,7 +380,7 @@ pub mod btc_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SignPayload>,
         ) -> std::result::Result<
-            tonic::Response<super::Round1SigningPackage>,
+            tonic::Response<super::Round2SigningPackage>,
             tonic::Status,
         > {
             self.inner
@@ -430,7 +452,7 @@ pub mod btc_server_client {
         }
         pub async fn new_round2_signing_package(
             &mut self,
-            request: impl tonic::IntoRequest<super::Round1SigningPackage>,
+            request: impl tonic::IntoRequest<super::Round2SigningPackage>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
@@ -450,6 +472,31 @@ pub mod btc_server_client {
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "NewRound2SigningPackage"),
                 );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn finalize_signing(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FinalizeSigningRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FinalizeSigningResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/FinalizeSigning",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "FinalizeSigning"));
             self.inner.unary(req, path, codec).await
         }
     }
