@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate log;
 
+mod cordinator;
 mod database;
+mod dkg;
+mod signer;
 mod util;
 
 mod rpc {
@@ -25,6 +28,7 @@ use bitcoin::{
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
+use serde_json::error;
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
@@ -75,6 +79,18 @@ pub enum Error {
     InvalidRound2SigningPayload(),
     #[error("Already have quorum of partial signatures")]
     AlreadyHaveQuorumOfPartialSignatures(),
+    #[error("Already have a key package")]
+    AlreadyHaveKeyPackage,
+    #[error("Alreadyy performed DKG and have a key package")]
+    MissingKeyPackage,
+    #[error("Not enough signers have provided round1 commitments to create signing package")]
+    NotEnoughSigners,
+    #[error("Missing round 1 signing nonce")]
+    MissingRound1SigningNonce,
+    #[error("Missing round 1 dkg package")]
+    MissingRound1DkgPackage,
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 struct App {
@@ -96,114 +112,6 @@ struct App {
 }
 
 impl App {
-    fn add_round2_signing(&self, payload: rpc::Round2SigningPackage) -> Result<(), Error> {
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
-        }
-
-        let signature_share: [u8; 32] = payload.payload.as_slice().try_into().map_err(|e| {
-            error!("Failed to deserialize round2 signing payload: {}", e);
-            Error::InvalidRound2SigningPayload()
-        })?;
-
-        let partial_sig = frost::round2::SignatureShare::deserialize(signature_share)
-            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
-
-        // Checks if we have enough partial signatures
-        let partial_sigs = self.db.get_round2_signing_packages().map_err(Error::Db)?;
-        println!("Partial sigs: {:?}", partial_sigs);
-        if partial_sigs.len() >= self.min_signers as usize {
-            return Err(Error::AlreadyHaveQuorumOfPartialSignatures())
-        }
-
-        let psbt = Psbt::deserialize(payload.psbt.as_slice()).map_err(|e| {
-            error!("Failed to deserialize psbt: {}", e);
-            Error::PbstError(e)
-        })?;
-        let txid = psbt.extract_tx().txid();
-
-        if self.db.add_round2_signing(txid, frost_id, partial_sig).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round2 signing from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round2 signing from peer: {:?}", frost_id);
-        }
-
-        Ok(())
-    }
-
-    fn add_round1_signing(&self, payload: rpc::Round1SigningPackage) -> Result<(), Error> {
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
-        }
-
-        let signing_round1 =
-            frost::round1::SigningCommitments::deserialize(payload.payload.as_slice())
-                .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
-
-        // Note: There doenst need to be a check for a quorum of round1 signing packages
-        // The more the better in the case one is unresponsive
-        // the frost lib will check if we have enough when we create the signing package
-
-        if self.db.add_round1_signing(frost_id, signing_round1).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round1 signing from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round1 signing from peer: {:?}", frost_id);
-        }
-
-        Ok(())
-    }
-
-    fn add_round2_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
-        }
-        // We serialize here to just validate the payload
-        let packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            serde_json::from_slice(payload.payload.as_slice())
-                .map_err(|e| Error::InvalidRoundDkgSerializationFormat(e))?;
-
-        for (id, package) in packages.iter() {
-            if self.identifier == *id {
-                if self.db.add_round2_dkg(frost_id, package.clone()).map_err(Error::Db)? {
-                    self.db.flush().map_err(Error::Db)?;
-                    debug!("Stored round2 dkg from peer: {:?}", frost_id);
-                } else {
-                    warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
-                }
-                return Ok(());
-            }
-        }
-        return Err(Error::InvalidRound2DkgPayloadMissingPackage);
-    }
-
-    fn add_round1_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
-        }
-
-        let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
-            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
-
-        if self.db.add_round1_dkg(frost_id, dkg_round1).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round1 dkg from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round1 dkg from peer: {:?}", frost_id);
-        }
-
-        Ok(())
-    }
-
     fn add_pegin(&self, utxo: &Utxo) -> Result<(), Error> {
         if self.db.store_utxo(&utxo).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
@@ -212,136 +120,6 @@ impl App {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
         Ok(())
-    }
-
-    fn make_tx(&self, output: TxOut, fee_rate: FeeRate) -> Result<Transaction, Error> {
-        if self.change_script.is_none() {
-            return Err(Error::InvalidTxRequestMissingDKG);
-        }
-
-        if self.db.get_public_key_package().map_err(Error::Db)?.is_none() {
-            return Err(Error::InvalidTxRequestMissingDKG);
-        }
-
-        // We take this lock so another call doesn't do this same
-        // process while we're doing it.
-        let _tx_lock = self.tx_lock.lock();
-
-        // collect all database utxos in a hashmap
-        let utxos = self
-            .db
-            .iter_utxos()
-            .fold::<Result<_, database::Error>, _>(Ok(HashMap::new()), |mut ret, r| {
-                if let Ok(ref mut map) = ret {
-                    let utxo = r?;
-                    map.insert(utxo.outpoint, utxo);
-                }
-                ret
-            })
-            .map_err(Error::Db)?;
-
-        // Now we're going to hijack BDK coin selection real quick..
-        let bdk_utxos = utxos
-            .values()
-            .map(|u| {
-                bdk::WeightedUtxo {
-                    satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-                    utxo: bdk::Utxo::Local(bdk::LocalOutput {
-                        outpoint: u.outpoint.to_bdk(),
-                        txout: bdk::bitcoin::TxOut {
-                            script_pubkey: u.output.script_pubkey.to_bytes().into(),
-                            value: u.output.value,
-                        },
-                        keychain: bdk::KeychainKind::External,
-                        is_spent: false,
-                        derivation_index: 0, // we're not using this
-                        // Also not used
-                        confirmation_time: bdk::chain::ConfirmationTime::Confirmed {
-                            height: 1,
-                            time: 1,
-                        },
-                    }),
-                }
-            })
-            .collect::<Vec<_>>();
-        let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value).sum();
-        let selection = coin_select
-            .coin_select(
-                vec![],
-                bdk_utxos,
-                bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
-                target_amount,
-                change_script.clone().as_script(), // drain_script
-            )
-            .map_err(Error::CoinSelection)?;
-        let selected = selection
-            .selected
-            .iter()
-            .map(|u| utxos.get(&OutPoint::from_bdk(u.outpoint())))
-            .filter_map(|s| if s.is_some() { s } else { None })
-            .collect::<Vec<_>>();
-        let change = match selection.excess {
-            bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
-                // change is checked at the start of the function
-                script_pubkey: self.change_script.as_ref().expect("change script").clone(),
-                value: amount,
-            }),
-            _ => None,
-        };
-
-        let mut psbt = reth_btc_wallet::transaction::create_psbt(
-            selected
-                .iter()
-                .map(|s| reth_btc_wallet::transaction::Input {
-                    outpoint: s.outpoint,
-                    output: s.output.clone(),
-                    eth_address: s.eth_address,
-                })
-                .collect(),
-            outputs,
-            change.clone(),
-        );
-        Ok(psbt)
-
-        // Signing
-        // TODO(armins) Replace this once we have frost signing working
-        // if let Err(err) =
-        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-        // {
-        //     error!("Failed to sign psbt {:?}", err);
-        //     return Err(Error::FailedToSignPbst)
-        // }
-
-        // try finalize tx
-        // if let Err(errs) = psbt.finalize_mut(&SECP) {
-        //     error!("Had {} PSBT finalization errors:", errs.len());
-        //     for e in &errs {
-        //         error!("  PSBT finalization error: {}", e);
-        //     }
-        //     return Err(Error::PbstFinalizationFailed(errs))
-        // }
-        // could do this once we are confident our code works and we don't
-        // want to do the effort of tx verification
-        // let tx = psbt.clone().extract_tx();
-        // let tx = psbt.extract(&SECP).map_err(|_| Error::InvaildResultingTx)?;
-
-        // then we should remove the utxos from the db and add the change one
-        // let txid = tx.txid();
-        // TODO (armins) when should this be done?
-        // After a batched pegout tx is confirmed?
-        // self.db
-        //     .add_remove_utxos(
-        //         selected.iter().map(|u| u.outpoint),
-        //         change
-        //             .map(|utxo| Utxo {
-        //                 outpoint: OutPoint::new(txid, 1),
-        //                 output: utxo,
-        //                 eth_address: None,
-        //             })
-        //             .iter(),
-        //     )
-        //     .map_err(Error::Db)?;
     }
 }
 
@@ -459,7 +237,13 @@ impl rpc::BtcServer for App {
             internal!("Failed to serialize psbt: {}", e)
         })?;
 
-        psbt.
+        // TODO (armins) add agg signature to psbt
+        // if let Err(err) =
+        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
+        // {
+        //     error!("Failed to sign psbt {:?}", err);
+        //     return Err(Error::FailedToSignPbst)
+        // }
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
         Ok(res)
@@ -469,23 +253,6 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
-        let pk_package = self
-            .db
-            .get_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
-        let signing_commitments = self.db.get_round1_signing_packages().map_err(|e| {
-            error!("Failed to get round1 signing packages: {}", e);
-            internal!("Failed to get round1 signing packages: {}", e)
-        })?;
-
-        if signing_commitments.len() < self.min_signers as usize {
-            return Err(internal!("Not enough signers"))
-        }
         let req = req.into_inner();
         let fee_rate =
             FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
@@ -502,31 +269,19 @@ impl rpc::BtcServer for App {
                 Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
             })
             .collect();
-
         let outputs = outputs_result?;
-        let pk = hex::encode(pk_package.verifying_key().serialize());
-        let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
 
-        let psbt = self.make_tx(outputs, fee_rate, change_script).map_err(|e| {
-            error!("Failed to make tx: {}", e);
-            internal!("Failed to make tx: {}", e)
+        let (to_sign, psbt) = self.get_to_sign(&SECP, outputs, fee_rate).map_err(|e| {
+            error!("Failed to get to sign: {}", e);
+            internal!("Failed to get to sign: {}", e)
         })?;
-        let txid = psbt.clone().extract_tx().txid();
 
-        let mut raw_tx: Vec<u8> = Vec::new();
-        psbt.clone().extract_tx().consensus_encode(&mut raw_tx).map_err(|e| {
-            error!("Failed to serialize tx: {}", e);
-            internal!("Failed to serialize tx: {}", e)
-        })?;
-        let signing_package = frost::SigningPackage::new(signing_commitments, raw_tx.as_slice());
         let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
             error!("Failed to serialize psbt: {}", e);
             internal!("Failed to serialize psbt: {}", e)
         })?;
         let res = tonic::Response::new(rpc::SignPayload {
-            payload: signing_package
+            payload: to_sign
                 .serialize()
                 .map_err(|e| {
                     error!("Failed to serialize signing package: {}", e);
@@ -535,13 +290,6 @@ impl rpc::BtcServer for App {
                 .to_vec(),
             psbt: psbt_bytes,
         });
-
-        // Lastly save this to sign package to the db
-        self.db.add_signing_package(txid, signing_package).map_err(|e| {
-            error!("Failed to store signing package: {}", e);
-            internal!("Failed to store signing package: {}", e)
-        })?;
-
         Ok(res)
     }
 
@@ -549,14 +297,6 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round1SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.db
-            .get_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
         self.add_round1_signing(req.into_inner()).map_err(|e| {
             error!("Failed to add round1 signing: {}", e);
             badarg!("Failed to add round1 signing")
@@ -569,14 +309,6 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round2SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.db
-            .get_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
         self.add_round2_signing(req.into_inner()).map_err(|e| {
             error!("Failed to add round1 signing: {}", e);
             badarg!("Failed to add round1 signing")
@@ -589,65 +321,18 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
-        // try to get pk package from db incase we already did dkg round 3
-        if let Some(pk_package) = self.db.get_public_key_package().map_err(|e| {
-            error!("Failed to get public key package: {}", e);
-            internal!("Failed to get public key package: {}", e)
-        })? {
-            let hex = hex::encode(pk_package.verifying_key().serialize());
-            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
-        }
-
-        // If we don't have a pubkey package we havent generated the group verifying key yet
-        if let Some(round2_secret) = self.frost_round2_dkg.lock().unwrap().clone() {
-            let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
-                error!("Failed to get round1 dkg packages: {}", e);
-                internal!("Failed to get round1 dkg packages: {}", e)
-            })?;
-
-            let round2_packages = self.db.get_round2_dkg_packages().map_err(|e| {
-                error!("Failed to get round2 dkg packages: {}", e);
-                internal!("Failed to get round2 dkg packages: {}", e)
-            })?;
-
-            let pk_res =
-                frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)
-                    .map_err(|e| {
-                        error!("Failed to generate public key package: {}", e);
-                        internal!("Failed to generate public key package: {}", e)
-                    })?;
-
-            self.db.set_key_package(pk_res.0.clone()).map_err(|e| {
-                error!("Failed to store key package: {}", e);
-                internal!("Failed to store key package: {}", e)
-            })?;
-
-            self.db.set_pubkey_package(pk_res.1.clone()).map_err(|e| {
-                error!("Failed to store public key package: {}", e);
-                internal!("Failed to store public key package: {}", e)
-            })?;
-
-            self.db.flush().map_err(|e| {
-                error!("Failed to flush db: {}", e);
-                internal!("Failed to persist pk to database: {}", e)
-            })?;
-
-            let hex = hex::encode(pk_res.1.verifying_key().serialize());
-            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
-        }
-        warn!("recieved get public key request while not having round 2 DKG");
-        return Err(internal!("Missing round2 dkg package"));
+        let pk = self.get_public_key().map_err(|e| {
+            error!("Failed to get public key: {}", e);
+            internal!("Failed to get public key: {}", e)
+        })?;
+        let hex = hex::encode(pk.serialize());
+        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
     }
 
     async fn new_round2_dkg_package(
         &self,
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        if self.db.get_public_key_package()?.is_some() {
-            warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"));
-        }
-
         self.add_round2_dkg(req.into_inner()).map_err(|e| {
             error!("Failed to add round2 dkg: {}", e);
             badarg!("Failed to add round2 dkg")
@@ -659,50 +344,25 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
-        if self.db.get_public_key_package()?.is_some() {
-            warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"));
-        }
-        // Check do we have our secret coef
-        if let Some(personal_round1_package) = &self.frost_round1_dkg {
-            // Retrieve round 1 packages from peers
-            // Here we dont check we have enough that should be done by the frost lib
-            // So we just propogate the error
-            let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
-                error!("Failed to get round2 dkg packages: {}", e);
-                internal!("Failed to get round2 dkg packages: {}", e)
-            })?;
-
-            let (round2_secret_package, round2_packages) =
-                frost::keys::dkg::part2(personal_round1_package.0.clone(), &round1_packages)
-                    .map_err(|e| badarg!("Failed to generate round 2 dkg: {:?}", e))?;
-
-            let json = serde_json::to_string(&round2_packages).unwrap();
-            let res = rpc::DkgPayload {
-                identifier: self.identifier.serialize().to_vec(),
-                payload: json.as_bytes().to_vec(),
-            };
-
-            self.frost_round2_dkg.lock().unwrap().replace(round2_secret_package.clone());
-
-            Ok(tonic::Response::new(res))
-        } else {
-            return Err(internal!("Missing round1 dkg package"));
-        }
+        let round2_packages = self.get_round2_dkg().map_err(|e| {
+            error!("Failed to get round2 dkg package: {}", e);
+            internal!("Failed to get round2 dkg package: {}", e)
+        })?;
+        let json = serde_json::to_string(&round2_packages).unwrap();
+        let res = rpc::DkgPayload {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: json.as_bytes().to_vec(),
+        };
+        Ok(tonic::Response::new(res))
     }
 
     async fn new_round1_dkg_package(
         &self,
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        if self.db.get_public_key_package()?.is_some() {
-            warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"));
-        }
-
         self.add_round1_dkg(req.into_inner()).map_err(|e| {
             error!("Failed to add round1 dkg: {}", e);
-            badarg!("Failed to add round1 dkg")
+            internal!("Failed to add round1 dkg")
         })?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -711,24 +371,22 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
-        if self.db.get_public_key_package()?.is_some() {
-            warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"));
-        }
-        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
-            let res = rpc::DkgPayload {
-                identifier: self.identifier.serialize().to_vec(),
-                payload: round1_dkg
-                    .1
-                    .serialize()
-                    .map_err(|e| internal!("Failed to serialize round 1 dkg: {}", e))?
-                    .to_vec(),
-            };
+        let round1_dkg_package = self.get_round1_dkg().map_err(|e| {
+            error!("Failed to get round1 dkg package: {}", e);
+            internal!("Failed to get round1 dkg package: {}", e)
+        })?;
+        let res = rpc::DkgPayload {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: round1_dkg_package
+                .serialize()
+                .map_err(|e| {
+                    error!("Failed to serialize round1 dkg package: {}", e);
+                    internal!("Failed to serialize round1 dkg package: {}", e)
+                })?
+                .to_vec(),
+        };
 
-            Ok(tonic::Response::new(res))
-        } else {
-            return Err(internal!("Missing round1 dkg package"));
-        }
+        Ok(tonic::Response::new(res))
     }
 
     /// Endpoint responds with a nonce commitments for a ONE particular signings session
@@ -736,32 +394,17 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
-        // Important note here is that we never re-use the same nonce pairs for a different signing
-        // request Should always generate new ones or if we are in a signing session refuse
-        // to provide new ones
-        let key_package = self
-            .db
-            .get_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
-        // Get our secret package
-        let secret = key_package.signing_share();
-
-        let mut rng = thread_rng();
-        let (signing_nonces, nonce_commitments) = frost::round1::commit(secret, &mut rng);
+        let signing_commitments = self.get_round1_signing_package().map_err(|e| {
+            error!("Failed to get round1 signing package: {}", e);
+            internal!("Failed to get round1 signing package: {}", e)
+        })?;
         let res = rpc::Round1SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
-            payload: nonce_commitments
-                .serialize()
-                .map_err(|_e| internal!("Failed to serialize round 1 signing nonce commitments"))?
-                .to_vec(),
+            payload: signing_commitments.serialize().map_err(|e| {
+                error!("Failed to serialize round1 signing package: {}", e);
+                internal!("Failed to serialize round1 signing package: {}", e)
+            })?,
         };
-
-        self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
 
         Ok(tonic::Response::new(res))
     }
@@ -770,47 +413,20 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::SignPayload>,
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
-        // Important note here is that we never re-use the same nonce pairs for a different signing
-        // request Should always generate new ones or if we are in a signing session refuse
-        // to provide new ones
-        let key_package = self
-            .db
-            .get_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
-        // Get signing nonces from round 1
-        let signing_nonces = self
-            .frost_round1_signing_nonces
-            .lock()
-            .map_err(|e| {
-                error!("Failed to get round1 signing nonces: {}", e);
-                internal!("Failed to get round1 signing nonces: {}", e)
-            })?
-            .clone()
-            .ok_or(internal!("missing round1 signing nonces"))?;
-
         let req = req.into_inner();
-
         let signing_package =
             frost::SigningPackage::deserialize(req.payload.as_slice()).map_err(|e| {
                 error!("Failed to deserialize signing package: {}", e);
                 internal!("Failed to deserialize signing package: {}", e)
             })?;
-
         let psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
-        // TODO verify psbt
-        // TODO need to sign for each input SIG_HASH_SINGLE
-        let partial_sig = frost::round2::sign(&signing_package, &signing_nonces, &key_package)
-            .map_err(|e| {
-                error!("Failed to sign psbt: {}", e);
-                internal!("Failed to sign psbt: {}", e)
+        let partial_signature =
+            self.get_round2_signing_package(signing_package, psbt.clone()).map_err(|e| {
+                error!("Failed to get round2 signing package: {}", e);
+                internal!("Failed to get round2 signing package: {}", e)
             })?;
         let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
             error!("Failed to serialize psbt: {}", e);
@@ -820,7 +436,7 @@ impl rpc::BtcServer for App {
         // TODO (armins) Should we add partial sig to psbt
         let res = rpc::Round2SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
-            payload: partial_sig.serialize().to_vec(),
+            payload: partial_signature.serialize().to_vec(),
             psbt: psbt_bytes,
         };
 
@@ -971,7 +587,10 @@ mod test {
         assert!(pk.is_err());
         let err = pk.err().unwrap();
         assert_eq!(err.code(), tonic::Code::Internal);
-        assert_eq!(err.message(), "Missing round2 dkg package");
+        assert_eq!(
+            err.message(),
+            "Failed to get public key: Invalid round 2 Dkg payload, missing our package"
+        );
 
         // Round 1 dkg
         let c1_dkg1 = c1
