@@ -19,7 +19,7 @@ use bdk::{miniscript::psbt::PsbtExt, wallet::coin_selection::CoinSelectionAlgori
 use bitcoin::{
     blockdata::fee_rate,
     consensus::{encode as btcencode, Encodable},
-    psbt::Psbt,
+    psbt::{self, Psbt},
     secp256k1, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut,
 };
 use clap::Parser;
@@ -52,6 +52,9 @@ pub enum Error {
     CoinSelection(#[from] bdk::wallet::coin_selection::Error),
     #[error("Pbst error: {0}")]
     Pbst(#[from] PsbtError),
+    // Two distinct PSBT related errors one from bdk and one from rust bitcoin
+    #[error("Pbst error: {0}")]
+    PbstError(#[from] bitcoin::psbt::Error),
     #[error("Invalid resulting transaction")]
     InvaildResultingTx,
     #[error("Invalid tx request, dkg has not been completed")]
@@ -70,6 +73,8 @@ pub enum Error {
     InvalidRound2DkgPayloadMissingPackage,
     #[error("Invalid round2 Signing payload")]
     InvalidRound2SigningPayload(),
+    #[error("Already have quorum of partial signatures")]
+    AlreadyHaveQuorumOfPartialSignatures(),
 }
 
 struct App {
@@ -91,7 +96,7 @@ struct App {
 }
 
 impl App {
-    fn add_round2_signing(&self, payload: rpc::Round1SigningPackage) -> Result<(), Error> {
+    fn add_round2_signing(&self, payload: rpc::Round2SigningPackage) -> Result<(), Error> {
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
@@ -103,10 +108,23 @@ impl App {
             Error::InvalidRound2SigningPayload()
         })?;
 
-        let signing_round2 = frost::round2::SignatureShare::deserialize(signature_share)
+        let partial_sig = frost::round2::SignatureShare::deserialize(signature_share)
             .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
 
-        if self.db.add_round2_signing(frost_id, signing_round2).map_err(Error::Db)? {
+        // Checks if we have enough partial signatures
+        let partial_sigs = self.db.get_round2_signing_packages().map_err(Error::Db)?;
+        println!("Partial sigs: {:?}", partial_sigs);
+        if partial_sigs.len() >= self.min_signers as usize {
+            return Err(Error::AlreadyHaveQuorumOfPartialSignatures())
+        }
+
+        let psbt = Psbt::deserialize(payload.psbt.as_slice()).map_err(|e| {
+            error!("Failed to deserialize psbt: {}", e);
+            Error::PbstError(e)
+        })?;
+        let txid = psbt.extract_tx().txid();
+
+        if self.db.add_round2_signing(txid, frost_id, partial_sig).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
             debug!("Stored round2 signing from peer: {:?}", frost_id);
         } else {
@@ -126,6 +144,10 @@ impl App {
         let signing_round1 =
             frost::round1::SigningCommitments::deserialize(payload.payload.as_slice())
                 .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
+
+        // Note: There doenst need to be a check for a quorum of round1 signing packages
+        // The more the better in the case one is unresponsive
+        // the frost lib will check if we have enough when we create the signing package
 
         if self.db.add_round1_signing(frost_id, signing_round1).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
@@ -268,7 +290,7 @@ impl App {
             _ => None,
         };
 
-        let psbt = reth_btc_wallet::transaction::create_psbt(
+        let mut psbt = reth_btc_wallet::transaction::create_psbt(
             selected
                 .iter()
                 .map(|s| reth_btc_wallet::transaction::Input {
@@ -383,6 +405,66 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    async fn finalize_signing(
+        &self,
+        payload: tonic::Request<rpc::FinalizeSigningRequest>,
+    ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        let psbt = Psbt::deserialize(&payload.into_inner().psbt.as_slice()).map_err(|e| {
+            error!("Failed to deserialize psbt: {}", e);
+            internal!("Failed to deserialize psbt: {}", e)
+        })?;
+        let txid = psbt.clone().extract_tx().txid();
+
+        let pk_package = self
+            .db
+            .get_public_key_package()
+            .map_err(|e| {
+                error!("Failed to get key package: {}", e);
+                internal!("Failed to get key package: {}", e)
+            })?
+            .ok_or(internal!("missing key package"))?;
+
+        let partial_sigs = self
+            .db
+            .get_round2_signing_package_txid(txid)
+            .map_err(|e| {
+                error!("Failed to get round2 partial signatures: {}", e);
+                internal!("Failed to get round2 partial signatures: {}", e)
+            })?
+            .ok_or(internal!("missing round2 partial signatures"))?;
+
+        let signing_package = self
+            .db
+            .get_signing_package(txid)
+            .map_err(|e| {
+                error!("Failed to get signing package: {}", e);
+                internal!("Failed to get signing package: {}", e)
+            })?
+            .ok_or(internal!("missing signing package"))?;
+
+        let agg_sig =
+            frost::aggregate(&signing_package, &partial_sigs, &pk_package).map_err(|e| {
+                error!("Failed to aggregate signatures: {}", e);
+                internal!("Failed to aggregate signatures: {}", e)
+            })?;
+
+        // Verify signature -- redundant check
+        pk_package.verifying_key().verify(signing_package.message(), &agg_sig).map_err(|e| {
+            error!("Failed to verify signature: {}", e);
+            internal!("Failed to verify signature: {}", e)
+        })?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+
+        psbt.
+
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
+        Ok(res)
+    }
+
     async fn get_to_sign_package(
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
@@ -431,13 +513,13 @@ impl rpc::BtcServer for App {
             error!("Failed to make tx: {}", e);
             internal!("Failed to make tx: {}", e)
         })?;
+        let txid = psbt.clone().extract_tx().txid();
 
         let mut raw_tx: Vec<u8> = Vec::new();
         psbt.clone().extract_tx().consensus_encode(&mut raw_tx).map_err(|e| {
             error!("Failed to serialize tx: {}", e);
             internal!("Failed to serialize tx: {}", e)
         })?;
-
         let signing_package = frost::SigningPackage::new(signing_commitments, raw_tx.as_slice());
         let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
             error!("Failed to serialize psbt: {}", e);
@@ -453,6 +535,13 @@ impl rpc::BtcServer for App {
                 .to_vec(),
             psbt: psbt_bytes,
         });
+
+        // Lastly save this to sign package to the db
+        self.db.add_signing_package(txid, signing_package).map_err(|e| {
+            error!("Failed to store signing package: {}", e);
+            internal!("Failed to store signing package: {}", e)
+        })?;
+
         Ok(res)
     }
 
@@ -478,7 +567,7 @@ impl rpc::BtcServer for App {
 
     async fn new_round2_signing_package(
         &self,
-        req: tonic::Request<rpc::Round1SigningPackage>,
+        req: tonic::Request<rpc::Round2SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.db
             .get_key_package()
@@ -647,6 +736,7 @@ impl rpc::BtcServer for App {
         }
     }
 
+    /// Endpoint responds with a nonce commitments for a ONE particular signings session
     async fn get_round1_signing_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -684,7 +774,7 @@ impl rpc::BtcServer for App {
     async fn get_round2_signing_package(
         &self,
         req: tonic::Request<rpc::SignPayload>,
-    ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
         // Important note here is that we never re-use the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
         // to provide new ones
@@ -716,24 +806,28 @@ impl rpc::BtcServer for App {
                 internal!("Failed to deserialize signing package: {}", e)
             })?;
 
-        let _psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
+        let psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
         // TODO verify psbt
-
+        // TODO need to sign for each input SIG_HASH_SINGLE
         let partial_sig = frost::round2::sign(&signing_package, &signing_nonces, &key_package)
             .map_err(|e| {
                 error!("Failed to sign psbt: {}", e);
                 internal!("Failed to sign psbt: {}", e)
             })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
 
-        let res = rpc::Round1SigningPackage {
+        // TODO (armins) Should we add partial sig to psbt
+        let res = rpc::Round2SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             payload: partial_sig.serialize().to_vec(),
+            psbt: psbt_bytes,
         };
-
-        self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
 
         Ok(tonic::Response::new(res))
     }
@@ -1094,19 +1188,34 @@ mod test {
         println!("signing package: {:?}", signing_package);
 
         // Round 2 signing
-        c1.get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
-            psbt: signing_package.clone().psbt,
-        }))
-        .await
-        .unwrap();
+        let c1_signing2 = c1
+            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+                payload: signing_package.clone().payload,
+                psbt: signing_package.clone().psbt,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-        c2.get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.payload,
-            psbt: signing_package.psbt,
-        }))
-        .await
-        .unwrap();
+        let c2_signing2 = c2
+            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+                payload: signing_package.clone().payload,
+                psbt: signing_package.clone().psbt,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
+        c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
+
+        let psbt = signing_package.clone().psbt;
+        let finalized = c3
+            .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest { psbt }))
+            .await
+            .unwrap();
+
+        println!("finalized: {:?}", finalized);
 
         // Test clean up
         // Remove db dirs

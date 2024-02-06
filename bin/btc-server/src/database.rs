@@ -1,9 +1,10 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use crate::util::OutPointExt;
-use bitcoin::{OutPoint, TxOut};
+use bitcoin::{consensus::Decodable, OutPoint, TxOut, Txid};
 use ciborium;
 use frost_secp256k1_tr as frost;
+use prost::bytes::Buf;
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
@@ -15,6 +16,8 @@ const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
+const ROUND2_SIGNING_PACKAGES: &[u8; 5] = b"r2sig";
+const SIGNING_PACKAGES: &[u8; 5] = b"signp";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Utxo {
@@ -48,13 +51,20 @@ pub struct Db {
 
     /// A tree of round 1 signing commitments
     ///
-    /// Indexed by peer id
+    /// Indexed by txid
+    /// Only relevant for the coordinator
     round1_signing_packages: sled::Tree,
 
     /// A tree of round 2 partial signatures
     ///
-    /// Indexed by peer id
+    /// Indexed by txid
+    /// Only relevant for the coordinator
     round2_signing_packages: sled::Tree,
+
+    // A tree of signing packages
+    // Indexed by txid
+    // Only relevant for the coordinator
+    signing_packages: sled::Tree,
 }
 
 impl Db {
@@ -65,7 +75,8 @@ impl Db {
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
-            round2_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
+            round2_signing_packages: db.open_tree(ROUND2_SIGNING_PACKAGES)?,
+            signing_packages: db.open_tree(SIGNING_PACKAGES)?,
             db,
         })
     }
@@ -77,11 +88,37 @@ impl Db {
         self.round2_dkg_packages.flush()?;
         self.round1_signing_packages.flush()?;
         self.round2_signing_packages.flush()?;
+        self.signing_packages.flush()?;
         Ok(())
+    }
+
+    pub fn add_signing_package(
+        &self,
+        txid: Txid,
+        signing_package: frost::SigningPackage,
+    ) -> Result<bool, Error> {
+        if self.signing_packages.contains_key(&txid[..])? {
+            return Ok(false);
+        }
+
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&signing_package, &mut bytes).expect("writing to buffer");
+        self.signing_packages.insert(&txid[..], &bytes[..])?;
+        Ok(true)
+    }
+
+    pub fn get_signing_package(&self, txid: Txid) -> Result<Option<frost::SigningPackage>, Error> {
+        if let Some(b) = self.signing_packages.get(&txid[..])? {
+            let ret = ciborium::from_reader::<frost::SigningPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn add_round2_signing(
         &self,
+        txid: bitcoin::Txid,
         peer_id: frost::Identifier,
         signing_round2: frost::round2::SignatureShare,
     ) -> Result<bool, Error> {
@@ -90,9 +127,21 @@ impl Db {
         if self.round2_signing_packages.contains_key(&peer_id_bytes[..])? {
             return Ok(false);
         }
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&signing_round2, &mut bytes).expect("writing to buffer");
-        self.round2_signing_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        // Get the list of signing packages for this txid
+        let mut existing_partial_sigs = self.get_round2_signing_package_txid(txid)?;
+        if let Some(existing_partial_sigs) = existing_partial_sigs.as_mut() {
+            existing_partial_sigs.insert(peer_id, signing_round2);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&existing_partial_sigs, &mut bytes).expect("writing to buffer");
+            self.round2_signing_packages.insert(&txid[..], &bytes[..])?;
+        } else {
+            let mut partial_sigs = BTreeMap::new();
+            partial_sigs.insert(peer_id, signing_round2);
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&partial_sigs, &mut bytes).expect("writing to buffer");
+            self.round2_signing_packages.insert(&txid[..], &bytes[..])?;
+        }
+
         Ok(true)
     }
 
@@ -132,20 +181,37 @@ impl Db {
 
     pub fn get_round2_signing_packages(
         &self,
-    ) -> Result<BTreeMap<frost::Identifier, frost::round2::SignatureShare>, Error> {
+    ) -> Result<
+        BTreeMap<bitcoin::Txid, BTreeMap<frost::Identifier, frost::round2::SignatureShare>>,
+        Error,
+    > {
         let mut ret = BTreeMap::new();
         for res in self.round2_signing_packages.iter() {
             let (k, v) = res?;
-            let peer_id_bytes: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+            let txid = bitcoin::Txid::consensus_decode(&mut k.reader())?;
+            println!("txid: {:?}", txid);
 
-            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
-                .map_err(|e| Error::FrostSerialization(e))?;
-            let signing_round2 =
-                ciborium::from_reader::<frost::round2::SignatureShare, _>(v.as_ref())?;
-            ret.insert(peer_id, signing_round2);
+            let partial_sig_set = ciborium::from_reader::<
+                BTreeMap<frost::Identifier, frost::round2::SignatureShare>,
+                _,
+            >(v.as_ref())?;
+            ret.insert(txid, partial_sig_set);
         }
         Ok(ret)
+    }
+
+    pub fn get_round2_signing_package_txid(
+        &self,
+        txid: Txid,
+    ) -> Result<Option<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>, Error> {
+        let partial_sigs = self.get_round2_signing_packages()?;
+        // Filter looking for signing packages for this txid
+        let ret = partial_sigs.iter().find(|(k, _v)| **k == txid);
+        if let Some((_k, v)) = ret {
+            Ok(Some(v.clone()))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
@@ -325,6 +391,8 @@ pub enum Error {
     FrostSerialization(#[from] frost::Error),
     #[error("Serialization error {0}")]
     Serialization(#[from] TryFromSliceError),
+    #[error("bitcoin serialization error {0}")]
+    BitcoinSerialization(#[from] bitcoin::consensus::encode::Error),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
