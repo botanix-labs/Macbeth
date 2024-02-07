@@ -83,10 +83,14 @@ pub enum Error {
     AlreadyHaveKeyPackage,
     #[error("Alreadyy performed DKG and have a key package")]
     MissingKeyPackage,
+    #[error("Missing signing package")]
+    MissingSigningPackage,
     #[error("Not enough signers have provided round1 commitments to create signing package")]
     NotEnoughSigners,
     #[error("Missing round 1 signing nonce")]
     MissingRound1SigningNonce,
+    #[error("Missing round 2 signing package")]
+    MissingRound2SigningPackage,
     #[error("Missing round 1 dkg package")]
     MissingRound1DkgPackage,
     #[error("io error: {0}")]
@@ -191,59 +195,16 @@ impl rpc::BtcServer for App {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
-        let txid = psbt.clone().extract_tx().txid();
 
-        let pk_package = self
-            .db
-            .get_public_key_package()
-            .map_err(|e| {
-                error!("Failed to get key package: {}", e);
-                internal!("Failed to get key package: {}", e)
-            })?
-            .ok_or(internal!("missing key package"))?;
-
-        let partial_sigs = self
-            .db
-            .get_round2_signing_package_txid(txid)
-            .map_err(|e| {
-                error!("Failed to get round2 partial signatures: {}", e);
-                internal!("Failed to get round2 partial signatures: {}", e)
-            })?
-            .ok_or(internal!("missing round2 partial signatures"))?;
-
-        let signing_package = self
-            .db
-            .get_signing_package(txid)
-            .map_err(|e| {
-                error!("Failed to get signing package: {}", e);
-                internal!("Failed to get signing package: {}", e)
-            })?
-            .ok_or(internal!("missing signing package"))?;
-
-        let agg_sig =
-            frost::aggregate(&signing_package, &partial_sigs, &pk_package).map_err(|e| {
-                error!("Failed to aggregate signatures: {}", e);
-                internal!("Failed to aggregate signatures: {}", e)
-            })?;
-
-        // Verify signature -- redundant check
-        pk_package.verifying_key().verify(signing_package.message(), &agg_sig).map_err(|e| {
-            error!("Failed to verify signature: {}", e);
-            internal!("Failed to verify signature: {}", e)
+        let finalized_psbt = self.finalize_signing(&psbt).map_err(|e| {
+            error!("Failed to finalize signing: {}", e);
+            internal!("Failed to finalize signing: {}", e)
         })?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+        let psbt_bytes = hex::decode(finalized_psbt.serialize_hex()).map_err(|e| {
             error!("Failed to serialize psbt: {}", e);
             internal!("Failed to serialize psbt: {}", e)
         })?;
-
-        // TODO (armins) add agg signature to psbt
-        // if let Err(err) =
-        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-        // {
-        //     error!("Failed to sign psbt {:?}", err);
-        //     return Err(Error::FailedToSignPbst)
-        // }
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
         Ok(res)
