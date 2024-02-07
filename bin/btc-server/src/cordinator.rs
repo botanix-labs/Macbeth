@@ -257,4 +257,34 @@ impl App {
         self.db.add_signing_package(txid, signing_package.clone())?;
         Ok((signing_package, psbt))
     }
+
+    pub(crate) fn finalize_signing(&self, psbt: &Psbt) -> Result<Psbt, Error> {
+        let txid = psbt.clone().extract_tx().txid();
+
+        let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
+
+        let partial_sigs = self
+            .db
+            .get_round2_signing_package_txid(txid)?
+            .ok_or(Error::MissingRound2SigningPackage)?;
+
+        let signing_package =
+            self.db.get_signing_package(txid)?.ok_or(Error::MissingSigningPackage)?;
+
+        let agg_sig = frost::aggregate(&signing_package, &partial_sigs, &pk_package)?;
+
+        // Verify signature -- redundant check
+        pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
+
+         // TODO (armins) add agg signature to psbt
+        // if let Err(err) =
+        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
+        // {
+        //     error!("Failed to sign psbt {:?}", err);
+        //     return Err(Error::FailedToSignPbst)
+        // }
+        // TODO Add signature to psbt and finalize
+        // TODO remove utxos being spent from db
+        Ok(psbt.clone())
+    }
 }
