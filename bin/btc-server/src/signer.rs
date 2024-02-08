@@ -13,7 +13,7 @@ impl App {
 
         let mut rng = thread_rng();
         let (signing_nonces, signing_commitments) = frost::round1::commit(secret, &mut rng);
-        let res = rpc::Round1SigningPackage {
+        let _res = rpc::Round1SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             payload: signing_commitments.serialize()?.to_vec(),
         };
