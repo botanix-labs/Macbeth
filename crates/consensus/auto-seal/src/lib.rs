@@ -40,10 +40,6 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use url::Url;
-
-use reth_payload_builder::PayloadBuilderHandle;
-
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::trace;
 
@@ -331,7 +327,7 @@ impl StorageInner {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
-        let (receipts, gas_used) = executor.execute_transactions(block, U256::ZERO)?;
+        let (receipts, gas_used) = executor.execute_transactions(block, U256::ZERO, None)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;

@@ -6758,10 +6758,7 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.17"
 dependencies = [
- "bitcoin",
- "btc-server",
  "clap",
- "client",
  "eyre",
  "futures-util",
  "jsonrpsee",
@@ -6769,20 +6766,16 @@ dependencies = [
  "reth-beacon-consensus",
  "reth-interfaces",
  "reth-node-api",
- "reth-node-ethereum",
  "reth-primitives",
  "reth-provider",
  "reth-revm",
  "reth-stages",
  "reth-transaction-pool",
- "secp256k1 0.27.0",
  "serde_json",
  "tempfile",
  "tokio",
  "tokio-stream",
- "tonic",
  "tracing",
- "url",
 ]
 
 [[package]]
