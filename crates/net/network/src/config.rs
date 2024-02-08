@@ -503,16 +503,6 @@ impl NetworkConfigBuilder {
             optimism_network_config: OptimismNetworkConfig { sequencer_endpoint },
         }
     }
-
-    pub fn build_with_block_import<C>(
-        self,
-        client: C,
-        block_import: Box<dyn BlockImport>,
-    ) -> NetworkConfig<C> {
-        let mut config = self.build(client);
-        config.block_import = block_import;
-        config
-    }
 }
 
 /// Describes the mode of the network wrt. POS or POW.
@@ -528,7 +518,7 @@ pub enum NetworkMode {
     /// Network is in proof-of-stake mode
     #[default]
     Stake,
-    /// Network is in proof-of-authority mode
+    /// Network is in PoA mode
     Authority,
 }
 

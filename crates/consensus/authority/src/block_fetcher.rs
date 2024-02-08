@@ -1,5 +1,6 @@
 use crate::engine_util;
 
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
@@ -8,9 +9,9 @@ use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::block_source::MempoolSpace;
 use reth_network::message::NewBlockMessage;
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
-use reth_transaction_pool::TransactionPool;
 
 use std::sync::Arc;
 use tokio::sync::{
@@ -20,10 +21,10 @@ use tokio::sync::{
 
 use tracing::{debug, error, info};
 
-pub struct BlockFetcherTask<Client> {
+pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     chain_spec: Arc<ChainSpec>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
@@ -34,21 +35,31 @@ pub struct BlockFetcherTask<Client> {
     storage: Storage<Client>,
     /// Recent bitcoin header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    /// The type that defines how to configure the EVM.
+    evm_config: EvmConfig,
 }
 
-impl<Client> BlockFetcherTask<Client>
+impl<Client, EvmConfig, Engine> BlockFetcherTask<Client, EvmConfig, Engine>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+    Engine: EngineTypes + 'static,
+    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
 {
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_source: MempoolSpace,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        evm_config: EvmConfig,
     ) -> Self {
         Self {
             chain_spec,
@@ -59,6 +70,7 @@ where
             bitcoin_block_source,
             storage,
             bitcoin_block_header,
+            evm_config,
         }
     }
 
@@ -69,11 +81,11 @@ where
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         debug!(target: "consensus::authority", "No new blocks from peers");
-                        continue
+                        continue;
                     }
                     TryRecvError::Disconnected => {
                         debug!(target: "consensus::authority", "Block import channel disconnected");
-                        continue
+                        continue;
                     }
                 },
             };
@@ -93,7 +105,7 @@ where
                 Ok(payload) => payload,
                 Err(err) => {
                     error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
-                    continue
+                    continue;
                 }
             };
 
@@ -104,6 +116,7 @@ where
                 self.chain_spec.clone(),
                 sealed_block.clone(),
                 recent_bitcoin_block_header,
+                self.evm_config.clone(),
             ) {
                 Ok(bundle_state) => {
                     let senders =
@@ -123,12 +136,12 @@ where
                         Ok(_) => {}
                         Err(e) => {
                             error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                            continue
+                            continue;
                         }
                     }
                     // Notify engine api about new FCU
                     engine_util::send_fork_choice_update_payload(
-                        sealed_block.clone().hash,
+                        sealed_block.clone().hash(),
                         self.to_engine.clone(),
                     )
                     .await
@@ -143,7 +156,8 @@ where
 
                     drop(storage);
 
-                    let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+                    // TODO(armins) trie updates here are non. is that correct?
+                    let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state, None));
 
                     info!(target: "consensus::authority", "sending block notification to block chain tree");
                     // send block notification

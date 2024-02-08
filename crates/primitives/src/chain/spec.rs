@@ -249,7 +249,7 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
 /// The Botanix Testnet
 pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     ChainSpec {
-        chain: Chain::botanix_testnet(),
+        chain: Chain::from_id(3636),
         genesis: serde_json::from_str(include_str!("../../res/genesis/botanix_testnet.json"))
             .expect("Can't deserialize Botanix Testnet genesis json"),
         genesis_hash: None,

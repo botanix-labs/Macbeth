@@ -9,6 +9,8 @@ use crate::{
     keccak256, Address, BaseFeeParams, BlockHash, BlockNumHash, BlockNumber, Bloom, Bytes,
     ChainSpec, GotExpected, GotExpectedBoxed, Hardfork, B256, B64, U256,
 };
+use crate::constants::eip225::EPOCH_LENGTH;
+
 use alloy_rlp::{length_of_length, Decodable, Encodable, EMPTY_LIST_CODE, EMPTY_STRING_CODE};
 use bytes::{Buf, BufMut, BytesMut};
 use reth_codecs::{add_arbitrary_tests, derive_arbitrary, main_codec, Compact};

@@ -20,6 +20,7 @@ use reth_eth_wire::{
 };
 use reth_interfaces::p2p::error::RequestError;
 use reth_metrics::common::mpsc::MeteredPollSender;
+
 use reth_primitives::PeerId;
 use std::{
     collections::VecDeque,
@@ -48,11 +49,6 @@ const MAXIMUM_TIMEOUT: Duration = INITIAL_REQUEST_TIMEOUT;
 const SAMPLE_IMPACT: f64 = 0.1;
 /// Amount of RTTs before timeout
 const TIMEOUT_SCALING: u32 = 3;
-
-/// The type of the underlying peer network connection.
-// This type is boxed because the underlying stream is ~6KB,
-// mostly coming from `P2PStream`'s `snap::Encoder` (2072), and `ECIESStream` (3600).
-pub type PeerConnection = Box<EthStream<P2PStream<ECIESStream<MeteredStream<TcpStream>>>>>;
 
 /// The type that advances an established session by listening for incoming messages (from local
 /// node or read from connection) and emitting events back to the

@@ -95,33 +95,6 @@ impl PendingBlockEnv {
 
         let mut receipts = Vec::new();
 
-        let (withdrawals, withdrawals_root) = match origin {
-            PendingBlockEnvOrigin::ActualPending(ref block) => {
-                (block.withdrawals.clone(), block.withdrawals_root)
-            }
-            PendingBlockEnvOrigin::DerivedFromLatest(_) => (None, None),
-        };
-
-        let chain_spec = client.chain_spec();
-
-        let parent_beacon_block_root = if origin.is_actual_pending() {
-            // apply eip-4788 pre block contract call if we got the block from the CL with the real
-            // parent beacon block root
-            pre_block_beacon_root_contract_call(
-                &mut db,
-                chain_spec.as_ref(),
-                block_number,
-                &cfg,
-                &block_env,
-                origin.header().parent_beacon_block_root,
-            )?;
-            origin.header().parent_beacon_block_root
-        } else {
-            None
-        };
-
-        let mut receipts = Vec::new();
-
         while let Some(pool_tx) = best_txs.next() {
             // ensure we still have capacity for this transaction
             if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {

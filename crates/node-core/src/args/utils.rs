@@ -8,19 +8,20 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use url::Url;
 
 #[cfg(feature = "optimism")]
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET, BASE_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
-use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
+use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET};
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] = &["base", "base-goerli", "base-sepolia"];
 #[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
-pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev"];
+pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
 
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {
@@ -42,6 +43,8 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
+        #[cfg(not(feature = "optimism"))]
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
@@ -77,6 +80,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
+        #[cfg(not(feature = "optimism"))]
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
@@ -129,6 +134,36 @@ pub enum SocketAddressParsingError {
     #[error("could not parse port: {0}")]
     Port(#[from] std::num::ParseIntError),
 }
+
+/// Error thrown while parsing a URL
+#[derive(thiserror::Error, Debug)]
+pub enum UrlParsingError {
+    /// Failed to parse the address
+    #[error("Could not parse URL from {0}")]
+    Parse(String),
+}
+
+/// Parse a [SocketAddr] from a `str` prefixing with http.
+///
+/// An error is returned if the value is empty or if non socket value is passed
+pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {
+    if value.is_empty() {
+        return Err(SocketAddressParsingError::Empty)
+    }
+    // TODO configuarable for https
+    let addr = format!("http://{}", value.to_string());
+    tonic::transport::Endpoint::try_from(addr.clone()).map_err(|_e| {
+        SocketAddressParsingError::Parse("Failed to parse as tonic endpoint".to_string())
+    })?;
+    Ok(addr)
+}
+
+/// Parse a [URL] from a `str` value
+pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
+    let url = Url::parse(value).map_err(|_e| UrlParsingError::Parse(value.to_owned()))?;
+    Ok(url)
+}
+
 
 /// Parse a [SocketAddr] from a `str`.
 ///

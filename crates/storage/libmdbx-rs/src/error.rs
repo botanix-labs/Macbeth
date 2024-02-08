@@ -5,9 +5,6 @@ use std::result;
 /// An MDBX result.
 pub type Result<T> = result::Result<T, Error>;
 
-/// An MDBX result.
-pub type Result<T> = result::Result<T, Error>;
-
 /// An MDBX error kind.
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 pub enum Error {

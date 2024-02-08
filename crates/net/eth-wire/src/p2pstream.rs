@@ -24,28 +24,8 @@ use std::{
 use tokio_stream::Stream;
 use tracing::{debug, trace};
 
-use alloy_rlp::{Decodable, Encodable, Error as RlpError, EMPTY_LIST_CODE};
-use futures::{Sink, SinkExt, StreamExt};
-use pin_project::pin_project;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use tokio_stream::Stream;
-use tracing::{debug, trace};
-
-use reth_codecs::derive_arbitrary;
-use reth_metrics::metrics::counter;
-use reth_primitives::{
-    bytes::{Buf, BufMut, Bytes, BytesMut},
-    hex, GotExpected,
-};
-
-use crate::{
-    capability::SharedCapabilities,
-    disconnect::CanDisconnect,
-    errors::{P2PHandshakeError, P2PStreamError},
-    pinger::{Pinger, PingerEvent},
-    DisconnectReason, HelloMessage, HelloMessageWithProtocols,
-};
 
 /// [`MAX_PAYLOAD_SIZE`] is the maximum size of an uncompressed message payload.
 /// This is defined in [EIP-706](https://eips.ethereum.org/EIPS/eip-706).

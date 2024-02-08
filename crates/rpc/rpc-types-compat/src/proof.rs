@@ -4,7 +4,8 @@ use reth_primitives::{
     trie::{AccountProof, StorageProof},
     U64,
 };
-use reth_rpc_types::{storage::JsonStorageKey, EIP1186AccountProofResponse, EIP1186StorageProof};
+use reth_rpc_types::{EIP1186AccountProofResponse, EIP1186StorageProof};
+use alloy_rpc_types::storage::JsonStorageKey;
 
 /// Creates a new rpc storage proof from a primitive storage proof type.
 pub fn from_primitive_storage_proof(proof: StorageProof) -> EIP1186StorageProof {

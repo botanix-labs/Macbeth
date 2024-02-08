@@ -1,18 +1,10 @@
 use reth_interfaces::provider::ProviderResult;
-<<<<<<< HEAD
-use reth_primitives::{BlockHashOrNumber, Header};
-use revm::primitives::{BlockEnv, CfgEnv};
-
-/// A provider type that knows chain specific information required to configure an
-/// [Env](revm::primitives::Env).
-=======
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{BlockHashOrNumber, Header};
 use revm::primitives::{BlockEnv, CfgEnv, CfgEnvWithHandlerCfg, SpecId};
 
 /// A provider type that knows chain specific information required to configure an
 /// [CfgEnvWithHandlerCfg].
->>>>>>> upstream/main
 ///
 /// This type is mainly used to provide required data to configure the EVM environment.
 #[auto_impl::auto_impl(&, Arc)]
@@ -24,13 +16,6 @@ pub trait EvmEnvProvider: Send + Sync {
         cfg: &mut CfgEnvWithHandlerCfg,
         block_env: &mut BlockEnv,
         at: BlockHashOrNumber,
-<<<<<<< HEAD
-    ) -> ProviderResult<()>;
-
-    /// Fills the default [CfgEnv] and [BlockEnv] fields with values specific to the given [Header].
-    fn env_with_header(&self, header: &Header) -> ProviderResult<(CfgEnv, BlockEnv)> {
-        let mut cfg = CfgEnv::default();
-=======
         evm_config: EvmConfig,
     ) -> ProviderResult<()>
     where
@@ -47,7 +32,6 @@ pub trait EvmEnvProvider: Send + Sync {
         EvmConfig: ConfigureEvmEnv,
     {
         let mut cfg = CfgEnvWithHandlerCfg::new(CfgEnv::default(), SpecId::LATEST);
->>>>>>> upstream/main
         let mut block_env = BlockEnv::default();
         self.fill_env_with_header::<EvmConfig>(&mut cfg, &mut block_env, header, evm_config)?;
         Ok((cfg, block_env))
@@ -60,14 +44,10 @@ pub trait EvmEnvProvider: Send + Sync {
         cfg: &mut CfgEnvWithHandlerCfg,
         block_env: &mut BlockEnv,
         header: &Header,
-<<<<<<< HEAD
-    ) -> ProviderResult<()>;
-=======
         evm_config: EvmConfig,
     ) -> ProviderResult<()>
     where
         EvmConfig: ConfigureEvmEnv;
->>>>>>> upstream/main
 
     /// Fills the [BlockEnv] fields with values specific to the given [BlockHashOrNumber].
     fn fill_block_env_at(
@@ -83,13 +63,6 @@ pub trait EvmEnvProvider: Send + Sync {
         header: &Header,
     ) -> ProviderResult<()>;
 
-<<<<<<< HEAD
-    /// Fills the [CfgEnv] fields with values specific to the given [BlockHashOrNumber].
-    fn fill_cfg_env_at(&self, cfg: &mut CfgEnv, at: BlockHashOrNumber) -> ProviderResult<()>;
-
-    /// Fills the [CfgEnv] fields with values specific to the given [Header].
-    fn fill_cfg_env_with_header(&self, cfg: &mut CfgEnv, header: &Header) -> ProviderResult<()>;
-=======
     /// Fills the [CfgEnvWithHandlerCfg] fields with values specific to the given
     /// [BlockHashOrNumber].
     fn fill_cfg_env_at<EvmConfig>(
@@ -110,5 +83,4 @@ pub trait EvmEnvProvider: Send + Sync {
     ) -> ProviderResult<()>
     where
         EvmConfig: ConfigureEvmEnv;
->>>>>>> upstream/main
 }

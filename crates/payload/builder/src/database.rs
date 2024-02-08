@@ -7,7 +7,6 @@ use reth_primitives::{
     },
     U256,
 };
-
 use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},

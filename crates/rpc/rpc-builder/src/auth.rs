@@ -19,8 +19,7 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
-        cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache,
-        FeeHistoryCacheConfig,
+        botanix_config::BotanixConfig, cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig
     },
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
@@ -32,6 +31,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use reth_rpc::eth::botanix_config::Botanix;
 
 /// Configure and launch a _standalone_ auth server with `engine` and a _new_ `eth` namespace.
 #[allow(clippy::too_many_arguments)]
@@ -44,6 +44,7 @@ pub async fn launch<Provider, Pool, Network, Tasks, EngineApi, EngineT, EvmConfi
     socket_addr: SocketAddr,
     secret: JwtSecret,
     evm_config: EvmConfig,
+    botanix_config: BotanixConfig,
 ) -> Result<AuthServerHandle, RpcError>
 where
     Provider: BlockReaderIdExt
@@ -71,6 +72,7 @@ where
     );
 
     let gas_oracle = GasPriceOracle::new(provider.clone(), Default::default(), eth_cache.clone());
+    let botanix_provider = Botanix::new(botanix_config);
 
     let fee_history_cache =
         FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
@@ -85,6 +87,7 @@ where
         BlockingTaskPool::build().expect("failed to build tracing pool"),
         fee_history_cache,
         evm_config,
+        botanix_provider,
     );
     let config = EthFilterConfig::default()
         .max_logs_per_response(DEFAULT_MAX_LOGS_PER_RESPONSE)

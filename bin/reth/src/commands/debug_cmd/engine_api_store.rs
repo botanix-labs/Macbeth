@@ -83,8 +83,10 @@ impl EngineApiStore {
                 )?;
             }
             // noop
-            BeaconEngineMessage::TransitionConfigurationExchanged |
-            BeaconEngineMessage::EventListener(_) => (),
+            BeaconEngineMessage::StartNewPayload { payload_attributes: _, parent: _, tx: _ } => (),
+            BeaconEngineMessage::BestPayload { tx: _, payload_id: _ } => (),
+            BeaconEngineMessage::TransitionConfigurationExchanged
+            | BeaconEngineMessage::EventListener(_) => (),
         };
         Ok(())
     }

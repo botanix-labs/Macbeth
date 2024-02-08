@@ -82,6 +82,7 @@ pub struct PayloadBuilderHandle<Engine: EngineTypes> {
     /// Sender half of the message channel to the [PayloadBuilderService].
     to_service: mpsc::UnboundedSender<PayloadServiceCommand<Engine>>,
 }
+
 // === impl PayloadBuilderHandle ===
 
 impl<Engine> PayloadBuilderHandle<Engine>
@@ -113,7 +114,7 @@ where
     }
 
     /// Returns the best payload for the given identifier.
-    async fn best_payload(
+    pub async fn best_payload(
         &self,
         id: PayloadId,
     ) -> Option<Result<Engine::BuiltPayload, PayloadBuilderError>> {
@@ -214,6 +215,7 @@ where
             metrics: Default::default(),
             chain_events,
         };
+
         let handle = service.handle();
         (service, handle)
     }
@@ -229,7 +231,7 @@ where
     }
 
     /// Returns the best payload for the given identifier that has been built so far.
-    fn best_payload(
+    pub fn best_payload(
         &self,
         id: PayloadId,
     ) -> Option<Result<Engine::BuiltPayload, PayloadBuilderError>> {
@@ -423,23 +425,6 @@ impl<Engine> fmt::Debug for PayloadServiceCommand<Engine>
 where
     Engine: EngineTypes,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PayloadServiceCommand::BuildNewPayload(f0, f1) => {
-                f.debug_tuple("BuildNewPayload").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::BestPayload(f0, f1) => {
-                f.debug_tuple("BestPayload").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::PayloadAttributes(f0, f1) => {
-                f.debug_tuple("PayloadAttributes").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::Resolve(f0, _f1) => f.debug_tuple("Resolve").field(&f0).finish(),
-        }
-    }
-}
-
-impl fmt::Debug for PayloadServiceCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PayloadServiceCommand::BuildNewPayload(f0, f1) => {

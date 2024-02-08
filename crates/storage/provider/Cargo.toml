@@ -47,6 +47,9 @@ alloy-rlp = { workspace = true, optional = true }
 # parallel utils
 rayon.workspace = true
 
+# Bitcoin
+bitcoin = "0.30.0"
+
 [dev-dependencies]
 reth-db = { workspace = true, features = ["test-utils"] }
 reth-primitives = { workspace = true, features = ["arbitrary", "test-utils"] }

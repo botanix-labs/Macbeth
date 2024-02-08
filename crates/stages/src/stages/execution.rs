@@ -163,7 +163,7 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
             let time = Instant::now();
             // Execute the block
             let execute_start = Instant::now();
-            executor.execute_and_verify_receipt(&block, td).map_err(|error| StageError::Block {
+            executor.execute_and_verify_receipt(&block, td, None).map_err(|error| StageError::Block {
                 block: Box::new(block.header.clone().seal_slow()),
                 error: BlockErrorKind::Execution(error),
             })?;

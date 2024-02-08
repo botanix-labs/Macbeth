@@ -22,7 +22,7 @@ mod rpc;
 pub mod serde_helpers;
 
 // re-export for convenience
-pub use alloy_rpc_types::serde_helpers;
+// pub use alloy_rpc_types::serde_helpers;
 
 // Ethereum specific rpc types coming from alloy.
 pub use alloy_rpc_types::*;
@@ -40,14 +40,9 @@ pub use eth::{
 };
 
 pub use admin::*;
-<<<<<<< HEAD
 pub use botanix::*;
-pub use eth::*;
-=======
->>>>>>> upstream/main
 pub use mev::*;
 pub use net::*;
 pub use otterscan::*;
 pub use peer::*;
 pub use rpc::*;
-pub use serde_helpers::*;

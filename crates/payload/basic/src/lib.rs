@@ -49,16 +49,6 @@ use tracing::{debug, trace, warn};
 
 mod metrics;
 
-#[cfg(feature = "optimism")]
-mod optimism;
-#[cfg(feature = "optimism")]
-pub use optimism::OptimismPayloadBuilder;
-
-/// Ethereum payload builder
-#[derive(Debug, Clone, Copy, Default)]
-#[non_exhaustive]
-pub struct EthereumPayloadBuilder;
-
 /// The [`PayloadJobGenerator`] that creates [`BasicPayloadJob`]s.
 #[derive(Debug)]
 pub struct BasicPayloadJobGenerator<Client, Pool, Tasks, Builder> {
@@ -144,30 +134,6 @@ impl<Client, Pool, Tasks, Builder> BasicPayloadJobGenerator<Client, Pool, Tasks,
         } else {
             None
         }
-    }
-
-    /// Returns the maximum duration a job should be allowed to run.
-    ///
-    /// This adheres to the following specification:
-    // > Client software SHOULD stop the updating process when either a call to engine_getPayload
-    // > with the build process's payloadId is made or SECONDS_PER_SLOT (12s in the Mainnet
-    // > configuration) have passed since the point in time identified by the timestamp parameter.
-    // See also <https://github.com/ethereum/execution-apis/blob/431cf72fd3403d946ca3e3afc36b973fc87e0e89/src/engine/paris.md?plain=1#L137>
-    #[inline]
-    fn max_job_duration(&self, unix_timestamp: u64) -> Duration {
-        let duration_until_timestamp = duration_until(unix_timestamp);
-
-        // safety in case clocks are bad
-        let duration_until_timestamp = duration_until_timestamp.min(self.config.deadline * 3);
-
-        self.config.deadline + duration_until_timestamp
-    }
-
-    /// Returns the [Instant](tokio::time::Instant) at which the job should be terminated because it
-    /// is considered timed out.
-    #[inline]
-    fn job_deadline(&self, unix_timestamp: u64) -> tokio::time::Instant {
-        tokio::time::Instant::now() + self.max_job_duration(unix_timestamp)
     }
 }
 
@@ -292,9 +258,6 @@ pub struct BasicPayloadJobGeneratorConfig {
     deadline: Duration,
     /// Maximum number of tasks to spawn for building a payload.
     max_payload_tasks: usize,
-    /// The rollup's compute pending block configuration option.
-    #[cfg(feature = "optimism")]
-    compute_pending_block: bool,
 }
 
 // === impl BasicPayloadJobGeneratorConfig ===
@@ -338,15 +301,6 @@ impl BasicPayloadJobGeneratorConfig {
         self.max_gas_limit = max_gas_limit;
         self
     }
-
-    /// Sets the compute pending block configuration option.
-    ///
-    /// Defaults to `false`.
-    #[cfg(feature = "optimism")]
-    pub fn compute_pending_block(mut self, compute_pending_block: bool) -> Self {
-        self.compute_pending_block = compute_pending_block;
-        self
-    }
 }
 
 impl Default for BasicPayloadJobGeneratorConfig {
@@ -360,8 +314,6 @@ impl Default for BasicPayloadJobGeneratorConfig {
             // 12s slot time
             deadline: SLOT_DURATION,
             max_payload_tasks: 3,
-            #[cfg(feature = "optimism")]
-            compute_pending_block: false,
         }
     }
 }
@@ -525,10 +477,6 @@ where
         Ok(self.config.attributes.clone())
     }
 
-    fn payload_attributes(&self) -> Result<PayloadBuilderAttributes, PayloadBuilderError> {
-        Ok(self.config.attributes.clone())
-    }
-
     fn resolve(&mut self) -> (Self::ResolvePayloadFuture, KeepPayloadJobAlive) {
         let best_payload = self.best_payload.take();
         let maybe_better = self.pending_block.take();
@@ -567,41 +515,6 @@ where
                 let res = Builder::build_empty_payload(&client, config);
                 let _ = tx.send(res);
             }));
-
-            // In Optimism, the PayloadAttributes can specify a `no_tx_pool` option that implies we
-            // should not pull transactions from the tx pool. In this case, we build the payload
-            // upfront with the list of transactions sent in the attributes without caring about
-            // the results of the polling job, if a best payload has not already been built.
-            #[cfg(feature = "optimism")]
-            {
-                if self.config.chain_spec.is_optimism() &&
-                    self.config.attributes.optimism_payload_attributes.no_tx_pool
-                {
-                    let args = BuildArguments {
-                        client: self.client.clone(),
-                        pool: self.pool.clone(),
-                        cached_reads: self.cached_reads.take().unwrap_or_default(),
-                        config: self.config.clone(),
-                        cancel: Cancelled::default(),
-                        best_payload: None,
-                    };
-                    if let Ok(BuildOutcome::Better { payload, cached_reads }) =
-                        self.builder.try_build(args)
-                    {
-                        self.cached_reads = Some(cached_reads);
-                        trace!(target: "payload_builder", "[OPTIMISM] Forced best payload");
-                        let payload = Arc::new(payload);
-                        return (
-                            ResolveBestPayload {
-                                best_payload: Some(payload),
-                                maybe_better,
-                                empty_payload,
-                            },
-                            KeepPayloadJobAlive::Yes,
-                        )
-                    }
-                }
-            }
 
             empty_payload = Some(rx);
         }
@@ -820,20 +733,6 @@ impl<Pool, Client, Attributes, Payload> BuildArguments<Pool, Client, Attributes,
         config: PayloadConfig<Attributes>,
         cancel: Cancelled,
         best_payload: Option<Payload>,
-    ) -> Self {
-        Self { client, pool, cached_reads, config, cancel, best_payload }
-    }
-}
-
-impl<Pool, Client> BuildArguments<Pool, Client> {
-    /// Create new build arguments.
-    pub fn new(
-        client: Client,
-        pool: Pool,
-        cached_reads: CachedReads,
-        config: PayloadConfig,
-        cancel: Cancelled,
-        best_payload: Option<Arc<BuiltPayload>>,
     ) -> Self {
         Self { client, pool, cached_reads, config, cancel, best_payload }
     }

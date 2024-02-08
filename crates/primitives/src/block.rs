@@ -7,9 +7,12 @@ use reth_codecs::derive_arbitrary;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
+use reth_rpc_types::{ExecutionPayload, ExecutionPayloadV1};
 pub use reth_rpc_types::{
-    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock, RpcBlockHash,
+    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock,
+    RpcBlockHash,
 };
+use crate::U256;
 
 /// Ethereum full block.
 ///
@@ -89,7 +92,7 @@ impl Block {
             let Some(senders) =
                 TransactionSigned::recover_signers_unchecked(&self.body, self.body.len())
             else {
-                return Err(self)
+                return Err(self);
             };
             senders
         };
@@ -108,11 +111,6 @@ impl Block {
 
     /// Returns whether or not the block contains any blob transactions.
     #[inline]
-    pub fn has_blob_transactions(&self) -> bool {
-        self.body.iter().any(|tx| tx.is_eip4844())
-    }
-
-    /// Returns whether or not the block contains any blob transactions.
     pub fn has_blob_transactions(&self) -> bool {
         self.body.iter().any(|tx| tx.is_eip4844())
     }
@@ -348,7 +346,7 @@ impl SealedBlock {
             return Err(GotExpected {
                 got: calculated_root,
                 expected: self.header.transactions_root,
-            })
+            });
         }
 
         Ok(())
@@ -357,11 +355,6 @@ impl SealedBlock {
     /// Returns a vector of transactions RLP encoded with [TransactionSigned::encode_enveloped].
     pub fn raw_transactions(&self) -> Vec<Bytes> {
         self.body.iter().map(|tx| tx.envelope_encoded()).collect()
-    }
-
-    /// Calculates the total gas used by blob transactions in the sealed block.
-    pub fn blob_gas_used(&self) -> u64 {
-        self.blob_transactions().iter().filter_map(|tx| tx.blob_gas_used()).sum()
     }
 }
 
@@ -551,11 +544,12 @@ impl BlockBody {
     /// Calculates a heuristic for the in-memory size of the [BlockBody].
     #[inline]
     pub fn size(&self) -> usize {
-        self.transactions.iter().map(TransactionSigned::size).sum::<usize>() +
-            self.transactions.capacity() * std::mem::size_of::<TransactionSigned>() +
-            self.ommers.iter().map(Header::size).sum::<usize>() +
-            self.ommers.capacity() * std::mem::size_of::<Header>() +
-            self.withdrawals
+        self.transactions.iter().map(TransactionSigned::size).sum::<usize>()
+            + self.transactions.capacity() * std::mem::size_of::<TransactionSigned>()
+            + self.ommers.iter().map(Header::size).sum::<usize>()
+            + self.ommers.capacity() * std::mem::size_of::<Header>()
+            + self
+                .withdrawals
                 .as_ref()
                 .map_or(std::mem::size_of::<Option<Withdrawals>>(), Withdrawals::total_size)
     }

@@ -35,7 +35,10 @@ use reth_interfaces::{
     },
     RethResult,
 };
-use reth_network::{NetworkBuilder, NetworkConfig, NetworkHandle, NetworkManager};
+use reth_network::{
+    config::NetworkMode, import::BlockImport, NetworkBuilder, NetworkConfig, NetworkHandle,
+    NetworkManager,
+};
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
@@ -391,6 +394,7 @@ impl NodeConfig {
         executor: TaskExecutor,
         head: Head,
         data_dir: &ChainPath<DataDirPath>,
+        block_import: Option<Box<dyn BlockImport>>,
     ) -> eyre::Result<(ProviderFactory<DB>, NetworkBuilder<ProviderFactory<DB>, (), ()>)>
     where
         DB: Database + Unpin + Clone + 'static,
@@ -405,6 +409,7 @@ impl NodeConfig {
             head,
             secret_key,
             default_peers_path.clone(),
+            block_import,
         );
 
         let client = network_config.client.clone();
@@ -687,7 +692,7 @@ impl NodeConfig {
         // try to look up the header in the database
         if let Some(header) = header {
             info!(target: "reth::cli", ?tip, "Successfully looked up tip block in the database");
-            return Ok(header.number)
+            return Ok(header.number);
         }
 
         Ok(self.fetch_tip_from_network(client, tip.into()).await?.number)
@@ -709,7 +714,7 @@ impl NodeConfig {
             match get_single_header(&client, tip).await {
                 Ok(tip_header) => {
                     info!(target: "reth::cli", ?tip, "Successfully fetched tip");
-                    return Ok(tip_header)
+                    return Ok(tip_header);
                 }
                 Err(error) => {
                     error!(target: "reth::cli", %error, "Failed to fetch the tip. Retrying...");
@@ -727,8 +732,9 @@ impl NodeConfig {
         head: Head,
         secret_key: SecretKey,
         default_peers_path: PathBuf,
+        block_import: Option<Box<dyn BlockImport>>,
     ) -> NetworkConfig<ProviderFactory<DB>> {
-        let cfg_builder = self
+        let mut cfg_builder = self
             .network
             .network_config(config, self.chain.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor))
@@ -743,6 +749,12 @@ impl NodeConfig {
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
             )));
+
+        // Botanix specific network configurations
+        if let Some(block_import) = block_import {
+            cfg_builder =
+                cfg_builder.block_import(block_import).network_mode(NetworkMode::Authority);
+        }
 
         // When `sequencer_endpoint` is configured, the node will forward all transactions to a
         // Sequencer node for execution and inclusion on L1, and disable its own txpool

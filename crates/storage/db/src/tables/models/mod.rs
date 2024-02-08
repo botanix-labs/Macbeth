@@ -103,7 +103,7 @@ impl Decode for String {
     }
 }
 
-impl Encode for Nibbles {
+impl Encode for StoredNibbles {
     type Encoded = Vec<u8>;
 
     // Delegate to the Compact implementation
@@ -114,7 +114,7 @@ impl Encode for Nibbles {
     }
 }
 
-impl Decode for Nibbles {
+impl Decode for StoredNibbles {
     fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
         let buf = value.as_ref();
         Ok(Self::from_compact(buf, buf.len()).0)

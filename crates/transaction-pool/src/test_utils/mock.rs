@@ -1617,43 +1617,6 @@ impl IntoIterator for MockTransactionSet {
     }
 }
 
-/// A set of [MockTransaction]s that can be modified at once
-#[derive(Debug, Clone)]
-pub struct MockTransactionSet {
-    pub(crate) transactions: Vec<MockTransaction>,
-}
-
-impl MockTransactionSet {
-    /// Create a new [MockTransactionSet] from a list of transactions
-    fn new(transactions: Vec<MockTransaction>) -> Self {
-        Self { transactions }
-    }
-
-    /// Create a list of dependent transactions with a common sender. The transactions start at the
-    /// given nonce, and the sender is incremented by the given tx_count.
-    pub fn dependent(sender: Address, from_nonce: u64, tx_count: usize, tx_type: TxType) -> Self {
-        let mut txs = Vec::with_capacity(tx_count);
-        let mut curr_tx = MockTransaction::new_from_type(tx_type).with_nonce(from_nonce);
-        for i in 0..tx_count {
-            let nonce = from_nonce + i as u64;
-            curr_tx = curr_tx.next().with_sender(sender);
-            txs.push(curr_tx.clone());
-        }
-
-        MockTransactionSet::new(txs)
-    }
-
-    /// Add transactions to the [MockTransactionSet]
-    pub fn extend<T: IntoIterator<Item = MockTransaction>>(&mut self, txs: T) {
-        self.transactions.extend(txs);
-    }
-
-    /// Extract the inner [Vec] of [MockTransaction]s
-    pub fn into_vec(self) -> Vec<MockTransaction> {
-        self.transactions
-    }
-}
-
 #[test]
 fn test_mock_priority() {
     use crate::TransactionOrdering;

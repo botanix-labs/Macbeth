@@ -59,9 +59,6 @@ pub use optimism::TxDeposit;
 #[cfg(feature = "optimism")]
 pub use tx_type::DEPOSIT_TX_TYPE_ID;
 
-/// Either a transaction hash or number.
-pub type TxHashOrNumber = BlockHashOrNumber;
-
 // Expected number of transactions where we can expect a speed-up by recovering the senders in
 // parallel.
 pub(crate) static PARALLEL_SENDER_RECOVERY_THRESHOLD: Lazy<usize> =

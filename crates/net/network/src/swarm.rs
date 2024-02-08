@@ -76,11 +76,6 @@ impl<C> Swarm<C> {
         self.sessions_mut().add_rlpx_sub_protocol(protocol);
     }
 
-    /// Adds an additional protocol handler to the RLPx sub-protocol list.
-    pub(crate) fn add_rlpx_sub_protocol(&mut self, protocol: impl IntoRlpxSubProtocol) {
-        self.sessions_mut().add_rlpx_sub_protocol(protocol);
-    }
-
     /// Access to the state.
     pub(crate) fn state(&self) -> &NetworkState<C> {
         &self.state

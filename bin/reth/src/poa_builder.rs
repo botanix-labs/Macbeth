@@ -1,5 +1,6 @@
-//! Contains types and methods that can be used to launch a node based off of a [NodeConfig].
+//! Contains types and methods that can be used to launch a node running poa consensus based off of a [NodeConfig].
 
+use crate::args::get_secret_key;
 use crate::{
     commands::{
         debug_cmd::engine_api_store::EngineApiStore,
@@ -10,6 +11,7 @@ use crate::{
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
+use reth_authority_consensus::AuthorityConsensusBuilder;
 use reth_auto_seal_consensus::AutoSealBuilder;
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
@@ -17,11 +19,13 @@ use reth_beacon_consensus::{
 };
 use reth_blockchain_tree::{config::BlockchainTreeConfig, ShareableBlockchainTree};
 use reth_config::Config;
+use reth_consensus_common::utils;
 use reth_db::{
     database::Database,
     database_metrics::{DatabaseMetadata, DatabaseMetrics},
 };
 use reth_interfaces::p2p::either::EitherDownloader;
+use reth_network::import::ProofOfAuthorityBlockImport;
 use reth_network::NetworkEvents;
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_node_core::{
@@ -39,20 +43,23 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 #[cfg(feature = "optimism")]
 use reth_node_optimism::{OptimismEngineTypes, OptimismEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::DisplayHardforks;
 use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
 use reth_transaction_pool::TransactionPool;
 use std::{path::PathBuf, sync::Arc};
-use tokio::sync::{mpsc::unbounded_channel, oneshot};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
+
+use client::BtcServerClient;
+use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+use rsntp::AsyncSntpClient;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
 
-/// Launches the node, also adding any RPC extensions passed.
+/// Launches the PoA node, also adding any RPC extensions passed.
 ///
 /// # Example
 /// ```rust
@@ -73,7 +80,7 @@ pub use reth_node_core::node_config::NodeConfig;
 ///     let handle = launch_from_config::<()>(builder, ext, executor).await.unwrap();
 /// }
 /// ```
-pub async fn launch_from_config<E: RethCliExt>(
+pub async fn launch_poa_from_config<E: RethCliExt>(
     mut config: NodeConfig,
     ext: E::Node,
     executor: TaskExecutor,
@@ -120,6 +127,92 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // Does not do anything on windows.
         raise_fd_limit()?;
 
+        // async task that checks system clock is in sync with NTP server
+        executor.spawn_critical(
+            "async system clock sync with ntp task",
+            Box::pin(async {
+                let sleep_sec = tokio::time::Duration::from_secs(15);
+                let acceptable_drift_sec = 1;
+                loop {
+                    // TODO (scott) pass in ntp url as arg
+                    match ntp_unix_timestamp("time.cloudflare.com").await {
+                        Ok(ntp_timestamp) => {
+                            let system_timestamp = utils::unix_timestamp();
+                            if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
+                                error!("System clock is not in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            } else {
+                                info!("System clock is in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            }
+                        }
+                        Err(err) => {
+                            error!("NTP sync failed: {}", err);
+                        }
+                    }
+                    tokio::time::sleep(sleep_sec).await;
+                }
+            }),
+        );
+
+        // Connect to btc signining server
+        let btc_server_client: BtcServerClient<tonic::transport::Channel> =
+            BtcServerClient::connect(self.config.rpc.btc_server.clone())
+                .await
+                .expect("connect to btc_server");
+        info!(target: "reth::cli", "Btc server connected");
+
+        let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
+            Arc::new(RwLock::new(None));
+        let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
+
+        let block_source = MempoolSpace::new(self.config.rpc.btc_block_source.to_string().clone());
+
+        executor.spawn_critical(
+            "async bitcoin block header task",
+            Box::pin(async move {
+                let sleep_ms = tokio::time::Duration::from_millis(5000);
+                let mut tip = 0u32;
+                loop {
+                    let mut header_write = bitcoin_block_headers.write().await;
+                    let current_tip = match block_source.get_tip().await {
+                        Ok(current_tip) => current_tip,
+                        Err(_) => {
+                            drop(header_write);
+                            error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            continue;
+                        }
+                    };
+                    if current_tip != tip {
+                        info!("Async bitcoin worker tip mismatch");
+                        let block_hash = match block_source.get_block_hash(current_tip).await {
+                            Ok(block_hash) => block_hash,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch a block hash. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
+                        let block_header = match block_source.get_block_header(block_hash).await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch a block header. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
+                        // TODO (armins) in v1 we will need the nth deep block header not tip
+                        *header_write = Some((block_header, current_tip));
+                        drop(header_write);
+                        tip = current_tip;
+                    }
+                    tokio::time::sleep(sleep_ms).await;
+                }
+            }),
+        );
+        info!(target: "reth::cli", "Spawned async bitcoin block header task");
+
         // get config
         let config = self.load_config()?;
 
@@ -147,8 +240,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         let genesis_hash = init_genesis(Arc::clone(&self.db), self.config.chain.clone())?;
 
-        info!(target: "reth::cli", "{}", DisplayHardforks::new(self.config.chain.hardforks()));
-
+        // Note: this should be PoA consenusus only
         let consensus = self.config.consensus();
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
@@ -163,6 +255,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             .or(config.prune.clone());
 
         // TODO: stateful node builder should be able to remove cfgs here
+        // NOTE: not needed for PoA but just keeping it in
         #[cfg(feature = "optimism")]
         let evm_config = OptimismEvmConfig::default();
 
@@ -198,7 +291,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let transaction_pool =
             self.config.build_and_spawn_txpool(&blockchain_db, head, &executor, &self.data_dir)?;
 
+        // Set up block import structures
+        let (block_import_tx, block_import_rx) = unbounded_channel();
+        let block_import =
+            ProofOfAuthorityBlockImport::new(self.config.chain.clone(), block_import_tx);
         // build network
+        // TODO(armins) need to config for block import
         let (network_client, mut network_builder) = self
             .config
             .build_network(
@@ -207,7 +305,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 executor.clone(),
                 head,
                 &self.data_dir,
-                None,
+                Some(Box::new(block_import)),
             )
             .await?;
 
@@ -259,6 +357,28 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             ext.spawn_payload_builder_service(&self.config.builder, &components, payload_builder)?;
 
         let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
+
+        let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
+        let (_, mut block_production_task, mut block_fetcher_task, mut sync_controller) =
+            AuthorityConsensusBuilder::try_new(
+                Arc::clone(&self.config.chain),
+                blockchain_db.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender.clone(),
+                btc_server_client.clone(),
+                bitcoin_block_headers_clone,
+                self.config.rpc.btc_block_source.clone(),
+                secp256k1::Secp256k1::new(),
+                network_sk,
+                None,
+                network.clone(),
+                block_import_rx,
+                executor.clone(),
+                evm_config.clone(),
+            )
+            .expect("Failed to create authority consensus builder")
+            .build();
+
         if let Some(store_path) = self.config.debug.engine_api_store.clone() {
             let (engine_intercept_tx, engine_intercept_rx) = unbounded_channel();
             let engine_api_store = EngineApiStore::new(store_path);
@@ -269,65 +389,44 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             consensus_engine_rx = engine_intercept_rx;
         };
         let max_block = self.config.max_block(&network_client, provider_factory.clone()).await?;
-
-        // Configure the pipeline
-        let (mut pipeline, client) = if self.config.dev.dev {
-            info!(target: "reth::cli", "Starting Reth in dev mode");
-            let mining_mode =
-                self.config.mining_mode(transaction_pool.pending_transactions_listener());
-
-            let (_, client, mut task) = AutoSealBuilder::new(
-                Arc::clone(&self.config.chain),
-                blockchain_db.clone(),
-                transaction_pool.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender,
-                mining_mode,
+        let mut pipeline = self
+            .config
+            .build_networked_pipeline(
+                &config.stages,
+                network_client.clone(),
+                Arc::clone(&consensus),
+                provider_factory.clone(),
+                &executor.clone(),
+                sync_metrics_tx,
+                prune_config.clone(),
+                max_block,
                 evm_config,
             )
-            .build();
-
-            let mut pipeline = self
-                .config
-                .build_networked_pipeline(
-                    &config.stages,
-                    client.clone(),
-                    Arc::clone(&consensus),
-                    provider_factory.clone(),
-                    &executor,
-                    sync_metrics_tx,
-                    prune_config.clone(),
-                    max_block,
-                    evm_config,
-                )
-                .await?;
-
-            let pipeline_events = pipeline.events();
-            task.set_pipeline_events(pipeline_events);
-            debug!(target: "reth::cli", "Spawning auto mine task");
-            executor.spawn(Box::pin(task));
-
-            (pipeline, EitherDownloader::Left(client))
-        } else {
-            let pipeline = self
-                .config
-                .build_networked_pipeline(
-                    &config.stages,
-                    network_client.clone(),
-                    Arc::clone(&consensus),
-                    provider_factory.clone(),
-                    &executor.clone(),
-                    sync_metrics_tx,
-                    prune_config.clone(),
-                    max_block,
-                    evm_config,
-                )
-                .await?;
-
-            (pipeline, EitherDownloader::Right(network_client))
-        };
+            .await?;
 
         let pipeline_events = pipeline.events();
+        
+        // TODO(armins) do we need this?
+        // block_production_task.set_pipeline_events(pipeline_events.clone());
+
+        executor.spawn_critical(
+            "PoA Block Production Task",
+            Box::pin(async move {
+                block_production_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "PoA Block Fetcher Task",
+            Box::pin(async move {
+                block_fetcher_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "PoA Block Sync Controller Task",
+            Box::pin(async move {
+                sync_controller.start_task().await;
+            }),
+        );
 
         let initial_target = self.config.initial_pipeline_target(genesis_hash);
         let mut hooks = EngineHooks::new();
@@ -349,7 +448,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         // Configure the consensus engine
         let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
-            client,
+            network_client,
             pipeline,
             blockchain_db.clone(),
             Box::new(executor.clone()),
@@ -417,8 +516,11 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             let _ = tx.send(res);
         });
 
+        // TODO launch poa specific CL stuff
+
         ext.on_node_started(&components)?;
 
+        // NOTE: again not really needed for PoA but just leaving this here
         // If `enable_genesis_walkback` is set to true, the rollup client will need to
         // perform the derivation pipeline from genesis, validating the data dir.
         // When set to false, set the finalized, safe, and unsafe head block hashes
@@ -535,323 +637,27 @@ impl NodeHandle {
 pub async fn spawn_node(config: NodeConfig) -> eyre::Result<(NodeHandle, TaskManager)> {
     let task_manager = TaskManager::current();
     let ext = DefaultRethNodeCommandConfig::default();
-    Ok((launch_from_config::<()>(config, ext, task_manager.executor()).await?, task_manager))
+    Ok((launch_poa_from_config::<()>(config, ext, task_manager.executor()).await?, task_manager))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use reth_node_core::args::RpcServerArgs;
-    use reth_primitives::U256;
-    use reth_rpc_api::EthApiClient;
+// *** Botanix specific
+// get unix timsestamp in seconds from ntp server
+async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
+    // create NTP client
+    let client = AsyncSntpClient::new();
 
-    #[tokio::test]
-    async fn block_number_node_config_test() {
-        // this launches a test node with http
-        let rpc_args = RpcServerArgs::default().with_http();
-
-        let (handle, _manager) = spawn_node(NodeConfig::test().with_rpc(rpc_args)).await.unwrap();
-
-        // call a function on the node
-        let client = handle.rpc_server_handles().rpc.http_client().unwrap();
-        let block_number = client.block_number().await.unwrap();
-
-        // it should be zero, since this is an ephemeral test node
-        assert_eq!(block_number, U256::ZERO);
-    }
-
-    #[tokio::test]
-    async fn rpc_handles_none_without_http() {
-        // this launches a test node _without_ http
-        let (handle, _manager) = spawn_node(NodeConfig::test()).await.unwrap();
-
-        // ensure that the `http_client` is none
-        let maybe_client = handle.rpc_server_handles().rpc.http_client();
-        assert!(maybe_client.is_none());
-    }
-
-    #[tokio::test]
-    async fn launch_multiple_nodes() {
-        // spawn_test_node takes roughly 1 second per node, so this test takes ~4 seconds
-        let num_nodes = 4;
-
-        // contains handles and managers
-        let mut handles = Vec::new();
-        for _ in 0..num_nodes {
-            let handle = spawn_node(NodeConfig::test()).await.unwrap();
-            handles.push(handle);
+    // sync with NTP server
+    match client.synchronize(ntp_server).await {
+        Ok(sync_result) => match sync_result.datetime().unix_timestamp() {
+            Ok(duration) => Ok(duration.as_secs()),
+            Err(err) => {
+                error!("Failed to get unix timestamp from NTP response: {}", err);
+                Err(err.into())
+            }
+        },
+        Err(err) => {
+            error!("Failed to sync with NTP server: {}", err);
+            Err(err.into())
         }
-    }
-
-    #[cfg(feature = "optimism")]
-    #[tokio::test]
-    async fn optimism_pre_canyon_no_withdrawals_valid() {
-        reth_tracing::init_test_tracing();
-        use alloy_chains::Chain;
-        use jsonrpsee::http_client::HttpClient;
-        use reth_primitives::{ChainSpec, Genesis};
-        use reth_rpc_api::EngineApiClient;
-        use reth_rpc_types::engine::{
-            ForkchoiceState, OptimismPayloadAttributes, PayloadAttributes,
-        };
-
-        // this launches a test node with http
-        let rpc_args = RpcServerArgs::default().with_http();
-
-        // create optimism genesis with canyon at block 2
-        let spec = ChainSpec::builder()
-            .chain(Chain::optimism_mainnet())
-            .genesis(Genesis::default())
-            .regolith_activated()
-            .build();
-
-        let genesis_hash = spec.genesis_hash();
-
-        // create node config
-        let node_config = NodeConfig::test().with_rpc(rpc_args).with_chain(spec);
-
-        let (handle, _manager) = spawn_node(node_config).await.unwrap();
-
-        // call a function on the node
-        let client = handle.rpc_server_handles().auth.http_client();
-        let block_number = client.block_number().await.unwrap();
-
-        // it should be zero, since this is an ephemeral test node
-        assert_eq!(block_number, U256::ZERO);
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let forkchoice_state = ForkchoiceState {
-            head_block_hash: genesis_hash,
-            safe_block_hash: genesis_hash,
-            finalized_block_hash: genesis_hash,
-        };
-
-        let payload_attributes = OptimismPayloadAttributes {
-            payload_attributes: PayloadAttributes {
-                timestamp: 1,
-                prev_randao: Default::default(),
-                suggested_fee_recipient: Default::default(),
-                // canyon is _not_ in the chain spec, so this should cause the engine call to fail
-                withdrawals: None,
-                parent_beacon_block_root: None,
-            },
-            no_tx_pool: None,
-            gas_limit: Some(1),
-            transactions: None,
-        };
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let res = <HttpClient as EngineApiClient<OptimismEngineTypes>>::fork_choice_updated_v2(
-            &client,
-            forkchoice_state,
-            Some(payload_attributes),
-        )
-        .await;
-        res.expect("pre-canyon engine call without withdrawals should succeed");
-    }
-
-    #[cfg(feature = "optimism")]
-    #[tokio::test]
-    async fn optimism_pre_canyon_withdrawals_invalid() {
-        reth_tracing::init_test_tracing();
-        use alloy_chains::Chain;
-        use assert_matches::assert_matches;
-        use jsonrpsee::{core::Error, http_client::HttpClient, types::error::INVALID_PARAMS_CODE};
-        use reth_primitives::{ChainSpec, Genesis};
-        use reth_rpc_api::EngineApiClient;
-        use reth_rpc_types::engine::{
-            ForkchoiceState, OptimismPayloadAttributes, PayloadAttributes,
-        };
-
-        // this launches a test node with http
-        let rpc_args = RpcServerArgs::default().with_http();
-
-        // create optimism genesis with canyon at block 2
-        let spec = ChainSpec::builder()
-            .chain(Chain::optimism_mainnet())
-            .genesis(Genesis::default())
-            .regolith_activated()
-            .build();
-
-        let genesis_hash = spec.genesis_hash();
-
-        // create node config
-        let node_config = NodeConfig::test().with_rpc(rpc_args).with_chain(spec);
-
-        let (handle, _manager) = spawn_node(node_config).await.unwrap();
-
-        // call a function on the node
-        let client = handle.rpc_server_handles().auth.http_client();
-        let block_number = client.block_number().await.unwrap();
-
-        // it should be zero, since this is an ephemeral test node
-        assert_eq!(block_number, U256::ZERO);
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let forkchoice_state = ForkchoiceState {
-            head_block_hash: genesis_hash,
-            safe_block_hash: genesis_hash,
-            finalized_block_hash: genesis_hash,
-        };
-
-        let payload_attributes = OptimismPayloadAttributes {
-            payload_attributes: PayloadAttributes {
-                timestamp: 1,
-                prev_randao: Default::default(),
-                suggested_fee_recipient: Default::default(),
-                // canyon is _not_ in the chain spec, so this should cause the engine call to fail
-                withdrawals: Some(vec![]),
-                parent_beacon_block_root: None,
-            },
-            no_tx_pool: None,
-            gas_limit: Some(1),
-            transactions: None,
-        };
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let res = <HttpClient as EngineApiClient<OptimismEngineTypes>>::fork_choice_updated_v2(
-            &client,
-            forkchoice_state,
-            Some(payload_attributes),
-        )
-        .await;
-        let err = res.expect_err("pre-canyon engine call with withdrawals should fail");
-        assert_matches!(err, Error::Call(ref object) if object.code() == INVALID_PARAMS_CODE);
-    }
-
-    #[cfg(feature = "optimism")]
-    #[tokio::test]
-    async fn optimism_post_canyon_no_withdrawals_invalid() {
-        reth_tracing::init_test_tracing();
-        use alloy_chains::Chain;
-        use assert_matches::assert_matches;
-        use jsonrpsee::{core::Error, http_client::HttpClient, types::error::INVALID_PARAMS_CODE};
-        use reth_primitives::{ChainSpec, Genesis};
-        use reth_rpc_api::EngineApiClient;
-        use reth_rpc_types::engine::{
-            ForkchoiceState, OptimismPayloadAttributes, PayloadAttributes,
-        };
-
-        // this launches a test node with http
-        let rpc_args = RpcServerArgs::default().with_http();
-
-        // create optimism genesis with canyon at block 2
-        let spec = ChainSpec::builder()
-            .chain(Chain::optimism_mainnet())
-            .genesis(Genesis::default())
-            .canyon_activated()
-            .build();
-
-        let genesis_hash = spec.genesis_hash();
-
-        // create node config
-        let node_config = NodeConfig::test().with_rpc(rpc_args).with_chain(spec);
-
-        let (handle, _manager) = spawn_node(node_config).await.unwrap();
-
-        // call a function on the node
-        let client = handle.rpc_server_handles().auth.http_client();
-        let block_number = client.block_number().await.unwrap();
-
-        // it should be zero, since this is an ephemeral test node
-        assert_eq!(block_number, U256::ZERO);
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let forkchoice_state = ForkchoiceState {
-            head_block_hash: genesis_hash,
-            safe_block_hash: genesis_hash,
-            finalized_block_hash: genesis_hash,
-        };
-
-        let payload_attributes = OptimismPayloadAttributes {
-            payload_attributes: PayloadAttributes {
-                timestamp: 1,
-                prev_randao: Default::default(),
-                suggested_fee_recipient: Default::default(),
-                // canyon is _not_ in the chain spec, so this should cause the engine call to fail
-                withdrawals: None,
-                parent_beacon_block_root: None,
-            },
-            no_tx_pool: None,
-            gas_limit: Some(1),
-            transactions: None,
-        };
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let res = <HttpClient as EngineApiClient<OptimismEngineTypes>>::fork_choice_updated_v2(
-            &client,
-            forkchoice_state,
-            Some(payload_attributes),
-        )
-        .await;
-        let err = res.expect_err("post-canyon engine call with no withdrawals should fail");
-        assert_matches!(err, Error::Call(ref object) if object.code() == INVALID_PARAMS_CODE);
-    }
-
-    #[cfg(feature = "optimism")]
-    #[tokio::test]
-    async fn optimism_post_canyon_withdrawals_valid() {
-        reth_tracing::init_test_tracing();
-        use alloy_chains::Chain;
-        use jsonrpsee::http_client::HttpClient;
-        use reth_primitives::{ChainSpec, Genesis};
-        use reth_rpc_api::EngineApiClient;
-        use reth_rpc_types::engine::{
-            ForkchoiceState, OptimismPayloadAttributes, PayloadAttributes,
-        };
-
-        // this launches a test node with http
-        let rpc_args = RpcServerArgs::default().with_http();
-
-        // create optimism genesis with canyon at block 2
-        let spec = ChainSpec::builder()
-            .chain(Chain::optimism_mainnet())
-            .genesis(Genesis::default())
-            .canyon_activated()
-            .build();
-
-        let genesis_hash = spec.genesis_hash();
-
-        // create node config
-        let node_config = NodeConfig::test().with_rpc(rpc_args).with_chain(spec);
-
-        let (handle, _manager) = spawn_node(node_config).await.unwrap();
-
-        // call a function on the node
-        let client = handle.rpc_server_handles().auth.http_client();
-        let block_number = client.block_number().await.unwrap();
-
-        // it should be zero, since this is an ephemeral test node
-        assert_eq!(block_number, U256::ZERO);
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let forkchoice_state = ForkchoiceState {
-            head_block_hash: genesis_hash,
-            safe_block_hash: genesis_hash,
-            finalized_block_hash: genesis_hash,
-        };
-
-        let payload_attributes = OptimismPayloadAttributes {
-            payload_attributes: PayloadAttributes {
-                timestamp: 1,
-                prev_randao: Default::default(),
-                suggested_fee_recipient: Default::default(),
-                // canyon is _not_ in the chain spec, so this should cause the engine call to fail
-                withdrawals: Some(vec![]),
-                parent_beacon_block_root: None,
-            },
-            no_tx_pool: None,
-            gas_limit: Some(1),
-            transactions: None,
-        };
-
-        // call the engine_forkchoiceUpdated function with payload attributes
-        let res = <HttpClient as EngineApiClient<OptimismEngineTypes>>::fork_choice_updated_v2(
-            &client,
-            forkchoice_state,
-            Some(payload_attributes),
-        )
-        .await;
-        res.expect("post-canyon engine call with withdrawals should succeed");
     }
 }

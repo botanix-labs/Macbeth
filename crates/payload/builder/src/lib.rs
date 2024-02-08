@@ -73,10 +73,6 @@
 //!     Ok(self.attributes.clone())
 //! }
 //!
-//! fn payload_attributes(&self) -> Result<PayloadBuilderAttributes, PayloadBuilderError> {
-//!     Ok(self.attributes.clone())
-//! }
-//!
 //! fn resolve(&mut self) -> (Self::ResolvePayloadFuture, KeepPayloadJobAlive) {
 //!        let payload = self.best_payload();
 //!        (futures_util::future::ready(payload), KeepPayloadJobAlive::No)

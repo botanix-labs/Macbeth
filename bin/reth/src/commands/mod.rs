@@ -10,3 +10,4 @@ pub mod p2p;
 pub mod recover;
 pub mod stage;
 pub mod test_vectors;
+pub mod poa;

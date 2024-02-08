@@ -89,10 +89,6 @@ impl PayloadJob for TestPayloadJob {
         Ok(self.attr.clone())
     }
 
-    fn payload_attributes(&self) -> Result<PayloadBuilderAttributes, PayloadBuilderError> {
-        Ok(self.attr.clone())
-    }
-
     fn resolve(&mut self) -> (Self::ResolvePayloadFuture, KeepPayloadJobAlive) {
         let fut = futures_util::future::ready(self.best_payload());
         (fut, KeepPayloadJobAlive::No)

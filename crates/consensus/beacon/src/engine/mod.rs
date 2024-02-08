@@ -1812,47 +1812,44 @@ where
                             this.listeners.push_listener(tx);
                         }
                         BeaconEngineMessage::StartNewPayload { payload_attributes, tx, parent } => {
-                            let payload_builder = this.payload_builder.clone();
-                            tokio::spawn(async move {
-                                let attributes_result =
-                                    PayloadBuilderAttributes::try_new(parent, payload_attributes);
-                                let attributes = match attributes_result {
-                                    Ok(attributes) => attributes,
-                                    Err(error) => {
-                                        error!(target: "consensus::engine", ?error, "Failed to create payload builder attributes");
-                                        return
-                                    }
-                                };
-                                if let Ok(result) =
-                                    payload_builder.send_new_payload(attributes).await
-                                {
-                                    let _ = tx.send(result);
-                                } else {
-                                    error!(target: "consensus::engine", "Failed to receive payload from payload builder");
-                                }
-                            });
+                            // tokio::spawn(async move {
+                            //     let attributes_result =
+                            //         PayloadBuilderAttributes::try_new(parent, payload_attributes);
+                            //     let attributes = match attributes_result {
+                            //         Ok(attributes) => attributes,
+                            //         Err(error) => {
+                            //             error!(target: "consensus::engine", ?error, "Failed to create payload builder attributes");
+                            //             return
+                            //         }
+                            //     };
+                            //     if let Ok(result) =
+                            //         payload_builder.send_new_payload(attributes).await
+                            //     {
+                            //         let _ = tx.send(result);
+                            //     } else {
+                            //         error!(target: "consensus::engine", "Failed to receive payload from payload builder");
+                            //     }
+                            // });
                         }
                         BeaconEngineMessage::BestPayload { tx, payload_id } => {
                             info!(target: "consensus::engine", "Resolving payload {}", payload_id);
-                            let payload_builder = this.payload_builder.clone();
-
-                            tokio::spawn(async move {
-                                match payload_builder
-                                    .best_payload(payload_id)
-                                    .await
-                                    .transpose()
-                                    .ok()
-                                    .flatten()
-                                {
-                                    Some(payload) => {
-                                        let _ = tx.send(Some(payload));
-                                    }
-                                    None => {
-                                        error!("Failed to get best payload {}", payload_id);
-                                        let _ = tx.send(None);
-                                    }
-                                }
-                            });
+                            // tokio::spawn(async move {
+                            //     match payload_builder
+                            //         .best_payload(payload_id)
+                            //         .await
+                            //         .transpose()
+                            //         .ok()
+                            //         .flatten()
+                            //     {
+                            //         Some(payload) => {
+                            //             let _ = tx.send(Some(payload));
+                            //         }
+                            //         None => {
+                            //             error!("Failed to get best payload {}", payload_id);
+                            //             let _ = tx.send(None);
+                            //         }
+                            //     }
+                            // });
                         }
                     }
                     continue
