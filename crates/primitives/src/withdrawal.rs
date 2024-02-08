@@ -1,6 +1,7 @@
-use crate::{constants::GWEI_TO_WEI, serde_helper::u64_hex, Address};
+use crate::{constants::GWEI_TO_WEI, Address};
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
 use reth_codecs::{main_codec, Compact};
+use reth_rpc_types::serde_helpers::u64_hex;
 use std::{
     mem,
     ops::{Deref, DerefMut},

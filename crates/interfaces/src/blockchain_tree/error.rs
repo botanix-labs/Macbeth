@@ -248,6 +248,9 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::CanonicalCommit { .. } |
                     BlockExecutionError::AppendChainDoesntConnect { .. } |
                     BlockExecutionError::UnavailableForTest => false,
+                    &BlockExecutionError::FailedToDeserializePreviousBlockHeader { .. } => true,
+                    &BlockExecutionError::BitcoinRecentHeaderNotAvailable { .. } => true,
+                    &BlockExecutionError::CannotAddExistingFederationMember { .. } => true,
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
                 }

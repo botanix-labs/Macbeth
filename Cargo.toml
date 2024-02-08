@@ -15,6 +15,7 @@ members = [
     "crates/ethereum-forks/",
     "crates/interfaces/",
     "crates/metrics/",
+    "crates/botanix-lib",
     "crates/metrics/metrics-derive/",
     "crates/net/common/",
     "crates/net/discv4/",
@@ -109,11 +110,6 @@ inherits = "release"
 strip = "none"
 debug = true
 
-# Meant for testing - all optimizations, but with debug assertions and overflow checks.
-[profile.hivetests]
-inherits = "test"
-opt-level = 3
-
 [profile.maxperf]
 inherits = "release"
 lto = "fat"
@@ -132,6 +128,8 @@ reth-blockchain-tree = { path = "crates/blockchain-tree" }
 reth-codecs = { path = "crates/storage/codecs" }
 reth-config = { path = "crates/config" }
 reth-consensus-common = { path = "crates/consensus/common" }
+reth-btc-wallet = { path = "crates/btc-wallet" }
+reth-botanix-lib = { path = "crates/botanix-lib" }
 reth-db = { path = "crates/storage/db" }
 reth-discv4 = { path = "crates/net/discv4" }
 reth-dns-discovery = { path = "crates/net/dns" }
@@ -206,7 +204,6 @@ ethers-middleware = { version = "2.0", default-features = false }
 discv5 = { git = "https://github.com/sigp/discv5", rev = "f289bbd4c57d499bb1bdb393af3c249600a1c662" }
 igd = { git = "https://github.com/stevefan1999-personal/rust-igd", rev = "c2d1f83eb1612a462962453cb0703bc93258b173" }
 
-discv5 = { git = "https://github.com/sigp/discv5", rev = "f289bbd4c57d499bb1bdb393af3c249600a1c662" }
 # Fork of rust-igd with ipv6 support
 igd-next = "0.14.3"
 

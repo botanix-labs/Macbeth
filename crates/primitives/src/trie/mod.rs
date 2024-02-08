@@ -10,7 +10,6 @@ pub use account::TrieAccount;
 mod proofs;
 pub use proofs::{AccountProof, StorageProof};
 
-mod account;
 mod mask;
 pub(crate) use mask::StoredTrieMask;
 
@@ -19,9 +18,6 @@ pub use nibbles::{Nibbles, StoredNibbles, StoredNibblesSubKey};
 
 pub mod nodes;
 pub use nodes::StoredBranchNode;
-
-mod proofs;
-pub use proofs::{AccountProof, StorageProof};
 
 mod storage;
 pub use storage::StorageTrieEntry;

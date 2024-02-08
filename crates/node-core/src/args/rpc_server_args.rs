@@ -25,14 +25,7 @@ use reth_provider::{
     EvmEnvProvider, HeaderProvider, StateProviderFactory,
 };
 use reth_rpc::{
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-    eth::{
-        botanix_config::BotanixConfig, cache::EthStateCacheConfig,
-        gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP,
-    },
-=======
-    eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP},
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
+    eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig,},
     JwtError, JwtSecret,
 };
 use reth_rpc_builder::{
@@ -64,12 +57,8 @@ pub(crate) const RPC_DEFAULT_MAX_REQUEST_SIZE_MB: u32 = 15;
 /// Default max response size in MB.
 ///
 /// This is only relevant for very large trace responses.
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-pub(crate) const RPC_DEFAULT_MAX_RESPONSE_SIZE_MB: u32 = 150;
-=======
 pub(crate) const RPC_DEFAULT_MAX_RESPONSE_SIZE_MB: u32 = 160;
 
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
 /// Default number of incoming connections.
 pub(crate) const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 500;
 
@@ -305,12 +294,7 @@ impl RpcServerArgs {
     /// Returns the handles for the launched regular RPC server(s) (if any) and the server handle
     /// for the auth server that handles the `engine_` API that's accessed by the consensus
     /// layer.
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-    #[allow(clippy::too_many_arguments)]
-    pub async fn start_servers<Reth, Engine, Conf>(
-=======
     pub async fn start_servers<Reth, Engine, Conf, EngineT>(
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
         &self,
         components: &Reth,
         engine_api: Engine,
@@ -318,14 +302,9 @@ impl RpcServerArgs {
         conf: &mut Conf,
     ) -> eyre::Result<RethRpcServerHandles>
     where
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-        Reth: RethNodeComponents,
-        Engine: EngineApiServer,
-=======
         EngineT: EngineTypes + 'static,
         Engine: EngineApiServer<EngineT>,
         Reth: RethNodeComponents,
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
         Conf: RethNodeCommandConfig,
     {
         let auth_config = self.auth_server_config(jwt_secret)?;
@@ -333,21 +312,12 @@ impl RpcServerArgs {
         let module_config = self.transport_rpc_module_config();
         debug!(target: "reth::cli", http=?module_config.http(), ws=?module_config.ws(), "Using RPC module config");
 
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-        let (mut modules, auth_module, mut registry) = RpcModuleBuilder::default()
-=======
         let (mut modules, mut auth_module, mut registry) = RpcModuleBuilder::default()
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
             .with_provider(components.provider())
             .with_pool(components.pool())
             .with_network(components.network())
             .with_events(components.events())
             .with_executor(components.task_executor())
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-            .build_with_auth_server(module_config, engine_api);
-
-        let rpc_components = RethRpcComponents { registry: &mut registry, modules: &mut modules };
-=======
             .with_evm_config(components.evm_config())
             .build_with_auth_server(module_config, engine_api);
 
@@ -356,7 +326,6 @@ impl RpcServerArgs {
             modules: &mut modules,
             auth_module: &mut auth_module,
         };
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
         // apply configured customization
         conf.extend_rpc_modules(self, components, rpc_components)?;
 
@@ -385,15 +354,11 @@ impl RpcServerArgs {
         let handles = RethRpcServerHandles { rpc, auth };
 
         // call hook
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
-        let rpc_components = RethRpcComponents { registry: &mut registry, modules: &mut modules };
-=======
         let rpc_components = RethRpcComponents {
             registry: &mut registry,
             modules: &mut modules,
             auth_module: &mut auth_module,
         };
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
         conf.on_rpc_server_started(self, components, rpc_components, handles.clone())?;
 
         Ok(handles)
@@ -656,12 +621,9 @@ impl Default for RpcServerArgs {
             rpc_gas_cap: RPC_DEFAULT_GAS_CAP.into(),
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
-<<<<<<< HEAD:bin/reth/src/args/rpc_server_args.rs
             btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
             btc_block_source: Url::parse("https://mempool.space/signet/api").expect("valid url"),
             slack_notifications_webhook_url: None,
-=======
->>>>>>> upstream/main:crates/node-core/src/args/rpc_server_args.rs
         }
     }
 }
