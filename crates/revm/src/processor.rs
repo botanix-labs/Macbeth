@@ -4,6 +4,7 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
+use reth_botanix_lib::mint_validation::{parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
@@ -18,10 +19,12 @@ use revm::{
     db::{states::bundle_state::BundleRetention, EmptyDBTyped, StateDBBox},
     inspector_handle_register,
     interpreter::Host,
-    primitives::{CfgEnvWithHandlerCfg, ResultAndState},
+    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
     Evm, State, StateBuilder,
 };
+use reth_primitives::Bytes;
 use std::{sync::Arc, time::Instant};
+use tracing::{error, warn};
 
 #[cfg(feature = "optimism")]
 use reth_primitives::revm::env::fill_op_tx_env;
@@ -34,6 +37,10 @@ use reth_provider::BundleStateWithReceipts;
 use revm::DatabaseCommit;
 #[cfg(not(feature = "optimism"))]
 use tracing::{debug, trace};
+
+lazy_static::lazy_static! {
+    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+}
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.
 ///
@@ -253,7 +260,7 @@ where
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         for log in result.logs() {
-            if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
+            if log.topics().get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
                 let pegin_data = parse_pegin_topic(&log).map_err(|e| {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
@@ -264,20 +271,20 @@ where
                         tracing::trace!("Pegin aggregate value: {}", aggregate_value);
                         if aggregate_value != pegin_data.amount {
                             warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
-                            return Err(BlockValidationError::MintContractViolation.into())
+                            return Err(BlockValidationError::MintContractViolation.into());
                         }
                     }
                     Err(e) => {
                         warn!("Failed pegin attempt! {:?}", e);
-                        return Err(BlockValidationError::MintContractViolation.into())
+                        return Err(BlockValidationError::MintContractViolation.into());
                     }
                 }
             }
 
-            if log.topics.get(0) == Some(&BURN_TOPIC) {
+            if log.topics().get(0) == Some(&BURN_TOPIC) {
                 if let Err(e) = parse_pegout_topic(&log) {
                     error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::MintContractViolation.into())
+                    return Err(BlockValidationError::MintContractViolation.into());
                 }
             }
         }
@@ -325,7 +332,6 @@ where
             self.evm.transact()
         };
 
-
         // ***** Botanix specific checks
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
@@ -370,7 +376,8 @@ where
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
-        let (receipts, cumulative_gas_used) = self.execute_transactions(block, total_difficulty)?;
+        let (receipts, cumulative_gas_used) =
+            self.execute_transactions(block, total_difficulty, recent_block_header)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -379,7 +386,7 @@ where
                 gas: GotExpected { got: cumulative_gas_used, expected: block.gas_used },
                 gas_spent_by_tx: receipts.gas_spent_by_tx()?,
             }
-            .into())
+            .into());
         }
         let time = Instant::now();
         self.apply_post_execution_state_change(block, total_difficulty)?;
@@ -390,8 +397,8 @@ where
             !self
                 .prune_modes
                 .account_history
-                .map_or(false, |mode| mode.should_prune(block.number, tip)) &&
-                !self
+                .map_or(false, |mode| mode.should_prune(block.number, tip))
+                && !self
                     .prune_modes
                     .storage_history
                     .map_or(false, |mode| mode.should_prune(block.number, tip))
@@ -438,7 +445,7 @@ where
             self.prune_modes.receipts.map_or(false, |mode| mode.should_prune(block_number, tip))
         {
             receipts.clear();
-            return Ok(())
+            return Ok(());
         }
 
         // All receipts from the last 128 blocks are required for blockchain tree, even with
@@ -446,7 +453,7 @@ where
         let prunable_receipts =
             PruneMode::Distance(MINIMUM_PRUNING_DISTANCE).should_prune(block_number, tip);
         if !prunable_receipts {
-            return Ok(())
+            return Ok(());
         }
 
         let contract_log_pruner = self.prune_modes.receipts_log_filter.group_by_block(tip, None)?;
@@ -486,7 +493,7 @@ where
         total_difficulty: U256,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty)?;
+        let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
         self.save_receipts(receipts)
     }
 
@@ -494,6 +501,7 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
         let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
@@ -508,7 +516,7 @@ where
                 verify_receipt(block.header.receipts_root, block.header.logs_bloom, receipts.iter())
             {
                 debug!(target: "evm", ?error, ?receipts, "receipts verification failed");
-                return Err(error)
+                return Err(error);
             };
             self.stats.receipt_root_duration += time.elapsed();
         }
@@ -521,13 +529,12 @@ where
         block: &BlockWithSenders,
         total_difficulty: U256,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
-
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0))
+            return Ok((Vec::new(), 0));
         }
 
         let mut cumulative_gas_used = 0;
@@ -542,10 +549,11 @@ where
                     transaction_gas_limit: transaction.gas_limit(),
                     block_available_gas,
                 }
-                .into())
+                .into());
             }
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, *sender, recent_block_header)?;
+            let ResultAndState { result, state } =
+                self.transact(transaction, *sender, recent_block_header)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -628,7 +636,7 @@ pub fn verify_receipt<'a>(
         return Err(BlockValidationError::ReceiptRootDiff(
             GotExpected { got: receipts_root, expected: expected_receipts_root }.into(),
         )
-        .into())
+        .into());
     }
 
     // Create header log bloom.
@@ -637,7 +645,7 @@ pub fn verify_receipt<'a>(
         return Err(BlockValidationError::BloomLogDiff(
             GotExpected { got: logs_bloom, expected: expected_logs_bloom }.into(),
         )
-        .into())
+        .into());
     }
 
     Ok(())

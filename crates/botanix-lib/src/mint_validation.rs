@@ -27,9 +27,9 @@ impl TryFrom<B256> for GenesisContractEvents {
     type Error = &'static str;
     fn try_from(value: B256) -> Result<Self, Self::Error> {
         if value == *MINT_TOPIC {
-            return Ok(GenesisContractEvents::MintingEvent)
+            return Ok(GenesisContractEvents::MintingEvent);
         } else if value == *BURN_TOPIC {
-            return Ok(GenesisContractEvents::BurnEvent)
+            return Ok(GenesisContractEvents::BurnEvent);
         }
         Err("Invalid topic")
     }
@@ -76,8 +76,7 @@ fn topic_to_address(t: B256) -> Result<Address, MintConsensusError> {
 pub fn parse_pegin_reth_log_topic(
     log: &reth_primitives::Log,
 ) -> Result<PeginData, MintConsensusError> {
-    let revm_log =
-        Log { address: log.address, data: log.data.clone().0.into() };
+    let revm_log = log.into();
 
     parse_pegin_topic(&revm_log)
 }
@@ -85,21 +84,20 @@ pub fn parse_pegin_reth_log_topic(
 pub fn parse_pegout_reth_log_topic(
     log: &reth_primitives::Log,
 ) -> Result<PegoutData, MintConsensusError> {
-    let revm_log =
-        Log { address: log.address, data: log.data.clone().into() };
+    let revm_log = log.into();
 
     parse_pegout_topic(&revm_log)
 }
 
-pub fn parse_pegin_topic(log: &Log) -> Result<PeginData, MintConsensusError> {
+pub fn parse_pegin_topic(log: &revm::primitives::Log) -> Result<PeginData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
-        return Err(MintConsensusError::MintContractDidNotEmitMintTopic())
+        return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
     }
 
     for topic in log.topics() {
         if *topic == *MINT_TOPIC {
             if log.topics().len() != 2 {
-                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"))
+                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
             }
 
             let destination = topic_to_address(log.topics()[1])?;
@@ -152,21 +150,21 @@ pub fn parse_pegin_topic(log: &Log) -> Result<PeginData, MintConsensusError> {
             };
 
             let pegin = PeginData { account: destination, amount, bitcoin_block_height, meta };
-            return Ok(pegin)
+            return Ok(pegin);
         }
     }
     Err(MintConsensusError::MintContractDidNotEmitRelevantTopic())
 }
 
-pub fn parse_pegout_topic(log: &Log) -> Result<PegoutData, MintConsensusError> {
+pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
-        return Err(MintConsensusError::MintContractDidNotEmitMintTopic())
+        return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
     }
 
     for topic in log.topics() {
         if *topic == *BURN_TOPIC {
             if log.topics().len() != 2 {
-                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"))
+                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
             }
 
             let data = &log.data;
@@ -202,7 +200,7 @@ pub fn parse_pegout_topic(log: &Log) -> Result<PegoutData, MintConsensusError> {
             let pegout = PegoutData::new(btc_amount, destination)
                 .map_err(|e| MintConsensusError::PegoutValidationFailed(e))?;
 
-            return Ok(pegout)
+            return Ok(pegout);
         }
     }
 

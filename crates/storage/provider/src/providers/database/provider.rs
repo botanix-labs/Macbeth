@@ -1184,26 +1184,6 @@ impl<TX: DbTx> HeaderProvider for DatabaseProvider<TX> {
             predicate,
         )
     }
-
-    fn sealed_headers_while(
-        &self,
-        range: impl RangeBounds<BlockNumber>,
-        mut predicate: impl FnMut(&SealedHeader) -> bool,
-    ) -> ProviderResult<Vec<SealedHeader>> {
-        let mut headers = vec![];
-        for entry in self.tx.cursor_read::<tables::Headers>()?.walk_range(range)? {
-            let (number, header) = entry?;
-            let hash = self
-                .block_hash(number)?
-                .ok_or_else(|| ProviderError::HeaderNotFound(number.into()))?;
-            let sealed = header.seal(hash);
-            if !predicate(&sealed) {
-                break
-            }
-            headers.push(sealed);
-        }
-        Ok(headers)
-    }
 }
 
 impl<TX: DbTx> BlockHashReader for DatabaseProvider<TX> {
@@ -1414,64 +1394,6 @@ impl<TX: DbTx> BlockReader for DatabaseProvider<TX> {
                             .into_iter()
                             .map(Into::into)
                             .collect()
-                    };
-
-                    // If we are past shanghai, then all blocks should have a withdrawal list,
-                    // even if empty
-                    let withdrawals =
-                        if self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp) {
-                            Some(
-                                withdrawals_cursor
-                                    .seek_exact(num)?
-                                    .map(|(_, w)| w.withdrawals)
-                                    .unwrap_or_default(),
-                            )
-                        } else {
-                            None
-                        };
-                    let ommers = if self.chain_spec.final_paris_total_difficulty(num).is_some() {
-                        Vec::new()
-                    } else {
-                        ommers_cursor.seek_exact(num)?.map(|(_, o)| o.ommers).unwrap_or_default()
-                    };
-
-                    blocks.push(Block { header, body, ommers, withdrawals });
-                }
-            }
-        }
-        Ok(blocks)
-    }
-
-    fn block_range(&self, range: RangeInclusive<BlockNumber>) -> ProviderResult<Vec<Block>> {
-        if range.is_empty() {
-            return Ok(Vec::new())
-        }
-
-        let len = range.end().saturating_sub(*range.start()) as usize;
-        let mut blocks = Vec::with_capacity(len);
-
-        let mut headers_cursor = self.tx.cursor_read::<tables::Headers>()?;
-        let mut ommers_cursor = self.tx.cursor_read::<tables::BlockOmmers>()?;
-        let mut withdrawals_cursor = self.tx.cursor_read::<tables::BlockWithdrawals>()?;
-        let mut block_body_cursor = self.tx.cursor_read::<tables::BlockBodyIndices>()?;
-        let mut tx_cursor = self.tx.cursor_read::<tables::Transactions>()?;
-
-        for num in range {
-            if let Some((_, header)) = headers_cursor.seek_exact(num)? {
-                // If the body indices are not found, this means that the transactions either do
-                // not exist in the database yet, or they do exit but are
-                // not indexed. If they exist but are not indexed, we don't
-                // have enough information to return the block anyways, so
-                // we skip the block.
-                if let Some((_, block_body_indices)) = block_body_cursor.seek_exact(num)? {
-                    let tx_range = block_body_indices.tx_num_range();
-                    let body = if tx_range.is_empty() {
-                        Vec::new()
-                    } else {
-                        tx_cursor
-                            .walk_range(tx_range)?
-                            .map(|result| result.map(|(_, tx)| tx.into()))
-                            .collect::<Result<Vec<_>, _>>()?
                     };
 
                     // If we are past shanghai, then all blocks should have a withdrawal list,

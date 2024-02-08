@@ -12,6 +12,9 @@ use crate::{
 use core::sync::atomic::Ordering;
 use fnv::FnvHashMap;
 use futures::{stream::Fuse, SinkExt, StreamExt};
+use reth_ecies::stream::ECIESStream;
+use reth_eth_wire::EthStream;
+use reth_eth_wire::P2PStream;
 use reth_eth_wire::{
     capability::Capabilities,
     errors::{EthHandshakeError, EthStreamError, P2PStreamError},
@@ -20,6 +23,7 @@ use reth_eth_wire::{
 };
 use reth_interfaces::p2p::error::RequestError;
 use reth_metrics::common::mpsc::MeteredPollSender;
+use reth_net_common::bandwidth_meter::MeteredStream;
 use reth_primitives::PeerId;
 use std::{
     collections::VecDeque,
@@ -31,13 +35,13 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
+    net::TcpStream,
     sync::{mpsc::error::TrySendError, oneshot},
     time::Interval,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::PollSender;
 use tracing::{debug, trace};
-
 // Constants for timeout updating.
 
 /// Minimum timeout value
@@ -202,7 +206,7 @@ impl ActiveSession {
                             sizes_len: msg.sizes.len(),
                         },
                         message: EthMessage::NewPooledTransactionHashes68(msg),
-                    }
+                    };
                 }
                 self.try_emit_broadcast(PeerMessage::PooledTransactions(msg.into())).into()
             }
@@ -284,8 +288,8 @@ impl ActiveSession {
 
     /// Returns the deadline timestamp at which the request times out
     fn request_deadline(&self) -> Instant {
-        Instant::now() +
-            Duration::from_millis(self.internal_request_timeout.load(Ordering::Relaxed))
+        Instant::now()
+            + Duration::from_millis(self.internal_request_timeout.load(Ordering::Relaxed))
     }
 
     /// Handle a Response to the peer
@@ -434,7 +438,7 @@ impl ActiveSession {
                     debug!(target: "net::session", ?id, remote_peer_id=?self.remote_peer_id, "timed out outgoing request");
                     req.timeout();
                 } else if now - req.timestamp > self.protocol_breach_request_timeout {
-                    return true
+                    return true;
                 }
             }
         }
@@ -458,7 +462,7 @@ impl ActiveSession {
         match tx.poll_reserve(cx) {
             Poll::Pending => {
                 self.terminate_message = Some((tx, msg));
-                return Some(Poll::Pending)
+                return Some(Poll::Pending);
             }
             Poll::Ready(Ok(())) => {
                 let _ = tx.send_item(msg);
@@ -480,11 +484,11 @@ impl Future for ActiveSession {
 
         // if the session is terminate we have to send the termination message before we can close
         if let Some(terminate) = this.poll_terminate_message(cx) {
-            return terminate
+            return terminate;
         }
 
         if this.is_disconnecting() {
-            return this.poll_disconnect(cx)
+            return this.poll_disconnect(cx);
         }
 
         // The receive loop can be CPU intensive since it involves message decoding which could take
@@ -505,7 +509,7 @@ impl Future for ActiveSession {
                     Poll::Ready(None) => {
                         // this is only possible when the manager was dropped, in which case we also
                         // terminate this session
-                        return Poll::Ready(())
+                        return Poll::Ready(());
                     }
                     Poll::Ready(Some(cmd)) => {
                         progress = true;
@@ -520,7 +524,7 @@ impl Future for ActiveSession {
                                 let reason =
                                     reason.unwrap_or(DisconnectReason::DisconnectRequested);
 
-                                return this.try_disconnect(reason, cx)
+                                return this.try_disconnect(reason, cx);
                             }
                             SessionCommand::Message(msg) => {
                                 this.on_internal_peer_message(msg);
@@ -563,11 +567,11 @@ impl Future for ActiveSession {
                     if let Err(err) = res {
                         debug!(target: "net::session", ?err,  remote_peer_id=?this.remote_peer_id, "failed to send message");
                         // notify the manager
-                        return this.close_on_error(err, cx)
+                        return this.close_on_error(err, cx);
                     }
                 } else {
                     // no more messages to send over the wire
-                    break
+                    break;
                 }
             }
 
@@ -578,7 +582,7 @@ impl Future for ActiveSession {
                 if budget == 0 {
                     // make sure we're woken up again
                     cx.waker().wake_by_ref();
-                    break 'main
+                    break 'main;
                 }
 
                 // try to resend the pending message that we could not send because the channel was
@@ -592,7 +596,7 @@ impl Future for ActiveSession {
                         Poll::Ready(Err(_)) => return Poll::Ready(()),
                         Poll::Pending => {
                             this.pending_message_to_session = Some(msg);
-                            break 'receive
+                            break 'receive;
                         }
                     };
                 }
@@ -601,10 +605,10 @@ impl Future for ActiveSession {
                     Poll::Pending => break,
                     Poll::Ready(None) => {
                         if this.is_disconnecting() {
-                            break
+                            break;
                         } else {
                             debug!(target: "net::session", remote_peer_id=?this.remote_peer_id, "eth stream completed");
-                            return this.emit_disconnect(cx)
+                            return this.emit_disconnect(cx);
                         }
                     }
                     Poll::Ready(Some(res)) => {
@@ -619,18 +623,18 @@ impl Future for ActiveSession {
                                     }
                                     OnIncomingMessageOutcome::BadMessage { error, message } => {
                                         debug!(target: "net::session", ?error, msg=?message,  remote_peer_id=?this.remote_peer_id, "received invalid protocol message");
-                                        return this.close_on_error(error, cx)
+                                        return this.close_on_error(error, cx);
                                     }
                                     OnIncomingMessageOutcome::NoCapacity(msg) => {
                                         // failed to send due to lack of capacity
                                         this.pending_message_to_session = Some(msg);
-                                        continue 'receive
+                                        continue 'receive;
                                     }
                                 }
                             }
                             Err(err) => {
                                 debug!(target: "net::session", ?err, remote_peer_id=?this.remote_peer_id, "failed to receive message");
-                                return this.close_on_error(err, cx)
+                                return this.close_on_error(err, cx);
                             }
                         }
                     }
@@ -638,7 +642,7 @@ impl Future for ActiveSession {
             }
 
             if !progress {
-                break 'main
+                break 'main;
             }
         }
 
@@ -1119,7 +1123,7 @@ mod tests {
                 .try_send(ActiveSessionMessage::ProtocolBreach { peer_id: PeerId::random() })
                 .is_err()
             {
-                break
+                break;
             }
             num_fill_messages += 1;
         }

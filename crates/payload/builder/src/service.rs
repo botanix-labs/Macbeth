@@ -389,7 +389,7 @@ where
             }
 
             if !new_job {
-                return Poll::Pending
+                return Poll::Pending;
             }
         }
     }
@@ -439,19 +439,3 @@ where
     }
 }
 
-impl fmt::Debug for PayloadServiceCommand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PayloadServiceCommand::BuildNewPayload(f0, f1) => {
-                f.debug_tuple("BuildNewPayload").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::BestPayload(f0, f1) => {
-                f.debug_tuple("BestPayload").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::PayloadAttributes(f0, f1) => {
-                f.debug_tuple("PayloadAttributes").field(&f0).field(&f1).finish()
-            }
-            PayloadServiceCommand::Resolve(f0, _f1) => f.debug_tuple("Resolve").field(&f0).finish(),
-        }
-    }
-}

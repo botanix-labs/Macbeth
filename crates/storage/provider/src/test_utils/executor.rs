@@ -15,6 +15,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
+        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest)
@@ -26,6 +27,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
+        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest)
@@ -37,6 +39,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
+        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         Err(BlockExecutionError::UnavailableForTest)
     }

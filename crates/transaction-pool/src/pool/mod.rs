@@ -633,16 +633,6 @@ where
         self.get_pool_data().best_transactions_with_attributes(best_transactions_attributes)
     }
 
-    /// Returns an iterator that yields transactions that are ready to be included in the block with
-    /// the given base fee and optional blob fee attributes.
-    pub(crate) fn best_transactions_with_attributes(
-        &self,
-        best_transactions_attributes: BestTransactionsAttributes,
-    ) -> Box<dyn crate::traits::BestTransactions<Item = Arc<ValidPoolTransaction<T::Transaction>>>>
-    {
-        self.pool.read().best_transactions_with_attributes(best_transactions_attributes)
-    }
-
     /// Returns all transactions from the pending sub-pool
     pub(crate) fn pending_transactions(&self) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
         self.get_pool_data().pending_transactions()
@@ -714,14 +704,6 @@ where
         origin: TransactionOrigin,
     ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
         self.get_pool_data().all().transactions_iter().filter(|tx| tx.origin == origin).collect()
-    }
-
-    /// Returns all transactions that where submitted with the given [TransactionOrigin]
-    pub(crate) fn get_transactions_by_origin(
-        &self,
-        origin: TransactionOrigin,
-    ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
-        self.pool.read().all().transactions_iter().filter(|tx| tx.origin == origin).collect()
     }
 
     /// Returns all the transactions belonging to the hashes.

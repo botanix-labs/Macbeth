@@ -17,7 +17,7 @@ use std::collections::{hash_map::IntoIter, HashMap};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TrieKey {
     /// A node in the account trie.
-    AccountNode(Nibbles),
+    AccountNode(StoredNibbles),
     /// A node in the storage trie.
     StorageNode(B256, StoredNibblesSubKey),
     /// Storage trie of an account.

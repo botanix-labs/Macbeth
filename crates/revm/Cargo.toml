@@ -30,8 +30,12 @@ secp256k1 = { version = "0.27.0", default-features = false, features = ["global-
 tracing.workspace = true
 tokio.workspace = true
 
+# Lazy static   
+lazy_static = "*"
+
 # Bitcoin
 bitcoin = "0.30.1"
+reth-botanix-lib.workspace = true
 
 [dev-dependencies]
 reth-trie.workspace = true

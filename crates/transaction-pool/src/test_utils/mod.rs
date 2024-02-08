@@ -6,7 +6,6 @@ use std::ops::Deref;
 mod gen;
 pub use gen::*;
 
-mod gen;
 mod mock;
 pub use mock::*;
 

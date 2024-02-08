@@ -6954,6 +6954,7 @@ dependencies = [
  "reth-interfaces",
  "reth-primitives",
  "reth-provider",
+ "reth-tracing",
  "secp256k1 0.27.0",
 ]
 
@@ -7587,6 +7588,7 @@ dependencies = [
  "alloy-rlp",
  "assert_matches",
  "auto_impl",
+ "bitcoin",
  "dashmap",
  "itertools 0.12.1",
  "metrics",
@@ -7637,6 +7639,8 @@ name = "reth-revm"
 version = "0.1.0-alpha.17"
 dependencies = [
  "bitcoin",
+ "lazy_static",
+ "reth-botanix-lib",
  "reth-consensus-common",
  "reth-interfaces",
  "reth-node-api",

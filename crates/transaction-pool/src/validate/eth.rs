@@ -31,10 +31,7 @@ use reth_revm::optimism::RethL1BlockInfo;
 
 /// Validator for Ethereum transactions.
 #[derive(Debug, Clone)]
-pub struct EthTransactionValidator<Client, T>
-where
-    Client: BlockReaderIdExt,
-{
+pub struct EthTransactionValidator<Client, T> {
     /// The type that performs the actual validation.
     inner: Arc<EthTransactionValidatorInner<Client, T>>,
 }
@@ -98,10 +95,7 @@ where
 
 /// A [TransactionValidator] implementation that validates ethereum transaction.
 #[derive(Debug)]
-pub(crate) struct EthTransactionValidatorInner<Client, T>
-where
-    Client: BlockReaderIdExt,
-{
+pub(crate) struct EthTransactionValidatorInner<Client, T> {
     /// Spec of the chain
     chain_spec: Arc<ChainSpec>,
     /// This type fetches account info from the db
@@ -130,10 +124,7 @@ where
 
 // === impl EthTransactionValidatorInner ===
 
-impl<Client, Tx> EthTransactionValidatorInner<Client, Tx>
-where
-    Client: BlockReaderIdExt,
-{
+impl<Client, Tx> EthTransactionValidatorInner<Client, Tx> {
     /// Returns the configured chain id
     pub(crate) fn chain_id(&self) -> u64 {
         self.chain_spec.chain().id()
@@ -645,32 +636,6 @@ impl EthTransactionValidatorBuilder {
     /// Builds a the [EthTransactionValidator] and spawns validation tasks via the
     /// [TransactionValidationTaskExecutor]
     ///
-    /// For example, whether the Shanghai and Cancun hardfork is activated at launch.
-    pub fn with_head_timestamp(mut self, timestamp: u64) -> Self {
-        self.cancun = self.chain_spec.is_cancun_active_at_timestamp(timestamp);
-        self.shanghai = self.chain_spec.is_shanghai_active_at_timestamp(timestamp);
-        self
-    }
-
-    /// Builds a the [EthTransactionValidator] without spawning validator tasks.
-    pub fn build<Client, Tx, S>(
-        self,
-        client: Client,
-        blob_store: S,
-    ) -> EthTransactionValidator<Client, Tx>
-    where
-        Client: BlockReaderIdExt,
-        S: BlobStore,
-    {
-        let additional_tasks = self.additional_tasks;
-        let validator = self.build(client, blob_store);
-
-        EthTransactionValidator { inner: Arc::new(inner) }
-    }
-
-    /// Builds a the [EthTransactionValidator] and spawns validation tasks via the
-    /// [TransactionValidationTaskExecutor]
-    ///
     /// The validator will spawn `additional_tasks` additional tasks for validation.
     ///
     /// By default this will spawn 1 additional task.
@@ -681,7 +646,6 @@ impl EthTransactionValidatorBuilder {
         blob_store: S,
     ) -> TransactionValidationTaskExecutor<EthTransactionValidator<Client, Tx>>
     where
-        Client: BlockReaderIdExt,
         T: TaskSpawner,
         S: BlobStore,
     {
