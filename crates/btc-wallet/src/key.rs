@@ -69,10 +69,6 @@ pub fn tweak_public_key(
     Ok(tweaked_pk)
 }
 
-pub fn sign_with_tweaked_key(tweaked_key_pair: KeyPair, message: &Message) -> Signature {
-    SECP.sign_schnorr(message, &tweaked_key_pair)
-}
-
 #[cfg(test)]
 mod tests {
     use secp256k1::Secp256k1;
