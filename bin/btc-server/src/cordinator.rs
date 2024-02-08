@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::{database, rpc, util::OutPointExt, App, Error};
 
@@ -132,7 +129,7 @@ impl App {
             .map(|u| {
                 bdk::WeightedUtxo {
                     satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-                    utxo: bdk::Utxo::Local(bdk::LocalUtxo {
+                    utxo: bdk::Utxo::Local(bdk::LocalOutput {
                         outpoint: u.outpoint.to_bdk(),
                         txout: bdk::bitcoin::TxOut {
                             script_pubkey: u.output.script_pubkey.to_bytes().into(),
@@ -174,7 +171,7 @@ impl App {
             _ => None,
         };
 
-        let mut psbt = reth_btc_wallet::transaction::create_psbt(
+        let psbt = reth_btc_wallet::transaction::create_psbt(
             selected
                 .iter()
                 .map(|s| reth_btc_wallet::transaction::Input {
@@ -260,7 +257,6 @@ impl App {
 
     pub(crate) fn finalize_signing(&self, psbt: &Psbt) -> Result<Psbt, Error> {
         let txid = psbt.clone().extract_tx().txid();
-
         let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
 
         let partial_sigs = self
@@ -276,7 +272,7 @@ impl App {
         // Verify signature -- redundant check
         pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
 
-         // TODO (armins) add agg signature to psbt
+        // TODO (armins) add agg signature to psbt
         // if let Err(err) =
         //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
         // {
