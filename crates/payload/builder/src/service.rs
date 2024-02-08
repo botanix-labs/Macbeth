@@ -114,7 +114,7 @@ where
     }
 
     /// Returns the best payload for the given identifier.
-    async fn best_payload(
+    pub async fn best_payload(
         &self,
         id: PayloadId,
     ) -> Option<Result<Engine::BuiltPayload, PayloadBuilderError>> {
@@ -231,7 +231,7 @@ where
     }
 
     /// Returns the best payload for the given identifier that has been built so far.
-    fn best_payload(
+    pub fn best_payload(
         &self,
         id: PayloadId,
     ) -> Option<Result<Engine::BuiltPayload, PayloadBuilderError>> {
