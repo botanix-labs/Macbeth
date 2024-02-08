@@ -53,7 +53,7 @@ const GET_POOLED_TRANSACTION_SOFT_LIMIT_NUM_HASHES: usize = 256;
 
 /// Softlimit for the response size of a GetPooledTransactions message (2MB)
 const GET_POOLED_TRANSACTION_SOFT_LIMIT_SIZE: GetPooledTransactionLimit =
-    GetPooledTransactionLimit::SizeSoftLimit(2 * 1024 * 1024);
+    GetPooledTransactionLimit::ResponseSizeSoftLimit(2 * 1024 * 1024);
 
 /// How many peers we keep track of for each missing transaction.
 const MAX_ALTERNATIVE_PEERS_PER_TX: usize = 3;

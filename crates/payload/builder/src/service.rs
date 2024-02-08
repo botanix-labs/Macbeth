@@ -82,6 +82,7 @@ pub struct PayloadBuilderHandle<Engine: EngineTypes> {
     /// Sender half of the message channel to the [PayloadBuilderService].
     to_service: mpsc::UnboundedSender<PayloadServiceCommand<Engine>>,
 }
+
 // === impl PayloadBuilderHandle ===
 
 impl<Engine> PayloadBuilderHandle<Engine>
@@ -214,6 +215,7 @@ where
             metrics: Default::default(),
             chain_events,
         };
+
         let handle = service.handle();
         (service, handle)
     }
@@ -389,7 +391,7 @@ where
             }
 
             if !new_job {
-                return Poll::Pending;
+                return Poll::Pending
             }
         }
     }
@@ -438,4 +440,3 @@ where
         }
     }
 }
-
