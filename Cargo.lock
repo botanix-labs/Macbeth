@@ -139,6 +139,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
+<<<<<<< HEAD
 name = "alloy-chains"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -156,10 +157,20 @@ dependencies = [
 name = "alloy-dyn-abi"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 checksum = "13b1a44ed6b4126e4818d20c9e48176ae9d6d4fcbe6c909f8cd0bf050eb56fd8"
+=======
+checksum = "c7265ac54c88a78604cea8444addfa9dfdad08d3098f153484cb4ee66fc202cc"
+=======
+name = "alloy-dyn-abi"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cb9c4b008d0004a0518ba69f3cd9e94795f3c23b71a80e1ef3bf499f67fba23"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "alloy-json-abi",
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-sol-type-parser",
  "alloy-sol-types",
  "const-hex",
@@ -196,11 +207,23 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-abi"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30c6a6c5140fc762edfe55349f9ddefa821f4b7f2339cef582de911a3f1fb6d3"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7c5aecfe87e06da0e760840974c6e3cc19d4247be17a3172825fbbe759c8e60"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "838228983f74f30e4efbd8d42d25bfe1b5bf6450ca71ee9d7628f134fbe8ae8e"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-sol-type-parser",
  "serde",
  "serde_json",
@@ -224,9 +247,21 @@ dependencies = [
 
 [[package]]
 name = "alloy-primitives"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef197eb250c64962003cb08b90b17f0882c192f4a6f2f544809d424fd7cb0e7d"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4b6fb2b432ff223d513db7f908937f63c252bee0af9b82bfd25b0a5dd1eb0d8"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c234f92024707f224510ff82419b2be0e1d8e1fd911defcac5a085cd7f83898"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "alloy-rlp",
  "arbitrary",
@@ -239,6 +274,34 @@ dependencies = [
  "getrandom 0.2.12",
  "hex-literal",
  "itoa",
+<<<<<<< HEAD
+=======
+ "keccak-asm",
+ "proptest",
+ "proptest-derive",
+ "rand 0.8.5",
+ "ruint",
+ "serde",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "alloy-primitives"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4b6fb2b432ff223d513db7f908937f63c252bee0af9b82bfd25b0a5dd1eb0d8"
+dependencies = [
+ "alloy-rlp",
+ "arbitrary",
+ "bytes",
+ "cfg-if",
+ "const-hex",
+ "derive_arbitrary",
+ "derive_more",
+ "ethereum_ssz",
+ "hex-literal",
+ "itoa",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "k256",
  "keccak-asm",
  "proptest",
@@ -268,7 +331,12 @@ checksum = "1a047897373be4bbb0224c1afdabca92648dc57a9c9ef6e7b0be3aff7a859c83"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -350,13 +418,27 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
 name = "alloy-sol-macro"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82e92100dee7fd1e44abbe0ef6607f18758cf0ad4e483f4c65ff5c8d85428a6d"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b0b5ab0cb07c21adf9d72e988b34e8200ce648c2bba8d009183bb1c50fb1216"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "970e5cf1ca089e964d4f7f7afc7c9ad642bfb1bdc695a20b0cba3b3c28954774"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "const-hex",
  "dunce",
@@ -372,20 +454,44 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-type-parser"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d146adca22a853b5aaaa98a6c78bd9d8f1d627ca7b01d170edccf45430e9b2cb"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dd124ec0a456ec5e9dcca5b6e8b011bc723cc410d4d9a66bf032770feaeef4b"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c82c1ed2d61e982cef4c4d709f4aeef5f39a6a6a7c59b6e54c9ed4f3f7e3741b"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "winnow 0.5.40",
 ]
 
 [[package]]
 name = "alloy-sol-types"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e7c6a8c492b1d6a4f92a8fc6a13cf39473978dd7d459d7221969ce5a73d97cd"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c08f62ded7ce03513bfb60ef5cad4fff5d4f67eac6feb4df80426b7b9ffb06e"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a059d4d2c78f8f21e470772c75f9abd9ac6d48c2aaf6b278d1ead06ed9ac664"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-sol-macro",
  "const-hex",
  "serde",
@@ -488,9 +594,15 @@ checksum = "5ad32ce52e4161730f7098c077cd2ed6229b5804ccf99e5366be1ab72a98b4e1"
 
 [[package]]
 name = "aquamarine"
+<<<<<<< HEAD
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21cc1548309245035eb18aa7f0967da6bc65587005170c56e6ef2788a4cf3f4e"
+=======
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1da02abba9f9063d786eab1509833ebb2fac0f966862ca59439c76b9c566760"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 dependencies = [
  "include_dir",
  "itertools 0.10.5",
@@ -716,6 +828,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "async-stream"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -731,10 +844,21 @@ name = "async-stream-impl"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16e62a023e7c117e27523144c5d2459f4397fcc3cab0085af8e2224f643a0193"
+=======
+name = "async-trait"
+version = "0.1.77"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c980ee35e870bd1a4d2c8294d4c04d0499e67bca1e4b5cefcc693c2fa00caea9"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -745,7 +869,13 @@ checksum = "c980ee35e870bd1a4d2c8294d4c04d0499e67bca1e4b5cefcc693c2fa00caea9"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -1003,7 +1133,12 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -1023,7 +1158,13 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -1685,8 +1826,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+<<<<<<< HEAD
  "similar-asserts",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+ "syn 2.0.48",
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -1985,6 +2133,25 @@ name = "crossbeam-utils"
 version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
+<<<<<<< HEAD
+=======
+
+[[package]]
+name = "crossterm"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e64e6c0fbe2c17357405f7c758c1ef960fce08bdfb2c03d88d2a18d7e09c4b67"
+dependencies = [
+ "bitflags 1.3.2",
+ "crossterm_winapi",
+ "libc",
+ "mio",
+ "parking_lot 0.12.1",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 
 [[package]]
 name = "crossterm"
@@ -2115,7 +2282,12 @@ checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -2151,6 +2323,8 @@ dependencies = [
  "reth-primitives",
  "tokio",
  "tracing",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -2975,8 +3149,16 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
  "toml",
+=======
+ "toml 0.8.9",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "walkdir",
 ]
 
@@ -3018,8 +3200,16 @@ dependencies = [
  "rlp",
  "serde",
  "serde_json",
+<<<<<<< HEAD
  "strum 0.25.0",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+=======
+ "strum",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+ "syn 2.0.48",
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
  "tempfile",
  "thiserror",
  "tiny-keccak",
@@ -3665,8 +3855,16 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
+<<<<<<< HEAD
  "http 0.2.11",
+<<<<<<< HEAD
  "indexmap 2.2.3",
+=======
+=======
+ "http",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+ "indexmap 2.2.2",
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
  "slab",
  "tokio",
  "tokio-util",
@@ -4727,6 +4925,7 @@ name = "libc"
 version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
+<<<<<<< HEAD
 
 [[package]]
 name = "libffi"
@@ -4748,6 +4947,23 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "libgit2-sys"
+version = "0.16.2+1.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee4126d8b4ee5c9d9ea891dd875cfdc1e9d0950437179104b183d7d8a74d24e8"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "pkg-config",
+]
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+
+[[package]]
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 name = "libloading"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4769,7 +4985,7 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229004ebba9d1d5caf41623f1523b6d52abb47d9f6ab87f7e6fc992e3b854aef"
 dependencies = [
- "bindgen 0.68.1",
+ "bindgen",
  "errno",
  "libc",
 ]
@@ -5389,6 +5605,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "nybbles"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5406,6 +5623,11 @@ dependencies = [
 name = "object"
 version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+name = "object"
+version = "0.32.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 checksum = "a6a622008b6e321afc04970976f62ee297fdbaa6f95318ca343e3eebb9648441"
 dependencies = [
  "memchr",
@@ -6103,8 +6325,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "731e0d9356b0c25f16f33b5be79b1c57b562f141ebfcdb0ad8ac2c13a24293b4"
 dependencies = [
  "bitflags 2.4.2",
+<<<<<<< HEAD
  "chrono",
  "flate2",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "hex",
  "lazy_static",
  "procfs-core",
@@ -6118,7 +6343,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d3554923a69f4ce04c4a754260c338f505ce22642d3830e049a399fc2059a29"
 dependencies = [
  "bitflags 2.4.2",
+<<<<<<< HEAD
  "chrono",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "hex",
 ]
 
@@ -6760,7 +6988,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+<<<<<<< HEAD
  "toml",
+=======
+ "toml 0.8.9",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "tonic",
  "tracing",
  "url",
@@ -6962,7 +7194,7 @@ dependencies = [
 name = "reth-codecs"
 version = "0.1.0-alpha.20"
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "arbitrary",
  "bytes",
  "codecs-derive",
@@ -6987,7 +7219,11 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+<<<<<<< HEAD
  "toml",
+=======
+ "toml 0.8.9",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -7189,8 +7425,12 @@ dependencies = [
 name = "reth-ethereum-forks"
 version = "0.1.0-alpha.20"
 dependencies = [
+<<<<<<< HEAD
  "alloy-chains",
  "alloy-primitives",
+=======
+ "alloy-primitives 0.5.4",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "alloy-rlp",
  "arbitrary",
  "crc",
@@ -7280,7 +7520,11 @@ dependencies = [
 name = "reth-mdbx-sys"
 version = "0.1.0-alpha.20"
 dependencies = [
+<<<<<<< HEAD
  "bindgen 0.69.4",
+=======
+ "bindgen",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "cc",
  "libc",
 ]
@@ -7634,6 +7878,7 @@ dependencies = [
 name = "reth-payload-validator"
 version = "0.1.0-alpha.20"
 dependencies = [
+<<<<<<< HEAD
  "reth-primitives",
  "reth-rpc-types",
  "reth-rpc-types-compat",
@@ -7647,6 +7892,9 @@ dependencies = [
  "alloy-eips",
  "alloy-genesis",
  "alloy-primitives",
+=======
+ "alloy-primitives 0.5.4",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "alloy-rlp",
  "alloy-trie",
  "arbitrary",
@@ -7663,7 +7911,10 @@ dependencies = [
  "itertools 0.12.1",
  "modular-bitfield",
  "num_enum 0.7.2",
+<<<<<<< HEAD
  "nybbles",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "once_cell",
  "plain_hasher",
  "pprof",
@@ -7685,7 +7936,11 @@ dependencies = [
  "tempfile",
  "test-fuzz",
  "thiserror",
+<<<<<<< HEAD
  "toml",
+=======
+ "toml 0.8.9",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "tracing",
  "triehash",
  "zstd 0.12.4",
@@ -7766,11 +8021,30 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
+=======
+name = "reth-revm-inspectors"
+version = "0.1.0-alpha.13"
+dependencies = [
+ "alloy-primitives 0.5.4",
+ "alloy-sol-types",
+ "boa_engine",
+ "boa_gc",
+ "reth-rpc-types",
+ "revm",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 name = "reth-rpc"
 version = "0.1.0-alpha.20"
 dependencies = [
  "alloy-dyn-abi",
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-rlp",
  "alloy-sol-types",
  "assert_matches",
@@ -7921,7 +8195,7 @@ dependencies = [
 name = "reth-rpc-types"
 version = "0.1.0-alpha.20"
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-rlp",
  "alloy-rpc-engine-types",
  "alloy-rpc-trace-types 0.1.0 (git+https://github.com/alloy-rs/alloy)",
@@ -8117,6 +8391,7 @@ dependencies = [
 [[package]]
 name = "revm"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d35316fc02d99e42831356c71e882f5d385c77b78f64a44ae82f2f9a4b8b72f"
@@ -8125,6 +8400,15 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "266f86bdefa6dac07d92e2f5c37d7d183f2575b2f9e0ee9cba9402dfde912524"
 >>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+=======
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "266f86bdefa6dac07d92e2f5c37d7d183f2575b2f9e0ee9cba9402dfde912524"
+=======
+version = "3.5.0"
+source = "git+https://github.com/bluealloy/revm?branch=reth_freeze#ba28a42393604beeb2da5a339ac47d3d5d3f2271"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "auto_impl",
  "cfg-if",
@@ -8177,6 +8461,7 @@ dependencies = [
 [[package]]
 name = "revm-interpreter"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fa10c2dc1e8f4934bdc763a2c09371bcec29e50c22e55e3eb325ee0cba09064"
@@ -8185,6 +8470,15 @@ version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a80b516cc706630e604e2fd47c281501d2fb222712be4328921361388b7d2df"
 >>>>>>> a5ff26d69 (feature(btc_server): add get signing package cordinator endpoint)
+=======
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a80b516cc706630e604e2fd47c281501d2fb222712be4328921361388b7d2df"
+=======
+version = "1.3.0"
+source = "git+https://github.com/bluealloy/revm?branch=reth_freeze#ba28a42393604beeb2da5a339ac47d3d5d3f2271"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "revm-primitives 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
@@ -8202,13 +8496,20 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db828d49d329560a70809d9d1fa0c74695edb49f50c5332db3eb24483076deac"
 =======
+=======
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6912fafe7f70a264ec5895875ce2f2d0621a39263844280c9ee7f85e35bbb9e"
+=======
+version = "2.2.0"
+source = "git+https://github.com/bluealloy/revm?branch=reth_freeze#ba28a42393604beeb2da5a339ac47d3d5d3f2271"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 dependencies = [
  "aurora-engine-modexp",
  "c-kzg",
@@ -8217,6 +8518,7 @@ dependencies = [
  "revm-primitives 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ripemd",
  "secp256k1 0.28.2",
+<<<<<<< HEAD
  "sha2",
  "substrate-bn",
 ]
@@ -8234,6 +8536,8 @@ dependencies = [
  "revm-primitives 2.0.0 (git+https://github.com/bluealloy/revm?branch=main)",
  "ripemd",
  "secp256k1 0.28.2",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "sha2",
  "substrate-bn",
 ]
@@ -8241,15 +8545,25 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fecd125aad58e135e2ca5771ed6e4e7b1f05fa3a64e0dfb9cc643b7a800a8435"
 =======
+=======
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b3683a40f1e94e7389c8e81e5f26bb5d30875ed0b48ab07985ec32eb6d6c712"
 dependencies = [
  "alloy-primitives",
+=======
+version = "1.3.0"
+source = "git+https://github.com/bluealloy/revm?branch=reth_freeze#ba28a42393604beeb2da5a339ac47d3d5d3f2271"
+dependencies = [
+ "alloy-primitives 0.6.2",
+ "alloy-rlp",
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
  "auto_impl",
  "bitflags 2.4.2",
  "bitvec",
@@ -9406,7 +9720,12 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+<<<<<<< HEAD
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -9419,7 +9738,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -9527,9 +9852,21 @@ dependencies = [
 
 [[package]]
 name = "syn-solidity"
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e656cbcef8a77543b5accbd76f60f9e0bc4be364b0aba4263a6f313f8a355511"
+=======
+<<<<<<< HEAD
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63bef2e2c735acbc06874eca3a8506f02a3c4700e6e748afc92cc2e4220e8a03"
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91ede2e5b2c6bfac4bc0ff4499957a11725dc12a7ddb86270e827ef575892553"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 dependencies = [
  "paste",
  "proc-macro2",
@@ -9633,9 +9970,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b139530208017f9d5a113784ed09cf1b8b22dee95eb99d51d89af1a3c2d6594e"
 dependencies = [
  "serde",
+<<<<<<< HEAD
  "test-fuzz-internal",
  "test-fuzz-macro",
  "test-fuzz-runtime",
+=======
+ "test-fuzz-internal 5.0.0",
+ "test-fuzz-macro 5.0.0",
+ "test-fuzz-runtime 5.0.0",
+]
+
+[[package]]
+name = "test-fuzz-internal"
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dc636f7d25fd41828408b08931216b93a4d18454a72e2d55d78bc3b78dc167e"
+<<<<<<< HEAD
+dependencies = [
+ "bincode",
+ "cargo_metadata",
+ "serde",
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -9643,6 +9998,8 @@ name = "test-fuzz-internal"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16e78ed8148311b6a02578dee5fd77600bf8805b77b2cb8382a9435348080985"
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 dependencies = [
  "bincode",
  "cargo_metadata",
@@ -9651,6 +10008,26 @@ dependencies = [
 
 [[package]]
 name = "test-fuzz-macro"
+<<<<<<< HEAD
+=======
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4da89cfe93508da3676114d5a15aa26e29aa88d5230e22bc5ea5f3c1f08ef5f6"
+dependencies = [
+ "darling 0.20.5",
+ "if_chain",
+ "itertools 0.12.1",
+ "once_cell",
+ "prettyplease 0.2.16",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
+<<<<<<< HEAD
+]
+
+[[package]]
+name = "test-fuzz-macro"
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17f9bc8c69f276df24e4d1c082e52ea057544495916c4aa0708b82e47f55f364"
@@ -9661,7 +10038,26 @@ dependencies = [
  "prettyplease 0.2.16",
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.51",
+=======
+ "syn 2.0.48",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+]
+
+[[package]]
+name = "test-fuzz-runtime"
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09f701acb832f8c7911fa32863683cd9e02fe83976ed6bc9a9f56c2e4fbea936"
+dependencies = [
+ "hex",
+ "num-traits",
+ "serde",
+ "sha-1 0.10.1",
+ "test-fuzz-internal 4.0.5",
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
 ]
 
 [[package]]
@@ -9956,6 +10352,18 @@ dependencies = [
 name = "toml"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
+=======
+checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "toml"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
 checksum = "c6a4b9e8023eb94392d3dca65d717c53abc5dad49c07cb65bb8fcd87115fa325"
 dependencies = [
  "serde",
@@ -10605,6 +11013,13 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "cfg-if",
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+ "git2",
+=======
+>>>>>>> 858986af7 (btc_server: fix lint and cargo fmt)
+>>>>>>> fa2bf14db (btc_server: fix lint and cargo fmt)
  "regex",
  "rustversion",
  "time",

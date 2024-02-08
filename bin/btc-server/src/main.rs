@@ -18,29 +18,23 @@ mod rpc {
 }
 
 use anyhow::Context;
-use bdk::{miniscript::psbt::PsbtExt, wallet::coin_selection::CoinSelectionAlgorithm};
-use bitcoin::{
-    blockdata::fee_rate,
-    consensus::{encode as btcencode, Encodable},
-    psbt::{self, Psbt},
-    secp256k1, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut,
-};
+
+use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-use serde_json::error;
+
 use std::{
-    collections::{BTreeMap, HashMap},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
 };
 
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use crate::database::Utxo;
 
-use crate::{database::Utxo, util::OutPointExt};
-
-use bdk::miniscript::psbt::Error as PsbtError;
+use bdk::{
+    miniscript::psbt::Error as PsbtError, wallet::coin_selection::Error as BdkCoinselectionError,
+};
 use database::Error as DbError;
 use thiserror::Error;
 
@@ -53,7 +47,7 @@ pub enum Error {
     #[error("Database error: {0}")]
     Db(#[from] DbError),
     #[error("Coin Selection error: {0}")]
-    CoinSelection(#[from] bdk::wallet::coin_selection::Error),
+    CoinSelection(#[from] BdkCoinselectionError),
     #[error("Pbst error: {0}")]
     Pbst(#[from] PsbtError),
     // Two distinct PSBT related errors one from bdk and one from rust bitcoin
@@ -485,10 +479,7 @@ mod test {
         process::Command,
     };
 
-    use bitcoin::{
-        consensus::{encode, Encodable},
-        Amount, FeeRate, TxOut,
-    };
+    use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut};
     use client;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
