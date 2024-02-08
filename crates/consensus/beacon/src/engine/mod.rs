@@ -1812,7 +1812,7 @@ where
                             this.listeners.push_listener(tx);
                         }
                         BeaconEngineMessage::StartNewPayload { payload_attributes, tx, parent } => {
-                            let payload_builder = this.payload_builder.clone();
+                            let payload_builder = this.payload_builder;
                             tokio::spawn(async move {
                                 let attributes_result =
                                     PayloadBuilderAttributes::try_new(parent, payload_attributes);
@@ -1834,7 +1834,7 @@ where
                         }
                         BeaconEngineMessage::BestPayload { tx, payload_id } => {
                             info!(target: "consensus::engine", "Resolving payload {}", payload_id);
-                            let payload_builder = this.payload_builder.clone();
+                            let payload_builder = this.payload_builder;
 
                             tokio::spawn(async move {
                                 match payload_builder

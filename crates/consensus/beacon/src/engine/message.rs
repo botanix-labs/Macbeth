@@ -4,12 +4,16 @@ use crate::{
 };
 use futures::{future::Either, FutureExt};
 use reth_interfaces::{consensus::ForkchoiceState, RethResult};
+use reth_node_api::BuiltPayload;
 use reth_node_api::EngineTypes;
+use reth_node_api::PayloadAttributes;
 use reth_payload_builder::error::PayloadBuilderError;
+use reth_primitives::B256;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ExecutionPayload, ForkChoiceUpdateResult, ForkchoiceUpdateError,
     ForkchoiceUpdated, PayloadId, PayloadStatus, PayloadStatusEnum,
 };
+
 use std::{
     future::Future,
     pin::Pin,
@@ -168,7 +172,7 @@ pub enum BeaconEngineMessage<Engine: EngineTypes> {
     /// Message to start building a new payload with the given attributes,
     StartNewPayload {
         /// The payload attributes for block building.
-        payload_attributes: PayloadAttributes,
+        payload_attributes: Engine::PayloadAttributes,
         /// The parent block hash to build on.
         parent: B256,
         /// The sender for returning the payload id.
@@ -177,7 +181,7 @@ pub enum BeaconEngineMessage<Engine: EngineTypes> {
     /// Message to return the best payload.
     BestPayload {
         /// The sender for returning the best payload.
-        tx: oneshot::Sender<Option<Arc<BuiltPayload>>>,
+        tx: oneshot::Sender<Option<Arc<dyn BuiltPayload>>>,
         /// The payload id to resolve.
         payload_id: PayloadId,
     },
