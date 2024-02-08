@@ -40,7 +40,6 @@ use reth_primitives::{
     Account, Address, BlockHash, BlockNumber, Bytecode, Header, IntegerList, PruneCheckpoint,
     PruneSegment, Receipt, StorageEntry, TransactionSignedNoHash, TxHash, TxNumber, B256,
 };
-
 /// Enum for the types of tables present in libmdbx.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum TableType {

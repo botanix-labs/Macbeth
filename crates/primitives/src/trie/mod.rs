@@ -6,10 +6,6 @@ pub mod hash_builder;
 mod account;
 pub use account::TrieAccount;
 
-/// Merkle trie proofs.
-mod proofs;
-pub use proofs::{AccountProof, StorageProof};
-
 mod mask;
 pub(crate) use mask::StoredTrieMask;
 
@@ -18,6 +14,9 @@ pub use nibbles::{Nibbles, StoredNibbles, StoredNibblesSubKey};
 
 pub mod nodes;
 pub use nodes::StoredBranchNode;
+
+mod proofs;
+pub use proofs::{AccountProof, StorageProof};
 
 mod storage;
 pub use storage::StorageTrieEntry;

@@ -7,9 +7,9 @@ use reth_codecs::derive_arbitrary;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-use reth_rpc_types::ExecutionPayloadV1;
+use reth_rpc_types::{ExecutionPayload, ExecutionPayloadV1};
 pub use reth_rpc_types::{
-    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ExecutionPayload, ForkBlock,
+    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock,
     RpcBlockHash,
 };
 use crate::U256;
