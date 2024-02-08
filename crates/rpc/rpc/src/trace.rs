@@ -11,8 +11,7 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult as Result;
 use reth_consensus_common::calc::{base_block_reward, block_reward};
 use reth_primitives::{
-    revm::env::tx_env_with_recovered, revm_primitives::db::DatabaseCommit, BlockId,
-    BlockNumberOrTag, Bytes, SealedHeader, B256, U256,
+    revm::env::tx_env_with_recovered, BlockId, BlockNumberOrTag, Bytes, SealedHeader, B256, U256,
 };
 use reth_provider::{BlockReader, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
 use reth_revm::{
@@ -25,7 +24,10 @@ use reth_rpc_types::{
     trace::{filter::TraceFilter, parity::*, tracerequest::TraceCallRequest},
     BlockError, BlockOverrides, CallRequest, Index,
 };
-use revm::{db::CacheDB, primitives::Env};
+use revm::{
+    db::{CacheDB, DatabaseCommit},
+    primitives::EnvWithHandlerCfg,
+};
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::{AcquireError, OwnedSemaphorePermit};
 
@@ -101,7 +103,7 @@ where
             .evm_env_at(block_id.unwrap_or(BlockId::Number(BlockNumberOrTag::Latest)))
             .await?;
         let tx = tx_env_with_recovered(&tx.into_ecrecovered_transaction());
-        let env = Env { cfg, block, tx };
+        let env = EnvWithHandlerCfg::new_with_cfg_env(cfg, block, tx);
 
         let config = TracingInspectorConfig::from_parity_config(&trace_types);
 
@@ -222,13 +224,88 @@ where
         hash: B256,
         index: usize,
     ) -> EthResult<Option<LocalizedTransactionTrace>> {
-        match self.trace_transaction(hash).await? {
-            None => Ok(None),
-            Some(traces) => {
-                let trace = traces.into_iter().nth(index);
-                Ok(trace)
+        Ok(self.trace_transaction(hash).await?.and_then(|traces| traces.into_iter().nth(index)))
+    }
+
+    /// Returns all transaction traces that match the given filter.
+    ///
+    /// This is similar to [Self::trace_block] but only returns traces for transactions that match
+    /// the filter.
+    pub async fn trace_filter(
+        &self,
+        filter: TraceFilter,
+    ) -> EthResult<Vec<LocalizedTransactionTrace>> {
+        let matcher = filter.matcher();
+        let TraceFilter { from_block, to_block, after: _after, count: _count, .. } = filter;
+        let start = from_block.unwrap_or(0);
+        let end = if let Some(to_block) = to_block {
+            to_block
+        } else {
+            self.provider().best_block_number()?
+        };
+
+        // ensure that the range is not too large, since we need to fetch all blocks in the range
+        let distance = end.saturating_sub(start);
+        if distance > 100 {
+            return Err(EthApiError::InvalidParams(
+                "Block range too large; currently limited to 100 blocks".to_string(),
+            ))
+        }
+
+        // fetch all blocks in that range
+        let blocks = self.provider().block_range(start..=end)?;
+
+        // find relevant blocks to trace
+        let mut target_blocks = Vec::new();
+        for block in blocks {
+            let mut transaction_indices = HashSet::new();
+            let mut highest_matching_index = 0;
+            for (tx_idx, tx) in block.body.iter().enumerate() {
+                let from = tx.recover_signer().ok_or(BlockError::InvalidSignature)?;
+                let to = tx.to();
+                if matcher.matches(from, to) {
+                    let idx = tx_idx as u64;
+                    transaction_indices.insert(idx);
+                    highest_matching_index = idx;
+                }
+            }
+            if !transaction_indices.is_empty() {
+                target_blocks.push((block.number, transaction_indices, highest_matching_index));
             }
         }
+
+        // trace all relevant blocks
+        let mut block_traces = Vec::with_capacity(target_blocks.len());
+        for (num, indices, highest_idx) in target_blocks {
+            let traces = self.inner.eth_api.trace_block_until(
+                num.into(),
+                Some(highest_idx),
+                TracingInspectorConfig::default_parity(),
+                move |tx_info, inspector, res, _, _| {
+                    if let Some(idx) = tx_info.index {
+                        if !indices.contains(&idx) {
+                            // only record traces for relevant transactions
+                            return Ok(None)
+                        }
+                    }
+                    let traces = inspector
+                        .with_transaction_gas_used(res.gas_used())
+                        .into_parity_builder()
+                        .into_localized_transaction_traces(tx_info);
+                    Ok(Some(traces))
+                },
+            );
+            block_traces.push(traces);
+        }
+
+        let block_traces = futures::future::try_join_all(block_traces).await?;
+        let all_traces = block_traces
+            .into_iter()
+            .flatten()
+            .flat_map(|traces| traces.into_iter().flatten().flat_map(|traces| traces.into_iter()))
+            .collect();
+
+        Ok(all_traces)
     }
 
     /// Returns all transaction traces that match the given filter.
@@ -357,7 +434,7 @@ where
             maybe_traces.map(|traces| traces.into_iter().flatten().collect::<Vec<_>>());
 
         if let (Some(block), Some(traces)) = (maybe_block, maybe_traces.as_mut()) {
-            if let Some(header_td) = self.provider().header_td(&block.header.hash)? {
+            if let Some(header_td) = self.provider().header_td(&block.header.hash())? {
                 if let Some(base_block_reward) = base_block_reward(
                     self.provider().chain_spec().as_ref(),
                     block.header.number,
@@ -553,7 +630,7 @@ struct TraceApiInner<Provider, Eth> {
 /// beneficiary.
 fn reward_trace(header: &SealedHeader, reward: RewardAction) -> LocalizedTransactionTrace {
     LocalizedTransactionTrace {
-        block_hash: Some(header.hash),
+        block_hash: Some(header.hash()),
         block_number: Some(header.number),
         transaction_hash: None,
         transaction_position: None,

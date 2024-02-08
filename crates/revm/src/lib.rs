@@ -5,8 +5,11 @@
     html_favicon_url = "https://avatars0.githubusercontent.com/u/97369466?s=256",
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
+<<<<<<< HEAD
 #![warn(missing_debug_implementations, missing_docs, unreachable_pub, rustdoc::all)]
 #![deny(unused_must_use, rust_2018_idioms)]
+=======
+>>>>>>> upstream/main
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 /// Contains glue code for integrating reth database into revm's [Database].
@@ -25,7 +28,7 @@ pub mod state_change;
 pub use factory::EvmProcessorFactory;
 
 /// reexport for convenience
-pub use reth_revm_inspectors::*;
+pub use revm_inspectors::*;
 
 /// Re-export everything
 pub use revm::{self, *};

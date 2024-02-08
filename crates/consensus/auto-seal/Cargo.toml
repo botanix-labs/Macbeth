@@ -8,6 +8,9 @@ homepage.workspace = true
 repository.workspace = true
 description = "A consensus impl for local testing purposes"
 
+[lints]
+workspace = true
+
 [dependencies]
 # reth
 reth-beacon-consensus.workspace = true
@@ -17,10 +20,9 @@ reth-provider.workspace = true
 reth-stages.workspace = true
 reth-revm.workspace = true
 reth-transaction-pool.workspace = true
-reth-btc-wallet.workspace = true
-reth-botanix-lib.workspace = true
-reth-payload-builder = { workspace = true, features = ["test-utils"] }
-reth-rpc-types.workspace = true
+reth-node-api.workspace = true
+reth-node-ethereum.workspace = true
+
 
 # async
 futures-util.workspace = true

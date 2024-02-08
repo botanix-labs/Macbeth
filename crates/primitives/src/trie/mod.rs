@@ -1,12 +1,10 @@
 //! Collection of trie related types.
 
-/// Various branch nodes produced by the hash builder.
-pub mod nodes;
-pub use nodes::BranchNodeCompact;
-
 /// The implementation of hash builder.
 pub mod hash_builder;
-pub use hash_builder::HashBuilder;
+
+mod account;
+pub use account::TrieAccount;
 
 /// Merkle trie proofs.
 mod proofs;
@@ -14,14 +12,21 @@ pub use proofs::{AccountProof, StorageProof};
 
 mod account;
 mod mask;
-mod nibbles;
-mod storage;
-mod subnode;
+pub(crate) use mask::StoredTrieMask;
 
-pub use self::{
-    account::TrieAccount,
-    mask::TrieMask,
-    nibbles::{Nibbles, StoredNibblesSubKey},
-    storage::StorageTrieEntry,
-    subnode::StoredSubNode,
-};
+mod nibbles;
+pub use nibbles::{Nibbles, StoredNibbles, StoredNibblesSubKey};
+
+pub mod nodes;
+pub use nodes::StoredBranchNode;
+
+mod proofs;
+pub use proofs::{AccountProof, StorageProof};
+
+mod storage;
+pub use storage::StorageTrieEntry;
+
+mod subnode;
+pub use subnode::StoredSubNode;
+
+pub use alloy_trie::{BranchNodeCompact, HashBuilder, TrieMask, EMPTY_ROOT_HASH};

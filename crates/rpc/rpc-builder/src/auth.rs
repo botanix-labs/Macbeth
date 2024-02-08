@@ -9,18 +9,18 @@ pub use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{
     http_client::HeaderMap,
     server::{RpcModule, ServerHandle},
+    Methods,
 };
 use reth_network_api::{NetworkInfo, Peers};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_provider::{
     BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, ReceiptProviderIdExt,
     StateProviderFactory,
 };
 use reth_rpc::{
     eth::{
-        botanix_config::{Botanix, BotanixConfig},
-        cache::EthStateCache,
-        gas_oracle::GasPriceOracle,
-        EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig,
+        cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache,
+        FeeHistoryCacheConfig,
     },
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
@@ -35,7 +35,7 @@ use std::{
 
 /// Configure and launch a _standalone_ auth server with `engine` and a _new_ `eth` namespace.
 #[allow(clippy::too_many_arguments)]
-pub async fn launch<Provider, Pool, Network, Tasks, EngineApi>(
+pub async fn launch<Provider, Pool, Network, Tasks, EngineApi, EngineT, EvmConfig>(
     provider: Provider,
     pool: Pool,
     network: Network,
@@ -43,6 +43,7 @@ pub async fn launch<Provider, Pool, Network, Tasks, EngineApi>(
     engine_api: EngineApi,
     socket_addr: SocketAddr,
     secret: JwtSecret,
+    evm_config: EvmConfig,
 ) -> Result<AuthServerHandle, RpcError>
 where
     Provider: BlockReaderIdExt
@@ -57,17 +58,22 @@ where
     Pool: TransactionPool + Clone + 'static,
     Network: NetworkInfo + Peers + Clone + 'static,
     Tasks: TaskSpawner + Clone + 'static,
-    EngineApi: EngineApiServer,
+    EngineT: EngineTypes + 'static,
+    EngineApi: EngineApiServer<EngineT>,
+    EvmConfig: ConfigureEvmEnv + 'static,
 {
     // spawn a new cache task
-    let eth_cache =
-        EthStateCache::spawn_with(provider.clone(), Default::default(), executor.clone());
+    let eth_cache = EthStateCache::spawn_with(
+        provider.clone(),
+        Default::default(),
+        executor.clone(),
+        evm_config.clone(),
+    );
 
     let gas_oracle = GasPriceOracle::new(provider.clone(), Default::default(), eth_cache.clone());
+
     let fee_history_cache =
         FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
-    let botanix_provider = Botanix::new(BotanixConfig::default());
-
     let eth_api = EthApi::with_spawner(
         provider.clone(),
         pool.clone(),
@@ -78,7 +84,7 @@ where
         Box::new(executor.clone()),
         BlockingTaskPool::build().expect("failed to build tracing pool"),
         fee_history_cache,
-        botanix_provider,
+        evm_config,
     );
     let config = EthFilterConfig::default()
         .max_logs_per_response(DEFAULT_MAX_LOGS_PER_RESPONSE)
@@ -89,8 +95,8 @@ where
 }
 
 /// Configure and launch a _standalone_ auth server with existing EthApi implementation.
-pub async fn launch_with_eth_api<Provider, Pool, Network, EngineApi>(
-    eth_api: EthApi<Provider, Pool, Network>,
+pub async fn launch_with_eth_api<Provider, Pool, Network, EngineApi, EngineT, EvmConfig>(
+    eth_api: EthApi<Provider, Pool, Network, EvmConfig>,
     eth_filter: EthFilter<Provider, Pool>,
     engine_api: EngineApi,
     socket_addr: SocketAddr,
@@ -107,7 +113,9 @@ where
         + 'static,
     Pool: TransactionPool + Clone + 'static,
     Network: NetworkInfo + Peers + Clone + 'static,
-    EngineApi: EngineApiServer,
+    EngineT: EngineTypes + 'static,
+    EngineApi: EngineApiServer<EngineT>,
+    EvmConfig: ConfigureEvmEnv + 'static,
 {
     // Configure the module and start the server.
     let mut module = RpcModule::new(());
@@ -240,7 +248,7 @@ impl AuthServerConfigBuilder {
                     .max_connections(500)
                     // bump the default request size slightly, there aren't any methods exposed with
                     // dynamic request params that can exceed this
-                    .max_request_body_size(25 * 1024 * 1024)
+                    .max_request_body_size(5 * 1024 * 1024)
                     .set_id_provider(EthSubscriptionIdProvider::default())
             }),
         }
@@ -248,18 +256,19 @@ impl AuthServerConfigBuilder {
 }
 
 /// Holds installed modules for the auth server.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuthRpcModule {
     pub(crate) inner: RpcModule<()>,
 }
 
-// === impl TransportRpcModules ===
+// === impl AuthRpcModule ===
 
 impl AuthRpcModule {
     /// Create a new `AuthRpcModule` with the given `engine_api`.
-    pub fn new<EngineApi>(engine: EngineApi) -> Self
+    pub fn new<EngineApi, EngineT>(engine: EngineApi) -> Self
     where
-        EngineApi: EngineApiServer,
+        EngineT: EngineTypes + 'static,
+        EngineApi: EngineApiServer<EngineT>,
     {
         let mut module = RpcModule::new(());
         module.merge(engine.into_rpc()).expect("No conflicting methods");
@@ -269,6 +278,16 @@ impl AuthRpcModule {
     /// Get a reference to the inner `RpcModule`.
     pub fn module_mut(&mut self) -> &mut RpcModule<()> {
         &mut self.inner
+    }
+
+    /// Merge the given [Methods] in the configured authenticated methods.
+    ///
+    /// Fails if any of the methods in other is present already.
+    pub fn merge_auth_methods(
+        &mut self,
+        other: impl Into<Methods>,
+    ) -> Result<bool, jsonrpsee::core::error::Error> {
+        self.module_mut().merge(other.into()).map(|_| true)
     }
 
     /// Convenience function for starting a server

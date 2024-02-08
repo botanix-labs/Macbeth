@@ -56,52 +56,71 @@ pub enum PeerMessage {
     /// All `eth` request variants.
     EthRequest(PeerRequest),
     /// Other than eth namespace message
-    #[allow(unused)]
     Other(RawCapabilityMessage),
 }
 
 /// Request Variants that only target block related data.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(missing_docs)]
-#[allow(clippy::enum_variant_names)]
 pub enum BlockRequest {
+    /// Requests block headers from the peer.
+    ///
+    /// The response should be sent through the channel.
     GetBlockHeaders(GetBlockHeaders),
+
+    /// Requests block bodies from the peer.
+    ///
+    /// The response should be sent through the channel.
     GetBlockBodies(GetBlockBodies),
 }
 
 /// Protocol related request messages that expect a response
 #[derive(Debug)]
-#[allow(clippy::enum_variant_names, missing_docs)]
 pub enum PeerRequest {
-    /// Request Block headers from the peer.
+    /// Requests block headers from the peer.
     ///
     /// The response should be sent through the channel.
     GetBlockHeaders {
+        /// The request for block headers.
         request: GetBlockHeaders,
+        /// The channel to send the response for block headers.
         response: oneshot::Sender<RequestResult<BlockHeaders>>,
     },
-    /// Request Block headers from the peer.
+    /// Requests block bodies from the peer.
     ///
     /// The response should be sent through the channel.
     GetBlockBodies {
+        /// The request for block bodies.
         request: GetBlockBodies,
+        /// The channel to send the response for block bodies.
         response: oneshot::Sender<RequestResult<BlockBodies>>,
     },
-    /// Request pooled transactions from the peer.
+    /// Requests pooled transactions from the peer.
     ///
     /// The response should be sent through the channel.
     GetPooledTransactions {
+        /// The request for pooled transactions.
         request: GetPooledTransactions,
+        /// The channel to send the response for pooled transactions.
         response: oneshot::Sender<RequestResult<PooledTransactions>>,
     },
-    /// Request NodeData from the peer.
+    /// Requests NodeData from the peer.
     ///
     /// The response should be sent through the channel.
-    GetNodeData { request: GetNodeData, response: oneshot::Sender<RequestResult<NodeData>> },
-    /// Request Receipts from the peer.
+    GetNodeData {
+        /// The request for NodeData.
+        request: GetNodeData,
+        /// The channel to send the response for NodeData.
+        response: oneshot::Sender<RequestResult<NodeData>>,
+    },
+    /// Requests receipts from the peer.
     ///
     /// The response should be sent through the channel.
-    GetReceipts { request: GetReceipts, response: oneshot::Sender<RequestResult<Receipts>> },
+    GetReceipts {
+        /// The request for receipts.
+        request: GetReceipts,
+        /// The channel to send the response for receipts.
+        response: oneshot::Sender<RequestResult<Receipts>>,
+    },
 }
 
 // === impl PeerRequest ===
@@ -223,12 +242,16 @@ impl PeerResponse {
 
 /// All response variants for [`PeerResponse`]
 #[derive(Debug)]
-#[allow(missing_docs)]
 pub enum PeerResponseResult {
+    /// Represents a result containing block headers or an error.
     BlockHeaders(RequestResult<Vec<Header>>),
+    /// Represents a result containing block bodies or an error.
     BlockBodies(RequestResult<Vec<BlockBody>>),
+    /// Represents a result containing pooled transactions or an error.
     PooledTransactions(RequestResult<Vec<PooledTransactionsElement>>),
+    /// Represents a result containing node data or an error.
     NodeData(RequestResult<Vec<Bytes>>),
+    /// Represents a result containing receipts or an error.
     Receipts(RequestResult<Vec<Vec<ReceiptWithBloom>>>),
 }
 
@@ -279,15 +302,8 @@ impl PeerResponseResult {
     }
 
     /// Returns whether this result is an error.
-    #[allow(unused)]
     pub fn is_err(&self) -> bool {
-        match self {
-            PeerResponseResult::BlockHeaders(res) => res.is_err(),
-            PeerResponseResult::BlockBodies(res) => res.is_err(),
-            PeerResponseResult::PooledTransactions(res) => res.is_err(),
-            PeerResponseResult::NodeData(res) => res.is_err(),
-            PeerResponseResult::Receipts(res) => res.is_err(),
-        }
+        self.err().is_some()
     }
 }
 

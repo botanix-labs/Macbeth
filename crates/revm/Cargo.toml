@@ -8,21 +8,20 @@ homepage.workspace = true
 repository.workspace = true
 description = "reth specific revm utilities"
 
+[lints]
+workspace = true
+
 [dependencies]
 # reth
 reth-primitives.workspace = true
 reth-interfaces.workspace = true
 reth-provider.workspace = true
-reth-revm-inspectors.workspace = true
 reth-consensus-common.workspace = true
-reth-btc-wallet.workspace = true
-reth-botanix-lib.workspace = true
-
-# Lazy static   
-lazy_static = "*"
+reth-node-api.workspace = true
 
 # revm
 revm.workspace = true
+revm-inspectors.workspace = true
 
 # Secp256k1
 secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
@@ -36,6 +35,8 @@ bitcoin = "0.30.1"
 
 [dev-dependencies]
 reth-trie.workspace = true
+reth-node-ethereum.workspace = true
+reth-node-optimism.workspace = true
 
 [features]
 optimism = [
@@ -44,3 +45,4 @@ optimism = [
   "reth-consensus-common/optimism",
   "reth-interfaces/optimism",
 ]
+js-tracer = ["revm-inspectors/js-tracer"]

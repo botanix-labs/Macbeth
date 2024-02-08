@@ -4,6 +4,7 @@ use crate::{
     message::{NewBlockMessage, PeerMessage, PeerRequest, PeerResponse, PeerResponseResult},
     session::{
         config::INITIAL_REQUEST_TIMEOUT,
+        conn::EthRlpxConnection,
         handle::{ActiveSessionMessage, SessionCommand},
         SessionId,
     },
@@ -11,16 +12,14 @@ use crate::{
 use core::sync::atomic::Ordering;
 use fnv::FnvHashMap;
 use futures::{stream::Fuse, SinkExt, StreamExt};
-use reth_ecies::stream::ECIESStream;
 use reth_eth_wire::{
     capability::Capabilities,
     errors::{EthHandshakeError, EthStreamError, P2PStreamError},
     message::{EthBroadcastMessage, RequestPair},
-    DisconnectReason, EthMessage, EthStream, P2PStream,
+    DisconnectP2P, DisconnectReason, EthMessage,
 };
 use reth_interfaces::p2p::error::RequestError;
 use reth_metrics::common::mpsc::MeteredPollSender;
-use reth_net_common::bandwidth_meter::MeteredStream;
 use reth_primitives::PeerId;
 use std::{
     collections::VecDeque,
@@ -32,7 +31,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    net::TcpStream,
     sync::{mpsc::error::TrySendError, oneshot},
     time::Interval,
 };
@@ -65,12 +63,12 @@ pub type PeerConnection = Box<EthStream<P2PStream<ECIESStream<MeteredStream<TcpS
 ///    - incoming _internal_ requests/broadcasts via the request/command channel
 ///    - incoming requests/broadcasts _from remote_ via the connection
 ///    - responses for handled ETH requests received from the remote peer.
-#[allow(unused)]
+#[allow(dead_code)]
 pub(crate) struct ActiveSession {
     /// Keeps track of request ids.
     pub(crate) next_id: u64,
     /// The underlying connection.
-    pub(crate) conn: PeerConnection,
+    pub(crate) conn: EthRlpxConnection,
     /// Identifier of the node we're connected to.
     pub(crate) remote_peer_id: PeerId,
     /// The address we're connected to.
@@ -166,7 +164,7 @@ impl ActiveSession {
                             // request was already timed out internally
                             self.update_request_timeout(req.timestamp, Instant::now());
                         }
-                    };
+                    }
                 } else {
                     // we received a response to a request we never sent
                     self.on_bad_message();
@@ -667,7 +665,7 @@ pub(crate) struct ReceivedRequest {
     /// Receiver half of the channel that's supposed to receive the proper response.
     rx: PeerResponse,
     /// Timestamp when we read this msg from the wire.
-    #[allow(unused)]
+    #[allow(dead_code)]
     received: Instant,
 }
 
@@ -771,16 +769,19 @@ mod tests {
         handle::PendingSessionEvent,
         start_pending_incoming_session,
     };
-    use reth_ecies::util::pk2id;
+    use reth_ecies::{stream::ECIESStream, util::pk2id};
     use reth_eth_wire::{
-        GetBlockBodies, HelloMessageWithProtocols, Status, StatusBuilder, UnauthedEthStream,
-        UnauthedP2PStream,
+        EthStream, GetBlockBodies, HelloMessageWithProtocols, P2PStream, Status, StatusBuilder,
+        UnauthedEthStream, UnauthedP2PStream,
     };
-    use reth_net_common::bandwidth_meter::BandwidthMeter;
+    use reth_net_common::bandwidth_meter::{BandwidthMeter, MeteredStream};
     use reth_primitives::{ForkFilter, Hardfork, MAINNET};
     use secp256k1::{SecretKey, SECP256K1};
     use std::time::Duration;
-    use tokio::{net::TcpListener, sync::mpsc};
+    use tokio::{
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+    };
 
     /// Returns a testing `HelloMessage` and new secretkey
     fn eth_hello(server_key: &SecretKey) -> HelloMessageWithProtocols {
@@ -856,6 +857,7 @@ mod tests {
                 self.hello.clone(),
                 self.status,
                 self.fork_filter.clone(),
+                Default::default(),
             ));
 
             let mut stream = ReceiverStream::new(pending_sessions_rx);

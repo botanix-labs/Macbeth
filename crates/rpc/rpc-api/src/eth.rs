@@ -5,8 +5,8 @@ use reth_primitives::{
 };
 use reth_rpc_types::{
     state::StateOverride, AccessListWithGasUsed, BlockOverrides, Bundle, CallRequest,
-    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, GatewayAddress, Index, RichBlock,
-    StateContext, SyncStatus, Transaction, TransactionReceipt, TransactionRequest, Work,
+    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Index, RichBlock, StateContext,
+    SyncStatus, Transaction, TransactionReceipt, TransactionRequest, Work, GatewayAddress,
 };
 
 /// Eth rpc interface: <https://ethereum.github.io/execution-apis/api-documentation/>

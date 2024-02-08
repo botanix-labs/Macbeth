@@ -1,11 +1,12 @@
 //! Implements data structures specific to the database
+
 use crate::{
     table::{Decode, Encode},
     DatabaseError,
 };
 use reth_codecs::Compact;
 use reth_primitives::{
-    trie::{Nibbles, StoredNibblesSubKey},
+    trie::{StoredNibbles, StoredNibblesSubKey},
     Address, PruneSegment, B256,
 };
 
@@ -107,7 +108,7 @@ impl Encode for Nibbles {
 
     // Delegate to the Compact implementation
     fn encode(self) -> Self::Encoded {
-        let mut buf = Vec::with_capacity(self.len());
+        let mut buf = Vec::with_capacity(self.0.len());
         self.to_compact(&mut buf);
         buf
     }

@@ -1,17 +1,10 @@
 use crate::{mode::MiningMode, Storage};
 use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
-use reth_botanix_lib::mint_validation::{
-    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents,
-};
-use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
 use reth_interfaces::consensus::ForkchoiceState;
-use reth_payload_builder::{PayloadBuilderAttributes, PayloadBuilderHandle, PayloadId};
-use reth_primitives::{
-    hex, Address, Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders, B256,
-};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_primitives::{Block, ChainSpec, IntoRecoveredTransaction, SealedBlockWithSenders};
 use reth_provider::{CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory};
-use reth_rpc_types::engine::PayloadAttributes;
 use reth_stages::PipelineEvent;
 use reth_transaction_pool::{TransactionPool, ValidPoolTransaction};
 
@@ -31,7 +24,7 @@ use tracing::{debug, error, info, warn};
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
 
 /// A Future that listens for new ready transactions and puts new blocks into storage
-pub struct MiningTask<Client, Pool: TransactionPool> {
+pub struct MiningTask<Client, Pool: TransactionPool, EvmConfig, Engine: EngineTypes> {
     /// The configured chain spec
     chain_spec: Arc<ChainSpec>,
     /// The client used to interact with the state
@@ -46,38 +39,32 @@ pub struct MiningTask<Client, Pool: TransactionPool> {
     pool: Pool,
     /// backlog of sets of transactions ready to be mined
     queued: VecDeque<Vec<Arc<ValidPoolTransaction<<Pool as TransactionPool>::Transaction>>>>,
-    /// TODO: ideally this would just be a sender of hashes
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    // TODO: ideally this would just be a sender of hashes
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// The pipeline events to listen on
     pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
-    /// BTC Server client
-    btc_server: BtcServerClient<tonic::transport::Channel>,
-    /// Recent bitcoin block headers
-    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Bitcoin block source url
-    bitcoin_block_source_address: Url,
-    /// Payload store
-    payload_store: PayloadBuilderHandle,
+    /// The type that defines how to configure the EVM.
+    evm_config: EvmConfig,
 }
 
 // === impl MiningTask ===
 
-impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
+impl<EvmConfig, Client, Pool: TransactionPool, Engine: EngineTypes>
+    MiningTask<Client, Pool, EvmConfig, Engine>
+{
     /// Creates a new instance of the task
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         miner: MiningMode,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         storage: Storage,
         client: Client,
         pool: Pool,
-        btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_source_address: Url,
-        payload_store: PayloadBuilderHandle,
+        evm_config: EvmConfig,
     ) -> Self {
         Self {
             chain_spec,
@@ -90,10 +77,7 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
             canon_state_notification,
             queued: Default::default(),
             pipe_line_events: None,
-            btc_server,
-            bitcoin_block_header,
-            bitcoin_block_source_address,
-            payload_store,
+            evm_config,
         }
     }
 
@@ -103,11 +87,13 @@ impl<Client, Pool: TransactionPool> MiningTask<Client, Pool> {
     }
 }
 
-impl<Client, Pool> Future for MiningTask<Client, Pool>
+impl<EvmConfig, Client, Pool, Engine> Future for MiningTask<Client, Pool, EvmConfig, Engine>
 where
     Client: StateProviderFactory + CanonChainTracker + Clone + Unpin + 'static,
     Pool: TransactionPool + Unpin + 'static,
     <Pool as TransactionPool>::Transaction: IntoRecoveredTransaction,
+    Engine: EngineTypes + 'static,
+    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
 {
     type Output = ();
 
@@ -146,10 +132,7 @@ where
                 let pool = this.pool.clone();
                 let events = this.pipe_line_events.take();
                 let canon_state_notification = this.canon_state_notification.clone();
-                let mut btc_server = this.btc_server.clone();
-                let bitcoin_block_header = this.bitcoin_block_header.clone();
-                let block_source =
-                    MempoolSpace::new(this.bitcoin_block_source_address.clone().to_string());
+                let evm_config = this.evm_config.clone();
 
                 let payload_store = this.payload_store.clone();
                 // Create the mining future that creates a block, notifies the engine that drives
@@ -216,23 +199,22 @@ where
                         })
                         .unzip();
 
-                    if transactions.is_empty() {
-                        return None
-                    }
-                    // execute the new block
-                    // let substate = SubState::new(State::new(client.latest().unwrap()));
-                    // let mut executor = Executor::new(Arc::clone(&chain_spec), substate);
                     match storage.build_and_execute(
                         transactions.clone(),
                         &client,
                         chain_spec,
-                        recent_block_header,
+                        evm_config,
                     ) {
                         Ok((new_header, bundle_state)) => {
+                            // clear all transactions from pool
+                            pool.remove_transactions(
+                                transactions.iter().map(|tx| tx.hash()).collect(),
+                            );
+
                             let state = ForkchoiceState {
-                                head_block_hash: new_header.hash,
-                                finalized_block_hash: new_header.hash,
-                                safe_block_hash: new_header.hash,
+                                head_block_hash: new_header.hash(),
+                                finalized_block_hash: new_header.hash(),
+                                safe_block_hash: new_header.hash(),
                             };
                             pool.remove_transactions(
                                 transactions.iter().map(|tx| tx.hash().to_owned()).collect(),
@@ -391,8 +373,11 @@ where
 
                             info!(target: "consensus::auto", header=?sealed_block_with_senders.hash(), "sending block notification");
 
-                            let chain =
-                                Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state));
+                            let chain = Arc::new(Chain::new(
+                                vec![sealed_block_with_senders],
+                                bundle_state,
+                                None,
+                            ));
 
                             // send block notification
                             let _ = canon_state_notification
@@ -436,7 +421,9 @@ where
     }
 }
 
-impl<Client, Pool: TransactionPool> std::fmt::Debug for MiningTask<Client, Pool> {
+impl<Client, Pool: TransactionPool, EvmConfig: std::fmt::Debug, Engine: EngineTypes> std::fmt::Debug
+    for MiningTask<Client, Pool, EvmConfig, Engine>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MiningTask").finish_non_exhaustive()
     }

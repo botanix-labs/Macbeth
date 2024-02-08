@@ -1,7 +1,6 @@
 //! `eth` namespace handler implementation.
 
 mod api;
-pub mod botanix_config;
 pub mod bundle;
 pub mod cache;
 pub mod error;
