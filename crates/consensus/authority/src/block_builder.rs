@@ -8,8 +8,10 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
-impl<Client> BlockProductionTask<Client>
+impl<EvmConfig, Client, Engine: reth_node_api::EngineTypes>
+    BlockProductionTask<EvmConfig, Client, Engine>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -17,6 +19,8 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    Engine: EngineTypes + 'static,
+    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
 {
     pub(crate) async fn try_build_block(&mut self) {
         // Check if we are in_turn
@@ -24,7 +28,7 @@ where
 
         if !is_inturn {
             info!(target: "consensus::authority", "Not in turn, skipping");
-            return
+            return;
         }
 
         let mut storage = self.storage.write().await;
@@ -50,7 +54,7 @@ where
 
         if payload_id.is_err() {
             warn!(target: "consensus::authority", "Failed to start new payload");
-            return
+            return;
         }
 
         // get payload by id
@@ -62,7 +66,7 @@ where
 
         if best_transactions.is_err() {
             warn!(target: "consensus::authority", "Failed to get best transactions from payload");
-            return
+            return;
         }
 
         let (transactions, senders): (Vec<_>, Vec<_>) = best_transactions
@@ -93,7 +97,7 @@ where
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "failed to execute block");
                 drop(storage);
-                return
+                return;
             }
         };
 
@@ -109,7 +113,7 @@ where
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                return
+                return;
             }
         }
 
@@ -133,7 +137,7 @@ where
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");
-                return
+                return;
             }
         }
         storage.client.set_canonical_head(sealed_block.header.clone());
@@ -148,13 +152,13 @@ where
             Err(e) => {
                 // This should fail if the insert was successful
                 error!(target: "consensus::authority", ?e, "Failed to send fork choice update");
-                return
+                return;
             }
         }
 
         // Notify peers
         let new_block = NewBlock { block, td: Uint::ZERO };
-        let block_hash = sealed_block.hash;
+        let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
 
         // TODO (scott) Process pegouts

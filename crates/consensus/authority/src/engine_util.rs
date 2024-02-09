@@ -4,6 +4,7 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::error::PayloadBuilderError;
 use reth_primitives::{revm_primitives::FixedBytes, BlockHash, SealedBlock, TransactionSigned};
 use reth_rpc_types::engine::{
@@ -29,9 +30,9 @@ pub(crate) enum SendNewPayloadError {
 /// Sends a new payload to the engine.
 /// This function sends a new payload to the engine and waits for the response.
 /// It handles different payload status scenarios and returns an error if the payload is invalid.
-pub(crate) async fn send_beacon_new_payload(
+pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
     sealed_block: SealedBlock,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 ) -> Result<PayloadStatus, SendNewPayloadError> {
     loop {
         let (tx, rx) = oneshot::channel();
@@ -48,21 +49,21 @@ pub(crate) async fn send_beacon_new_payload(
                     PayloadStatusEnum::Syncing => {
                         debug!(target: "consensus::authority", ?recv, "Authority fork new payload returned SYNCING, waiting for VALID");
                         // wait for the next fork choice update
-                        continue
+                        continue;
                     }
                     PayloadStatusEnum::Invalid { validation_error } => {
                         // wait for the next fork choice update
-                        return Err(SendNewPayloadError::InvalidPayload(validation_error))
+                        return Err(SendNewPayloadError::InvalidPayload(validation_error));
                     }
                     PayloadStatusEnum::Valid | PayloadStatusEnum::Accepted => {
                         debug!(target: "consensus::authority", ?recv, "Authority fork new payload returned VALID");
-                        return Ok(recv)
+                        return Ok(recv);
                     }
                 }
             }
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "Authority new payload failed");
-                return Err(SendNewPayloadError::BeaconError(err))
+                return Err(SendNewPayloadError::BeaconError(err));
             }
         }
     }
@@ -80,9 +81,9 @@ pub(crate) enum SendForkChoiceUpdateError {
 }
 
 /// Sends a FCU payload to the engine.
-pub(crate) async fn send_fork_choice_update_payload(
+pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::EngineTypes>(
     new_block_hash: BlockHash,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 ) -> Result<(), SendForkChoiceUpdateError> {
     let state = ForkchoiceState {
         head_block_hash: new_block_hash,
@@ -106,19 +107,19 @@ pub(crate) async fn send_fork_choice_update_payload(
                     ForkchoiceStatus::Invalid => {
                         error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
                         // TODO(armins) maybe we should return the status here
-                        return Ok(())
+                        return Ok(());
                     }
                     ForkchoiceStatus::Syncing => {
                         trace!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
                         // wait for the next fork choice update
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue
+                        continue;
                     }
                 }
             }
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "Authority fork choice update failed");
-                return Err(SendForkChoiceUpdateError::InvalidPayload)
+                return Err(SendForkChoiceUpdateError::InvalidPayload);
             }
         }
     }
@@ -146,28 +147,29 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
-pub(crate) async fn start_new_payload(
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+pub(crate) async fn start_new_payload<Engine: reth_node_api::EngineTypes>(
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     payload_attributes: PayloadAttributes,
     parent: FixedBytes<32>,
 ) -> Result<PayloadId, StartNewPayloadError> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let result =
-        to_engine.send(BeaconEngineMessage::StartNewPayload { payload_attributes, parent, tx });
+    todo!()
+    // let (tx, rx) = tokio::sync::oneshot::channel();
+    // let result =
+    //     to_engine.send(BeaconEngineMessage::StartNewPayload { payload_attributes, parent, tx });
 
-    match result {
-        Ok(_) => match rx.await {
-            Ok(payload_id) => payload_id.map_err(|e| StartNewPayloadError::NoPayload(e)),
-            Err(e) => {
-                error!(target: "consensus::authority", ?e, "Receiver error, channel closed");
-                Err(StartNewPayloadError::RecvError)
-            }
-        },
-        Err(e) => {
-            error!(target: "consensus::authority", ?e, "Failed to send start new payload request");
-            Err(StartNewPayloadError::EngineError)
-        }
-    }
+    // match result {
+    //     Ok(_) => match rx.await {
+    //         Ok(payload_id) => payload_id.map_err(|e| StartNewPayloadError::NoPayload(e)),
+    //         Err(e) => {
+    //             error!(target: "consensus::authority", ?e, "Receiver error, channel closed");
+    //             Err(StartNewPayloadError::RecvError)
+    //         }
+    //     },
+    //     Err(e) => {
+    //         error!(target: "consensus::authority", ?e, "Failed to send start new payload request");
+    //         Err(StartNewPayloadError::EngineError)
+    //     }
+    // }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -190,8 +192,8 @@ pub(crate) enum BestTransactionsError {
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn best_transactions_from_payload(
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::EngineTypes>(
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     payload_id: PayloadId,
 ) -> Result<Vec<TransactionSigned>, BestTransactionsError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -202,7 +204,7 @@ pub(crate) async fn best_transactions_from_payload(
             Ok(payload) => match payload {
                 Some(payload) => {
                     if payload.block().clone().body.is_empty() {
-                        return Err(BestTransactionsError::PayloadEmpty)
+                        return Err(BestTransactionsError::PayloadEmpty);
                     }
                     Ok(payload.block().clone().body)
                 }
@@ -230,17 +232,38 @@ mod tests {
     async fn test_send_fork_choice_update_payload_valid() {
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        let header =
-            SealedHeader { hash: Header::default().hash_slow(), header: Header::default() }; // Replace with actual values
-        tokio::spawn(send_fork_choice_update_payload(header.hash, tx.clone()));
+        let header = Header {
+            parent_hash: b256!("e0a94a7a3c9617401586b1a27025d2d9671332d22d540e0af72b069170380f2a"),
+            ommers_hash: b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
+            beneficiary: address!("ba5e000000000000000000000000000000000000"),
+            state_root: b256!("ec3c94b18b8a1cff7d60f8d258ec723312932928626b4c9355eb4ab3568ec7f7"),
+            transactions_root: b256!("50f738580ed699f0469702c7ccc63ed2e51bc034be9479b7bff4e68dee84accf"),
+            receipts_root: b256!("29b0562f7140574dd0d50dee8a271b22e1a0a7b78fca58f7c60370d8317ba2a9"),
+            logs_bloom: bloom!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            difficulty: U256::from(0x020000),
+            number: 0x01_u64,
+            gas_limit: 0x016345785d8a0000_u64,
+            gas_used: 0x015534_u64,
+            timestamp: 0x079e,
+            extra_data: bytes!("42"),
+            mix_hash: b256!("0000000000000000000000000000000000000000000000000000000000000000"),
+            nonce: 0,
+            base_fee_per_gas: Some(0x036b_u64),
+            withdrawals_root: None,
+            blob_gas_used: None,
+            excess_blob_gas: None,
+            parent_beacon_block_root: None,
+        };
+        let header = SealedHeader::new(header, header.hash_slow());
+        tokio::spawn(send_fork_choice_update_payload(header.hash_slow(), tx.clone()));
 
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
         match msg {
             BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs, tx } => {
-                assert_eq!(state.head_block_hash, header.hash);
-                assert_eq!(state.finalized_block_hash, header.hash);
-                assert_eq!(state.safe_block_hash, header.hash);
+                assert_eq!(state.head_block_hash, header.hash_slow());
+                assert_eq!(state.finalized_block_hash, header.hash_slow());
+                assert_eq!(state.safe_block_hash, header.hash_slow());
                 assert!(payload_attrs.is_none());
             }
             _ => panic!("Unexpected message type"),
@@ -252,8 +275,28 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         let block_body = BlockBody::default();
-        let header =
-            SealedHeader { hash: Header::default().hash_slow(), header: Header::default() };
+        let header = Header {
+            parent_hash: b256!("e0a94a7a3c9617401586b1a27025d2d9671332d22d540e0af72b069170380f2a"),
+            ommers_hash: b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
+            beneficiary: address!("ba5e000000000000000000000000000000000000"),
+            state_root: b256!("ec3c94b18b8a1cff7d60f8d258ec723312932928626b4c9355eb4ab3568ec7f7"),
+            transactions_root: b256!("50f738580ed699f0469702c7ccc63ed2e51bc034be9479b7bff4e68dee84accf"),
+            receipts_root: b256!("29b0562f7140574dd0d50dee8a271b22e1a0a7b78fca58f7c60370d8317ba2a9"),
+            logs_bloom: bloom!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            difficulty: U256::from(0x020000),
+            number: 0x01_u64,
+            gas_limit: 0x016345785d8a0000_u64,
+            gas_used: 0x015534_u64,
+            timestamp: 0x079e,
+            extra_data: bytes!("42"),
+            mix_hash: b256!("0000000000000000000000000000000000000000000000000000000000000000"),
+            nonce: 0,
+            base_fee_per_gas: Some(0x036b_u64),
+            withdrawals_root: None,
+            blob_gas_used: None,
+            excess_blob_gas: None,
+            parent_beacon_block_root: None,
+        };
         let sealed_block = SealedBlock::new(header, block_body);
         tokio::spawn(send_beacon_new_payload(sealed_block.clone(), tx.clone()));
 
