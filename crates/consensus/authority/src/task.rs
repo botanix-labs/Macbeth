@@ -51,7 +51,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     #[allow(dead_code)]
     task_executor: TaskExecutor,
 }
-impl<EvmConfig, Client, Engine: reth_node_api::EngineTypes>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt

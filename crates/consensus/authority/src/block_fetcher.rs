@@ -9,9 +9,9 @@ use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::block_source::MempoolSpace;
 use reth_network::message::NewBlockMessage;
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
 use std::sync::Arc;
 use tokio::sync::{
@@ -21,7 +21,7 @@ use tokio::sync::{
 
 use tracing::{debug, error, info};
 
-pub struct BlockFetcherTask<EvmConfig, Client, Engine: EngineTypes> {
+pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     chain_spec: Arc<ChainSpec>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -39,7 +39,7 @@ pub struct BlockFetcherTask<EvmConfig, Client, Engine: EngineTypes> {
     evm_config: EvmConfig,
 }
 
-impl<EvmConfig, Client, Engine> BlockFetcherTask<EvmConfig, Client, Engine>
+impl<Client, EvmConfig, Engine> BlockFetcherTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory

@@ -802,6 +802,7 @@ mod tests {
                     },
                     senders: vec![],
                 },
+                None,
                 U256::ZERO,
             )
             .expect_err(
@@ -900,6 +901,7 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
+                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",

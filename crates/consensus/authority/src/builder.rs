@@ -27,7 +27,7 @@ use tracing::error;
 use url::Url;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<EvmConfig, Client, Engine: EngineTypes> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -59,7 +59,7 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EvmConfig, Client, Engine> AuthorityConsensusBuilder<EvmConfig, Client, Engine>
+impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
 where
     Engine: EngineTypes + 'static,
     EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
@@ -168,8 +168,8 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        BlockProductionTask<EvmConfig, Client, Engine>,
-        BlockFetcherTask<EvmConfig, Client, Engine>,
+        BlockProductionTask<Client, EvmConfig, Engine>,
+        BlockFetcherTask<Client, EvmConfig, Engine>,
         SyncController<Engine>,
     ) {
         let Self {
@@ -207,6 +207,7 @@ where
             bitcoin_block_source.clone(),
             storage.clone(),
             bitcoin_block_header.clone(),
+            evm_config.clone(),
         );
         let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
@@ -221,7 +222,7 @@ where
             epoch_manager,
             network_handle,
             task_executor,
-            evm_config,
+            evm_config.clone(),
         );
 
         (consensus, block_production_task, block_fetcher_task, sync_task)

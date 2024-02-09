@@ -3,15 +3,15 @@ use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
-impl<EvmConfig, Client, Engine: reth_node_api::EngineTypes>
-    BlockProductionTask<EvmConfig, Client, Engine>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
+    BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory

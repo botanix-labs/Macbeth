@@ -33,8 +33,9 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
-    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, Bloom, Bytes, ChainSpec, Header,
-    ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -44,7 +45,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::sync::Arc;
+use std::{clone, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -276,11 +277,14 @@ where
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
     pub(crate) fn execute<EvmConfig>(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         executor: &mut EVMProcessor<'_, EvmConfig>,
         senders: Vec<Address>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
-    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
+    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
@@ -375,7 +379,10 @@ where
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
         evm_config: EvmConfig,
-    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
+    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // Check if we have a recent block header
         // Can't validate pegin without it
         if recent_block_header.is_none() {
@@ -390,6 +397,8 @@ where
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
+        let block_with_senders = BlockWithSenders::new(block, senders).expect("senders are valid");
+
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
         // Now execute the block
@@ -403,7 +412,7 @@ where
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
         let (bundle_state, gas_used) =
-            self.execute(&block, &mut executor, senders, recent_block_header)?;
+            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
@@ -455,7 +464,10 @@ where
         sealed_block: SealedBlock,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
         evm_config: EvmConfig,
-    ) -> Result<BundleStateWithReceipts, BlockExecutionError> {
+    ) -> Result<BundleStateWithReceipts, BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // Check if we have a recent block header
         // Can't validate pegin without it
         if recent_block_header.is_none() {
@@ -477,8 +489,11 @@ where
                 BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
             )?;
 
+        let block_with_senders =
+            BlockWithSenders::new(sealed_block.clone().unseal(), senders).expect("senders are valid");
+
         let (bundle_state, _gas_used) = self.execute(
-            &sealed_block.clone().unseal(),
+            &block_with_senders,
             &mut executor,
             senders,
             recent_block_header,
