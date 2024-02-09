@@ -19,7 +19,6 @@ use reth_rpc_types::engine::{
 use reth_rpc_types_compat::engine::payload::{
     convert_payload_input_v2_to_payload, convert_to_payload_body_v1,
 };
-
 use reth_tasks::TaskSpawner;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -460,62 +459,6 @@ where
                     return Ok(fcu_res)
                 }
                 return Err(err.into())
-            }
-        }
-
-        Ok(self.inner.beacon_consensus.fork_choice_updated(state, payload_attrs).await?)
-    }
-
-    /// Validates the `engine_forkchoiceUpdated` payload attributes and executes the forkchoice
-    /// update.
-    ///
-    /// The payload attributes will be validated according to the engine API rules for the given
-    /// message version:
-    /// * If the version is [EngineApiMessageVersion::V1], then the payload attributes will be
-    ///   validated according to the Paris rules.
-    /// * If the version is [EngineApiMessageVersion::V2], then the payload attributes will be
-    ///   validated according to the Shanghai rules, as well as the validity changes from cancun:
-    ///   <https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/cancun.md#update-the-methods-of-previous-forks>
-    ///
-    /// * If the version is [EngineApiMessageVersion::V3], then the payload attributes will be
-    ///   validated according to the Cancun rules.
-    async fn validate_and_execute_forkchoice(
-        &self,
-        version: EngineApiMessageVersion,
-        state: ForkchoiceState,
-        payload_attrs: Option<PayloadAttributes>,
-    ) -> EngineApiResult<ForkchoiceUpdated> {
-        if let Some(ref attrs) = payload_attrs {
-            let attr_validation_res = self.validate_version_specific_fields(version, &attrs.into());
-
-            #[cfg(feature = "optimism")]
-            if attrs.optimism_payload_attributes.gas_limit.is_none() &&
-                self.inner.chain_spec.is_optimism()
-            {
-                return Err(EngineApiError::MissingGasLimitInPayloadAttributes)
-            }
-
-            // From the engine API spec:
-            //
-            // Client software MUST ensure that payloadAttributes.timestamp is greater than
-            // timestamp of a block referenced by forkchoiceState.headBlockHash. If this condition
-            // isn't held client software MUST respond with -38003: Invalid payload attributes and
-            // MUST NOT begin a payload build process. In such an event, the forkchoiceState
-            // update MUST NOT be rolled back.
-            //
-            // NOTE: This will also apply to the validation result for the cancun or
-            // shanghai-specific fields provided in the payload attributes.
-            //
-            // To do this, we set the payload attrs to `None` if attribute validation failed, but
-            // we still apply the forkchoice update.
-            if let Err(err) = attr_validation_res {
-                let fcu_res = self.inner.beacon_consensus.fork_choice_updated(state, None).await?;
-                // TODO: decide if we want this branch - the FCU INVALID response might be more
-                // useful than the payload attributes INVALID response
-                if fcu_res.is_invalid() {
-                    return Ok(fcu_res)
-                }
-                return Err(err)
             }
         }
 

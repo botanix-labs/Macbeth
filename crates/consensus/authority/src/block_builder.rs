@@ -92,6 +92,7 @@ where
             &self.sk,
             &self.secp,
             &authority_signers,
+            self.evm_config.clone(),
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -145,7 +146,7 @@ where
         storage.client.set_finalized(sealed_block.header.clone());
         drop(storage);
 
-        match engine_util::send_fork_choice_update_payload(new_header.hash, self.to_engine.clone())
+        match engine_util::send_fork_choice_update_payload(new_header.hash(), self.to_engine.clone())
             .await
         {
             Ok(_) => {}
