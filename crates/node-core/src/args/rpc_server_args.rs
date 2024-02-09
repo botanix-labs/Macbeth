@@ -25,7 +25,10 @@ use reth_provider::{
     EvmEnvProvider, HeaderProvider, StateProviderFactory,
 };
 use reth_rpc::{
-    eth::{cache::EthStateCacheConfig, gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP, botanix_config::BotanixConfig,},
+    eth::{
+        botanix_config::BotanixConfig, cache::EthStateCacheConfig,
+        gas_oracle::GasPriceOracleConfig, RPC_DEFAULT_GAS_CAP,
+    },
     JwtError, JwtSecret,
 };
 use reth_rpc_builder::{
@@ -432,6 +435,10 @@ impl RpcServerArgs {
         EvmConfig: ConfigureEvmEnv + 'static,
     {
         let socket_address = SocketAddr::new(self.auth_addr, self.auth_port);
+        let mut botanix_config = BotanixConfig::default();
+        botanix_config = botanix_config
+            .btc_server(self.btc_server.clone())
+            .mempool_space_url(self.btc_block_source.clone().to_string());
 
         reth_rpc_builder::auth::launch(
             provider,
@@ -442,6 +449,7 @@ impl RpcServerArgs {
             socket_address,
             jwt_secret,
             evm_config,
+            botanix_config,
         )
         .await
     }
@@ -471,15 +479,6 @@ impl RethRpcConfig for RpcServerArgs {
             .state_cache(self.state_cache_config())
             .gpo_config(self.gas_price_oracle_config())
             .botanix_config(botanix_config)
-    }
-
-    fn state_cache_config(&self) -> EthStateCacheConfig {
-        EthStateCacheConfig {
-            max_blocks: self.rpc_state_cache.max_blocks,
-            max_receipts: self.rpc_state_cache.max_receipts,
-            max_envs: self.rpc_state_cache.max_envs,
-            max_concurrent_db_requests: self.rpc_state_cache.max_concurrent_db_requests,
-        }
     }
 
     fn state_cache_config(&self) -> EthStateCacheConfig {

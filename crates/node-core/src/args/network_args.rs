@@ -159,26 +159,6 @@ impl Default for NetworkArgs {
     }
 }
 
-impl Default for NetworkArgs {
-    fn default() -> Self {
-        Self {
-            discovery: DiscoveryArgs::default(),
-            trusted_peers: vec![],
-            trusted_only: false,
-            bootnodes: None,
-            peers_file: None,
-            identity: P2P_CLIENT_VERSION.to_string(),
-            p2p_secret_key: None,
-            no_persist_peers: false,
-            nat: NatResolver::Any,
-            addr: DEFAULT_DISCOVERY_ADDR,
-            port: DEFAULT_DISCOVERY_PORT,
-            max_outbound_peers: None,
-            max_inbound_peers: None,
-        }
-    }
-}
-
 /// Arguments to setup discovery
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct DiscoveryArgs {
@@ -224,18 +204,6 @@ impl DiscoveryArgs {
     pub fn with_unused_discovery_port(mut self) -> Self {
         self.port = 0;
         self
-    }
-}
-
-impl Default for DiscoveryArgs {
-    fn default() -> Self {
-        Self {
-            disable_discovery: false,
-            disable_dns_discovery: false,
-            disable_discv4_discovery: false,
-            addr: DEFAULT_DISCOVERY_ADDR,
-            port: DEFAULT_DISCOVERY_PORT,
-        }
     }
 }
 

@@ -7446,7 +7446,9 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tonic",
  "tracing",
+ "url",
  "vergen",
 ]
 
