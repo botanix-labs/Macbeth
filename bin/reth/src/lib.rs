@@ -32,7 +32,6 @@ pub mod commands;
 pub mod init;
 pub mod runner;
 pub mod utils;
-pub mod poa;
 
 /// Re-exported payload related types
 pub mod payload {

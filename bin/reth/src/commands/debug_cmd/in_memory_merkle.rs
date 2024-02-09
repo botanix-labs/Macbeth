@@ -177,6 +177,7 @@ impl Command {
                 .with_recovered_senders()
                 .ok_or(BlockValidationError::SenderRecoveryError)?,
             merkle_block_td + block.difficulty,
+            None,
         )?;
         let block_state = executor.take_output_state();
 

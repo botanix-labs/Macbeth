@@ -1,6 +1,6 @@
 //! Support for handling events emitted by node components.
 
-use crate::node::cl_events::ConsensusLayerHealthEvent;
+use crate::commands::poa::cl_events::ConsensusLayerHealthEvent;
 use futures::Stream;
 use reth_beacon_consensus::BeaconConsensusEngineEvent;
 use reth_db::DatabaseEnv;
@@ -22,7 +22,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::time::Interval;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
+use crate::commands::poa::notifications::EventsNotificationClient;
+
 
 /// Interval of reporting node state.
 const INFO_MESSAGE_INTERVAL: Duration = Duration::from_secs(25);
@@ -39,6 +41,8 @@ struct NodeState {
     current_stage: Option<CurrentStage>,
     /// The latest block reached by either pipeline or consensus engine.
     latest_block: Option<BlockNumber>,
+    /// Events client
+    events_client: Option<EventsNotificationClient>,
 }
 
 impl NodeState {
@@ -46,8 +50,20 @@ impl NodeState {
         db: Arc<DatabaseEnv>,
         network: Option<NetworkHandle>,
         latest_block: Option<BlockNumber>,
+        events_client: Option<EventsNotificationClient>,
     ) -> Self {
-        Self { db, network, current_stage: None, latest_block }
+        Self { db, network, current_stage: None, latest_block, events_client }
+    }
+
+    fn send_notification_message_async(&self, msg: String) {
+        if let Some(client) = self.events_client.clone() {
+            let client = client.clone();
+            tokio::spawn(async move {
+                if let Err(err) = client.send_message(&msg).await {
+                    error!("Failed to send notification message: {:?}", err);
+                }
+            });
+        }
     }
 
     fn num_connected_peers(&self) -> usize {
@@ -155,17 +171,21 @@ impl NodeState {
                     ?status,
                     "Forkchoice updated"
                 );
+                self.send_notification_message_async("Forkchoice updated".to_string());
             }
             BeaconConsensusEngineEvent::CanonicalBlockAdded(block) => {
-                info!(number=block.number, hash=?block.hash, "Block added to canonical chain");
+                info!(number=block.number, hash=?block.hash(), "Block added to canonical chain");
+                self.send_notification_message_async("Block added to canonical chain".to_string());
             }
             BeaconConsensusEngineEvent::CanonicalChainCommitted(head, elapsed) => {
                 self.latest_block = Some(head.number);
 
-                info!(number=head.number, hash=?head.hash, ?elapsed, "Canonical chain committed");
+                info!(number=head.number, hash=?head.hash(), ?elapsed, "Canonical chain committed");
+                self.send_notification_message_async("Canonical chain committed".to_string());
             }
             BeaconConsensusEngineEvent::ForkBlockAdded(block) => {
-                info!(number=block.number, hash=?block.hash, "Block added to fork chain");
+                info!(number=block.number, hash=?block.hash(), "Block added to fork chain");
+                self.send_notification_message_async("Block added to fork chain".to_string());
             }
         }
     }
@@ -176,16 +196,24 @@ impl NodeState {
         if self.current_stage.is_none() {
             match event {
                 ConsensusLayerHealthEvent::NeverSeen => {
-                    warn!("Post-merge network, but never seen beacon client. Please launch one to follow the chain!")
+                    let msg = "Post-merge network, but never seen beacon client. Please launch one to follow the chain!";
+                    warn!(msg);
+                    self.send_notification_message_async(msg.to_string());
                 }
                 ConsensusLayerHealthEvent::HasNotBeenSeenForAWhile(period) => {
-                    warn!(?period, "Post-merge network, but no beacon client seen for a while. Please launch one to follow the chain!")
+                    let msg = "Post-merge network, but no beacon client seen for a while. Please launch one to follow the chain!";
+                    warn!(?period, msg);
+                    self.send_notification_message_async(msg.to_string());
                 }
                 ConsensusLayerHealthEvent::NeverReceivedUpdates => {
-                    warn!("Beacon client online, but never received consensus updates. Please ensure your beacon client is operational to follow the chain!")
+                    let msg = "Beacon client online, but never received consensus updates. Please ensure your beacon client is operational to follow the chain!";
+                    warn!(msg);
+                    self.send_notification_message_async(msg.to_string());
                 }
                 ConsensusLayerHealthEvent::HaveNotReceivedUpdatesForAWhile(period) => {
-                    warn!(?period, "Beacon client online, but no consensus updates received for a while. Please fix your beacon client to follow the chain!")
+                    let msg = "Beacon client online, but no consensus updates received for a while. Please fix your beacon client to follow the chain!";
+                    warn!(?period, msg);
+                    self.send_notification_message_async(msg.to_string());
                 }
             }
         }
@@ -275,10 +303,11 @@ pub async fn handle_events<E>(
     latest_block_number: Option<BlockNumber>,
     events: E,
     db: Arc<DatabaseEnv>,
+    events_client: Option<EventsNotificationClient>,
 ) where
     E: Stream<Item = NodeEvent> + Unpin,
 {
-    let state = NodeState::new(db, network, latest_block_number);
+    let state = NodeState::new(db, network, latest_block_number, events_client);
 
     let start = tokio::time::Instant::now() + Duration::from_secs(3);
     let mut info_interval = tokio::time::interval_at(start, INFO_MESSAGE_INTERVAL);
@@ -438,7 +467,7 @@ impl Display for Eta {
 
 #[cfg(test)]
 mod tests {
-    use crate::node::events::Eta;
+    use crate::commands::poa::events::Eta;
     use std::time::{Duration, Instant};
 
     #[test]
