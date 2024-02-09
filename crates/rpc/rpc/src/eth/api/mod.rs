@@ -54,7 +54,7 @@ use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{
-    Botanix, BtcFeesRPCError, GatewayAddressRPCError, MerkleProofRPCError,
+    self, Botanix, BotanixConfig, BtcFeesRPCError, GatewayAddressRPCError, MerkleProofRPCError,
 };
 
 lazy_static::lazy_static! {
@@ -83,6 +83,22 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
 
     /// Returns the [SyncStatus] of the network
     fn sync_status(&self) -> RethResult<SyncStatus>;
+
+    /// Returns gateway address
+    async fn get_gateway_address(
+        &self,
+        eth_address: Address,
+    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
+
+    /// Returns the merkle proof for a given block hash
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
+
+    /// Returns the BTC fee rate for a pegout transaction in sat/vb.
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
 }
 
 /// `Eth` API implementation.
@@ -114,6 +130,7 @@ where
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
         evm_config: EvmConfig,
+        botanix_provider: Botanix,
     ) -> Self {
         Self::with_spawner(
             provider,
@@ -126,6 +143,7 @@ where
             blocking_task_pool,
             fee_history_cache,
             evm_config,
+            botanix_provider,
         )
     }
 
@@ -142,6 +160,7 @@ where
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
         evm_config: EvmConfig,
+        botanix_provider: Botanix,
     ) -> Self {
         // get the block number of the latest block
         let latest_block = provider
@@ -165,6 +184,7 @@ where
             blocking_task_pool,
             fee_history_cache,
             evm_config,
+            botanix_provider,
             #[cfg(feature = "optimism")]
             http_client: reqwest::Client::builder().use_rustls_tls().build().unwrap(),
         };
@@ -330,7 +350,7 @@ where
     pub(crate) async fn local_pending_block(&self) -> EthResult<Option<SealedBlockWithSenders>> {
         let pending = self.pending_block_env_and_cfg()?;
         if pending.origin.is_actual_pending() {
-            return Ok(pending.origin.into_actual_pending())
+            return Ok(pending.origin.into_actual_pending());
         }
 
         // no pending block from the CL yet, so we need to build it ourselves via txpool
@@ -341,17 +361,17 @@ where
             // check if the block is still good
             if let Some(pending_block) = lock.as_ref() {
                 // this is guaranteed to be the `latest` header
-                if pending.block_env.number.to::<u64>() == pending_block.block.number &&
-                    pending.origin.header().hash() == pending_block.block.parent_hash &&
-                    now <= pending_block.expires_at
+                if pending.block_env.number.to::<u64>() == pending_block.block.number
+                    && pending.origin.header().hash() == pending_block.block.parent_hash
+                    && now <= pending_block.expires_at
                 {
-                    return Ok(Some(pending_block.block.clone()))
+                    return Ok(Some(pending_block.block.clone()));
                 }
             }
 
             // if we're currently syncing, we're unable to build a pending block
             if this.network().is_syncing() {
-                return Ok(None)
+                return Ok(None);
             }
 
             // we rebuild the block
@@ -359,7 +379,7 @@ where
                 Ok(block) => block,
                 Err(err) => {
                     tracing::debug!(target: "rpc", "Failed to build pending block: {:?}", err);
-                    return Ok(None)
+                    return Ok(None);
                 }
             };
 
@@ -523,6 +543,8 @@ struct EthApiInner<Provider, Pool, Network, EvmConfig> {
     fee_history_cache: FeeHistoryCache,
     /// The type that defines how to configure the EVM
     evm_config: EvmConfig,
+    /// Botanix specific configurations
+    botanix_provider: Botanix,
     /// An http client for communicating with sequencers.
     #[cfg(feature = "optimism")]
     http_client: reqwest::Client,
