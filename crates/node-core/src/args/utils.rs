@@ -14,14 +14,14 @@ use url::Url;
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET, BASE_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
-use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
+use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET};
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] = &["base", "base-goerli", "base-sepolia"];
 #[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
-pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev"];
+pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
 
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {
@@ -43,6 +43,8 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
+        #[cfg(not(feature = "optimism"))]
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
@@ -78,6 +80,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
+        #[cfg(not(feature = "optimism"))]
+        "botanix_testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
