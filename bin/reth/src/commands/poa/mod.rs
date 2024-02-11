@@ -19,11 +19,7 @@ use crate::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
-    },
-    builder::{launch_from_config, NodeConfig},
-    cli::{db_type::DatabaseBuilder, ext::RethCliExt},
-    dirs::{DataDirPath, MaybePlatformPath},
-    runner::CliContext,
+    }, builder::{launch_from_config, NodeConfig}, cli::{db_type::DatabaseBuilder, ext::RethCliExt}, dirs::{DataDirPath, MaybePlatformPath}, poa_builder::launch_poa_from_config, runner::CliContext
 };
 
 /// Start the node
@@ -205,7 +201,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
         let executor = ctx.task_executor;
 
         // launch the node
-        let handle = launch_from_config::<Ext>(node_config, ext, executor).await?;
+        let handle = launch_poa_from_config::<Ext>(node_config, ext, executor).await?;
 
         handle.wait_for_node_exit().await
     }
