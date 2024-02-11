@@ -31,7 +31,7 @@ use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 use crate::{database::Utxo, util::OutPointExt};
 
-use bdk::{miniscript::psbt::Error as PsbtError, Error as BdkError};
+use bdk::miniscript::psbt::Error as PsbtError;
 use database::Error as DbError;
 use thiserror::Error;
 
@@ -44,7 +44,7 @@ pub enum Error {
     #[error("Database error: {0}")]
     Db(#[from] DbError),
     #[error("Coin Selection error: {0}")]
-    CoinSelection(#[from] BdkError),
+    CoinSelection(#[from] bdk::wallet::coin_selection::Error),
     #[error("Pbst error: {0}")]
     Pbst(#[from] PsbtError),
     #[error("Invalid resulting transaction")]
@@ -105,7 +105,7 @@ impl App {
                 return Ok(());
             }
         }
-        return Err(Error::InvalidRound2DkgPayloadMissingPackage)
+        return Err(Error::InvalidRound2DkgPayloadMissingPackage);
     }
 
     fn add_round1_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
@@ -170,7 +170,7 @@ impl App {
             .map(|u| {
                 bdk::WeightedUtxo {
                     satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-                    utxo: bdk::Utxo::Local(bdk::LocalUtxo {
+                    utxo: bdk::Utxo::Local(bdk::LocalOutput {
                         outpoint: u.outpoint.to_bdk(),
                         txout: bdk::bitcoin::TxOut {
                             script_pubkey: u.output.script_pubkey.to_bytes().into(),
@@ -242,7 +242,7 @@ impl App {
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);
             }
-            return Err(Error::PbstFinalizationFailed(errs))
+            return Err(Error::PbstFinalizationFailed(errs));
         }
         // could do this once we are confident our code works and we don't
         // want to do the effort of tx verification
@@ -310,7 +310,7 @@ impl rpc::BtcServer for App {
         let eth_addr_vec =
             hex::decode(req.eth_address).map_err(|e| badarg!("invalid eth address: {}", e))?;
         if eth_addr_vec.len() != 20 {
-            return Err(badarg!("invalid eth address"))
+            return Err(badarg!("invalid eth address"));
         }
 
         let eth_addr: [u8; 20] =
@@ -359,7 +359,7 @@ impl rpc::BtcServer for App {
             internal!("Failed to get public key package: {}", e)
         })? {
             let hex = hex::encode(pk_package.verifying_key().serialize());
-            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
+            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
         }
 
         // If we don't have a pubkey package we havent generated the group verifying key yet
@@ -397,10 +397,10 @@ impl rpc::BtcServer for App {
             })?;
 
             let hex = hex::encode(pk_res.1.verifying_key().serialize());
-            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
+            return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
         }
         warn!("recieved get public key request while not having round 2 DKG");
-        return Err(internal!("Missing round2 dkg package"))
+        return Err(internal!("Missing round2 dkg package"));
     }
 
     async fn new_round2_dkg_package(
@@ -409,7 +409,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"))
+            return Err(already_exists!("already have key package"));
         }
 
         self.add_round2_dkg(req.into_inner()).map_err(|e| {
@@ -425,7 +425,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"))
+            return Err(already_exists!("already have key package"));
         }
         // Check do we have our secret coef
         if let Some(personal_round1_package) = &self.frost_round1_dkg {
@@ -451,7 +451,7 @@ impl rpc::BtcServer for App {
 
             Ok(tonic::Response::new(res))
         } else {
-            return Err(internal!("Missing round1 dkg package"))
+            return Err(internal!("Missing round1 dkg package"));
         }
 
         // Ok(tonic::Response::new(rpc::Empty {}))
@@ -463,7 +463,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"))
+            return Err(already_exists!("already have key package"));
         }
 
         self.add_round1_dkg(req.into_inner()).map_err(|e| {
@@ -479,7 +479,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"))
+            return Err(already_exists!("already have key package"));
         }
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
             let res = rpc::DkgPayload {
@@ -493,7 +493,7 @@ impl rpc::BtcServer for App {
 
             Ok(tonic::Response::new(res))
         } else {
-            return Err(internal!("Missing round1 dkg package"))
+            return Err(internal!("Missing round1 dkg package"));
         }
     }
 }
