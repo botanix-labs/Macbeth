@@ -133,7 +133,7 @@ pub enum CalculateSighashError {
 
 /// Calculate the sighash for a taproot keyspend
 /// Using tapsighash type ALL
-pub fn calculate_sighash(psbt: Psbt) -> Result<TapSighash, CalculateSighashError> {
+pub fn calculate_sighash(psbt: &Psbt) -> Result<TapSighash, CalculateSighashError> {
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
 
     let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
