@@ -182,6 +182,9 @@ pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::Engine
         .transpose()
         .map_err(BestTransactionsError::EngineError)?
         .ok_or_else(|| BestTransactionsError::PayloadEmpty)?;
+    if best_txs.block().body.is_empty() {
+        return Err(BestTransactionsError::PayloadEmpty);
+    }
     Ok(best_txs)
 }
 

@@ -17,7 +17,7 @@ pub const RETH_CLIENT_VERSION: &str = concat!("reth/v", env!("CARGO_PKG_VERSION"
 pub const SELECTOR_LEN: usize = 4;
 
 /// Maximum extra data size in a block after genesis
-pub const MAXIMUM_EXTRA_DATA_SIZE: usize = 128;
+pub const MAXIMUM_EXTRA_DATA_SIZE: usize = 256;
 
 /// Fixed number of extra-data suffix bytes reserved for signer seal.
 pub const MAXIMUM_EXTRA_SEAL_SIZE: usize = 65;
