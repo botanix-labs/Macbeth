@@ -3,10 +3,13 @@ use std::{collections::HashMap, str::FromStr};
 use crate::{database, rpc, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
+use bitcoin::secp256k1::schnorr::Signature as SchnorrSignature;
 use bitcoin::{
-    consensus::Encodable, hashes::Hash, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut,
+    consensus::Encodable, hashes::Hash, psbt::Psbt, sighash::TapSighashType, FeeRate, OutPoint,
+    ScriptBuf, TxOut,
 };
 use frost_secp256k1_tr as frost;
+use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 impl App {
@@ -262,7 +265,12 @@ impl App {
         Ok((signing_package, psbt))
     }
 
-    pub(crate) fn finalize_signing(&self, psbt: &Psbt) -> Result<Psbt, Error> {
+    pub(crate) fn finalize_signing(
+        &self,
+        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
+        psbt: &mut Psbt,
+        input_index: usize,
+    ) -> Result<Psbt, Error> {
         let txid = psbt.clone().extract_tx().txid();
         let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
 
@@ -275,19 +283,46 @@ impl App {
             self.db.get_signing_package(txid)?.ok_or(Error::MissingSigningPackage)?;
 
         let agg_sig = frost::aggregate(&signing_package, &partial_sigs, &pk_package)?;
+        let schnorr_sig =
+            bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..]).unwrap();
+
+        // TODO(armins) need to add the eth tweak
+        let schorr_pk =
+            bitcoin::secp256k1::PublicKey::from_slice(&pk_package.verifying_key().serialize()[..])
+                .unwrap();
 
         // Verify signature -- redundant check
         pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
 
-        // TODO (armins) add agg signature to psbt
-    //     if let Err(err) =
-    //         reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-    //     {
-    //         error!("Failed to sign psbt {:?}", err);
-    //         return Err(Error::FailedToSignPbst);
-    //     }
-    //     // TODO Add signature to psbt and finalize
-    //     // TODO remove utxos being spent from db
+        // Add relevant signing information for the specific input we are signing
+        // let secp_pk =
+        psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.sighash_type =
+            Some(TapSighashType::All.into());
+        
+        psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_key_sig =
+            Some(bitcoin::taproot::Signature { sig: schnorr_sig, hash_ty: TapSighashType::All });
+
+        // TODO(armins) do we need to add internal key?
+        // let taproot_spend_info =
+        // reth_btc_wallet::address::generate_taproot_spend_info(secp, &schorr_pk).unwrap();
+        // psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_internal_key =
+        //     Some(schorr_pk.x_only_public_key().0);
+        // psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_merkle_root =
+        //     taproot_spend_info.merkle_root();
+
+        if let Err(errs) = psbt.finalize_mut(secp) {
+            error!("Had {} PSBT finalization errors:", errs.len());
+            for e in &errs {
+                error!("  PSBT finalization error: {}", e);
+            }
+            return Err(Error::PbstFinalizationFailed(errs));
+        }
+        // could do this once we are confident our code works and we don't
+        // want to do the effort of tx verification
+        let tx = psbt.clone().extract_tx();
+        let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
+        println!("Finalized tx: {:?}", tx);
+
         Ok(psbt.clone())
     }
 }
