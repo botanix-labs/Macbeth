@@ -110,7 +110,6 @@ mod traits;
 
 pub mod noop;
 
-#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 pub use optimism::OptimismPayloadBuilderAttributes;

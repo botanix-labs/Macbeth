@@ -28,7 +28,7 @@ use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
-use reth_node_api::{evm, ConfigureEvmEnv, EngineTypes};
+use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
@@ -45,7 +45,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::{clone, sync::Arc};
+use std::sync::Arc;
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};

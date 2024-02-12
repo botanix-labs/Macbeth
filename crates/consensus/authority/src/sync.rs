@@ -75,6 +75,7 @@ mod tests {
         EthVersion, Status,
     };
     use reth_network::{message::PeerRequestSender, PeerRequest};
+    use reth_node_ethereum::EthEngineTypes;
     use reth_rpc_types::PeerId;
     use tokio::sync::mpsc;
 
@@ -84,7 +85,7 @@ mod tests {
         let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
         let network_stream = UnboundedReceiverStream::new(rx);
         let peer_id = PeerId::random();
-        let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage>();
+        let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
 
         // intialize the SyncController
         let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);

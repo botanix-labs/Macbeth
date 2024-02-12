@@ -14,6 +14,8 @@ use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
+use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
@@ -47,6 +49,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     task_executor: TaskExecutor,
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
+    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -88,6 +91,7 @@ where
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
+        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -157,6 +161,7 @@ where
             block_import_rx,
             task_executor,
             evm_config,
+            payload_builder,
         })
     }
 
@@ -189,6 +194,7 @@ where
             block_import_rx,
             task_executor,
             evm_config,
+            payload_builder,
         } = self;
         let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
 
@@ -223,6 +229,7 @@ where
             network_handle,
             task_executor,
             evm_config.clone(),
+            payload_builder,
         );
 
         (consensus, block_production_task, block_fetcher_task, sync_task)
