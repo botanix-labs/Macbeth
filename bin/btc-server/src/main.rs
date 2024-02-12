@@ -91,6 +91,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Failed to calculate sighash")]
     FailedToCalculateSighash,
+    #[error("Invalid input index")]
+    InvalidInputIndex,
 }
 
 struct App {
@@ -187,12 +189,13 @@ impl rpc::BtcServer for App {
         &self,
         payload: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
-        let psbt = Psbt::deserialize(&payload.into_inner().psbt.as_slice()).map_err(|e| {
+        let mut psbt = Psbt::deserialize(&payload.into_inner().psbt.as_slice()).map_err(|e| {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
 
-        let finalized_psbt = self.finalize_signing(&psbt).map_err(|e| {
+        // TODO (armins) inputs indecies should get saved on teh signing package
+        let finalized_psbt = self.finalize_signing(&SECP, &mut psbt, 0).map_err(|e| {
             error!("Failed to finalize signing: {}", e);
             internal!("Failed to finalize signing: {}", e)
         })?;
@@ -283,7 +286,7 @@ impl rpc::BtcServer for App {
             internal!("Failed to get public key: {}", e)
         })?;
         let hex = hex::encode(pk.serialize());
-        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }))
+        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
     }
 
     /// Adds round2 packages received from a peer
