@@ -397,7 +397,8 @@ where
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
-        let block_with_senders = BlockWithSenders::new(block.clone(), senders.clone()).expect("senders are valid");
+        let block_with_senders =
+            BlockWithSenders::new(block.clone(), senders.clone()).expect("senders are valid");
 
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
@@ -490,14 +491,11 @@ where
             )?;
 
         let block_with_senders =
-            BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone()).expect("senders are valid");
+            BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
+                .expect("senders are valid");
 
-        let (bundle_state, _gas_used) = self.execute(
-            &block_with_senders,
-            &mut executor,
-            senders,
-            recent_block_header,
-        )?;
+        let (bundle_state, _gas_used) =
+            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
 
         let authority_signers = self.authorities.clone();
         validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(

@@ -7,7 +7,7 @@ pub mod import;
 pub mod init_cmd;
 pub mod node;
 pub mod p2p;
+pub mod poa;
 pub mod recover;
 pub mod stage;
 pub mod test_vectors;
-pub mod poa;

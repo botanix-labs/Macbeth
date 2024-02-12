@@ -7,7 +7,7 @@ use crate::{
     },
     cli::ext::RethCliExt,
     commands::{
-        config_cmd, db, debug_cmd, import, init_cmd, node, p2p, recover, stage, test_vectors, poa,
+        config_cmd, db, debug_cmd, import, init_cmd, node, p2p, poa, recover, stage, test_vectors,
     },
     runner::CliRunner,
     version::{LONG_VERSION, SHORT_VERSION},

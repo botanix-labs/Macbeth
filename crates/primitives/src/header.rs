@@ -2,14 +2,13 @@ use crate::{
     basefee::calculate_next_block_base_fee,
     constants,
     constants::{
-        ALLOWED_FUTURE_BLOCK_TIME_SECONDS, EMPTY_OMMER_ROOT_HASH, EMPTY_ROOT_HASH,
-        MINIMUM_GAS_LIMIT,
+        eip225::EPOCH_LENGTH, ALLOWED_FUTURE_BLOCK_TIME_SECONDS, EMPTY_OMMER_ROOT_HASH,
+        EMPTY_ROOT_HASH, MINIMUM_GAS_LIMIT,
     },
     eip4844::{calc_blob_gasprice, calculate_excess_blob_gas},
     keccak256, Address, BaseFeeParams, BlockHash, BlockNumHash, BlockNumber, Bloom, Bytes,
     ChainSpec, GotExpected, GotExpectedBoxed, Hardfork, B256, B64, U256,
 };
-use crate::constants::eip225::EPOCH_LENGTH;
 
 use alloy_rlp::{length_of_length, Decodable, Encodable, EMPTY_LIST_CODE, EMPTY_STRING_CODE};
 use bytes::{Buf, BufMut, BytesMut};

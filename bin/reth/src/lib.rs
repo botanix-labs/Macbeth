@@ -27,10 +27,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 pub mod builder;
-pub mod poa_builder;
 pub mod cli;
 pub mod commands;
 pub mod init;
+pub mod poa_builder;
 pub mod runner;
 pub mod utils;
 

@@ -19,7 +19,10 @@ use reth_provider::{
 };
 use reth_rpc::{
     eth::{
-        botanix_config::BotanixConfig, cache::EthStateCache, gas_oracle::GasPriceOracle, EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig
+        botanix_config::{Botanix, BotanixConfig},
+        cache::EthStateCache,
+        gas_oracle::GasPriceOracle,
+        EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig,
     },
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
@@ -31,7 +34,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use reth_rpc::eth::botanix_config::Botanix;
 
 /// Configure and launch a _standalone_ auth server with `engine` and a _new_ `eth` namespace.
 #[allow(clippy::too_many_arguments)]

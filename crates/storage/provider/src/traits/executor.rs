@@ -6,7 +6,6 @@ use reth_primitives::{BlockNumber, BlockWithSenders, ChainSpec, PruneModes, Rece
 use std::time::Duration;
 use tracing::debug;
 
-
 /// Executor factory that would create the EVM with particular state provider.
 ///
 /// It can be used to mock executor.

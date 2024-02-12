@@ -17,7 +17,12 @@ use crate::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
-    }, builder::NodeConfig, cli::{db_type::DatabaseBuilder, ext::RethCliExt}, dirs::{DataDirPath, MaybePlatformPath}, poa_builder::launch_poa_from_config, runner::CliContext
+    },
+    builder::NodeConfig,
+    cli::{db_type::DatabaseBuilder, ext::RethCliExt},
+    dirs::{DataDirPath, MaybePlatformPath},
+    poa_builder::launch_poa_from_config,
+    runner::CliContext,
 };
 
 /// Start the node

@@ -5,12 +5,11 @@
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
 use reth_node_ethereum::EthEngineTypes;
-use reth_payload_builder::{error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes};
-use reth_primitives::{BlockHash, SealedBlock};
-use reth_rpc_types::engine::{
-    ForkchoiceState, PayloadId, PayloadStatus, PayloadStatusEnum,
+use reth_payload_builder::{
+    error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
 };
-use reth_payload_builder::PayloadBuilderHandle;
+use reth_primitives::{BlockHash, SealedBlock};
+use reth_rpc_types::engine::{ForkchoiceState, PayloadId, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use tracing::{debug, error, trace};
@@ -149,9 +148,9 @@ pub(crate) async fn start_new_payload<Engine: reth_node_api::EngineTypes>(
     payload_attributes: EthPayloadBuilderAttributes,
 ) -> Result<PayloadId, StartNewPayloadError> {
     let payload_id = payload_builder
-    .new_payload(payload_attributes)
-    .await
-    .map_err(StartNewPayloadError::EngineError)?;
+        .new_payload(payload_attributes)
+        .await
+        .map_err(StartNewPayloadError::EngineError)?;
     Ok(payload_id)
 }
 
@@ -178,22 +177,25 @@ pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::Engine
     payload_id: PayloadId,
 ) -> Result<EthBuiltPayload, BestTransactionsError> {
     let best_txs = payload_builder
-    .best_payload(payload_id)
-    .await
-    .transpose()
-    .map_err(BestTransactionsError::EngineError)?
-    .ok_or_else(|| BestTransactionsError::PayloadEmpty)?;
+        .best_payload(payload_id)
+        .await
+        .transpose()
+        .map_err(BestTransactionsError::EngineError)?
+        .ok_or_else(|| BestTransactionsError::PayloadEmpty)?;
     Ok(best_txs)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_primitives::{address, b256, bloom, bytes, revm_primitives::FixedBytes, Address, BlockBody, Header, SealedHeader, U256};
+    use reth_payload_builder::test_utils::{spawn_test_payload_service, test_payload_service};
+    use reth_primitives::{
+        address, b256, bloom, bytes, revm_primitives::FixedBytes, Address, BlockBody, Header,
+        SealedHeader, U256,
+    };
     use reth_rpc_types::engine::PayloadAttributes;
     use tokio::sync::mpsc;
-    use reth_payload_builder::test_utils::{spawn_test_payload_service, test_payload_service};
-    
+
     #[tokio::test]
     async fn test_send_fork_choice_update_payload_valid() {
         let (tx, mut rx) = mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
@@ -235,7 +237,7 @@ mod tests {
             _ => panic!("Unexpected message type"),
         }
     }
- 
+
     #[tokio::test]
     async fn test_send_new_payload_valid() {
         let (tx, mut rx) = mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
@@ -319,5 +321,4 @@ mod tests {
         let best_payload = best_payload.unwrap();
         assert_eq!(best_payload.id(), payload_id);
     }
-    
 }

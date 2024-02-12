@@ -19,7 +19,7 @@ pub struct SyncController<Engine: EngineTypes> {
 
 impl<Engine> SyncController<Engine>
 where
-Engine: EngineTypes + 'static,
+    Engine: EngineTypes + 'static,
 {
     pub fn new(
         network_event_listener: UnboundedReceiverStream<NetworkEvent>,
@@ -85,7 +85,8 @@ mod tests {
         let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
         let network_stream = UnboundedReceiverStream::new(rx);
         let peer_id = PeerId::random();
-        let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
+        let (engine_tx, mut engine_rx) =
+            mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
 
         // intialize the SyncController
         let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);

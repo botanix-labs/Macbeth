@@ -14,14 +14,15 @@ use url::Url;
 use reth_primitives::{BASE_GOERLI, BASE_MAINNET, BASE_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
-use reth_primitives::{DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA, BOTANIX_TESTNET};
+use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] = &["base", "base-goerli", "base-sepolia"];
 #[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
-pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
+pub const SUPPORTED_CHAINS: &[&str] =
+    &["mainnet", "sepolia", "goerli", "holesky", "dev", "botanix_testnet"];
 
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {
@@ -163,7 +164,6 @@ pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
     let url = Url::parse(value).map_err(|_e| UrlParsingError::Parse(value.to_owned()))?;
     Ok(url)
 }
-
 
 /// Parse a [SocketAddr] from a `str`.
 ///
