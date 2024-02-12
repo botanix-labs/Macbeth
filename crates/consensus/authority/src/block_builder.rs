@@ -3,12 +3,15 @@ use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes, PayloadAttributes as PayloadAttributesTrait};
+use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
+//use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
+use reth_payload_builder::{EthPayloadBuilderAttributes, };
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -46,10 +49,11 @@ where
             withdrawals: None,              // only relevant for PoS
             parent_beacon_block_root: None, // only relevant for PoS
         };
+        let payload_attr = EthPayloadBuilderAttributes::new(best_hash, payload_attributes);
 
         // start new payload
         let payload_id =
-            engine_util::start_new_payload(self.to_engine.clone(), payload_attributes, best_hash)
+            engine_util::start_new_payload::<EthEngineTypes>(&self.payload_builder, payload_attr)
                 .await;
 
         if payload_id.is_err() {
@@ -58,8 +62,8 @@ where
         }
 
         // get payload by id
-        let best_transactions = engine_util::best_transactions_from_payload(
-            self.to_engine.clone(),
+        let best_transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
+            &self.payload_builder,
             payload_id.expect("payload id exists"),
         )
         .await;
@@ -71,6 +75,9 @@ where
 
         let (transactions, senders): (Vec<_>, Vec<_>) = best_transactions
             .expect("best transactions exists")
+            .block()
+            .body
+            .clone()
             .into_iter()
             .map(|tx| {
                 let recovered = tx.clone().try_into_ecrecovered().expect("valid tx");

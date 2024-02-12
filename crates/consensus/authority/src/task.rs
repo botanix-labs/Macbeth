@@ -11,7 +11,7 @@ use reth_provider::{
 };
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
-
+use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
 
 use secp256k1::{All, Secp256k1};
@@ -50,6 +50,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Task executor
     #[allow(dead_code)]
     task_executor: TaskExecutor,
+    /// Ethereum Payload Builder
+    pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -79,6 +81,7 @@ where
         network_handle: NetworkHandle,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
+        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     ) -> Self {
         Self {
             chain_spec,
@@ -94,6 +97,7 @@ where
             network_handle,
             task_executor,
             evm_config,
+            payload_builder,
         }
     }
 

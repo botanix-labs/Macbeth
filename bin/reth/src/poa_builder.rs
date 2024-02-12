@@ -12,7 +12,6 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
 use reth_authority_consensus::AuthorityConsensusBuilder;
-use reth_auto_seal_consensus::AutoSealBuilder;
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
     BeaconConsensusEngine, BeaconConsensusEngineError, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -47,7 +46,6 @@ use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use reth_transaction_pool::TransactionPool;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
@@ -375,6 +373,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 block_import_rx,
                 executor.clone(),
                 evm_config.clone(),
+                payload_builder.clone(),
             )
             .expect("Failed to create authority consensus builder")
             .build();

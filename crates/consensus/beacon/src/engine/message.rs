@@ -169,20 +169,4 @@ pub enum BeaconEngineMessage<Engine: EngineTypes> {
     TransitionConfigurationExchanged,
     /// Add a new listener for [`BeaconEngineMessage`].
     EventListener(UnboundedSender<BeaconConsensusEngineEvent>),
-    /// Message to start building a new payload with the given attributes,
-    StartNewPayload {
-        /// The payload attributes for block building.
-        payload_attributes: Engine::PayloadAttributes,
-        /// The parent block hash to build on.
-        parent: B256,
-        /// The sender for returning the payload id.
-        tx: oneshot::Sender<Result<PayloadId, PayloadBuilderError>>,
-    },
-    /// Message to return the best payload.
-    BestPayload {
-        /// The sender for returning the best payload.
-        tx: oneshot::Sender<Option<Arc<dyn BuiltPayload>>>,
-        /// The payload id to resolve.
-        payload_id: PayloadId,
-    },
 }
