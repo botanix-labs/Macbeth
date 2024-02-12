@@ -308,8 +308,11 @@ impl Command {
 
                 let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config);
                 let mut executor = executor_factory.with_state(blockchain_db.latest()?);
-                executor
-                    .execute_and_verify_receipt(&block_with_senders.clone().unseal(), U256::MAX, None)?;
+                executor.execute_and_verify_receipt(
+                    &block_with_senders.clone().unseal(),
+                    U256::MAX,
+                    None,
+                )?;
                 let state = executor.take_output_state();
                 debug!(target: "reth::cli", ?state, "Executed block");
 

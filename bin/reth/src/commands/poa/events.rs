@@ -1,6 +1,8 @@
 //! Support for handling events emitted by node components.
 
-use crate::commands::poa::cl_events::ConsensusLayerHealthEvent;
+use crate::commands::poa::{
+    cl_events::ConsensusLayerHealthEvent, notifications::EventsNotificationClient,
+};
 use futures::Stream;
 use reth_beacon_consensus::BeaconConsensusEngineEvent;
 use reth_db::DatabaseEnv;
@@ -23,8 +25,6 @@ use std::{
 };
 use tokio::time::Interval;
 use tracing::{error, info, warn};
-use crate::commands::poa::notifications::EventsNotificationClient;
-
 
 /// Interval of reporting node state.
 const INFO_MESSAGE_INTERVAL: Duration = Duration::from_secs(25);

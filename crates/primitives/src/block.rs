@@ -7,12 +7,11 @@ use reth_codecs::derive_arbitrary;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-use reth_rpc_types::{ExecutionPayload, ExecutionPayloadV1};
-pub use reth_rpc_types::{
-    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock,
-    RpcBlockHash,
-};
 use crate::U256;
+pub use reth_rpc_types::{
+    BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock, RpcBlockHash,
+};
+use reth_rpc_types::{ExecutionPayload, ExecutionPayloadV1};
 
 /// Ethereum full block.
 ///
@@ -544,12 +543,11 @@ impl BlockBody {
     /// Calculates a heuristic for the in-memory size of the [BlockBody].
     #[inline]
     pub fn size(&self) -> usize {
-        self.transactions.iter().map(TransactionSigned::size).sum::<usize>()
-            + self.transactions.capacity() * std::mem::size_of::<TransactionSigned>()
-            + self.ommers.iter().map(Header::size).sum::<usize>()
-            + self.ommers.capacity() * std::mem::size_of::<Header>()
-            + self
-                .withdrawals
+        self.transactions.iter().map(TransactionSigned::size).sum::<usize>() +
+            self.transactions.capacity() * std::mem::size_of::<TransactionSigned>() +
+            self.ommers.iter().map(Header::size).sum::<usize>() +
+            self.ommers.capacity() * std::mem::size_of::<Header>() +
+            self.withdrawals
                 .as_ref()
                 .map_or(std::mem::size_of::<Option<Withdrawals>>(), Withdrawals::total_size)
     }

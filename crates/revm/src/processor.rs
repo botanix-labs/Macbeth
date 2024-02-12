@@ -4,12 +4,14 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
-use reth_botanix_lib::mint_validation::{parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC};
+use reth_botanix_lib::mint_validation::{
+    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
-    Address, Block, BlockNumber, BlockWithSenders, Bloom, ChainSpec, GotExpected, Hardfork, Header,
-    PruneMode, PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts,
+    Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork,
+    Header, PruneMode, PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts,
     TransactionSigned, Withdrawals, B256, MINIMUM_PRUNING_DISTANCE, U256,
 };
 use reth_provider::{
@@ -22,7 +24,6 @@ use revm::{
     primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
     Evm, State, StateBuilder,
 };
-use reth_primitives::Bytes;
 use std::{sync::Arc, time::Instant};
 use tracing::{error, warn};
 
@@ -397,8 +398,8 @@ where
             !self
                 .prune_modes
                 .account_history
-                .map_or(false, |mode| mode.should_prune(block.number, tip))
-                && !self
+                .map_or(false, |mode| mode.should_prune(block.number, tip)) &&
+                !self
                     .prune_modes
                     .storage_history
                     .map_or(false, |mode| mode.should_prune(block.number, tip))

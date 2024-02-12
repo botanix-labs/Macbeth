@@ -5,12 +5,12 @@ use reth_interfaces::blockchain_tree::{
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
-use reth_payload_builder::EthPayloadBuilderAttributes;
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -53,8 +53,8 @@ where
 
         // start new payload
         let payload_id =
-        engine_util::start_new_payload::<EthEngineTypes>(&self.payload_builder, payload_attr)
-        .await;
+            engine_util::start_new_payload::<EthEngineTypes>(&self.payload_builder, payload_attr)
+                .await;
 
         if payload_id.is_err() {
             warn!(target: "consensus::authority", "Failed to start new payload");
@@ -153,8 +153,11 @@ where
         storage.client.set_finalized(sealed_block.header.clone());
         drop(storage);
 
-        match engine_util::send_fork_choice_update_payload(new_header.hash(), self.to_engine.clone())
-            .await
+        match engine_util::send_fork_choice_update_payload(
+            new_header.hash(),
+            self.to_engine.clone(),
+        )
+        .await
         {
             Ok(_) => {}
             Err(e) => {

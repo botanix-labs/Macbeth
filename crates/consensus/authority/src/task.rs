@@ -5,14 +5,14 @@ use reth_btc_wallet::block_source::MempoolSpace;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
-use reth_node_ethereum::EthEngineTypes;
-use reth_payload_builder::PayloadBuilderHandle;
 
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;

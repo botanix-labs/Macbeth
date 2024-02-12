@@ -157,7 +157,8 @@ where
                     drop(storage);
 
                     // TODO(armins) trie updates here are non. is that correct?
-                    let chain = Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state, None));
+                    let chain =
+                        Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state, None));
 
                     info!(target: "consensus::authority", "sending block notification to block chain tree");
                     // send block notification

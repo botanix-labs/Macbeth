@@ -1,7 +1,8 @@
-//! Contains types and methods that can be used to launch a node running poa consensus based off of a [NodeConfig].
+//! Contains types and methods that can be used to launch a node running poa consensus based off of
+//! a [NodeConfig].
 
-use crate::args::get_secret_key;
 use crate::{
+    args::get_secret_key,
     commands::{
         debug_cmd::engine_api_store::EngineApiStore,
         node::{cl_events::ConsensusLayerHealthEvents, events},
@@ -23,8 +24,7 @@ use reth_db::{
     database::Database,
     database_metrics::{DatabaseMetadata, DatabaseMetrics},
 };
-use reth_network::import::ProofOfAuthorityBlockImport;
-use reth_network::NetworkEvents;
+use reth_network::{import::ProofOfAuthorityBlockImport, NetworkEvents};
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_node_core::{
     cli::{
@@ -403,7 +403,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             .await?;
 
         let pipeline_events = pipeline.events();
-        
+
         // TODO(armins) do we need this?
         // block_production_task.set_pipeline_events(pipeline_events.clone());
 

@@ -10,12 +10,12 @@ use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
-use reth_node_ethereum::EthEngineTypes;
-use reth_payload_builder::PayloadBuilderHandle;
 use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;

@@ -101,9 +101,9 @@ impl From<RecoverAuthorityError> for ConsensusError {
             RecoverAuthorityError::FailedToRecoverSigner(_) => {
                 ConsensusError::TransactionSignerRecoveryError
             }
-            RecoverAuthorityError::FailedToCreateSigHash(_)
-            | RecoverAuthorityError::FailedToDerserializeExtraData(_)
-            | RecoverAuthorityError::NoSignaturePresentInExtraData => {
+            RecoverAuthorityError::FailedToCreateSigHash(_) |
+            RecoverAuthorityError::FailedToDerserializeExtraData(_) |
+            RecoverAuthorityError::NoSignaturePresentInExtraData => {
                 ConsensusError::ExtraDataInvalid
             }
         }

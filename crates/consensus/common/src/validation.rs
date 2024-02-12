@@ -2,7 +2,10 @@
 
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
-    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK}, BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock, SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844, TxLegacy, EMPTY_OMMER_ROOT_HASH, U256
+    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
+    BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
+    SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
+    TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 use std::collections::{hash_map::Entry, HashMap};
