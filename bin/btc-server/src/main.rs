@@ -89,6 +89,8 @@ pub enum Error {
     MissingRound1DkgPackage,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Failed to calculate sighash")]
+    FailedToCalculateSighash,
 }
 
 struct App {
