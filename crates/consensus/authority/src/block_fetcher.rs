@@ -125,7 +125,7 @@ where
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
                     // Process Botanix specific logs
-                    match crate::utils::process_reciepts(
+                    match crate::utils::process_receipts(
                         &self.bitcoin_block_source,
                         &mut self.btc_server.clone(),
                         &bundle_state,

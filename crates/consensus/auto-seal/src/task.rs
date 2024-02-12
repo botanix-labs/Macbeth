@@ -152,7 +152,6 @@ where
                                 safe_block_hash: new_header.hash(),
                             };
                             drop(storage);
-
                             // TODO: make this a future
                             // await the fcu call rx for SYNCING, then wait for a VALID response
                             loop {
