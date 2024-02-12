@@ -1,4 +1,5 @@
 use crate::{engine_util, task::BlockProductionTask};
+use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
@@ -42,7 +43,7 @@ where
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
         let payload_attributes = PayloadAttributes {
-            timestamp: 0_u64,
+            timestamp: utils::unix_timestamp(),
             prev_randao: B256::ZERO, // only relevant for PoS
             suggested_fee_recipient,
             withdrawals: None,              // only relevant for PoS
