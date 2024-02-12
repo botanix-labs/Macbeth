@@ -3,7 +3,9 @@ use std::{collections::HashMap, str::FromStr};
 use crate::{database, rpc, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
-use bitcoin::{consensus::Encodable, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{
+    consensus::Encodable, hashes::Hash, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut,
+};
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
@@ -31,7 +33,7 @@ impl App {
         let partial_sigs = self.db.get_round2_signing_packages().map_err(Error::Db)?;
         println!("Partial sigs: {:?}", partial_sigs);
         if partial_sigs.len() >= self.min_signers as usize {
-            return Err(Error::AlreadyHaveQuorumOfPartialSignatures())
+            return Err(Error::AlreadyHaveQuorumOfPartialSignatures());
         }
 
         let psbt = Psbt::deserialize(payload.psbt.as_slice()).map_err(|e| {
@@ -96,7 +98,7 @@ impl App {
             self.db.flush()?;
             return Ok(pk_res.1.verifying_key().to_owned());
         } else {
-            return Err(Error::InvalidRound2DkgPayloadMissingPackage)
+            return Err(Error::InvalidRound2DkgPayloadMissingPackage);
         }
     }
 
@@ -234,7 +236,7 @@ impl App {
         let pk_package = self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
         let signing_commitments = self.db.get_round1_signing_packages()?;
         if signing_commitments.len() < self.min_signers as usize {
-            return Err(Error::NotEnoughSigners)
+            return Err(Error::NotEnoughSigners);
         }
 
         let pk = hex::encode(pk_package.verifying_key().serialize());
@@ -245,10 +247,15 @@ impl App {
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
         let txid = psbt.clone().extract_tx().txid();
 
-        let mut raw_tx: Vec<u8> = Vec::new();
-        psbt.clone().extract_tx().consensus_encode(&mut raw_tx)?;
-        // TODO (armins) calc sighash here
-        let signing_package = frost::SigningPackage::new(signing_commitments, raw_tx.as_slice());
+        let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt).map_err(|e| {
+            error!("Failed to calculate sighash: {}", e);
+            Error::FailedToCalculateSighash
+        })?;
+
+        let signing_package = frost::SigningPackage::new(
+            signing_commitments,
+            sighash.to_raw_hash().to_byte_array().as_slice(),
+        );
 
         // Lastly save this to sign package to the db
         self.db.add_signing_package(txid, signing_package.clone())?;
@@ -273,14 +280,14 @@ impl App {
         pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
 
         // TODO (armins) add agg signature to psbt
-        // if let Err(err) =
-        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-        // {
-        //     error!("Failed to sign psbt {:?}", err);
-        //     return Err(Error::FailedToSignPbst)
-        // }
-        // TODO Add signature to psbt and finalize
-        // TODO remove utxos being spent from db
+    //     if let Err(err) =
+    //         reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
+    //     {
+    //         error!("Failed to sign psbt {:?}", err);
+    //         return Err(Error::FailedToSignPbst);
+    //     }
+    //     // TODO Add signature to psbt and finalize
+    //     // TODO remove utxos being spent from db
         Ok(psbt.clone())
     }
 }
