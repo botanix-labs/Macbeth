@@ -2,7 +2,7 @@ use reth_consensus_common::utils;
 use reth_primitives::BlockHashOrNumber;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::Storage;
 use reth_provider::StateProviderFactory;

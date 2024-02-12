@@ -320,7 +320,7 @@ pub struct PeerRequestSender {
 
 impl PeerRequestSender {
     /// Constructs a new sender instance that's wired to a session
-    pub(crate) fn new(peer_id: PeerId, to_session_tx: mpsc::Sender<PeerRequest>) -> Self {
+    pub fn new(peer_id: PeerId, to_session_tx: mpsc::Sender<PeerRequest>) -> Self {
         Self { peer_id, to_session_tx }
     }
 

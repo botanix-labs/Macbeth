@@ -391,3 +391,50 @@ pr:
 	make lint && \
 	make docs && \
 	make test
+
+
+start-btc-server-1:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8080 --db "./db1"
+
+start-btc-server-2:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 2 --address 0.0.0.0:8081 --db "./db2"
+
+start-poa-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NODE_1_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8545 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NODE_1_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8551 \
+	--btc-server "localhost:8080" \
+	--btc-block-source "https://mempool.space/signet/api" \
+	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
+	--port 30303
+
+start-poa-server-2:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NODE_2_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8546 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8552 \
+	--btc-server "localhost:8080" \
+	--btc-block-source "https://mempool.space/signet/api" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
+	--port 30304

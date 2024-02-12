@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use ethers::abi::decode;
 use reth_primitives::{keccak256, Address, B256};
-use revm::primitives::Log;
 use secp256k1::{self, PublicKey};
 
 use crate::{
