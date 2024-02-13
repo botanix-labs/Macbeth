@@ -296,7 +296,7 @@ async fn test_proto_multiplex() {
     handle.connect_peers().await;
 
     let peer0_to_peer1 = from_peer0.recv().await.unwrap();
-    let peer0_conn = match peer0_to_peer1 {
+    let peer0_to_peer1_conn = match peer0_to_peer1 {
         ProtocolEvent::Established { direction: _, peer_id, to_connection } => {
             assert_eq!(peer_id, *handle.peers()[1].peer_id());
             to_connection
@@ -304,7 +304,7 @@ async fn test_proto_multiplex() {
     };
 
     let peer1_to_peer0 = from_peer1.recv().await.unwrap();
-    let peer1_conn = match peer1_to_peer0 {
+    let peer1_to_peer0_conn = match peer1_to_peer0 {
         ProtocolEvent::Established { direction: _, peer_id, to_connection } => {
             assert_eq!(peer_id, *handle.peers()[0].peer_id());
             to_connection
@@ -313,14 +313,16 @@ async fn test_proto_multiplex() {
 
     let (tx, rx) = oneshot::channel();
     // send a ping message from peer0 to peer1
-    peer0_conn.send(Command::PingMessage { msg: "hello!".to_string(), response: tx }).unwrap();
+    peer0_to_peer1_conn
+        .send(Command::PingMessage { msg: "hello!".to_string(), response: tx })
+        .unwrap();
 
     let response = rx.await.unwrap();
     assert_eq!(response, "hello!");
 
     let (tx, rx) = oneshot::channel();
     // send a ping message from peer1 to peer0
-    peer1_conn
+    peer1_to_peer0_conn
         .send(Command::PingMessage { msg: "hello from peer1!".to_string(), response: tx })
         .unwrap();
 

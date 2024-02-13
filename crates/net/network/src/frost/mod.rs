@@ -1,0 +1,108 @@
+#![allow(unreachable_pub)]
+//! Testing gossiping of transactions.
+use reth_network_api::Direction;
+use reth_rpc_types::PeerId;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, oneshot};
+
+/// Manager implementation
+pub mod manager;
+/// Frost Messaging
+pub mod messages;
+/// Frost Protocol
+pub mod protocol;
+
+/// Protocol state containing peer protocol information.
+#[derive(Clone, Debug)]
+pub struct ProtocolState {
+    events: mpsc::UnboundedSender<FrostProtocolEvent>,
+    peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
+    authority_index: u16,
+    peer_id: PeerId,
+}
+
+impl ProtocolState {
+    /// Constructs a new Protocol State.
+    pub fn new(
+        events: mpsc::UnboundedSender<FrostProtocolEvent>,
+        peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
+        authority_index: u16,
+        peer_id: PeerId,
+    ) -> Self {
+        Self { events, peer_message_forwarder, authority_index, peer_id }
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Response {
+    /// The Response Type
+    pub response_type: EventResponseType,
+    /// Frost Identifier
+    pub identifier: Vec<u8>,
+    /// Frost Data
+    pub data: Vec<u8>,
+}
+
+/// Event Response Variants indicating the type of response
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum EventResponseType {
+    /// DKG round 1
+    DkgRound1,
+    /// DKG round 2
+    DkgRound2,
+}
+
+/// Frost Protocol Events
+#[derive(Debug)]
+pub enum FrostProtocolEvent {
+    /// An emitted event once the connection is established
+    ConnectionEstablished {
+        #[allow(dead_code)]
+        /// the connection direction - we connected to them, or they to us
+        direction: Direction,
+        /// the other peer id
+        peer_id: PeerId,
+        /// the tx sender we send to the other peer to enable it to communicate with us
+        to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
+    },
+    /// An emitted event once a peer sends a message to another peer
+    PeerMessage(Response),
+    /// Peer confirmation
+    PeerConfirmed(PeerId, u16),
+}
+
+/// All events related to frost events emitted by the network.
+#[derive(Debug)]
+pub enum NetworkFrostEvent {
+    /// Represents the event of receiving a list of transactions from a peer.
+    ///
+    /// This indicates transactions that were broadcasted to us from the peer.
+    ConnectionEstablished {
+        #[allow(dead_code)]
+        /// the connection direction - we connected to them, or they to us
+        direction: Direction,
+        /// the other peer id
+        peer_id: PeerId,
+        /// the tx sender we send to the other peer to enable it to communicate with us
+        to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
+    },
+    /// An emitted event once a peer sends a message to another peer
+    PeerMessage(Response),
+    /// Peer Confirmation
+    PeerConfirmed(PeerId, u16),
+}
+
+/// Commands sent by the peer to the network
+#[derive(Debug)]
+pub enum FrostPeerCommand {
+    /// Send a ping message to the peer.
+    PingMessage {
+        /// The message text
+        msg: String,
+        /// The stringified response will be sent to this channel.
+        response: oneshot::Sender<String>,
+    },
+    /// An emitted event once a peer sends a message to another peer
+    PeerMessage(Response),
+}

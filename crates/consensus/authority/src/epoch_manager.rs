@@ -18,7 +18,7 @@ pub(crate) enum EpochManagerError {
     FailedToFetchPegouts,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 /// Manages the block production epochs
 ///
 /// Blocks will be rejected by consensus if

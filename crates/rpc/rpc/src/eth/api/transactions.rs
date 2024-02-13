@@ -1464,8 +1464,10 @@ mod tests {
     use super::*;
     use crate::{
         eth::{
-            cache::EthStateCache, gas_oracle::GasPriceOracle, FeeHistoryCache,
-            FeeHistoryCacheConfig,
+            botanix_config::{Botanix, BotanixConfig},
+            cache::EthStateCache,
+            gas_oracle::GasPriceOracle,
+            FeeHistoryCache, FeeHistoryCacheConfig,
         },
         BlockingTaskPool,
     };
@@ -1496,6 +1498,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             fee_history_cache,
             evm_config,
+            Botanix::new(BotanixConfig::default()),
         );
 
         // https://etherscan.io/tx/0xa694b71e6c128a2ed8e2e0f6770bddbe52e3bb8f10e8472f9a79ab81497a8b5d

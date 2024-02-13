@@ -15,6 +15,7 @@ use reth::{
     },
     commands::poa::PoaNodeCommand,
     network::Peers,
+    runner::CliRunner,
     tasks::TaskSpawner,
 };
 use reth_primitives::{public_key_to_address, Address, ChainSpec, BOTANIX_TESTNET};

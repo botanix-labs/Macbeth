@@ -208,6 +208,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 head,
                 &self.data_dir,
                 None,
+                None,
             )
             .await?;
 
@@ -224,12 +225,13 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         ext.configure_network(network_builder.network_mut(), &components)?;
 
         // launch network
-        let network = self.config.start_network(
+        let (network, _frost_handle) = self.config.start_network(
             network_builder,
             &executor,
             transaction_pool.clone(),
             provider_factory.clone(),
             &self.data_dir,
+            None,
         );
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");

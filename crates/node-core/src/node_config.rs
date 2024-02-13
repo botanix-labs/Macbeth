@@ -37,6 +37,7 @@ use reth_interfaces::{
 };
 use reth_network::{
     config::NetworkMode,
+    frost::manager::{FrostConfig, FrostHandle},
     import::BlockImport,
     transactions::{TransactionFetcherConfig, TransactionsManagerConfig},
     NetworkBuilder, NetworkConfig, NetworkHandle, NetworkManager,
@@ -404,6 +405,7 @@ impl NodeConfig {
         head: Head,
         data_dir: &ChainPath<DataDirPath>,
         block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
     ) -> eyre::Result<NetworkBuilder<C, (), ()>>
     where
         C: BlockNumReader,
@@ -419,6 +421,7 @@ impl NodeConfig {
             secret_key,
             default_peers_path.clone(),
             block_import,
+            frost_config,
         );
         let builder = NetworkManager::builder(network_config).await?;
         Ok(builder)
@@ -632,14 +635,15 @@ impl NodeConfig {
         pool: Pool,
         client: C,
         data_dir: &ChainPath<DataDirPath>,
-    ) -> NetworkHandle
+        frost_config: Option<FrostConfig>,
+    ) -> (NetworkHandle, Option<FrostHandle>)
     where
         C: BlockReader + HeaderProvider + Clone + Unpin + 'static,
         Pool: TransactionPool + Unpin + 'static,
     {
-        let (handle, network, txpool, eth) = builder
+        let mut network_builder = builder
             .transactions(
-                pool, // Configure transactions manager
+                pool,
                 TransactionsManagerConfig {
                     transaction_fetcher_config: TransactionFetcherConfig::new(
                         self.network.soft_limit_byte_size_pooled_transactions_response,
@@ -648,11 +652,20 @@ impl NodeConfig {
                     ),
                 },
             )
-            .request_handler(client)
-            .split_with_handle();
+            .request_handler(client);
+        if let Some(frost_config) = frost_config {
+            network_builder = network_builder.frost(frost_config);
+        }
+
+        let (handle, network, txpool, eth, frost) = network_builder.split_with_handle();
 
         task_executor.spawn_critical("p2p txpool", txpool);
         task_executor.spawn_critical("p2p eth request handler", eth);
+        let frost_handle = frost.map(|frost_manager| {
+            let ret = frost_manager.handle();
+            task_executor.spawn_critical("p2p frost", frost_manager);
+            ret
+        });
 
         let default_peers_path = data_dir.known_peers_path();
         let known_peers_file = self.network.persistent_peers_file(default_peers_path);
@@ -665,7 +678,7 @@ impl NodeConfig {
             },
         );
 
-        handle
+        (handle, frost_handle)
     }
 
     /// Fetches the head block from the database.
@@ -757,6 +770,7 @@ impl NodeConfig {
         secret_key: SecretKey,
         default_peers_path: PathBuf,
         block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
     ) -> NetworkConfig<C> {
         let mut cfg_builder = self
             .network
@@ -778,6 +792,12 @@ impl NodeConfig {
         if let Some(block_import) = block_import {
             cfg_builder =
                 cfg_builder.block_import(block_import).network_mode(NetworkMode::Authority);
+        }
+
+        // Frost specific network configurations
+        if let Some(frost_config) = frost_config {
+            cfg_builder =
+                cfg_builder.frost_config(frost_config).network_mode(NetworkMode::Authority);
         }
 
         // When `sequencer_endpoint` is configured, the node will forward all transactions to a

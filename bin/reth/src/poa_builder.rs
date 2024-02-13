@@ -19,12 +19,14 @@ use reth_beacon_consensus::{
 };
 use reth_blockchain_tree::{config::BlockchainTreeConfig, ShareableBlockchainTree};
 use reth_config::Config;
-use reth_consensus_common::utils;
+use reth_consensus_common::utils::{self, get_authority_signer_index};
 use reth_db::{
     database::Database,
     database_metrics::{DatabaseMetadata, DatabaseMetrics},
 };
-use reth_network::{import::ProofOfAuthorityBlockImport, NetworkEvents};
+use reth_network::{
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents,
+};
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_node_core::{
     cli::{
@@ -309,6 +311,21 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let transaction_pool =
             self.config.build_and_spawn_txpool(&blockchain_db, head, &executor, &self.data_dir)?;
 
+        // get node secret key
+        let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
+
+        // create authority config
+        let (authority_index, total_authorities) = get_authority_signer_index(
+            blockchain_db.clone(),
+            Arc::clone(&self.config.chain),
+            secp256k1::Secp256k1::new(),
+            network_sk.clone(),
+        )
+        .expect("Failed to get authority index");
+
+        // TODO: make this configurable
+        let frost_config = FrostConfig::new(authority_index, total_authorities, 2, 2);
+
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
         let block_import =
@@ -324,6 +341,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 head,
                 &self.data_dir,
                 Some(Box::new(block_import)),
+                Some(frost_config.clone()),
             )
             .await?;
 
@@ -340,12 +358,13 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         ext.configure_network(network_builder.network_mut(), &components)?;
 
         // launch network
-        let network = self.config.start_network(
+        let (network, frost_handle) = self.config.start_network(
             network_builder,
             &executor,
             transaction_pool.clone(),
             provider_factory.clone(),
             &self.data_dir,
+            Some(frost_config.clone()),
         );
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
@@ -379,26 +398,33 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let bitcoind_config = self.config.rpc.bitcoind.clone().into();
 
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
-        let (_, mut block_production_task, mut block_fetcher_task, mut sync_controller) =
-            AuthorityConsensusBuilder::try_new(
-                Arc::clone(&self.config.chain),
-                blockchain_db.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender.clone(),
-                btc_server_client.clone(),
-                bitcoin_block_headers_clone,
-                bitcoind_config,
-                secp256k1::Secp256k1::new(),
-                network_sk,
-                None,
-                network.clone(),
-                block_import_rx,
-                executor.clone(),
-                evm_config,
-                payload_builder.clone(),
-            )
-            .expect("Failed to create authority consensus builder")
-            .build();
+        let (
+            _,
+            mut block_production_task,
+            mut block_fetcher_task,
+            mut frost_task,
+            mut sync_controller,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&self.config.chain),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            network_sk,
+            None,
+            network.clone(),
+            frost_handle.clone(),
+            block_import_rx,
+            executor.clone(),
+            evm_config,
+            frost_config,
+            payload_builder.clone(),
+        )
+        .expect("Failed to create authority consensus builder")
+        .build();
 
         if let Some(store_path) = self.config.debug.engine_api_store.clone() {
             let (engine_intercept_tx, engine_intercept_rx) = unbounded_channel();
@@ -440,6 +466,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             "PoA Block Fetcher Task",
             Box::pin(async move {
                 block_fetcher_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "Frost Task",
+            Box::pin(async move {
+                frost_task.start_task().await;
             }),
         );
         executor.spawn_critical(

@@ -593,17 +593,14 @@ impl<T: TransactionOrdering> Ord for PendingTransaction<T> {
 
 #[cfg(test)]
 mod tests {
+    use reth_primitives::{address, TxType};
     use std::collections::HashSet;
-
-    use reth_primitives::address;
 
     use super::*;
     use crate::{
         test_utils::{MockOrdering, MockTransaction, MockTransactionFactory, MockTransactionSet},
         PoolTransaction,
     };
-    use reth_primitives::{address, TxType};
-    use std::collections::HashSet;
 
     #[test]
     fn test_enforce_basefee() {

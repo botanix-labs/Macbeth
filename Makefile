@@ -399,11 +399,11 @@ pr:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8080 --db "./db1"
+	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1"
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 2 --address 0.0.0.0:8081 --db "./db2"
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2"
 
 start-poa-server-1:
 	cd ./bin/reth && \
@@ -440,7 +440,7 @@ start-poa-server-2:
 	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8552 \
-	--btc-server "localhost:8080" \
+	--btc-server "localhost:8081" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \

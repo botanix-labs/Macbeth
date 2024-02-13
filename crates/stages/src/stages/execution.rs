@@ -160,7 +160,7 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
             // Configure the executor to use the current state.
             trace!(target: "sync::stages::execution", number = block_number, txs = block.body.len(), "Executing block");
 
-            let time = Instant::now();
+            let _time = Instant::now();
             // Execute the block
             let execute_start = Instant::now();
             executor.execute_and_verify_receipt(&block, td, None).map_err(|error| {

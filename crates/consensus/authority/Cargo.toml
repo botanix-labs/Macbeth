@@ -28,7 +28,7 @@ reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
-
+serde_json = { workspace = true }
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
@@ -43,6 +43,16 @@ reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
 btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
+
+## Ethereum
+ethers = "2.0.11"
+
+# hex
+hex = "0.4.3"
+
+# frost
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/mimoo/frost", branch = "mimoo/fix5",  features = ["serde", "serialization"] }
 
 ## Bitcoin
 bitcoin = "0.30.2"

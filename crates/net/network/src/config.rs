@@ -2,6 +2,7 @@
 
 use crate::{
     error::NetworkError,
+    frost::manager::FrostConfig,
     import::{BlockImport, ProofOfStakeBlockImport},
     peers::PeersConfig,
     session::SessionsConfig,
@@ -77,6 +78,8 @@ pub struct NetworkConfig<C> {
     pub tx_gossip_disabled: bool,
     /// How to instantiate transactions manager.
     pub transactions_manager_config: TransactionsManagerConfig,
+    /// Frost configuration
+    pub frost_config: Option<FrostConfig>,
     /// Optimism Network Config
     #[cfg(feature = "optimism")]
     pub optimism_network_config: OptimismNetworkConfig,
@@ -125,11 +128,12 @@ where
     /// Starts the networking stack given a [NetworkConfig] and returns a handle to the network.
     pub async fn start_network(self) -> Result<NetworkHandle, NetworkError> {
         let client = self.client.clone();
-        let (handle, network, _txpool, eth) =
+        let (handle, network, _txpool, eth, _frost) =
             NetworkManager::builder(self).await?.request_handler(client).split_with_handle();
 
         tokio::task::spawn(network);
         // TODO: tokio::task::spawn(txpool);
+        // TODO: tokio::task::spawn(frost);
         tokio::task::spawn(eth);
         Ok(handle)
     }
@@ -176,6 +180,9 @@ pub struct NetworkConfigBuilder {
     block_import: Option<Box<dyn BlockImport>>,
     /// How to instantiate transactions manager.
     transactions_manager_config: TransactionsManagerConfig,
+    /// Frost Configuration
+    #[serde(skip)]
+    frost_config: Option<FrostConfig>,
     /// Optimism Network Config Builder
     #[cfg(feature = "optimism")]
     optimism_network_config: OptimismNetworkConfigBuilder,
@@ -212,6 +219,7 @@ impl NetworkConfigBuilder {
             head: None,
             tx_gossip_disabled: false,
             block_import: None,
+            frost_config: None,
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfigBuilder::default(),
             transactions_manager_config: Default::default(),
@@ -416,6 +424,12 @@ impl NetworkConfigBuilder {
         self
     }
 
+    /// Sets the block import type.
+    pub fn frost_config(mut self, frost_config: FrostConfig) -> Self {
+        self.frost_config = Some(frost_config);
+        self
+    }
+
     /// Sets the sequencer HTTP endpoint.
     #[cfg(feature = "optimism")]
     pub fn sequencer_endpoint(mut self, endpoint: Option<String>) -> Self {
@@ -456,6 +470,7 @@ impl NetworkConfigBuilder {
             head,
             tx_gossip_disabled,
             block_import,
+            frost_config,
             #[cfg(feature = "optimism")]
                 optimism_network_config: OptimismNetworkConfigBuilder { sequencer_endpoint },
             transactions_manager_config,
@@ -511,6 +526,7 @@ impl NetworkConfigBuilder {
             extra_protocols,
             fork_filter,
             tx_gossip_disabled,
+            frost_config,
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfig { sequencer_endpoint },
             transactions_manager_config,

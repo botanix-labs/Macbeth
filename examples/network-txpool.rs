@@ -37,7 +37,7 @@ async fn main() -> eyre::Result<()> {
     let config = NetworkConfig::builder(local_key).mainnet_boot_nodes().build(client);
     let transactions_manager_config = config.transactions_manager_config.clone();
     // create the network instance
-    let (_handle, network, txpool, _) = NetworkManager::builder(config)
+    let (_handle, network, txpool, _, _) = NetworkManager::builder(config)
         .await?
         .transactions(pool.clone(), transactions_manager_config)
         .split_with_handle();

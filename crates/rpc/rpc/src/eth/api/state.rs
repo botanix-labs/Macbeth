@@ -120,8 +120,10 @@ mod tests {
     use super::*;
     use crate::{
         eth::{
-            cache::EthStateCache, gas_oracle::GasPriceOracle, FeeHistoryCache,
-            FeeHistoryCacheConfig,
+            botanix_config::{Botanix, BotanixConfig},
+            cache::EthStateCache,
+            gas_oracle::GasPriceOracle,
+            FeeHistoryCache, FeeHistoryCacheConfig,
         },
         BlockingTaskPool,
     };
@@ -148,6 +150,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             FeeHistoryCache::new(cache.clone(), FeeHistoryCacheConfig::default()),
             evm_config,
+            Botanix::new(BotanixConfig::default()),
         );
         let address = Address::random();
         let storage = eth_api.storage_at(address, U256::ZERO.into(), None).unwrap();
@@ -172,6 +175,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             FeeHistoryCache::new(cache.clone(), FeeHistoryCacheConfig::default()),
             evm_config,
+            Botanix::new(BotanixConfig::default()),
         );
 
         let storage_key: U256 = storage_key.into();
