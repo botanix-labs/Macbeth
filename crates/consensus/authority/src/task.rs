@@ -71,7 +71,7 @@ where
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
-        canon_state_notification: CanonStateNotificationSender,
+        _canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,

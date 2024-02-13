@@ -76,6 +76,10 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status>;
+        async fn get_round1_dkg_packages(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status>;
         async fn new_round1_dkg_package(
             &self,
             request: tonic::Request<super::DkgPayload>,
@@ -296,6 +300,42 @@ pub mod btc_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetRound1DkgPackageSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetRound1DkgPackages" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetRound1DkgPackagesSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetRound1DkgPackagesSvc<T> {
+                        type Response = super::DkgPayload;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut =
+                                async move { (*inner).get_round1_dkg_packages(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetRound1DkgPackagesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

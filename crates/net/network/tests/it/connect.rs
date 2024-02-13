@@ -225,7 +225,7 @@ async fn test_connect_with_builder() {
 
     let client = NoopProvider::default();
     let config = NetworkConfigBuilder::new(secret_key).discovery(discv4).build(client);
-    let (handle, network, _, requests) = NetworkManager::new(config)
+    let (handle, network, _, requests, _) = NetworkManager::new(config)
         .await
         .unwrap()
         .into_builder()
@@ -262,7 +262,7 @@ async fn test_connect_to_trusted_peer() {
     let client = NoopProvider::default();
     let config = NetworkConfigBuilder::new(secret_key).discovery(discv4).build(client);
     let transactions_manager_config = config.transactions_manager_config.clone();
-    let (handle, network, transactions, requests) = NetworkManager::new(config)
+    let (handle, network, transactions, requests, _) = NetworkManager::new(config)
         .await
         .unwrap()
         .into_builder()

@@ -442,8 +442,10 @@ where
 mod tests {
     use crate::{
         eth::{
-            cache::EthStateCache, gas_oracle::GasPriceOracle, FeeHistoryCache,
-            FeeHistoryCacheConfig,
+            botanix_config::{Botanix, BotanixConfig},
+            cache::EthStateCache,
+            gas_oracle::GasPriceOracle,
+            FeeHistoryCache, FeeHistoryCacheConfig,
         },
         BlockingTaskPool, EthApi,
     };
@@ -490,6 +492,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             fee_history_cache,
             evm_config,
+            Botanix::new(BotanixConfig::default()),
         )
     }
 

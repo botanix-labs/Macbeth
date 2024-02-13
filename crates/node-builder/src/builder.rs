@@ -716,6 +716,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
                 self.head,
                 self.data_dir(),
                 None,
+                None,
             )
             .await
     }
@@ -735,7 +736,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     where
         Pool: TransactionPool + Unpin + 'static,
     {
-        let (handle, network, txpool, eth) = builder
+        let (handle, network, txpool, eth, _frost) = builder
             .transactions(
                 pool,
                 TransactionsManagerConfig {
