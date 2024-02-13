@@ -434,7 +434,7 @@ start-poa-server-2:
 	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8552 \
-	--btc-server "localhost:8080" \
+	--btc-server "localhost:8081" \
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304

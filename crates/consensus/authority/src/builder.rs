@@ -1,6 +1,6 @@
 use crate::{
-    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, task::BlockProductionTask,
-    voting::AuthorityVote, AuthorityConsensus, Storage,
+    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, frost_task::FrostTask,
+    task::BlockProductionTask, voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 
 use client::BtcServerClient;
@@ -8,7 +8,11 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
+use reth_network::{
+    frost::manager::{FrostConfig, FrostHandle},
+    message::NewBlockMessage,
+    NetworkEvents, NetworkHandle,
+};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
@@ -45,10 +49,12 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
+    frost_handle: Option<FrostHandle>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
+    frost_config: FrostConfig,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
 }
 
@@ -88,9 +94,11 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
+        frost_handle: Option<FrostHandle>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
+        frost_config: FrostConfig,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
@@ -126,6 +134,7 @@ where
         if signer_index.is_none() {
             return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
         }
+
         let pk = sk.public_key(&secp);
 
         // Try to instantiate storage
@@ -158,9 +167,11 @@ where
             vote,
             epoch_manager,
             network_handle,
+            frost_handle,
             block_import_rx,
             task_executor,
             evm_config,
+            frost_config,
             payload_builder,
         })
     }
@@ -175,6 +186,7 @@ where
         AuthorityConsensus,
         BlockProductionTask<Client, EvmConfig, Engine>,
         BlockFetcherTask<Client, EvmConfig, Engine>,
+        FrostTask<Client>,
         SyncController<Engine>,
     ) {
         let Self {
@@ -191,9 +203,11 @@ where
             vote: _,
             epoch_manager,
             network_handle,
+            frost_handle,
             block_import_rx,
             task_executor,
             evm_config,
+            frost_config,
             payload_builder,
         } = self;
         let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
@@ -215,6 +229,16 @@ where
             bitcoin_block_header.clone(),
             evm_config.clone(),
         );
+
+        // FIX the unwrap
+        let frost_task = FrostTask::new(
+            btc_server.clone(),
+            network_handle.clone(),
+            frost_handle.expect("Requires frost handle"),
+            epoch_manager.clone(),
+            frost_config,
+        );
+
         let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
             to_engine,
@@ -232,6 +256,6 @@ where
             payload_builder,
         );
 
-        (consensus, block_production_task, block_fetcher_task, sync_task)
+        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)
     }
 }

@@ -121,6 +121,7 @@ pub mod error;
 pub mod eth_requests;
 mod fetch;
 mod flattened_response;
+pub mod frost;
 pub mod import;
 mod listener;
 mod manager;

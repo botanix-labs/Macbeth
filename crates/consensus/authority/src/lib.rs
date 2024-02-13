@@ -54,8 +54,10 @@ use tracing::{trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
+mod dkg;
 mod engine_util;
 mod epoch_manager;
+mod frost_task;
 mod sync;
 mod task;
 mod utils;
@@ -279,7 +281,7 @@ where
         &mut self,
         block: &BlockWithSenders,
         executor: &mut EVMProcessor<'_, EvmConfig>,
-        senders: Vec<Address>,
+        _senders: Vec<Address>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where

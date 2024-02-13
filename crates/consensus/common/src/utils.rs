@@ -1,13 +1,17 @@
 use crate::validation;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
-use reth_interfaces::consensus::ConsensusError;
+use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, consensus::ConsensusError};
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS, keccak256, public_key_to_address, Address, Bytes, Header,
-    B256, U256,
+    constants::STAKING_CONTRACT_ADDRESS, keccak256, public_key_to_address, Address, Bytes,
+    ChainSpec, Header, B256, U256,
 };
-use reth_provider::StateProvider;
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProvider, StateProviderFactory};
 use reth_tracing::tracing::error;
-use std::time::{SystemTime, UNIX_EPOCH};
+use secp256k1::{All, Secp256k1};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 /// Error that can occur while accessing EVM global storage
 #[derive(Debug)]
@@ -116,6 +120,8 @@ pub enum GetAuthoritiesError {
     FailedToRecoverAuthorityList(
         reth_botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError,
     ),
+    FailedToRetrieveEpochHeader,
+    FailedToFindAuthoritySignerIndex,
 }
 
 /// Recover the authority list from the block header
@@ -128,6 +134,48 @@ pub fn get_authority_list(
     .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
 
     Ok(extra_data.authority_signers)
+}
+
+pub fn get_authority_signer_index<Client>(
+    client: Client,
+    chain_spec: Arc<ChainSpec>,
+    secp: Secp256k1<All>,
+    sk: secp256k1::SecretKey,
+) -> Result<(usize, usize), GetAuthoritiesError>
+where
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+{
+    let mut latest_header =
+        client.latest_header().ok().flatten().unwrap_or_else(|| chain_spec.sealed_genesis_header());
+    let mut headers = vec![latest_header.clone()];
+
+    while !latest_header.header().is_poa_epoch() {
+        let parent_hash = latest_header.parent_hash;
+
+        if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
+            let old_latest_header = std::mem::replace(&mut latest_header, new_header.seal_slow());
+            headers.push(old_latest_header);
+        } else {
+            return Err(GetAuthoritiesError::FailedToRetrieveEpochHeader);
+        }
+    }
+
+    // Latest epoch header is the last header in the vector
+    // This header should include the authority list which is validated by consensus
+    let authorities =
+        get_authority_list(&latest_header)?.expect("authority signer list in epoch block");
+
+    let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
+
+    Ok((
+        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
+        authorities.len(),
+    ))
 }
 
 /// Returns the unix timestamp in seconds

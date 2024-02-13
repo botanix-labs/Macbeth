@@ -12,8 +12,8 @@ use reth::{
         components::RethNodeComponents,
         ext::{NoArgs, NoArgsCliExt, RethNodeCommandConfig},
     },
+    commands::poa::PoaNodeCommand,
     network::Peers,
-    poa::PoaNodeCommand,
     runner::CliRunner,
     tasks::TaskSpawner,
 };

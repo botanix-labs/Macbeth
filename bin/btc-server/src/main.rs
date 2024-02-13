@@ -349,6 +349,7 @@ impl rpc::BtcServer for App {
         }))
     }
 
+    /// gets the public key in the final step of thd DKG process (needs round 1+2 packages)
     async fn get_public_key(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -395,7 +396,6 @@ impl rpc::BtcServer for App {
                 error!("Failed to flush db: {}", e);
                 internal!("Failed to persist pk to database: {}", e)
             })?;
-
             let hex = hex::encode(pk_res.1.verifying_key().serialize());
             return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
         }
@@ -403,6 +403,7 @@ impl rpc::BtcServer for App {
         return Err(internal!("Missing round2 dkg package"));
     }
 
+    /// Adds round2 packages received from a peer
     async fn new_round2_dkg_package(
         &self,
         req: tonic::Request<rpc::DkgPayload>,
@@ -419,6 +420,8 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Generates a hashmap of round2 packages for sending to all other peers (needs round 1
+    /// packages)
     async fn get_round2_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -457,6 +460,7 @@ impl rpc::BtcServer for App {
         // Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Adds round 1 pkg received from another peer to our own state
     async fn new_round1_dkg_package(
         &self,
         req: tonic::Request<rpc::DkgPayload>,
@@ -473,6 +477,8 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Gets round 1 pkg we have generated (to be sent to another peer) - default when we start the
+    /// btc server
     async fn get_round1_dkg_package(
         &self,
         _req: tonic::Request<rpc::Empty>,
@@ -571,7 +577,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
-    use std::process::Stdio;
+    use std::{process::Stdio, str::FromStr};
 
     use tokio::{
         io::{self, AsyncBufReadExt},
@@ -669,7 +675,6 @@ mod test {
         .unwrap();
 
         // Round 2
-
         let c1_dkg2 = c1
             .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
             .await
@@ -708,6 +713,11 @@ mod test {
             c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
 
         assert_eq!(pk_1.publickey, pk_2.publickey);
+
+        // check public key decoding
+        let pub_key = secp256k1::PublicKey::from_str(&pk_1.publickey.clone()).unwrap();
+        assert_eq!(pk_1.publickey, pub_key.to_string());
+
         // Test clean up
         // Remove db dirs
         std::fs::remove_dir_all("db_0").unwrap();
