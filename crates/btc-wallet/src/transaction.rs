@@ -1,12 +1,8 @@
 use bitcoin::{
     psbt::{self, PartiallySignedTransaction, Psbt},
-    secp256k1::{KeyPair, SecretKey},
     sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
 };
-use thiserror::Error;
-
-use crate::address::{generate_taproot_spend_info, generate_tweaked_secret_key};
 
 const USER_ETH_ADDRESS_FIELD: u8 = 1;
 
