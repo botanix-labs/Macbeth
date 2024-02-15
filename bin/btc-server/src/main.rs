@@ -195,17 +195,14 @@ impl rpc::BtcServer for App {
         })?;
 
         // TODO (armins) inputs indecies should get saved on teh signing package
-        let finalized_psbt = self.finalize_signing(&SECP, &mut psbt, 0).map_err(|e| {
+        let tx = self.finalize_signing(&SECP, &mut psbt, 0).map_err(|e| {
             error!("Failed to finalize signing: {}", e);
             internal!("Failed to finalize signing: {}", e)
         })?;
 
-        let psbt_bytes = hex::decode(finalized_psbt.serialize_hex()).map_err(|e| {
-            error!("Failed to serialize psbt: {}", e);
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
-
-        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse {
+            transaction: bitcoin::consensus::encode::serialize(&tx),
+        });
         Ok(res)
     }
 
@@ -545,7 +542,7 @@ mod test {
         tokio::spawn(spawn_server(2, "0.0.0.0:8082"));
 
         // let servers come up
-        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
         let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
         let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();

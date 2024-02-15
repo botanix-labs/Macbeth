@@ -4,12 +4,14 @@ use crate::{database, rpc, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
 use bitcoin::secp256k1::schnorr::Signature as SchnorrSignature;
-use bitcoin::secp256k1::Message;
+use bitcoin::secp256k1::{self, Message};
+use bitcoin::{consensus, transaction, Transaction, Witness};
 use bitcoin::{
     consensus::Encodable, hashes::Hash, psbt::Psbt, sighash::TapSighashType, FeeRate, OutPoint,
     ScriptBuf, TxOut,
 };
 use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::public_key_addition_tweaked;
 use miniscript::psbt::PsbtExt;
 use miniscript::ToPublicKey;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
@@ -275,12 +277,13 @@ impl App {
         Ok((signing_package, psbt))
     }
 
+    /// Retruns finalized and ready to braodcast tx
     pub(crate) fn finalize_signing(
         &self,
         secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         psbt: &mut Psbt,
         input_index: usize,
-    ) -> Result<Psbt, Error> {
+    ) -> Result<Transaction, Error> {
         let txid = psbt.clone().extract_tx().txid();
         let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
 
@@ -290,10 +293,14 @@ impl App {
             .ok_or(Error::MissingRound2SigningPackage)?;
         info!("psbt: {:?}", psbt);
 
-        let input = psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?;
         // TODO need to check optiop b/c change outputs are not tweaked
-        let eth_tweak =
-            input.proprietary.get(&reth_btc_wallet::transaction::ETH_ADDRESS_FIELD).unwrap();
+        let eth_tweak = psbt
+            .inputs
+            .get_mut(0)
+            .unwrap()
+            .proprietary
+            .get(&reth_btc_wallet::transaction::ETH_ADDRESS_FIELD)
+            .unwrap();
 
         let mut signing_package =
             self.db.get_signing_package(txid)?.ok_or(Error::MissingSigningPackage)?;
@@ -311,6 +318,8 @@ impl App {
         )
         .unwrap();
 
+        let pkt = public_key_addition_tweaked(&pk_package.verifying_key().element(), &eth_tweak);
+
         // Verify signature -- redundant check
         pk_package.verifying_key().verify(
             signing_package.message(),
@@ -322,19 +331,31 @@ impl App {
         let secp_message = Message::from_slice(signing_package.message()).expect("valid message");
         secp.verify_schnorr(&schnorr_sig, &secp_message, &schnorr_pk.to_x_only_pubkey()).unwrap();
 
+        // try to re-create the message that was signed
+        let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt).unwrap();
+        let msg = secp256k1::Message::from_slice(sighash.as_byte_array()).expect("32 byte");
+
+        secp.verify_schnorr(&schnorr_sig, &msg, &schnorr_pk.to_x_only_pubkey()).unwrap();
+
+        println!("HERE");
         // Add relevant signing information for the specific input we are signing
 
         let hash_ty = bitcoin::sighash::TapSighashType::Default;
-        let sighash_type =  bitcoin::psbt::PsbtSighashType::from(hash_ty);
+        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
 
-        input.sighash_type = Some(sighash_type);
-        input.tap_key_sig =
-            Some(bitcoin::taproot::Signature { sig: schnorr_sig, hash_ty: hash_ty });
+        // psbt.inputs.get_mut(0).unwrap().sighash_type = Some(sighash_type);
+        // psbt.inputs.get_mut(0).unwrap().tap_internal_key = Some(schnorr_pk.x_only_public_key().0);
+        psbt.inputs.get_mut(0).unwrap().tap_key_sig =
+            Some(bitcoin::taproot::Signature { sig: schnorr_sig, hash_ty });
+        psbt.inputs.get_mut(0).unwrap().final_script_witness =
+            Some(Witness::from_slice(&[schnorr_sig[..].to_vec()]));
+
+        // psbt.inputs.get_mut(0).unwrap().tap_merkle_root = None;
 
         // let taproot_spend =
         //     reth_btc_wallet::address::generate_taproot_spend_info(secp, &schnorr_pk).unwrap();
         // println!("Taproot spend: {:?}", taproot_spend);
-        // input.tap_internal_key = Some(taproot_spend.internal_key());
+        // input.tap_internal_key = Some(schnorr_pk.to_x_only_pubkey());
         // input.tap_merkle_root = taproot_spend.merkle_root();
 
         // if let Err(errs) = psbt.finalize_mut(secp) {
@@ -346,10 +367,12 @@ impl App {
         // }
         // // could do this once we are confident our code works and we don't
         // // want to do the effort of tx verification
-        // let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx();
+        let hex_coded = hex::encode(consensus::serialize(&tx));
+        println!("Finalized tx hex: {:?}", hex_coded);
         // let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
         // println!("Finalized tx: {:?}", tx);
 
-        Ok(psbt.clone())
+        Ok(tx)
     }
 }
