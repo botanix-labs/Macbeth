@@ -16,6 +16,13 @@ pub struct NotifyPeginRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPublicKeyRequest {
+    /// Eth address to tweak by
+    #[prost(bytes = "vec", tag = "1")]
+    pub eth_address: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakeTxRequest {
     #[prost(string, tag = "1")]
     pub address: ::prost::alloc::string::String,
@@ -218,7 +225,7 @@ pub mod btc_server_client {
         }
         pub async fn get_public_key(
             &mut self,
-            request: impl tonic::IntoRequest<super::Empty>,
+            request: impl tonic::IntoRequest<super::GetPublicKeyRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetPublicKeyResponse>,
             tonic::Status,
