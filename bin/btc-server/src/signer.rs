@@ -25,8 +25,8 @@ impl App {
 
     pub(crate) fn get_round2_signing_package(
         &self,
-        signing_package: frost::SigningPackage,
-        _psbt: Psbt,
+        signing_package: &mut frost::SigningPackage,
+        psbt: Psbt,
     ) -> Result<frost::round2::SignatureShare, Error> {
         // Important note here is that we never re-use the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
@@ -45,6 +45,19 @@ impl App {
         // TODO verify psbt
         // TODO verify message
         // TODO need to sign for each input SIG_HASH_SINGLE
+
+        // get the eth tweak from the psbt proprietary fields
+        // TODO(armmins) this code needs to handle signing for multiple inputs
+        let eth_tweak = psbt
+            .inputs
+            .get(0)
+            .unwrap()
+            .proprietary
+            .get(&reth_btc_wallet::transaction::ETH_ADDRESS_FIELD)
+            .unwrap();
+
+        // TODO (armins) this needs to be wrapped in a option check b/c change inputs do no have eth tweaks
+        signing_package.set_addtional_tweak(eth_tweak.clone());
         let partial_sig = frost::round2::sign(&signing_package, &signing_nonces, &key_package)?;
 
         Ok(partial_sig)

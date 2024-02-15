@@ -92,6 +92,7 @@ message ToSignRequest {
     repeated Output outputs = 1;
     // Fee rate in satoshi per vbyte.
     uint32 fee_rate = 2;
+    bytes eth_address = 3;
 }
 
 message FinalizeSigningRequest {
