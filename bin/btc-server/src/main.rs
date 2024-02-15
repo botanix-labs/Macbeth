@@ -214,6 +214,9 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::ToSignRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
         let req = req.into_inner();
+
+        let eth_address = req.eth_address;
+
         let fee_rate =
             FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
 
@@ -231,10 +234,11 @@ impl rpc::BtcServer for App {
             .collect();
         let outputs = outputs_result?;
 
-        let (to_sign, psbt) = self.get_to_sign(&SECP, outputs, fee_rate).map_err(|e| {
-            error!("Failed to get to sign: {}", e);
-            internal!("Failed to get to sign: {}", e)
-        })?;
+        let (to_sign, psbt) =
+            self.get_to_sign(&SECP, outputs, fee_rate, Some(eth_address)).map_err(|e| {
+                error!("Failed to get to sign: {}", e);
+                internal!("Failed to get to sign: {}", e)
+            })?;
 
         let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
             error!("Failed to serialize psbt: {}", e);
@@ -380,7 +384,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::SignPayload>,
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
         let req = req.into_inner();
-        let signing_package =
+        let mut signing_package =
             frost::SigningPackage::deserialize(req.payload.as_slice()).map_err(|e| {
                 error!("Failed to deserialize signing package: {}", e);
                 internal!("Failed to deserialize signing package: {}", e)
@@ -390,7 +394,7 @@ impl rpc::BtcServer for App {
             internal!("Failed to deserialize psbt: {}", e)
         })?;
         let partial_signature =
-            self.get_round2_signing_package(signing_package, psbt.clone()).map_err(|e| {
+            self.get_round2_signing_package(&mut signing_package, psbt.clone()).map_err(|e| {
                 error!("Failed to get round2 signing package: {}", e);
                 internal!("Failed to get round2 signing package: {}", e)
             })?;
@@ -454,8 +458,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pk_package = db.get_key_package().expect("pk package").expect("pk package");
         let pk = hex::encode(pk_package.verifying_key().serialize());
         let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
-        change_script =
-            Some(reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk));
+        change_script = Some(reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk));
         info!("Already have key package, skipping round 1 dkg key generation");
     }
 
@@ -744,7 +747,7 @@ mod test {
             utxo_txid: "c0ea9dc0029bb844a231887655e4b9f80eab4d11804c8af28dd618d073eed7de"
                 .to_string(),
             utxo_vout: 0,
-            eth_address: eth_1,
+            eth_address: eth_1.clone(),
             output: prev_out_bytes,
         }))
         .await
@@ -758,6 +761,7 @@ mod test {
                     address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
                     value: 100000,
                 }],
+                eth_address: eth_1.clone().as_bytes().to_vec(),
             }))
             .await
             .unwrap()

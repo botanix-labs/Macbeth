@@ -99,6 +99,8 @@ impl App {
             self.db.set_key_package(pk_res.0.clone())?;
             self.db.set_pubkey_package(pk_res.1.clone())?;
             self.db.flush()?;
+            // Keep in mind this pk is tweaked with an empty merkel root as this is
+            // default behavior by the FROST library
             return Ok(pk_res.1.verifying_key().to_owned());
         } else {
             return Err(Error::InvalidRound2DkgPayloadMissingPackage);
@@ -188,6 +190,7 @@ impl App {
             outputs,
             change.clone(),
         );
+
         Ok(psbt)
 
         // Signing
@@ -235,6 +238,7 @@ impl App {
         secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
+        additional_tweak: Option<Vec<u8>>,
     ) -> Result<(frost::SigningPackage, Psbt), Error> {
         let pk_package = self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
         let signing_commitments = self.db.get_round1_signing_packages()?;
@@ -244,8 +248,7 @@ impl App {
 
         let pk = hex::encode(pk_package.verifying_key().serialize());
         let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(secp, &secp_pk);
+        let change_script = reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk);
 
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
         let txid = psbt.clone().extract_tx().txid();
@@ -255,10 +258,14 @@ impl App {
             Error::FailedToCalculateSighash
         })?;
 
-        let signing_package = frost::SigningPackage::new(
+        let mut signing_package = frost::SigningPackage::new(
             signing_commitments,
             sighash.to_raw_hash().to_byte_array().as_slice(),
         );
+        // The tweak is not added here to the signing package b/c
+        // 1. it does not get serialized
+        // 2. the tweak should be explicitly verified by the signers before signing
+        // Instead we can add it to the psbt as a proprietary field for each input
 
         // Lastly save this to sign package to the db
         self.db.add_signing_package(txid, signing_package.clone())?;
@@ -279,8 +286,16 @@ impl App {
             .get_round2_signing_package_txid(txid)?
             .ok_or(Error::MissingRound2SigningPackage)?;
 
-        let signing_package =
+        let input = psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?;
+        // TODO need to check optiop b/c change outputs are not tweaked
+        let eth_tweak =
+            input.proprietary.get(&reth_btc_wallet::transaction::ETH_ADDRESS_FIELD).unwrap();
+
+        let mut signing_package =
             self.db.get_signing_package(txid)?.ok_or(Error::MissingSigningPackage)?;
+
+        signing_package.set_addtional_tweak(eth_tweak.clone());
+        info!("Signing package: {:?}", signing_package);
 
         let agg_sig = frost::aggregate(&signing_package, &partial_sigs, &pk_package)?;
         let schnorr_sig =
@@ -290,25 +305,25 @@ impl App {
         let schorr_pk =
             bitcoin::secp256k1::PublicKey::from_slice(&pk_package.verifying_key().serialize()[..])
                 .unwrap();
-
+        
         // Verify signature -- redundant check
-        pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
+        pk_package.verifying_key().verify(
+            signing_package.message(),
+            &agg_sig,
+            Some(&eth_tweak.to_owned().as_slice()),
+        )?;
 
         // Add relevant signing information for the specific input we are signing
-        // let secp_pk =
-        psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.sighash_type =
-            Some(TapSighashType::All.into());
-        
-        psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_key_sig =
+
+        input.sighash_type = Some(TapSighashType::All.into());
+        input.tap_key_sig =
             Some(bitcoin::taproot::Signature { sig: schnorr_sig, hash_ty: TapSighashType::All });
 
         // TODO(armins) do we need to add internal key?
         // let taproot_spend_info =
         // reth_btc_wallet::address::generate_taproot_spend_info(secp, &schorr_pk).unwrap();
-        // psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_internal_key =
-        //     Some(schorr_pk.x_only_public_key().0);
-        // psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_merkle_root =
-        //     taproot_spend_info.merkle_root();
+        input.tap_internal_key = Some(schorr_pk.x_only_public_key().0);
+        psbt.inputs.get_mut(input_index).ok_or(Error::InvalidInputIndex)?.tap_merkle_root = None;
 
         if let Err(errs) = psbt.finalize_mut(secp) {
             error!("Had {} PSBT finalization errors:", errs.len());
@@ -317,11 +332,11 @@ impl App {
             }
             return Err(Error::PbstFinalizationFailed(errs));
         }
-        // could do this once we are confident our code works and we don't
-        // want to do the effort of tx verification
-        let tx = psbt.clone().extract_tx();
-        let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
-        println!("Finalized tx: {:?}", tx);
+        // // could do this once we are confident our code works and we don't
+        // // want to do the effort of tx verification
+        // let tx = psbt.clone().extract_tx();
+        // let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
+        // println!("Finalized tx: {:?}", tx);
 
         Ok(psbt.clone())
     }
