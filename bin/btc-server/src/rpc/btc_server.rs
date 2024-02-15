@@ -16,6 +16,13 @@ pub struct NotifyPeginRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPublicKeyRequest {
+    /// Eth address to tweak by
+    #[prost(bytes = "vec", tag = "1")]
+    pub eth_address: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakeTxRequest {
     #[prost(string, tag = "1")]
     pub address: ::prost::alloc::string::String,
@@ -122,7 +129,7 @@ pub mod btc_server_server {
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn get_public_key(
             &self,
-            request: tonic::Request<super::Empty>,
+            request: tonic::Request<super::GetPublicKeyRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetPublicKeyResponse>,
             tonic::Status,
@@ -310,7 +317,9 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetPublicKey" => {
                     #[allow(non_camel_case_types)]
                     struct GetPublicKeySvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::GetPublicKeyRequest>
                     for GetPublicKeySvc<T> {
                         type Response = super::GetPublicKeyResponse;
                         type Future = BoxFuture<
@@ -319,7 +328,7 @@ pub mod btc_server_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>,
+                            request: tonic::Request<super::GetPublicKeyRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

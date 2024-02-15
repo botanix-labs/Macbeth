@@ -283,9 +283,10 @@ impl rpc::BtcServer for App {
 
     async fn get_public_key(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::GetPublicKeyRequest>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
-        let pk = self.get_public_key().map_err(|e| {
+        let req = req.into_inner();
+        let pk = self.get_public_key(&req.eth_address).map_err(|e| {
             error!("Failed to get public key: {}", e);
             internal!("Failed to get public key: {}", e)
         })?;
@@ -384,8 +385,8 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::SignPayload>,
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
         let req = req.into_inner();
-        let mut signing_package =
-            frost::SigningPackage::deserialize(req.payload.as_slice()).map_err(|e| {
+        let mut signing_package = frost::SigningPackage::deserialize(req.payload.as_slice())
+            .map_err(|e| {
                 error!("Failed to deserialize signing package: {}", e);
                 internal!("Failed to deserialize signing package: {}", e)
             })?;
@@ -536,6 +537,7 @@ mod test {
     #[tokio::test]
     pub async fn dkg_flow() {
         let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         tokio::spawn(spawn_server(0, "0.0.0.0:8080"));
         tokio::spawn(spawn_server(1, "0.0.0.0:8081"));
         // Cordinator node
@@ -549,7 +551,11 @@ mod test {
         let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
 
         // Getting public key should fail
-        let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
+        let pk = c1
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.as_bytes().to_vec(),
+            }))
+            .await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
         assert_eq!(err.code(), tonic::Code::Internal);
@@ -698,13 +704,27 @@ mod test {
         .await
         .unwrap();
         //// Get the pubkey
-
-        let pk_1 =
-            c1.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
-        let pk_2 =
-            c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
-        let pk_3 =
-            c3.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        let pk_1 = c1
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.as_bytes().to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        let pk_2 = c2
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.as_bytes().to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        let pk_3 = c3
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.as_bytes().to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
         // Everyone got the same pks
         assert_eq!(pk_1.publickey, pk_2.publickey);
@@ -728,7 +748,6 @@ mod test {
         c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
 
         // Notify peg in
-        let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         let prev_out = TxOut {
             script_pubkey: reth_btc_wallet::address::gateway_address(
                 &SECP,
