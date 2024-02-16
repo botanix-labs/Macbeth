@@ -10,7 +10,6 @@
     no_crate_inject,
     attr(deny(warnings, rust_2018_idioms), allow(dead_code, unused_variables))
 ))]
-#![feature(noop_waker)]
 
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
@@ -29,12 +28,14 @@ use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
+use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
-    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, Bloom, Bytes, ChainSpec, Header,
-    ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -91,10 +92,11 @@ impl Consensus for AuthorityConsensus {
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
         reth_consensus_common::utils::validate_against_parent(
-            parent.header.clone(),
-            header.header.clone(),
+            parent.header().clone(),
+            header.header().clone(),
         )?;
-        validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
+        // TODO(armins) this was removed do we still need it?
+        // validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
         Ok(())
     }
 
@@ -137,7 +139,7 @@ where
         pk: secp256k1::PublicKey,
     ) -> Result<Self, StorageCreationError> {
         if headers.len() == 0 {
-            return Err(StorageCreationError::EmptyHeaders)
+            return Err(StorageCreationError::EmptyHeaders);
         }
         // sort the headers by block numbers
         headers.sort_by(|a, b| a.number.cmp(&b.number));
@@ -273,18 +275,21 @@ where
     /// Executes the block with the given block and senders, on the provided [Executor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    pub(crate) fn execute(
+    pub(crate) fn execute<EvmConfig>(
         &mut self,
-        block: &Block,
-        executor: &mut EVMProcessor<'_>,
+        block: &BlockWithSenders,
+        executor: &mut EVMProcessor<'_, EvmConfig>,
         senders: Vec<Address>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
-    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
+    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
         let (receipts, gas_used) =
-            executor.execute_transactions(block, U256::ZERO, Some(senders), recent_block_header)?;
+            executor.execute_transactions(block, U256::ZERO, recent_block_header)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
@@ -364,7 +369,7 @@ where
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
-    pub(crate) fn build_and_execute(
+    pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
@@ -373,11 +378,15 @@ where
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
-    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
+        evm_config: EvmConfig,
+    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // Check if we have a recent block header
         // Can't validate pegin without it
         if recent_block_header.is_none() {
-            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
+            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
         }
 
         // Construct block and header
@@ -387,6 +396,9 @@ where
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
+
+        let block_with_senders =
+            BlockWithSenders::new(block.clone(), senders.clone()).expect("senders are valid");
 
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
@@ -398,10 +410,10 @@ where
             .with_bundle_update()
             .build();
 
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
         let (bundle_state, gas_used) =
-            self.execute(&block, &mut executor, senders, recent_block_header)?;
+            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
@@ -434,7 +446,7 @@ where
 
             // TODO(armins) Should we be verbose and fail the block or just ignore?
             if authority_signers.iter().any(|signer| signer == &authority_to_vote_on) {
-                return Err(BlockExecutionError::CannotAddExistingFederationMember)
+                return Err(BlockExecutionError::CannotAddExistingFederationMember);
             }
             // Keep track of votes
             self.authority_votes.vote_for(&sk.public_key(secp), &vote.1, &vote.0);
@@ -447,16 +459,20 @@ where
     }
 
     // Execute and run poa validation on the block without inserting it into the storage
-    pub(crate) fn execute_imported_block(
+    pub(crate) fn execute_imported_block<EvmConfig>(
         &mut self,
         chain_spec: Arc<ChainSpec>,
         sealed_block: SealedBlock,
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
-    ) -> Result<BundleStateWithReceipts, BlockExecutionError> {
+        evm_config: EvmConfig,
+    ) -> Result<BundleStateWithReceipts, BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    {
         // Check if we have a recent block header
         // Can't validate pegin without it
         if recent_block_header.is_none() {
-            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable)
+            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
         }
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
 
@@ -467,19 +483,19 @@ where
             )))
             .with_bundle_update()
             .build();
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
         let senders =
             TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
                 BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
             )?;
 
-        let (bundle_state, _gas_used) = self.execute(
-            &sealed_block.clone().unseal(),
-            &mut executor,
-            senders,
-            recent_block_header,
-        )?;
+        let block_with_senders =
+            BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
+                .expect("senders are valid");
+
+        let (bundle_state, _gas_used) =
+            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
 
         let authority_signers = self.authorities.clone();
         validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(
@@ -490,6 +506,6 @@ where
             },
         )?;
 
-        return Ok(bundle_state)
+        return Ok(bundle_state);
     }
 }

@@ -22,7 +22,7 @@ pub(crate) enum ProcessBotanixLogError {
     FailedToMakePegoutTx(tonic::Status),
 }
 
-// TODO(armins) ideally processing these reciepts dont have sideeffects or make network calls
+// TODO(armins) ideally processing these receipts dont have sideeffects or make network calls
 // in the future the caller should be responsible for doing this
 
 /// Processes the receipts in the given `bundle_state` and performs actions based on the receipt
@@ -42,24 +42,24 @@ pub(crate) enum ProcessBotanixLogError {
 ///
 /// Returns `Ok(())` if the processing is successful, otherwise returns an error of type
 /// `ProcessBotanixLogError`.
-pub(crate) async fn process_reciepts(
+pub(crate) async fn process_receipts(
     bitcoin_block_source: &MempoolSpace,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
     should_broadcast_pegout: bool,
 ) -> Result<(), ProcessBotanixLogError> {
-    let reciepts_bundle = bundle_state.receipts().iter();
-    for (index, reciepts) in reciepts_bundle.enumerate() {
-        for reciept in reciepts {
-            if index == 0 && reciept.is_none() {
+    let receipts_bundle = bundle_state.receipts().iter();
+    for (index, receipts) in receipts_bundle.enumerate() {
+        for receipt in receipts {
+            if index == 0 && receipt.is_none() {
                 // Prunning block, skip
                 break
             }
-            if let Some(reciept) = reciept {
-                if !reciept.success {
+            if let Some(receipt) = receipt {
+                if !receipt.success {
                     continue
                 }
-                for log in &reciept.logs {
+                for log in &receipt.logs {
                     process_botanix_log(
                         bitcoin_block_source,
                         btc_server,
@@ -69,7 +69,7 @@ pub(crate) async fn process_reciepts(
                     .await?;
                 }
             }
-            info!(target: "consensus::authority", "Reciept {:?}", reciept);
+            info!(target: "consensus::authority", "Receipt {:?}", receipt);
         }
     }
     Ok(())

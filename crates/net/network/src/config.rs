@@ -79,7 +79,7 @@ pub struct NetworkConfig<C> {
     pub optimism_network_config: OptimismNetworkConfig,
 }
 
-/// Optimmism Network Config
+/// Optimism Network Config
 #[cfg(feature = "optimism")]
 #[derive(Debug, Clone, Default)]
 pub struct OptimismNetworkConfig {
@@ -135,7 +135,6 @@ where
 /// Builder for [`NetworkConfig`](struct.NetworkConfig.html).
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[allow(missing_docs)]
 pub struct NetworkConfigBuilder {
     /// The node's secret key, from which the node's identity is derived.
     secret_key: SecretKey,
@@ -169,6 +168,9 @@ pub struct NetworkConfigBuilder {
     head: Option<Head>,
     /// Whether tx gossip is disabled
     tx_gossip_disabled: bool,
+    /// The block importer type
+    #[serde(skip)]
+    block_import: Option<Box<dyn BlockImport>>,
     /// Optimism Network Config Builder
     #[cfg(feature = "optimism")]
     optimism_network_config: OptimismNetworkConfigBuilder,
@@ -204,6 +206,7 @@ impl NetworkConfigBuilder {
             extra_protocols: Default::default(),
             head: None,
             tx_gossip_disabled: false,
+            block_import: None,
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfigBuilder::default(),
         }
@@ -396,11 +399,25 @@ impl NetworkConfigBuilder {
         self
     }
 
+    /// Sets the block import type.
+    pub fn block_import(mut self, block_import: Box<dyn BlockImport>) -> Self {
+        self.block_import = Some(block_import);
+        self
+    }
+
     /// Sets the sequencer HTTP endpoint.
     #[cfg(feature = "optimism")]
     pub fn sequencer_endpoint(mut self, endpoint: Option<String>) -> Self {
         self.optimism_network_config.sequencer_endpoint = endpoint;
         self
+    }
+
+    /// Convenience function for creating a [NetworkConfig] with a noop provider that does nothing.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn build_with_noop_provider(
+        self,
+    ) -> NetworkConfig<reth_provider::test_utils::NoopProvider> {
+        self.build(reth_provider::test_utils::NoopProvider::default())
     }
 
     /// Consumes the type and creates the actual [`NetworkConfig`]
@@ -427,6 +444,7 @@ impl NetworkConfigBuilder {
             extra_protocols,
             head,
             tx_gossip_disabled,
+            block_import,
             #[cfg(feature = "optimism")]
                 optimism_network_config: OptimismNetworkConfigBuilder { sequencer_endpoint },
         } = self;
@@ -473,7 +491,7 @@ impl NetworkConfigBuilder {
             peers_config: peers_config.unwrap_or_default(),
             sessions_config: sessions_config.unwrap_or_default(),
             chain_spec,
-            block_import: Box::<ProofOfStakeBlockImport>::default(),
+            block_import: block_import.unwrap_or(Box::<ProofOfStakeBlockImport>::default()),
             network_mode,
             executor: executor.unwrap_or_else(|| Box::<TokioTaskExecutor>::default()),
             status,
@@ -484,16 +502,6 @@ impl NetworkConfigBuilder {
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfig { sequencer_endpoint },
         }
-    }
-
-    pub fn build_with_block_import<C>(
-        self,
-        client: C,
-        block_import: Box<dyn BlockImport>,
-    ) -> NetworkConfig<C> {
-        let mut config = self.build(client);
-        config.block_import = block_import;
-        config
     }
 }
 
@@ -510,7 +518,7 @@ pub enum NetworkMode {
     /// Network is in proof-of-stake mode
     #[default]
     Stake,
-    /// Network is in proof-of-authority mode
+    /// Network is in PoA mode
     Authority,
 }
 

@@ -15,7 +15,7 @@ BUILD_PATH = "target"
 ifeq ($(OS),Windows_NT)
     FEATURES ?=
 else
-    FEATURES ?= jemalloc
+    FEATURES ?= jemalloc asm-keccak
 endif
 
 # Cargo profile for builds. Default is for local builds, CI uses an override.
@@ -31,6 +31,9 @@ EF_TESTS_DIR := ./testing/ef-tests/ethereum-tests
 
 # The docker image name
 DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
+
+# Features in reth/op-reth binary crate other than "ethereum" and "optimism"
+BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
 ##@ Help
 
@@ -73,6 +76,9 @@ op-build-native-%:
 
 # No jemalloc on Windows
 build-x86_64-pc-windows-gnu: FEATURES := $(filter-out jemalloc jemalloc-prof,$(FEATURES))
+
+# asm keccak optimizations not enabled
+build-aarch64-unknown-linux-gnu: FEATURES := $(filter-out asm-keccak,$(FEATURES))
 
 # Note: The additional rustc compiler flags are for intrinsics needed by MDBX.
 # See: https://github.com/cross-rs/cross/wiki/FAQ#undefined-reference-with-build-std
@@ -227,23 +233,15 @@ db-tools: ## Compile MDBX debugging tools.
 update-book-cli: ## Update book cli documentation.
 	cargo build --bin reth --features "$(FEATURES)" --profile "$(PROFILE)"
 	@echo "Updating book cli doc..."
-	@./book/cli/update.sh $(BUILD_PATH)
+	@./book/cli/update.sh $(BUILD_PATH)/$(PROFILE)/reth
 
 .PHONY: maxperf
-maxperf:
+maxperf: ## Builds `reth` with the most aggressive optimisations.
+	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc,asm-keccak
+
+.PHONY: maxperf-no-asm
+maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
-
-fmt:
-	@cargo fmt --all --
-
-fmt-check:
-	@cargo fmt --all -- --check
-
-lint:
-	@cargo clippy --bins --lib --tests --examples --all-features --fix -- -D warnings
-
-doc:
-	@cargo doc --no-deps --open
 
 start-btc-server:
 	cd ./bin/btc-server && \
@@ -303,4 +301,140 @@ start-poa-server-2:
 	--btc-block-source "https://mempool.space/signet/api" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--notifications-webhook-url "https://hooks.slack.com/services/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"
+	--port 30304
+
+fmt:
+	cargo +nightly fmt
+
+lint-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "ethereum $(BIN_OTHER_FEATURES)" \
+	-- -D warnings
+
+lint-op-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "op-reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "optimism $(BIN_OTHER_FEATURES)" \
+	-- -D warnings
+
+lint-other-targets:
+	cargo +nightly clippy \
+	--workspace \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--all-features \
+	-- -D warnings
+
+lint:
+	make fmt && \
+	make lint-reth && \
+	make lint-op-reth && \
+	make lint-other-targets
+
+rustdocs:
+	RUSTDOCFLAGS="\
+	--cfg docsrs \
+	--show-type-layout \
+	--generate-link-to-definition \
+	--enable-index-page -Zunstable-options -D warnings" \
+	cargo +nightly docs \
+	--document-private-items
+
+test-reth:
+	cargo test \
+	--workspace \
+	--bin "reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "ethereum $(BIN_OTHER_FEATURES)"
+
+test-op-reth:
+	cargo test \
+	--workspace \
+	--bin "op-reth" \
+	--lib --examples \
+	--tests \
+	--benches \
+	--features "optimism $(BIN_OTHER_FEATURES)"
+
+test-other-targets:
+	cargo test \
+	--workspace \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--all-features
+
+test:
+	make test-reth && \
+	make test-op-reth && \
+	make test-other-targets
+
+pr:
+	make fmt && \
+	make lint && \
+	make docs && \
+	make test
+
+
+start-btc-server-1:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8080 --db "./db1"
+
+start-btc-server-2:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- --network testnet --identifier 2 --address 0.0.0.0:8081 --db "./db2"
+
+start-poa-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NODE_1_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8545 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NODE_1_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8551 \
+	--btc-server "localhost:8080" \
+	--btc-block-source "https://mempool.space/signet/api" \
+	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
+	--port 30303
+
+start-poa-server-2:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NODE_2_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8546 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8552 \
+	--btc-server "localhost:8080" \
+	--btc-block-source "https://mempool.space/signet/api" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304

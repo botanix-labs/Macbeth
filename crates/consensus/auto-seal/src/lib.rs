@@ -12,20 +12,18 @@
     html_favicon_url = "https://avatars0.githubusercontent.com/u/97369466?s=256",
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
-#![warn(missing_debug_implementations, missing_docs, unreachable_pub, rustdoc::all)]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-use ::client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{
     consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
 };
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    proofs, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Bloom, ChainSpec,
-    Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
+    proofs, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, Bloom,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
     EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
@@ -42,12 +40,8 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use url::Url;
-
-use reth_payload_builder::PayloadBuilderHandle;
-
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{trace, warn};
+use tracing::trace;
 
 mod client;
 mod mode;
@@ -100,39 +94,34 @@ impl Consensus for AutoSealConsensus {
 
 /// Builder type for configuring the setup
 #[derive(Debug)]
-pub struct AutoSealBuilder<Client, Pool> {
+pub struct AutoSealBuilder<Client, Pool, Engine: EngineTypes, EvmConfig> {
     client: Client,
     consensus: AutoSealConsensus,
     pool: Pool,
     mode: MiningMode,
     storage: Storage,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: BtcServerClient<tonic::transport::Channel>,
-    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    bitcoin_block_source_address: Url,
-    payload_store: PayloadBuilderHandle,
+    evm_config: EvmConfig,
 }
 
 // === impl AutoSealBuilder ===
 
-impl<Client, Pool> AutoSealBuilder<Client, Pool>
+impl<Client, Pool, Engine, EvmConfig> AutoSealBuilder<Client, Pool, Engine, EvmConfig>
 where
     Client: BlockReaderIdExt,
     Pool: TransactionPool,
+    Engine: EngineTypes,
 {
     /// Creates a new builder instance to configure all parts.
     pub fn new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
         pool: Pool,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         mode: MiningMode,
-        btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_source_address: Url,
-        payload_store: PayloadBuilderHandle,
+        evm_config: EvmConfig,
     ) -> Self {
         let latest_header = client
             .latest_header()
@@ -148,10 +137,7 @@ where
             mode,
             to_engine,
             canon_state_notification,
-            btc_server,
-            bitcoin_block_header,
-            bitcoin_block_source_address,
-            payload_store,
+            evm_config,
         }
     }
 
@@ -163,9 +149,10 @@ where
 
     /// Consumes the type and returns all components
     #[track_caller]
-    pub fn build(self) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool>) {
+    pub fn build(
+        self,
+    ) -> (AutoSealConsensus, AutoSealClient, MiningTask<Client, Pool, EvmConfig, Engine>) {
         let Self {
-            btc_server,
             client,
             consensus,
             pool,
@@ -173,9 +160,7 @@ where
             storage,
             to_engine,
             canon_state_notification,
-            bitcoin_block_header,
-            bitcoin_block_source_address,
-            payload_store,
+            evm_config,
         } = self;
         let auto_client = AutoSealClient::new(storage.clone());
         let task = MiningTask::new(
@@ -186,10 +171,7 @@ where
             storage,
             client,
             pool,
-            btc_server,
-            bitcoin_block_header,
-            bitcoin_block_source_address,
-            payload_store,
+            evm_config,
         );
         (consensus, auto_client, task)
     }
@@ -330,13 +312,14 @@ impl StorageInner {
     /// Executes the block with the given block and senders, on the provided [EVMProcessor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    pub(crate) fn execute(
+    pub(crate) fn execute<EvmConfig>(
         &mut self,
-        block: &Block,
-        executor: &mut EVMProcessor<'_>,
-        senders: Vec<Address>,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
-    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
+        block: &BlockWithSenders,
+        executor: &mut EVMProcessor<'_, EvmConfig>,
+    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
         // TODO: there isn't really a parent beacon block root here, so not sure whether or not to
         // call the 4788 beacon contract
@@ -344,8 +327,7 @@ impl StorageInner {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
-        let (receipts, gas_used) =
-            executor.execute_transactions(block, U256::ZERO, Some(senders), recent_block_header)?;
+        let (receipts, gas_used) = executor.execute_transactions(block, U256::ZERO, None)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
@@ -405,18 +387,20 @@ impl StorageInner {
     /// Builds and executes a new block with the given transactions, on the provided [EVMProcessor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
-    pub(crate) fn build_and_execute(
+    pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
         client: &impl StateProviderFactory,
         chain_spec: Arc<ChainSpec>,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
-    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError> {
+        evm_config: EvmConfig,
+    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         let header = self.build_header_template(&transactions, chain_spec.clone());
 
-        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
-
-        let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
+        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None }
+            .with_recovered_senders()
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
@@ -426,12 +410,11 @@ impl StorageInner {
             .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db);
+        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
-        let (bundle_state, gas_used) =
-            self.execute(&block, &mut executor, senders, recent_block_header)?;
+        let (bundle_state, gas_used) = self.execute(&block, &mut executor)?;
 
-        let Block { header, body, .. } = block;
+        let Block { header, body, .. } = block.block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
 
         trace!(target: "consensus::auto", ?bundle_state, ?header, ?body, "executed block, calculating state root and completing header");

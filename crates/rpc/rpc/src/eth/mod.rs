@@ -1,7 +1,6 @@
 //! `eth` namespace handler implementation.
 
 mod api;
-pub mod botanix_config;
 pub mod bundle;
 pub mod cache;
 pub mod error;
@@ -23,3 +22,5 @@ pub use bundle::EthBundle;
 pub use filter::{EthFilter, EthFilterConfig};
 pub use id_provider::EthSubscriptionIdProvider;
 pub use pubsub::EthPubSub;
+
+pub mod botanix_config;

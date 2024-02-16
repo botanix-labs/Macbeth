@@ -4,16 +4,16 @@ use crate::{
 };
 use futures::{future::Either, FutureExt};
 use reth_interfaces::{consensus::ForkchoiceState, RethResult};
-use reth_payload_builder::{error::PayloadBuilderError, BuiltPayload};
-use reth_primitives::B256;
+use reth_node_api::EngineTypes;
+use reth_payload_builder::error::PayloadBuilderError;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ExecutionPayload, ForkChoiceUpdateResult, ForkchoiceUpdateError,
-    ForkchoiceUpdated, PayloadAttributes, PayloadId, PayloadStatus, PayloadStatusEnum,
+    ForkchoiceUpdated, PayloadId, PayloadStatus, PayloadStatusEnum,
 };
+
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
     task::{ready, Context, Poll},
 };
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -142,8 +142,7 @@ impl Future for PendingPayloadId {
 /// A message for the beacon engine from other components of the node (engine RPC API invoked by the
 /// consensus layer).
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum BeaconEngineMessage {
+pub enum BeaconEngineMessage<Engine: EngineTypes> {
     /// Message with new payload.
     NewPayload {
         /// The execution payload received by Engine API.
@@ -158,7 +157,7 @@ pub enum BeaconEngineMessage {
         /// The updated forkchoice state.
         state: ForkchoiceState,
         /// The payload attributes for block building.
-        payload_attrs: Option<PayloadAttributes>,
+        payload_attrs: Option<Engine::PayloadAttributes>,
         /// The sender for returning forkchoice updated result.
         tx: oneshot::Sender<RethResult<OnForkChoiceUpdated>>,
     },
@@ -166,20 +165,4 @@ pub enum BeaconEngineMessage {
     TransitionConfigurationExchanged,
     /// Add a new listener for [`BeaconEngineMessage`].
     EventListener(UnboundedSender<BeaconConsensusEngineEvent>),
-    /// Message to start building a new payload with the given attributes,
-    StartNewPayload {
-        /// The payload attributes for block building.
-        payload_attributes: PayloadAttributes,
-        /// The parent block hash to build on.
-        parent: B256,
-        /// The sender for returning the payload id.
-        tx: oneshot::Sender<Result<PayloadId, PayloadBuilderError>>,
-    },
-    /// Message to return the best payload.
-    BestPayload {
-        /// The sender for returning the best payload.
-        tx: oneshot::Sender<Option<Arc<BuiltPayload>>>,
-        /// The payload id to resolve.
-        payload_id: PayloadId,
-    },
 }

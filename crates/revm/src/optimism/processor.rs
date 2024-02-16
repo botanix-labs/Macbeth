@@ -2,34 +2,35 @@ use crate::processor::{verify_receipt, EVMProcessor};
 use reth_interfaces::executor::{
     BlockExecutionError, BlockValidationError, OptimismBlockExecutionError,
 };
+use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
-    revm::compat::into_reth_log, revm_primitives::ResultAndState, Address, Block, Hardfork,
-    Receipt, U256,
+    revm_primitives::ResultAndState, BlockWithSenders, Hardfork, Receipt, TxType, U256,
 };
 use reth_provider::{BlockExecutor, BlockExecutorStats, BundleStateWithReceipts};
 use revm::DatabaseCommit;
 use std::time::Instant;
 use tracing::{debug, trace};
 
-impl<'a> BlockExecutor for EVMProcessor<'a> {
+impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig>
+where
+    EvmConfig: ConfigureEvmEnv,
+{
     fn execute(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
+        let receipts = self.execute_inner(block, total_difficulty)?;
         self.save_receipts(receipts)
     }
 
     fn execute_and_verify_receipt(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
+        let receipts = self.execute_inner(block, total_difficulty)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -55,9 +56,8 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
 
     fn execute_transactions(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
@@ -65,8 +65,6 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
         if block.body.is_empty() {
             return Ok((Vec::new(), 0))
         }
-
-        let senders = self.recover_senders(&block.body, senders)?;
 
         let is_regolith =
             self.chain_spec.fork(Hardfork::Regolith).active_at_timestamp(block.timestamp);
@@ -84,7 +82,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
 
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
-        for (transaction, sender) in block.body.iter().zip(senders) {
+        for (sender, transaction) in block.transactions_with_sender() {
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -99,6 +97,13 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 .into())
             }
 
+            // An optimism block should never contain blob transactions.
+            if matches!(transaction.tx_type(), TxType::EIP4844) {
+                return Err(BlockExecutionError::OptimismBlockExecution(
+                    OptimismBlockExecutionError::BlobTransactionRejected,
+                ))
+            }
+
             // Cache the depositor account prior to the state transition for the deposit nonce.
             //
             // Note that this *only* needs to be done post-regolith hardfork, as deposit nonces
@@ -107,14 +112,14 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
             let depositor = (is_regolith && transaction.is_deposit())
                 .then(|| {
                     self.db_mut()
-                        .load_cache_account(sender)
+                        .load_cache_account(*sender)
                         .map(|acc| acc.account_info().unwrap_or_default())
                 })
                 .transpose()
                 .map_err(|_| BlockExecutionError::ProviderError)?;
 
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, sender)?;
+            let ResultAndState { result, state } = self.transact(transaction, *sender)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -138,7 +143,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 success: result.is_success(),
                 cumulative_gas_used,
                 // convert to reth log
-                logs: result.into_logs().into_iter().map(into_reth_log).collect(),
+                logs: result.into_logs().into_iter().map(Into::into).collect(),
                 #[cfg(feature = "optimism")]
                 deposit_nonce: depositor.map(|account| account.nonce),
                 // The deposit receipt version was introduced in Canyon to indicate an update to how
@@ -158,7 +163,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
         let receipts = std::mem::take(&mut self.receipts);
         BundleStateWithReceipts::new(
-            self.evm.db().unwrap().take_bundle(),
+            self.evm.context.evm.db.take_bundle(),
             receipts,
             self.first_block.unwrap_or_default(),
         )
@@ -169,6 +174,6 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
     }
 
     fn size_hint(&self) -> Option<usize> {
-        self.evm.db.as_ref().map(|db| db.bundle_size_hint())
+        Some(self.evm.context.evm.db.bundle_size_hint())
     }
 }

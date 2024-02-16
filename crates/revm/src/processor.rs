@@ -8,30 +8,36 @@ use reth_botanix_lib::mint_validation::{
     parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
+use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
-    revm::env::{fill_cfg_and_block_env, fill_tx_env},
-    Address, Block, BlockNumber, Bloom, Bytes, ChainSpec, GotExpected, Hardfork, Header, PruneMode,
-    PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts, TransactionSigned, B256,
-    MINIMUM_PRUNING_DISTANCE, U256,
+    Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork,
+    Header, PruneMode, PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts,
+    TransactionSigned, Withdrawals, B256, MINIMUM_PRUNING_DISTANCE, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockExecutorStats, ProviderError, PrunableBlockExecutor, StateProvider,
 };
 use revm::{
-    db::{states::bundle_state::BundleRetention, StateDBBox},
-    primitives::{ExecutionResult, ResultAndState},
-    State, EVM,
+    db::{states::bundle_state::BundleRetention, EmptyDBTyped, StateDBBox},
+    inspector_handle_register,
+    interpreter::Host,
+    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
+    Evm, State, StateBuilder,
 };
 use std::{sync::Arc, time::Instant};
+use tracing::{error, warn};
 
+#[cfg(feature = "optimism")]
+use reth_primitives::revm::env::fill_op_tx_env;
 #[cfg(not(feature = "optimism"))]
-use reth_primitives::revm::compat::into_reth_log;
+use reth_primitives::revm::env::fill_tx_env;
+
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 #[cfg(not(feature = "optimism"))]
 use revm::DatabaseCommit;
 #[cfg(not(feature = "optimism"))]
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace};
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -55,13 +61,11 @@ lazy_static::lazy_static! {
 // TODO: https://github.com/bluealloy/revm/pull/745
 // #[derive(Debug)]
 #[allow(missing_debug_implementations)]
-pub struct EVMProcessor<'a> {
+pub struct EVMProcessor<'a, EvmConfig> {
     /// The configured chain-spec
     pub(crate) chain_spec: Arc<ChainSpec>,
     /// revm instance that contains database and env environment.
-    pub(crate) evm: EVM<StateDBBox<'a, ProviderError>>,
-    /// Hook and inspector stack that we want to invoke on that hook.
-    stack: InspectorStack,
+    pub(crate) evm: Evm<'a, InspectorStack, StateDBBox<'a, ProviderError>>,
     /// The collection of receipts.
     /// Outer vector stores receipts for each block sequentially.
     /// The inner vector stores receipts ordered by transaction number.
@@ -81,27 +85,43 @@ pub struct EVMProcessor<'a> {
     pruning_address_filter: Option<(u64, Vec<Address>)>,
     /// Execution stats
     pub(crate) stats: BlockExecutorStats,
+    /// The type that is able to configure the EVM environment.
+    _evm_config: EvmConfig,
 }
 
-impl<'a> EVMProcessor<'a> {
+impl<'a, EvmConfig> EVMProcessor<'a, EvmConfig>
+where
+    EvmConfig: ConfigureEvmEnv,
+{
     /// Return chain spec.
     pub fn chain_spec(&self) -> &Arc<ChainSpec> {
         &self.chain_spec
     }
 
     /// Create a new pocessor with the given chain spec.
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        let evm = EVM::new();
+    pub fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
+        // create evm with boxed empty db that is going to be set later.
+        let evm = Evm::builder()
+            .with_db(
+                Box::new(
+                    StateBuilder::new()
+                        .with_database_boxed(Box::new(EmptyDBTyped::<ProviderError>::new())),
+                )
+                .build(),
+            )
+            // Hook and inspector stack that we want to invoke on that hook.
+            .with_external_context(InspectorStack::new(InspectorStackConfig::default()))
+            .build();
         EVMProcessor {
             chain_spec,
             evm,
-            stack: InspectorStack::new(InspectorStackConfig::default()),
             receipts: Receipts::new(),
             first_block: None,
             tip: None,
             prune_modes: PruneModes::none(),
             pruning_address_filter: None,
             stats: BlockExecutorStats::default(),
+            _evm_config: evm_config,
         }
     }
 
@@ -109,38 +129,42 @@ impl<'a> EVMProcessor<'a> {
     pub fn new_with_db<DB: StateProvider + 'a>(
         chain_spec: Arc<ChainSpec>,
         db: StateProviderDatabase<DB>,
+        evm_config: EvmConfig,
     ) -> Self {
         let state = State::builder()
             .with_database_boxed(Box::new(db))
             .with_bundle_update()
             .without_state_clear()
             .build();
-        EVMProcessor::new_with_state(chain_spec, state)
+        EVMProcessor::new_with_state(chain_spec, state, evm_config)
     }
 
     /// Create a new EVM processor with the given revm state.
     pub fn new_with_state(
         chain_spec: Arc<ChainSpec>,
         revm_state: StateDBBox<'a, ProviderError>,
+        evm_config: EvmConfig,
     ) -> Self {
-        let mut evm = EVM::new();
-        evm.database(revm_state);
+        let evm = Evm::builder()
+            .with_db(revm_state)
+            .with_external_context(InspectorStack::new(InspectorStackConfig::default()))
+            .build();
         EVMProcessor {
             chain_spec,
             evm,
-            stack: InspectorStack::new(InspectorStackConfig::default()),
             receipts: Receipts::new(),
             first_block: None,
             tip: None,
             prune_modes: PruneModes::none(),
             pruning_address_filter: None,
             stats: BlockExecutorStats::default(),
+            _evm_config: evm_config,
         }
     }
 
     /// Configures the executor with the given inspectors.
     pub fn set_stack(&mut self, stack: InspectorStack) {
-        self.stack = stack;
+        self.evm.context.external = stack;
     }
 
     /// Configure the executor with the given block.
@@ -150,30 +174,7 @@ impl<'a> EVMProcessor<'a> {
 
     /// Returns a reference to the database
     pub fn db_mut(&mut self) -> &mut StateDBBox<'a, ProviderError> {
-        // Option will be removed from EVM in the future.
-        // as it is always some.
-        // https://github.com/bluealloy/revm/issues/697
-        self.evm.db().expect("Database inside EVM is always set")
-    }
-
-    pub(crate) fn recover_senders(
-        &mut self,
-        body: &[TransactionSigned],
-        senders: Option<Vec<Address>>,
-    ) -> Result<Vec<Address>, BlockExecutionError> {
-        if let Some(senders) = senders {
-            if body.len() == senders.len() {
-                Ok(senders)
-            } else {
-                Err(BlockValidationError::SenderRecoveryError.into())
-            }
-        } else {
-            let time = Instant::now();
-            let ret = TransactionSigned::recover_signers(body, body.len())
-                .ok_or(BlockValidationError::SenderRecoveryError.into());
-            self.stats.sender_recovery_duration += time.elapsed();
-            ret
-        }
+        &mut self.evm.context.evm.db
     }
 
     /// Initializes the config and block env.
@@ -184,13 +185,17 @@ impl<'a> EVMProcessor<'a> {
 
         self.db_mut().set_state_clear_flag(state_clear_flag);
 
-        fill_cfg_and_block_env(
-            &mut self.evm.env.cfg,
-            &mut self.evm.env.block,
+        let mut cfg: CfgEnvWithHandlerCfg =
+            CfgEnvWithHandlerCfg::new(self.evm.cfg().clone(), self.evm.spec_id());
+        EvmConfig::fill_cfg_and_block_env(
+            &mut cfg,
+            self.evm.block_mut(),
             &self.chain_spec,
             header,
             total_difficulty,
         );
+        *self.evm.cfg_mut() = cfg.cfg_env;
+        self.evm.handler.modify_spec_id(cfg.handler_cfg.spec_id);
     }
 
     /// Applies the pre-block call to the EIP-4788 beacon block root contract.
@@ -226,7 +231,7 @@ impl<'a> EVMProcessor<'a> {
             block.timestamp,
             total_difficulty,
             &block.ommers,
-            block.withdrawals.as_deref(),
+            block.withdrawals.as_ref().map(Withdrawals::as_ref),
         );
 
         // Irregular state change at Ethereum DAO hardfork
@@ -256,7 +261,7 @@ impl<'a> EVMProcessor<'a> {
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         for log in result.logs() {
-            if log.topics.get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
+            if log.topics().get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
                 let pegin_data = parse_pegin_topic(&log).map_err(|e| {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
@@ -267,20 +272,20 @@ impl<'a> EVMProcessor<'a> {
                         tracing::trace!("Pegin aggregate value: {}", aggregate_value);
                         if aggregate_value != pegin_data.amount {
                             warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
-                            return Err(BlockValidationError::MintContractViolation.into())
+                            return Err(BlockValidationError::MintContractViolation.into());
                         }
                     }
                     Err(e) => {
                         warn!("Failed pegin attempt! {:?}", e);
-                        return Err(BlockValidationError::MintContractViolation.into())
+                        return Err(BlockValidationError::MintContractViolation.into());
                     }
                 }
             }
 
-            if log.topics.get(0) == Some(&BURN_TOPIC) {
+            if log.topics().get(0) == Some(&BURN_TOPIC) {
                 if let Err(e) = parse_pegout_topic(&log) {
                     error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::MintContractViolation.into())
+                    return Err(BlockValidationError::MintContractViolation.into());
                 }
             }
         }
@@ -300,30 +305,35 @@ impl<'a> EVMProcessor<'a> {
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
-        fill_tx_env(&mut self.evm.env.tx, transaction, sender);
+        fill_tx_env(self.evm.tx_mut(), transaction, sender);
 
         #[cfg(feature = "optimism")]
         {
             let mut envelope_buf = Vec::with_capacity(transaction.length_without_header());
             transaction.encode_enveloped(&mut envelope_buf);
-            fill_tx_env(&mut self.evm.env.tx, transaction, sender, envelope_buf.into());
+            fill_op_tx_env(self.evm.tx_mut(), transaction, sender, envelope_buf.into());
         }
 
         let hash = transaction.hash();
-        let out = if self.stack.should_inspect(&self.evm.env, hash) {
-            // execution with inspector.
-            let output = self.evm.inspect(&mut self.stack);
+        let should_inspect = self.evm.context.external.should_inspect(self.evm.env(), hash);
+        let out = if should_inspect {
+            // push inspector handle register.
+            self.evm.handler.append_handler_register_plain(inspector_handle_register);
+            let output = self.evm.transact();
             tracing::trace!(
                 target: "evm",
-                ?hash, ?output, ?transaction, env = ?self.evm.env,
+                ?hash, ?output, ?transaction, env = ?self.evm.context.evm.env,
                 "Executed transaction"
             );
+            // pop last handle register
+            self.evm.handler.pop_handle_register();
             output
         } else {
             // main execution.
             self.evm.transact()
         };
 
+        // ***** Botanix specific checks
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
@@ -361,15 +371,14 @@ impl<'a> EVMProcessor<'a> {
     /// Execute the block, verify gas usage and apply post-block state changes.
     pub(crate) fn execute_inner(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used) =
-            self.execute_transactions(block, total_difficulty, senders, recent_block_header)?;
+            self.execute_transactions(block, total_difficulty, recent_block_header)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -378,7 +387,7 @@ impl<'a> EVMProcessor<'a> {
                 gas: GotExpected { got: cumulative_gas_used, expected: block.gas_used },
                 gas_spent_by_tx: receipts.gas_spent_by_tx()?,
             }
-            .into())
+            .into());
         }
         let time = Instant::now();
         self.apply_post_execution_state_change(block, total_difficulty)?;
@@ -437,7 +446,7 @@ impl<'a> EVMProcessor<'a> {
             self.prune_modes.receipts.map_or(false, |mode| mode.should_prune(block_number, tip))
         {
             receipts.clear();
-            return Ok(())
+            return Ok(());
         }
 
         // All receipts from the last 128 blocks are required for blockchain tree, even with
@@ -445,7 +454,7 @@ impl<'a> EVMProcessor<'a> {
         let prunable_receipts =
             PruneMode::Distance(MINIMUM_PRUNING_DISTANCE).should_prune(block_number, tip);
         if !prunable_receipts {
-            return Ok(())
+            return Ok(());
         }
 
         let contract_log_pruner = self.prune_modes.receipts_log_filter.group_by_block(tip, None)?;
@@ -475,27 +484,28 @@ impl<'a> EVMProcessor<'a> {
 
 /// Default Ethereum implementation of the [BlockExecutor] trait for the [EVMProcessor].
 #[cfg(not(feature = "optimism"))]
-impl<'a> BlockExecutor for EVMProcessor<'a> {
+impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig>
+where
+    EvmConfig: ConfigureEvmEnv,
+{
     fn execute(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty, senders, recent_block_header)?;
+        let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
         self.save_receipts(receipts)
     }
 
     fn execute_and_verify_receipt(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, senders, recent_block_header)?;
+        let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -507,7 +517,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 verify_receipt(block.header.receipts_root, block.header.logs_bloom, receipts.iter())
             {
                 debug!(target: "evm", ?error, ?receipts, "receipts verification failed");
-                return Err(error)
+                return Err(error);
             };
             self.stats.receipt_root_duration += time.elapsed();
         }
@@ -517,23 +527,20 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
 
     fn execute_transactions(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0))
+            return Ok((Vec::new(), 0));
         }
-
-        let senders = self.recover_senders(&block.body, senders)?;
 
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
-        for (transaction, sender) in block.body.iter().zip(senders) {
+        for (sender, transaction) in block.transactions_with_sender() {
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -543,11 +550,11 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                     transaction_gas_limit: transaction.gas_limit(),
                     block_available_gas,
                 }
-                .into())
+                .into());
             }
             // Execute transaction.
             let ResultAndState { result, state } =
-                self.transact(transaction, sender, recent_block_header)?;
+                self.transact(transaction, *sender, recent_block_header)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -571,9 +578,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 success: result.is_success(),
                 cumulative_gas_used,
                 // convert to reth log
-                logs: result.into_logs().into_iter().map(into_reth_log).collect(),
-                #[cfg(feature = "optimism")]
-                deposit_nonce: None,
+                logs: result.into_logs().into_iter().map(Into::into).collect(),
             });
         }
 
@@ -583,7 +588,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
         let receipts = std::mem::take(&mut self.receipts);
         BundleStateWithReceipts::new(
-            self.evm.db().unwrap().take_bundle(),
+            self.evm.context.evm.db.take_bundle(),
             receipts,
             self.first_block.unwrap_or_default(),
         )
@@ -594,11 +599,14 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
     }
 
     fn size_hint(&self) -> Option<usize> {
-        self.evm.db.as_ref().map(|db| db.bundle_size_hint())
+        Some(self.evm.context.evm.db.bundle_size_hint())
     }
 }
 
-impl<'a> PrunableBlockExecutor for EVMProcessor<'a> {
+impl<'a, EvmConfig> PrunableBlockExecutor for EVMProcessor<'a, EvmConfig>
+where
+    EvmConfig: ConfigureEvmEnv,
+{
     fn set_tip(&mut self, tip: BlockNumber) {
         self.tip = Some(tip);
     }
@@ -629,7 +637,7 @@ pub fn verify_receipt<'a>(
         return Err(BlockValidationError::ReceiptRootDiff(
             GotExpected { got: receipts_root, expected: expected_receipts_root }.into(),
         )
-        .into())
+        .into());
     }
 
     // Create header log bloom.
@@ -638,7 +646,7 @@ pub fn verify_receipt<'a>(
         return Err(BlockValidationError::BloomLogDiff(
             GotExpected { got: logs_bloom, expected: expected_logs_bloom }.into(),
         )
-        .into())
+        .into());
     }
 
     Ok(())
@@ -648,6 +656,7 @@ pub fn verify_receipt<'a>(
 mod tests {
     use super::*;
     use reth_interfaces::provider::ProviderResult;
+    use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         bytes,
         constants::{BEACON_ROOTS_ADDRESS, SYSTEM_ADDRESS},
@@ -776,15 +785,26 @@ mod tests {
         );
 
         // execute invalid header (no parent beacon block root)
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
 
         // attempt to execute a block without parent beacon block root, expect err
         let err = executor
             .execute_and_verify_receipt(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
+                None,
                 U256::ZERO,
-                None,
-                None,
             )
             .expect_err(
                 "Executing cancun block without parent beacon block root field should fail",
@@ -800,9 +820,16 @@ mod tests {
         // Now execute a block with the fixed header, ensure that it does not fail
         executor
             .execute(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
                 None,
             )
             .unwrap();
@@ -852,18 +879,29 @@ mod tests {
                 .build(),
         );
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
         executor.init_env(&header, U256::ZERO);
 
         // get the env
-        let previous_env = executor.evm.env.clone();
+        let previous_env = executor.evm.context.evm.env.clone();
 
         // attempt to execute an empty block with parent beacon block root, this should not fail
         executor
             .execute_and_verify_receipt(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
                 None,
             )
             .expect(
@@ -871,7 +909,7 @@ mod tests {
             );
 
         // ensure that the env has not changed
-        assert_eq!(executor.evm.env, previous_env);
+        assert_eq!(executor.evm.context.evm.env, previous_env);
     }
 
     #[test]
@@ -903,7 +941,11 @@ mod tests {
                 .build(),
         );
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
 
         // construct the header for block one
         let header = Header {
@@ -919,10 +961,16 @@ mod tests {
         // attempt to execute an empty block with parent beacon block root, this should not fail
         executor
             .execute_and_verify_receipt(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
-                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -960,17 +1008,27 @@ mod tests {
 
         let mut header = chain_spec.genesis_header();
 
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
         executor.init_env(&header, U256::ZERO);
 
         // attempt to execute the genesis block with non-zero parent beacon block root, expect err
         header.parent_beacon_block_root = Some(B256::with_last_byte(0x69));
         let _err = executor
             .execute_and_verify_receipt(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
-                None,
             )
             .expect_err(
                 "Executing genesis cancun block with non-zero parent beacon block root field should fail",
@@ -983,16 +1041,23 @@ mod tests {
         // call does not occur
         executor
             .execute(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
                 None,
             )
             .unwrap();
 
         // there is no system contract call so there should be NO STORAGE CHANGES
         // this means we'll check the transition state
-        let state = executor.evm.db().unwrap();
+        let state = executor.evm.context.evm.db;
         let transition_state = state
             .transition_state
             .clone()
@@ -1038,18 +1103,29 @@ mod tests {
         );
 
         // execute header
-        let mut executor = EVMProcessor::new_with_db(chain_spec, StateProviderDatabase::new(db));
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
         executor.init_env(&header, U256::ZERO);
 
         // ensure that the env is configured with a base fee
-        assert_eq!(executor.evm.env.block.basefee, U256::from(u64::MAX));
+        assert_eq!(executor.evm.block().basefee, U256::from(u64::MAX));
 
         // Now execute a block with the fixed header, ensure that it does not fail
         executor
             .execute(
-                &Block { header: header.clone(), body: vec![], ommers: vec![], withdrawals: None },
+                &BlockWithSenders {
+                    block: Block {
+                        header: header.clone(),
+                        body: vec![],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![],
+                },
                 U256::ZERO,
-                None,
                 None,
             )
             .unwrap();

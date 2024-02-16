@@ -1,6 +1,7 @@
 use crate::engine_util;
 use futures_util::StreamExt;
 
+use reth_node_api::EngineTypes;
 use reth_primitives::revm_primitives::FixedBytes;
 
 use reth_network::NetworkEvent;
@@ -10,17 +11,20 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
-pub struct SyncController {
+pub struct SyncController<Engine: EngineTypes> {
     network_event_listener: UnboundedReceiverStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 }
 
-impl SyncController {
+impl<Engine> SyncController<Engine>
+where
+    Engine: EngineTypes + 'static,
+{
     pub fn new(
         network_event_listener: UnboundedReceiverStream<NetworkEvent>,
         peer_id: FixedBytes<64>,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     ) -> Self {
         Self { network_event_listener, peer_id, to_engine }
     }
@@ -32,7 +36,7 @@ impl SyncController {
                     let blockhash = status.blockhash;
                     if peer_id == self.peer_id {
                         debug!(target: "consensus::authority", "Ignoring session established event from self");
-                        return
+                        return;
                     }
                     match engine_util::send_fork_choice_update_payload(
                         blockhash,
@@ -46,7 +50,7 @@ impl SyncController {
                         Err(err) => {
                             error!(target: "consensus::authority", "Failed to send fork choice update with new tip {} from peer {}: {:?}", blockhash, peer_id, err);
                             //TODO(armins) If we cannot talk to the engine sould we panic?
-                            return
+                            return;
                         }
                     }
                 }
@@ -71,6 +75,7 @@ mod tests {
         EthVersion, Status,
     };
     use reth_network::{message::PeerRequestSender, PeerRequest};
+    use reth_node_ethereum::EthEngineTypes;
     use reth_rpc_types::PeerId;
     use tokio::sync::mpsc;
 
@@ -80,7 +85,8 @@ mod tests {
         let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
         let network_stream = UnboundedReceiverStream::new(rx);
         let peer_id = PeerId::random();
-        let (engine_tx, mut engine_rx) = mpsc::unbounded_channel::<BeaconEngineMessage>();
+        let (engine_tx, mut engine_rx) =
+            mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
 
         // intialize the SyncController
         let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);

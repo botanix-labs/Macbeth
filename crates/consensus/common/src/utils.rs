@@ -6,8 +6,8 @@ use reth_primitives::{
     B256, U256,
 };
 use reth_provider::StateProvider;
+use reth_tracing::tracing::error;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::error;
 
 /// Error that can occur while accessing EVM global storage
 #[derive(Debug)]
@@ -89,7 +89,7 @@ pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, Recov
         let signer = signature
             .recover(&message)
             .map_err(|e| RecoverAuthorityError::FailedToRecoverSigner(e))?;
-        return Ok(signer)
+        return Ok(signer);
     }
 
     Err(RecoverAuthorityError::NoSignaturePresentInExtraData)
@@ -154,7 +154,7 @@ pub fn validate_poa_extra_data_header(
 ) -> Result<(), ConsensusError> {
     // Skip over genesis
     if header.number == 0 {
-        return Ok(())
+        return Ok(());
     }
     // First run the basic validation
     validation::validate_header_extradata(header)?;
@@ -208,7 +208,7 @@ pub fn validate_against_parent(
 ) -> Result<(), ValidateAgainstParentError> {
     // Gensis block does not have a federation signature, skip
     if parent.number == 0 {
-        return Ok(())
+        return Ok(());
     }
     let parent_signer = recovery_authority(&parent).map_err(|e: RecoverAuthorityError| {
         ValidateAgainstParentError::FailedToDerserializeExtraData(e)
@@ -216,8 +216,8 @@ pub fn validate_against_parent(
     let current_signer = recovery_authority(&current)
         .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?;
     // Check if the parent block was mined in a different turn
-    let parent_ts = parent.timestamp / 60;
-    let current_ts = current.timestamp / 60;
+    let parent_ts = parent.timestamp as f64 / 60.0;
+    let current_ts = current.timestamp as f64 / 60.0;
 
     validate_current_signer_against_last((parent_signer, parent_ts), (current_signer, current_ts))?;
 
@@ -227,14 +227,14 @@ pub fn validate_against_parent(
 /// Validate current signer and its last block timestamp against the last signer and its last block
 /// timestamp Used to prevent a signer from signing multiple blocks in the same turn
 pub fn validate_current_signer_against_last(
-    last: (secp256k1::PublicKey, u64),
-    current: (secp256k1::PublicKey, u64),
+    last: (secp256k1::PublicKey, f64),
+    current: (secp256k1::PublicKey, f64),
 ) -> Result<(), ValidateAgainstParentError> {
     // Last block should be greater that 1 minute in the worst cast
     // Even in the case of > 2 federation members the worst case time between blocks for the same
     // Signer should be 1 minute. Assuming 1 minute block times
-    if last.0 == current.0 && current.1 - last.1 < 1 {
-        return Err(ValidateAgainstParentError::SignerLimitExceeded)
+    if last.0 == current.0 && current.1 - last.1 < 1.0 {
+        return Err(ValidateAgainstParentError::SignerLimitExceeded);
     }
 
     Ok(())
@@ -263,7 +263,7 @@ pub fn validate_inturn(
     let block_timestamp_min = header.timestamp / 60;
     if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
         error!(target = "authority_consensus", "Authority was not in turn when producing block");
-        return Err(ConsensusError::AuthorityNotInTurn)
+        return Err(ConsensusError::AuthorityNotInTurn);
     }
 
     Ok(())

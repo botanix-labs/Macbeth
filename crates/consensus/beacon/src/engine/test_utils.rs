@@ -22,6 +22,7 @@ use reth_interfaces::{
     sync::NoopSyncStateUpdater,
     test_utils::{NoopFullBlockClient, TestConsensus},
 };
+use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::test_utils::spawn_test_payload_service;
 use reth_primitives::{BlockNumber, ChainSpec, PruneModes, Receipt, B256, U256};
 use reth_provider::{
@@ -45,10 +46,11 @@ type TestBeaconConsensusEngine<Client> = BeaconConsensusEngine<
         Arc<DatabaseEnv>,
         ShareableBlockchainTree<
             Arc<DatabaseEnv>,
-            EitherExecutorFactory<TestExecutorFactory, EvmProcessorFactory>,
+            EitherExecutorFactory<TestExecutorFactory, EvmProcessorFactory<EthEvmConfig>>,
         >,
     >,
     Arc<EitherDownloader<Client, NoopFullBlockClient>>,
+    EthEngineTypes,
 >;
 
 #[derive(Debug)]
@@ -57,14 +59,14 @@ pub struct TestEnv<DB> {
     // Keep the tip receiver around, so it's not dropped.
     #[allow(dead_code)]
     tip_rx: watch::Receiver<B256>,
-    engine_handle: BeaconConsensusEngineHandle,
+    engine_handle: BeaconConsensusEngineHandle<EthEngineTypes>,
 }
 
 impl<DB> TestEnv<DB> {
     fn new(
         db: DB,
         tip_rx: watch::Receiver<B256>,
-        engine_handle: BeaconConsensusEngineHandle,
+        engine_handle: BeaconConsensusEngineHandle<EthEngineTypes>,
     ) -> Self {
         Self { db, tip_rx, engine_handle }
     }
@@ -182,29 +184,75 @@ where
 {
     fn execute(
         &mut self,
-        block: &reth_primitives::Block,
+        block: &reth_primitives::BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<reth_primitives::Address>>,
     ) -> Result<(), BlockExecutionError> {
         match self {
-            EitherBlockExecutor::Left(a) => a.execute(block, total_difficulty, senders, None),
-            EitherBlockExecutor::Right(b) => b.execute(block, total_difficulty, senders, None),
+            EitherBlockExecutor::Left(a) => a.execute(block, total_difficulty),
+            EitherBlockExecutor::Right(b) => b.execute(block, total_difficulty),
         }
     }
 
     fn execute_and_verify_receipt(
         &mut self,
-        block: &reth_primitives::Block,
+        block: &reth_primitives::BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<reth_primitives::Address>>,
     ) -> Result<(), BlockExecutionError> {
         match self {
-            EitherBlockExecutor::Left(a) => {
-                a.execute_and_verify_receipt(block, total_difficulty, senders, None)
-            }
-            EitherBlockExecutor::Right(b) => {
-                b.execute_and_verify_receipt(block, total_difficulty, senders, None)
-            }
+            EitherBlockExecutor::Left(a) => a.execute_and_verify_receipt(block, total_difficulty),
+            EitherBlockExecutor::Right(b) => b.execute_and_verify_receipt(block, total_difficulty),
+        }
+    }
+
+    fn execute_transactions(
+        &mut self,
+        block: &reth_primitives::BlockWithSenders,
+        total_difficulty: U256,
+    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+        match self {
+            EitherBlockExecutor::Left(a) => a.execute_transactions(block, total_difficulty),
+            EitherBlockExecutor::Right(b) => b.execute_transactions(block, total_difficulty),
+        }
+    }
+
+    fn take_output_state(&mut self) -> BundleStateWithReceipts {
+        match self {
+            EitherBlockExecutor::Left(a) => a.take_output_state(),
+            EitherBlockExecutor::Right(b) => b.take_output_state(),
+        }
+    }
+
+    fn stats(&self) -> reth_provider::BlockExecutorStats {
+        match self {
+            EitherBlockExecutor::Left(a) => a.stats(),
+            EitherBlockExecutor::Right(b) => b.stats(),
+        }
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        match self {
+            EitherBlockExecutor::Left(a) => a.size_hint(),
+            EitherBlockExecutor::Right(b) => b.size_hint(),
+        }
+    }
+}
+
+impl<A, B> PrunableBlockExecutor for EitherBlockExecutor<A, B>
+where
+    B: PrunableBlockExecutor,
+    A: PrunableBlockExecutor,
+{
+    fn set_prune_modes(&mut self, prune_modes: PruneModes) {
+        match self {
+            EitherBlockExecutor::Left(a) => a.set_prune_modes(prune_modes),
+            EitherBlockExecutor::Right(b) => b.set_prune_modes(prune_modes),
+        }
+    }
+
+    fn set_tip(&mut self, tip: BlockNumber) {
+        match self {
+            EitherBlockExecutor::Left(a) => a.set_tip(tip),
+            EitherBlockExecutor::Right(b) => b.set_tip(tip),
         }
     }
 
@@ -464,7 +512,7 @@ where
             }
             TestConsensusConfig::Test => Arc::new(TestConsensus::default()),
         };
-        let payload_builder = spawn_test_payload_service();
+        let payload_builder = spawn_test_payload_service::<EthEngineTypes>();
 
         // use either noop client or a user provided client (for example TestFullBlockClient)
         let client = Arc::new(
@@ -483,6 +531,7 @@ where
             }
             TestExecutorConfig::Real => EitherExecutorFactory::Right(EvmProcessorFactory::new(
                 self.base_config.chain_spec.clone(),
+                EthEvmConfig::default(),
             )),
         };
 
@@ -525,11 +574,11 @@ where
             BlockchainTree::new(externals, config, None).expect("failed to create tree"),
         );
         let latest = self.base_config.chain_spec.genesis_header().seal_slow();
-        let blockchain_provider = BlockchainProvider::with_latest(provider_factory, tree, latest);
+        let blockchain_provider =
+            BlockchainProvider::with_latest(provider_factory.clone(), tree, latest);
 
         let pruner = Pruner::new(
-            db.clone(),
-            self.base_config.chain_spec.clone(),
+            provider_factory,
             vec![],
             5,
             self.base_config.chain_spec.prune_delete_limit,
@@ -563,9 +612,12 @@ where
     }
 }
 
-pub fn spawn_consensus_engine<Client: HeadersClient + BodiesClient + 'static>(
+pub fn spawn_consensus_engine<Client>(
     engine: TestBeaconConsensusEngine<Client>,
-) -> oneshot::Receiver<Result<(), BeaconConsensusEngineError>> {
+) -> oneshot::Receiver<Result<(), BeaconConsensusEngineError>>
+where
+    Client: HeadersClient + BodiesClient + 'static,
+{
     let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
         let result = engine.await;

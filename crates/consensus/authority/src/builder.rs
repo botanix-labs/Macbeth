@@ -9,6 +9,9 @@ use reth_btc_wallet::block_source::MempoolSpace;
 use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
@@ -26,12 +29,12 @@ use tracing::error;
 use url::Url;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
     storage: Storage<Client>,
-    to_engine: UnboundedSender<BeaconEngineMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
@@ -44,6 +47,9 @@ pub struct AuthorityConsensusBuilder<Client> {
     network_handle: NetworkHandle,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
+    /// The type that defines how to configure the EVM.
+    evm_config: EvmConfig,
+    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -56,8 +62,10 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client> AuthorityConsensusBuilder<Client>
+impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
 where
+    Engine: EngineTypes + 'static,
+    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -70,7 +78,7 @@ where
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
@@ -82,6 +90,8 @@ where
         network_handle: NetworkHandle,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
+        evm_config: EvmConfig,
+        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -90,7 +100,7 @@ where
             .unwrap_or_else(|| chain_spec.sealed_genesis_header());
         let mut headers = vec![latest_header.clone()];
 
-        while !latest_header.header.is_poa_epoch() {
+        while !latest_header.header().is_poa_epoch() {
             let parent_hash = latest_header.parent_hash;
 
             if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
@@ -98,7 +108,7 @@ where
                     std::mem::replace(&mut latest_header, new_header.seal_slow());
                 headers.push(old_latest_header);
             } else {
-                return Err(AuthorityConsensusBuilderError::FailedToRetrieveEopchHeader)
+                return Err(AuthorityConsensusBuilderError::FailedToRetrieveEopchHeader);
             }
         }
 
@@ -114,7 +124,7 @@ where
         let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
         if signer_index.is_none() {
-            return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex)
+            return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
         }
         let pk = sk.public_key(&secp);
 
@@ -150,6 +160,8 @@ where
             network_handle,
             block_import_rx,
             task_executor,
+            evm_config,
+            payload_builder,
         })
     }
 
@@ -159,8 +171,12 @@ where
     /// production task.
     pub fn build(
         self,
-    ) -> (AuthorityConsensus, BlockProductionTask<Client>, BlockFetcherTask<Client>, SyncController)
-    {
+    ) -> (
+        AuthorityConsensus,
+        BlockProductionTask<Client, EvmConfig, Engine>,
+        BlockFetcherTask<Client, EvmConfig, Engine>,
+        SyncController<Engine>,
+    ) {
         let Self {
             btc_server,
             client: _,
@@ -177,6 +193,8 @@ where
             network_handle,
             block_import_rx,
             task_executor,
+            evm_config,
+            payload_builder,
         } = self;
         let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
 
@@ -195,6 +213,7 @@ where
             bitcoin_block_source.clone(),
             storage.clone(),
             bitcoin_block_header.clone(),
+            evm_config.clone(),
         );
         let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
@@ -209,6 +228,8 @@ where
             epoch_manager,
             network_handle,
             task_executor,
+            evm_config.clone(),
+            payload_builder,
         );
 
         (consensus, block_production_task, block_fetcher_task, sync_task)

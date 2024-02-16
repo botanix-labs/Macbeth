@@ -70,7 +70,7 @@ impl FeeHistoryCache {
     /// Insert block data into the cache.
     async fn insert_blocks<I>(&self, blocks: I)
     where
-        I: Iterator<Item = (SealedBlock, Vec<Receipt>)>,
+        I: Iterator<Item = (SealedBlock, Arc<Vec<Receipt>>)>,
     {
         let mut entries = self.inner.entries.write().await;
 
@@ -244,7 +244,7 @@ pub async fn fee_history_cache_new_blocks_task<St, Provider>(
                     let (blocks, receipts): (Vec<_>, Vec<_>) = committed
                         .blocks_and_receipts()
                         .map(|(block, receipts)| {
-                            (block.block.clone(), receipts.iter().flatten().cloned().collect::<Vec<_>>())
+                            (block.block.clone(), Arc::new(receipts.iter().flatten().cloned().collect::<Vec<_>>()))
                         })
                         .unzip();
                     fee_history_cache.insert_blocks(blocks.into_iter().zip(receipts)).await;
@@ -343,7 +343,7 @@ impl FeeHistoryEntry {
             base_fee_per_gas: block.base_fee_per_gas.unwrap_or_default(),
             gas_used_ratio: block.gas_used as f64 / block.gas_limit as f64,
             gas_used: block.gas_used,
-            header_hash: block.hash,
+            header_hash: block.hash(),
             gas_limit: block.gas_limit,
             rewards: Vec::new(),
         }

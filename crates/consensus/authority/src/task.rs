@@ -2,17 +2,17 @@ use crate::{epoch_manager::EpochManager, Storage};
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::block_source::MempoolSpace;
-
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_ethereum::EthEngineTypes;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
-
-use reth_payload_builder::PayloadBuilderHandle;
 
 use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use client::BtcServerClient;
 
-pub struct BlockProductionTask<Client> {
+pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
     /// The active epoch
@@ -30,7 +30,7 @@ pub struct BlockProductionTask<Client> {
     /// Shared storage to insert new blocks
     pub(crate) storage: Storage<Client>,
     /// TODO: ideally this would just be a sender of hashes
-    pub(crate) to_engine: UnboundedSender<BeaconEngineMessage>,
+    pub(crate) to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// The pipeline events to listen on
     pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
     /// BTC Server client
@@ -45,12 +45,16 @@ pub struct BlockProductionTask<Client> {
     pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
+    /// The type that defines how to configure the EVM.
+    pub(crate) evm_config: EvmConfig,
     /// Task executor
     #[allow(dead_code)]
     task_executor: TaskExecutor,
+    /// Ethereum Payload Builder
+    pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
 }
-
-impl<Client> BlockProductionTask<Client>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
+    BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -58,12 +62,14 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    Engine: EngineTypes + 'static,
+    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
-        to_engine: UnboundedSender<BeaconEngineMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
@@ -74,6 +80,8 @@ where
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
         task_executor: TaskExecutor,
+        evm_config: EvmConfig,
+        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     ) -> Self {
         Self {
             chain_spec,
@@ -88,6 +96,8 @@ where
             epoch_manager,
             network_handle,
             task_executor,
+            evm_config,
+            payload_builder,
         }
     }
 
@@ -104,8 +114,10 @@ where
     }
 }
 
-impl<Client> std::fmt::Debug for BlockProductionTask<Client> {
+impl<Client, EvmConfig: std::fmt::Debug, Engine: EngineTypes> std::fmt::Debug
+    for BlockProductionTask<Client, EvmConfig, Engine>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlockProductionTask").finish_non_exhaustive()
+        f.debug_struct("Authority Block Production Task").finish_non_exhaustive()
     }
 }

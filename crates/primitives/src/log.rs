@@ -1,4 +1,5 @@
 use crate::{Address, Bloom, Bytes, B256};
+use alloy_primitives::{Log as AlloyLog, LogData};
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use reth_codecs::{main_codec, Compact};
 
@@ -18,6 +19,19 @@ pub struct Log {
     pub topics: Vec<B256>,
     /// Arbitrary length data.
     pub data: Bytes,
+}
+
+impl From<AlloyLog> for Log {
+    fn from(log: AlloyLog) -> Self {
+        Self { address: log.address, topics: log.topics().to_vec(), data: log.data.data }
+    }
+}
+
+impl From<&Log> for AlloyLog<LogData> {
+    fn from(log: &Log) -> AlloyLog<LogData> {
+        AlloyLog::<LogData>::new(log.address, log.topics.clone(), log.data.clone())
+            .expect("log data is valid")
+    }
 }
 
 /// Calculate receipt logs bloom.

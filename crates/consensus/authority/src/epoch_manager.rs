@@ -2,7 +2,7 @@ use reth_consensus_common::utils;
 use reth_primitives::BlockHashOrNumber;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::Storage;
 use reth_provider::StateProviderFactory;
@@ -37,7 +37,10 @@ where
         // get best block
         let best_block_number = match storage.client.best_block_number() {
             Ok(best_block_number) => best_block_number,
-            Err(_) => return false,
+            Err(_) => {
+                drop(storage);
+                return false
+            }
         };
 
         // Check if the last signer was us
@@ -49,6 +52,7 @@ where
             .flatten();
 
         if latest_header.is_none() {
+            drop(storage);
             warn!("No latest header found");
             return false
         }
@@ -61,15 +65,14 @@ where
         if latest_header.number != 0 {
             let latest_signer = utils::recovery_authority(&latest_header).unwrap();
             let current_ts = utils::unix_timestamp();
-            if is_inturn &&
-                utils::validate_current_signer_against_last(
-                    (latest_signer, latest_header.timestamp / 60),
-                    (signer_pk, current_ts / 60),
-                )
-                .is_err()
-            {
+            let current_last_signer_validation = utils::validate_current_signer_against_last(
+                (latest_signer, latest_header.timestamp as f64 / 60.0),
+                (signer_pk, current_ts as f64 / 60.0),
+            );
+            if is_inturn && current_last_signer_validation.is_err() {
                 // made info instead of warn since this prints as soon as
                 // a block is produced and the node is still in turn
+                drop(storage);
                 info!("Current signer failed validation against last signer.");
                 return false
             }
