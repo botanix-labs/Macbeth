@@ -322,7 +322,7 @@ pub async fn test_poa_testnet() {
         println!("======> Received payload from engine index {:?}", x.engine_index);
         assert_eq!(x.engine_index, SELECTED_FED_MEMBER_INDEX as u16);
         if test_rounds == INTEGRATION_TEST_ROUNDS {
-            break
+            break;
         }
 
         // after first successful tx, send invalid tx with too low nonce
@@ -347,10 +347,10 @@ pub async fn test_poa_testnet() {
                 is_inturn(total_authorities as u64, targeted_fed_member.index.into());
             println!("Is in turn? {}", is_test_fed_member_inturn);
             if is_test_fed_member_inturn != current_turn {
-                break 'inner
+                break 'inner;
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
-            continue
+            continue;
         }
         println!("======>  Sending eoa transaction...");
         last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();

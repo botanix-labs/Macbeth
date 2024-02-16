@@ -1,11 +1,22 @@
+use client::MakeTxRequest;
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_consensus_common::utils;
-use reth_primitives::BlockHashOrNumber;
+use reth_primitives::{constants::eip225::EPOCH_LENGTH, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-use crate::Storage;
+use crate::{
+    utils::{bloom_contains_pegout, make_tx_request_for_pegout_in_receipt},
+    Storage,
+};
 use reth_provider::StateProviderFactory;
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum EpochManagerError {
+    #[error("Failed to fetch pegouts for an epoch")]
+    FailedToFetchPegouts,
+}
 
 #[derive(Debug)]
 /// Manages the block production epochs
@@ -28,6 +39,81 @@ where
         Self { storage }
     }
 
+    /// Returns all pegouts in an epoch iterating through an inclusive block range
+    ///
+    /// # Arguments
+    ///
+    /// * `end_block` - The end block of the epoch
+    ///
+    /// # Returns
+    ///
+    /// A vector of `MakeTxRequest` representing the pegouts in the epoch
+    pub(crate) async fn epoch_pegouts(
+        &self,
+        end_block: u64,
+    ) -> Result<Vec<MakeTxRequest>, EpochManagerError> {
+        let start_block = (end_block - EPOCH_LENGTH) + 1;
+        let storage = self.storage.inner.read().await;
+        let pegouts: Vec<MakeTxRequest> = vec![];
+        for block in start_block..=end_block {
+            match storage.client.block_by_number(block) {
+                Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+                    match storage
+                        .client
+                        .receipts_by_block(BlockHashOrNumber::Number(block.header.number))
+                    {
+                        Ok(Some(receipts)) => {
+                            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+                            let mut futures = Vec::new();
+
+                            for receipt in receipts {
+                                let future = make_tx_request_for_pegout_in_receipt(receipt);
+                                futures.push(future);
+                            }
+
+                            let mut results_stream = futures
+                                .into_iter()
+                                .map(tokio::spawn)
+                                .collect::<FuturesUnordered<_>>();
+                            while let Some(pegout) = results_stream.next().await {
+                                match pegout {
+                                    Ok(Some(pegout)) => pegouts.push(pegout),
+                                    Ok(None) => continue,
+                                    Err(e) => {
+                                        error!("Error fetching pegout: {}", e);
+                                        return Err(EpochManagerError::FailedToFetchPegouts);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            info!("No receipts found for block {:?}", block);
+                            continue;
+                        }
+                        Err(e) => {
+                            error!("Error fetching receipts for block {:?}: {}", block, e);
+                            return Err(EpochManagerError::FailedToFetchPegouts);
+                        }
+                    }
+                }
+                Ok(Some(_)) => {
+                    info!("No pegouts found in block {}", block);
+                    continue;
+                }
+                Ok(None) => {
+                    error!("Block {} not found", block);
+                    return Err(EpochManagerError::FailedToFetchPegouts);
+                }
+                Err(e) => {
+                    error!("Error fetching block {}: {}", block, e);
+                    return Err(EpochManagerError::FailedToFetchPegouts);
+                }
+            }
+        }
+
+        Ok(pegouts)
+    }
+
     pub(crate) async fn poll(&mut self) -> bool {
         let storage = self.storage.inner.read().await;
         let signer_index = storage.signer_index;
@@ -39,7 +125,7 @@ where
             Ok(best_block_number) => best_block_number,
             Err(_) => {
                 drop(storage);
-                return false
+                return false;
             }
         };
 
@@ -54,7 +140,7 @@ where
         if latest_header.is_none() {
             drop(storage);
             warn!("No latest header found");
-            return false
+            return false;
         }
 
         let latest_header = latest_header.unwrap();
@@ -74,7 +160,7 @@ where
                 // a block is produced and the node is still in turn
                 drop(storage);
                 info!("Current signer failed validation against last signer.");
-                return false
+                return false;
             }
         }
 
