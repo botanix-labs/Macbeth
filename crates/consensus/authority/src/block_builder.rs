@@ -1,4 +1,4 @@
-use crate::{engine_util, task::BlockProductionTask};
+use crate::{engine_util::{self, BestTransactionsError}, task::BlockProductionTask};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -6,7 +6,7 @@ use reth_interfaces::blockchain_tree::{
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
-use reth_payload_builder::EthPayloadBuilderAttributes;
+use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
@@ -62,12 +62,35 @@ where
             return;
         }
 
-        // get payload by id
-        let best_transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
-            &self.payload_builder,
-            payload_id.expect("payload id exists"),
-        )
-        .await;
+        let payload_id = payload_id.expect("payload id exists");
+
+        // retry if best_transactions is empty bc it could be a race condition
+        let mut retries = 0;
+        let mut delay = tokio::time::Duration::from_secs(1);
+        let max_retries = 5;
+        let mut best_transactions: Result<EthBuiltPayload, BestTransactionsError> = Err(BestTransactionsError::PayloadEmpty);
+        loop {
+            // get payload by id
+            let transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
+                &self.payload_builder,
+                payload_id,
+            )
+            .await;
+
+            if transactions.is_ok() {
+                best_transactions = transactions;
+                break;
+            }
+
+            retries += 1;
+            if retries >= max_retries {
+                break;
+            }
+
+            // Exponential backoff
+            delay *= 2;
+            tokio::time::sleep(delay).await;
+        };
 
         if best_transactions.is_err() {
             warn!(target: "consensus::authority", "Failed to get best transactions from payload");
