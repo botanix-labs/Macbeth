@@ -1,4 +1,8 @@
-use crate::{engine_util::{self, BestTransactionsError}, task::BlockProductionTask};
+use crate::{
+    engine_util::{self, BestTransactionsError},
+    task::BlockProductionTask,
+    utils::is_epoch_end,
+};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -35,8 +39,27 @@ where
         }
 
         let mut storage = self.storage.write().await;
-        let (_best_block, best_hash) =
-            storage.get_best_block_and_hash().expect("best block exists");
+        let (best_block, best_hash) = storage.get_best_block_and_hash().expect("best block exists");
+
+        // if epoch end block, process pegouts
+        let current_block = best_block + 1;
+        let pegouts = if is_epoch_end(current_block) {
+            match self.epoch_manager.epoch_pegouts(current_block).await {
+                Ok(pegouts) => pegouts,
+                Err(e) => {
+                    panic!("Failed to get pegouts {}", e)
+                }
+            }
+        } else {
+            vec![]
+        };
+
+        if pegouts.is_empty() {
+            info!(target: "consensus::authority", "No pegouts found");
+        } else {
+            info!(target: "consensus::authority", "Processing pegouts: {:?}", pegouts);
+            // TODO(scott)
+        }
 
         // use authority address as suggested fee recipient
         let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
@@ -68,7 +91,8 @@ where
         let mut retries = 0;
         let mut delay = tokio::time::Duration::from_secs(1);
         let max_retries = 5;
-        let mut best_transactions: Result<EthBuiltPayload, BestTransactionsError> = Err(BestTransactionsError::PayloadEmpty);
+        let mut best_transactions: Result<EthBuiltPayload, BestTransactionsError> =
+            Err(BestTransactionsError::PayloadEmpty);
         loop {
             // get payload by id
             let transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
@@ -90,7 +114,7 @@ where
             // Exponential backoff
             delay *= 2;
             tokio::time::sleep(delay).await;
-        };
+        }
 
         if best_transactions.is_err() {
             warn!(target: "consensus::authority", "Failed to get best transactions from payload");

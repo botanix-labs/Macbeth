@@ -45,7 +45,7 @@ impl AuthorityVote {
     pub(crate) fn add_vote(&mut self, authority_voting: &secp256k1::PublicKey, vote: Vote) {
         // Check vote from this authority does not already exist
         if self.votes.contains_key(&authority_voting) {
-            return
+            return;
         }
         self.votes.insert(*authority_voting, vote);
     }
@@ -96,7 +96,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
 
     for header in headers {
         if header.is_empty() {
-            continue
+            continue;
         }
         // Check if there is a authority being voted on in the extra data
         let extra_data_header =
@@ -104,18 +104,18 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
                 .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
 
         if extra_data_header.authority_vote.is_none() {
-            continue
+            continue;
         }
 
         // If there is no signature, we can't verify who casted the vote
         // This would be a invalid block anyways
         if extra_data_header.authority_signature.is_none() {
-            continue
+            continue;
         }
 
         // Check if there is a valid vote in the nonce field
         if header.nonce != NONCE_AUTH && header.nonce != NONCE_DROP {
-            continue
+            continue;
         }
 
         let authority_to_vote_on = extra_data_header.authority_vote.expect("valid authority vote");
