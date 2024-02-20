@@ -3276,6 +3276,7 @@ checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 [[package]]
 name = "frost-core"
 version = "1.0.0-rc.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
 dependencies = [
  "byteorder",
  "const-crc32",
@@ -3296,6 +3297,7 @@ dependencies = [
 [[package]]
 name = "frost-rerandomized"
 version = "1.0.0-rc.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
 dependencies = [
  "derive-getters",
  "document-features",
@@ -3306,6 +3308,7 @@ dependencies = [
 [[package]]
 name = "frost-secp256k1-tr"
 version = "1.0.0-rc.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
 dependencies = [
  "document-features",
  "frost-core",
