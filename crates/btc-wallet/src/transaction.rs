@@ -6,7 +6,7 @@ use bitcoin::{
 
 const USER_ETH_ADDRESS_FIELD: u8 = 1;
 
-static ETH_ADDRESS_FIELD: psbt::raw::ProprietaryKey = psbt::raw::ProprietaryKey {
+pub static ETH_ADDRESS_FIELD: psbt::raw::ProprietaryKey = psbt::raw::ProprietaryKey {
     prefix: Vec::new(),
     subtype: USER_ETH_ADDRESS_FIELD,
     key: Vec::new(),
@@ -47,6 +47,7 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
     for (psbt, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
         psbt.witness_utxo = Some(utxo.output.clone());
         // store the user tweak if used
+        // TODO(armins) different inputs are going to have different eth tweaks
         if utxo.eth_address.is_some() {
             psbt.proprietary.insert(
                 ETH_ADDRESS_FIELD.clone(),
@@ -70,11 +71,11 @@ pub fn calculate_sighash(psbt: &Psbt) -> Result<TapSighash, CalculateSighashErro
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
 
     let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
-    let sighash = sighashcache.taproot_signature_hash(
+    println!("prevouts: {:?}", prevouts);
+    // TODO (armins) input index is hardocded to 0
+    let sighash = sighashcache.taproot_key_spend_signature_hash(
         0,
         &psbt::Prevouts::All(&prevouts),
-        None, // annex
-        None, // leaf_hash_code_separator
         TapSighashType::All,
     )?;
 
