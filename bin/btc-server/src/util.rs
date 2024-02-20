@@ -59,6 +59,15 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error
     Ok(frost_id)
 }
 
+/// Parses an Ethereum address string into a byte array.
+///
+/// # Arguments
+///
+/// * `eth_address` - The Ethereum address string to be parsed.
+///
+/// # Returns
+///
+/// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if successful, or an Error if the parsing fails.
 pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], Error> {
     let eth_addr_vec =
         hex::decode(eth_address).map_err(|_e| Error::BadEthAddress("Failed to decode hex"))?;
@@ -101,5 +110,39 @@ mod tests {
         let peer_id_decoded = deserialize_frost_peer_id(f_bytes.to_vec()).unwrap();
 
         assert_eq!(f, peer_id_decoded);
+    }
+
+    #[test]
+    fn test_parse_eth_address() {
+        // Valid Ethereum address
+        let valid_eth_address = "0123456789abcdef0123456789abcdef01234567".to_string();
+        let result = parse_eth_address(valid_eth_address);
+        assert!(result.is_ok());
+        let parsed_address = result.unwrap();
+        assert_eq!(
+            parsed_address,
+            [
+                1, 35, 69, 103, 137, 171, 205, 239, 1, 35, 69, 103, 137, 171, 205, 239, 1, 35, 69,
+                103
+            ]
+        );
+
+        // Invalid Ethereum address (not enough bytes)
+        let invalid_eth_address = "0123456789abcdef01234567".to_string();
+        let result = parse_eth_address(invalid_eth_address);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            Error::BadEthAddress("Eth address must be 20 bytes").to_string()
+        );
+
+        // Invalid Ethereum address (failed to decode hex)
+        let invalid_eth_address = "0123456789abcdef0123456789abcdef0123456g".to_string();
+        let result = parse_eth_address(invalid_eth_address);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            Error::BadEthAddress("Failed to decode hex").to_string()
+        );
     }
 }
