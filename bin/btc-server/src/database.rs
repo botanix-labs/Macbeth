@@ -81,6 +81,14 @@ impl Db {
         })
     }
 
+    // Temporary function to clear the db
+    pub fn clear(&self) -> Result<(), Error> {
+        self.round1_signing_packages.clear()?;
+        self.round2_signing_packages.clear()?;
+        self.signing_packages.clear()?;
+        Ok(())
+    }
+
     pub fn flush(&self) -> Result<(), Error> {
         self.utxos.flush()?;
         self.db.flush()?;
@@ -189,7 +197,6 @@ impl Db {
         for res in self.round2_signing_packages.iter() {
             let (k, v) = res?;
             let txid = bitcoin::Txid::consensus_decode(&mut k.reader())?;
-            println!("txid: {:?}", txid);
 
             let partial_sig_set = ciborium::from_reader::<
                 BTreeMap<frost::Identifier, frost::round2::SignatureShare>,

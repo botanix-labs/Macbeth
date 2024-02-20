@@ -59,6 +59,20 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error
     Ok(frost_id)
 }
 
+pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], Error> {
+    let eth_addr_vec =
+        hex::decode(eth_address).map_err(|_e| Error::BadEthAddress("Failed to decode hex"))?;
+    if eth_addr_vec.len() != 20 {
+        return Err(Error::BadEthAddress("Eth address must be 20 bytes"));
+    }
+
+    let eth_addr: [u8; 20] = eth_addr_vec
+        .try_into()
+        .map_err(|_e| Error::BadEthAddress("Failed to map eth address to 20 bytes"))?;
+
+    Ok(eth_addr)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
