@@ -44,7 +44,7 @@ message NotifyPeginRequest {
 
 message GetPublicKeyRequest {
     // Eth address to tweak by 
-    bytes eth_address = 1;
+    string eth_address = 1;
 }
 
 message MakeTxRequest {
@@ -97,7 +97,7 @@ message ToSignRequest {
     repeated Output outputs = 1;
     // Fee rate in satoshi per vbyte.
     uint32 fee_rate = 2;
-    bytes eth_address = 3;
+    string   eth_address = 3;
 }
 
 message FinalizeSigningRequest {

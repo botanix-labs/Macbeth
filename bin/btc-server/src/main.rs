@@ -23,6 +23,7 @@ use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, Ou
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
+use util::parse_eth_address;
 
 use std::{
     path::PathBuf,
@@ -93,6 +94,8 @@ pub enum Error {
     FailedToCalculateSighash,
     #[error("Invalid input index")]
     InvalidInputIndex,
+    #[error("Bad eth address {0}")]
+    BadEthAddress(&'static str),
 }
 
 struct App {
@@ -164,15 +167,10 @@ impl rpc::BtcServer for App {
         let txid = req.utxo_txid.parse().map_err(|e| badarg!("bad txid: {}", e))?;
         let outpoint = OutPoint::new(txid, req.utxo_vout);
 
-        let eth_addr_vec =
-            hex::decode(req.eth_address).map_err(|e| badarg!("invalid eth address: {}", e))?;
-        if eth_addr_vec.len() != 20 {
-            return Err(badarg!("invalid eth address"));
-        }
-
-        let eth_addr: [u8; 20] =
-            eth_addr_vec.try_into().map_err(|e| badarg!("invalid eth address: {:?}", e))?;
-
+        let eth_addr = parse_eth_address(req.eth_address).map_err(|e| {
+            error!("Failed to parse eth address: {}", e);
+            badarg!("Failed to parse eth address: {}", e)
+        })?;
         let utxo = Utxo {
             outpoint,
             output: btcencode::deserialize(&req.output)
@@ -212,7 +210,10 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
         let req = req.into_inner();
 
-        let eth_address = req.eth_address;
+        let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
+            error!("Failed to parse eth address: {}", e);
+            badarg!("Failed to parse eth address: {}", e)
+        })?;
 
         let fee_rate =
             FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
@@ -232,7 +233,7 @@ impl rpc::BtcServer for App {
         let outputs = outputs_result?;
 
         let (to_sign, psbt) =
-            self.get_to_sign(&SECP, outputs, fee_rate, Some(eth_address)).map_err(|e| {
+            self.get_to_sign(&SECP, outputs, fee_rate, Some(&eth_address)).map_err(|e| {
                 error!("Failed to get to sign: {}", e);
                 internal!("Failed to get to sign: {}", e)
             })?;
@@ -283,7 +284,11 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::GetPublicKeyRequest>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         let req = req.into_inner();
-        let pk = self.get_public_key(&req.eth_address).map_err(|e| {
+        let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
+            error!("Failed to parse eth address: {}", e);
+            badarg!("Failed to parse eth address: {}", e)
+        })?;
+        let pk = self.get_public_key(&eth_address).map_err(|e| {
             error!("Failed to get public key: {}", e);
             internal!("Failed to get public key: {}", e)
         })?;
@@ -478,6 +483,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
+    use core::panic;
     use std::{process::Stdio, str::FromStr};
 
     use tokio::{
@@ -488,7 +494,7 @@ mod test {
     use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut};
     use client;
 
-    const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
+    const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
     const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
     async fn spawn_server(id: u16, address: &str) -> () {
@@ -544,7 +550,7 @@ mod test {
         // Getting public key should fail
         let pk = c1
             .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-                eth_address: eth_1.as_bytes().to_vec(),
+                eth_address: eth_1.clone(),
             }))
             .await;
         assert!(pk.is_err());
@@ -697,21 +703,21 @@ mod test {
         //// Get the pubkey
         let pk_1 = c1
             .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-                eth_address: eth_1.as_bytes().to_vec(),
+                eth_address: eth_1.clone(),
             }))
             .await
             .unwrap()
             .into_inner();
         let pk_2 = c2
             .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-                eth_address: eth_1.as_bytes().to_vec(),
+                eth_address: eth_1.clone(),
             }))
             .await
             .unwrap()
             .into_inner();
         let pk_3 = c3
             .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-                eth_address: eth_1.as_bytes().to_vec(),
+                eth_address: eth_1.clone(),
             }))
             .await
             .unwrap()
@@ -739,24 +745,25 @@ mod test {
         c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
 
         // Notify peg in
+        let address = reth_btc_wallet::address::gateway_address(
+            &SECP,
+            &bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap(),
+            &eth_1.as_bytes().to_vec(),
+            NETWORK,
+        )
+        .unwrap();
         let prev_out = TxOut {
-            script_pubkey: reth_btc_wallet::address::gateway_address(
-                &SECP,
-                &bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap(),
-                &eth_1.as_bytes().to_vec(),
-                NETWORK,
-            )
-            .unwrap()
-            .script_pubkey(),
-            value: Amount::ONE_BTC.to_sat(),
+            script_pubkey: address.script_pubkey(),
+            value: Amount::from_sat(1000).to_sat(),
         };
+
         let mut prev_out_bytes = Vec::new();
         prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
 
         c3.notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
-            utxo_txid: "c0ea9dc0029bb844a231887655e4b9f80eab4d11804c8af28dd618d073eed7de"
+            utxo_txid: "a6e300c09dc9646b48efe2bf6cdd35bd6e41a277da832029c355dfe202cb1267"
                 .to_string(),
-            utxo_vout: 0,
+            utxo_vout: 1,
             eth_address: eth_1.clone(),
             output: prev_out_bytes,
         }))
@@ -766,12 +773,12 @@ mod test {
         // Get signing package
         let signing_package = c3
             .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
-                fee_rate: 30,
+                fee_rate: 2,
                 outputs: vec![client::Output {
                     address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
-                    value: 100000,
+                    value: 800,
                 }],
-                eth_address: eth_1.clone().as_bytes().to_vec(),
+                eth_address: eth_1.clone(),
             }))
             .await
             .unwrap()

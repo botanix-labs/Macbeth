@@ -54,6 +54,8 @@ fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, Key
     Ok(scalar)
 }
 
+
+// Deprecated
 pub fn tweak_private_key(tweak: &[u8; 32], prv: &SecretKey) -> Result<SecretKey, KeyError> {
     let scalar = generate_tweak_scalar(tweak, &prv.public_key(&SECP))?;
     let tweaked_prv = prv.add_tweak(&scalar)?;

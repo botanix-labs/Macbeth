@@ -11,7 +11,7 @@ impl App {
         // Already have done dkg
         // This function shold error
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage)
+            return Err(Error::AlreadyHaveKeyPackage);
         }
 
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
@@ -26,7 +26,7 @@ impl App {
 
             Ok(round2_packages)
         } else {
-            return Err(Error::MissingRound1DkgPackage)
+            return Err(Error::MissingRound1DkgPackage);
         }
     }
 
@@ -34,18 +34,18 @@ impl App {
         // Already have done dkg
         // This function shold error
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage)
+            return Err(Error::AlreadyHaveKeyPackage);
         }
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
             Ok(round1_dkg.1)
         } else {
-            return Err(Error::MissingRound1DkgPackage)
+            return Err(Error::MissingRound1DkgPackage);
         }
     }
 
     pub(crate) fn add_round2_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage)
+            return Err(Error::AlreadyHaveKeyPackage);
         }
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
@@ -68,12 +68,12 @@ impl App {
                 return Ok(());
             }
         }
-        return Err(Error::InvalidRound2DkgPayloadMissingPackage)
+        return Err(Error::InvalidRound2DkgPayloadMissingPackage);
     }
 
     pub(crate) fn add_round1_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage)
+            return Err(Error::AlreadyHaveKeyPackage);
         }
         let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves

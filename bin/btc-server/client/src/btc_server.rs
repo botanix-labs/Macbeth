@@ -18,8 +18,8 @@ pub struct NotifyPeginRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPublicKeyRequest {
     /// Eth address to tweak by
-    #[prost(bytes = "vec", tag = "1")]
-    pub eth_address: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "1")]
+    pub eth_address: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -101,8 +101,8 @@ pub struct ToSignRequest {
     /// Fee rate in satoshi per vbyte.
     #[prost(uint32, tag = "2")]
     pub fee_rate: u32,
-    #[prost(bytes = "vec", tag = "3")]
-    pub eth_address: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub eth_address: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
