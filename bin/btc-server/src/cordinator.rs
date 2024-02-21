@@ -4,10 +4,7 @@ use crate::{database, rpc, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
 use bitcoin::Transaction;
-use bitcoin::{
-    hashes::Hash, psbt::Psbt, FeeRate, OutPoint,
-    ScriptBuf, TxOut,
-};
+use bitcoin::{hashes::Hash, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
@@ -95,21 +92,7 @@ impl App {
                 .get_tweaked(Some(eth_tweak.as_slice())));
         }
 
-        let round1_packages = self.db.get_round1_dkg_packages()?;
-        let round2_packages = self.db.get_round2_dkg_packages()?;
-        if let Some(round2_secret) = self.frost_round2_dkg.lock().unwrap().clone() {
-            let pk_res =
-                frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)?;
-
-            self.db.set_key_package(pk_res.0.clone())?;
-            self.db.set_pubkey_package(pk_res.1.clone())?;
-            self.db.flush()?;
-            // Keep in mind this pk is tweaked with an empty merkel root as this is
-            // default behavior by the FROST library
-            return Ok(pk_res.1.verifying_key().to_owned().get_tweaked(Some(eth_tweak.as_slice())));
-        } else {
-            return Err(Error::InvalidRound2DkgPayloadMissingPackage);
-        }
+        Err(Error::MissingKeyPackage)
     }
 
     pub(crate) fn make_tx(
