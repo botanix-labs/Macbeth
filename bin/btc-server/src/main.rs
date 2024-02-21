@@ -76,7 +76,7 @@ pub enum Error {
     AlreadyHaveQuorumOfPartialSignatures(),
     #[error("Already have a key package")]
     AlreadyHaveKeyPackage,
-    #[error("Alreadyy performed DKG and have a key package")]
+    #[error("Missing key package, need to perform DKG first")]
     MissingKeyPackage,
     #[error("Missing signing package")]
     MissingSigningPackage,
@@ -484,7 +484,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::{process::Stdio, str::FromStr};
+    use std::{process::Stdio, str::FromStr, vec};
 
     use tokio::{
         io::{self, AsyncBufReadExt},
@@ -493,11 +493,12 @@ mod test {
 
     use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut};
     use client;
+    use tonic::transport::{channel, Channel};
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
     const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
-    async fn spawn_server(id: u16, address: &str) -> () {
+    async fn spawn_server(id: u16, address: String) -> () {
         let working_directory = std::env::current_dir().unwrap();
 
         let identifier = id.to_string();
@@ -514,7 +515,7 @@ mod test {
             "--identifier",
             identifier.as_str(),
             "--address",
-            address,
+            address.as_str(),
         ];
 
         // Create a Command instance and set the working directory
@@ -531,21 +532,96 @@ mod test {
         }
     }
 
+    fn clean_db(max: u16) {
+        for i in 0..max {
+            let db_name = format!("db_{}", i);
+            std::fs::remove_dir_all(db_name).unwrap();
+        }
+    }
+
+    fn spawn_n_servers(n: u16) -> Vec<tokio::task::JoinHandle<()>> {
+        let mut tasks = vec![];
+        for i in 0..n {
+            let task = tokio::spawn(spawn_server(i, format!("0.0.0.0:{}", 8080 + i)));
+            tasks.push(task);
+        }
+        tasks
+    }
+
+    async fn do_dkg(clients: &mut Vec<client::BtcServerClient<Channel>>) {
+        // Round 1 dkg
+        let mut round1_packages = vec![];
+        for c in clients.iter_mut() {
+            let p = c
+                .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
+                .await
+                .unwrap()
+                .into_inner();
+            round1_packages.push(p);
+        }
+
+        // Ensure all packages have correct props
+        for p in round1_packages.iter() {
+            assert_eq!(p.identifier.len(), 32);
+            assert_eq!(p.payload.len(), 138);
+        }
+        // Send each package to all other clients
+        for (i, c) in clients.iter_mut().enumerate() {
+            for (j, p) in round1_packages.iter().enumerate() {
+                if i != j {
+                    c.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
+                        identifier: p.identifier.clone(),
+                        payload: p.payload.clone(),
+                    }))
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+        // Round 2 dkg
+        let mut round2_packages = vec![];
+        for c in clients.iter_mut() {
+            let p = c
+                .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
+                .await
+                .unwrap()
+                .into_inner();
+            round2_packages.push(p);
+        }
+        // Ensure all packages have correct props
+        // Not much to assert here, we can check the lenght of the ids
+        for p in round2_packages.iter() {
+            assert_eq!(p.identifier.len(), 32);
+        }
+
+        // Send round 2 dkg packages to each respective participant
+        for (i, c) in clients.iter_mut().enumerate() {
+            for (j, p) in round2_packages.iter().enumerate() {
+                if i != j {
+                    c.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+                        identifier: p.identifier.clone(),
+                        payload: p.payload.clone(),
+                    }))
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     pub async fn dkg_flow() {
         let SECP = bitcoin::secp256k1::Secp256k1::new();
         let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
-        tokio::spawn(spawn_server(0, "0.0.0.0:8080"));
-        tokio::spawn(spawn_server(1, "0.0.0.0:8081"));
-        // Cordinator node
-        // They will also be part of the dkg but will serve as a cordinator during signing rounds
-        tokio::spawn(spawn_server(2, "0.0.0.0:8082"));
+        let tasks = spawn_n_servers(3);
 
         // let servers come up
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
         let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
         let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
+
+        let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
 
         // Getting public key should fail
         let pk = c1
@@ -558,148 +634,11 @@ mod test {
         assert_eq!(err.code(), tonic::Code::Internal);
         assert_eq!(
             err.message(),
-            "Failed to get public key: Invalid round 2 Dkg payload, missing our package"
+            "Failed to get public key: Missing key package, need to perform DKG first"
         );
 
-        // Round 1 dkg
-        let c1_dkg1 = c1
-            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        let c2_dkg1 = c2
-            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        let c3_dkg1 = c3
-            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        assert_eq!(c1_dkg1.identifier.len(), 32);
-        assert_eq!(c1_dkg1.payload.len(), 138);
-
-        assert_eq!(c2_dkg1.identifier.len(), 32);
-        assert_eq!(c2_dkg1.payload.len(), 138);
-
-        assert_eq!(c3_dkg1.identifier.len(), 32);
-        assert_eq!(c3_dkg1.payload.len(), 138);
-
-        // Send round 1 dkg to c1
-        c1.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c2_dkg1.identifier.clone(),
-            payload: c2_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-        c1.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c3_dkg1.identifier.clone(),
-            payload: c3_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        // Send round 1 dkg to c2
-        c2.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c1_dkg1.identifier.clone(),
-            payload: c1_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        c2.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c3_dkg1.identifier.clone(),
-            payload: c3_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        // Send round 1 dkg to c3
-        c3.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c1_dkg1.identifier.clone(),
-            payload: c1_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        c3.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c2_dkg1.identifier.clone(),
-            payload: c2_dkg1.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        // Round 2
-        let c1_dkg2 = c1
-            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        let c2_dkg2 = c2
-            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        let c3_dkg2 = c3
-            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-
-        assert_eq!(c1_dkg2.identifier.len(), 32);
-        assert_eq!(c2_dkg2.identifier.len(), 32);
-        assert_eq!(c3_dkg2.identifier.len(), 32);
-        // TODO should we have assertion for the payload?
-        // Send round 2 dkg to c1
-        c1.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c2_dkg2.identifier.clone(),
-            payload: c2_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        c1.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c3_dkg2.identifier.clone(),
-            payload: c3_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        // Send round 2 dkg to c2
-        c2.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c1_dkg2.identifier.clone(),
-            payload: c1_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        c2.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c3_dkg2.identifier.clone(),
-            payload: c3_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        // Send round 2 dkg to c3
-        c3.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c1_dkg2.identifier.clone(),
-            payload: c1_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
-
-        c3.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-            identifier: c2_dkg2.identifier.clone(),
-            payload: c2_dkg2.payload.clone(),
-        }))
-        .await
-        .unwrap();
+        do_dkg(&mut clients).await;
+        // After dkg we should be able to the dkg
         //// Get the pubkey
         let pk_1 = c1
             .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
@@ -728,6 +667,44 @@ mod test {
         assert_eq!(pk_1.publickey, pk_3.publickey);
         assert_eq!(pk_2.publickey, pk_3.publickey);
 
+        // Ensure all pks can be serialized as secp public keys
+        let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_1.publickey).unwrap();
+        let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_2.publickey).unwrap();
+        let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap();
+       
+        // Test clean up
+        for task in tasks {
+            task.abort();
+        }
+        // Remove db dirs
+        clean_db(3);
+    }
+
+    #[tokio::test]
+    async fn test_one_input_signing() {
+        let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
+        let tasks = spawn_n_servers(3);
+
+        // let servers come up
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
+        let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
+        let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
+
+        let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
+
+        do_dkg(&mut clients).await;
+        // get the aggregate pk from any of the clients
+        let pk = c1
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.clone(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+
         // Round 1 signing
         let c1_signing1 = c1
             .get_round1_signing_package(tonic::Request::new(client::Empty {}))
@@ -747,7 +724,7 @@ mod test {
         // Notify peg in
         let address = reth_btc_wallet::address::gateway_address(
             &SECP,
-            &bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap(),
+            &bitcoin::secp256k1::PublicKey::from_str(&pk.publickey).unwrap(),
             &eth_1.as_bytes().to_vec(),
             NETWORK,
         )
@@ -816,9 +793,11 @@ mod test {
         println!("finalized: {:?}", finalized);
 
         // Test clean up
+        for task in tasks {
+            task.abort();
+        }
         // Remove db dirs
-        std::fs::remove_dir_all("db_0").unwrap();
-        std::fs::remove_dir_all("db_1").unwrap();
-        std::fs::remove_dir_all("db_2").unwrap();
+        clean_db(3);
     }
+
 }
