@@ -86,6 +86,8 @@ pub enum Error {
     MissingRound1SigningNonce,
     #[error("Missing round 2 signing package")]
     MissingRound2SigningPackage,
+    #[error("Invalid signing package {0}")]
+    InvalidSigningPackage(&'static str),
     #[error("Missing round 1 dkg package")]
     MissingRound1DkgPackage,
     #[error("io error: {0}")]
@@ -96,6 +98,10 @@ pub enum Error {
     InvalidInputIndex,
     #[error("Bad eth address {0}")]
     BadEthAddress(&'static str),
+    #[error("Signing session already in progress")]
+    AlreadyInSigningSession,
+    #[error("Invalid signing session id")]
+    InvalidSigningSessionId,
 }
 
 struct App {
@@ -111,9 +117,10 @@ struct App {
     min_signers: u16,
     frost_round1_dkg:
         Option<(frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package)>,
-
     frost_round2_dkg: Arc<Mutex<Option<frost::keys::dkg::round2::SecretPackage>>>,
-    frost_round1_signing_nonces: Arc<Mutex<Option<frost::round1::SigningNonces>>>,
+    /// The signing nonces for the current signing session
+    /// We will replace this value in the case of a new signing session
+    frost_round1_signing_nonces: Arc<Mutex<Option<Vec<frost::round1::SigningNonces>>>>,
 }
 
 impl App {
@@ -185,15 +192,20 @@ impl rpc::BtcServer for App {
 
     async fn finalize_signing(
         &self,
-        payload: tonic::Request<rpc::FinalizeSigningRequest>,
+        req: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
-        let mut psbt = Psbt::deserialize(&payload.into_inner().psbt.as_slice()).map_err(|e| {
+        let req = req.into_inner();
+        let mut psbt = Psbt::deserialize(&req.psbt.as_slice()).map_err(|e| {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
 
-        // TODO (armins) inputs indecies should get saved on teh signing package
-        let tx = self.finalize_signing(&SECP, &mut psbt, 0).map_err(|e| {
+        let tx = self.finalize_signing(&SECP, &mut psbt, &signing_session_id).map_err(|e| {
             error!("Failed to finalize signing: {}", e);
             internal!("Failed to finalize signing: {}", e)
         })?;
@@ -209,11 +221,11 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::ToSignRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
         let req = req.into_inner();
-
-        let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
-            error!("Failed to parse eth address: {}", e);
-            badarg!("Failed to parse eth address: {}", e)
-        })?;
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
 
         let fee_rate =
             FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
@@ -233,7 +245,7 @@ impl rpc::BtcServer for App {
         let outputs = outputs_result?;
 
         let (to_sign, psbt) =
-            self.get_to_sign(&SECP, outputs, fee_rate, Some(&eth_address)).map_err(|e| {
+            self.get_to_sign(outputs, fee_rate, &signing_session_id).map_err(|e| {
                 error!("Failed to get to sign: {}", e);
                 internal!("Failed to get to sign: {}", e)
             })?;
@@ -243,14 +255,14 @@ impl rpc::BtcServer for App {
             internal!("Failed to serialize psbt: {}", e)
         })?;
         let res = tonic::Response::new(rpc::SignPayload {
-            payload: to_sign
-                .serialize()
+            payload: serde_json::to_vec(&to_sign)
                 .map_err(|e| {
                     error!("Failed to serialize signing package: {}", e);
                     internal!("Failed to serialize signing package: {}", e)
                 })?
                 .to_vec(),
             psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
         });
         Ok(res)
     }
@@ -259,10 +271,27 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round1SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.add_round1_signing(req.into_inner()).map_err(|e| {
-            error!("Failed to add round1 signing: {}", e);
-            badarg!("Failed to add round1 signing")
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
+            error!("Failed to parse frost peer id: {}", e);
+            badarg!("Failed to parse frost peer id: {}", e)
         })?;
+        let signing_commitments = serde_json::from_slice(&req.payload.as_slice()).map_err(|e| {
+            error!("Failed to deserialize signing commitments: {}", e);
+            badarg!("Failed to deserialize signing commitments: {}", e)
+        })?;
+
+        self.add_round1_signing(&signing_session_id, frost_id, signing_commitments).map_err(
+            |e| {
+                error!("Failed to add round1 signing: {}", e);
+                badarg!("Failed to add round1 signing")
+            },
+        )?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -271,9 +300,26 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round2SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.add_round2_signing(req.into_inner()).map_err(|e| {
-            error!("Failed to add round1 signing: {}", e);
-            badarg!("Failed to add round1 signing")
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
+            error!("Failed to parse frost peer id: {}", e);
+            badarg!("Failed to parse frost peer id: {}", e)
+        })?;
+
+        let signature_shares: Vec<frost::round2::SignatureShare> =
+            serde_json::from_slice(&req.payload.as_slice()).map_err(|e| {
+                error!("Failed to deserialize signature share: {}", e);
+                badarg!("Failed to deserialize signature share: {}", e)
+            })?;
+
+        self.add_round2_signing(&signing_session_id, frost_id, signature_shares).map_err(|e| {
+            error!("Failed to add round2 signing: {}", e);
+            badarg!("Failed to add round2 signing")
         })?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
@@ -365,18 +411,30 @@ impl rpc::BtcServer for App {
     /// Endpoint responds with a nonce commitments for a ONE particular signings session
     async fn get_round1_signing_package(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Round1SigningPackageRequest>,
     ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
-        let signing_commitments = self.get_round1_signing_package().map_err(|e| {
-            error!("Failed to get round1 signing package: {}", e);
-            internal!("Failed to get round1 signing package: {}", e)
-        })?;
-        let res = rpc::Round1SigningPackage {
-            identifier: self.identifier.serialize().to_vec(),
-            payload: signing_commitments.serialize().map_err(|e| {
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let signing_commitments = self
+            .get_round1_signing_package(req.number_of_inputs, &signing_session_id)
+            .map_err(|e| {
+                error!("Failed to get round1 signing package: {}", e);
+                internal!("Failed to get round1 signing package: {}", e)
+            })?;
+        let signings_commitments_serialized =
+            serde_json::to_vec(&signing_commitments).map_err(|e| {
                 error!("Failed to serialize round1 signing package: {}", e);
                 internal!("Failed to serialize round1 signing package: {}", e)
-            })?,
+            })?;
+
+        let res = rpc::Round1SigningPackage {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: signings_commitments_serialized,
+            signing_session_id: signing_session_id.to_vec(),
         };
 
         Ok(tonic::Response::new(res))
@@ -387,17 +445,22 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::SignPayload>,
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
         let req = req.into_inner();
-        let mut signing_package = frost::SigningPackage::deserialize(req.payload.as_slice())
-            .map_err(|e| {
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let mut signing_packages =
+            serde_json::from_slice(&req.payload.as_slice()).map_err(|e| {
                 error!("Failed to deserialize signing package: {}", e);
-                internal!("Failed to deserialize signing package: {}", e)
+                badarg!("Failed to deserialize signing package: {}", e)
             })?;
         let psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
             error!("Failed to deserialize psbt: {}", e);
             internal!("Failed to deserialize psbt: {}", e)
         })?;
         let partial_signature =
-            self.get_round2_signing_package(&mut signing_package, psbt.clone()).map_err(|e| {
+            self.get_round2_signing_package(&mut signing_packages, &psbt).map_err(|e| {
                 error!("Failed to get round2 signing package: {}", e);
                 internal!("Failed to get round2 signing package: {}", e)
             })?;
@@ -407,10 +470,15 @@ impl rpc::BtcServer for App {
         })?;
 
         // TODO (armins) Should we add partial sig to psbt
+        let partial_sigs_serialized = serde_json::to_vec(&partial_signature).map_err(|e| {
+            error!("Failed to serialize partial signature: {}", e);
+            internal!("Failed to serialize partial signature: {}", e)
+        })?;
         let res = rpc::Round2SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
-            payload: partial_signature.serialize().to_vec(),
+            payload: partial_sigs_serialized,
             psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
         };
 
         Ok(tonic::Response::new(res))
@@ -492,6 +560,7 @@ mod test {
     use core::panic;
     use std::{process::Stdio, str::FromStr, vec};
 
+    use rand::random;
     use tokio::{
         io::{self, AsyncBufReadExt},
         process::Command,
@@ -615,6 +684,39 @@ mod test {
         }
     }
 
+    async fn send_pegin_notification(
+        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
+        client: &mut client::BtcServerClient<Channel>,
+        eth_address: String,
+        pk: String,
+    ) {
+        let address = reth_btc_wallet::address::gateway_address(
+            &secp,
+            &bitcoin::secp256k1::PublicKey::from_str(&pk).unwrap(),
+            &eth_address.as_bytes().to_vec(),
+            NETWORK,
+        )
+        .unwrap();
+        let prev_out = TxOut {
+            script_pubkey: address.script_pubkey(),
+            value: Amount::from_sat(1000).to_sat(),
+        };
+
+        let mut prev_out_bytes = Vec::new();
+        prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
+        // Get a random 32 bytes
+        let txid = rand::random::<[u8; 32]>();
+        let res = client
+            .notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
+                eth_address,
+                utxo_txid: hex::encode(txid),
+                utxo_vout: 1,
+                output: prev_out_bytes,
+            }))
+            .await;
+        assert!(res.is_ok());
+    }
+
     #[tokio::test]
     pub async fn dkg_flow() {
         let SECP = bitcoin::secp256k1::Secp256k1::new();
@@ -677,7 +779,7 @@ mod test {
         let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_1.publickey).unwrap();
         let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_2.publickey).unwrap();
         let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).unwrap();
-       
+
         // Test clean up
         for task in tasks {
             task.abort();
@@ -689,6 +791,7 @@ mod test {
     #[tokio::test]
     async fn test_one_input_signing() {
         let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let signing_session_id = [0u8; 32];
         let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         let tasks = spawn_n_servers(3);
 
@@ -710,16 +813,21 @@ mod test {
             .unwrap()
             .into_inner();
 
-
         // Round 1 signing
         let c1_signing1 = c1
-            .get_round1_signing_package(tonic::Request::new(client::Empty {}))
+            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+                number_of_inputs: 1,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
             .await
             .unwrap()
             .into_inner();
 
         let c2_signing1 = c2
-            .get_round1_signing_package(tonic::Request::new(client::Empty {}))
+            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+                number_of_inputs: 1,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
             .await
             .unwrap()
             .into_inner();
@@ -728,27 +836,27 @@ mod test {
         c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
 
         // Notify peg in
-        let address = reth_btc_wallet::address::gateway_address(
+        let address1 = reth_btc_wallet::address::gateway_address(
             &SECP,
             &bitcoin::secp256k1::PublicKey::from_str(&pk.publickey).unwrap(),
             &eth_1.as_bytes().to_vec(),
             NETWORK,
         )
         .unwrap();
-        let prev_out = TxOut {
-            script_pubkey: address.script_pubkey(),
+        let prev_out1 = TxOut {
+            script_pubkey: address1.script_pubkey(),
             value: Amount::from_sat(1000).to_sat(),
         };
 
-        let mut prev_out_bytes = Vec::new();
-        prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
+        let mut prev_out_bytes1 = Vec::new();
+        prev_out1.consensus_encode(&mut prev_out_bytes1).unwrap();
 
         c3.notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
-            utxo_txid: "a6e300c09dc9646b48efe2bf6cdd35bd6e41a277da832029c355dfe202cb1267"
+            utxo_txid: "96e7187b4fb26f2d5c1699235ce1702dc373c009063da45aadca41bd85a866f6"
                 .to_string(),
             utxo_vout: 1,
             eth_address: eth_1.clone(),
-            output: prev_out_bytes,
+            output: prev_out_bytes1,
         }))
         .await
         .unwrap();
@@ -761,18 +869,18 @@ mod test {
                     address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
                     value: 800,
                 }],
-                eth_address: eth_1.clone(),
+                signing_session_id: signing_session_id.to_vec(),
             }))
             .await
             .unwrap()
             .into_inner();
-        println!("signing package: {:?}", signing_package);
 
         // Round 2 signing
         let c1_signing2 = c1
             .get_round2_signing_package(tonic::Request::new(client::SignPayload {
                 payload: signing_package.clone().payload,
                 psbt: signing_package.clone().psbt,
+                signing_session_id: signing_session_id.to_vec(),
             }))
             .await
             .unwrap()
@@ -782,6 +890,7 @@ mod test {
             .get_round2_signing_package(tonic::Request::new(client::SignPayload {
                 payload: signing_package.clone().payload,
                 psbt: signing_package.clone().psbt,
+                signing_session_id: signing_session_id.to_vec(),
             }))
             .await
             .unwrap()
@@ -792,7 +901,10 @@ mod test {
 
         let psbt = signing_package.clone().psbt;
         let finalized = c3
-            .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest { psbt }))
+            .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
             .await
             .unwrap();
 
@@ -806,4 +918,120 @@ mod test {
         clean_db(3);
     }
 
+    #[tokio::test]
+    async fn test_many_inputs_signing() {
+        let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
+        let eth_2 = "3C44CdDdB6a900fa2b585dd299e03d12FA4293BC".to_string();
+        let signing_session_id = [0u8; 32];
+
+        let tasks = spawn_n_servers(3);
+
+        // let servers come up
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
+        let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
+        let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
+
+        let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
+
+        do_dkg(&mut clients).await;
+        // get the aggregate pk from any of the clients
+        let pk1 = c1
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_1.clone(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let pk2 = c1
+            .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+                eth_address: eth_2.clone(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        // Round 1 signing
+        let c1_signing1 = c1
+            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+                number_of_inputs: 2,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let c2_signing1 = c2
+            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+                number_of_inputs: 2,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
+        c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
+
+        // Notify peg ins
+        send_pegin_notification(&SECP, &mut c3, eth_1.clone(), pk1.publickey.clone()).await;
+        send_pegin_notification(&SECP, &mut c3, eth_2.clone(), pk2.publickey.clone()).await;
+
+        // Get signing package
+        let signing_package = c3
+            .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+                fee_rate: 2,
+                outputs: vec![client::Output {
+                    address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+                    // Make sure to provide a value great than the value of one pegin (1000 sats)
+                    value: 1200,
+                }],
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        // Round 2 signing
+        let c1_signing2 = c1
+            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+                payload: signing_package.clone().payload,
+                psbt: signing_package.clone().psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let c2_signing2 = c2
+            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+                payload: signing_package.clone().payload,
+                psbt: signing_package.clone().psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
+        c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
+
+        let psbt = signing_package.clone().psbt;
+        let finalized = c3
+            .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            }))
+            .await
+            .unwrap();
+
+        // Test clean up
+        for task in tasks {
+            task.abort();
+        }
+        // Remove db dirs
+        clean_db(3);
+    }
 }
