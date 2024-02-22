@@ -1,5 +1,5 @@
 use crate::Error;
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt, OutPoint, TxOut};
 use frost_secp256k1_tr as frost;
 
 /// Extension trait for OutPoint.
@@ -80,6 +80,15 @@ pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], Error> {
         .map_err(|_e| Error::BadEthAddress("Failed to map eth address to 20 bytes"))?;
 
     Ok(eth_addr)
+}
+
+pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Error> {
+    if session_id.len() != 32 {
+        return Err(Error::InvalidSigningSessionId);
+    }
+    let mut session_id_array = [0u8; 32];
+    session_id_array.copy_from_slice(&session_id);
+    Ok(session_id_array)
 }
 
 #[cfg(test)]

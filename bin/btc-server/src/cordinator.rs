@@ -1,80 +1,71 @@
+use std::collections::BTreeMap;
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{database, rpc, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
-use bitcoin::Transaction;
+use bitcoin::consensus::Encodable;
 use bitcoin::{hashes::Hash, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{psbt, Transaction};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 impl App {
-    pub(crate) fn add_round2_signing(
+    pub(crate) fn add_round1_signing(
         &self,
-        payload: rpc::Round2SigningPackage,
+        signing_session_id: &[u8; 32],
+        frost_id: frost::Identifier,
+        signing_commitments: Vec<frost::round1::SigningCommitments>,
     ) -> Result<(), Error> {
         self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
         }
 
-        let signature_share: [u8; 32] = payload.payload.as_slice().try_into().map_err(|e| {
-            error!("Failed to deserialize round2 signing payload: {}", e);
-            Error::InvalidRound2SigningPayload()
-        })?;
-
-        let partial_sig = frost::round2::SignatureShare::deserialize(signature_share)
-            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
-
-        // Checks if we have enough partial signatures
-        let partial_sigs = self.db.get_round2_signing_packages().map_err(Error::Db)?;
-        if partial_sigs.len() >= self.min_signers as usize {
-            return Err(Error::AlreadyHaveQuorumOfPartialSignatures());
-        }
-
-        let psbt = Psbt::deserialize(payload.psbt.as_slice()).map_err(|e| {
-            error!("Failed to deserialize psbt: {}", e);
-            Error::PbstError(e)
-        })?;
-        let txid = psbt.extract_tx().txid();
-
-        if self.db.add_round2_signing(txid, frost_id, partial_sig).map_err(Error::Db)? {
+        // Note: There doesn't need to be a check for a quorum of round1 signing packages
+        // The more the better in the case one is unresponsive
+        // the frost lib will check if we have enough when we create the signing package
+        if self
+            .db
+            .add_round1_signing(&signing_session_id, frost_id, signing_commitments.clone())
+            .map_err(Error::Db)?
+        {
             self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round2 signing from peer: {:?}", frost_id);
+            debug!("Stored round1 signing from peer: {:?}", frost_id);
         } else {
-            warn!("Duplicate round2 signing from peer: {:?}", frost_id);
+            warn!("Duplicate round1 signing from peer: {:?}", frost_id);
         }
 
         Ok(())
     }
 
-    pub(crate) fn add_round1_signing(
+    pub(crate) fn add_round2_signing(
         &self,
-        payload: rpc::Round1SigningPackage,
+        signing_session_id: &[u8; 32],
+        frost_id: frost::Identifier,
+        partial_sigs: Vec<frost::round2::SignatureShare>,
     ) -> Result<(), Error> {
         self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
         }
 
-        let signing_round1 =
-            frost::round1::SigningCommitments::deserialize(payload.payload.as_slice())
-                .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
+        // Checks if we have enough partial signatures
+        let existing_sigs =
+            self.db.get_round2_signing_packages(signing_session_id).map_err(Error::Db)?;
 
-        // Note: There doesn't need to be a check for a quorum of round1 signing packages
-        // The more the better in the case one is unresponsive
-        // the frost lib will check if we have enough when we create the signing package
-
-        if self.db.add_round1_signing(frost_id, signing_round1).map_err(Error::Db)? {
+        if self
+            .db
+            .add_round2_signing(signing_session_id, &frost_id, &partial_sigs)
+            .map_err(Error::Db)?
+        {
             self.db.flush().map_err(Error::Db)?;
-            debug!("Stored round1 signing from peer: {:?}", frost_id);
+            debug!("Stored round2 signing from peer: {:?}", frost_id);
         } else {
-            warn!("Duplicate round1 signing from peer: {:?}", frost_id);
+            warn!("Duplicate round2 signing from peer: {:?}", frost_id);
         }
 
         Ok(())
@@ -223,14 +214,12 @@ impl App {
 
     pub(crate) fn get_to_sign(
         &self,
-        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
-        // eth address tweak
-        additional_tweak: Option<&[u8; 20]>,
-    ) -> Result<(frost::SigningPackage, Psbt), Error> {
+        signing_session_id: &[u8; 32],
+    ) -> Result<(Vec<frost::SigningPackage>, Psbt), Error> {
         let pk_package = self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
-        let signing_commitments = self.db.get_round1_signing_packages()?;
+        let signing_commitments = self.db.get_round1_signing_packages(&signing_session_id)?;
         if signing_commitments.len() < self.min_signers as usize {
             return Err(Error::NotEnoughSigners);
         }
@@ -238,27 +227,35 @@ impl App {
         let pk = hex::encode(pk_package.verifying_key().serialize());
         let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
         let change_script = reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk);
-
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
-        let txid = psbt.clone().extract_tx().txid();
 
-        let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt).map_err(|e| {
-            error!("Failed to calculate sighash: {}", e);
-            Error::FailedToCalculateSighash
-        })?;
+        // signers need to sign for each input individually
+        let mut signing_packages = Vec::new();
+        for (index, _input) in psbt.inputs.iter().enumerate() {
+            let sighash =
+                reth_btc_wallet::transaction::calculate_sighash(&psbt, index).map_err(|e| {
+                    error!("Failed to calculate sighash: {}", e);
+                    Error::FailedToCalculateSighash
+                })?;
+            // Get the signing commitments for just this input
+            let mut sc = BTreeMap::new();
+            for (frost_id, signing_commitment) in signing_commitments.iter() {
+                sc.insert(
+                    *frost_id,
+                    signing_commitment.get(index).ok_or(Error::NotEnoughSigners)?.clone(),
+                );
+            }
+            let signing_package =
+                frost::SigningPackage::new(sc, sighash.to_raw_hash().to_byte_array().as_slice());
+            // Note that the tweaks should be explicitly verified by the signers before signing
+            // Instead we can add it to the psbt as a proprietary field for each input
+            // Lastly save this to sign package to the db
+            signing_packages.push(signing_package);
+        }
 
-        let mut signing_package = frost::SigningPackage::new(
-            signing_commitments,
-            sighash.to_raw_hash().to_byte_array().as_slice(),
-        );
-        // The tweak is not added here to the signing package b/c
-        // 1. it does not get serialized
-        // 2. the tweak should be explicitly verified by the signers before signing
-        // Instead we can add it to the psbt as a proprietary field for each input
-
-        // Lastly save this to sign package to the db
-        self.db.add_signing_package(txid, signing_package.clone())?;
-        Ok((signing_package, psbt))
+        self.db.add_signing_package(signing_session_id, signing_packages.clone())?;
+        self.db.flush()?;
+        Ok((signing_packages, psbt))
     }
 
     /// Retruns finalized and ready to braodcast tx
@@ -266,52 +263,59 @@ impl App {
         &self,
         secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         psbt: &mut Psbt,
-        input_index: usize,
+        signing_session_id: &[u8; 32],
     ) -> Result<Transaction, Error> {
-        let txid = psbt.clone().extract_tx().txid();
+        let tx = psbt.clone().extract_tx();
         let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
+        let partial_sigs = self.db.get_round2_signing_packages(signing_session_id)?;
+        // Check that the inputs match the number of partial sigs
+        if tx.input.len() != partial_sigs.len() {
+            // TODO(armins) better error variant
+            return Err(Error::InvalidSigningPackage("Number of inputs does not match"));
+        }
+        // Get signing packages for this signing session
+        let signing_packages = self.db.get_signing_package(signing_session_id)?;
 
-        let partial_sigs = self
-            .db
-            .get_round2_signing_package_txid(txid)?
-            .ok_or(Error::MissingRound2SigningPackage)?;
+        if signing_packages.len() != tx.input.len() {
+            return Err(Error::InvalidSigningPackage(
+                "Number of inputs does not match signing packages",
+            ));
+        }
 
-        // TODO need to check optiop b/c change outputs are not tweaked
-        let eth_tweak = psbt
-            .inputs
-            .get(0)
-            .unwrap()
-            .proprietary
-            .get(&reth_btc_wallet::transaction::ETH_ADDRESS_FIELD)
-            .unwrap();
+        for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
+            let mut signing_package = signing_packages.get(index).expect("valid index").clone();
+            let eth_tweak =
+                psbt_input.unknown.get(&psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] });
+            if let Some(e) = eth_tweak {
+                signing_package.set_addtional_tweak(e.clone());
+            };
+            let partial_sig = partial_sigs.get(index).expect("valid index");
+            let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
 
-        let mut signing_package =
-            self.db.get_signing_package(txid)?.ok_or(Error::MissingSigningPackage)?;
+            // Skipping first byte which is encoding the parity of the y cord of R
+            // We only use x-only elements. So we can skip this byte. FROST library only produces x-only keys / points
+            // TODO (armins) remove the unwrap here
+            let secp_sig =
+                bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..])
+                    .unwrap();
 
-        // TODO(armins) probably can remove this as its serialized in the signing package
-        signing_package.set_addtional_tweak(eth_tweak.clone());
-
-        let agg_sig = frost::aggregate(&signing_package, &partial_sigs, &pk_package)?;
-        // Skipping first byte which is encoding the parity of the y cord of R
-        // We only use x-only elements. So we can skip this byte. FROST library only produces x-only keys / points
-        let secp_sig =
-            bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..]).unwrap();
-
-        // Verify signature -- redundant check
-        pk_package.verifying_key().verify(
-            signing_package.message(),
-            &agg_sig,
-            Some(&eth_tweak.clone().as_slice()),
-        )?;
-
-        // Note: we don't need to add the internal key here for a key spend path
-        // as the output key is derived from the scriptpubkey
-        let hash_ty = bitcoin::sighash::TapSighashType::All;
-        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
-        psbt.inputs.get_mut(0).unwrap().sighash_type = Some(sighash_type);
-        psbt.inputs.get_mut(0).unwrap().tap_key_sig =
-            Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
-
+            // Verify signature -- redundant check finalize psbt already checks this
+            if let Some(e) = eth_tweak {
+                pk_package.verifying_key().verify(
+                    signing_package.message(),
+                    &agg_sig,
+                    Some(&e.clone().as_slice()),
+                )?;
+            } else {
+                pk_package.verifying_key().verify(signing_package.message(), &agg_sig, None)?;
+            }
+            // Note: we don't need to add the internal key here for a key spend path
+            // as the output key is derived from the scriptpubkey
+            let hash_ty = bitcoin::sighash::TapSighashType::All;
+            let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
+            psbt_input.sighash_type = Some(sighash_type);
+            psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
+        }
         if let Err(errs) = psbt.finalize_mut(secp) {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
@@ -323,7 +327,6 @@ impl App {
         // want to do the effort of tx verification
         // let tx = psbt.clone().extract_tx();
         let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
-        println!("Finalized tx: {:?}", tx);
 
         Ok(tx)
     }

@@ -61,11 +61,22 @@ pub struct DkgPayload {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Round1SigningPackageRequest {
+    #[prost(uint32, tag = "1")]
+    pub number_of_inputs: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Round1SigningPackage {
     #[prost(bytes = "vec", tag = "1")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
+    /// This is Vec<frost::round1::SigningCommitments>
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -74,16 +85,22 @@ pub struct Round2SigningPackage {
     pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
+    /// This is a Vec<frost::round2::SignatureShare>
     #[prost(bytes = "vec", tag = "3")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignPayload {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
+    /// This is Vec<frost::SigningPackages>
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -101,14 +118,16 @@ pub struct ToSignRequest {
     /// Fee rate in satoshi per vbyte.
     #[prost(uint32, tag = "2")]
     pub fee_rate: u32,
-    #[prost(string, tag = "3")]
-    pub eth_address: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSigningRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -153,7 +172,7 @@ pub mod btc_server_server {
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn get_round1_signing_package(
             &self,
-            request: tonic::Request<super::Empty>,
+            request: tonic::Request<super::Round1SigningPackageRequest>,
         ) -> std::result::Result<
             tonic::Response<super::Round1SigningPackage>,
             tonic::Status,
@@ -536,7 +555,9 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetRound1SigningPackage" => {
                     #[allow(non_camel_case_types)]
                     struct GetRound1SigningPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::Round1SigningPackageRequest>
                     for GetRound1SigningPackageSvc<T> {
                         type Response = super::Round1SigningPackage;
                         type Future = BoxFuture<
@@ -545,7 +566,7 @@ pub mod btc_server_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>,
+                            request: tonic::Request<super::Round1SigningPackageRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
