@@ -1,7 +1,15 @@
-use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
+use std::{
+    array::TryFromSliceError,
+    collections::BTreeMap,
+    io::{self, Read},
+    path::Path,
+};
 
 use crate::util::OutPointExt;
-use bitcoin::{consensus::Decodable, OutPoint, TxOut, Txid};
+use bitcoin::{
+    consensus::{Decodable, Encodable},
+    OutPoint, TxOut, Txid,
+};
 use ciborium;
 use frost_secp256k1_tr as frost;
 use prost::bytes::Buf;
@@ -51,18 +59,22 @@ pub struct Db {
 
     /// A tree of round 1 signing commitments
     ///
-    /// Indexed by txid
+    /// Indexed by signing_session_id
+    /// Values are a map of peer_id -> Vec<round1::SigningCommitments>
+    /// Where each Vec is a list of commitments for each input of the transaction
     /// Only relevant for the coordinator
     round1_signing_packages: sled::Tree,
 
     /// A tree of round 2 partial signatures
     ///
-    /// Indexed by txid
+    /// Indexed by signing_session_id
+    /// Values are a map of peer_id -> Vec<round2::SignatureShare>
+    /// Where each Vec is a list of partial signatures for each input of the transaction
     /// Only relevant for the coordinator
     round2_signing_packages: sled::Tree,
 
     // A tree of signing packages
-    // Indexed by txid
+    // Indexed by outpoint
     // Only relevant for the coordinator
     signing_packages: sled::Tree,
 }
@@ -102,123 +114,154 @@ impl Db {
 
     pub fn add_signing_package(
         &self,
-        txid: Txid,
-        signing_package: frost::SigningPackage,
+        signing_session_id: &[u8; 32],
+        signing_packages: Vec<frost::SigningPackage>,
     ) -> Result<bool, Error> {
-        if self.signing_packages.contains_key(&txid[..])? {
+        if self.signing_packages.contains_key(&signing_session_id[..])? {
             return Ok(false);
         }
 
         let mut bytes = Vec::new();
-        ciborium::into_writer(&signing_package, &mut bytes).expect("writing to buffer");
-        self.signing_packages.insert(&txid[..], &bytes[..])?;
+        ciborium::into_writer(&signing_packages, &mut bytes).expect("writing to buffer");
+        self.signing_packages.insert(&signing_session_id[..], &bytes[..])?;
         Ok(true)
     }
 
-    pub fn get_signing_package(&self, txid: Txid) -> Result<Option<frost::SigningPackage>, Error> {
-        if let Some(b) = self.signing_packages.get(&txid[..])? {
-            let ret = ciborium::from_reader::<frost::SigningPackage, _>(b.as_ref())?;
-            Ok(Some(ret))
+    pub fn get_signing_package(
+        &self,
+        signing_session_id: &[u8; 32],
+    ) -> Result<Vec<frost::SigningPackage>, Error> {
+        if let Some(b) = self.signing_packages.get(&signing_session_id[..])? {
+            let ret = ciborium::from_reader::<Vec<frost::SigningPackage>, _>(b.as_ref())?;
+            Ok(ret)
         } else {
-            Ok(None)
+            Ok(vec![])
         }
     }
 
     pub fn add_round2_signing(
         &self,
-        txid: bitcoin::Txid,
-        peer_id: frost::Identifier,
-        signing_round2: frost::round2::SignatureShare,
+        signing_session_id: &[u8; 32],
+        peer_id: &frost::Identifier,
+        signing_round2: &Vec<frost::round2::SignatureShare>,
     ) -> Result<bool, Error> {
-        let peer_id_bytes = peer_id.serialize();
-
-        if self.round2_signing_packages.contains_key(&peer_id_bytes[..])? {
-            return Ok(false);
-        }
-        // Get the list of signing packages for this txid
-        let mut existing_partial_sigs = self.get_round2_signing_package_txid(txid)?;
-        if let Some(existing_partial_sigs) = existing_partial_sigs.as_mut() {
-            existing_partial_sigs.insert(peer_id, signing_round2);
-            let mut bytes = Vec::new();
-            ciborium::into_writer(&existing_partial_sigs, &mut bytes).expect("writing to buffer");
-            self.round2_signing_packages.insert(&txid[..], &bytes[..])?;
+        // for each input, we have a map of peer_id -> partial sig
+        // loop throw each map (repersenting a partial sigs for input) and add this peer's signature
+        let mut existing_partial_sigs = self.get_round2_signing_packages(signing_session_id)?;
+        // If there are no existing partial signatures, initialize the vector
+        if existing_partial_sigs.is_empty() {
+            existing_partial_sigs.extend(
+                signing_round2
+                    .iter()
+                    .map(|partial_sigs| BTreeMap::from_iter(vec![(*peer_id, *partial_sigs)])),
+            );
         } else {
-            let mut partial_sigs = BTreeMap::new();
-            partial_sigs.insert(peer_id, signing_round2);
-            let mut bytes = Vec::new();
-            ciborium::into_writer(&partial_sigs, &mut bytes).expect("writing to buffer");
-            self.round2_signing_packages.insert(&txid[..], &bytes[..])?;
-        }
-
-        Ok(true)
-    }
-
-    pub fn add_round1_signing(
-        &self,
-        peer_id: frost::Identifier,
-        signing_round1: frost::round1::SigningCommitments,
-    ) -> Result<bool, Error> {
-        let peer_id_bytes = peer_id.serialize();
-
-        if self.round1_signing_packages.contains_key(&peer_id_bytes[..])? {
-            return Ok(false);
+            // Update existing partial signatures
+            for (sigs, round2_partial_sig) in existing_partial_sigs.iter_mut().zip(signing_round2.iter()) {
+                // Skip if the peer_id already has a signature
+                if !sigs.contains_key(peer_id) {
+                    sigs.insert(*peer_id, *round2_partial_sig);
+                }
+            }
         }
         let mut bytes = Vec::new();
-        ciborium::into_writer(&signing_round1, &mut bytes).expect("writing to buffer");
-        self.round1_signing_packages.insert(&peer_id_bytes[..], &bytes[..])?;
+        ciborium::into_writer(&existing_partial_sigs, &mut bytes).expect("writing to buffer");
+        self.round2_signing_packages.insert(&signing_session_id[..], &bytes[..])?;
+
         Ok(true)
     }
 
+    /// Adds round 1 signing data for a specific signing session
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A fixed-size array of 32 bytes representing the unique identifier of the signing session.
+    /// * `peer_id` - An identifier representing the peer associated with the signing data.
+    /// * `signing_commitments` - A vector containing round 1 signing commitments for the specified session. Each commitment is associated with a specific input of the final transaction.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` indicating success (`Ok(true)`) if the round 1 signing data is successfully added.
+    /// Returns `Ok(false)` if the signing session ID already exists in storage.
+    /// Returns an `Err` variant if there are errors in the process.
+    pub fn add_round1_signing(
+        &self,
+        signing_session_id: &[u8; 32],
+        peer_id: frost::Identifier,
+        signing_commitments: Vec<frost::round1::SigningCommitments>,
+    ) -> Result<bool, Error> {
+        let mut round1_commitments = self.get_round1_signing_packages(signing_session_id)?;
+        // check if this frost id already has a commitment
+        if round1_commitments.contains_key(&peer_id) {
+            return Ok(false);
+        }
+
+        round1_commitments.insert(peer_id, signing_commitments);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&round1_commitments, &mut bytes).expect("writing to buffer");
+
+        self.round1_signing_packages.insert(&signing_session_id[..], &bytes[..])?;
+        Ok(true)
+    }
+
+    /// Retrieves round 1 signing packages associated with a specific signing session from storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A fixed-size array of 32 bytes representing the unique identifier of the signing session.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `BTreeMap` where the keys are peer identifiers and the values are vectors
+    /// of round 1 signing commitments associated with the provided signing session ID.
+    /// Returns `Ok(BTreeMap::new())` if no data is found for the specified signing session ID.
+    /// Returns an `Err` variant if there are errors in the process.
+    ///
     pub fn get_round1_signing_packages(
         &self,
-    ) -> Result<BTreeMap<frost::Identifier, frost::round1::SigningCommitments>, Error> {
-        let mut ret = BTreeMap::new();
+        signing_session_id: &[u8; 32],
+    ) -> Result<BTreeMap<frost::Identifier, Vec<frost::round1::SigningCommitments>>, Error> {
+        // let mut ret = BTreeMap::new();
         for res in self.round1_signing_packages.iter() {
             let (k, v) = res?;
-            let peer_id_bytes: [u8; 32] =
+            let signing_session_id_key: [u8; 32] =
                 k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+            if signing_session_id_key != *signing_session_id {
+                continue;
+            }
+            let signing_commitments = ciborium::from_reader::<
+                BTreeMap<frost::Identifier, Vec<frost::round1::SigningCommitments>>,
+                _,
+            >(&mut v.as_ref())?;
 
-            let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
-                .map_err(|e| Error::FrostSerialization(e))?;
-            let signing_round1 =
-                ciborium::from_reader::<frost::round1::SigningCommitments, _>(v.as_ref())?;
-            ret.insert(peer_id, signing_round1);
+            return Ok(signing_commitments);
         }
-        Ok(ret)
+        Ok(BTreeMap::new())
     }
 
     pub fn get_round2_signing_packages(
         &self,
-    ) -> Result<
-        BTreeMap<bitcoin::Txid, BTreeMap<frost::Identifier, frost::round2::SignatureShare>>,
-        Error,
-    > {
-        let mut ret = BTreeMap::new();
+        signing_session_id: &[u8; 32],
+    ) -> Result<Vec<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>, Error> {
         for res in self.round2_signing_packages.iter() {
             let (k, v) = res?;
-            let txid = bitcoin::Txid::consensus_decode(&mut k.reader())?;
+
+            let signing_session_id_key: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+
+            if signing_session_id_key != *signing_session_id {
+                continue;
+            }
 
             let partial_sig_set = ciborium::from_reader::<
-                BTreeMap<frost::Identifier, frost::round2::SignatureShare>,
+                Vec<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>,
                 _,
             >(v.as_ref())?;
-            ret.insert(txid, partial_sig_set);
+            return Ok(partial_sig_set);
         }
-        Ok(ret)
-    }
-
-    pub fn get_round2_signing_package_txid(
-        &self,
-        txid: Txid,
-    ) -> Result<Option<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>, Error> {
-        let partial_sigs = self.get_round2_signing_packages()?;
-        // Filter looking for signing packages for this txid
-        let ret = partial_sigs.iter().find(|(k, _v)| **k == txid);
-        if let Some((_k, v)) = ret {
-            Ok(Some(v.clone()))
-        } else {
-            Ok(None)
-        }
+        // Could not find partial sigs for this signing session id
+        // TODO Should we throw instead
+        Ok(vec![])
     }
 
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {

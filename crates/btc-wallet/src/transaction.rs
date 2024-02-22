@@ -1,4 +1,5 @@
 use bitcoin::{
+    consensus::Encodable,
     psbt::{self, PartiallySignedTransaction, Psbt},
     sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
@@ -43,14 +44,13 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
     };
 
     // Create PSBT
-    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
-    for (psbt, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
-        psbt.witness_utxo = Some(utxo.output.clone());
-        // store the user tweak if used
-        // TODO(armins) different inputs are going to have different eth tweaks
+    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx).expect("tx is unsigned");
+    for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
+        psbt_input.witness_utxo = Some(utxo.output.clone());
         if utxo.eth_address.is_some() {
-            psbt.proprietary.insert(
-                ETH_ADDRESS_FIELD.clone(),
+            // Key stores no keydata, only the type value
+            psbt_input.unknown.insert(
+                psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] },
                 utxo.eth_address.expect("have eth address").to_vec(),
             );
         }
@@ -67,14 +67,16 @@ pub enum CalculateSighashError {
 
 /// Calculate the sighash for a taproot keyspend
 /// Using tapsighash type ALL
-pub fn calculate_sighash(psbt: &Psbt) -> Result<TapSighash, CalculateSighashError> {
+pub fn calculate_sighash(
+    psbt: &Psbt,
+    input_index: usize,
+) -> Result<TapSighash, CalculateSighashError> {
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
 
+    // TODO(armins) remove unwrap
     let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
-    println!("prevouts: {:?}", prevouts);
-    // TODO (armins) input index is hardocded to 0
     let sighash = sighashcache.taproot_key_spend_signature_hash(
-        0,
+        input_index,
         &psbt::Prevouts::All(&prevouts),
         TapSighashType::All,
     )?;
