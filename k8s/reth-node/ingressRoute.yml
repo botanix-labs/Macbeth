@@ -1,0 +1,25 @@
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: botanix-reth-node-ingress
+  namespace: sandbox
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`node.botanixlabs.dev`)
+      kind: Rule
+      services:
+        - name: botanix-reth-node
+          port: 8545
+    - match: Host(`node.botanixlabs.dev`) && PathPrefix(`/ws`)
+      kind: Rule
+      services:
+        - name: botanix-reth-node
+          port: 8546
+
+
+
+

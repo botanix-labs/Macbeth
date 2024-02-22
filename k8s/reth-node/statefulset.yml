@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: botanix-reth-node
+  namespace: sandbox
+spec:
+  serviceName: botanix-reth-node
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: botanix-reth-node
+  template:
+    metadata:
+      labels:
+        app: botanix-reth-node
+    spec:
+      serviceAccountName: workload-runner
+      nodeSelector:
+        iam.gke.io/gke-metadata-server-enabled: "true"
+      securityContext:
+        fsGroup: 1000
+      # initContainers:
+      # - name: botanix-reth-init
+      #   image: google/cloud-sdk:latest
+      #   command: ["sh", "-c"]
+      #   args: ["gsutil cp gs://botanix-testnet-snapshot/botanix-testnet.tgz /reth/botanix_testnet && tar -xzvf /reth/botanix_testnet/botanix-testnet.tgz -C /reth/botanix_testnet && rm /reth/botanix_testnet/botanix-testnet.tgz"]
+      #   volumeMounts:
+      #   - name: botanix-reth-node-data
+      #     mountPath: /reth/botanix_testnet
+
+      containers:
+      - name: botanix-reth-node
+        image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest
+        command:
+          - /usr/local/bin/reth 
+        args: 
+          - node
+          - --chain=botanix_testnet
+          - --datadir=/reth/botanix_testnet/botanix_testnet
+          - --http
+          - --http.addr=0.0.0.0
+          - --http.port=8545
+          - --http.api=admin,debug,eth,net,trace,txpool,web3,rpc
+          - --http.corsdomain=*
+          - -vvv
+          - --auto-mine
+          - --disable-discovery
+          - --btc-server=botanix-bitcoin-server.sandbox.svc.cluster.local:8080
+          - --btc-network=signet
+          - --btc-block-source=https://esplora.botanixlabs.dev/signet/api 
+          - --metrics=0.0.0.0:9001
+        volumeMounts:
+          - name: botanix-reth-node-data
+            mountPath: /reth/botanix_testnet
+        ports:
+        - containerPort: 30303
+          name: p2p-port
+          protocol: TCP
+        - containerPort: 8545
+          name: http-port
+          protocol: TCP
+        - containerPort: 8546
+          name: ws-port
+          protocol: TCP
+        - containerPort: 9001
+          name: metrics-port
+          protocol: TCP
+        - containerPort: 8551
+          name: engine-api-port
+          protocol: TCP
+        imagePullPolicy: Always
+
+  volumeClaimTemplates:
+  - metadata:
+      name: botanix-reth-node-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: botanix-storage-class
+      resources:
+        requests:
+          storage: 200Gi
