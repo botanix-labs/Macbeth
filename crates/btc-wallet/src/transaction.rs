@@ -1,5 +1,5 @@
 use bitcoin::{
-    psbt::{self, PartiallySignedTransaction},
+    psbt::{self, Psbt},
     secp256k1::{KeyPair, SecretKey},
     sighash::TapSighashType,
     OutPoint, TxOut,
@@ -23,13 +23,9 @@ pub struct Input {
 }
 
 /// Create psbt with proprietary tweak fields
-pub fn create_psbt(
-    inputs: Vec<Input>,
-    outputs: Vec<TxOut>,
-    change: Option<TxOut>,
-) -> PartiallySignedTransaction {
+pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut>) -> Psbt {
     let tx = bitcoin::Transaction {
-        version: 2,
+        version: 2i32,
         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
         input: inputs
             .iter()
@@ -50,7 +46,7 @@ pub fn create_psbt(
     };
 
     // Create PSBT
-    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx).expect("tx is unsigned");
+    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
     for (psbt, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
         psbt.witness_utxo = Some(utxo.output.clone());
         // store the user tweak if used
@@ -68,13 +64,13 @@ pub fn create_psbt(
 #[derive(Debug)]
 pub enum SignPsbtError {
     NonceProvidedMissingEthTweak,
-    FailedToGetTaprootInfo(bitcoin::taproot::Error),
+    FailedToGetTaprootInfo(bitcoin::taproot::TaprootError),
 }
 
 pub fn sign_psbt(
     secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     secret_key: &SecretKey,
-    psbt: &mut PartiallySignedTransaction,
+    psbt: &mut Psbt,
 ) -> Result<(), SignPsbtError> {
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
     for i in 0..psbt.inputs.len() {
@@ -110,7 +106,7 @@ pub fn sign_psbt(
             let sighash = sighashcache
                 .taproot_signature_hash(
                     i,
-                    &psbt::Prevouts::All(&prevouts),
+                    &bitcoin::sighash::Prevouts::All(&prevouts),
                     None, // annex
                     None, // leaf_hash_code_separator
                     TapSighashType::All,

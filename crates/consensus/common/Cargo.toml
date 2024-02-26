@@ -21,7 +21,11 @@ reth-tracing.workspace = true
 
 
 ## Crypto
-secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
 
 # misc
 cfg-if = "1.0.0"

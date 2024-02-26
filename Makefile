@@ -418,7 +418,9 @@ start-poa-server-1:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8551 \
 	--btc-server "localhost:8080" \
-	--btc-block-source "https://mempool.space/signet/api" \
+	--bitcoind.url "https://bitcoind.botanixlabs.dev" \
+	--bitcoind.username "mempool" \
+	--bitcoind.password "mempool" \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303
 
@@ -437,6 +439,8 @@ start-poa-server-2:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8552 \
 	--btc-server "localhost:8080" \
-	--btc-block-source "https://mempool.space/signet/api" \
+	--bitcoind.url "https://bitcoind.botanixlabs.dev" \
+	--bitcoind.username "mempool" \
+	--bitcoind.password "mempool" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304

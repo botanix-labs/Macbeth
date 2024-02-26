@@ -2,12 +2,10 @@ use std::io;
 
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
+    hashes::Hash,
     secp256k1,
 };
-use secp256k1::{
-    ecdsa::{RecoverableSignature, RecoveryId},
-    hashes::Hash,
-};
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
 const EXTRA_HEADER_VERSION: u32 = 0;
@@ -256,11 +254,8 @@ impl ExtraDataHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::{
-        hashes::{sha256, Hash},
-        rand::rngs::OsRng,
-        Message, Secp256k1,
-    };
+    use bitcoin::hashes::Hash;
+    use secp256k1::{hashes::sha256, rand::rngs::OsRng, Message, Secp256k1};
 
     // Test case for creating a new ExtraDataHeader
     #[test]

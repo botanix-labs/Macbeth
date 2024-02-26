@@ -5,7 +5,7 @@ use crate::{
 
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::block_source::MempoolSpace;
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{message::NewBlockMessage, NetworkEvents, NetworkHandle};
@@ -26,7 +26,6 @@ use tokio::sync::{
 
 use crate::sync::SyncController;
 use tracing::error;
-use url::Url;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
@@ -38,7 +37,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    bitcoin_block_source_address: Url,
+    bitcoind_config: BitcoindConfig,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
     #[allow(dead_code)]
@@ -83,7 +82,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_source_address: Url,
+        bitcoind_config: BitcoindConfig,
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
@@ -153,7 +152,7 @@ where
             canon_state_notification,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source_address,
+            bitcoind_config,
             secp,
             sk,
             vote,
@@ -186,7 +185,7 @@ where
             to_engine,
             canon_state_notification,
             bitcoin_block_header,
-            bitcoin_block_source_address,
+            bitcoind_config,
             secp,
             sk,
             vote: _,
@@ -197,7 +196,6 @@ where
             evm_config,
             payload_builder,
         } = self;
-        let bitcoin_block_source = MempoolSpace::new(bitcoin_block_source_address.to_string());
 
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
@@ -205,17 +203,21 @@ where
             to_engine.clone(),
         );
 
+        let bitcoind_client =
+            BitcoindClient::new(bitcoind_config.clone()).expect("Invalid Bitcoind client");
         let block_fetcher_task = crate::block_fetcher::BlockFetcherTask::new(
             Arc::clone(&consensus.chain_spec),
             block_import_rx,
             to_engine.clone(),
             canon_state_notification.clone(),
             btc_server.clone(),
-            bitcoin_block_source.clone(),
+            bitcoind_client,
             storage.clone(),
             bitcoin_block_header.clone(),
             evm_config.clone(),
         );
+        let bitcoind_client =
+            BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
         let block_production_task = BlockProductionTask::new(
             Arc::clone(&consensus.chain_spec),
             to_engine,
@@ -223,7 +225,7 @@ where
             storage,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source,
+            bitcoind_client,
             secp,
             sk,
             epoch_manager,

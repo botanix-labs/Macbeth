@@ -1,0 +1,143 @@
+use bitcoincore_rpc::{json::GetChainTipsResultStatus, Auth, Client, RpcApi};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use url::Url;
+
+#[derive(Debug, Error)]
+pub enum BitcoindError {
+    #[error("Client initialization failed")]
+    ClientInitFailed(bitcoincore_rpc::Error),
+    #[error("Block Header retrieval failed")]
+    BlockHeaderRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Block Tip retrieval failed")]
+    BlockTipRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Empty block tip")]
+    EmptyBlockTip,
+    #[error("Block hash retrieval failed")]
+    BlockHashRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Tx broadcast failed")]
+    TransactionBroadcastFailed(bitcoincore_rpc::Error),
+    #[error("Block index failed")]
+    BlockIndexStatusFailed(bitcoincore_rpc::Error),
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+pub struct BitcoindConfig {
+    url: Url,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+impl BitcoindConfig {
+    pub fn new(url: Url, username: Option<String>, password: Option<String>) -> Self {
+        Self { url, username, password }
+    }
+}
+
+#[derive(Debug)]
+pub struct BitcoindClient {
+    rpc: Client,
+}
+
+impl BitcoindClient {
+    pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
+        let BitcoindConfig { url, username, password } = config;
+        let creds = Auth::UserPass(
+            username.expect("must have a username"),
+            password.expect("must have a password"),
+        );
+        let rpc = Client::new(url.to_string().as_str(), creds)
+            .map_err(BitcoindError::ClientInitFailed)?;
+        Ok(BitcoindClient { rpc })
+    }
+
+    pub fn get_rpc_client(&self) -> &Client {
+        &self.rpc
+    }
+
+    pub async fn get_block_header(
+        &self,
+        block_hash: bitcoin::BlockHash,
+    ) -> Result<bitcoin::blockdata::block::Header, BitcoindError> {
+        let header = self
+            .rpc
+            .get_block_header(&block_hash)
+            .map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
+        Ok(header)
+    }
+
+    pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
+        let index_data =
+            self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed)?;
+        match (index_data.txindex, index_data.coinstatsindex) {
+            (Some(txindex), Some(coinstatsindex)) => Ok(txindex.synced && coinstatsindex.synced),
+            _ => Ok(false),
+        }
+    }
+
+    pub async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
+        let block_hash =
+            self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
+        Ok(block_hash)
+    }
+
+    pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
+        let mut chain_tips = self
+            .rpc
+            .get_chain_tips()
+            .map_err(BitcoindError::BlockTipRetrievalFailed)?
+            .iter()
+            .filter_map(|tip| match tip.status {
+                GetChainTipsResultStatus::Active => Some(tip.height),
+                _ => None,
+            })
+            .collect::<Vec<u64>>();
+        chain_tips.sort();
+        Ok(chain_tips.iter().last().cloned().ok_or(BitcoindError::EmptyBlockTip)?)
+    }
+
+    pub async fn get_txids(
+        &self,
+        block_hash: bitcoin::BlockHash,
+    ) -> Result<Vec<bitcoin::Txid>, BitcoindError> {
+        let block = self
+            .rpc
+            .get_block_info(&block_hash)
+            .map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
+        Ok(block.tx)
+    }
+
+    pub async fn broadcast_tx(&self, raw_tx: &String) -> Result<bitcoin::Txid, BitcoindError> {
+        let tx_id = self
+            .rpc
+            .send_raw_transaction(raw_tx.to_owned())
+            .map_err(BitcoindError::TransactionBroadcastFailed)?;
+        Ok(tx_id)
+    }
+}
+
+mod tests {
+
+    #[tokio::test]
+    async fn create_client() {
+        use super::*;
+
+        let client = BitcoindClient::new(BitcoindConfig::new(
+            "https://bitcoind.botanixlabs.dev".parse::<Url>().unwrap(),
+            Some("mempool".to_owned()),
+            Some("mempool".to_owned()),
+        ))
+        .unwrap();
+
+        let tip = client.get_tip().await;
+        match tip {
+            Ok(tip) => {
+                println!("Got tip {:?}", tip);
+                assert!(tip > 0);
+            }
+            Err(e) => {
+                panic!("Got error {:?}", e);
+            }
+        }
+    }
+}

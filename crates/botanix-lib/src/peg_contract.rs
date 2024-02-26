@@ -240,10 +240,9 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin::{
-        absolute::LockTime, block::Version, BlockHash, CompactTarget, OutPoint, Transaction, TxIn,
-        TxOut, Txid,
+        absolute::LockTime, block::Version, hashes::Hash, BlockHash, CompactTarget, OutPoint,
+        Transaction, TxIn, TxOut, Txid,
     };
-    use secp256k1::hashes::Hash;
 
     use super::*;
     #[test]
