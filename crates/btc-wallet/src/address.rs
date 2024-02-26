@@ -185,15 +185,7 @@ pub fn generate_taproot_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
 
 /// Note: pk provided to this address is the frost public key already tweaked
 /// with the eth address and the taptree merkel root.
-pub fn gateway_address<T>(
-    secp: &Secp256k1<impl Verification>,
-    pk: &PublicKey,
-    _eth_addr: &T,
-    network: Network,
-) -> anyhow::Result<Address>
-where
-    T: EthAddress,
-{
+pub fn gateway_address(pk: &PublicKey, network: Network) -> anyhow::Result<Address> {
     Ok(generate_taproot_address(&pk, network))
 }
 
