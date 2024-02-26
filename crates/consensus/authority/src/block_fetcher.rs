@@ -7,7 +7,7 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFac
 use crate::Storage;
 use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::block_source::MempoolSpace;
+use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_network::message::NewBlockMessage;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::ChainSpec;
@@ -30,7 +30,7 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Btc Server client
     btc_server: BtcServerClient<tonic::transport::Channel>,
     /// bitcoin block source
-    bitcoin_block_source: MempoolSpace,
+    bitcoind_client: BitcoindClient,
     /// Consensus cache
     storage: Storage<Client>,
     /// Recent bitcoin header
@@ -57,7 +57,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
-        bitcoin_block_source: MempoolSpace,
+        bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
@@ -68,7 +68,7 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
-            bitcoin_block_source,
+            bitcoind_client,
             storage,
             bitcoin_block_header,
             evm_config,
@@ -127,7 +127,7 @@ where
                             .expect("senders are valid");
                     // Process Botanix specific logs
                     match crate::utils::process_receipts(
-                        &self.bitcoin_block_source,
+                        &self.bitcoind_client,
                         &mut self.btc_server.clone(),
                         &bundle_state,
                         false,

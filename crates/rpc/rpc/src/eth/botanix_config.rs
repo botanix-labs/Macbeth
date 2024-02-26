@@ -1,13 +1,12 @@
 //! Defines structure for botanix RPC configurables and business logic
 
-use std::{fmt, str::FromStr};
-
 use alloy_primitives::hex;
-use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
-
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_primitives::U256;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
+use url::Url;
 
 // TODO Secp should be getting pulled from provider
 lazy_static::lazy_static! {
@@ -24,8 +23,8 @@ pub struct BotanixConfig {
     /// The gRPC url for the bitcoin signer
     pub btc_server: String,
 
-    /// mempool space url
-    pub mempool_space_url: String,
+    /// bitcoind configuration
+    pub bitcoind_config: BitcoindConfig,
 }
 
 impl Default for BotanixConfig {
@@ -34,7 +33,13 @@ impl Default for BotanixConfig {
             bitcoin_network: bitcoin::Network::Signet,
             btc_server: "http://localhost:8080".to_string(),
             // Use a public signet endpoint by default
-            mempool_space_url: "https://mempool.space/signet/api".to_string(),
+            bitcoind_config: BitcoindConfig::new(
+                "https://bitcoind.botanixlabs.dev"
+                    .parse::<Url>()
+                    .expect("must be valid url address"),
+                None,
+                None,
+            ),
         }
     }
 }
@@ -42,19 +47,29 @@ impl Default for BotanixConfig {
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     #[allow(dead_code)]
-    fn new(&self, bitcoin_network: bitcoin::Network, btc_server: String) -> Self {
+    fn new(
+        &self,
+        bitcoin_network: bitcoin::Network,
+        btc_server: String,
+        bitcoind_username: Option<String>,
+        bitcoind_password: Option<String>,
+    ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
-        let mempool_space_api = match bitcoin_network {
-            bitcoin::Network::Bitcoin => "https://mempool.space/api",
-            bitcoin::Network::Testnet => "https://mempool.space/api/testnet",
-            bitcoin::Network::Signet => "https://mempool.space/api/signet",
+        let bitcoind_url = match bitcoin_network {
+            bitcoin::Network::Bitcoin => "https://bitcoind.botanixlabs.dev", // TODO: update this
+            bitcoin::Network::Testnet => "https://bitcoind.botanixlabs.dev", // TODO: update this
+            bitcoin::Network::Signet => "https://bitcoind.botanixlabs.dev/", // TODO: update this
             _ => panic!("Unsupported network"),
         };
 
         BotanixConfig {
             bitcoin_network,
             btc_server,
-            mempool_space_url: mempool_space_api.to_string(),
+            bitcoind_config: BitcoindConfig::new(
+                bitcoind_url.parse::<Url>().expect("must be valid ip address"),
+                bitcoind_username,
+                bitcoind_password,
+            ),
         }
     }
 
@@ -65,8 +80,13 @@ impl BotanixConfig {
     }
 
     /// Set mempool space block source url
-    pub fn mempool_space_url(mut self, mempool_space_url: String) -> Self {
-        self.mempool_space_url = mempool_space_url;
+    pub fn bitcoind(
+        mut self,
+        url: Url,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Self {
+        self.bitcoind_config = BitcoindConfig::new(url, username, password);
         self
     }
 }
@@ -95,6 +115,8 @@ pub enum MerkleProofRPCError {
     FailedToEncodePartialMerkleTree(bitcoin::consensus::encode::Error),
     /// Malformed block hash
     MalformedBlockHash,
+    /// Bitcoin client initialization
+    BitcoindClientInitialization,
 }
 
 /// Errors from get btc fees RPC endpoint
@@ -113,6 +135,9 @@ impl fmt::Display for MerkleProofRPCError {
                 write!(f, "Failed to encode Partial Merkle Tree: {}", e)
             }
             MerkleProofRPCError::MalformedBlockHash => write!(f, "Malformed block hash"),
+            MerkleProofRPCError::BitcoindClientInitialization => {
+                write!(f, "Bad bitcoind client initialization")
+            }
         }
     }
 }
@@ -181,9 +206,10 @@ impl Botanix {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
         let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
             .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
-        let mempool = MempoolSpace::new(self.config().mempool_space_url.clone());
+        let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
+            .map_err(|_| MerkleProofRPCError::BitcoindClientInitialization)?;
 
-        let txids = mempool
+        let txids = bitcoind_client
             .get_txids(
                 bitcoin::BlockHash::from_str(&block_hash)
                     .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?,

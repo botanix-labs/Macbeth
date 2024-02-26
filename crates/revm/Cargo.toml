@@ -24,7 +24,11 @@ revm.workspace = true
 revm-inspectors.workspace = true
 
 # Secp256k1
-secp256k1 = { version = "0.27.0", default-features = false, features = ["global-context", "rand-std", "recovery"] }
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
 
 # common
 tracing.workspace = true
@@ -34,7 +38,7 @@ tokio.workspace = true
 lazy_static = "*"
 
 # Bitcoin
-bitcoin = "0.30.1"
+bitcoin = "0.30.2"
 reth-botanix-lib.workspace = true
 
 [dev-dependencies]

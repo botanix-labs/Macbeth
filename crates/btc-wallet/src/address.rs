@@ -5,7 +5,7 @@ use bitcoin::{
     hashes::{sha256, Hash},
     opcodes,
     script::Builder,
-    taproot::{Error, TaprootBuilder, TaprootSpendInfo},
+    taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
@@ -102,7 +102,7 @@ fn build_safe_spend_path_script_check_sig_verify(
 pub fn generate_taproot_spend_info(
     secp: &Secp256k1<impl Verification>,
     tweaked_public_key: &PublicKey,
-) -> Result<TaprootSpendInfo, Error> {
+) -> Result<TaprootSpendInfo, TaprootError> {
     let lock_time = LockTime::from_time(SAFE_SPEND_TIMELOCK_SECOND).expect("valid time");
     let builder = TaprootBuilder::new()
         .add_leaf(

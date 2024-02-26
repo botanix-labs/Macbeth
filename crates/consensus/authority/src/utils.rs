@@ -4,7 +4,7 @@ use reth_botanix_lib::mint_validation::{
     parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
     MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
-use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+use reth_btc_wallet::bitcoind::BitcoindClient;
 
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::BundleStateWithReceipts;
@@ -80,7 +80,7 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 /// Returns `Ok(())` if the processing is successful, otherwise returns an error of type
 /// `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
-    bitcoin_block_source: &MempoolSpace,
+    bitcoind_client: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
     should_broadcast_pegout: bool,
@@ -97,13 +97,8 @@ pub(crate) async fn process_receipts(
                     continue;
                 }
                 for log in &receipt.logs {
-                    process_botanix_log(
-                        bitcoin_block_source,
-                        btc_server,
-                        log,
-                        should_broadcast_pegout,
-                    )
-                    .await?;
+                    process_botanix_log(bitcoind_client, btc_server, log, should_broadcast_pegout)
+                        .await?;
                 }
             }
             info!(target: "consensus::authority", "Receipt {:?}", receipt);
@@ -164,7 +159,7 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
 // check if pegout and store in cache
 // create util method to send pegouts
 async fn process_botanix_log(
-    bitcoin_block_source: &MempoolSpace,
+    bitcoind_client: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     log: &Log,
     should_broadcast_pegout: bool,
@@ -213,7 +208,7 @@ async fn process_botanix_log(
                 let raw_tx = response.into_inner().tx;
                 info!(target: "consensus::authority", "broadcasting withdrawal tx");
 
-                bitcoin_block_source
+                bitcoind_client
                     .broadcast_tx(&hex::encode(raw_tx))
                     .await
                     .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;

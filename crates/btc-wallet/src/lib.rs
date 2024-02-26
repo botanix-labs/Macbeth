@@ -2,6 +2,7 @@ extern crate anyhow;
 extern crate hex;
 
 pub mod address;
+pub mod bitcoind;
 pub mod block_source;
 pub mod key;
 pub mod transaction;
@@ -25,7 +26,7 @@ mod test {
 
         let desc =
             Descriptor::Tr(miniscript::descriptor::Tr::new(key_pair.public_key(), None).unwrap());
-        let weight = Weight::from_wu(desc.max_satisfaction_weight().unwrap() as u64);
+        let weight = Weight::from_wu(desc.max_weight_to_satisfy().unwrap() as u64);
         assert_eq!(weight, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT);
     }
 }

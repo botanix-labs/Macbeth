@@ -49,7 +49,10 @@ use std::{
 use tracing::{debug, info};
 use url::Url;
 
-use super::utils::{parse_grpc_address, parse_url};
+use super::{
+    utils::{parse_grpc_address, parse_url},
+    BitcoindArgs,
+};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -197,8 +200,8 @@ pub struct RpcServerArgs {
     /// Btc signing service
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "BITCOIN_BLOCK_SOURCE", value_parser = parse_url, help_heading = "Btc_block_source")]
-    pub btc_block_source: Url,
+    #[clap(flatten)]
+    pub bitcoind: BitcoindArgs,
 
     /// Notifications Webhook Url
     ///
@@ -436,9 +439,11 @@ impl RpcServerArgs {
     {
         let socket_address = SocketAddr::new(self.auth_addr, self.auth_port);
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config
-            .btc_server(self.btc_server.clone())
-            .mempool_space_url(self.btc_block_source.clone().to_string());
+        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoind(
+            self.bitcoind.url.clone(),
+            self.bitcoind.username.clone(),
+            self.bitcoind.password.clone(),
+        );
 
         reth_rpc_builder::auth::launch(
             provider,
@@ -467,9 +472,11 @@ impl RethRpcConfig for RpcServerArgs {
 
     fn eth_config(&self) -> EthConfig {
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config
-            .btc_server(self.btc_server.clone())
-            .mempool_space_url(self.btc_block_source.clone().to_string());
+        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoind(
+            self.bitcoind.url.clone(),
+            self.bitcoind.username.clone(),
+            self.bitcoind.password.clone(),
+        );
 
         EthConfig::default()
             .max_tracing_requests(self.rpc_max_tracing_requests)
@@ -621,7 +628,13 @@ impl Default for RpcServerArgs {
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
             btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
-            btc_block_source: Url::parse("https://mempool.space/signet/api").expect("valid url"),
+            bitcoind: BitcoindArgs {
+                url: "https://bitcoind.botanixlabs.dev"
+                    .parse::<Url>()
+                    .expect("valid bitcoind address"),
+                password: None,
+                username: None,
+            },
             slack_notifications_webhook_url: None,
         }
     }

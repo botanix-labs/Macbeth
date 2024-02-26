@@ -1,7 +1,7 @@
 use crate::{epoch_manager::EpochManager, Storage};
 use reth_beacon_consensus::BeaconEngineMessage;
 
-use reth_btc_wallet::block_source::MempoolSpace;
+use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
@@ -37,8 +37,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Bitcoin block source
-    pub(crate) bitcoin_block_source: MempoolSpace,
+    /// Bitcoind client
+    pub(crate) bitcoind_client: BitcoindClient,
     /// Instance of secp
     pub(crate) secp: Secp256k1<All>,
     /// Key of authority
@@ -75,7 +75,7 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_source: MempoolSpace,
+        bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager<Client>,
@@ -91,7 +91,7 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_source,
+            bitcoind_client,
             secp,
             sk,
             epoch_manager,

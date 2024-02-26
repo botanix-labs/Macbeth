@@ -50,7 +50,7 @@ use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
 use client::BtcServerClient;
-use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
+use reth_btc_wallet::bitcoind::BitcoindClient;
 use rsntp::AsyncSntpClient;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
@@ -161,16 +161,18 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             Arc::new(RwLock::new(None));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
-        let block_source = MempoolSpace::new(self.config.rpc.btc_block_source.to_string().clone());
+        let bitcoind_config = self.config.rpc.bitcoind.clone().into();
+        let bitcoind_client =
+            BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
 
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
                 let sleep_ms = tokio::time::Duration::from_millis(5000);
-                let mut tip = 0u32;
+                let mut tip = 0u64;
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
-                    let current_tip = match block_source.get_tip().await {
+                    let current_tip = match bitcoind_client.get_tip().await {
                         Ok(current_tip) => current_tip,
                         Err(_) => {
                             drop(header_write);
@@ -181,7 +183,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                     };
                     if current_tip != tip {
                         info!("Async bitcoin worker tip mismatch");
-                        let block_hash = match block_source.get_block_hash(current_tip).await {
+                        let block_hash = match bitcoind_client.get_block_hash(current_tip).await {
                             Ok(block_hash) => block_hash,
                             Err(_) => {
                                 drop(header_write);
@@ -190,7 +192,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                                 continue;
                             }
                         };
-                        let block_header = match block_source.get_block_header(block_hash).await {
+                        let block_header = match bitcoind_client.get_block_header(block_hash).await {
                             Ok(block_header) => block_header,
                             Err(_) => {
                                 drop(header_write);
@@ -200,7 +202,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                             }
                         };
                         // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some((block_header, current_tip));
+                        *header_write = Some((block_header, current_tip.try_into().expect("Failed to convert current tip from u64 to u32")));
                         drop(header_write);
                         tip = current_tip;
                     }
@@ -356,6 +358,8 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
 
+        let bitcoind_config = self.config.rpc.bitcoind.clone().into();
+
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
         let (_, mut block_production_task, mut block_fetcher_task, mut sync_controller) =
             AuthorityConsensusBuilder::try_new(
@@ -365,7 +369,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 canon_state_notification_sender.clone(),
                 btc_server_client.clone(),
                 bitcoin_block_headers_clone,
-                self.config.rpc.btc_block_source.clone(),
+                bitcoind_config,
                 secp256k1::Secp256k1::new(),
                 network_sk,
                 None,
