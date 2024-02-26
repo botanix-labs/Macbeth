@@ -691,9 +691,7 @@ mod test {
         pk: String,
     ) {
         let address = reth_btc_wallet::address::gateway_address(
-            &secp,
             &bitcoin::secp256k1::PublicKey::from_str(&pk).unwrap(),
-            &eth_address.as_bytes().to_vec(),
             NETWORK,
         )
         .unwrap();
@@ -837,9 +835,7 @@ mod test {
 
         // Notify peg in
         let address1 = reth_btc_wallet::address::gateway_address(
-            &SECP,
             &bitcoin::secp256k1::PublicKey::from_str(&pk.publickey).unwrap(),
-            &eth_1.as_bytes().to_vec(),
             NETWORK,
         )
         .unwrap();
