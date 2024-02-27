@@ -24,7 +24,7 @@ const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
 const ROUND2_SIGNING_PACKAGES: &[u8; 5] = b"r2sig";
 const SIGNING_PACKAGES: &[u8; 5] = b"signp";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
     #[serde(skip)]
     pub outpoint: OutPoint,
@@ -540,7 +540,7 @@ impl Db {
     pub fn add_remove_utxos<'a>(
         &self,
         remove: impl Iterator<Item = OutPoint> + Clone,
-        new: impl Iterator<Item = &'a Utxo> + Clone,
+        new: impl Iterator<Item = Utxo> + Clone,
     ) -> Result<(), Error> {
         // NB the clones on the args is because the closure in the
         // transaction can be called multiple times in the case where

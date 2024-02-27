@@ -1,6 +1,7 @@
-use crate::Error;
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
+use crate::{database::Utxo, Error};
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, OutPoint};
 use frost_secp256k1_tr as frost;
+use std::fmt;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
@@ -35,6 +36,36 @@ pub trait OutPointExt: Into<OutPoint> {
 }
 
 impl OutPointExt for OutPoint {}
+
+#[derive(Debug, Clone, Error)]
+pub enum VerifyingKeyExtError {
+    FailedToConvertToSecpPk(bitcoin::secp256k1::Error),
+}
+
+impl fmt::Display for VerifyingKeyExtError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            VerifyingKeyExtError::FailedToConvertToSecpPk(err) => {
+                write!(f, "Failed to convert to secp pk: {}", err)
+            }
+        }
+    }
+}
+/// Extension trait for Frost verifying key (aggregate key)
+pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
+    fn to_secp_pk(self) -> Result<bitcoin::secp256k1::PublicKey, VerifyingKeyExtError> {
+        let vk: frost::VerifyingKey = self.into();
+        let pk =
+            bitcoin::secp256k1::PublicKey::from_slice(vk.serialize().as_slice()).map_err(|e| {
+                log::error!("Failed to convert to secp pk: {}", e);
+                VerifyingKeyExtError::FailedToConvertToSecpPk(e)
+            })?;
+
+        Ok(pk)
+    }
+}
+
+impl VerifyingKeyExt for frost::VerifyingKey {}
 
 // Deserializes a Frost peer ID.
 ///
@@ -89,6 +120,40 @@ pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Error>
     let mut session_id_array = [0u8; 32];
     session_id_array.copy_from_slice(&session_id);
     Ok(session_id_array)
+}
+
+/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT (Partially Signed Bitcoin Transaction),
+/// public key, and associated Bitcoin transaction details.
+///
+/// # Arguments
+///
+/// * `db` - A mutable reference to the `Db` representing the database where UTXOs will be added or removed.
+/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction details.
+/// * `pk` - A reference to the secp256k1 public key associated with the PSBT.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the UTXOs are successfully added or removed from the database.
+/// Returns `Err` in case of any errors during the process.
+pub fn add_remove_utxo_from_psbt(
+    psbt: &Psbt,
+    pk: &bitcoin::secp256k1::PublicKey,
+) -> Result<(Vec<Utxo>, Vec<OutPoint>), Error> {
+    let tx = psbt.clone().extract_tx();
+    let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
+    // For change outputs there will always be a no eth tweak
+    let mut change_outputs: Vec<Utxo> = vec![];
+    let change_spk = reth_btc_wallet::address::generate_taproot_scriptpubkey(pk);
+    for (index, output) in tx.output.iter().enumerate() {
+        if output.script_pubkey == change_spk {
+            change_outputs.push(Utxo {
+                outpoint: OutPoint::new(tx.txid(), index as u32),
+                output: output.clone(),
+                eth_address: None,
+            });
+        }
+    }
+    Ok((change_outputs, selected_inputs))
 }
 
 #[cfg(test)]

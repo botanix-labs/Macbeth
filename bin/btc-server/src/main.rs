@@ -102,12 +102,13 @@ pub enum Error {
     AlreadyInSigningSession,
     #[error("Invalid signing session id")]
     InvalidSigningSessionId,
+    #[error("Failed to derive secp public key {0}")]
+    FailedToDeriveSecpPublicKey(#[from] crate::util::VerifyingKeyExtError),
 }
 
 struct App {
     db: database::Db,
     network: bitcoin::Network,
-    change_script: Option<bitcoin::ScriptBuf>,
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
     tx_lock: Arc<Mutex<()>>,
@@ -511,7 +512,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let max_signers = 3;
 
     let mut round1_dkg = None;
-    let mut change_script = None;
     if db.get_public_key_package().expect("failed to get public key package").is_none() {
         let rng = thread_rng();
         round1_dkg = Some(
@@ -519,18 +519,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?,
         );
         info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
-    } else {
-        let pk_package = db.get_key_package().expect("pk package").expect("pk package");
-        let pk = hex::encode(pk_package.verifying_key().serialize());
-        let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
-        change_script = Some(reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk));
-        info!("Already have key package, skipping round 1 dkg key generation");
-    }
+    } 
 
     let app = App {
         db,
         network: config.network,
-        change_script,
         tx_lock: Arc::new(Mutex::new(())),
         identifier: frost_identifier,
         max_signers,
@@ -1009,7 +1002,7 @@ mod test {
         c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
 
         let psbt = signing_package.clone().psbt;
-        let finalized = c3
+        let _finalized = c3
             .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
