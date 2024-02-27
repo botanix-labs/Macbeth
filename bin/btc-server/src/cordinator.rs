@@ -10,6 +10,7 @@ use bitcoin::{psbt, Transaction};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
 
 impl App {
     pub(crate) fn add_round1_signing(
@@ -285,7 +286,7 @@ impl App {
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
             let mut signing_package = signing_packages.get(index).expect("valid index").clone();
             let eth_tweak =
-                psbt_input.unknown.get(&psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] });
+                psbt_input.unknown.get(&ETH_ADDRESS_FIELD.clone());
             if let Some(e) = eth_tweak {
                 signing_package.set_addtional_tweak(e.clone());
             };

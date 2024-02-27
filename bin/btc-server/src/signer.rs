@@ -5,7 +5,7 @@ use bitcoin::{
 };
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-
+use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
 impl App {
     pub(crate) fn get_round1_signing_package(
         &self,
@@ -88,12 +88,7 @@ impl App {
             signing_packages.iter_mut().zip(tx.input.iter()).enumerate()
         {
             // get the eth tweak from the psbt unknown fields
-            let eth_tweak = psbt
-                .inputs
-                .get(index)
-                .unwrap()
-                .unknown
-                .get(&psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] });
+            let eth_tweak = psbt.inputs.get(index).unwrap().unknown.get(&ETH_ADDRESS_FIELD.clone());
             if let Some(e) = eth_tweak {
                 signing_package.set_addtional_tweak(e.clone());
             };
