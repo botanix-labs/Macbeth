@@ -1,7 +1,7 @@
 use crate::{
     constants::{
         EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR, EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
-        EIP1559_INITIAL_BASE_FEE, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, EMPTY_WITHDRAWALS,
+        EIP1559_INITIAL_BASE_FEE, BOTANIX_INITIAL_BASE_FEE, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, EMPTY_WITHDRAWALS,
     },
     holesky_nodes,
     net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
@@ -634,10 +634,19 @@ impl ChainSpec {
     /// Get the initial base fee of the genesis block.
     pub fn initial_base_fee(&self) -> Option<u64> {
         // If the base fee is set in the genesis block, we use that instead of the default.
-        let genesis_base_fee = self.genesis.base_fee_per_gas.unwrap_or(EIP1559_INITIAL_BASE_FEE);
+        let genesis_base_fee = self.clone().initial_base_fee_by_chain_id();
 
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
         (self.fork(Hardfork::London).active_at_block(0)).then_some(genesis_base_fee)
+    }
+
+    /// Returns the initial base fee based on chain id
+    pub fn initial_base_fee_by_chain_id(self) -> u64 {
+        if self.chain().id() == BOTANIX_TESTNET.chain().id() {
+            BOTANIX_INITIAL_BASE_FEE
+        } else {
+            EIP1559_INITIAL_BASE_FEE
+        }
     }
 
     /// Get the [BaseFeeParams] for the chain at the given timestamp.
