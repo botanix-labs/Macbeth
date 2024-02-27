@@ -5,7 +5,7 @@ use reth_rpc_types::{
         BlockTraceResult, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace,
         TraceResult,
     },
-    Bundle, CallRequest, RichBlock, StateContext,
+    Bundle, RichBlock, StateContext, TransactionRequest,
 };
 
 /// Debug rpc interface.
@@ -102,7 +102,7 @@ pub trait DebugApi {
     #[method(name = "traceCall")]
     async fn debug_trace_call(
         &self,
-        request: CallRequest,
+        request: TransactionRequest,
         block_number: Option<BlockId>,
         opts: Option<GethDebugTracingCallOptions>,
     ) -> RpcResult<GethTrace>;
@@ -131,7 +131,7 @@ pub trait DebugApi {
     ) -> RpcResult<Vec<Vec<GethTrace>>>;
 
     /// Sets the logging backtrace location. When a backtrace location is set and a log message is
-    /// emitted at that location,  the stack of the goroutine executing the log statement will
+    /// emitted at that location, the stack of the goroutine executing the log statement will
     /// be printed to stderr.
     #[method(name = "backtraceAt")]
     async fn debug_backtrace_at(&self, location: &str) -> RpcResult<()>;

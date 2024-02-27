@@ -20,9 +20,9 @@ use crate::{
     },
     builder::NodeConfig,
     cli::{db_type::DatabaseBuilder, ext::RethCliExt},
+    core::cli::runner::CliContext,
     dirs::{DataDirPath, MaybePlatformPath},
     poa_builder::launch_poa_from_config,
-    runner::CliContext,
 };
 
 /// Start the node

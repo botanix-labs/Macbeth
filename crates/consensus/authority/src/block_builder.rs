@@ -27,7 +27,8 @@ where
         + Clone
         + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) async fn try_build_block(&mut self) {
         // Check if we are in_turn

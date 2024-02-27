@@ -42,7 +42,11 @@ use reth_primitives::{
     StorageEntry, TransactionMeta, TransactionSigned, TransactionSignedEcRecovered,
     TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256, U256,
 };
-use reth_trie::{prefix_set::PrefixSetMut, updates::TrieUpdates, HashedPostState, StateRoot};
+use reth_trie::{
+    prefix_set::{PrefixSet, PrefixSetMut, TriePrefixSets},
+    updates::TrieUpdates,
+    HashedPostState, StateRoot,
+};
 use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg, SpecId};
 use std::{
     collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet},
@@ -110,48 +114,40 @@ impl<TX: DbTxMut> DatabaseProvider<TX> {
 }
 
 impl<TX: DbTx> DatabaseProvider<TX> {
-    fn cursor_read_collect<T: Table<Key = u64>, R>(
+    /// Iterates over read only values in the given table and collects them into a vector.
+    ///
+    /// Early-returns if the range is empty, without opening a cursor transaction.
+    fn cursor_read_collect<T: Table<Key = u64>>(
         &self,
         range: impl RangeBounds<T::Key>,
-        mut f: impl FnMut(T::Value) -> Result<R, DatabaseError>,
-    ) -> ProviderResult<Vec<R>> {
-        self.cursor_read_collect_with_key::<T, R>(range, |_, v| f(v))
-    }
-
-    fn cursor_read_collect_with_key<T: Table<Key = u64>, R>(
-        &self,
-        range: impl RangeBounds<T::Key>,
-        f: impl FnMut(T::Key, T::Value) -> Result<R, DatabaseError>,
-    ) -> ProviderResult<Vec<R>> {
+    ) -> ProviderResult<Vec<T::Value>> {
         let capacity = match range_size_hint(&range) {
             Some(0) | None => return Ok(Vec::new()),
             Some(capacity) => capacity,
         };
         let mut cursor = self.tx.cursor_read::<T>()?;
-        self.cursor_collect_with_capacity(&mut cursor, range, capacity, f)
+        self.cursor_collect_with_capacity(&mut cursor, range, capacity)
     }
 
-    fn cursor_collect<T: Table<Key = u64>, R>(
+    /// Iterates over read only values in the given table and collects them into a vector.
+    fn cursor_collect<T: Table<Key = u64>>(
         &self,
         cursor: &mut impl DbCursorRO<T>,
         range: impl RangeBounds<T::Key>,
-        mut f: impl FnMut(T::Value) -> Result<R, DatabaseError>,
-    ) -> ProviderResult<Vec<R>> {
+    ) -> ProviderResult<Vec<T::Value>> {
         let capacity = range_size_hint(&range).unwrap_or(0);
-        self.cursor_collect_with_capacity(cursor, range, capacity, |_, v| f(v))
+        self.cursor_collect_with_capacity(cursor, range, capacity)
     }
 
-    fn cursor_collect_with_capacity<T: Table<Key = u64>, R>(
+    fn cursor_collect_with_capacity<T: Table<Key = u64>>(
         &self,
         cursor: &mut impl DbCursorRO<T>,
         range: impl RangeBounds<T::Key>,
         capacity: usize,
-        mut f: impl FnMut(T::Key, T::Value) -> Result<R, DatabaseError>,
-    ) -> ProviderResult<Vec<R>> {
+    ) -> ProviderResult<Vec<T::Value>> {
         let mut items = Vec::with_capacity(capacity);
         for entry in cursor.walk_range(range)? {
-            let (key, value) = entry?;
-            items.push(f(key, value)?);
+            items.push(entry?.1);
         }
         Ok(items)
     }
@@ -356,7 +352,7 @@ impl<TX: DbTx> DatabaseProvider<TX> {
             SnapshotSegment::Transactions,
             to_range(range),
             |snapshot, range, _| snapshot.transactions_by_tx_range(range),
-            |range, _| self.cursor_collect(cursor, range, Ok),
+            |range, _| self.cursor_collect(cursor, range),
             |_| true,
         )
     }
@@ -600,7 +596,7 @@ impl<TX: DbTxMut + DbTx> DatabaseProvider<TX> {
             self.get_or_take::<tables::TxSenders, TAKE>(first_transaction..=last_transaction)?;
 
         // Recover senders manually if not found in db
-        // SAFETY: Transactions are always guaranteed to be in the database whereas
+        // NOTE: Transactions are always guaranteed to be in the database whereas
         // senders might be pruned.
         if senders.len() != transactions.len() {
             senders.reserve(transactions.len() - senders.len());
@@ -1132,9 +1128,7 @@ impl<TX: DbTx> HeaderProvider for DatabaseProvider<TX> {
             SnapshotSegment::Headers,
             to_range(range),
             |snapshot, range, _| snapshot.headers_range(range),
-            |range, _| {
-                self.cursor_read_collect::<tables::Headers, _>(range, Ok).map_err(Into::into)
-            },
+            |range, _| self.cursor_read_collect::<tables::Headers>(range).map_err(Into::into),
             |_| true,
         )
     }
@@ -1206,8 +1200,7 @@ impl<TX: DbTx> BlockHashReader for DatabaseProvider<TX> {
             start..end,
             |snapshot, range, _| snapshot.canonical_hashes_range(range.start, range.end),
             |range, _| {
-                self.cursor_read_collect::<tables::CanonicalHeaders, _>(range, Ok)
-                    .map_err(Into::into)
+                self.cursor_read_collect::<tables::CanonicalHeaders>(range).map_err(Into::into)
             },
             |_| true,
         )
@@ -1328,10 +1321,7 @@ impl<TX: DbTx> BlockReader for DatabaseProvider<TX> {
         // in the database yet, or they do exit but are not indexed. If they exist but are not
         // indexed, we don't have enough information to return the block anyways, so we return
         // `None`.
-        let body = match self.block_body_indices(block_number)? {
-            Some(body) => body,
-            None => return Ok(None),
-        };
+        let Some(body) = self.block_body_indices(block_number)? else { return Ok(None) };
 
         let tx_range = body.tx_num_range();
 
@@ -1346,7 +1336,7 @@ impl<TX: DbTx> BlockReader for DatabaseProvider<TX> {
             .map(|tx| match transaction_kind {
                 TransactionVariant::NoHash => TransactionSigned {
                     // Caller explicitly asked for no hash, so we don't calculate it
-                    hash: Default::default(),
+                    hash: B256::ZERO,
                     signature: tx.signature,
                     transaction: tx.transaction,
                 },
@@ -1354,14 +1344,12 @@ impl<TX: DbTx> BlockReader for DatabaseProvider<TX> {
             })
             .collect();
 
-        let block = Block { header, body, ommers, withdrawals };
-        let block = block
+        Block { header, body, ommers, withdrawals }
             // Note: we're using unchecked here because we know the block contains valid txs wrt to
             // its height and can ignore the s value check so pre EIP-2 txs are allowed
             .try_with_senders_unchecked(senders)
-            .map_err(|_| ProviderError::SenderRecoveryError)?;
-
-        Ok(Some(block))
+            .map(Some)
+            .map_err(|_| ProviderError::SenderRecoveryError)
     }
 
     fn block_range(&self, range: RangeInclusive<BlockNumber>) -> ProviderResult<Vec<Block>> {
@@ -1551,7 +1539,7 @@ impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
                         if let Some(block_body) = self.block_body_indices(block_number)? {
                             // the index of the tx in the block is the offset:
                             // len([start..tx_id])
-                            // SAFETY: `transaction_id` is always `>=` the block's first
+                            // NOTE: `transaction_id` is always `>=` the block's first
                             // index
                             let index = transaction_id - block_body.first_tx_num();
 
@@ -1641,7 +1629,7 @@ impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
         &self,
         range: impl RangeBounds<TxNumber>,
     ) -> ProviderResult<Vec<Address>> {
-        self.cursor_read_collect::<tables::TxSenders, _>(range, Ok).map_err(Into::into)
+        self.cursor_read_collect::<tables::TxSenders>(range).map_err(Into::into)
     }
 
     fn transaction_sender(&self, id: TxNumber) -> ProviderResult<Option<Address>> {
@@ -1689,9 +1677,7 @@ impl<TX: DbTx> ReceiptProvider for DatabaseProvider<TX> {
             SnapshotSegment::Receipts,
             to_range(range),
             |snapshot, range, _| snapshot.receipts_by_tx_range(range),
-            |range, _| {
-                self.cursor_read_collect::<tables::Receipts, _>(range, Ok).map_err(Into::into)
-            },
+            |range, _| self.cursor_read_collect::<tables::Receipts>(range).map_err(Into::into),
             |_| true,
         )
     }
@@ -2081,7 +2067,7 @@ impl<TX: DbTxMut + DbTx> HashingWriter for DatabaseProvider<TX> {
     ) -> ProviderResult<()> {
         // Initialize prefix sets.
         let mut account_prefix_set = PrefixSetMut::default();
-        let mut storage_prefix_set: HashMap<B256, PrefixSetMut> = HashMap::default();
+        let mut storage_prefix_sets: HashMap<B256, PrefixSetMut> = HashMap::default();
         let mut destroyed_accounts = HashSet::default();
 
         let mut durations_recorder = metrics::DurationsRecorder::default();
@@ -2094,7 +2080,7 @@ impl<TX: DbTxMut + DbTx> HashingWriter for DatabaseProvider<TX> {
             for (hashed_address, hashed_slots) in storage_entries {
                 account_prefix_set.insert(Nibbles::unpack(hashed_address));
                 for slot in hashed_slots {
-                    storage_prefix_set
+                    storage_prefix_sets
                         .entry(hashed_address)
                         .or_default()
                         .insert(Nibbles::unpack(slot));
@@ -2121,12 +2107,16 @@ impl<TX: DbTxMut + DbTx> HashingWriter for DatabaseProvider<TX> {
         {
             // This is the same as `StateRoot::incremental_root_with_updates`, only the prefix sets
             // are pre-loaded.
+            let prefix_sets = TriePrefixSets {
+                account_prefix_set: account_prefix_set.freeze(),
+                storage_prefix_sets: storage_prefix_sets
+                    .into_iter()
+                    .map(|(k, v)| (k, v.freeze()))
+                    .collect(),
+                destroyed_accounts,
+            };
             let (state_root, trie_updates) = StateRoot::from_tx(&self.tx)
-                .with_changed_account_prefixes(account_prefix_set.freeze())
-                .with_changed_storage_prefixes(
-                    storage_prefix_set.into_iter().map(|(k, v)| (k, v.freeze())).collect(),
-                )
-                .with_destroyed_accounts(destroyed_accounts)
+                .with_prefix_sets(prefix_sets)
                 .root_with_updates()
                 .map_err(Into::<reth_db::DatabaseError>::into)?;
             if state_root != expected_state_root {
@@ -2269,13 +2259,10 @@ impl<TX: DbTxMut + DbTx> BlockExecutionWriter for DatabaseProvider<TX> {
         if TAKE {
             let storage_range = BlockNumberAddress::range(range.clone());
 
-            // Initialize prefix sets.
-            let mut account_prefix_set = PrefixSetMut::default();
-            let mut storage_prefix_set: HashMap<B256, PrefixSetMut> = HashMap::default();
-            let mut destroyed_accounts = HashSet::default();
-
             // Unwind account hashes. Add changed accounts to account prefix set.
             let hashed_addresses = self.unwind_account_hashing(range.clone())?;
+            let mut account_prefix_set = PrefixSetMut::with_capacity(hashed_addresses.len());
+            let mut destroyed_accounts = HashSet::default();
             for (hashed_address, account) in hashed_addresses {
                 account_prefix_set.insert(Nibbles::unpack(hashed_address));
                 if account.is_none() {
@@ -2288,15 +2275,15 @@ impl<TX: DbTxMut + DbTx> BlockExecutionWriter for DatabaseProvider<TX> {
 
             // Unwind storage hashes. Add changed account and storage keys to corresponding prefix
             // sets.
+            let mut storage_prefix_sets = HashMap::<B256, PrefixSet>::default();
             let storage_entries = self.unwind_storage_hashing(storage_range.clone())?;
             for (hashed_address, hashed_slots) in storage_entries {
                 account_prefix_set.insert(Nibbles::unpack(hashed_address));
+                let mut storage_prefix_set = PrefixSetMut::with_capacity(hashed_slots.len());
                 for slot in hashed_slots {
-                    storage_prefix_set
-                        .entry(hashed_address)
-                        .or_default()
-                        .insert(Nibbles::unpack(slot));
+                    storage_prefix_set.insert(Nibbles::unpack(slot));
                 }
+                storage_prefix_sets.insert(hashed_address, storage_prefix_set.freeze());
             }
 
             // Unwind storage history indices.
@@ -2305,12 +2292,13 @@ impl<TX: DbTxMut + DbTx> BlockExecutionWriter for DatabaseProvider<TX> {
             // Calculate the reverted merkle root.
             // This is the same as `StateRoot::incremental_root_with_updates`, only the prefix sets
             // are pre-loaded.
+            let prefix_sets = TriePrefixSets {
+                account_prefix_set: account_prefix_set.freeze(),
+                storage_prefix_sets,
+                destroyed_accounts,
+            };
             let (new_state_root, trie_updates) = StateRoot::from_tx(&self.tx)
-                .with_changed_account_prefixes(account_prefix_set.freeze())
-                .with_changed_storage_prefixes(
-                    storage_prefix_set.into_iter().map(|(k, v)| (k, v.freeze())).collect(),
-                )
-                .with_destroyed_accounts(destroyed_accounts)
+                .with_prefix_sets(prefix_sets)
                 .root_with_updates()
                 .map_err(Into::<reth_db::DatabaseError>::into)?;
 

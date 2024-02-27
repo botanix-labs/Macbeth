@@ -10,6 +10,7 @@ use crate::{
     result::{internal_rpc_err, ToRpcResult},
     BlockingTaskGuard, EthApiSpec,
 };
+use alloy_primitives::U256;
 use alloy_rlp::{Decodable, Encodable};
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -27,7 +28,7 @@ use reth_rpc_types::{
         BlockTraceResult, FourByteFrame, GethDebugBuiltInTracerType, GethDebugTracerType,
         GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, NoopFrame, TraceResult,
     },
-    BlockError, Bundle, CallRequest, RichBlock, StateContext,
+    BlockError, Bundle, RichBlock, StateContext, TransactionRequest,
 };
 use revm::{
     db::CacheDB,
@@ -90,10 +91,10 @@ where
                 while let Some((index, tx)) = transactions.next() {
                     let tx_hash = tx.hash;
                     let tx = tx_env_with_recovered(&tx);
-                    let env = EnvWithHandlerCfg::new(
-                        Env::boxed(cfg.cfg_env.clone(), block_env.clone(), tx),
-                        cfg.handler_cfg.spec_id,
-                    );
+                    let env = EnvWithHandlerCfg {
+                        env: Env::boxed(cfg.cfg_env.clone(), block_env.clone(), tx),
+                        handler_cfg: cfg.handler_cfg,
+                    };
                     let (result, state_changes) = this
                         .trace_transaction(
                             opts.clone(),
@@ -237,10 +238,11 @@ where
                     tx.hash,
                 )?;
 
-                let env = EnvWithHandlerCfg::new(
-                    Env::boxed(cfg.cfg_env.clone(), block_env, tx_env_with_recovered(&tx)),
-                    cfg.handler_cfg.spec_id,
-                );
+                let env = EnvWithHandlerCfg {
+                    env: Env::boxed(cfg.cfg_env.clone(), block_env, tx_env_with_recovered(&tx)),
+                    handler_cfg: cfg.handler_cfg,
+                };
+
                 this.trace_transaction(
                     opts,
                     env,
@@ -263,7 +265,7 @@ where
     ///  - `debug_traceCall` executes with __enabled__ basefee check, `eth_call` does not: <https://github.com/paradigmxyz/reth/issues/6240>
     pub async fn debug_trace_call(
         &self,
-        call: CallRequest,
+        call: TransactionRequest,
         block_id: Option<BlockId>,
         opts: GethDebugTracingCallOptions,
     ) -> EthResult<GethTrace> {
@@ -380,7 +382,8 @@ where
     }
 
     /// The debug_traceCallMany method lets you run an `eth_callMany` within the context of the
-    /// given block execution using the first n transactions in the given block as base
+    /// given block execution using the first n transactions in the given block as base.
+    /// Each following bundle increments block number by 1 and block timestamp by 12 seconds
     pub async fn debug_trace_call_many(
         &self,
         bundles: Vec<Bundle>,
@@ -394,9 +397,8 @@ where
         let StateContext { transaction_index, block_number } = state_context.unwrap_or_default();
         let transaction_index = transaction_index.unwrap_or_default();
 
-        let target_block = block_number
-            .unwrap_or(reth_rpc_types::BlockId::Number(reth_rpc_types::BlockNumberOrTag::Latest));
-        let ((cfg, block_env, _), block) = futures::try_join!(
+        let target_block = block_number.unwrap_or(BlockId::Number(BlockNumberOrTag::Latest));
+        let ((cfg, mut block_env, _), block) = futures::try_join!(
             self.inner.eth_api.evm_env_at(target_block),
             self.inner.eth_api.block_by_id_with_senders(target_block),
         )?;
@@ -411,9 +413,12 @@ where
         let mut at = block.parent_hash;
         let mut replay_block_txs = true;
 
-        // but if all transactions are to be replayed, we can use the state at the block itself
+        // if a transaction index is provided, we need to replay the transactions until the index
         let num_txs = transaction_index.index().unwrap_or(block.body.len());
-        if num_txs == block.body.len() {
+        // but if all transactions are to be replayed, we can use the state at the block itself
+        // this works with the exception of the PENDING block, because its state might not exist if
+        // built locally
+        if !target_block.is_pending() && num_txs == block.body.len() {
             at = block.hash();
             replay_block_txs = false;
         }
@@ -434,10 +439,10 @@ where
                     // Execute all transactions until index
                     for tx in transactions {
                         let tx = tx_env_with_recovered(&tx);
-                        let env = EnvWithHandlerCfg::new(
-                            Env::boxed(cfg.cfg_env.clone(), block_env.clone(), tx),
-                            cfg.handler_cfg.spec_id,
-                        );
+                        let env = EnvWithHandlerCfg {
+                            env: Env::boxed(cfg.cfg_env.clone(), block_env.clone(), tx),
+                            handler_cfg: cfg.handler_cfg,
+                        };
                         let (res, _) = transact(&mut db, env)?;
                         db.commit(res.state);
                     }
@@ -476,6 +481,9 @@ where
                         }
                         results.push(trace);
                     }
+                    // Increment block_env number and timestamp for the next bundle
+                    block_env.number += U256::from(1);
+                    block_env.timestamp += U256::from(12);
 
                     all_bundles.push(results);
                 }
@@ -722,7 +730,7 @@ where
     /// Handler for `debug_traceCall`
     async fn debug_trace_call(
         &self,
-        request: CallRequest,
+        request: TransactionRequest,
         block_number: Option<BlockId>,
         opts: Option<GethDebugTracingCallOptions>,
     ) -> RpcResult<GethTrace> {

@@ -20,7 +20,8 @@ use reth_provider::{
 };
 use reth_revm::{access_list::AccessListInspector, database::StateProviderDatabase};
 use reth_rpc_types::{
-    state::StateOverride, AccessListWithGasUsed, Bundle, CallRequest, EthCallResponse, StateContext,
+    state::StateOverride, AccessListWithGasUsed, Bundle, EthCallResponse, StateContext,
+    TransactionRequest,
 };
 use reth_transaction_pool::TransactionPool;
 use revm::{
@@ -47,7 +48,7 @@ where
     /// Estimate gas needed for execution of the `request` at the [BlockId].
     pub async fn estimate_gas_at(
         &self,
-        request: CallRequest,
+        request: TransactionRequest,
         at: BlockId,
         state_override: Option<StateOverride>,
     ) -> EthResult<U256> {
@@ -63,7 +64,7 @@ where
     /// Executes the call request (`eth_call`) and returns the output
     pub async fn call(
         &self,
-        request: CallRequest,
+        request: TransactionRequest,
         block_number: Option<BlockId>,
         overrides: EvmOverrides,
     ) -> EthResult<Bytes> {
@@ -173,12 +174,12 @@ where
 
     /// Estimates the gas usage of the `request` with the state.
     ///
-    /// This will execute the [CallRequest] and find the best gas limit via binary search
+    /// This will execute the [TransactionRequest] and find the best gas limit via binary search
     pub fn estimate_gas_with<S>(
         &self,
         mut cfg: CfgEnvWithHandlerCfg,
         block: BlockEnv,
-        request: CallRequest,
+        request: TransactionRequest,
         state: S,
         state_override: Option<StateOverride>,
     ) -> EthResult<U256>
@@ -214,7 +215,7 @@ where
         // if the request is a simple transfer we can optimize
         if env.tx.data.is_empty() {
             if let TransactTo::Call(to) = env.tx.transact_to {
-                if let Ok(code) = db.db.state().account_code(to) {
+                if let Ok(code) = db.db.account_code(to) {
                     let no_code_callee = code.map(|code| code.is_empty()).unwrap_or(true);
                     if no_code_callee {
                         // simple transfer, check if caller has sufficient funds
@@ -357,7 +358,7 @@ where
     /// Creates the AccessList for the `request` at the [BlockId] or latest.
     pub(crate) async fn create_access_list_at(
         &self,
-        request: CallRequest,
+        request: TransactionRequest,
         block_number: Option<BlockId>,
     ) -> EthResult<AccessListWithGasUsed> {
         self.on_blocking_task(|this| async move {
@@ -368,7 +369,7 @@ where
 
     async fn create_access_list_with(
         &self,
-        mut request: CallRequest,
+        mut request: TransactionRequest,
         at: Option<BlockId>,
     ) -> EthResult<AccessListWithGasUsed> {
         let block_id = at.unwrap_or(BlockId::Number(BlockNumberOrTag::Latest));
@@ -421,16 +422,13 @@ where
 
         let access_list = inspector.into_access_list();
 
-        let cfg_with_spec_id = CfgEnvWithHandlerCfg::new(env.cfg.clone(), env.handler_cfg.spec_id);
+        let cfg_with_spec_id =
+            CfgEnvWithHandlerCfg { cfg_env: env.cfg.clone(), handler_cfg: env.handler_cfg };
+
         // calculate the gas used using the access list
         request.access_list = Some(access_list.clone());
-        let gas_used = self.estimate_gas_with(
-            cfg_with_spec_id,
-            env.block.clone(),
-            request,
-            db.db.state(),
-            None,
-        )?;
+        let gas_used =
+            self.estimate_gas_with(cfg_with_spec_id, env.block.clone(), request, &*db.db, None)?;
 
         Ok(AccessListWithGasUsed { access_list, gas_used })
     }

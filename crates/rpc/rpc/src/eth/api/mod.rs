@@ -309,10 +309,10 @@ where
             let latest =
                 self.provider().latest_header()?.ok_or_else(|| EthApiError::UnknownBlockNumber)?;
 
-            let (mut latest_header, _block_hash) = latest.split();
+            let (mut latest_header, block_hash) = latest.split();
             // child block
             latest_header.number += 1;
-            // assumed child block is in the next slot
+            // assumed child block is in the next slot: 12s
             latest_header.timestamp += 12;
             // base fee of the child block
             let chain_spec = self.provider().chain_spec();
@@ -320,18 +320,16 @@ where
             latest_header.base_fee_per_gas = latest_header
                 .next_block_base_fee(chain_spec.base_fee_params(latest_header.timestamp));
 
-            let block_hash = latest_header.hash_slow();
+            // update excess blob gas consumed above target
+            latest_header.excess_blob_gas = latest_header.next_block_excess_blob_gas();
+
+            // we're reusing the same block hash because we need this to lookup the block's state
             let latest = SealedHeader::new(latest_header, block_hash);
 
             PendingBlockEnvOrigin::DerivedFromLatest(latest)
         };
 
-        let mut cfg = CfgEnvWithHandlerCfg::new(CfgEnv::default(), SpecId::LATEST);
-
-        #[cfg(feature = "optimism")]
-        {
-            cfg.handler_cfg.is_optimism = self.provider().chain_spec().is_optimism();
-        }
+        let mut cfg = CfgEnvWithHandlerCfg::new_with_spec_id(CfgEnv::default(), SpecId::LATEST);
 
         let mut block_env = BlockEnv::default();
         // Note: for the PENDING block we assume it is past the known merge block and thus this will

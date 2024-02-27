@@ -27,7 +27,7 @@ use reth_rpc::{
     AuthLayer, BlockingTaskPool, Claims, EngineEthApi, EthApi, EthFilter,
     EthSubscriptionIdProvider, JwtAuthValidator, JwtSecret,
 };
-use reth_rpc_api::{servers::*, EngineApiServer};
+use reth_rpc_api::servers::*;
 use reth_tasks::TaskSpawner;
 use reth_transaction_pool::TransactionPool;
 use std::{
@@ -253,7 +253,7 @@ impl AuthServerConfigBuilder {
                     .max_connections(500)
                     // bump the default request size slightly, there aren't any methods exposed with
                     // dynamic request params that can exceed this
-                    .max_request_body_size(5 * 1024 * 1024)
+                    .max_request_body_size(128 * 1024 * 1024)
                     .set_id_provider(EthSubscriptionIdProvider::default())
             }),
         }

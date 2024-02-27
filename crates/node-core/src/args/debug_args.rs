@@ -5,7 +5,7 @@ use reth_primitives::{TxHash, B256};
 use std::path::PathBuf;
 
 /// Parameters for debugging purposes
-#[derive(Debug, Args, PartialEq, Default)]
+#[derive(Debug, Clone, Args, PartialEq, Default)]
 #[clap(next_help_heading = "Debug")]
 pub struct DebugArgs {
     /// Prompt the downloader to download blocks one at a time.
@@ -64,26 +64,6 @@ pub struct DebugArgs {
     /// will be written to specified location.
     #[arg(long = "debug.engine-api-store", help_heading = "Debug", value_name = "PATH")]
     pub engine_api_store: Option<PathBuf>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::Parser;
-
-    /// A helper type to parse Args more easily
-    #[derive(Parser)]
-    struct CommandParser<T: Args> {
-        #[clap(flatten)]
-        args: T,
-    }
-
-    #[test]
-    fn test_parse_database_args() {
-        let default_args = DebugArgs::default();
-        let args = CommandParser::<DebugArgs>::parse_from(["reth"]).args;
-        assert_eq!(args, default_args);
-    }
 }
 
 #[cfg(test)]

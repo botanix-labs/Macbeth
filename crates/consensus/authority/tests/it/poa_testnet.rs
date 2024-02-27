@@ -11,10 +11,10 @@ use reth::{
     cli::{
         components::RethNodeComponents,
         ext::{NoArgs, NoArgsCliExt, RethNodeCommandConfig},
+        runner::CliRunner,
     },
+    commands::poa::PoaNodeCommand,
     network::Peers,
-    poa::PoaNodeCommand,
-    runner::CliRunner,
     tasks::TaskSpawner,
 };
 use reth_primitives::{public_key_to_address, Address, ChainSpec, BOTANIX_TESTNET};

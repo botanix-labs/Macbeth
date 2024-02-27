@@ -1,5 +1,7 @@
 //! utilities for working with revm
 
+use std::cmp::min;
+
 use crate::eth::error::{EthApiError, EthResult, RpcInvalidTransactionError};
 #[cfg(feature = "optimism")]
 use reth_primitives::revm::env::fill_op_tx_env;
@@ -11,7 +13,7 @@ use reth_primitives::{
 };
 use reth_rpc_types::{
     state::{AccountOverride, StateOverride},
-    BlockOverrides, CallRequest,
+    BlockOverrides, TransactionRequest,
 };
 #[cfg(feature = "optimism")]
 use revm::primitives::{Bytes, OptimismFields};
@@ -232,10 +234,11 @@ where
 ///  - `disable_block_gas_limit` is set to `true`
 ///  - `disable_eip3607` is set to `true`
 ///  - `disable_base_fee` is set to `true`
+///  - `nonce` is set to `None`
 pub(crate) fn prepare_call_env<DB>(
     mut cfg: CfgEnvWithHandlerCfg,
     block: BlockEnv,
-    request: CallRequest,
+    request: TransactionRequest,
     gas_limit: u64,
     db: &mut CacheDB<DB>,
     overrides: EvmOverrides,
@@ -260,6 +263,7 @@ where
     let request_gas = request.gas;
 
     let mut env = build_call_evm_env(cfg, block, request)?;
+    env.tx.nonce = None;
 
     // apply state overrides
     if let Some(state_overrides) = overrides.state {
@@ -296,29 +300,33 @@ where
     Ok(env)
 }
 
-/// Creates a new [EnvWithHandlerCfg] to be used for executing the [CallRequest] in `eth_call`.
+/// Creates a new [EnvWithHandlerCfg] to be used for executing the [TransactionRequest] in
+/// `eth_call`.
 ///
 /// Note: this does _not_ access the Database to check the sender.
 pub(crate) fn build_call_evm_env(
     cfg: CfgEnvWithHandlerCfg,
     block: BlockEnv,
-    request: CallRequest,
+    request: TransactionRequest,
 ) -> EthResult<EnvWithHandlerCfg> {
     let tx = create_txn_env(&block, request)?;
     Ok(EnvWithHandlerCfg::new_with_cfg_env(cfg, block, tx))
 }
 
-/// Configures a new [TxEnv]  for the [CallRequest]
+/// Configures a new [TxEnv]  for the [TransactionRequest]
 ///
-/// All [TxEnv] fields are derived from the given [CallRequest], if fields are `None`, they fall
-/// back to the [BlockEnv]'s settings.
-pub(crate) fn create_txn_env(block_env: &BlockEnv, request: CallRequest) -> EthResult<TxEnv> {
+/// All [TxEnv] fields are derived from the given [TransactionRequest], if fields are `None`, they
+/// fall back to the [BlockEnv]'s settings.
+pub(crate) fn create_txn_env(
+    block_env: &BlockEnv,
+    request: TransactionRequest,
+) -> EthResult<TxEnv> {
     // Ensure that if versioned hashes are set, they're not empty
     if request.has_empty_blob_hashes() {
         return Err(RpcInvalidTransactionError::BlobTransactionMissingBlobHashes.into())
     }
 
-    let CallRequest {
+    let TransactionRequest {
         from,
         to,
         gas_price,
@@ -412,7 +420,7 @@ where
         .unwrap_or_default())
 }
 
-/// Helper type for representing the fees of a [CallRequest]
+/// Helper type for representing the fees of a [TransactionRequest]
 pub(crate) struct CallFees {
     /// EIP-1559 priority fee
     max_priority_fee_per_gas: Option<U256>,
@@ -430,10 +438,7 @@ pub(crate) struct CallFees {
 // === impl CallFees ===
 
 impl CallFees {
-    /// Ensures the fields of a [CallRequest] are not conflicting.
-    ///
-    /// If no `gasPrice` or `maxFeePerGas` is set, then the `gas_price` in the returned `gas_price`
-    /// will be `0`. See: <https://github.com/ethereum/go-ethereum/blob/2754b197c935ee63101cbbca2752338246384fec/internal/ethapi/transaction_args.go#L242-L255>
+    /// Ensures the fields of a [TransactionRequest] are not conflicting.
     ///
     /// # EIP-4844 transactions
     ///
@@ -452,21 +457,38 @@ impl CallFees {
         max_fee_per_blob_gas: Option<U256>,
         block_blob_fee: Option<U256>,
     ) -> EthResult<CallFees> {
-        /// Ensures that the transaction's max fee is lower than the priority fee, if any.
-        fn ensure_valid_fee_cap(
-            max_fee: U256,
+        /// Get the effective gas price of a transaction as specfified in EIP-1559 with relevant
+        /// checks.
+        fn get_effective_gas_price(
+            max_fee_per_gas: Option<U256>,
             max_priority_fee_per_gas: Option<U256>,
-        ) -> EthResult<()> {
-            if let Some(max_priority) = max_priority_fee_per_gas {
-                if max_priority > max_fee {
-                    // Fail early
-                    return Err(
-                        // `max_priority_fee_per_gas` is greater than the `max_fee_per_gas`
-                        RpcInvalidTransactionError::TipAboveFeeCap.into(),
-                    )
+            block_base_fee: U256,
+        ) -> EthResult<U256> {
+            match max_fee_per_gas {
+                Some(max_fee) => {
+                    if max_fee < block_base_fee {
+                        // `base_fee_per_gas` is greater than the `max_fee_per_gas`
+                        return Err(RpcInvalidTransactionError::FeeCapTooLow.into())
+                    }
+                    if max_fee < max_priority_fee_per_gas.unwrap_or(U256::ZERO) {
+                        return Err(
+                            // `max_priority_fee_per_gas` is greater than the `max_fee_per_gas`
+                            RpcInvalidTransactionError::TipAboveFeeCap.into(),
+                        )
+                    }
+                    Ok(min(
+                        max_fee,
+                        block_base_fee
+                            .checked_add(max_priority_fee_per_gas.unwrap_or(U256::ZERO))
+                            .ok_or_else(|| {
+                                EthApiError::from(RpcInvalidTransactionError::TipVeryHigh)
+                            })?,
+                    ))
                 }
+                None => Ok(block_base_fee
+                    .checked_add(max_priority_fee_per_gas.unwrap_or(U256::ZERO))
+                    .ok_or_else(|| EthApiError::from(RpcInvalidTransactionError::TipVeryHigh))?),
             }
-            Ok(())
         }
 
         let has_blob_hashes =
@@ -485,18 +507,26 @@ impl CallFees {
             }
             (None, max_fee_per_gas, max_priority_fee_per_gas, None) => {
                 // request for eip-1559 transaction
-                let max_fee = max_fee_per_gas.unwrap_or(block_base_fee);
-                ensure_valid_fee_cap(max_fee, max_priority_fee_per_gas)?;
-
+                let effective_gas_price = get_effective_gas_price(
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                    block_base_fee,
+                )?;
                 let max_fee_per_blob_gas = has_blob_hashes.then_some(block_blob_fee).flatten();
 
-                Ok(CallFees { gas_price: max_fee, max_priority_fee_per_gas, max_fee_per_blob_gas })
+                Ok(CallFees {
+                    gas_price: effective_gas_price,
+                    max_priority_fee_per_gas,
+                    max_fee_per_blob_gas,
+                })
             }
             (None, max_fee_per_gas, max_priority_fee_per_gas, Some(max_fee_per_blob_gas)) => {
                 // request for eip-4844 transaction
-                let max_fee = max_fee_per_gas.unwrap_or(block_base_fee);
-                ensure_valid_fee_cap(max_fee, max_priority_fee_per_gas)?;
-
+                let effective_gas_price = get_effective_gas_price(
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                    block_base_fee,
+                )?;
                 // Ensure blob_hashes are present
                 if !has_blob_hashes {
                     // Blob transaction but no blob hashes
@@ -504,7 +534,7 @@ impl CallFees {
                 }
 
                 Ok(CallFees {
-                    gas_price: max_fee,
+                    gas_price: effective_gas_price,
                     max_priority_fee_per_gas,
                     max_fee_per_blob_gas: Some(max_fee_per_blob_gas),
                 })
@@ -623,6 +653,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use reth_primitives::constants::GWEI_TO_WEI;
+
     use super::*;
 
     #[test]
@@ -653,5 +685,77 @@ mod tests {
         .unwrap();
         assert!(gas_price.is_zero());
         assert_eq!(max_fee_per_blob_gas, Some(U256::from(99)));
+    }
+
+    #[test]
+    fn test_eip_1559_fees() {
+        let CallFees { gas_price, .. } = CallFees::ensure_fees(
+            None,
+            Some(U256::from(25 * GWEI_TO_WEI)),
+            Some(U256::from(15 * GWEI_TO_WEI)),
+            U256::from(15 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        )
+        .unwrap();
+        assert_eq!(gas_price, U256::from(25 * GWEI_TO_WEI));
+
+        let CallFees { gas_price, .. } = CallFees::ensure_fees(
+            None,
+            Some(U256::from(25 * GWEI_TO_WEI)),
+            Some(U256::from(5 * GWEI_TO_WEI)),
+            U256::from(15 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        )
+        .unwrap();
+        assert_eq!(gas_price, U256::from(20 * GWEI_TO_WEI));
+
+        let CallFees { gas_price, .. } = CallFees::ensure_fees(
+            None,
+            Some(U256::from(30 * GWEI_TO_WEI)),
+            Some(U256::from(30 * GWEI_TO_WEI)),
+            U256::from(15 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        )
+        .unwrap();
+        assert_eq!(gas_price, U256::from(30 * GWEI_TO_WEI));
+
+        let call_fees = CallFees::ensure_fees(
+            None,
+            Some(U256::from(30 * GWEI_TO_WEI)),
+            Some(U256::from(31 * GWEI_TO_WEI)),
+            U256::from(15 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        );
+        assert!(call_fees.is_err());
+
+        let call_fees = CallFees::ensure_fees(
+            None,
+            Some(U256::from(5 * GWEI_TO_WEI)),
+            Some(U256::from(GWEI_TO_WEI)),
+            U256::from(15 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        );
+        assert!(call_fees.is_err());
+
+        let call_fees = CallFees::ensure_fees(
+            None,
+            Some(U256::MAX),
+            Some(U256::MAX),
+            U256::from(5 * GWEI_TO_WEI),
+            None,
+            None,
+            Some(U256::ZERO),
+        );
+        assert!(call_fees.is_err());
     }
 }

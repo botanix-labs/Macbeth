@@ -1,9 +1,10 @@
-use reth_node_api::ConfigureEvmEnv;
+use reth_node_api::{ConfigureEvm, ConfigureEvmEnv};
 use reth_primitives::{
     revm::{config::revm_spec, env::fill_op_tx_env},
-    revm_primitives::{AnalysisKind, CfgEnvWithHandlerCfg, TxEnv},
+    revm_primitives::{AnalysisKind, CfgEnvWithHandlerCfg, HandlerCfg, SpecId, TxEnv},
     Address, Bytes, ChainSpec, Head, Header, Transaction, U256,
 };
+use revm::{Database, Evm, EvmBuilder};
 
 /// Optimism-related EVM configuration.
 #[derive(Debug, Default, Clone, Copy)]
@@ -45,15 +46,31 @@ impl ConfigureEvmEnv for OptimismEvmConfig {
     }
 }
 
+impl ConfigureEvm for OptimismEvmConfig {
+    fn evm<'a, DB: Database + 'a>(&self, db: DB) -> Evm<'a, (), DB> {
+        let handler_cfg = HandlerCfg { spec_id: SpecId::LATEST, is_optimism: true };
+        EvmBuilder::default().with_db(db).with_handler_cfg(handler_cfg).build()
+    }
+
+    fn evm_with_inspector<'a, DB: Database + 'a, I>(&self, db: DB, inspector: I) -> Evm<'a, I, DB> {
+        let handler_cfg = HandlerCfg { spec_id: SpecId::LATEST, is_optimism: true };
+        EvmBuilder::default()
+            .with_db(db)
+            .with_external_context(inspector)
+            .with_handler_cfg(handler_cfg)
+            .build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_primitives::revm_primitives::{BlockEnv, CfgEnv, SpecId};
+    use reth_primitives::revm_primitives::{BlockEnv, CfgEnv};
 
     #[test]
     #[ignore]
     fn test_fill_cfg_and_block_env() {
-        let mut cfg_env = CfgEnvWithHandlerCfg::new(CfgEnv::default(), SpecId::LATEST);
+        let mut cfg_env = CfgEnvWithHandlerCfg::new_with_spec_id(CfgEnv::default(), SpecId::LATEST);
         let mut block_env = BlockEnv::default();
         let header = Header::default();
         let chain_spec = ChainSpec::default();
