@@ -519,7 +519,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| internal!("Failed to generate round 1 dkg: {:?}", e))?,
         );
         info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
-    } 
+    }
 
     let app = App {
         db,
@@ -544,10 +544,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
-    use core::panic;
+
     use std::{process::Stdio, str::FromStr, vec};
 
-    use rand::random;
     use tokio::{
         io::{self, AsyncBufReadExt},
         process::Command,
@@ -555,7 +554,7 @@ mod test {
 
     use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut};
     use client;
-    use tonic::transport::{channel, Channel};
+    use tonic::transport::Channel;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
     const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
@@ -672,7 +671,7 @@ mod test {
     }
 
     async fn send_pegin_notification(
-        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
+        _secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         client: &mut client::BtcServerClient<Channel>,
         eth_address: String,
         pk: String,
@@ -704,7 +703,7 @@ mod test {
 
     #[tokio::test]
     pub async fn dkg_flow() {
-        let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let _secp = bitcoin::secp256k1::Secp256k1::new();
         let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         let tasks = spawn_n_servers(3);
 
@@ -775,7 +774,7 @@ mod test {
 
     #[tokio::test]
     async fn test_one_input_signing() {
-        let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let _secp = bitcoin::secp256k1::Secp256k1::new();
         let signing_session_id = [0u8; 32];
         let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         let tasks = spawn_n_servers(3);
@@ -903,7 +902,7 @@ mod test {
 
     #[tokio::test]
     async fn test_many_inputs_signing() {
-        let SECP = bitcoin::secp256k1::Secp256k1::new();
+        let secp = bitcoin::secp256k1::Secp256k1::new();
         let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
         let eth_2 = "3C44CdDdB6a900fa2b585dd299e03d12FA4293BC".to_string();
         let signing_session_id = [0u8; 32];
@@ -959,8 +958,8 @@ mod test {
         c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
 
         // Notify peg ins
-        send_pegin_notification(&SECP, &mut c3, eth_1.clone(), pk1.publickey.clone()).await;
-        send_pegin_notification(&SECP, &mut c3, eth_2.clone(), pk2.publickey.clone()).await;
+        send_pegin_notification(&secp, &mut c3, eth_1.clone(), pk1.publickey.clone()).await;
+        send_pegin_notification(&secp, &mut c3, eth_2.clone(), pk2.publickey.clone()).await;
 
         // Get signing package
         let signing_package = c3
