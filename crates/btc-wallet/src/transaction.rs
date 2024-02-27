@@ -1,17 +1,12 @@
 use bitcoin::{
-    consensus::Encodable,
     psbt::{self, PartiallySignedTransaction, Psbt},
     sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
 };
 
-const USER_ETH_ADDRESS_FIELD: u8 = 1;
-
-pub static ETH_ADDRESS_FIELD: psbt::raw::ProprietaryKey = psbt::raw::ProprietaryKey {
-    prefix: Vec::new(),
-    subtype: USER_ETH_ADDRESS_FIELD,
-    key: Vec::new(),
-};
+lazy_static::lazy_static!(
+    pub static ref ETH_ADDRESS_FIELD: psbt::raw::Key = psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] };
+);
 
 /// Utxo DTO struct
 pub struct Input {
@@ -54,7 +49,7 @@ pub fn create_psbt(
         if utxo.eth_address.is_some() {
             // Key stores no keydata, only the type value
             psbt_input.unknown.insert(
-                psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] },
+                ETH_ADDRESS_FIELD.clone(),
                 utxo.eth_address.expect("have eth address").to_vec(),
             );
         }
