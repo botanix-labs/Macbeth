@@ -2,8 +2,7 @@ use secp256k1::{
     hashes::{sha256, Hash},
     rand::rngs::OsRng,
     scalar::OutOfRangeError,
-    schnorr::Signature,
-    KeyPair, Message, PublicKey, Scalar, SecretKey,
+    KeyPair, PublicKey, Scalar, SecretKey,
 };
 
 lazy_static::lazy_static! {
