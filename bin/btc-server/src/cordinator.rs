@@ -54,7 +54,7 @@ impl App {
             return Err(Error::InvalidFrostPeerId);
         }
 
-        // Checks if we have enough partial signatures
+        // TODO Checks if we have enough partial signatures
         let _existing_sigs =
             self.db.get_round2_signing_packages(signing_session_id).map_err(Error::Db)?;
 

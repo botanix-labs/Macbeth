@@ -71,7 +71,7 @@ pub struct Db {
     round2_signing_packages: sled::Tree,
 
     // A tree of signing packages
-    // Indexed by outpoint
+    // Indexed by signing_session_id
     // Only relevant for the coordinator
     signing_packages: sled::Tree,
 }
@@ -91,7 +91,7 @@ impl Db {
     }
 
     // Temporary function to clear the db
-    pub fn clear(&self) -> Result<(), Error> {
+    pub fn _clear(&self) -> Result<(), Error> {
         self.round1_signing_packages.clear()?;
         self.round2_signing_packages.clear()?;
         self.signing_packages.clear()?;
@@ -109,6 +109,19 @@ impl Db {
         Ok(())
     }
 
+    /// Adds a vec of signing package to the collection for a given signing session.
+    /// Each signing package is associated with a specific input of the final transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
+    /// * `signing_packages` - A vector of `frost::SigningPackage` to be added to the signing session.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if the signing package was added successfully, `Ok(false)` if the signing session
+    /// already contains a signing package with the given identifier. Returns `Err` in case of other errors.
+    ///
     pub fn add_signing_package(
         &self,
         signing_session_id: &[u8; 32],
@@ -124,6 +137,21 @@ impl Db {
         Ok(true)
     }
 
+    /// Gets the signing package associated with the given signing session identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `frost::SigningPackage` for the given signing session identifier.
+    /// If the signing session does not exist, an empty vector is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if there is an issue deserializing the signing packages.
+    ///
     pub fn get_signing_package(
         &self,
         signing_session_id: &[u8; 32],
@@ -136,6 +164,19 @@ impl Db {
         }
     }
 
+    // Adds round 2 signing information to the specified signing session.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
+    /// * `peer_id` - The frost identifier of the peer contributing to the signing session.
+    /// * `signing_round2` - A vector of `frost::round2::SignatureShare` containing the round 2 signatures.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if the round 2 signing information was added successfully.
+    /// Returns `Err` in case of other errors.
+    ///
     pub fn add_round2_signing(
         &self,
         signing_session_id: &[u8; 32],
@@ -238,6 +279,17 @@ impl Db {
         Ok(BTreeMap::new())
     }
 
+    /// Retrieves the round 2 signing packages associated with the specified signing session.
+    ///
+    /// # Arguments
+    ///
+    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `BTreeMap` where each map represents the partial signatures for a peer
+    /// in the specified signing session. If no matching signing session is found, an empty vector is returned.
+    ///
     pub fn get_round2_signing_packages(
         &self,
         signing_session_id: &[u8; 32],
@@ -263,6 +315,14 @@ impl Db {
         Ok(vec![])
     }
 
+    /// Retrieves the public key package stored in the database, if available.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(public_key_package))` if the public key package is found in the database.
+    /// Returns `Ok(None)` if the public key package is not found.
+    /// Returns `Err` in case of deserialization or other errors.
+    ///
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
         if let Some(b) = self.db.get(PUBKEY_PACKAGE)? {
             let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
@@ -272,6 +332,13 @@ impl Db {
         }
     }
 
+    /// Retrieves the key package stored in the database, if available.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(key_package))` if the key package is found in the database.
+    /// Returns `Ok(None)` if the key package is not found.
+    /// Returns `Err` in case of deserialization or other errors.
     pub fn get_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
         if let Some(b) = self.db.get(KEY_PACKAGE)? {
             let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
@@ -281,6 +348,16 @@ impl Db {
         }
     }
 
+    /// Sets the key package in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_package` - The `frost::keys::KeyPackage` to be stored in the database.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the key package is successfully stored in the database.
+    /// Returns `Err` in case of serialization or other errors.
     pub fn set_key_package(&self, key_package: frost::keys::KeyPackage) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
@@ -289,6 +366,16 @@ impl Db {
         Ok(())
     }
 
+    /// Sets the public key package in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `pk_package` - The `frost::keys::PublicKeyPackage` to be stored in the database.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the public key package is successfully stored in the database.
+    /// Returns `Err` in case of serialization or other errors.
     pub fn set_pubkey_package(
         &self,
         pk_package: frost::keys::PublicKeyPackage,
@@ -300,6 +387,18 @@ impl Db {
         Ok(())
     }
 
+    /// Adds a round 2 DKG package for a specific peer.
+    ///
+    /// # Arguments
+    ///
+    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 2 DKG package is being added.
+    /// * `dkg_round2_package` - The `frost::keys::dkg::round2::Package` representing the round 2 DKG package.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if the round 2 DKG package is successfully added for the peer.
+    /// Returns `Ok(false)` if a round 2 DKG package for the specified peer already exists.
+    /// Returns `Err` in case of serialization or other errors.
     pub fn add_round2_dkg(
         &self,
         peer_id: frost::Identifier,
@@ -317,6 +416,18 @@ impl Db {
         Ok(true)
     }
 
+    /// Adds a round 1 DKG package for a specific peer.
+    ///
+    /// # Arguments
+    ///
+    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 1 DKG package is being added.
+    /// * `dkg_round1` - The `frost::keys::dkg::round1::Package` representing the round 1 DKG package.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if the round 1 DKG package is successfully added for the peer.
+    /// Returns `Ok(false)` if a round 1 DKG package for the specified peer already exists.
+    /// Returns `Err` in case of serialization or other errors.
     pub fn add_round1_dkg(
         &self,
         peer_id: frost::Identifier,
@@ -333,6 +444,17 @@ impl Db {
         Ok(true)
     }
 
+    /// Retrieves the round 2 DKG (Distributed Key Generation) packages stored in the database.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `BTreeMap` where keys are `frost::Identifier` representing peers and values are
+    /// `frost::keys::dkg::round2::Package` representing the associated round 2 DKG packages.
+    /// If no round 2 DKG packages are found, an empty `BTreeMap` is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling serialization errors.
     pub fn get_round2_dkg_packages(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, Error> {
@@ -352,6 +474,17 @@ impl Db {
         Ok(ret)
     }
 
+    /// Retrieves the round 1 DKG (Distributed Key Generation) packages stored in the database.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `BTreeMap` where keys are `frost::Identifier` representing peers and values are
+    /// `frost::keys::dkg::round1::Package` representing the associated round 1 DKG packages.
+    /// If no round 1 DKG packages are found, an empty `BTreeMap` is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling serialization errors.
     pub fn get_round1_dkg_packages(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round1::Package>, Error> {
@@ -372,7 +505,7 @@ impl Db {
     }
 
     /* UTXO specific DB functions */
-    pub fn get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
+    pub fn _get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
         if let Some(b) = self.utxos.get(&op.to_bytes())? {
             let mut ret = ciborium::from_reader::<Utxo, _>(b.as_ref())?;
             ret.outpoint = op;
