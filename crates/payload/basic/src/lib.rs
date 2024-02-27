@@ -128,12 +128,7 @@ impl<Client, Pool, Tasks, Builder> BasicPayloadJobGenerator<Client, Pool, Tasks,
     /// Returns the pre-cached reads for the given parent block if it matches the cached state's
     /// block.
     fn maybe_pre_cached(&self, parent: B256) -> Option<CachedReads> {
-        let pre_cached = self.pre_cached.as_ref()?;
-        if pre_cached.block == parent {
-            Some(pre_cached.cached.clone())
-        } else {
-            None
-        }
+        self.pre_cached.as_ref().filter(|pc| pc.block == parent).map(|pc| pc.cached.clone())
     }
 }
 
@@ -433,7 +428,7 @@ where
                 }
                 Poll::Ready(Err(error)) => {
                     // job failed, but we simply try again next interval
-                    debug!(target: "payload_builder", ?error, "payload build attempt failed");
+                    debug!(target: "payload_builder", %error, "payload build attempt failed");
                     this.metrics.inc_failed_payload_builds();
                 }
                 Poll::Pending => {
@@ -573,7 +568,7 @@ where
         match empty_payload.poll_unpin(cx) {
             Poll::Ready(Ok(res)) => {
                 if let Err(err) = &res {
-                    warn!(target: "payload_builder", ?err, "failed to resolve empty payload");
+                    warn!(target: "payload_builder", %err, "failed to resolve empty payload");
                 } else {
                     debug!(target: "payload_builder", "resolving empty payload");
                 }

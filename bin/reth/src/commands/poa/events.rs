@@ -173,7 +173,7 @@ impl NodeState {
                 );
                 self.send_notification_message_async("Forkchoice updated".to_string());
             }
-            BeaconConsensusEngineEvent::CanonicalBlockAdded(block) => {
+            BeaconConsensusEngineEvent::CanonicalBlockAdded(block, _) => {
                 info!(number=block.number, hash=?block.hash(), "Block added to canonical chain");
                 self.send_notification_message_async("Block added to canonical chain".to_string());
             }

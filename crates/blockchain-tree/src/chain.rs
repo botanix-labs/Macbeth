@@ -25,6 +25,7 @@ use reth_trie::updates::TrieUpdates;
 use std::{
     collections::BTreeMap,
     ops::{Deref, DerefMut},
+    time::Instant,
 };
 
 /// A chain if the blockchain tree, that has functionality to execute blocks and append them to the
@@ -162,18 +163,18 @@ impl AppendableChain {
     ///   - [BlockAttachment] represents if the block extends the canonical chain, and thus we can
     ///     cache the trie state updates.
     ///   - [BlockValidationKind] determines if the state root __should__ be validated.
-    fn validate_and_execute<BSDP, DB, EF>(
+    fn validate_and_execute<BSDP, DB, EVM>(
         block: SealedBlockWithSenders,
         parent_block: &SealedHeader,
         bundle_state_data_provider: BSDP,
-        externals: &TreeExternals<DB, EF>,
+        externals: &TreeExternals<DB, EVM>,
         block_attachment: BlockAttachment,
         block_validation_kind: BlockValidationKind,
     ) -> RethResult<(BundleStateWithReceipts, Option<TrieUpdates>)>
     where
         BSDP: BundleStateDataProvider,
         DB: Database,
-        EF: ExecutorFactory,
+        EVM: ExecutorFactory,
     {
         // some checks are done before blocks comes here.
         externals.consensus.validate_header_against_parent(&block, parent_block)?;
@@ -186,6 +187,7 @@ impl AppendableChain {
         let provider = BundleStateProvider::new(state_provider, bundle_state_data_provider);
 
         let mut executor = externals.executor_factory.with_state(&provider);
+        let block_hash = block.hash();
         let block = block.unseal();
         executor.execute_and_verify_receipt(&block, U256::MAX, None)?;
         let bundle_state = executor.take_output_state();
@@ -193,7 +195,8 @@ impl AppendableChain {
         // check state root if the block extends the canonical chain __and__ if state root
         // validation was requested.
         if block_validation_kind.is_exhaustive() {
-            // check state root
+            // calculate and check state root
+            let start = Instant::now();
             let (state_root, trie_updates) = if block_attachment.is_canonical() {
                 provider
                     .state_root_with_updates(&bundle_state)
@@ -207,6 +210,14 @@ impl AppendableChain {
                 )
                 .into())
             }
+
+            tracing::debug!(
+                target: "blockchain_tree::chain",
+                number = block.number,
+                hash = %block_hash,
+                elapsed = ?start.elapsed(),
+                "Validated state root"
+            );
 
             Ok((bundle_state, trie_updates))
         } else {

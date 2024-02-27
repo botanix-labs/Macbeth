@@ -3,11 +3,11 @@
 
 use crate::{
     args::get_secret_key,
-    commands::{
-        debug_cmd::engine_api_store::EngineApiStore,
-        node::{cl_events::ConsensusLayerHealthEvents, events},
+    commands::debug_cmd::engine_api_store::EngineApiStore,
+    core::{
+        events::{cl::ConsensusLayerHealthEvents, node::handle_events},
+        init::init_genesis,
     },
-    init::init_genesis,
 };
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -294,7 +294,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             ProofOfAuthorityBlockImport::new(self.config.chain.clone(), block_import_tx);
         // build network
         // TODO(armins) need to config for block import
-        let (network_client, mut network_builder) = self
+        let mut network_builder = self
             .config
             .build_network(
                 &config,
@@ -319,11 +319,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         ext.configure_network(network_builder.network_mut(), &components)?;
 
         // launch network
+
         let network = self.config.start_network(
             network_builder,
             &executor,
             transaction_pool.clone(),
-            network_client,
+            provider_factory.clone(),
             &self.data_dir,
         );
 
@@ -478,12 +479,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         );
         executor.spawn_critical(
             "events task",
-            events::handle_events(
-                Some(network.clone()),
-                Some(head.number),
-                events,
-                self.db.clone(),
-            ),
+            handle_events(Some(network.clone()), Some(head.number), events, self.db.clone()),
         );
 
         let engine_api = EngineApi::new(

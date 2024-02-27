@@ -22,7 +22,7 @@ use reth_rpc_api::TraceApiServer;
 use reth_rpc_types::{
     state::StateOverride,
     trace::{filter::TraceFilter, parity::*, tracerequest::TraceCallRequest},
-    BlockError, BlockOverrides, CallRequest, Index,
+    BlockError, BlockOverrides, Index, TransactionRequest,
 };
 use revm::{
     db::{CacheDB, DatabaseCommit},
@@ -125,7 +125,7 @@ where
     /// Note: Allows tracing dependent transactions, hence all transactions are traced in sequence
     pub async fn trace_call_many(
         &self,
-        calls: Vec<(CallRequest, HashSet<TraceType>)>,
+        calls: Vec<(TransactionRequest, HashSet<TraceType>)>,
         block_id: Option<BlockId>,
     ) -> EthResult<Vec<TraceResults>> {
         let at = block_id.unwrap_or(BlockId::Number(BlockNumberOrTag::Pending));
@@ -432,7 +432,7 @@ where
     /// Handler for `trace_call`
     async fn trace_call(
         &self,
-        call: CallRequest,
+        call: TransactionRequest,
         trace_types: HashSet<TraceType>,
         block_id: Option<BlockId>,
         state_overrides: Option<StateOverride>,
@@ -447,7 +447,7 @@ where
     /// Handler for `trace_callMany`
     async fn trace_call_many(
         &self,
-        calls: Vec<(CallRequest, HashSet<TraceType>)>,
+        calls: Vec<(TransactionRequest, HashSet<TraceType>)>,
         block_id: Option<BlockId>,
     ) -> Result<Vec<TraceResults>> {
         let _permit = self.acquire_trace_permit().await;

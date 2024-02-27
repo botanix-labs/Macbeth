@@ -8,7 +8,7 @@ use reth_botanix_lib::mint_validation::{
     parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
-use reth_node_api::ConfigureEvmEnv;
+use reth_node_api::ConfigureEvm;
 use reth_primitives::{
     Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork,
     Header, PruneMode, PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts,
@@ -22,7 +22,7 @@ use revm::{
     inspector_handle_register,
     interpreter::Host,
     primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
-    Evm, State, StateBuilder,
+    Evm, Handler, State, StateBuilder,
 };
 use std::{sync::Arc, time::Instant};
 use tracing::{error, warn};
@@ -58,8 +58,6 @@ lazy_static::lazy_static! {
 ///
 /// InspectorStack are used for optional inspecting execution. And it contains
 /// various duration of parts of execution.
-// TODO: https://github.com/bluealloy/revm/pull/745
-// #[derive(Debug)]
 #[allow(missing_debug_implementations)]
 pub struct EVMProcessor<'a, EvmConfig> {
     /// The configured chain-spec
@@ -91,7 +89,7 @@ pub struct EVMProcessor<'a, EvmConfig> {
 
 impl<'a, EvmConfig> EVMProcessor<'a, EvmConfig>
 where
-    EvmConfig: ConfigureEvmEnv,
+    EvmConfig: ConfigureEvm,
 {
     /// Return chain spec.
     pub fn chain_spec(&self) -> &Arc<ChainSpec> {
@@ -101,17 +99,14 @@ where
     /// Create a new pocessor with the given chain spec.
     pub fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
         // create evm with boxed empty db that is going to be set later.
-        let evm = Evm::builder()
-            .with_db(
-                Box::new(
-                    StateBuilder::new()
-                        .with_database_boxed(Box::new(EmptyDBTyped::<ProviderError>::new())),
-                )
-                .build(),
-            )
-            // Hook and inspector stack that we want to invoke on that hook.
-            .with_external_context(InspectorStack::new(InspectorStackConfig::default()))
-            .build();
+        let db = Box::new(
+            StateBuilder::new().with_database_boxed(Box::new(EmptyDBTyped::<ProviderError>::new())),
+        )
+        .build();
+
+        // Hook and inspector stack that we want to invoke on that hook.
+        let stack = InspectorStack::new(InspectorStackConfig::default());
+        let evm = evm_config.evm_with_inspector(db, stack);
         EVMProcessor {
             chain_spec,
             evm,
@@ -145,10 +140,8 @@ where
         revm_state: StateDBBox<'a, ProviderError>,
         evm_config: EvmConfig,
     ) -> Self {
-        let evm = Evm::builder()
-            .with_db(revm_state)
-            .with_external_context(InspectorStack::new(InspectorStackConfig::default()))
-            .build();
+        let stack = InspectorStack::new(InspectorStackConfig::default());
+        let evm = evm_config.evm_with_inspector(revm_state, stack);
         EVMProcessor {
             chain_spec,
             evm,
@@ -186,7 +179,7 @@ where
         self.db_mut().set_state_clear_flag(state_clear_flag);
 
         let mut cfg: CfgEnvWithHandlerCfg =
-            CfgEnvWithHandlerCfg::new(self.evm.cfg().clone(), self.evm.spec_id());
+            CfgEnvWithHandlerCfg::new_with_spec_id(self.evm.cfg().clone(), self.evm.spec_id());
         EvmConfig::fill_cfg_and_block_env(
             &mut cfg,
             self.evm.block_mut(),
@@ -195,7 +188,7 @@ where
             total_difficulty,
         );
         *self.evm.cfg_mut() = cfg.cfg_env;
-        self.evm.handler.modify_spec_id(cfg.handler_cfg.spec_id);
+        self.evm.handler = Handler::new(cfg.handler_cfg);
     }
 
     /// Applies the pre-block call to the EIP-4788 beacon block root contract.
@@ -329,7 +322,7 @@ where
             self.evm.handler.pop_handle_register();
             output
         } else {
-            // main execution.
+            // Main execution without needing the hash
             self.evm.transact()
         };
 
@@ -365,7 +358,11 @@ where
             }
         };
 
-        out.map_err(|e| BlockValidationError::EVM { hash, error: e.into() }.into())
+        out.map_err(move |e| {
+            // Ensure hash is calculated for error log, if not already done
+            BlockValidationError::EVM { hash: transaction.recalculate_hash(), error: e.into() }
+                .into()
+        })
     }
 
     /// Execute the block, verify gas usage and apply post-block state changes.
@@ -486,8 +483,10 @@ where
 #[cfg(not(feature = "optimism"))]
 impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig>
 where
-    EvmConfig: ConfigureEvmEnv,
+    EvmConfig: ConfigureEvm,
 {
+    type Error = BlockExecutionError;
+
     fn execute(
         &mut self,
         block: &BlockWithSenders,
@@ -516,8 +515,8 @@ where
             if let Err(error) =
                 verify_receipt(block.header.receipts_root, block.header.logs_bloom, receipts.iter())
             {
-                debug!(target: "evm", ?error, ?receipts, "receipts verification failed");
-                return Err(error);
+                debug!(target: "evm", %error, ?receipts, "receipts verification failed");
+                return Err(error)
             };
             self.stats.receipt_root_duration += time.elapsed();
         }
@@ -586,16 +585,13 @@ where
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
+        self.stats.log_debug();
         let receipts = std::mem::take(&mut self.receipts);
         BundleStateWithReceipts::new(
             self.evm.context.evm.db.take_bundle(),
             receipts,
             self.first_block.unwrap_or_default(),
         )
-    }
-
-    fn stats(&self) -> BlockExecutorStats {
-        self.stats.clone()
     }
 
     fn size_hint(&self) -> Option<usize> {
@@ -605,7 +601,7 @@ where
 
 impl<'a, EvmConfig> PrunableBlockExecutor for EVMProcessor<'a, EvmConfig>
 where
-    EvmConfig: ConfigureEvmEnv,
+    EvmConfig: ConfigureEvm,
 {
     fn set_tip(&mut self, tip: BlockNumber) {
         self.tip = Some(tip);
@@ -616,35 +612,48 @@ where
     }
 }
 
-/// Verify receipts
+/// Calculate the receipts root, and copmare it against against the expected receipts root and logs
+/// bloom.
 pub fn verify_receipt<'a>(
     expected_receipts_root: B256,
     expected_logs_bloom: Bloom,
     receipts: impl Iterator<Item = &'a Receipt> + Clone,
-    #[cfg(feature = "optimism")] chain_spec: &ChainSpec,
-    #[cfg(feature = "optimism")] timestamp: u64,
 ) -> Result<(), BlockExecutionError> {
-    // Check receipts root.
+    // Calculate receipts root.
     let receipts_with_bloom = receipts.map(|r| r.clone().into()).collect::<Vec<ReceiptWithBloom>>();
-    let receipts_root = reth_primitives::proofs::calculate_receipt_root(
-        &receipts_with_bloom,
-        #[cfg(feature = "optimism")]
-        chain_spec,
-        #[cfg(feature = "optimism")]
-        timestamp,
-    );
-    if receipts_root != expected_receipts_root {
+    let receipts_root = reth_primitives::proofs::calculate_receipt_root(&receipts_with_bloom);
+
+    // Create header log bloom.
+    let logs_bloom = receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | r.bloom);
+
+    compare_receipts_root_and_logs_bloom(
+        receipts_root,
+        logs_bloom,
+        expected_receipts_root,
+        expected_logs_bloom,
+    )?;
+
+    Ok(())
+}
+
+/// Compare the calculated receipts root with the expected receipts root, also copmare
+/// the calculated logs bloom with the expected logs bloom.
+pub fn compare_receipts_root_and_logs_bloom(
+    calculated_receipts_root: B256,
+    calculated_logs_bloom: Bloom,
+    expected_receipts_root: B256,
+    expected_logs_bloom: Bloom,
+) -> Result<(), BlockExecutionError> {
+    if calculated_receipts_root != expected_receipts_root {
         return Err(BlockValidationError::ReceiptRootDiff(
-            GotExpected { got: receipts_root, expected: expected_receipts_root }.into(),
+            GotExpected { got: calculated_receipts_root, expected: expected_receipts_root }.into(),
         )
         .into());
     }
 
-    // Create header log bloom.
-    let logs_bloom = receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | r.bloom);
-    if logs_bloom != expected_logs_bloom {
+    if calculated_logs_bloom != expected_logs_bloom {
         return Err(BlockValidationError::BloomLogDiff(
-            GotExpected { got: logs_bloom, expected: expected_logs_bloom }.into(),
+            GotExpected { got: calculated_logs_bloom, expected: expected_logs_bloom }.into(),
         )
         .into());
     }
@@ -659,14 +668,15 @@ mod tests {
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         bytes,
-        constants::{BEACON_ROOTS_ADDRESS, SYSTEM_ADDRESS},
+        constants::{BEACON_ROOTS_ADDRESS, EIP1559_INITIAL_BASE_FEE, SYSTEM_ADDRESS},
         keccak256,
         trie::AccountProof,
-        Account, Bytecode, Bytes, ChainSpecBuilder, ForkCondition, StorageKey, MAINNET,
+        Account, Bytecode, Bytes, ChainSpecBuilder, ForkCondition, Signature, StorageKey,
+        Transaction, TransactionKind, TxEip1559, MAINNET,
     };
-    use reth_provider::{
-        AccountReader, BlockHashReader, BundleStateWithReceipts, StateRootProvider,
-    };
+    #[cfg(feature = "optimism")]
+    use reth_provider::BundleStateWithReceipts;
+    use reth_provider::{AccountReader, BlockHashReader, StateRootProvider};
     use reth_trie::updates::TrieUpdates;
     use revm::{Database, TransitionState};
     use std::collections::HashMap;
@@ -1151,5 +1161,50 @@ mod tests {
             .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
             .unwrap();
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
+    }
+
+    #[test]
+    fn test_transact_error_includes_correct_hash() {
+        let chain_spec = Arc::new(
+            ChainSpecBuilder::from(&*MAINNET)
+                .shanghai_activated()
+                .with_fork(Hardfork::Cancun, ForkCondition::Timestamp(1))
+                .build(),
+        );
+
+        let db = StateProviderTest::default();
+        let chain_id = chain_spec.chain.id();
+
+        // execute header
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            EthEvmConfig::default(),
+        );
+
+        // Create a test transaction that gonna fail
+        let transaction = TransactionSigned::from_transaction_and_signature(
+            Transaction::Eip1559(TxEip1559 {
+                chain_id,
+                nonce: 1,
+                gas_limit: 21_000,
+                to: TransactionKind::Call(Address::ZERO),
+                max_fee_per_gas: EIP1559_INITIAL_BASE_FEE as u128,
+                ..Default::default()
+            }),
+            Signature::default(),
+        );
+
+        let result = executor.transact(&transaction, Address::random());
+
+        let expected_hash = transaction.recalculate_hash();
+
+        // Check the error
+        match result {
+            Err(BlockExecutionError::Validation(BlockValidationError::EVM { hash, error: _ })) => {
+                    assert_eq!(hash, expected_hash, "The EVM error does not include the correct transaction hash.");
+            },
+            _ => panic!("Expected a BlockExecutionError::Validation error, but transaction did not fail as expected."),
+        }
     }
 }

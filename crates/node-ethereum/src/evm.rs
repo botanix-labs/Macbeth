@@ -1,4 +1,4 @@
-use reth_node_api::ConfigureEvmEnv;
+use reth_node_api::{ConfigureEvm, ConfigureEvmEnv};
 use reth_primitives::{
     revm::{config::revm_spec, env::fill_tx_env},
     revm_primitives::{AnalysisKind, CfgEnvWithHandlerCfg, TxEnv},
@@ -44,6 +44,8 @@ impl ConfigureEvmEnv for EthEvmConfig {
     }
 }
 
+impl ConfigureEvm for EthEvmConfig {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,7 +54,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_fill_cfg_and_block_env() {
-        let mut cfg_env = CfgEnvWithHandlerCfg::new(CfgEnv::default(), SpecId::LATEST);
+        let mut cfg_env = CfgEnvWithHandlerCfg::new_with_spec_id(CfgEnv::default(), SpecId::LATEST);
         let mut block_env = BlockEnv::default();
         let header = Header::default();
         let chain_spec = ChainSpec::default();

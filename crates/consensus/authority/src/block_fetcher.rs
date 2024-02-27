@@ -48,7 +48,8 @@ where
         + Clone
         + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,

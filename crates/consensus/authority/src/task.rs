@@ -63,7 +63,8 @@ where
         + Clone
         + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]

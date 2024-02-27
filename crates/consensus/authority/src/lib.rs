@@ -283,7 +283,7 @@ where
         recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
@@ -381,7 +381,7 @@ where
         evm_config: EvmConfig,
     ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
     where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
         // Check if we have a recent block header
         // Can't validate pegin without it
@@ -467,7 +467,7 @@ where
         evm_config: EvmConfig,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static,
+        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
         // Check if we have a recent block header
         // Can't validate pegin without it

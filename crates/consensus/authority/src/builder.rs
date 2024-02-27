@@ -65,7 +65,8 @@ pub enum AuthorityConsensusBuilderError {
 impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
 where
     Engine: EngineTypes + 'static,
-    EvmConfig: ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static,
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
