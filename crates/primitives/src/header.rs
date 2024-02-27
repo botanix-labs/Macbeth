@@ -849,17 +849,18 @@ impl SealedHeader {
         // EIP-1559 check base fee
         if chain_spec.fork(Hardfork::London).active_at_block(self.number) {
             let base_fee = self.base_fee_per_gas.ok_or(HeaderValidationError::BaseFeeMissing)?;
+        // Determine initial base fee by chain id
+        let initial_base_fee_by_chain_id = chain_spec.clone().initial_base_fee_by_chain_id();
 
-            let expected_base_fee =
-                if chain_spec.fork(Hardfork::London).transitions_at_block(self.number) {
-                    constants::EIP1559_INITIAL_BASE_FEE
-                } else {
-                    // This BaseFeeMissing will not happen as previous blocks are checked to have
-                    // them.
-                    parent
-                        .next_block_base_fee(chain_spec.base_fee_params(self.timestamp))
-                        .ok_or(HeaderValidationError::BaseFeeMissing)?
-                };
+        let expected_base_fee =
+            if chain_spec.fork(Hardfork::London).transitions_at_block(self.number) {
+                initial_base_fee_by_chain_id
+            } else {
+                // This BaseFeeMissing will not happen as previous blocks are checked to have them.
+                parent
+                    .next_block_base_fee(chain_spec.base_fee_params(self.timestamp))
+                    .ok_or(HeaderValidationError::BaseFeeMissing)?
+            };
             if expected_base_fee != base_fee {
                 return Err(HeaderValidationError::BaseFeeDiff(GotExpected {
                     expected: expected_base_fee,
