@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
+use crate::util::{self, VerifyingKeyExt};
 use crate::{database, util::OutPointExt, App, Error};
 
 use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
@@ -172,45 +173,6 @@ impl App {
         );
 
         Ok(psbt)
-
-        // Signing
-        // TODO(armins) Replace this once we have frost signing working
-        // if let Err(err) =
-        //     reth_btc_wallet::transaction::sign_psbt(&SECP, &self.key.secret_key(), &mut psbt)
-        // {
-        //     error!("Failed to sign psbt {:?}", err);
-        //     return Err(Error::FailedToSignPbst)
-        // }
-
-        // try finalize tx
-        // if let Err(errs) = psbt.finalize_mut(&SECP) {
-        //     error!("Had {} PSBT finalization errors:", errs.len());
-        //     for e in &errs {
-        //         error!("  PSBT finalization error: {}", e);
-        //     }
-        //     return Err(Error::PbstFinalizationFailed(errs))
-        // }
-        // could do this once we are confident our code works and we don't
-        // want to do the effort of tx verification
-        // let tx = psbt.clone().extract_tx();
-        // let tx = psbt.extract(&SECP).map_err(|_| Error::InvaildResultingTx)?;
-
-        // then we should remove the utxos from the db and add the change one
-        // let txid = tx.txid();
-        // TODO (armins) when should this be done?
-        // After a batched pegout tx is confirmed?
-        // self.db
-        //     .add_remove_utxos(
-        //         selected.iter().map(|u| u.outpoint),
-        //         change
-        //             .map(|utxo| Utxo {
-        //                 outpoint: OutPoint::new(txid, 1),
-        //                 output: utxo,
-        //                 eth_address: None,
-        //             })
-        //             .iter(),
-        //     )
-        //     .map_err(Error::Db)?;
     }
 
     pub(crate) fn get_to_sign(
@@ -225,8 +187,7 @@ impl App {
             return Err(Error::NotEnoughSigners);
         }
 
-        let pk = hex::encode(pk_package.verifying_key().serialize());
-        let secp_pk = bitcoin::secp256k1::PublicKey::from_str(pk.as_str()).expect("pk");
+        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
         let change_script = reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk);
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
 
@@ -266,6 +227,9 @@ impl App {
         psbt: &mut Psbt,
         signing_session_id: &[u8; 32],
     ) -> Result<Transaction, Error> {
+        // Lock here to prevent a make_tx that uses utxos that will be removed
+        let _tx_lock = self.tx_lock.lock().expect("get lock");
+
         let tx = psbt.clone().extract_tx();
         let pk_package = self.db.get_public_key_package()?.ok_or(Error::MissingKeyPackage)?;
         let partial_sigs = self.db.get_round2_signing_packages(signing_session_id)?;
@@ -328,6 +292,11 @@ impl App {
         // let tx = psbt.clone().extract_tx();
         let tx = psbt.extract(secp).map_err(|_| Error::InvaildResultingTx)?;
 
+        // Finally we should remove the utxos from the db and add the change one
+        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
+        let (change_outputs, selected_inputs) = util::add_remove_utxo_from_psbt(psbt, &secp_pk)?;
+        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
+        self.db.flush()?;
         Ok(tx)
     }
 }
