@@ -1,18 +1,15 @@
 use std::{
     array::TryFromSliceError,
     collections::BTreeMap,
-    io::{self, Read},
+    io::{self},
     path::Path,
 };
 
 use crate::util::OutPointExt;
-use bitcoin::{
-    consensus::{Decodable, Encodable},
-    OutPoint, TxOut, Txid,
-};
+use bitcoin::{OutPoint, TxOut};
 use ciborium;
 use frost_secp256k1_tr as frost;
-use prost::bytes::Buf;
+
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
@@ -157,7 +154,9 @@ impl Db {
             );
         } else {
             // Update existing partial signatures
-            for (sigs, round2_partial_sig) in existing_partial_sigs.iter_mut().zip(signing_round2.iter()) {
+            for (sigs, round2_partial_sig) in
+                existing_partial_sigs.iter_mut().zip(signing_round2.iter())
+            {
                 // Skip if the peer_id already has a signature
                 if !sigs.contains_key(peer_id) {
                     sigs.insert(*peer_id, *round2_partial_sig);

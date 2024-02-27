@@ -1,5 +1,5 @@
 use crate::Error;
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt, OutPoint, TxOut};
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, OutPoint};
 use frost_secp256k1_tr as frost;
 
 /// Extension trait for OutPoint.

@@ -1,8 +1,5 @@
 use crate::{App, Error};
-use bitcoin::{
-    consensus::Encodable,
-    psbt::{self, Psbt},
-};
+use bitcoin::psbt::Psbt;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
@@ -10,7 +7,7 @@ impl App {
     pub(crate) fn get_round1_signing_package(
         &self,
         number_of_nonces: u32,
-        signing_session_id: &[u8; 32],
+        _signing_session_id: &[u8; 32],
     ) -> Result<Vec<frost::round1::SigningCommitments>, Error> {
         // Check if have already provided nonces for the current session
         if self.frost_round1_signing_nonces.lock().unwrap().is_some() {
@@ -84,7 +81,7 @@ impl App {
         // TODO(armmins) this code needs to handle signing for multiple inputs
         // Get a parital sig for each input
         let mut partial_sigs = vec![];
-        for (index, (signing_package, txin)) in
+        for (index, (signing_package, _txin)) in
             signing_packages.iter_mut().zip(tx.input.iter()).enumerate()
         {
             // get the eth tweak from the psbt unknown fields
