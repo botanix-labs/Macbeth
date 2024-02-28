@@ -13,6 +13,12 @@ impl App {
         if self.frost_round1_signing_nonces.lock().unwrap().is_some() {
             return Err(Error::AlreadyInSigningSession);
         }
+
+        if number_of_nonces == 0 || number_of_nonces > 15 {
+            // TODO(armins) different error variant 
+            return Err(Error::AlreadyInSigningSession);
+        }
+
         let key_package = self.db.get_key_package()?.ok_or(Error::MissingKeyPackage)?;
         // Get our secret package
         let secret = key_package.signing_share();
