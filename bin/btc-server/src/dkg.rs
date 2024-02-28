@@ -43,21 +43,20 @@ impl App {
         }
     }
 
-    pub(crate) fn add_round2_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
+    pub(crate) fn add_round2_dkg(
+        &self,
+        frost_id: frost::Identifier,
+        packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+    ) -> Result<(), Error> {
         if self.db.get_key_package()?.is_some() {
             return Err(Error::AlreadyHaveKeyPackage);
         }
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(Error::InvalidFrostPeerId);
         }
-        // We serialize here to just validate the payload
-        let packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            serde_json::from_slice(payload.payload.as_slice())
-                .map_err(|e| Error::InvalidRoundDkgSerializationFormat(e))?;
-
         for (id, package) in packages.iter() {
+            // Look for our package and store it
             if self.identifier == *id {
                 if self.db.add_round2_dkg(frost_id, package.clone()).map_err(Error::Db)? {
                     self.db.flush().map_err(Error::Db)?;
@@ -88,18 +87,26 @@ impl App {
         return Err(Error::InvalidRound2DkgPayloadMissingPackage);
     }
 
-    pub(crate) fn add_round1_dkg(&self, payload: rpc::DkgPayload) -> Result<(), Error> {
+    pub(crate) fn add_round1_dkg(
+        &self,
+        frost_id: frost::Identifier,
+        dkg_round1: frost::keys::dkg::round1::Package,
+    ) -> Result<(), Error> {
         if self.db.get_key_package()?.is_some() {
             return Err(Error::AlreadyHaveKeyPackage);
         }
-        let frost_id = crate::util::deserialize_frost_peer_id(payload.identifier.clone())?;
         // Can't add our selves
         if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
+            return Err(Error::CannotAddOwnDkgPackage);
         }
 
-        let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(payload.payload.as_slice())
-            .map_err(|e| Error::InvalidRoundDkgPayload(e))?;
+        if self.frost_round1_dkg.as_ref().take().expect("valid dkg round1").1 == dkg_round1 {
+            return Err(Error::CannotAddOwnDkgPackage);
+        }
+        // Should not add if we have max signers
+        if self.db.get_round1_dkg_packages()?.len() as u16 == self.max_signers - 1 {
+            return Err(Error::DkgMaxSignersReached);
+        }
 
         if self.db.add_round1_dkg(frost_id, dkg_round1).map_err(Error::Db)? {
             self.db.flush().map_err(Error::Db)?;
