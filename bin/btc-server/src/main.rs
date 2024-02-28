@@ -580,6 +580,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
+    macro_rules! frost_id {
+        ($index:expr) => {
+            frost::Identifier::try_from($index).expect("valid id")
+        };
+    }
     use std::collections::BTreeMap;
 
     use super::*;
@@ -606,7 +611,7 @@ mod test {
             db: database::Db::open(&dbdir).unwrap(),
             network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
-            identifier: frost::Identifier::derive(&[0u8; 16]).unwrap(),
+            identifier: frost_id!(1u16),
             max_signers: 3,
             min_signers: 2,
             frost_round1_dkg: None,
@@ -633,6 +638,7 @@ mod test {
 
         keys
     }
+    // NOTE: reminder for the tests that frost identifiers start indexing at 1
     /**
      * Round 1 DKG Tests
      */
@@ -717,10 +723,11 @@ mod test {
         let rng = thread_rng();
         // generate round1 dkgs
         let mut round1_dkgs = vec![];
-        for index in 0..app.max_signers {
+        // Reminder that frost ids index at 1
+        for index in 1..(app.max_signers + 1) {
             round1_dkgs.push(
                 frost::keys::dkg::part1(
-                    frost::Identifier::derive(&index.to_be_bytes()).expect("valid id"),
+                    frost_id!(index),
                     app.max_signers,
                     app.min_signers,
                     rng.clone(),
@@ -736,7 +743,8 @@ mod test {
         assert_eq!(res.err().unwrap().to_string(), "Cannot add our own dkg package");
         // Should not be able to add ourselves -- when package is the same
         let res = app.add_round1_dkg(
-            frost::Identifier::derive(&[1u8; 32]).expect("valid id"),
+            // Different peers id, the original is `1u16`
+            frost_id!(2),
             round1_dkgs[0].clone().1,
         );
 
@@ -744,48 +752,35 @@ mod test {
         assert_eq!(res.err().unwrap().to_string(), "Cannot add our own dkg package");
 
         // Add round 1 dkg from peer
-        let res = app.add_round1_dkg(
-            frost::Identifier::derive(&[1u8; 32]).expect("valid id"),
-            round1_dkgs[1].clone().1,
-        );
+        let res = app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1);
         assert!(res.is_ok());
         let pkgs = app.db.get_round1_dkg_packages().unwrap();
         // Check it updates the db
-        assert!(pkgs.contains_key(&frost::Identifier::derive(&[1u8; 32]).unwrap()));
+        assert!(pkgs.contains_key(&frost::Identifier::try_from(2u16).unwrap()));
         // Adding the same round 1 dkg should not make a difference
-        let res = app.add_round1_dkg(
-            frost::Identifier::derive(&[1u8; 32]).expect("valid id"),
-            round1_dkgs[1].clone().1,
-        );
+        let res = app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1);
         assert!(res.is_ok());
         let pkgs = app.db.get_round1_dkg_packages().unwrap();
         // Check it updates the db
-        assert!(pkgs.contains_key(&frost::Identifier::derive(&[1u8; 32]).unwrap()));
+        assert!(pkgs.contains_key(&frost_id!(2)));
         assert_eq!(pkgs.len(), 1);
 
         // Should be able to add different round 1 dkg
-        let res = app.add_round1_dkg(
-            frost::Identifier::derive(&[2u8; 32]).expect("valid id"),
-            round1_dkgs[2].clone().1,
-        );
+        let res = app.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1);
         assert!(res.is_ok());
         let pkgs = app.db.get_round1_dkg_packages().unwrap();
         // Check it updates the db
-        assert!(pkgs.contains_key(&frost::Identifier::derive(&[1u8; 32]).unwrap()));
-        assert!(pkgs.contains_key(&frost::Identifier::derive(&[2u8; 32]).unwrap()));
+        assert!(pkgs.contains_key(&frost_id!(2)));
+        assert!(pkgs.contains_key(&frost_id!(3)));
         assert_eq!(pkgs.len(), 2);
+        // Note here that we explicity do not store our own round 1 package in db
 
         // Try to add one more participant
-        let extra = frost::keys::dkg::part1(
-            frost::Identifier::derive(&4u8.to_be_bytes()).expect("valid id"),
-            app.max_signers,
-            app.min_signers,
-            rng.clone(),
-        )
-        .unwrap();
+        let extra =
+            frost::keys::dkg::part1(frost_id!(4), app.max_signers, app.min_signers, rng.clone())
+                .unwrap();
 
-        let res =
-            app.add_round1_dkg(frost::Identifier::derive(&[4u8; 32]).expect("valid id"), extra.1);
+        let res = app.add_round1_dkg(frost_id!(4), extra.1);
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "Already have max dkg packages");
     }
@@ -823,10 +818,11 @@ mod test {
         let mut app = setup();
         let rng = thread_rng();
         let mut round1_dkgs = vec![];
-        for index in 0..app.max_signers {
+        // reminder that frost identifiers start at 1
+        for index in 1..(app.max_signers + 1) {
             round1_dkgs.push(
                 frost::keys::dkg::part1(
-                    frost::Identifier::derive(&index.to_be_bytes()).expect("valid id"),
+                    frost_id!(index),
                     app.max_signers,
                     app.min_signers,
                     rng.clone(),
@@ -843,23 +839,13 @@ mod test {
             "Invalid round1 Dkg payload: Incorrect number of packages."
         );
 
-        app.add_round1_dkg(
-            frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id"),
-            round1_dkgs[1].clone().1,
-        )
-        .expect("valid round1 dkg");
-        app.add_round1_dkg(
-            frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id"),
-            round1_dkgs[2].clone().1,
-        )
-        .expect("valid round1 dkg");
+        app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
+        app.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
 
         let round2_dkg = app.get_round2_dkg().expect("valid round 2 transition");
         assert_eq!(round2_dkg.len(), 2);
-        assert!(round2_dkg
-            .contains_key(&frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id")));
-        assert!(round2_dkg
-            .contains_key(&frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id")));
+        assert!(round2_dkg.contains_key(&frost_id!(2)));
+        assert!(round2_dkg.contains_key(&frost_id!(3)));
     }
 
     #[test]
@@ -870,10 +856,11 @@ mod test {
         let mut app2 = setup();
         let mut app3 = setup();
         let mut round1_dkgs = vec![];
-        for index in 0..app1.max_signers {
+        // Reminder that frost ids index at 1
+        for index in 1..(app1.max_signers + 1) {
             round1_dkgs.push(
                 frost::keys::dkg::part1(
-                    frost::Identifier::derive(&index.to_be_bytes()).expect("valid id"),
+                    frost::Identifier::try_from(index).expect("valid id"),
                     app1.max_signers,
                     app1.min_signers,
                     rng.clone(),
@@ -882,60 +869,46 @@ mod test {
             );
         }
         // 1st participant round 1
-        app1.identifier = frost::Identifier::derive(&0u16.to_be_bytes()).expect("valid id");
+        app1.identifier = frost_id!(1);
         app1.frost_round1_dkg = Some(round1_dkgs[0].clone());
-        app1.add_round1_dkg(
-            frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id"),
-            round1_dkgs[1].clone().1,
-        )
-        .expect("valid round1 dkg");
-        app1.add_round1_dkg(
-            frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id"),
-            round1_dkgs[2].clone().1,
-        )
-        .expect("valid round1 dkg");
+        app1.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
+        app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
         let p1_dkg2 = app1.get_round2_dkg().expect("valid round 2 transition");
 
         // 2nd participant round 1
         app2.frost_round1_dkg = Some(round1_dkgs[1].clone());
-        app2.identifier = frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id");
+        app2.identifier = frost_id!(2);
         app2.add_round1_dkg(
-            frost::Identifier::derive(&0u16.to_be_bytes()).expect("valid id"),
+            frost_id!(1),
             round1_dkgs[0].clone().1,
         )
         .expect("valid round1 dkg");
         app2.add_round1_dkg(
-            frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id"),
+            frost_id!(3),
             round1_dkgs[2].clone().1,
         )
         .expect("valid round1 dkg");
         let p2_dkg2 = app2.get_round2_dkg().expect("valid round 2 transition");
         // 3rd participant round 1
         app3.frost_round1_dkg = Some(round1_dkgs[2].clone());
-        app3.identifier = frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id");
+        app3.identifier = frost_id!(3);
         app3.add_round1_dkg(
-            frost::Identifier::derive(&0u16.to_be_bytes()).expect("valid id"),
+            frost_id!(1),
             round1_dkgs[0].clone().1,
         )
         .expect("valid round1 dkg");
         app3.add_round1_dkg(
-            frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id"),
+            frost_id!(2),
             round1_dkgs[1].clone().1,
         )
         .expect("valid round1 dkg");
         let p3_dkg2 = app3.get_round2_dkg().expect("valid round 2 transition");
 
         // Round 2 dkg for 1st participant
-        app1.add_round2_dkg(
-            frost::Identifier::derive(&1u16.to_be_bytes()).expect("valid id"),
-            p2_dkg2.clone(),
-        )
-        .expect("valid round2 dkg");
-        app1.add_round2_dkg(
-            frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id"),
-            p3_dkg2.clone(),
-        )
-        .expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone())
+            .expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone())
+            .expect("valid round2 dkg");
 
         // The dkg session should have concluded by now
         let pk_package1 = app1.db.get_public_key_package().expect("valid pk package");
@@ -945,19 +918,14 @@ mod test {
 
         // Lets complete the round 2 dkg for the another participant
         // And compare the results
-        app2.add_round2_dkg(
-            frost::Identifier::derive(&0u16.to_be_bytes()).expect("valid id"),
-            p1_dkg2.clone(),
-        ).expect("valid round2 dkg");
-        app2.add_round2_dkg(
-            frost::Identifier::derive(&2u16.to_be_bytes()).expect("valid id"),
-            p3_dkg2.clone(),
-        ).expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone())
+            .expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone())
+            .expect("valid round2 dkg");
 
         let pk_package2 = app1.db.get_public_key_package().expect("valid pk package");
         assert!(pk_package2.is_some());
         assert_eq!(pk_package1, pk_package2);
-
 
         let eth = eth_vector_to_fixed_bytes(
             hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
@@ -965,6 +933,52 @@ mod test {
         let pk1 = app1.get_public_key(&eth).expect("valid public key request");
         let pk2 = app2.get_public_key(&eth).expect("valid public key request");
         assert_eq!(pk1, pk2);
+    }
 
+    // Signing tests
+    #[test]
+    fn should_fail_to_get_to_sign_package_without_dkg() {
+        let app = setup();
+        let signing_session_id = [0u8; 32];
+        let nonce_commits = app.get_round1_signing_package(2, &signing_session_id);
+        assert!(nonce_commits.is_err());
+        assert_eq!(
+            nonce_commits.err().unwrap().to_string(),
+            "Missing key package, need to perform DKG first"
+        );
+    }
+
+    #[test]
+    fn should_fail_when_requesting_too_many_nonces() {
+        let app = setup();
+        let signing_session_id = [0u8; 32];
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+
+        let nonce_commits = app.get_round1_signing_package(100_000_000, &signing_session_id);
+        assert!(nonce_commits.is_err());
+        assert_eq!(nonce_commits.err().unwrap().to_string(), "Signing session already in progress");
+    }
+
+    #[test]
+    fn should_get_round1_nonce_commitments() {
+        let app = setup();
+        let signing_session_id = [0u8; 32];
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        app.db.set_pubkey_package(pk_package).expect("set public key package");
+        app.db.set_key_package(key_package).expect("set key package");
+
+        let nonce_commits = app
+            .get_round1_signing_package(1, &signing_session_id)
+            .expect("valid nonce commits request");
+
+        assert_eq!(nonce_commits.len(), 1);
+        // Should not be able to get a new set of nonces
+        let res = app
+            .get_round1_signing_package(1, &signing_session_id);
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "Signing session already in progress");
     }
 }
