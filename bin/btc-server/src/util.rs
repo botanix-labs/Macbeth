@@ -67,6 +67,16 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
 
 impl VerifyingKeyExt for frost::VerifyingKey {}
 
+#[derive(Debug, Error)]
+pub enum ParsingError {
+    #[error("invalid frost id")]
+    InvalidFrostPeerId,
+    #[error("invalid signing session id")]
+    InvalidSigningSessionId,
+    #[error("invalid eth address: {0}")]
+    InvalidEthAddress(&'static str),
+}
+
 // Deserializes a Frost peer ID.
 ///
 /// # Arguments
@@ -77,15 +87,15 @@ impl VerifyingKeyExt for frost::VerifyingKey {}
 ///
 /// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
 /// the peer ID is invalid.
-pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> {
+pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, ParsingError> {
     if id.len() != 32 {
-        return Err(Error::InvalidFrostPeerId);
+        return Err(ParsingError::InvalidFrostPeerId);
     }
     let peer_id_bytes: &[u8; 32] =
-        id.as_slice().try_into().map_err(|_e| Error::InvalidFrostPeerId)?;
+        id.as_slice().try_into().map_err(|_e| ParsingError::InvalidFrostPeerId)?;
 
-    let frost_id =
-        frost::Identifier::deserialize(&peer_id_bytes).map_err(|_e| Error::InvalidFrostPeerId)?;
+    let frost_id = frost::Identifier::deserialize(&peer_id_bytes)
+        .map_err(|_e| ParsingError::InvalidFrostPeerId)?;
 
     Ok(frost_id)
 }
@@ -99,23 +109,23 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error
 /// # Returns
 ///
 /// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if successful, or an Error if the parsing fails.
-pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], Error> {
-    let eth_addr_vec =
-        hex::decode(eth_address).map_err(|_e| Error::BadEthAddress("Failed to decode hex"))?;
+pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> {
+    let eth_addr_vec = hex::decode(eth_address)
+        .map_err(|_e| ParsingError::InvalidEthAddress("Failed to decode hex"))?;
     if eth_addr_vec.len() != 20 {
-        return Err(Error::BadEthAddress("Eth address must be 20 bytes"));
+        return Err(ParsingError::InvalidEthAddress("Eth address must be 20 bytes"));
     }
 
     let eth_addr: [u8; 20] = eth_addr_vec
         .try_into()
-        .map_err(|_e| Error::BadEthAddress("Failed to map eth address to 20 bytes"))?;
+        .map_err(|_e| ParsingError::InvalidEthAddress("Failed to map eth address to 20 bytes"))?;
 
     Ok(eth_addr)
 }
 
-pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Error> {
+pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], ParsingError> {
     if session_id.len() != 32 {
-        return Err(Error::InvalidSigningSessionId);
+        return Err(ParsingError::InvalidSigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
     session_id_array.copy_from_slice(&session_id);
@@ -127,18 +137,16 @@ pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Error>
 ///
 /// # Arguments
 ///
-/// * `db` - A mutable reference to the `Db` representing the database where UTXOs will be added or removed.
 /// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction details.
 /// * `pk` - A reference to the secp256k1 public key associated with the PSBT.
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if the UTXOs are successfully added or removed from the database.
-/// Returns `Err` in case of any errors during the process.
+/// Returns tuple of two vectors containing the UTXOs added and removed from the database.
 pub fn add_remove_utxo_from_psbt(
     psbt: &Psbt,
     pk: &bitcoin::secp256k1::PublicKey,
-) -> Result<(Vec<Utxo>, Vec<OutPoint>), Error> {
+) -> (Vec<Utxo>, Vec<OutPoint>) {
     let tx = psbt.clone().extract_tx();
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
     // For change outputs there will always be a no eth tweak
@@ -153,7 +161,7 @@ pub fn add_remove_utxo_from_psbt(
             });
         }
     }
-    Ok((change_outputs, selected_inputs))
+    (change_outputs, selected_inputs)
 }
 
 #[cfg(test)]
@@ -207,7 +215,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            Error::BadEthAddress("Eth address must be 20 bytes").to_string()
+            ParsingError::InvalidEthAddress("Eth address must be 20 bytes").to_string()
         );
 
         // Invalid Ethereum address (failed to decode hex)
@@ -216,7 +224,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            Error::BadEthAddress("Failed to decode hex").to_string()
+            ParsingError::InvalidEthAddress("Failed to decode hex").to_string()
         );
     }
 }
