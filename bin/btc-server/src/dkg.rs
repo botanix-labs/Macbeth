@@ -1,17 +1,38 @@
+use crate::App;
+use crate::DbError;
+use crate::Error;
 use std::collections::BTreeMap;
 
-use crate::{rpc, App, Error};
-
 use frost_secp256k1_tr as frost;
+
+#[derive(Debug, Error)]
+pub enum DKGError {
+    #[error("already have key package")]
+    AlreadyHaveKeyPackage,
+    #[error("missing round1 dkg package")]
+    MissingRound1DkgPackage,
+    #[error("invalid frost peer id")]
+    InvalidFrostPeerId,
+    #[error("invalid round2 dkg payload missing package")]
+    InvalidRound2DkgPayloadMissingPackage,
+    #[error("cannot add own dkg package")]
+    CannotAddOwnDkgPackage,
+    #[error("dkg max signers reached")]
+    DkgMaxSignersReached,
+    #[error("internal FROST error: {0}")]
+    FrostError(#[from] frost::Error),
+    #[error("internal DB error")]
+    DbError(#[from] DbError),
+}
 
 impl App {
     pub(crate) fn get_round2_dkg(
         &self,
-    ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, Error> {
+    ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, DKGError> {
         // Already have done dkg
         // This function shold error
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage);
+            return Err(DKGError::AlreadyHaveKeyPackage);
         }
 
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
@@ -26,20 +47,20 @@ impl App {
 
             Ok(round2_packages)
         } else {
-            return Err(Error::MissingRound1DkgPackage);
+            return Err(DKGError::MissingRound1DkgPackage);
         }
     }
 
-    pub(crate) fn get_round1_dkg(&self) -> Result<frost::keys::dkg::round1::Package, Error> {
+    pub(crate) fn get_round1_dkg(&self) -> Result<frost::keys::dkg::round1::Package, DKGError> {
         // Already have done dkg
         // This function shold error
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage);
+            return Err(DKGError::AlreadyHaveKeyPackage);
         }
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
             Ok(round1_dkg.1)
         } else {
-            return Err(Error::MissingRound1DkgPackage);
+            return Err(DKGError::MissingRound1DkgPackage);
         }
     }
 
@@ -47,19 +68,19 @@ impl App {
         &self,
         frost_id: frost::Identifier,
         packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), DKGError> {
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage);
+            return Err(DKGError::AlreadyHaveKeyPackage);
         }
         // Can't add our selves
         if frost_id == self.identifier {
-            return Err(Error::InvalidFrostPeerId);
+            return Err(DKGError::InvalidFrostPeerId);
         }
         for (id, package) in packages.iter() {
             // Look for our package and store it
             if self.identifier == *id {
-                if self.db.add_round2_dkg(frost_id, package.clone()).map_err(Error::Db)? {
-                    self.db.flush().map_err(Error::Db)?;
+                if self.db.add_round2_dkg(frost_id, package.clone())? {
+                    self.db.flush()?;
                     debug!("Stored round2 dkg from peer: {:?}", frost_id);
                 } else {
                     warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
@@ -84,32 +105,32 @@ impl App {
                 return Ok(());
             }
         }
-        return Err(Error::InvalidRound2DkgPayloadMissingPackage);
+        return Err(DKGError::InvalidRound2DkgPayloadMissingPackage);
     }
 
     pub(crate) fn add_round1_dkg(
         &self,
         frost_id: frost::Identifier,
         dkg_round1: frost::keys::dkg::round1::Package,
-    ) -> Result<(), Error> {
+    ) -> Result<(), DKGError> {
         if self.db.get_key_package()?.is_some() {
-            return Err(Error::AlreadyHaveKeyPackage);
+            return Err(DKGError::AlreadyHaveKeyPackage);
         }
         // Can't add our selves
         if frost_id == self.identifier {
-            return Err(Error::CannotAddOwnDkgPackage);
+            return Err(DKGError::CannotAddOwnDkgPackage);
         }
 
         if self.frost_round1_dkg.as_ref().take().expect("valid dkg round1").1 == dkg_round1 {
-            return Err(Error::CannotAddOwnDkgPackage);
+            return Err(DKGError::CannotAddOwnDkgPackage);
         }
         // Should not add if we have max signers
         if self.db.get_round1_dkg_packages()?.len() as u16 == self.max_signers - 1 {
-            return Err(Error::DkgMaxSignersReached);
+            return Err(DKGError::DkgMaxSignersReached);
         }
 
-        if self.db.add_round1_dkg(frost_id, dkg_round1).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
+        if self.db.add_round1_dkg(frost_id, dkg_round1)? {
+            self.db.flush()?;
             debug!("Stored round1 dkg from peer: {:?}", frost_id);
         } else {
             warn!("Duplicate round1 dkg from peer: {:?}", frost_id);

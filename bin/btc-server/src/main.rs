@@ -21,9 +21,11 @@ use anyhow::Context;
 
 use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
 use clap::Parser;
+use dkg::DKGError;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-use util::parse_eth_address;
+use signer::SigningError;
+use util::{parse_eth_address, ParsingError};
 
 use std::{
     collections::BTreeMap,
@@ -46,69 +48,16 @@ lazy_static::lazy_static! {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Database error: {0}")]
-    Db(#[from] DbError),
-    #[error("Coin Selection error: {0}")]
-    CoinSelection(#[from] BdkCoinselectionError),
-    #[error("Pbst error: {0}")]
-    Pbst(#[from] PsbtError),
-    // Two distinct PSBT related errors one from bdk and one from rust bitcoin
-    #[error("Pbst error: {0}")]
-    PbstError(#[from] bitcoin::psbt::Error),
-    #[error("Invalid resulting transaction")]
-    InvaildResultingTx,
-    #[error("Invalid tx request, dkg has not been completed")]
-    InvalidTxRequestMissingDKG,
-    #[error("Failed to sign pbst")]
-    FailedToSignPbst,
-    #[error("PSBT finalization failed : {0:?}")]
-    PbstFinalizationFailed(Vec<PsbtError>),
-    #[error("Invalid Frost peer id")]
-    InvalidFrostPeerId,
-    #[error("Invalid round1 Dkg payload: {0}")]
-    InvalidRoundDkgPayload(#[from] frost::Error),
-    #[error("Invalid Dkg serialization format: {0}")]
-    InvalidRoundDkgSerializationFormat(#[from] serde_json::Error),
-    #[error("Invalid round 2 Dkg payload, missing our package")]
-    InvalidRound2DkgPayloadMissingPackage,
-    #[error("Invalid round2 Signing payload")]
-    InvalidRound2SigningPayload(),
-    #[error("Already have quorum of partial signatures")]
-    AlreadyHaveQuorumOfPartialSignatures(),
-    #[error("Already have a key package")]
-    AlreadyHaveKeyPackage,
-    #[error("Missing key package, need to perform DKG first")]
-    MissingKeyPackage,
-    #[error("Missing signing package")]
-    MissingSigningPackage,
-    #[error("Not enough signers have provided round1 commitments to create signing package")]
-    NotEnoughSigners,
-    #[error("Missing round 1 signing nonce")]
-    MissingRound1SigningNonce,
-    #[error("Missing round 2 signing package")]
-    MissingRound2SigningPackage,
-    #[error("Invalid signing package {0}")]
-    InvalidSigningPackage(&'static str),
-    #[error("Missing round 1 dkg package")]
-    MissingRound1DkgPackage,
+    #[error("Signing error")]
+    Signing(SigningError),
+    #[error("DKG error")]
+    DKG(#[from] DKGError),
+    #[error("Coordination error")]
+    Coordination(#[from] cordinator::CoordinatorError),
+    #[error("Parsing error")]
+    Parsing(#[from] ParsingError),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Failed to calculate sighash")]
-    FailedToCalculateSighash,
-    #[error("Invalid input index")]
-    InvalidInputIndex,
-    #[error("Bad eth address {0}")]
-    BadEthAddress(&'static str),
-    #[error("Signing session already in progress")]
-    AlreadyInSigningSession,
-    #[error("Invalid signing session id")]
-    InvalidSigningSessionId,
-    #[error("Failed to derive secp public key {0}")]
-    FailedToDeriveSecpPublicKey(#[from] crate::util::VerifyingKeyExtError),
-    #[error("Cannot add our own dkg package")]
-    CannotAddOwnDkgPackage,
-    #[error("Already have max dkg packages")]
-    DkgMaxSignersReached,
 }
 
 struct App {
@@ -127,18 +76,6 @@ struct App {
     /// The signing nonces for the current signing session
     /// We will replace this value in the case of a new signing session
     frost_round1_signing_nonces: Arc<Mutex<Option<Vec<frost::round1::SigningNonces>>>>,
-}
-
-impl App {
-    fn add_pegin(&self, utxo: &Utxo) -> Result<(), Error> {
-        if self.db.store_utxo(&utxo).map_err(Error::Db)? {
-            self.db.flush().map_err(Error::Db)?;
-            debug!("Stored utxo {}", utxo.outpoint);
-        } else {
-            warn!("Duplicate utxo {}", utxo.outpoint);
-        }
-        Ok(())
-    }
 }
 
 macro_rules! badarg {
@@ -191,7 +128,10 @@ impl rpc::BtcServer for App {
             eth_address: Some(eth_addr),
         };
 
-        self.add_pegin(&utxo).to_status()?;
+        self.add_pegin(&utxo).map_err(|e| {
+            error!("Failed to add pegin: {}", e);
+            internal!("Failed to add pegin: {}", e)
+        })?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -647,7 +587,7 @@ mod test {
         assert!(pk_result.is_err());
         assert_eq!(
             pk_result.err().unwrap().to_string(),
-            "Missing key package, need to perform DKG first"
+            "missing key package"
         );
     }
 
@@ -656,7 +596,7 @@ mod test {
         let app = setup();
         let round1_dkg = app.get_round1_dkg();
         assert!(round1_dkg.is_err());
-        assert_eq!(round1_dkg.err().unwrap().to_string(), "Missing round 1 dkg package");
+        assert_eq!(round1_dkg.err().unwrap().to_string(), "missing round1 dkg package");
     }
 
     #[test]
@@ -673,7 +613,7 @@ mod test {
 
         let round1_dkg = app.get_round1_dkg();
         assert!(round1_dkg.is_err());
-        assert_eq!(round1_dkg.err().unwrap().to_string(), "Already have a key package");
+        assert_eq!(round1_dkg.err().unwrap().to_string(), "already have key package");
     }
 
     #[test]
@@ -734,7 +674,7 @@ mod test {
         // Should not be able to add ourselves -- when identifier is the same
         let res = app.add_round1_dkg(app.identifier, round1_dkgs[0].clone().1);
         assert!(res.is_err());
-        assert_eq!(res.err().unwrap().to_string(), "Cannot add our own dkg package");
+        assert_eq!(res.err().unwrap().to_string(), "cannot add own dkg package");
         // Should not be able to add ourselves -- when package is the same
         let res = app.add_round1_dkg(
             // Different peers id, the original is `1u16`
@@ -743,7 +683,7 @@ mod test {
         );
 
         assert!(res.is_err());
-        assert_eq!(res.err().unwrap().to_string(), "Cannot add our own dkg package");
+        assert_eq!(res.err().unwrap().to_string(), "cannot add own dkg package");
 
         // Add round 1 dkg from peer
         let res = app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1);
@@ -776,7 +716,7 @@ mod test {
 
         let res = app.add_round1_dkg(frost_id!(4), extra.1);
         assert!(res.is_err());
-        assert_eq!(res.err().unwrap().to_string(), "Already have max dkg packages");
+        assert_eq!(res.err().unwrap().to_string(), "dkg max signers reached");
     }
 
     /**
@@ -796,7 +736,7 @@ mod test {
 
         let round2_pkg = app.get_round2_dkg();
         assert!(round2_pkg.is_err());
-        assert_eq!(round2_pkg.err().unwrap().to_string(), "Already have a key package");
+        assert_eq!(round2_pkg.err().unwrap().to_string(), "already have key package");
     }
 
     #[test]
@@ -804,7 +744,7 @@ mod test {
         let app = setup();
         let round2_dkg = app.get_round2_dkg();
         assert!(round2_dkg.is_err());
-        assert_eq!(round2_dkg.err().unwrap().to_string(), "Missing round 1 dkg package");
+        assert_eq!(round2_dkg.err().unwrap().to_string(), "missing round1 dkg package");
     }
 
     #[test]
@@ -830,7 +770,7 @@ mod test {
         assert!(round2_dkg.is_err());
         assert_eq!(
             round2_dkg.err().unwrap().to_string(),
-            "Invalid round1 Dkg payload: Incorrect number of packages."
+            "internal FROST error: Incorrect number of packages."
         );
 
         app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
@@ -872,37 +812,19 @@ mod test {
         // 2nd participant round 1
         app2.frost_round1_dkg = Some(round1_dkgs[1].clone());
         app2.identifier = frost_id!(2);
-        app2.add_round1_dkg(
-            frost_id!(1),
-            round1_dkgs[0].clone().1,
-        )
-        .expect("valid round1 dkg");
-        app2.add_round1_dkg(
-            frost_id!(3),
-            round1_dkgs[2].clone().1,
-        )
-        .expect("valid round1 dkg");
+        app2.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1).expect("valid round1 dkg");
+        app2.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
         let p2_dkg2 = app2.get_round2_dkg().expect("valid round 2 transition");
         // 3rd participant round 1
         app3.frost_round1_dkg = Some(round1_dkgs[2].clone());
         app3.identifier = frost_id!(3);
-        app3.add_round1_dkg(
-            frost_id!(1),
-            round1_dkgs[0].clone().1,
-        )
-        .expect("valid round1 dkg");
-        app3.add_round1_dkg(
-            frost_id!(2),
-            round1_dkgs[1].clone().1,
-        )
-        .expect("valid round1 dkg");
+        app3.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1).expect("valid round1 dkg");
+        app3.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
         let p3_dkg2 = app3.get_round2_dkg().expect("valid round 2 transition");
 
         // Round 2 dkg for 1st participant
-        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone())
-            .expect("valid round2 dkg");
-        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone())
-            .expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone()).expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).expect("valid round2 dkg");
 
         // The dkg session should have concluded by now
         let pk_package1 = app1.db.get_public_key_package().expect("valid pk package");
@@ -912,10 +834,8 @@ mod test {
 
         // Lets complete the round 2 dkg for the another participant
         // And compare the results
-        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone())
-            .expect("valid round2 dkg");
-        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone())
-            .expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone()).expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).expect("valid round2 dkg");
 
         let pk_package2 = app1.db.get_public_key_package().expect("valid pk package");
         assert!(pk_package2.is_some());
@@ -938,7 +858,7 @@ mod test {
         assert!(nonce_commits.is_err());
         assert_eq!(
             nonce_commits.err().unwrap().to_string(),
-            "Missing key package, need to perform DKG first"
+            "missing key package"
         );
     }
 
@@ -946,11 +866,9 @@ mod test {
     fn should_fail_when_requesting_too_many_nonces() {
         let app = setup();
         let signing_session_id = [0u8; 32];
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-
         let nonce_commits = app.get_round1_signing_package(100_000_000, &signing_session_id);
         assert!(nonce_commits.is_err());
-        assert_eq!(nonce_commits.err().unwrap().to_string(), "Signing session already in progress");
+        assert_eq!(nonce_commits.err().unwrap().to_string(), "invalid number of signing nonces requested");
     }
 
     #[test]
@@ -970,9 +888,8 @@ mod test {
 
         assert_eq!(nonce_commits.len(), 1);
         // Should not be able to get a new set of nonces
-        let res = app
-            .get_round1_signing_package(1, &signing_session_id);
+        let res = app.get_round1_signing_package(1, &signing_session_id);
         assert!(res.is_err());
-        assert_eq!(res.err().unwrap().to_string(), "Signing session already in progress");
+        assert_eq!(res.err().unwrap().to_string(), "already in signing session");
     }
 }

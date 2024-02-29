@@ -178,7 +178,7 @@ pub async fn dkg_flow() {
     assert_eq!(err.code(), tonic::Code::Internal);
     assert_eq!(
         err.message(),
-        "Failed to get public key: Missing key package, need to perform DKG first"
+        "Failed to get public key: missing key package"
     );
 
     do_dkg(&mut clients).await;
