@@ -1,9 +1,11 @@
 use crate::DbError;
 use crate::{App, Error};
+use bitcoin::hashes::Hash;
 use bitcoin::psbt::Psbt;
+use bitcoin::sighash::TapSighashType;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
+use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
 
 #[derive(Debug)]
 pub enum SigningError {
@@ -44,6 +46,10 @@ pub enum SigningRound2Error {
     MissingRound1SigningNonce,
     #[error("internal DB error")]
     DbError(#[from] DbError),
+    #[error("signer not found in signing package at index: {0}")]
+    SignerNotFound(usize),
+    #[error("Failed to calculate sighash: {0}")]
+    FailedToCalculateSighash(#[from] CalculateSighashError),
 }
 
 impl From<SigningRound1Error> for SigningError {
@@ -133,13 +139,41 @@ impl App {
                 "Number of signing nonces does not match number of inputs",
             ));
         }
+        let tx = psbt.clone().extract_tx();
+        // re-create the signing message
+        for (index, signing_package) in signing_packages.iter().enumerate() {
+            let signing_commitments = signing_package.signing_commitments();
+            if !signing_commitments.contains_key(&self.identifier) {
+                return Err(SigningRound2Error::SignerNotFound(index));
+            }
+            let input = psbt.inputs.get(index).expect("valid index");
+            let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
+            let mut signing_package = frost::SigningPackage::new(
+                signing_commitments.clone(),
+                sighash.to_raw_hash().to_byte_array().as_slice(),
+            );
+            // inlcude tweak if one exists
+            let eth_tweak = input.unknown.get(&ETH_ADDRESS_FIELD.clone());
+            if let Some(e) = eth_tweak {
+                signing_package.set_addtional_tweak(e.clone());
+            };
+            if signing_package.message()
+                != signing_packages.get(index).expect("valid index").message()
+            {
+                println!("signing_package: {:?}", signing_package.message());
+                return Err(SigningRound2Error::InvalidSigningPackage(
+                    "Cannot re-create signing package",
+                ));
+            }
+            // Check if input exists in db
+            let ot = tx.input.get(index).expect("valid index").previous_output;
+            let db_utxo = self.db.get_utxo(ot)?;
+            if db_utxo.is_none() {
+                println!("utxo not found in db: {:?}", ot);
+                return Err(SigningRound2Error::InvalidSigningPackage("UTXO not found in DB"));
+            }
+        }
 
-        // TODO verify psbt
-        // TODO verify message
-        // TODO verify that my nonce commitments are being used
-        // TODO need to sign for each input SIG_HASH_SINGLE
-
-        // TODO(armmins) this code needs to handle signing for multiple inputs
         // Get a parital sig for each input
         let mut partial_sigs = vec![];
         for (index, (signing_package, _txin)) in
