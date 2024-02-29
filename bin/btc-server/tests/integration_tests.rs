@@ -1,4 +1,3 @@
-
 use std::{process::Stdio, str::FromStr, vec};
 
 use tokio::{
@@ -6,7 +5,7 @@ use tokio::{
     process::Command,
 };
 
-use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut};
+use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut, Txid};
 use client;
 use tonic::transport::Channel;
 
@@ -129,6 +128,7 @@ async fn send_pegin_notification(
     client: &mut client::BtcServerClient<Channel>,
     eth_address: String,
     pk: String,
+    txid: [u8; 32],
 ) {
     let address = reth_btc_wallet::address::gateway_address(
         &bitcoin::secp256k1::PublicKey::from_str(&pk).unwrap(),
@@ -141,7 +141,7 @@ async fn send_pegin_notification(
     let mut prev_out_bytes = Vec::new();
     prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
     // Get a random 32 bytes
-    let txid = rand::random::<[u8; 32]>();
+
     let res = client
         .notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
             eth_address,
@@ -176,10 +176,7 @@ pub async fn dkg_flow() {
     assert!(pk.is_err());
     let err = pk.err().unwrap();
     assert_eq!(err.code(), tonic::Code::Internal);
-    assert_eq!(
-        err.message(),
-        "Failed to get public key: missing key package"
-    );
+    assert_eq!(err.message(), "Failed to get public key: missing key package");
 
     do_dkg(&mut clients).await;
     // After dkg we should be able to the dkg
@@ -406,9 +403,18 @@ async fn test_many_inputs_signing() {
     c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
     c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
 
-    // Notify peg ins
-    send_pegin_notification(&secp, &mut c3, eth_1.clone(), pk1.publickey.clone()).await;
-    send_pegin_notification(&secp, &mut c3, eth_2.clone(), pk2.publickey.clone()).await;
+    let txid1 = rand::random::<[u8; 32]>();
+    let txid2 = rand::random::<[u8; 32]>();
+    // Notify peg ins to all peers
+    // signers will not sign if they cannot locate the UTXOs they are being requested to sign
+    send_pegin_notification(&secp, &mut c1, eth_1.clone(), pk1.publickey.clone(), txid1).await;
+    send_pegin_notification(&secp, &mut c1, eth_2.clone(), pk2.publickey.clone(), txid2).await;
+
+    send_pegin_notification(&secp, &mut c2, eth_1.clone(), pk1.publickey.clone(), txid1).await;
+    send_pegin_notification(&secp, &mut c2, eth_2.clone(), pk2.publickey.clone(), txid2).await;
+
+    send_pegin_notification(&secp, &mut c3, eth_1.clone(), pk1.publickey.clone(), txid1).await;
+    send_pegin_notification(&secp, &mut c3, eth_2.clone(), pk2.publickey.clone(), txid2).await;
 
     // Get signing package
     let signing_package = c3

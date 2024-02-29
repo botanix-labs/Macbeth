@@ -873,7 +873,7 @@ mod test {
 
     #[test]
     fn should_get_round1_nonce_commitments() {
-        let app = setup();
+        let mut app = setup();
         let signing_session_id = [0u8; 32];
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -891,5 +891,18 @@ mod test {
         let res = app.get_round1_signing_package(1, &signing_session_id);
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "already in signing session");
+
+        // Ensure you get a different set of nonces on a new signing session
+        app.frost_round1_signing_nonces = Arc::new(Mutex::new(None));
+        let signing_session_id = [0u8; 32];
+
+        let nonce_commits2 = app
+        .get_round1_signing_package(1, &signing_session_id)
+        .expect("valid nonce commits request");
+
+        assert_eq!(nonce_commits2.len(), 1);
+        assert_ne!(nonce_commits, nonce_commits2);
     }
+
+ 
 }

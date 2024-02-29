@@ -505,7 +505,7 @@ impl Db {
     }
 
     /* UTXO specific DB functions */
-    pub fn _get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
+    pub fn get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
         if let Some(b) = self.utxos.get(&op.to_bytes())? {
             let mut ret = ciborium::from_reader::<Utxo, _>(b.as_ref())?;
             ret.outpoint = op;
