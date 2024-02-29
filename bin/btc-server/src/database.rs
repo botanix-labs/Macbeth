@@ -565,7 +565,7 @@ impl Db {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("internal BD error")]
+    #[error("internal DB error")]
     Db(#[from] sled::Error),
     #[error("data corruption error")]
     DataCorruption(#[from] ciborium::de::Error<io::Error>),
