@@ -1351,6 +1351,7 @@ dependencies = [
  "sled",
  "tempfile",
  "test-log",
+ "thiserror",
  "tokio",
  "tonic",
  "tonic-build",

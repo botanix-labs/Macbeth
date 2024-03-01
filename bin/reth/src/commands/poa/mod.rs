@@ -211,9 +211,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
 
     /// Returns the [Consensus] instance to use.
     pub fn consensus(&self) -> Arc<dyn Consensus> {
-        let poa_consensus = Arc::new(AuthorityConsensus::new(self.chain.clone()));
-
-        poa_consensus
+        Arc::new(AuthorityConsensus::new(self.chain.clone()))
     }
 }
 

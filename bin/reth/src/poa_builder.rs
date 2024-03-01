@@ -50,8 +50,9 @@ use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
 use client::BtcServerClient;
-use reth_btc_wallet::bitcoind::BitcoindClient;
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use rsntp::AsyncSntpClient;
+use tokio::time::Duration;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
@@ -161,15 +162,33 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             Arc::new(RwLock::new(None));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
-        let bitcoind_config = self.config.rpc.bitcoind.clone().into();
+        // create bitcoind client and make sure its synced
+        let bitcoind_config: BitcoindConfig = self.config.rpc.bitcoind.clone().into();
         let bitcoind_client =
-            BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
+            BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
 
+        info!(target: "reth::cli", "Waiting for bitcoind client to sync...");
+        match tokio::time::timeout(Duration::from_secs(60), bitcoind_client.wait_until_synced())
+            .await
+        {
+            Ok(_) => {
+                info!(target: "reth::cli", "Bitcoind client synced");
+            }
+            Err(_) => {
+                error!(target: "reth::cli", "Bitcoind client could not achieve synced status within 60 secs. Exiting...");
+                return Err(eyre::eyre!(
+                    "Bitcoind client could not achieve synced status within 60secs. Exiting..."
+                ));
+            }
+        }
+
+        let bitcoind_config = bitcoind_config.clone();
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
                 let sleep_ms = tokio::time::Duration::from_millis(5000);
                 let mut tip = 0u64;
+                let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
                     let current_tip = match bitcoind_client.get_tip().await {
@@ -321,7 +340,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         ext.configure_network(network_builder.network_mut(), &components)?;
 
         // launch network
-
         let network = self.config.start_network(
             network_builder,
             &executor,
@@ -376,7 +394,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 network.clone(),
                 block_import_rx,
                 executor.clone(),
-                evm_config.clone(),
+                evm_config,
                 payload_builder.clone(),
             )
             .expect("Failed to create authority consensus builder")

@@ -105,12 +105,12 @@ impl ExtraDataHeader {
         }
     }
 
-    pub fn set_signature(&mut self, signature: RecoverableSignature) -> () {
+    pub fn set_signature(&mut self, signature: RecoverableSignature) {
         self.authority_signature = Some(signature);
         self.set_optional_fields_bitmask();
     }
 
-    pub fn set_optional_fields_bitmask(&mut self) -> () {
+    pub fn set_optional_fields_bitmask(&mut self) {
         let mut optional_fields = 0u8;
         if self.authority_signers.is_some() {
             optional_fields |= 1 << HAS_AUTHORTIES_POS;
@@ -228,7 +228,7 @@ impl ExtraDataHeader {
     pub fn validate_authority_signature(
         self,
         message: &Vec<u8>,
-        authority_signers: &Vec<secp256k1::PublicKey>,
+        authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError> {
         if self.authority_signature.is_none() {
             return Err(ValidateAuthoritySignatureError::MissingSignature)
@@ -237,11 +237,11 @@ impl ExtraDataHeader {
         let msg = secp256k1::Message::from_slice(message.as_slice())
             .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
 
-        if authority_signers.into_iter().any(|signer| {
+        if authority_signers.iter().any(|signer| {
             self.authority_signature
                 .expect("signature exists")
                 .to_standard()
-                .verify(&msg, &signer)
+                .verify(&msg, signer)
                 .is_ok()
         }) {
             return Ok(())

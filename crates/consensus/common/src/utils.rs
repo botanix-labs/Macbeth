@@ -79,16 +79,15 @@ pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, Recov
     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
     )
-    .map_err(|e| RecoverAuthorityError::FailedToDerserializeExtraData(e))?;
+    .map_err(RecoverAuthorityError::FailedToDerserializeExtraData)?;
 
     let sighash = create_authority_sighash(&mut header.clone(), &extra_data);
-    let message = secp256k1::Message::from_slice(&sighash.as_slice())
-        .map_err(|e| RecoverAuthorityError::FailedToCreateSigHash(e))?;
+    let message = secp256k1::Message::from_slice(sighash.as_slice())
+        .map_err(RecoverAuthorityError::FailedToCreateSigHash)?;
 
     if let Some(signature) = extra_data.authority_signature {
-        let signer = signature
-            .recover(&message)
-            .map_err(|e| RecoverAuthorityError::FailedToRecoverSigner(e))?;
+        let signer =
+            signature.recover(&message).map_err(RecoverAuthorityError::FailedToRecoverSigner)?;
         return Ok(signer);
     }
 
@@ -125,7 +124,7 @@ pub fn get_authority_list(
     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
         &mut header.extra_data.to_vec().as_slice(),
     )
-    .map_err(|e| GetAuthoritiesError::FailedToRecoverAuthorityList(e))?;
+    .map_err(GetAuthoritiesError::FailedToRecoverAuthorityList)?;
 
     Ok(extra_data.authority_signers)
 }
@@ -138,7 +137,7 @@ pub fn unix_timestamp() -> u64 {
 /// Validate poa block beneficiary
 pub fn validate_poa_block_beneficiary(
     header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
+    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     authority_signers
         .iter()
@@ -150,7 +149,7 @@ pub fn validate_poa_block_beneficiary(
 /// Validate poa extra data header
 pub fn validate_poa_extra_data_header(
     header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
+    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     // Skip over genesis
     if header.number == 0 {
@@ -214,7 +213,7 @@ pub fn validate_against_parent(
         ValidateAgainstParentError::FailedToDerserializeExtraData(e)
     })?;
     let current_signer = recovery_authority(&current)
-        .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?;
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?;
     // Check if the parent block was mined in a different turn
     let parent_ts = parent.timestamp as f64 / 60.0;
     let current_ts = current.timestamp as f64 / 60.0;
@@ -288,7 +287,7 @@ mod tests {
         secp256k1::SecretKey::from_str(hex_string).expect("Invalid hex string for SecretKey")
     }
     #[allow(dead_code)]
-    fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) -> () {
+    fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) {
         let mut edh = ExtraDataHeader::default();
         let sk1 = generate_secret_key(SK1);
         let sk2 = generate_secret_key(SK2);
@@ -302,7 +301,7 @@ mod tests {
         header.number = 1;
 
         let sighash = create_authority_sighash(&mut header.clone(), &edh);
-        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let message = secp256k1::Message::from_slice(sighash.as_slice()).unwrap();
         let signature = {
             if let Some(sk_str) = signer_sk {
                 let sk = generate_secret_key(sk_str);
@@ -316,6 +315,7 @@ mod tests {
 
         header.extra_data = Bytes::from(edh.serialize());
     }
+
     /* Tests for create authority sighash utility */
     #[test]
     fn create_default_edh_sighhash() {

@@ -59,14 +59,14 @@ fn topic_to_address(t: B256) -> Result<Address, MintConsensusError> {
             .unwrap();
 
     let word = decoded_params
-        .get(0)
+        .first()
         .ok_or(MintConsensusError::LogParsingError("Failed to parse destination address"))?
         .clone()
         .into_address()
         .ok_or(MintConsensusError::LogParsingError("Failed to parse destination address"))?;
 
     let address_slice = word.0.as_slice();
-    let address = Address::from_slice(&address_slice);
+    let address = Address::from_slice(address_slice);
 
     // Convert ethers address to reth address
     Ok(address)
@@ -104,8 +104,8 @@ pub fn parse_pegin_topic(log: &revm::primitives::Log) -> Result<PeginData, MintC
 
             let decoded_params: Vec<ethers::abi::Token> = decode(
                 &[
-                    ethers::abi::param_type::ParamType::Uint(256 as usize),
-                    ethers::abi::param_type::ParamType::Uint(32 as usize),
+                    ethers::abi::param_type::ParamType::Uint(256_usize),
+                    ethers::abi::param_type::ParamType::Uint(32_usize),
                     ethers::abi::param_type::ParamType::Bytes,
                 ],
                 &data.data,
@@ -113,7 +113,7 @@ pub fn parse_pegin_topic(log: &revm::primitives::Log) -> Result<PeginData, MintC
             .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
 
             let amount = decoded_params
-                .get(0)
+                .first()
                 .ok_or(MintConsensusError::LogParsingError("Failed to parse amount"))?
                 .clone()
                 .into_uint()
@@ -170,7 +170,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
 
             let decoded_params: Vec<ethers::abi::Token> = decode(
                 &[
-                    ethers::abi::param_type::ParamType::Uint(256 as usize),
+                    ethers::abi::param_type::ParamType::Uint(256_usize),
                     ethers::abi::param_type::ParamType::String,
                 ],
                 &data.data,
@@ -178,7 +178,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
             .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
 
             let amount = decoded_params
-                .get(0)
+                .first()
                 .ok_or(MintConsensusError::LogParsingError("Failed to parse pegout amount"))?
                 .clone()
                 .into_uint()
@@ -197,7 +197,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
                 .ok_or(MintConsensusError::PegoutAmountIsInvalid())?;
 
             let pegout = PegoutData::new(btc_amount, destination)
-                .map_err(|e| MintConsensusError::PegoutValidationFailed(e))?;
+                .map_err(MintConsensusError::PegoutValidationFailed)?;
 
             return Ok(pegout);
         }

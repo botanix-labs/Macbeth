@@ -62,7 +62,7 @@ impl EventsNotificationClient {
         &self,
         message: &str,
     ) -> Result<SlackApiPostWebhookMessageResponse, Error> {
-        let msg = format!("[CLIENT_ID = {}]. Text = {}", self.client_id.to_string(), message);
+        let msg = format!("[CLIENT_ID = {}]. Text = {}", self.client_id, message);
         let client_result = self
             .client
             .post_webhook_message(
@@ -70,7 +70,7 @@ impl EventsNotificationClient {
                 &SlackApiPostWebhookMessageRequest::new(SlackMessageContent::new().with_text(msg)),
             )
             .await
-            .map_err(|err| Error::SlackClient(err))?;
+            .map_err(Error::SlackClient)?;
 
         Ok(client_result)
     }

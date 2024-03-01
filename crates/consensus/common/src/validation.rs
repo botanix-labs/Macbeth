@@ -347,7 +347,7 @@ pub fn validate_poa_header_standalone(
     utils::validate_poa_block_beneficiary(header, authority_signers)?;
 
     // Validate signer is in turn
-    utils::validate_inturn(&header, authority_signers)?;
+    utils::validate_inturn(header, authority_signers)?;
 
     Ok(())
 }

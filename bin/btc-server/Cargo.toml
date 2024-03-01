@@ -24,6 +24,7 @@ rand = "0.8.5"
 serde = "1.0.171"
 serde_json = "1.0"
 sled = "0.34.7"
+thiserror = "1.0.43"
 
 # for tonic
 tokio = { version = "1.29.1", features = ["full"] }

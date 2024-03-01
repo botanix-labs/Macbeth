@@ -44,7 +44,7 @@ pub struct AuthorityVote {
 impl AuthorityVote {
     pub(crate) fn add_vote(&mut self, authority_voting: &secp256k1::PublicKey, vote: Vote) {
         // Check vote from this authority does not already exist
-        if self.votes.contains_key(&authority_voting) {
+        if self.votes.contains_key(authority_voting) {
             return;
         }
         self.votes.insert(*authority_voting, vote);
@@ -72,10 +72,10 @@ impl AuthorityVoteCollection {
     ) {
         if let Some(auth_vote) = self.votes.iter_mut().find(|k| k.authority == *authority_vote_for)
         {
-            auth_vote.add_vote(&authority_voting.clone(), vote.clone());
+            auth_vote.add_vote(&authority_voting.clone(), *vote);
         } else {
             let mut votes = HashMap::new();
-            votes.insert(*authority_voting, vote.clone());
+            votes.insert(*authority_voting, *vote);
             self.votes.push(AuthorityVote { authority: *authority_vote_for, votes });
         }
     }
@@ -101,7 +101,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         // Check if there is a authority being voted on in the extra data
         let extra_data_header =
             ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-                .map_err(|e| GetVotesError::FailedToDeserializeBlockHeaderExtraData(e))?;
+                .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
 
         if extra_data_header.authority_vote.is_none() {
             continue;
@@ -130,7 +130,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
             .authority_signature
             .expect("valid signature")
             .recover(&sig_hash)
-            .map_err(|e| GetVotesError::FailedToRecoverAuthority(e))?;
+            .map_err(GetVotesError::FailedToRecoverAuthority)?;
         // Already keeping track of this authority
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)

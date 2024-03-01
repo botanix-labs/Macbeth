@@ -68,11 +68,11 @@ impl PeginData {
                 return Err(PeginError::Invalid("invalid tx or outpoint: output idx"))
             }
             let tweaked_key = address::generate_tweaked_public_key(
-                &secp,
+                secp,
                 &self.account.as_slice().to_vec(),
                 &AGG_PK,
             );
-            let gateway_script = address::generate_taproot_scriptpubkey(&secp, &tweaked_key);
+            let gateway_script = address::generate_taproot_scriptpubkey(secp, &tweaked_key);
 
             let output = &pegin.tx.output[op.vout as usize];
             if gateway_script != output.script_pubkey {
@@ -133,7 +133,7 @@ impl PeginData {
             }
         }
 
-        return Ok(aggregate_value)
+        Ok(aggregate_value)
     }
 }
 
@@ -161,19 +161,13 @@ impl PeginMeta {
                 address: {
                     let mut address_slice = [0u8; 20];
                     bytes.read_slice(&mut address_slice)?;
-                    let address = Address::from_slice(&address_slice);
-
-                    address
+                    Address::from_slice(&address_slice)
                 },
                 aggregate_publickey: {
                     // compressed schnorr public key
                     let mut pk_bytes = [0u8; 33];
                     bytes.read_slice(&mut pk_bytes)?;
-
-                    let pk =
-                        PublicKey::from_slice(&pk_bytes).map_err(PeginError::InvalidPublicKey)?;
-
-                    pk
+                    PublicKey::from_slice(&pk_bytes).map_err(PeginError::InvalidPublicKey)?
                 },
                 block_headers: {
                     let len = btcencode::VarInt::consensus_decode(&mut bytes)?.0;

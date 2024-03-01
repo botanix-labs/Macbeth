@@ -199,7 +199,7 @@ where
 
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
-            network_handle.peer_id().clone(),
+            *network_handle.peer_id(),
             to_engine.clone(),
         );
 

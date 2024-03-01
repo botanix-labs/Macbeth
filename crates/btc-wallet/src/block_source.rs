@@ -42,7 +42,7 @@ pub trait BlockSource {
         block_hash: bitcoin::BlockHash,
     ) -> Result<Header, BlockSourceError>;
     /// Hex encoded raw tx
-    async fn broadcast_tx(&self, raw_tx: &String) -> Result<Txid, BlockSourceError>;
+    async fn broadcast_tx(&self, raw_tx: &str) -> Result<Txid, BlockSourceError>;
 
     async fn get_tip(&self) -> Result<u32, BlockSourceError>;
 
@@ -102,8 +102,7 @@ impl BlockSource for MempoolSpace {
 
         if response.status().is_success() {
             let raw_response = response.text().await?;
-            let height: u32 =
-                raw_response.parse().map_err(|e| BlockSourceError::ParsingIntError(e))?;
+            let height: u32 = raw_response.parse().map_err(BlockSourceError::ParsingIntError)?;
             return Ok(height)
         }
 
@@ -128,13 +127,10 @@ impl BlockSource for MempoolSpace {
         Err(BlockSourceError::BlockHeaderRetrievalFailed)
     }
 
-    async fn broadcast_tx(&self, raw_tx: &String) -> Result<Txid, BlockSourceError> {
+    async fn broadcast_tx(&self, raw_tx: &str) -> Result<Txid, BlockSourceError> {
         let client = reqwest::Client::new();
-        let response = client
-            .post(format!("{}/tx", self.url.to_string()))
-            .body(raw_tx.to_string())
-            .send()
-            .await?;
+        let response =
+            client.post(format!("{}/tx", self.url)).body(raw_tx.to_string()).send().await?;
 
         if response.status().is_success() {
             let raw_response = response.text().await?;

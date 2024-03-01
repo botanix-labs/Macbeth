@@ -254,7 +254,7 @@ where
         recent_block_header: Option<(bitcoin::block::Header, u32)>,
     ) -> Result<(), BlockExecutionError> {
         for log in result.logs() {
-            if log.topics().get(0) == Some(&MINT_TOPIC) && recent_block_header.is_some() {
+            if log.topics().first() == Some(&MINT_TOPIC) && recent_block_header.is_some() {
                 let pegin_data = parse_pegin_topic(&log).map_err(|e| {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
@@ -275,7 +275,7 @@ where
                 }
             }
 
-            if log.topics().get(0) == Some(&BURN_TOPIC) {
+            if log.topics().first() == Some(&BURN_TOPIC) {
                 if let Err(e) = parse_pegout_topic(&log) {
                     error!("Failed to parse pegout topic! {:?}", e);
                     return Err(BlockValidationError::MintContractViolation.into());
@@ -330,7 +330,7 @@ where
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(&result, recent_block_header) {
+                    match Self::botanix_mint_contract_checks(result, recent_block_header) {
                         Ok(()) => out,
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);

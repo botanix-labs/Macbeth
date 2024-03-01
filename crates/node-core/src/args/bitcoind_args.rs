@@ -21,7 +21,7 @@ pub struct BitcoindArgs {
         name = "bitcoind.username",
         value_name = "BITCOIND_USERNAME"
     )]
-    pub username: Option<String>,
+    pub username: String,
 
     /// Btcd password
     ///
@@ -31,7 +31,7 @@ pub struct BitcoindArgs {
         name = "bitcoind.password",
         value_name = "BITCOIND_PASSWORD"
     )]
-    pub password: Option<String>,
+    pub password: String,
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {

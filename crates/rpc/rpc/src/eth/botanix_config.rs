@@ -37,8 +37,8 @@ impl Default for BotanixConfig {
                 "https://bitcoind.botanixlabs.dev"
                     .parse::<Url>()
                     .expect("must be valid url address"),
-                None,
-                None,
+                "usr".to_string(),
+                "pwd".to_string(),
             ),
         }
     }
@@ -48,11 +48,10 @@ impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     #[allow(dead_code)]
     fn new(
-        &self,
         bitcoin_network: bitcoin::Network,
         btc_server: String,
-        bitcoind_username: Option<String>,
-        bitcoind_password: Option<String>,
+        bitcoind_username: String,
+        bitcoind_password: String,
     ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
@@ -80,12 +79,7 @@ impl BotanixConfig {
     }
 
     /// Set mempool space block source url
-    pub fn bitcoind(
-        mut self,
-        url: Url,
-        username: Option<String>,
-        password: Option<String>,
-    ) -> Self {
+    pub fn bitcoind(mut self, url: Url, username: String, password: String) -> Self {
         self.bitcoind_config = BitcoindConfig::new(url, username, password);
         self
     }
