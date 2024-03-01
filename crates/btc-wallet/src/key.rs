@@ -34,9 +34,7 @@ pub fn generate_new_secret_key() -> SecretKey {
 }
 
 pub fn generate_bip340_keypair() -> KeyPair {
-    let key_pair = KeyPair::new(&SECP, &mut OsRng);
-
-    key_pair
+    KeyPair::new(&SECP, &mut OsRng)
 }
 
 fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, KeyError> {
@@ -72,9 +70,7 @@ pub fn tweak_public_key(
 }
 
 pub fn sign_with_tweaked_key(tweaked_key_pair: KeyPair, message: &Message) -> Signature {
-    let sig = SECP.sign_schnorr(message, &tweaked_key_pair);
-
-    sig
+    SECP.sign_schnorr(message, &tweaked_key_pair)
 }
 
 #[cfg(test)]

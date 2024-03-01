@@ -78,26 +78,26 @@ pub fn sign_psbt(
         // Get address tweaks if applicaple
         let eth_address_tweak = input.proprietary.get(&ETH_ADDRESS_FIELD);
 
-        let aggregate_pk = secret_key.public_key(&secp);
+        let aggregate_pk = secret_key.public_key(secp);
 
-        let mut internal_sk = secret_key.clone();
+        let mut internal_sk = *secret_key;
 
         // Not signing change
         // So we need to tweak the key before signing
         if eth_address_tweak.is_some() {
             let eth_address = ethers::types::Address::from_slice(
-                &eth_address_tweak.expect("eth address tweak").as_slice(),
+                eth_address_tweak.expect("eth address tweak").as_slice(),
             );
 
-            internal_sk = generate_tweaked_secret_key(&eth_address, &aggregate_pk, &secret_key);
+            internal_sk = generate_tweaked_secret_key(&eth_address, &aggregate_pk, secret_key);
         }
 
-        let internal = KeyPair::from_secret_key(&secp, &internal_sk);
-        let taproot_spend_info = generate_taproot_spend_info(&secp, &internal.public_key())
-            .map_err(|e| SignPsbtError::FailedToGetTaprootInfo(e))?;
+        let internal = KeyPair::from_secret_key(secp, &internal_sk);
+        let taproot_spend_info = generate_taproot_spend_info(secp, &internal.public_key())
+            .map_err(SignPsbtError::FailedToGetTaprootInfo)?;
         let keypair = bitcoin::key::TapTweak::tap_tweak(
             internal.clone(),
-            &secp,
+            secp,
             taproot_spend_info.merkle_root(),
         );
         let signature = {

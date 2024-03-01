@@ -34,19 +34,6 @@ where
         // Check if we are in_turn
         let is_inturn = self.epoch_manager.poll().await;
 
-        match self.bitcoind_client.is_synced().await {
-            Ok(is_synced) => {
-                if !is_synced {
-                    warn!("Bitcoind client is not in sync yet. Waiting...");
-                    return;
-                }
-            }
-            Err(_) => {
-                error!("Bitcoind client did not return sync status. Retrying...");
-                return;
-            }
-        }
-
         if !is_inturn {
             info!(target: "consensus::authority", "Not in turn, skipping");
             return;

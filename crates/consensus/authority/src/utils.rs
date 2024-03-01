@@ -168,13 +168,13 @@ async fn process_botanix_log(
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(&log)
+                let pegin_data = parse_pegin_reth_log_topic(log)
                     .expect("passed evm check should pass this parse attempt");
                 for pegin in &pegin_data.meta {
                     let request = NotifyPeginRequest {
                         utxo_txid: pegin.outpoint.txid.to_string(),
                         utxo_vout: pegin.outpoint.vout,
-                        eth_address: hex::encode(pegin.address.to_vec()),
+                        eth_address: hex::encode(pegin.address),
                         output: bitcoin::consensus::serialize(
                             pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
                         ),
@@ -193,7 +193,7 @@ async fn process_botanix_log(
                 // TODO (armins): obv
                 let fee_rate = 30u32;
                 info!(target: "consensus::authority", "Parsing and sending withdrawal event to btc_server");
-                let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
+                let pegout = parse_pegout_reth_log_topic(log).expect("valid pegout request");
                 let request = MakeTxRequest {
                     address: pegout.destination.to_string(),
                     value: pegout.amount.to_sat(),

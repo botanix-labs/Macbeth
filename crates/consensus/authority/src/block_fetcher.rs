@@ -110,7 +110,7 @@ where
                 }
             };
 
-            let recent_bitcoin_block_header = self.bitcoin_block_header.read().await.clone();
+            let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let mut storage = self.storage.write().await;
 
             match storage.execute_imported_block(

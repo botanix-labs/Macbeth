@@ -1,5 +1,6 @@
 use bitcoincore_rpc::{json::GetChainTipsResultStatus, Auth, Client, RpcApi};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use thiserror::Error;
 use url::Url;
 
@@ -24,12 +25,12 @@ pub enum BitcoindError {
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoindConfig {
     url: Url,
-    username: Option<String>,
-    password: Option<String>,
+    username: String,
+    password: String,
 }
 
 impl BitcoindConfig {
-    pub fn new(url: Url, username: Option<String>, password: Option<String>) -> Self {
+    pub fn new(url: Url, username: String, password: String) -> Self {
         Self { url, username, password }
     }
 }
@@ -42,10 +43,7 @@ pub struct BitcoindClient {
 impl BitcoindClient {
     pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
         let BitcoindConfig { url, username, password } = config;
-        let creds = Auth::UserPass(
-            username.expect("must have a username"),
-            password.expect("must have a password"),
-        );
+        let creds = Auth::UserPass(username, password);
         let rpc = Client::new(url.to_string().as_str(), creds)
             .map_err(BitcoindError::ClientInitFailed)?;
         Ok(BitcoindClient { rpc })
@@ -69,8 +67,8 @@ impl BitcoindClient {
     pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
         let index_data =
             self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed)?;
-        match (index_data.txindex, index_data.coinstatsindex) {
-            (Some(txindex), Some(coinstatsindex)) => Ok(txindex.synced && coinstatsindex.synced),
+        match index_data.txindex {
+            Some(txindex) => Ok(txindex.synced),
             _ => Ok(false),
         }
     }
@@ -93,7 +91,7 @@ impl BitcoindClient {
             })
             .collect::<Vec<u64>>();
         chain_tips.sort();
-        Ok(chain_tips.iter().last().cloned().ok_or(BitcoindError::EmptyBlockTip)?)
+        chain_tips.iter().last().cloned().ok_or(BitcoindError::EmptyBlockTip)
     }
 
     pub async fn get_txids(
@@ -114,25 +112,42 @@ impl BitcoindClient {
             .map_err(BitcoindError::TransactionBroadcastFailed)?;
         Ok(tx_id)
     }
+
+    pub async fn wait_until_synced(&self) {
+        loop {
+            match self.is_synced().await {
+                Ok(is_synced) => {
+                    if !is_synced {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    break;
+                }
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+        }
+    }
 }
 
 mod tests {
 
     #[tokio::test]
-    async fn create_client() {
+    async fn test_basic_client() {
         use super::*;
 
         let client = BitcoindClient::new(BitcoindConfig::new(
-            "https://bitcoind.botanixlabs.dev".parse::<Url>().unwrap(),
-            Some("mempool".to_owned()),
-            Some("mempool".to_owned()),
+            "http://127.0.0.1:38332".parse::<Url>().unwrap(),
+            "usr".to_owned(),
+            "pwd".to_owned(),
         ))
         .unwrap();
 
         let tip = client.get_tip().await;
         match tip {
             Ok(tip) => {
-                println!("Got tip {:?}", tip);
                 assert!(tip > 0);
             }
             Err(e) => {

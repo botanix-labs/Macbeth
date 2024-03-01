@@ -138,7 +138,7 @@ where
         signer_index: usize,
         pk: secp256k1::PublicKey,
     ) -> Result<Self, StorageCreationError> {
-        if headers.len() == 0 {
+        if headers.is_empty() {
             return Err(StorageCreationError::EmptyHeaders);
         }
         // sort the headers by block numbers
@@ -314,7 +314,7 @@ where
         gas_used: u64,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
-        authorities: &Vec<secp256k1::PublicKey>,
+        authorities: &[secp256k1::PublicKey],
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
         recent_block_hash: bitcoin::BlockHash,
     ) -> Result<Header, BlockExecutionError> {
@@ -332,7 +332,7 @@ where
         };
         header.gas_used = gas_used;
 
-        let vote_for = if let Some(vote) = authority_to_vote_on { Some(vote.0) } else { None };
+        let vote_for = authority_to_vote_on.as_ref().map(|vote| vote.0);
         // calculate the state root
         let state_root = self
             .client
@@ -346,7 +346,7 @@ where
         let mut extra_header_content_no_signature = ExtraDataHeader::new(
             0u32,
             None,
-            if header.is_poa_epoch() { Some(authorities.clone()) } else { None },
+            if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
             vote_for,
             recent_block_hash,
         );
@@ -360,7 +360,7 @@ where
             secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
 
-        extra_header_content_no_signature.set_signature(signature.clone());
+        extra_header_content_no_signature.set_signature(signature);
 
         header.extra_data = Bytes::from(extra_header_content_no_signature.serialize());
         Ok(header)
@@ -427,14 +427,14 @@ where
             gas_used,
             sk,
             secp,
-            &authority_signers,
+            authority_signers,
             vote,
             // This is checked to be Some above
             recent_block_header.expect("valid header").0.block_hash(),
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        validate_poa_header_standalone(&header, &authority_signers).map_err(|e| {
+        validate_poa_header_standalone(&header, authority_signers).map_err(|e| {
             warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
             // TODO(armins) return more expressive error
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
@@ -506,6 +506,6 @@ where
             },
         )?;
 
-        return Ok(bundle_state);
+        Ok(bundle_state)
     }
 }

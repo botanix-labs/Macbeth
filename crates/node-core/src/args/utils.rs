@@ -148,7 +148,7 @@ pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressPars
         return Err(SocketAddressParsingError::Empty)
     }
     // TODO configuarable for https
-    let addr = format!("http://{}", value.to_string());
+    let addr = format!("http://{}", value);
     tonic::transport::Endpoint::try_from(addr.clone()).map_err(|_e| {
         SocketAddressParsingError::Parse("Failed to parse as tonic endpoint".to_string())
     })?;

@@ -22,7 +22,7 @@ impl EthAddress for ethers::types::Address {
 
 impl EthAddress for Vec<u8> {
     fn as_slice(&self) -> &[u8] {
-        &self
+        self
     }
 }
 
@@ -70,14 +70,14 @@ fn _build_safe_spend_path_script_check_sig_add(
     let mut script = Builder::new()
         .push_lock_time(lock_time)
         .push_key(&bitcoin::PublicKey::new(
-            *public_keys.get(0).expect("There is always a 0th public key"),
+            *public_keys.first().expect("There is always a 0th public key"),
         ))
         .push_opcode(opcodes::all::OP_CHECKSIG);
 
     for i in 1..public_keys.len() {
         script = script
             .push_key(&bitcoin::PublicKey::new(
-                *(public_keys.get(i).expect(format!("should find pubkey at {}", i).as_str())),
+                *(public_keys.get(i).unwrap_or_else(|| panic!("should find pubkey at {}", i))),
             ))
             .push_opcode(opcodes::all::OP_CHECKSIGADD);
     }
@@ -112,7 +112,7 @@ pub fn generate_taproot_spend_info(
         .expect("Couldn't add timelock leaf");
 
     let finalized_taproot =
-        builder.finalize(&secp, tweaked_public_key.x_only_public_key().0).unwrap();
+        builder.finalize(secp, tweaked_public_key.x_only_public_key().0).unwrap();
 
     Ok(finalized_taproot)
 }
@@ -135,7 +135,7 @@ pub fn generate_taproot_address(
     tweaked_public_key: &PublicKey,
     network: Network,
 ) -> Address {
-    let script = generate_taproot_scriptpubkey(&secp, tweaked_public_key);
+    let script = generate_taproot_scriptpubkey(secp, tweaked_public_key);
     Address::from_script(&script, network).expect("valid address")
 }
 
@@ -144,7 +144,7 @@ where
     T: EthAddress,
 {
     let eth = eth_address.as_slice();
-    let eth_address_tweak = sha256::Hash::hash(&eth);
+    let eth_address_tweak = sha256::Hash::hash(eth);
     let tweak = {
         let mut eng = sha256::Hash::engine();
         eng.write_all(&aggregate_key.serialize()).unwrap();
@@ -180,9 +180,7 @@ where
     T: EthAddress,
 {
     let tweak = generate_tweak(eth_address, aggregate_key);
-    let internal_sk = secret_key.add_tweak(&tweak).expect("legal tweak");
-
-    internal_sk
+    secret_key.add_tweak(&tweak).expect("legal tweak")
 }
 
 pub fn generate_taproot_change_scriptpubkey(
@@ -204,7 +202,7 @@ pub fn gateway_address<T>(
 where
     T: EthAddress,
 {
-    let tweaked_pk = generate_tweaked_public_key(&secp, eth_addr, frost_pubkey);
+    let tweaked_pk = generate_tweaked_public_key(secp, eth_addr, frost_pubkey);
 
     Ok(generate_taproot_address(secp, &tweaked_pk, network))
 }

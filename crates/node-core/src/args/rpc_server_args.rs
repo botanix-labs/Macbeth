@@ -632,8 +632,8 @@ impl Default for RpcServerArgs {
                 url: "https://bitcoind.botanixlabs.dev"
                     .parse::<Url>()
                     .expect("valid bitcoind address"),
-                password: None,
-                username: None,
+                password: "usr".to_string(),
+                username: "pwd".to_string(),
             },
             slack_notifications_webhook_url: None,
         }
