@@ -36,14 +36,12 @@ use std::{
 
 use crate::database::Utxo;
 
-use bdk::{
-    miniscript::psbt::Error as PsbtError, wallet::coin_selection::Error as BdkCoinselectionError,
-};
+
 use database::Error as DbError;
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+    pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
 
 #[derive(Debug, Error)]
@@ -191,7 +189,7 @@ impl rpc::BtcServer for App {
         let outputs = outputs_result?;
 
         let (to_sign, psbt) =
-            self.get_to_sign(outputs, fee_rate, &signing_session_id).map_err(|e| {
+            self.get_to_sign(&SECP, outputs, fee_rate, &signing_session_id).map_err(|e| {
                 error!("Failed to get to sign: {}", e);
                 internal!("Failed to get to sign: {}", e)
             })?;
@@ -527,7 +525,10 @@ mod test {
     }
     use std::collections::BTreeMap;
 
+    use crate::signer::SigningRound2Error;
+
     use super::*;
+    use bitcoin::{absolute::LockTime, Script, ScriptBuf, Sequence, Transaction, TxIn};
     use frost::keys::dkg::round1;
     use rand::thread_rng;
 
@@ -591,10 +592,7 @@ mod test {
 
         let pk_result = app.get_public_key(&eth);
         assert!(pk_result.is_err());
-        assert_eq!(
-            pk_result.err().unwrap().to_string(),
-            "missing key package"
-        );
+        assert_eq!(pk_result.err().unwrap().to_string(), "missing key package");
     }
 
     #[test]
@@ -862,10 +860,7 @@ mod test {
         let signing_session_id = [0u8; 32];
         let nonce_commits = app.get_round1_signing_package(2, &signing_session_id);
         assert!(nonce_commits.is_err());
-        assert_eq!(
-            nonce_commits.err().unwrap().to_string(),
-            "missing key package"
-        );
+        assert_eq!(nonce_commits.err().unwrap().to_string(), "missing key package");
     }
 
     #[test]
@@ -874,7 +869,10 @@ mod test {
         let signing_session_id = [0u8; 32];
         let nonce_commits = app.get_round1_signing_package(100_000_000, &signing_session_id);
         assert!(nonce_commits.is_err());
-        assert_eq!(nonce_commits.err().unwrap().to_string(), "invalid number of signing nonces requested");
+        assert_eq!(
+            nonce_commits.err().unwrap().to_string(),
+            "invalid number of signing nonces requested"
+        );
     }
 
     #[test]
@@ -903,12 +901,66 @@ mod test {
         let signing_session_id = [0u8; 32];
 
         let nonce_commits2 = app
-        .get_round1_signing_package(1, &signing_session_id)
-        .expect("valid nonce commits request");
+            .get_round1_signing_package(1, &signing_session_id)
+            .expect("valid nonce commits request");
 
         assert_eq!(nonce_commits2.len(), 1);
         assert_ne!(nonce_commits, nonce_commits2);
     }
 
- 
+    #[test]
+    fn should_not_sign_without_dkg() {
+        let app = setup();
+        let tx =
+            Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![] };
+        let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
+        let mut signing_package: Vec<frost::SigningPackage> = vec![];
+        let res = app.get_round2_signing_package(&mut signing_package, &psbt);
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "missing key package");
+    }
+
+    #[test]
+    fn sanity_checks_for_input_sizes() {
+        // Setup
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        app.db.set_pubkey_package(pk_package).expect("set public key package");
+        app.db.set_key_package(key_package).expect("set key package");
+
+        let tx =
+            Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![] };
+        let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
+        let mut signing_package: Vec<frost::SigningPackage> = vec![];
+        let res = app.get_round2_signing_package(&mut signing_package, &psbt);
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap().to_string(),
+            "invalid signing package: number of inputs cannot be zero"
+        );
+
+        // Input size mismatch with the number of signing packages
+        let tx = Transaction {
+            version: 2,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Default::default(),
+            }],
+            output: vec![],
+        };
+        let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
+
+        let res = app.get_round2_signing_package(&mut signing_package, &psbt);
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap().to_string(),
+            "invalid signing package: number of inputs does not match number of signing packages"
+        );
+    }
 }

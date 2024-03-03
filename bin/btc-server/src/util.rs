@@ -1,4 +1,4 @@
-use crate::{database::Utxo, Error};
+use crate::{database::Utxo, Error, SECP};
 use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, OutPoint};
 use frost_secp256k1_tr as frost;
 use std::fmt;
@@ -138,7 +138,7 @@ pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Parsin
 /// # Arguments
 ///
 /// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction details.
-/// * `pk` - A reference to the secp256k1 public key associated with the PSBT.
+/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any taptweaks or eth addresses.
 ///
 /// # Returns
 ///
@@ -151,7 +151,7 @@ pub fn add_remove_utxo_from_psbt(
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
     // For change outputs there will always be a no eth tweak
     let mut change_outputs: Vec<Utxo> = vec![];
-    let change_spk = reth_btc_wallet::address::generate_taproot_scriptpubkey(pk);
+    let change_spk = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, pk);
     for (index, output) in tx.output.iter().enumerate() {
         if output.script_pubkey == change_spk {
             change_outputs.push(Utxo {

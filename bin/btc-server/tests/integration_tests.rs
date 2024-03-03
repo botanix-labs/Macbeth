@@ -422,7 +422,7 @@ async fn test_many_inputs_signing() {
             fee_rate: 2,
             outputs: vec![client::Output {
                 address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
-                // Make sure to provide a value great than the value of one pegin (1000 sats)
+                // At this point there should be 2000 sats in the wallet
                 value: 1200,
             }],
             signing_session_id: signing_session_id.to_vec(),
@@ -455,6 +455,76 @@ async fn test_many_inputs_signing() {
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
 
+    let psbt = signing_package.clone().psbt;
+    let _finalized = c3
+        .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
+            psbt,
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap();
+
+    // Lets try spending again, this time should be spending non tweaked inputs (change)
+    // First lets get a new signing session id
+    let signing_session_id = [1u8; 32];
+    let c1_signing1 = c1
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            number_of_inputs: 1,
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let c2_signing1 = c2
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            number_of_inputs: 1,
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
+    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
+
+    let signing_package = c3
+        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+            fee_rate: 2,
+            outputs: vec![client::Output {
+                address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+                // At this point there should be 800 sats in the wallet
+                value: 200,
+            }],
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Round 2 signing
+    let c1_signing2 = c1
+        .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+            payload: signing_package.clone().payload,
+            psbt: signing_package.clone().psbt,
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let c2_signing2 = c2
+        .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+            payload: signing_package.clone().payload,
+            psbt: signing_package.clone().psbt,
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
+    c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
     let psbt = signing_package.clone().psbt;
     let _finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {

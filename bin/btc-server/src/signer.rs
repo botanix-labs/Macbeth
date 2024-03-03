@@ -1,8 +1,9 @@
+use crate::util::{add_remove_utxo_from_psbt, VerifyingKeyExt};
 use crate::DbError;
 use crate::{App, Error};
 use bitcoin::hashes::Hash;
 use bitcoin::psbt::Psbt;
-use bitcoin::sighash::TapSighashType;
+
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
@@ -38,7 +39,7 @@ pub enum SigningRound1Error {
 pub enum SigningRound2Error {
     #[error("missing key package")]
     MissingKeyPackage,
-    #[error("invalid signing package")]
+    #[error("invalid signing package: {0}")]
     InvalidSigningPackage(&'static str),
     #[error("internal FROST error: {0}")]
     FrostError(#[from] frost::Error),
@@ -118,10 +119,17 @@ impl App {
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
         let tx = psbt.clone().extract_tx();
         let num_inputs = tx.input.len();
+        // # of inputs sanity check
+        if num_inputs == 0 {
+            return Err(SigningRound2Error::InvalidSigningPackage(
+                "number of inputs cannot be zero",
+            ));
+        }
+        // TODO have a fee sanity check
         // The number of inputs on the psbt should match the number of signing packages
         if num_inputs != signing_packages.len() {
             return Err(SigningRound2Error::InvalidSigningPackage(
-                "Number of inputs does not match number of signing packages",
+                "number of inputs does not match number of signing packages",
             ));
         }
 
@@ -160,7 +168,6 @@ impl App {
             if signing_package.message()
                 != signing_packages.get(index).expect("valid index").message()
             {
-                println!("signing_package: {:?}", signing_package.message());
                 return Err(SigningRound2Error::InvalidSigningPackage(
                     "Cannot re-create signing package",
                 ));
@@ -169,7 +176,6 @@ impl App {
             let ot = tx.input.get(index).expect("valid index").previous_output;
             let db_utxo = self.db.get_utxo(ot)?;
             if db_utxo.is_none() {
-                println!("utxo not found in db: {:?}", ot);
                 return Err(SigningRound2Error::InvalidSigningPackage("UTXO not found in DB"));
             }
         }
@@ -191,6 +197,11 @@ impl App {
                 &key_package,
             )?);
         }
+        // update the utxo set
+        let pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
+        let (change_outputs, selected_inputs) = add_remove_utxo_from_psbt(psbt, &pk);
+        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
+        self.db.flush()?;
 
         // Clear the signing nonces
         // This finalizes the signing session

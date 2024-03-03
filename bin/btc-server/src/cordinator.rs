@@ -211,6 +211,7 @@ impl App {
 
     pub(crate) fn get_to_sign(
         &self,
+        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
         signing_session_id: &[u8; 32],
@@ -222,7 +223,9 @@ impl App {
         }
 
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let change_script = reth_btc_wallet::address::generate_taproot_scriptpubkey(&secp_pk);
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(secp, &secp_pk);
+
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
 
         // signers need to sign for each input individually
