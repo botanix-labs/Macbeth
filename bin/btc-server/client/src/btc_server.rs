@@ -454,6 +454,31 @@ pub mod btc_server_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Meant to be used at anytime to perform utxo selection and create a tx
+        pub async fn get_psbt(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ToSignRequest>,
+        ) -> std::result::Result<tonic::Response<super::SignPayload>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetPsbt",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetPsbt"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Meant to be used to transition the signing round to round 2 after round 1
+        /// signing commitments have been collected
         pub async fn get_to_sign_package(
             &mut self,
             request: impl tonic::IntoRequest<super::ToSignRequest>,

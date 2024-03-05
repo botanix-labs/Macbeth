@@ -190,6 +190,13 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::Round1SigningPackage>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        /// Meant to be used at anytime to perform utxo selection and create a tx
+        async fn get_psbt(
+            &self,
+            request: tonic::Request<super::ToSignRequest>,
+        ) -> std::result::Result<tonic::Response<super::SignPayload>, tonic::Status>;
+        /// Meant to be used to transition the signing round to round 2 after round 1
+        /// signing commitments have been collected
         async fn get_to_sign_package(
             &self,
             request: tonic::Request<super::ToSignRequest>,
@@ -718,6 +725,48 @@ pub mod btc_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = NewRound1SigningPackageSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetPsbt" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetPsbtSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::ToSignRequest>
+                    for GetPsbtSvc<T> {
+                        type Response = super::SignPayload;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ToSignRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).get_psbt(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetPsbtSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
