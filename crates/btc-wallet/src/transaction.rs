@@ -6,6 +6,8 @@ use bitcoin::{
 
 lazy_static::lazy_static!(
     pub static ref ETH_ADDRESS_FIELD: psbt::raw::Key = psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] };
+    pub static ref SIGNING_COMMITMENTS_KEY_TYPE: u8 = 0xde;
+    pub static ref PARTIAL_SIGNATURE_KEY_TYPE: u8 = 0xdf;
     pub static ref SIGNING_COMMITMENTS: psbt::raw::Key = psbt::raw::Key { type_value: 0xde, key: vec![0, 0xde] };
 );
 
