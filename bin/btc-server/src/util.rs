@@ -246,6 +246,8 @@ pub fn add_signing_commitments_to_psbt(
     }
 }
 
+// TODO the next four functions are very similar, we should refactor them
+
 pub fn add_partial_signature_to_psbt(
     psbt: &mut Psbt,
     partial_signature: &Vec<frost::round2::SignatureShare>,
@@ -260,6 +262,66 @@ pub fn add_partial_signature_to_psbt(
     for (_index, (input, sig)) in psbt.inputs.iter_mut().zip(partial_signature.iter()).enumerate() {
         input.unknown.insert(key.clone(), sig.serialize().to_vec());
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RetrieveUnknownKeyError {
+    #[error("key was not found in input unknown fields")]
+    KeyNotFound,
+    #[error("failed to deserialize value")]
+    ValueFormatError(#[from] std::array::TryFromSliceError),
+    #[error("invalid value for key: {0}")]
+    InvalidValue(#[from] frost::Error),
+}
+
+pub fn retrieve_partial_signatures(
+    psbt: &Psbt,
+    frost_id: &frost::Identifier,
+) -> Result<Vec<frost::round2::SignatureShare>, RetrieveUnknownKeyError> {
+    let frost_id_bytes = frost_id.serialize();
+    let key_type = PARTIAL_SIGNATURE_KEY_TYPE.clone();
+    let mut key: Vec<u8> = vec![frost_id_bytes.len() as u8];
+    key.extend(frost_id_bytes);
+    key.push(key_type);
+
+    let key = psbt::raw::Key { type_value: key_type, key };
+
+    let mut ret = vec![];
+    for input in psbt.inputs.iter() {
+        if let Some(value) = input.unknown.get(&key) {
+            let partial_sig =
+                frost::round2::SignatureShare::deserialize(value.clone().as_slice().try_into()?)?;
+            ret.push(partial_sig);
+            continue;
+        }
+        return Err(RetrieveUnknownKeyError::KeyNotFound);
+    }
+    Ok(ret)
+}
+
+pub fn retrieve_signing_commitments(
+    psbt: &Psbt,
+    frost_id: &frost::Identifier,
+) -> Result<Vec<frost::round1::SigningCommitments>, RetrieveUnknownKeyError> {
+    let key_type = SIGNING_COMMITMENTS_KEY_TYPE.clone();
+    let frost_id_bytes = frost_id.serialize();
+    let mut key: Vec<u8> = vec![frost_id_bytes.len() as u8];
+    key.extend(frost_id_bytes);
+    key.push(key_type);
+
+    let key = psbt::raw::Key { type_value: key_type, key };
+
+    let mut ret = vec![];
+    for input in psbt.inputs.iter() {
+        if let Some(value) = input.unknown.get(&key) {
+            let signing_commitments =
+                frost::round1::SigningCommitments::deserialize(value.clone().as_slice())?;
+            ret.push(signing_commitments);
+            continue;
+        }
+        return Err(RetrieveUnknownKeyError::KeyNotFound);
+    }
+    Ok(ret)
 }
 
 #[cfg(test)]
@@ -315,7 +377,6 @@ mod util_tests {
             &vec![signing_commits2_0, signing_commits2_1],
             &frost_id2,
         );
-        println!("{:?}", psbt);
         for (i, input) in psbt.inputs.iter().enumerate() {
             let key = input.unknown.keys();
             let values = input.unknown.values();
@@ -335,6 +396,12 @@ mod util_tests {
                 assert_eq!(sc, if i == 0 { scs_input_0[j] } else { scs_input_1[j] });
             }
         }
+        // lets try to retrieve the signing commitments
+        let retrieved_scs = retrieve_signing_commitments(&psbt, &frost_id1).expect("valid scs");
+        assert_eq!(retrieved_scs, vec![signing_commits1_0, signing_commits1_1]);
+
+        let retrieved_scs = retrieve_signing_commitments(&psbt, &frost_id2).expect("valid scs");
+        assert_eq!(retrieved_scs, vec![signing_commits2_0, signing_commits2_1]);
     }
 
     #[test]
@@ -378,14 +445,21 @@ mod util_tests {
 
             for (j, v) in values.enumerate() {
                 let fixed_size_bytes: [u8; 32] = v.as_slice().try_into().unwrap();
-                let sc =
-                    frost::round2::SignatureShare::deserialize(fixed_size_bytes).expect("valid signing commits");
+                let sc = frost::round2::SignatureShare::deserialize(fixed_size_bytes)
+                    .expect("valid signing commits");
                 assert_eq!(
                     sc,
                     if i == 0 { partial_sigs_input_0[j] } else { partial_sigs_input_1[j] }
                 );
             }
         }
+
+         // lets try to retrieve
+         let retrieved_sigs = retrieve_partial_signatures(&psbt, &frost_id1).expect("valid sigs");
+         assert_eq!(retrieved_sigs, vec![sig_share1_0, sig_share1_1]);
+ 
+         let retrieved_sigs = retrieve_partial_signatures(&psbt, &frost_id2).expect("valid sigs");
+         assert_eq!(retrieved_sigs, vec![sig_share2_0, sig_share2_1]);
     }
 
     #[test]
