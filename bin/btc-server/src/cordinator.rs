@@ -12,11 +12,12 @@ use bdk::{
 };
 
 use bitcoin::Transaction;
-use bitcoin::{hashes::Hash, psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::CalculateSighashError;
 use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
+use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 #[derive(Debug, Error)]
@@ -45,6 +46,8 @@ pub enum CoordinatorError {
     PbstFinalizationFailed(Vec<PsbtError>),
     #[error("Invalid resulting transaction")]
     InvaildResultingTx,
+    #[error("Failed parse out to sign package: {0}")]
+    PsbtToSigningPackageConversionError(#[from] crate::util::PsbtToSigningPackageConversionError),
 }
 
 impl App {
@@ -215,7 +218,7 @@ impl App {
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
         signing_session_id: &[u8; 32],
-    ) -> Result<(Vec<frost::SigningPackage>, Psbt), CoordinatorError> {
+    ) -> Result<Psbt, CoordinatorError> {
         let pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         let signing_commitments = self.db.get_round1_signing_packages(&signing_session_id)?;
         if signing_commitments.len() < self.min_signers as usize {
@@ -226,12 +229,8 @@ impl App {
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(secp, &secp_pk);
 
-        let psbt = self.make_tx(outputs, fee_rate, change_script)?;
-
-        // signers need to sign for each input individually
-        let mut signing_packages = Vec::new();
-        for (index, _input) in psbt.inputs.iter().enumerate() {
-            let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
+        let mut psbt = self.make_tx(outputs, fee_rate, change_script)?;
+        for (index, input) in psbt.inputs.iter_mut().enumerate() {
             // Get the signing commitments for just this input
             let mut sc = BTreeMap::new();
             for (frost_id, signing_commitment) in signing_commitments.iter() {
@@ -243,17 +242,18 @@ impl App {
                         .clone(),
                 );
             }
-            let signing_package =
-                frost::SigningPackage::new(sc, sighash.to_raw_hash().to_byte_array().as_slice());
-            // Note that the tweaks should be explicitly verified by the signers before signing
+            // Keep track of the signing commitments in the psbt inputs
+            // This is a list of public nonce points provided by each signer
+            input.unknown.insert(
+                SIGNING_COMMITMENTS.clone(),
+                serde_json::to_vec(&sc).expect("valid structure"),
+            );
+            println!("input.unknown {:?}", input.unknown);
+            // Note that the tweaks and signing commitments should be explicitly verified by the signers before signing
             // Instead we can add it to the psbt as a proprietary field for each input
             // Lastly save this to sign package to the db
-            signing_packages.push(signing_package);
         }
-
-        self.db.add_signing_package(signing_session_id, signing_packages.clone())?;
-        self.db.flush()?;
-        Ok((signing_packages, psbt))
+        Ok(psbt)
     }
 
     /// Retruns finalized and ready to braodcast tx
@@ -276,20 +276,15 @@ impl App {
             return Err(CoordinatorError::InvalidSigningPackage("Number of inputs does not match"));
         }
         // Get signing packages for this signing session
-        let signing_packages = self.db.get_signing_package(signing_session_id)?;
-
-        if signing_packages.len() != tx.input.len() {
-            return Err(CoordinatorError::InvalidSigningPackage(
-                "Number of inputs does not match signing packages",
-            ));
-        }
+        let signing_packages = util::psbt_to_signing_packages(psbt).map_err(|e| {
+            CoordinatorError::PsbtToSigningPackageConversionError(
+                crate::util::PsbtToSigningPackageConversionError::from(e),
+            )
+        })?;
 
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
-            let mut signing_package = signing_packages.get(index).expect("valid index").clone();
+            let signing_package = signing_packages.get(index).expect("valid index").clone();
             let eth_tweak = psbt_input.unknown.get(&ETH_ADDRESS_FIELD.clone());
-            if let Some(e) = eth_tweak {
-                signing_package.set_addtional_tweak(e.clone());
-            };
             let partial_sig = partial_sigs.get(index).expect("valid index");
             let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
 

@@ -85,7 +85,7 @@ pub struct Round2SigningPackage {
     pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
-    /// This is a Vec<frost::round2::SignatureShare>
+    /// This is Vec<frost::round2::SignatureShares>
     #[prost(bytes = "vec", tag = "3")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "4")]
@@ -96,9 +96,6 @@ pub struct Round2SigningPackage {
 pub struct SignPayload {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
-    /// This is Vec<frost::SigningPackages>
-    #[prost(bytes = "vec", tag = "2")]
-    pub payload: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
