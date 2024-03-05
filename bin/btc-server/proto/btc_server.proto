@@ -89,15 +89,13 @@ message Round1SigningPackage {
 message Round2SigningPackage {
     bytes psbt = 1;
     bytes identifier = 2;
-    // This is a Vec<frost::round2::SignatureShare>
+    // This is Vec<frost::round2::SignatureShares>
     bytes payload = 3;
     bytes signing_session_id = 4;
 }
 
 message SignPayload {
     bytes psbt = 1;
-    // This is Vec<frost::SigningPackages>
-    bytes payload = 2;
     bytes signing_session_id = 3;
 }
 

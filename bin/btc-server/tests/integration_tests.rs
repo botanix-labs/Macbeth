@@ -306,7 +306,6 @@ async fn test_one_input_signing() {
     // Round 2 signing
     let c1_signing2 = c1
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -316,7 +315,6 @@ async fn test_one_input_signing() {
 
     let c2_signing2 = c2
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -434,7 +432,6 @@ async fn test_many_inputs_signing() {
     // Round 2 signing
     let c1_signing2 = c1
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -444,7 +441,6 @@ async fn test_many_inputs_signing() {
 
     let c2_signing2 = c2
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -505,7 +501,6 @@ async fn test_many_inputs_signing() {
     // Round 2 signing
     let c1_signing2 = c1
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -515,7 +510,6 @@ async fn test_many_inputs_signing() {
 
     let c2_signing2 = c2
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            payload: signing_package.clone().payload,
             psbt: signing_package.clone().psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))

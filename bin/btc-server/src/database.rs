@@ -22,7 +22,6 @@ const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
 const ROUND2_SIGNING_PACKAGES: &[u8; 5] = b"r2sig";
-const SIGNING_PACKAGES: &[u8; 5] = b"signp";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -69,11 +68,6 @@ pub struct Db {
     /// Where each Vec is a list of partial signatures for each input of the transaction
     /// Only relevant for the coordinator
     round2_signing_packages: sled::Tree,
-
-    // A tree of signing packages
-    // Indexed by signing_session_id
-    // Only relevant for the coordinator
-    signing_packages: sled::Tree,
 }
 
 impl Db {
@@ -85,7 +79,6 @@ impl Db {
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
             round2_signing_packages: db.open_tree(ROUND2_SIGNING_PACKAGES)?,
-            signing_packages: db.open_tree(SIGNING_PACKAGES)?,
             db,
         })
     }
@@ -94,7 +87,6 @@ impl Db {
     pub fn _clear(&self) -> Result<(), Error> {
         self.round1_signing_packages.clear()?;
         self.round2_signing_packages.clear()?;
-        self.signing_packages.clear()?;
         Ok(())
     }
 
@@ -105,63 +97,7 @@ impl Db {
         self.round2_dkg_packages.flush()?;
         self.round1_signing_packages.flush()?;
         self.round2_signing_packages.flush()?;
-        self.signing_packages.flush()?;
         Ok(())
-    }
-
-    /// Adds a vec of signing package to the collection for a given signing session.
-    /// Each signing package is associated with a specific input of the final transaction.
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
-    /// * `signing_packages` - A vector of `frost::SigningPackage` to be added to the signing session.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(true)` if the signing package was added successfully, `Ok(false)` if the signing session
-    /// already contains a signing package with the given identifier. Returns `Err` in case of other errors.
-    ///
-    pub fn add_signing_package(
-        &self,
-        signing_session_id: &[u8; 32],
-        signing_packages: Vec<frost::SigningPackage>,
-    ) -> Result<bool, Error> {
-        if self.signing_packages.contains_key(&signing_session_id[..])? {
-            return Ok(false);
-        }
-
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&signing_packages, &mut bytes).expect("writing to buffer");
-        self.signing_packages.insert(&signing_session_id[..], &bytes[..])?;
-        Ok(true)
-    }
-
-    /// Gets the signing package associated with the given signing session identifier.
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of `frost::SigningPackage` for the given signing session identifier.
-    /// If the signing session does not exist, an empty vector is returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns an `Err` if there is an issue deserializing the signing packages.
-    ///
-    pub fn get_signing_package(
-        &self,
-        signing_session_id: &[u8; 32],
-    ) -> Result<Vec<frost::SigningPackage>, Error> {
-        if let Some(b) = self.signing_packages.get(&signing_session_id[..])? {
-            let ret = ciborium::from_reader::<Vec<frost::SigningPackage>, _>(b.as_ref())?;
-            Ok(ret)
-        } else {
-            Ok(vec![])
-        }
     }
 
     // Adds round 2 signing information to the specified signing session.

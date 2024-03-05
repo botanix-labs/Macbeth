@@ -1,7 +1,7 @@
-use crate::util::{add_remove_utxo_from_psbt, VerifyingKeyExt};
+use crate::util::{add_remove_utxo_from_psbt, psbt_to_signing_packages, VerifyingKeyExt};
 use crate::DbError;
 use crate::{App, Error};
-use bitcoin::hashes::Hash;
+
 use bitcoin::psbt::Psbt;
 
 use frost_secp256k1_tr as frost;
@@ -51,6 +51,8 @@ pub enum SigningRound2Error {
     SignerNotFound(usize),
     #[error("Failed to calculate sighash: {0}")]
     FailedToCalculateSighash(#[from] CalculateSighashError),
+    #[error("Failed parse out to sign package: {0}")]
+    PsbtToSigningPackageConversionError(#[from] crate::util::PsbtToSigningPackageConversionError),
 }
 
 impl From<SigningRound1Error> for SigningError {
@@ -109,7 +111,6 @@ impl App {
 
     pub(crate) fn get_round2_signing_package(
         &self,
-        signing_packages: &mut Vec<frost::SigningPackage>,
         psbt: &Psbt,
     ) -> Result<Vec<frost::round2::SignatureShare>, SigningRound2Error> {
         // Important note here is that we never re-use the same nonce pairs for a different signing
@@ -125,13 +126,7 @@ impl App {
                 "number of inputs cannot be zero",
             ));
         }
-        // TODO have a fee sanity check
-        // The number of inputs on the psbt should match the number of signing packages
-        if num_inputs != signing_packages.len() {
-            return Err(SigningRound2Error::InvalidSigningPackage(
-                "number of inputs does not match number of signing packages",
-            ));
-        }
+        let mut signing_packages = psbt_to_signing_packages(psbt)?;
 
         // Get signing nonces from round 1
         let signing_nonces = self
@@ -154,24 +149,25 @@ impl App {
             if !signing_commitments.contains_key(&self.identifier) {
                 return Err(SigningRound2Error::SignerNotFound(index));
             }
-            let input = psbt.inputs.get(index).expect("valid index");
-            let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
-            let mut signing_package = frost::SigningPackage::new(
-                signing_commitments.clone(),
-                sighash.to_raw_hash().to_byte_array().as_slice(),
-            );
+            // let input = psbt.inputs.get(index).expect("valid index");
+            // re-create the sighash for the input
+            // let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
+            // let mut signing_package = frost::SigningPackage::new(
+            //     signing_commitments.clone(),
+            //     sighash.to_raw_hash().to_byte_array().as_slice(),
+            // );
             // inlcude tweak if one exists
-            let eth_tweak = input.unknown.get(&ETH_ADDRESS_FIELD.clone());
-            if let Some(e) = eth_tweak {
-                signing_package.set_addtional_tweak(e.clone());
-            };
-            if signing_package.message()
-                != signing_packages.get(index).expect("valid index").message()
-            {
-                return Err(SigningRound2Error::InvalidSigningPackage(
-                    "Cannot re-create signing package",
-                ));
-            }
+            // let eth_tweak = input.unknown.get(&ETH_ADDRESS_FIELD.clone());
+            // if let Some(e) = eth_tweak {
+            //     signing_package.set_addtional_tweak(e.clone());
+            // };
+            // if signing_package.message()
+            //     != signing_packages.get(index).expect("valid index").message()
+            // {
+            //     return Err(SigningRound2Error::InvalidSigningPackage(
+            //         "Cannot re-create signing package",
+            //     ));
+            // }
             // Check if input exists in db
             let ot = tx.input.get(index).expect("valid index").previous_output;
             let db_utxo = self.db.get_utxo(ot)?;
