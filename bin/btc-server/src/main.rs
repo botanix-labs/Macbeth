@@ -25,7 +25,7 @@ use dkg::DKGError;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use signer::SigningError;
-use util::{parse_eth_address, ParsingError};
+use util::{parse_eth_address, ParsingError, VerifyingKeyExt};
 
 use std::{
     collections::BTreeMap,
@@ -159,6 +159,62 @@ impl rpc::BtcServer for App {
         Ok(res)
     }
 
+    async fn get_psbt(
+        &self,
+        req: tonic::Request<rpc::ToSignRequest>,
+    ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+
+        let fee_rate =
+            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
+
+        let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+            })
+            .collect();
+        let outputs = outputs_result?;
+
+        let pk_package = self
+            .db
+            .get_key_package()?
+            .ok_or(badarg!("missing key package, run the dkg process first"))?;
+
+        let secp_pk = pk_package.verifying_key().to_secp_pk().map_err(|e| {
+            error!("Failed to convert verifying key to secp pk: {}", e);
+            internal!("Failed to convert verifying key to secp pk: {}", e)
+        })?;
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
+
+        let psbt = self.make_tx(outputs, fee_rate, change_script).map_err(|e| {
+            error!("Failed to make tx: {}", e);
+            internal!("Failed to make tx: {}", e)
+        })?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+        let res = tonic::Response::new(rpc::SignPayload {
+            psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
+        });
+        Ok(res)
+    }
+
     async fn get_to_sign_package(
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
@@ -197,8 +253,6 @@ impl rpc::BtcServer for App {
             error!("Failed to serialize psbt: {}", e);
             internal!("Failed to serialize psbt: {}", e)
         })?;
-        // reserialize the psbt and print it
-        let _p = Psbt::deserialize(&psbt_bytes.as_slice()).unwrap();
         let res = tonic::Response::new(rpc::SignPayload {
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
@@ -990,10 +1044,7 @@ mod test {
 
         let res = app.get_round2_signing_package(&psbt);
         assert!(res.is_err());
-        assert_eq!(
-            res.err().unwrap().to_string(),
-            "invalid signing package: UTXO not found in DB"
-        );
+        assert_eq!(res.err().unwrap().to_string(), "invalid signing package: UTXO not found in DB");
         // TODO finish test
     }
 

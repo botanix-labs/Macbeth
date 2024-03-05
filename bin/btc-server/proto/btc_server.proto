@@ -25,6 +25,11 @@ service BtcServer {
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
 
+    // Meant to be used at anytime to perform utxo selection and create a tx
+    rpc GetPsbt(ToSignRequest) returns (SignPayload) {}
+
+    // Meant to be used to transition the signing round to round 2 after round 1
+    // signing commitments have been collected
     rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
 
     rpc NewRound2SigningPackage(Round2SigningPackage) returns (Empty) {}
