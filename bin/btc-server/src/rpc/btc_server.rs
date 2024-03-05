@@ -1,5 +1,23 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Utxo {
+    #[prost(string, tag = "1")]
+    pub txid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub vout: u32,
+    #[prost(string, tag = "3")]
+    pub script_pubkey: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub value: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAllUtxosResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotifyPeginRequest {
     /// The txid of the utxo in hex.
     #[prost(string, tag = "1")]
@@ -202,6 +220,13 @@ pub mod btc_server_server {
             request: tonic::Request<super::FinalizeSigningRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FinalizeSigningResponse>,
+            tonic::Status,
+        >;
+        async fn get_all_utxos(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAllUtxosResponse>,
             tonic::Status,
         >;
     }
@@ -809,6 +834,50 @@ pub mod btc_server_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = FinalizeSigningSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetAllUtxos" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAllUtxosSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetAllUtxosSvc<T> {
+                        type Response = super::GetAllUtxosResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).get_all_utxos(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetAllUtxosSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

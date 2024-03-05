@@ -36,7 +36,6 @@ use std::{
 
 use crate::database::Utxo;
 
-
 use database::Error as DbError;
 use thiserror::Error;
 
@@ -444,6 +443,27 @@ impl rpc::BtcServer for App {
             signing_session_id: signing_session_id.to_vec(),
         };
 
+        Ok(tonic::Response::new(res))
+    }
+
+    /// Retrieves all utxos from the database.
+    /// Returns an empty vec if there are no utxos.
+    async fn get_all_utxos(
+        &self,
+        _request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
+        let db_utxos = self.db.get_all_utxos().await?;
+        let utxos = db_utxos
+            .into_iter()
+            .map(|db_utxo| rpc::Utxo {
+                txid: db_utxo.outpoint.txid.to_string(),
+                vout: db_utxo.outpoint.vout,
+                eth_address: db_utxo.eth_address,
+                script_pubkey: db_utxo.outpoint.script_pubkey,
+                value: db_utxo.value,
+            })
+            .collect();
+        let res = rpc::GetAllUtxosResponse { utxos };
         Ok(tonic::Response::new(res))
     }
 }
