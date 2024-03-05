@@ -568,7 +568,7 @@ mod test {
     }
     use std::collections::BTreeMap;
 
-    use crate::signer::SigningRound2Error;
+    use crate::{rpc::BtcServer, signer::SigningRound2Error};
 
     use super::*;
     use bitcoin::{
@@ -1001,7 +1001,7 @@ mod test {
     }
 
     #[test]
-    fn sanity_checks_for_input_sizes() {
+    fn tx_input_sanity_check() {
         // Setup
         let signing_session_id = [0u8; 32];
         let app = setup();
@@ -1027,17 +1027,15 @@ mod test {
             .get_round1_signing_package(1, &signing_session_id)
             .expect("valid nonce commits request");
 
-        // Generate our signing commitments
-        // let mut rng = thread_rng();
-        // let (_, signing_commits) = frost::round1::commit(key_package.signing_share(), &mut rng);
         let mut sc = BTreeMap::new();
         sc.insert(frost::Identifier::try_from(1u16).expect("valid id"), nonce_commits[0].clone());
 
         // Input size mismatch with the number of signing packages
         let tx = create_tx(1);
-        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).expect("valid tx");
         // we need to insert the signing commitments
-        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+        let tx_out = TxOut { value: 1000, script_pubkey: ScriptBuf::new() };
+        psbt.inputs[0].witness_utxo = Some(tx_out.clone());
         psbt.inputs[0]
             .unknown
             .insert(SIGNING_COMMITMENTS.clone(), serde_json::to_vec(&sc).unwrap());
@@ -1045,7 +1043,15 @@ mod test {
         let res = app.get_round2_signing_package(&psbt);
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "invalid signing package: UTXO not found in DB");
-        // TODO finish test
+
+        // Add the pegin utxo and re-run test
+        let utxo =
+            Utxo { outpoint: OutPoint::new(tx.txid(), 0), eth_address: None, output: tx_out };
+
+        app.add_pegin(&utxo);
+        let res = app.get_round2_signing_package(&psbt);
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "invalid signing package: UTXO not found in DB");
     }
 
     #[test]
