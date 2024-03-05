@@ -1,6 +1,7 @@
 use crate::{database::Utxo, Error, SECP};
 use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, OutPoint};
 use frost_secp256k1_tr as frost;
+use reth_btc_wallet::transaction::{ETH_ADDRESS_FIELD, SIGNING_COMMITMENTS};
 use std::fmt;
 
 /// Extension trait for OutPoint.
@@ -164,9 +165,183 @@ pub fn add_remove_utxo_from_psbt(
     (change_outputs, selected_inputs)
 }
 
+/// Errors that can occur during the conversion from a PSBT to
+/// a vector of signing packages for Frost signature generation.
+#[derive(Debug, Error)]
+pub enum PsbtToSigningPackageConversionError {
+    #[error("Failed to calculate sighash: {0}")]
+    FailedToCalculateSighash(#[from] reth_btc_wallet::transaction::CalculateSighashError),
+    #[error("Missing signing commitments")]
+    MissingSigningCommitments,
+    #[error("Failed to deserialize signing commitments")]
+    FailedToDeserializeSigningCommitments(#[from] serde_json::Error),
+}
+
+/// Converts a PSBT into a vector of Frost signing packages.
+///
+/// This function takes a PSBT as input and processes each input to generate the necessary signing
+/// packages for Frost signature generation. It returns a vector of `frost::SigningPackage` instances,
+/// each containing the signing commitments and other relevant information for the corresponding PSBT input.
+///
+/// # Arguments
+///
+/// * `psbt` - A reference to the PSBT to be converted into signing packages.
+///
+/// # Returns
+///
+/// Returns a `Result` containing a vector of `frost::SigningPackage` instances if the conversion is successful,
+/// or an error of type `PsbtToSigningPackageConversionError` otherwise.
+///
+pub fn psbt_to_signing_packages(
+    psbt: &Psbt,
+) -> Result<Vec<frost::SigningPackage>, PsbtToSigningPackageConversionError> {
+    let mut signing_packages = vec![];
+    for (index, input) in psbt.inputs.iter().enumerate() {
+        let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
+        let eth_tweak = input.unknown.get(&ETH_ADDRESS_FIELD.clone());
+        let signing_commitments_bytes = input
+            .unknown
+            .get(&SIGNING_COMMITMENTS.clone())
+            .ok_or(PsbtToSigningPackageConversionError::MissingSigningCommitments)?;
+        let signing_commitments = serde_json::from_slice(&signing_commitments_bytes.as_slice())
+            .map_err(|e| {
+                PsbtToSigningPackageConversionError::FailedToDeserializeSigningCommitments(e)
+            })?;
+
+        let mut signing_package = frost::SigningPackage::new(
+            signing_commitments,
+            sighash.to_raw_hash().to_byte_array().as_slice(),
+        );
+        if let Some(e) = eth_tweak {
+            signing_package.set_addtional_tweak(e.clone());
+        };
+
+        signing_packages.push(signing_package);
+    }
+    Ok(signing_packages)
+}
+
 #[cfg(test)]
-mod tests {
+mod util_tests {
+    use std::collections::BTreeMap;
+
+    use bitcoin::{ScriptBuf, TxOut};
+
+    use crate::test::{eth_vector_to_fixed_bytes, trusted_dealer_setup};
+
     use super::*;
+    #[test]
+    fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
+        let tx = crate::test::create_tx(1);
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
+        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+
+        let signing_packages = psbt_to_signing_packages(&psbt);
+        assert!(signing_packages.is_err());
+        assert_eq!(
+            signing_packages.unwrap_err().to_string(),
+            PsbtToSigningPackageConversionError::MissingSigningCommitments.to_string()
+        );
+    }
+
+    #[test]
+    fn should_generate_singning_packages() {
+        let (shares, pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+        let rng = &mut rand::thread_rng();
+
+        let (_, signing_commits) = frost::round1::commit(key_package.signing_share(), rng);
+        let mut sc = BTreeMap::new();
+        sc.insert(frost::Identifier::try_from(1u16).expect("valid id"), signing_commits);
+
+        let tx = crate::test::create_tx(1);
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
+        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0]
+            .unknown
+            .insert(SIGNING_COMMITMENTS.clone(), serde_json::to_vec(&sc).unwrap());
+
+        let signing_packages = psbt_to_signing_packages(&psbt).expect("valid list signing package");
+        assert_eq!(signing_packages.len(), 1);
+        assert_eq!(signing_packages[0].signing_commitments(), &sc);
+        assert!(signing_packages[0].additional_tweak().is_none());
+    }
+
+    #[test]
+    fn should_create_multiple_signing_packages() {
+        // Setup
+        let (shares, pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+        let rng = &mut rand::thread_rng();
+        let total_inputs = 5;
+        let tx = crate::test::create_tx(total_inputs);
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
+
+        // For each input we need to create tx_outs and signing commitments
+        let mut sc_per_input = vec![];
+        for i in 0..5 {
+            let (_, signing_commits) = frost::round1::commit(key_package.signing_share(), rng);
+            let mut sc = BTreeMap::new();
+            sc.insert(frost::Identifier::try_from(1u16).expect("valid id"), signing_commits);
+            sc_per_input.push(sc.clone());
+            psbt.inputs[i].witness_utxo =
+                Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+            psbt.inputs[i]
+                .unknown
+                .insert(SIGNING_COMMITMENTS.clone(), serde_json::to_vec(&sc).unwrap());
+        }
+
+        let signing_packages = psbt_to_signing_packages(&psbt).expect("valid list signing package");
+        assert_eq!(signing_packages.len(), total_inputs);
+        // Check each signing package
+        for i in 0..5 {
+            assert_eq!(signing_packages[i].signing_commitments(), &sc_per_input[i]);
+            assert!(signing_packages[i].additional_tweak().is_none());
+        }
+    }
+
+    #[test]
+    fn should_test_eth_tweak_getting_added() {
+        // Test setup
+        let eth = eth_vector_to_fixed_bytes(
+            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
+        )
+        .to_vec();
+        let (shares, _pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+        let rng = &mut rand::thread_rng();
+
+        // Generate our signing commitments
+        let (_, signing_commits) = frost::round1::commit(key_package.signing_share(), rng);
+        let mut sc = BTreeMap::new();
+        sc.insert(frost::Identifier::try_from(1u16).expect("valid id"), signing_commits);
+
+        let tx = crate::test::create_tx(1);
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
+
+        // Set up the psbt with the signing commitments and eth address
+        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0]
+            .unknown
+            .insert(SIGNING_COMMITMENTS.clone(), serde_json::to_vec(&sc).unwrap());
+        psbt.inputs[0].unknown.insert(ETH_ADDRESS_FIELD.clone(), eth.clone());
+
+        // assertions
+        let signing_packages = psbt_to_signing_packages(&psbt).expect("valid list signing package");
+        assert_eq!(signing_packages.len(), 1);
+        assert_eq!(signing_packages[0].signing_commitments(), &sc);
+        let additional_tweak = signing_packages[0].additional_tweak();
+        assert_eq!(additional_tweak.clone().unwrap(), eth);
+    }
 
     #[test]
     fn test_deserialize_frost_peer_id() {
