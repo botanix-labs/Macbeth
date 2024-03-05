@@ -10,7 +10,7 @@ data:
     set -e
 
     # Set the bucket name and file name
-    BUCKET_NAME="botaniz-testnet-snapshot"
+    BUCKET_NAME="botanix-testnet-snapshot"
     FILE_NAME="botanix-testnet.tgz"
 
     # Download the file from the bucket
