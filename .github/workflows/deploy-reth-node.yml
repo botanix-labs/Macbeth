@@ -2,7 +2,7 @@ name: Build, Tag, and Deploy Docker Reth Node Image to GCP
 
 on:
   pull_request:
-    branches: [main]
+    branches: [feature/poA-consenus]
     types: [closed]
 
 jobs:
@@ -38,7 +38,7 @@ jobs:
   push_to_gke:
     runs-on: ubuntu-latest
     needs: build_and_deploy
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'  || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true) }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/poA-consensus'  || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true) }}
     env:
       PROJECT_ID: botanix-391913
       CLUSTER_NAME: botanixlabs-cluster-dev
