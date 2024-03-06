@@ -1,150 +1,109 @@
 # Botanix Protocol 
 
-[![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)][gh-ci]
-[![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)][gh-deny]
-[![Codecov](https://img.shields.io/codecov/c/github/paradigmxyz/reth?token=c24SDcMImE)][codecov]
-[![Telegram Chat][tg-badge]][tg-url]
+[![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)]
+[![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)]
 
-**Modular, contributor-friendly and blazing-fast implementation of the Ethereum protocol**
+**A blazing fast and secure L2 for bitcoin using the EVM as a superstructure**
 
-![](./assets/reth-alpha.png)
+![](./images/botanix.jpg)
 
-**[Install](https://paradigmxyz.github.io/reth/installation/installation.html)**
-| [User Book](https://paradigmxyz.github.io/reth)
-| [Developer Docs](./docs)
-| [Crate Docs](https://paradigmxyz.github.io/reth/docs)
+## Requirements
 
-*The project is still work in progress, see the [disclaimer below](#status).*
+To run the stack locally, please go through the following steps to ensure you have all necessary prerequisites:
 
-[codecov]: https://app.codecov.io/gh/paradigmxyz/reth
-[gh-ci]: https://github.com/paradigmxyz/reth/actions/workflows/ci.yml
-[gh-deny]: https://github.com/paradigmxyz/reth/actions/workflows/deny.yml
-[tg-badge]: https://img.shields.io/endpoint?color=neon&logo=telegram&label=chat&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fparadigm%5Freth
+1. Install `rust` (best way to install it is through the rustup toolchain: [rust](https://rustup.rs/) - depending on your OS). Default to nightly version. Minimum required version is `1.75`.
+2. Install `docker` on your OS - simply follow the instructions here: [docker](https://docs.docker.com/engine/install/)
+3. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
+4. Install and set up `git` to use ssh.
+7. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
+8. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+9. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
+9. Install [k9s](https://k9scli.io/topics/install/)
 
-## What is Reth?
+## Connecting to bitcoind on the cluster
 
-Reth (short for Rust Ethereum, [pronunciation](https://twitter.com/kelvinfichter/status/1597653609411268608)) is a new Ethereum full node implementation that is focused on being user-friendly, highly modular, as well as being fast and efficient. Reth is an Execution Layer (EL) and is compatible with all Ethereum Consensus Layer (CL) implementations that support the [Engine API](https://github.com/ethereum/execution-apis/tree/a0d03086564ab1838b462befbc083f873dcf0c0f/src/engine). It is originally built and driven forward by [Paradigm](https://paradigm.xyz/), and is licensed under the Apache and MIT licenses.
+1. Install google cloud cli following the link here [gpc](https://cloud.google.com/sdk/docs/install) depending on your platform.
+2. Provided you have been given access by an administrator, connect to the google cloud cluster where the bitcoind server is running using:
 
-## Goals
+```shell
+gcloud container clusters get-credentials botanixlabs-cluster-dev --region us-central1 --project botanix-391913
+```
+3. Install [k9s](https://k9scli.io/topics/install/) depending on your platform.
+4. Start `k9s` using the following command:
+```shell
+KUBE_EDITOR=nano k9s
+```
+and automatically select the cluster context. Then find the pod where bitcoind is running, press `Shift+f` for port-forwarding and select the local port
+onto which the pod traffic is to be forwarded. Usually that is `38332`.
 
-As a full Ethereum node, Reth allows users to connect to the Ethereum network and interact with the Ethereum blockchain. This includes sending and receiving transactions/logs/traces, as well as accessing and interacting with smart contracts. Building a successful Ethereum node requires creating a high-quality implementation that is both secure and efficient, as well as being easy to use on consumer hardware. It also requires building a strong community of contributors who can help support and improve the software.
+## Runing a local federation
 
-More concretely, our goals are:
+Once you have connected to bitcoind, you can run a local federation of two and more nodes easily.
+These instructions set up federation nodes running poa consensus on your local set up.
+Please note that the federation on feature/poA-consensus consists of at least two federation members
 
-1. **Modularity**: Every component of Reth is built to be used as a library: well-tested, heavily documented and benchmarked. We envision that developers will import the node's crates, mix and match, and innovate on top of them. Examples of such usage include but are not limited to spinning up standalone P2P networks, talking directly to a node's database, or "unbundling" the node into the components you need. To achieve that, we are licensing Reth under the Apache/MIT permissive license. You can learn more about the project's components [here](./docs/repo/layout.md).
-2. **Performance**: Reth aims to be fast, so we used Rust and the [Erigon staged-sync](https://erigon.substack.com/p/erigon-stage-sync-and-control-flows) node architecture. We also use our Ethereum libraries (including [ethers-rs](https://github.com/gakonst/ethers-rs/) and [revm](https://github.com/bluealloy/revm/)) which we’ve battle-tested and optimized via [Foundry](https://github.com/foundry-rs/foundry/).
-3. **Free for anyone to use any way they want**: Reth is free open source software, built for the community, by the community. By licensing the software under the Apache/MIT license, we want developers to use it without being bound by business licenses, or having to think about the implications of GPL-like licenses.
-4. **Client Diversity**: The Ethereum protocol becomes more antifragile when no node implementation dominates. This ensures that if there's a software bug, the network does not finalize a bad block. By building a new client, we hope to contribute to Ethereum's antifragility.
-5. **Support as many EVM chains as possible**: We aspire that Reth can full-sync not only Ethereum, but also other chains like Optimism, Polygon, BNB Smart Chain, and more. If you're working on any of these projects, please reach out.
-6. **Configurability**: We want to solve for node operators that care about fast historical queries, but also for hobbyists who cannot operate on large hardware. We also want to support teams and individuals who want both sync from genesis and via "fast sync". We envision that Reth will be configurable enough and provide configurable "profiles" for the tradeoffs that each team faces.
 
-## Status
+1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD` with regards to the locally port-forwarded traffic. Ask adminstrator for username and password.
 
-The project is **not ready for production use**.
-
-Reth is fully capable of syncing, however, there are still some missing features, and we are still working on performance and stability. Because of this, we are still introducing breaking changes.
-
-It has **not been audited for security purposes** and should not be used in production yet.
-
-We will be updating the documentation with the completion status of each component, as well as include more contributing guidelines (design docs, architecture diagrams, repository layouts) and "good first issues".
-
-We appreciate your patience until we get there. Until then, we are happy to answer all questions in the Telegram link above.
-
-## For Users
-
-See the [Reth Book](https://paradigmxyz.github.io/reth) for instructions on how to install and run Reth.
-
-## For Developers
-
-### Using reth as a library
-
-You can use individual crates of reth in your project.
-
-The crate docs can be found [here](https://paradigmxyz.github.io/reth/docs).
-
-For a general overview of the crates, see [Project Layout](./docs/repo/layout.md).
-
-### Contributing
-
-If you want to contribute, or follow along with contributor discussion, you can use our [main telegram](https://t.me/paradigm_reth) to chat with us about the development of Reth!
-
-- Our contributor guidelines can be found in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-- See our [contributor docs](./docs) for more information on the project. A good starting point is [Project Layout](./docs/repo/layout.md).
-
-### Building and testing
-
-<!--
-When updating this, also update:
-- clippy.toml
-- Cargo.toml
-- .github/workflows/lint.yml
--->
-
-The Minimum Supported Rust Version (MSRV) of this project is [1.75.0](https://blog.rust-lang.org/2023/12/28/Rust-1.75.0.html).
-
-See the book for detailed instructions on how to [build from source](https://paradigmxyz.github.io/reth/installation/source.html).
-
-To fully test Reth, you will need to have [Geth installed](https://geth.ethereum.org/docs/getting-started/installing-geth), but it is possible to run a subset of tests without Geth.
-
-First, clone the repository:
-
-```sh
-git clone https://github.com/paradigmxyz/reth
-cd reth
+```bash
+BITCOIND_URL=http://localhost:38332
+BITCOIND_USER=[USER]
+BITCOIND_PWD=[PWD]
 ```
 
-Next, run the tests:
+2. Set up directories for a two different reth nodes, `[PATH_TO_NODE1]`, `[PATH_TO_NODE2]` and add a federation secret key to each of them. You can use the code snippets provided below directly.
+
+For federation member 1:
+```bash
+cd [PATH_TO_NODE1] && echo "0a35afe1386497890e1dce7286a5b378b978ede20db900e6ce5b4eb1a0449ad6" > [PATH_TO_NODE1]/discovery-secret
+```
+
+For federation member 2:
+```bash
+cd [PATH_TO_NODE2] && echo "0cc8f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe057f094135f2c9b019" > [PATH_TO_NODE2]/discovery-secret
+```
+
+3. Start the two bitcoin servers in two separate prompts: 
+
+```bash
+make start-btc-server-1
+make start-btc-server-2
+```
+
+4. Start the 2 botanix nodes as follows:
+
+```bash
+NODE_1_DIR=[PATH_TO_NODE1] make start-poa-server-1
+NODE_2_DIR=[PATH_TO_NODE2] make start-poa-server-2
+```
+
+where `[PATH_TO_NODE1]` and `[PATH_TO_NODE2]` are the absolute paths to the locations where the node configurations are stored. Wait for the nodes to start and connect to the bitcoind server. Usually takes around ~10secs.
+
+5. Connect the two federation nodes via the admin rpc endpoint:
+
+```bash
+`cast rpc admin_addPeer "enode://bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826@127.0.0.1:30304"`
+```
+
+> **Note**
+>
+> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
+
+## Testing
+
+To run the tests:
 
 ```sh
-# Without Geth
-cargo test --workspace
-
-# With Geth
-cargo test --workspace --features geth-tests
-
-# With Ethereum Foundation tests
-#
-# Note: Requires cloning https://github.com/ethereum/tests
-# 
-#   cd testing/ef-tests && git clone https://github.com/ethereum/tests ethereum-tests
-cargo test -p ef-tests --features ef-tests
+cargo test --workspace --features all
 ```
 
 We recommend using [`cargo nextest`](https://nexte.st/) to speed up testing. With nextest installed, simply substitute `cargo test` with `cargo nextest run`.
 
-> **Note**
-> 
-> Some tests use random number generators to generate test data. If you want to use a deterministic seed, you can set the `SEED` environment variable.
+## Building and pushing the Botanix images (TODO)
 
-## Getting Help
+Pipelines do normally build and push the poA image the btc-server images to the google cloud cluster. Nevertheless, if necessary, all these images could be build and pushed manually as follows:
 
-If you have any questions, first see if the answer to your question can be found in the [book][book].
-
-If the answer is not there:
-
-- Join the [Telegram][tg-url] to get help, or
-- Open a [discussion](https://github.com/paradigmxyz/reth/discussions/new) with your question, or
-- Open an issue with [the bug](https://github.com/paradigmxyz/reth/issues/new?assignees=&labels=C-bug%2CS-needs-triage&projects=&template=bug.yml)
-
-## Security
-
-See [`SECURITY.md`](./SECURITY.md).
-
-## Acknowledgements
-
-Reth is a new implementation of the Ethereum protocol. In the process of developing the node we investigated the design decisions other nodes have made to understand what is done well, what is not, and where we can improve the status quo.
-
-None of this would have been possible without them, so big shoutout to the teams below:
-* [Geth](https://github.com/ethereum/go-ethereum/): We would like to express our heartfelt gratitude to the go-ethereum team for their outstanding contributions to Ethereum over the years. Their tireless efforts and dedication have helped to shape the Ethereum ecosystem and make it the vibrant and innovative community it is today. Thank you for your hard work and commitment to the project.
-* [Erigon](https://github.com/ledgerwatch/erigon) (fka Turbo-Geth): Erigon pioneered the ["Staged Sync" architecture](https://erigon.substack.com/p/erigon-stage-sync-and-control-flows) that Reth is using, as well as [introduced MDBX](https://github.com/ledgerwatch/erigon/wiki/Choice-of-storage-engine) as the database of choice. We thank Erigon for pushing the state of the art research on the performance limits of Ethereum nodes.
-* [Akula](https://github.com/akula-bft/akula/): Reth uses forks of the Apache versions of Akula's [MDBX Bindings](https://github.com/paradigmxyz/reth/pull/132), [FastRLP](https://github.com/paradigmxyz/reth/pull/63) and [ECIES](https://github.com/paradigmxyz/reth/pull/80) . Given that these packages were already released under the Apache License, and they implement standardized solutions, we decided not to reimplement them to iterate faster. We thank the Akula team for their contributions to the Rust Ethereum ecosystem and for publishing these packages.
-
-[book]: https://paradigmxyz.github.io/reth/
-[tg-url]: https://t.me/paradigm_reth
-
-#### Building and pushing the Botanix images
-
-Build the testnet image
+Build the poA image
 `docker build -t botanix_testnet -f Dockerfile.testnet .`
 
 Tag the image
@@ -157,20 +116,20 @@ Push the image
 `docker push {region}-docker.pkg.dev/{project_id}/{repo_name}/botanix_testnet:latest`
 For example: `docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest`
 
-### Requirements
+## Getting Help
 
-To run the stack locally, please go through the following steps to ensure you have all necessary prerequisites:
+If you have any questions, first see if the answer to your question can be found in the [book][https://docs.botanixlabs.xyz/botanix-labs/].
 
-1. Install rust (best way to install it is through the rustup toolchain: `https://rustup.rs/` - for any OS). Default to nightly version.
-2. Install docker on your OS - simply follow the instructions here: `https://docs.docker.com/engine/install/`
-3. Install foundry on your system - simply follow the instructions here: `https://book.getfoundry.sh/getting-started/installation`
-4. Set up git to use ssh. Currently all git submodules are set up via ssh and other authentication methods wont work.
-5. Once you have cloned the Botanix monorepo, initialize gitmodules: `git submodule init`
-6. Pull the git submodules and their deps recursively: `git submodule update --init --recursive`
-7. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
-8. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+If the answer is not there:
 
-### Run locally the stack
+- Join the [Telegram](https://botanixlabs.xyz/en/home) to get help, or
+- Open a [discussion](https://github.com/botanix-labs/Macbeth/issues/new) with your question, or
+- Open an issue with [the bug](https://github.com/botanix-labs/Macbeth/issues)
 
-1. Run: `start-btc-server` to spin up the btc server
-2. Run: `start-reth-server` to spin up the EVM Botanix node
+## Security
+
+See [`SECURITY.md`](./SECURITY.md).
+
+## Acknowledgements
+
+The Botanix Project team
