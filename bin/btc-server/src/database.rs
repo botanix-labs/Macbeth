@@ -23,8 +23,6 @@ const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
-const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
-const ROUND2_SIGNING_PACKAGES: &[u8; 5] = b"r2sig";
 const PSBT: &[u8; 4] = b"psbt";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -57,22 +55,6 @@ pub struct Db {
     /// Indexed by peer id
     round2_dkg_packages: sled::Tree,
 
-    /// A tree of round 1 signing commitments
-    ///
-    /// Indexed by signing_session_id
-    /// Values are a map of peer_id -> Vec<round1::SigningCommitments>
-    /// Where each Vec is a list of commitments for each input of the transaction
-    /// Only relevant for the coordinator
-    round1_signing_packages: sled::Tree,
-
-    /// A tree of round 2 partial signatures
-    ///
-    /// Indexed by signing_session_id
-    /// Values are a map of peer_id -> Vec<round2::SignatureShare>
-    /// Where each Vec is a list of partial signatures for each input of the transaction
-    /// Only relevant for the coordinator
-    round2_signing_packages: sled::Tree,
-
     /// A tree of PSBTs
     ///
     /// Indexed by signing_session_id
@@ -88,18 +70,9 @@ impl Db {
             utxos: db.open_tree(&TREE_UTXOS)?,
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
-            round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
-            round2_signing_packages: db.open_tree(ROUND2_SIGNING_PACKAGES)?,
             psbt: db.open_tree(PSBT)?,
             db,
         })
-    }
-
-    // Temporary function to clear the db
-    pub fn _clear(&self) -> Result<(), Error> {
-        self.round1_signing_packages.clear()?;
-        self.round2_signing_packages.clear()?;
-        Ok(())
     }
 
     pub fn flush(&self) -> Result<(), Error> {
@@ -107,8 +80,6 @@ impl Db {
         self.db.flush()?;
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
-        self.round1_signing_packages.flush()?;
-        self.round2_signing_packages.flush()?;
         self.psbt.flush()?;
         Ok(())
     }
@@ -140,157 +111,6 @@ impl Db {
         } else {
             Ok(None)
         }
-    }
-
-    // Adds round 2 signing information to the specified signing session.
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
-    /// * `peer_id` - The frost identifier of the peer contributing to the signing session.
-    /// * `signing_round2` - A vector of `frost::round2::SignatureShare` containing the round 2 signatures.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(true)` if the round 2 signing information was added successfully.
-    /// Returns `Err` in case of other errors.
-    ///
-    pub fn add_round2_signing(
-        &self,
-        signing_session_id: &[u8; 32],
-        peer_id: &frost::Identifier,
-        signing_round2: &Vec<frost::round2::SignatureShare>,
-    ) -> Result<bool, Error> {
-        // for each input, we have a map of peer_id -> partial sig
-        // loop throw each map (repersenting a partial sigs for input) and add this peer's signature
-        let mut existing_partial_sigs = self.get_round2_signing_packages(signing_session_id)?;
-        // If there are no existing partial signatures, initialize the vector
-        if existing_partial_sigs.is_empty() {
-            existing_partial_sigs.extend(
-                signing_round2
-                    .iter()
-                    .map(|partial_sigs| BTreeMap::from_iter(vec![(*peer_id, *partial_sigs)])),
-            );
-        } else {
-            // Update existing partial signatures
-            for (sigs, round2_partial_sig) in
-                existing_partial_sigs.iter_mut().zip(signing_round2.iter())
-            {
-                // Skip if the peer_id already has a signature
-                if !sigs.contains_key(peer_id) {
-                    sigs.insert(*peer_id, *round2_partial_sig);
-                }
-            }
-        }
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&existing_partial_sigs, &mut bytes).expect("writing to buffer");
-        self.round2_signing_packages.insert(&signing_session_id[..], &bytes[..])?;
-
-        Ok(true)
-    }
-
-    /// Adds round 1 signing data for a specific signing session
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A fixed-size array of 32 bytes representing the unique identifier of the signing session.
-    /// * `peer_id` - An identifier representing the peer associated with the signing data.
-    /// * `signing_commitments` - A vector containing round 1 signing commitments for the specified session. Each commitment is associated with a specific input of the final transaction.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` indicating success (`Ok(true)`) if the round 1 signing data is successfully added.
-    /// Returns `Ok(false)` if the signing session ID already exists in storage.
-    /// Returns an `Err` variant if there are errors in the process.
-    pub fn add_round1_signing(
-        &self,
-        signing_session_id: &[u8; 32],
-        peer_id: frost::Identifier,
-        signing_commitments: Vec<frost::round1::SigningCommitments>,
-    ) -> Result<bool, Error> {
-        let mut round1_commitments = self.get_round1_signing_packages(signing_session_id)?;
-        // check if this frost id already has a commitment
-        if round1_commitments.contains_key(&peer_id) {
-            return Ok(false);
-        }
-
-        round1_commitments.insert(peer_id, signing_commitments);
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&round1_commitments, &mut bytes).expect("writing to buffer");
-
-        self.round1_signing_packages.insert(&signing_session_id[..], &bytes[..])?;
-        Ok(true)
-    }
-
-    /// Retrieves round 1 signing packages associated with a specific signing session from storage.
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A fixed-size array of 32 bytes representing the unique identifier of the signing session.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing a `BTreeMap` where the keys are peer identifiers and the values are vectors
-    /// of round 1 signing commitments associated with the provided signing session ID.
-    /// Returns `Ok(BTreeMap::new())` if no data is found for the specified signing session ID.
-    /// Returns an `Err` variant if there are errors in the process.
-    ///
-    pub fn get_round1_signing_packages(
-        &self,
-        signing_session_id: &[u8; 32],
-    ) -> Result<BTreeMap<frost::Identifier, Vec<frost::round1::SigningCommitments>>, Error> {
-        // let mut ret = BTreeMap::new();
-        for res in self.round1_signing_packages.iter() {
-            let (k, v) = res?;
-            let signing_session_id_key: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
-            if signing_session_id_key != *signing_session_id {
-                continue;
-            }
-            let signing_commitments = ciborium::from_reader::<
-                BTreeMap<frost::Identifier, Vec<frost::round1::SigningCommitments>>,
-                _,
-            >(&mut v.as_ref())?;
-
-            return Ok(signing_commitments);
-        }
-        Ok(BTreeMap::new())
-    }
-
-    /// Retrieves the round 2 signing packages associated with the specified signing session.
-    ///
-    /// # Arguments
-    ///
-    /// * `signing_session_id` - A 32-byte array representing the unique identifier of the signing session.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of `BTreeMap` where each map represents the partial signatures for a peer
-    /// in the specified signing session. If no matching signing session is found, an empty vector is returned.
-    ///
-    pub fn get_round2_signing_packages(
-        &self,
-        signing_session_id: &[u8; 32],
-    ) -> Result<Vec<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>, Error> {
-        for res in self.round2_signing_packages.iter() {
-            let (k, v) = res?;
-
-            let signing_session_id_key: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
-
-            if signing_session_id_key != *signing_session_id {
-                continue;
-            }
-
-            let partial_sig_set = ciborium::from_reader::<
-                Vec<BTreeMap<frost::Identifier, frost::round2::SignatureShare>>,
-                _,
-            >(v.as_ref())?;
-            return Ok(partial_sig_set);
-        }
-        // Could not find partial sigs for this signing session id
-        // TODO Should we throw instead
-        Ok(vec![])
     }
 
     /// Retrieves the public key package stored in the database, if available.
