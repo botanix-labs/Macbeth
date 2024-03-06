@@ -5,7 +5,6 @@ use reth_botanix_lib::mint_validation::{
     MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_btc_wallet::block_source::{BlockSource, MempoolSpace};
-
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::BundleStateWithReceipts;
 
@@ -72,19 +71,18 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 ///
 /// # Arguments
 ///
+/// * `btc_server` - The btc server client to send the pegins and pegouts to.
 /// * `bundle_state` - The bundle state with receipts to process.
-/// * `should_broadcast_pegout` - A boolean indicating whether to broadcast pegout or not.
 ///
 /// # Returns
 ///
 /// Returns `Ok(())` if the processing is successful, otherwise returns an error of type
 /// `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
-    bitcoin_block_source: &MempoolSpace,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
-    should_broadcast_pegout: bool,
-) -> Result<(), ProcessBotanixLogError> {
+) -> Result<Option<Vec<MakeTxRequest>>, ProcessBotanixLogError> {
+    let mut pegouts: Vec<MakeTxRequest> = Vec::new();
     let receipts_bundle = bundle_state.receipts().iter();
     for (index, receipts) in receipts_bundle.enumerate() {
         for receipt in receipts {
@@ -97,19 +95,25 @@ pub(crate) async fn process_receipts(
                     continue;
                 }
                 for log in &receipt.logs {
-                    process_botanix_log(
-                        bitcoin_block_source,
-                        btc_server,
-                        log,
-                        should_broadcast_pegout,
-                    )
-                    .await?;
+                    match process_botanix_log(btc_server, log).await {
+                        Ok(Some(pegout)) => {
+                            pegouts.push(pegout);
+                        }
+                        Ok(None) => continue,
+                        Err(e) => {
+                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                            return Err(e);
+                        }
+                    }
                 }
             }
             info!(target: "consensus::authority", "Receipt {:?}", receipt);
         }
     }
-    Ok(())
+    match pegouts.is_empty() {
+        true => Ok(None),
+        false => Ok(Some(pegouts)),
+    }
 }
 
 /// Search a log for a pegout and return a MakeTxRequest for the pegout
@@ -126,6 +130,7 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
+                // TODO (scott): fetch fee - this will make function async
                 let fee_rate = 30u32;
                 let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
                 return Some(MakeTxRequest {
@@ -143,32 +148,52 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
     None
 }
 
+pub(crate) async fn send_pegouts(
+    bitcoin_block_source: &MempoolSpace,
+    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    pegouts: Vec<MakeTxRequest>,
+) -> Result<(), ProcessBotanixLogError> {
+    for pegout in pegouts {
+        // TODO (scott): call bitcoind's testmempoolaccept to check if tx is valid before proceeding
+        match btc_server.make_tx(pegout).await {
+            Ok(response) => {
+                let raw_tx = response.into_inner().tx;
+                info!(target: "consensus::authority", "broadcasting withdrawal tx");
+
+                bitcoin_block_source
+                    .broadcast_tx(&hex::encode(raw_tx))
+                    .await
+                    .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
+            }
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
+                continue;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Processes a single botanix log and performs actions based on the log's topics.
 ///
 /// This function checks the topics of the log and performs different actions based on the topic.
 /// If the topic is `GenesisContractEvents::MintingEvent`, it parses and sends the minting event to
-/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent` and
-/// `should_broadcast_pegout` is true, it parses and sends the withdrawal event to the `btc_server`.
+/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout and returns it.
 ///
 /// # Arguments
 ///
+/// * `btc_server` - The btc server client to send the pegins and pegouts to.
 /// * `log` - The log to process.
-/// * `should_broadcast_pegout` - A boolean indicating whether to broadcast pegout or not.
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if the processing is successful, otherwise returns an error of type
-/// `ProcessBotanixLogError`.
-
-// TODO (scott) remove `should_broadcast_pegout` since this only happens for epoch block
-// check if pegout and store in cache
-// create util method to send pegouts
+/// Returns `Ok(Option<MakeTxRequest>)` if the processing is successful, otherwise returns an error of type `ProcessBotanixLogError`.
 async fn process_botanix_log(
-    bitcoin_block_source: &MempoolSpace,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     log: &Log,
-    should_broadcast_pegout: bool,
-) -> Result<(), ProcessBotanixLogError> {
+) -> Result<Option<MakeTxRequest>, ProcessBotanixLogError> {
+    let mut pegout: Option<MakeTxRequest> = None;
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
@@ -179,7 +204,7 @@ async fn process_botanix_log(
                     let request = NotifyPeginRequest {
                         utxo_txid: pegin.outpoint.txid.to_string(),
                         utxo_vout: pegin.outpoint.vout,
-                        eth_address: hex::encode(pegin.address.to_vec()),
+                        eth_address: hex::encode(pegin.address),
                         output: bitcoin::consensus::serialize(
                             pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
                         ),
@@ -192,31 +217,17 @@ async fn process_botanix_log(
                 }
             }
             Ok(GenesisContractEvents::BurnEvent) => {
-                if !should_broadcast_pegout {
-                    continue;
-                }
-                // TODO (armins): obv
                 let fee_rate = 30u32;
-                info!(target: "consensus::authority", "Parsing and sending withdrawal event to btc_server");
-                let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
-                let request = MakeTxRequest {
-                    address: pegout.destination.to_string(),
-                    value: pegout.amount.to_sat(),
+
+                // validate pegout
+                info!(target: "consensus::authority", "Validating pegout");
+                let parsed_pegout =
+                    parse_pegout_reth_log_topic(&log).expect("valid pegout request");
+                pegout = Some(MakeTxRequest {
+                    address: parsed_pegout.destination.to_string(),
+                    value: parsed_pegout.amount.to_sat(),
                     fee_rate,
-                };
-
-                let response = btc_server
-                    .make_tx(request)
-                    .await
-                    .map_err(ProcessBotanixLogError::FailedToMakePegoutTx)?;
-
-                let raw_tx = response.into_inner().tx;
-                info!(target: "consensus::authority", "broadcasting withdrawal tx");
-
-                bitcoin_block_source
-                    .broadcast_tx(&hex::encode(raw_tx))
-                    .await
-                    .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
+                });
             }
             Err(e) => {
                 debug!(target: "consensus::authority", ?e, "Non-genesis contract event");
@@ -224,7 +235,7 @@ async fn process_botanix_log(
             }
         }
     }
-    Ok(())
+    Ok(pegout)
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
@@ -232,13 +243,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Returns true if the given block number is the end of an epoch
@@ -255,10 +266,29 @@ pub(crate) fn is_epoch_end(current_block_number: u64) -> bool {
     (current_block_number + 1) % EPOCH_LENGTH == 0
 }
 
+/// Finds the starting block number for the current epoch based on the current block number
+///
+/// # Arguments
+///
+/// * `epoch_length` - The length of an epoch
+/// * `current_block_number` - The current block number
+///
+/// # Returns
+///
+/// Returns the starting block number for the current epoch.
+pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> u64 {
+    let mut start_block_number = current_block_number;
+    while start_block_number % epoch_length != 0 {
+        start_block_number -= 1;
+    }
+    start_block_number
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
 
+    use rand::Rng;
     use reth_primitives::{address, b256, bloom, bytes, Header, B256, U256};
 
     use super::*;
@@ -373,5 +403,20 @@ mod test {
         assert!(!is_epoch_end(start_block_2));
         assert!(is_epoch_end(end_block_2));
         assert!(!is_epoch_end(start_block_3));
+    }
+
+    #[test]
+    fn test_find_epoch_start() {
+        let mut rng = rand::thread_rng();
+
+        let current_block_1 = 0;
+        let current_block_2 = current_block_1 + rng.gen_range(1..EPOCH_LENGTH);
+        let current_block_3 = current_block_1 + EPOCH_LENGTH;
+        let current_block_4 = current_block_3 + rng.gen_range(1..EPOCH_LENGTH);
+
+        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_1), current_block_1);
+        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
+        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
+        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
     }
 }

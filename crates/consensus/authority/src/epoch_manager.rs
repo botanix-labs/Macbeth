@@ -7,7 +7,7 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 use tracing::{error, info, warn};
 
 use crate::{
-    utils::{bloom_contains_pegout, make_tx_request_for_pegout_in_receipt},
+    utils::{bloom_contains_pegout, find_epoch_start, make_tx_request_for_pegout_in_receipt},
     Storage,
 };
 use reth_provider::StateProviderFactory;
@@ -43,19 +43,19 @@ where
     ///
     /// # Arguments
     ///
-    /// * `end_block` - The end block of the epoch
+    /// * `current_block` - The current block number
     ///
     /// # Returns
     ///
     /// A vector of `MakeTxRequest` representing the pegouts in the epoch
     pub(crate) async fn epoch_pegouts(
         &self,
-        end_block: u64,
+        best_block: u64,
     ) -> Result<Vec<MakeTxRequest>, EpochManagerError> {
-        let start_block = (end_block - EPOCH_LENGTH) + 1;
+        let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
         let storage = self.storage.inner.read().await;
         let pegouts: Vec<MakeTxRequest> = vec![];
-        for block in start_block..=end_block {
+        for block in start_block..=best_block {
             match storage.client.block_by_number(block) {
                 Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
                     match storage

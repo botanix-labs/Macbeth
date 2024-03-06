@@ -170,7 +170,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
 
             let decoded_params: Vec<ethers::abi::Token> = decode(
                 &[
-                    ethers::abi::param_type::ParamType::Uint(256 as usize),
+                    ethers::abi::param_type::ParamType::Uint(256_usize),
                     ethers::abi::param_type::ParamType::String,
                 ],
                 &data.data,
@@ -178,7 +178,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
             .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
 
             let amount = decoded_params
-                .get(0)
+                .first()
                 .ok_or(MintConsensusError::LogParsingError("Failed to parse pegout amount"))?
                 .clone()
                 .into_uint()
@@ -197,7 +197,7 @@ pub fn parse_pegout_topic(log: &revm::primitives::Log) -> Result<PegoutData, Min
                 .ok_or(MintConsensusError::PegoutAmountIsInvalid())?;
 
             let pegout = PegoutData::new(btc_amount, destination)
-                .map_err(|e| MintConsensusError::PegoutValidationFailed(e))?;
+                .map_err(MintConsensusError::PegoutValidationFailed)?;
 
             return Ok(pegout);
         }

@@ -102,7 +102,7 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) -> () {
+    pub async fn start_task(&mut self) {
         loop {
             self.try_build_block().await;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;

@@ -19,6 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
+use client::MakeTxRequest;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
     utils::unix_timestamp,
@@ -138,7 +139,7 @@ where
         signer_index: usize,
         pk: secp256k1::PublicKey,
     ) -> Result<Self, StorageCreationError> {
-        if headers.len() == 0 {
+        if headers.is_empty() {
             return Err(StorageCreationError::EmptyHeaders);
         }
         // sort the headers by block numbers

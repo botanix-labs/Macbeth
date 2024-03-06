@@ -59,6 +59,7 @@ pub enum AuthorityConsensusBuilderError {
     FailedToRecoverAuthorityList,
     FailedToFindSignerIndex,
     FailedToRetrieveEopchHeader,
+    FailedToStorePegouts,
 }
 
 // ===== impl AuthorityConsensusBuilder =====
