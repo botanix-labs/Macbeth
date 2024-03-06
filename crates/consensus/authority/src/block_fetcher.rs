@@ -1,7 +1,10 @@
-use crate::engine_util;
+use crate::{
+    engine_util,
+    utils::{get_recent_block_height_or_zero, is_testnet},
+};
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_primitives::{SealedBlockWithSenders, TransactionSigned};
+use reth_primitives::{SealedBlockWithSenders, TransactionSigned, BOTANIX_TESTNET};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
 use crate::Storage;
@@ -111,6 +114,12 @@ where
             };
 
             let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+            let recent_bitcoin_block_height =
+                get_recent_block_height_or_zero(recent_bitcoin_block_header);
+            if recent_bitcoin_block_height == 0 {
+                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+                continue;
+            }
             let mut storage = self.storage.write().await;
 
             match storage.execute_imported_block(
@@ -126,10 +135,13 @@ where
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
                     // Process Botanix specific logs
+                    let is_testnet = is_testnet(self.chain_spec.chain().id());
                     match crate::utils::process_receipts(
                         &self.bitcoind_client,
                         &mut self.btc_server.clone(),
                         &bundle_state,
+                        recent_bitcoin_block_height,
+                        is_testnet,
                         false,
                     )
                     .await
