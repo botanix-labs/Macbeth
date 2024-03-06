@@ -105,9 +105,7 @@ impl App {
             return Err(CoordinatorError::InvalidFrostPeerId);
         }
         // TODO (armins) need to verify here that the psbt is in a valid round 2 state
-
         // TODO Checks if we have enough partial signatures
-        let _existing_sigs = self.db.get_round2_signing_packages(signing_session_id)?;
 
         self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
