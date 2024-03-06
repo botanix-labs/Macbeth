@@ -1,4 +1,7 @@
-use crate::util::{add_remove_utxo_from_psbt, psbt_to_signing_packages, VerifyingKeyExt};
+use crate::util::{
+    add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
+    psbt_to_signing_packages, VerifyingKeyExt,
+};
 use crate::DbError;
 use crate::{App, Error};
 
@@ -6,7 +9,7 @@ use bitcoin::psbt::Psbt;
 
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
+use reth_btc_wallet::transaction::CalculateSighashError;
 
 #[derive(Debug)]
 pub enum SigningError {
@@ -31,8 +34,12 @@ pub enum SigningRound1Error {
     MissingKeyPackage,
     #[error("invalid number of signing nonces requested")]
     InvalidNumberOfNoncesRequested,
+    #[error("invalid signing package: {0}")]
+    InvalidSigningPackage(&'static str),
     #[error("internal DB error")]
     DbError(#[from] DbError),
+    #[error("failed to add signing commits to psbt")]
+    FailedToAddSigningCommitsToPsbt(#[from] crate::util::PsbtToSigningPackageConversionError),
 }
 
 #[derive(Debug, Error)]
@@ -70,15 +77,30 @@ impl From<SigningRound2Error> for SigningError {
 impl App {
     pub(crate) fn get_round1_signing_package(
         &self,
-        number_of_nonces: u32,
+        mut psbt: &mut Psbt,
         _signing_session_id: &[u8; 32],
-    ) -> Result<Vec<frost::round1::SigningCommitments>, SigningRound1Error> {
-        if number_of_nonces == 0 || number_of_nonces > 15 {
+    ) -> Result<(), SigningRound1Error> {
+        let num_inputs = psbt.inputs.len();
+        if num_inputs == 0 || num_inputs > 15 {
             return Err(SigningRound1Error::InvalidNumberOfNoncesRequested);
         }
         // Check if have already provided nonces for the current session
-        if self.frost_round1_signing_nonces.lock().unwrap().is_some() {
+        if self.frost_round1_nonces.lock().unwrap().is_some() {
             return Err(SigningRound1Error::AlreadyInSigningSession);
+        }
+        let tx = psbt.clone().extract_tx();
+        // Validate the psbt
+        for (index, input) in psbt.inputs.iter().enumerate() {
+            if input.witness_utxo.is_none() {
+                return Err(SigningRound1Error::InvalidSigningPackage("witness_utxo is missing"));
+            }
+
+            // Check if input exists in db
+            let ot = tx.input.get(index).expect("valid index").previous_output;
+            let db_utxo = self.db.get_utxo(ot)?;
+            if db_utxo.is_none() {
+                return Err(SigningRound1Error::InvalidSigningPackage("UTXO not found in DB"));
+            }
         }
 
         let key_package =
@@ -92,27 +114,29 @@ impl App {
         // Each nonce pair is commitment to a input of the tx
         // When the signing package is produced the signer should be careful to
         // Verify that the nonce pairs are in the same order as the inputs
-        for _ in 0..number_of_nonces {
+        for _ in 0..num_inputs {
             let nonce_pkg = frost::round1::commit(secret, &mut rng);
             nonces.push(nonce_pkg);
         }
 
         let signing_commitments =
             nonces.iter().map(|nonce| nonce.1).collect::<Vec<frost::round1::SigningCommitments>>();
-        let signing_nonces = nonces
-            .iter()
-            .map(|nonce| nonce.0.clone())
-            .collect::<Vec<frost::round1::SigningNonces>>();
+        // Add the signing commitments to the psbt
+        add_signing_commitments_to_psbt(&mut psbt, &signing_commitments, &self.identifier);
 
-        self.frost_round1_signing_nonces.lock().unwrap().replace(signing_nonces.clone());
+        // Save signing nonces in memory
+        let signing_nonces =
+            nonces.iter().map(|nonce| (nonce.0.clone(), nonce.1.clone())).collect::<Vec<_>>();
 
-        Ok(signing_commitments)
+        self.frost_round1_nonces.lock().unwrap().replace(signing_nonces.clone());
+
+        Ok(())
     }
 
     pub(crate) fn get_round2_signing_package(
         &self,
-        psbt: &Psbt,
-    ) -> Result<Vec<frost::round2::SignatureShare>, SigningRound2Error> {
+        mut psbt: &mut Psbt,
+    ) -> Result<(), SigningRound2Error> {
         // Important note here is that we never re-use the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
         // to provide new ones
@@ -120,17 +144,11 @@ impl App {
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
         let tx = psbt.clone().extract_tx();
         let num_inputs = tx.input.len();
-        // # of inputs sanity check
-        if num_inputs == 0 {
-            return Err(SigningRound2Error::InvalidSigningPackage(
-                "number of inputs cannot be zero",
-            ));
-        }
         let mut signing_packages = psbt_to_signing_packages(psbt)?;
 
         // Get signing nonces from round 1
         let signing_nonces = self
-            .frost_round1_signing_nonces
+            .frost_round1_nonces
             .lock()
             // TODO (armins) remove unwrap
             .unwrap()
@@ -143,36 +161,20 @@ impl App {
             ));
         }
         let tx = psbt.clone().extract_tx();
-        // re-create the signing message
         for (index, signing_package) in signing_packages.iter().enumerate() {
+            // Check if this signer is in the signing set
+            // This should also implicitly validate the psbt
+            // In other words this signer would have never provided nonce pairs if the psbt was not valid from round 1
             let signing_commitments = signing_package.signing_commitments();
             if !signing_commitments.contains_key(&self.identifier) {
                 return Err(SigningRound2Error::SignerNotFound(index));
             }
-            // let input = psbt.inputs.get(index).expect("valid index");
-            // re-create the sighash for the input
-            // let sighash = reth_btc_wallet::transaction::calculate_sighash(&psbt, index)?;
-            // let mut signing_package = frost::SigningPackage::new(
-            //     signing_commitments.clone(),
-            //     sighash.to_raw_hash().to_byte_array().as_slice(),
-            // );
-            // inlcude tweak if one exists
-            // let eth_tweak = input.unknown.get(&ETH_ADDRESS_FIELD.clone());
-            // if let Some(e) = eth_tweak {
-            //     signing_package.set_addtional_tweak(e.clone());
-            // };
-            // if signing_package.message()
-            //     != signing_packages.get(index).expect("valid index").message()
-            // {
-            //     return Err(SigningRound2Error::InvalidSigningPackage(
-            //         "Cannot re-create signing package",
-            //     ));
-            // }
-            // Check if input exists in db
-            let ot = tx.input.get(index).expect("valid index").previous_output;
-            let db_utxo = self.db.get_utxo(ot)?;
-            if db_utxo.is_none() {
-                return Err(SigningRound2Error::InvalidSigningPackage("UTXO not found in DB"));
+            let our_sc = signing_commitments.get(&self.identifier).expect("valid index");
+            let our_nonce = signing_nonces.get(index).expect("valid index");
+            if our_sc != &our_nonce.1 {
+                return Err(SigningRound2Error::InvalidSigningPackage(
+                    "Invalid nonce pair for this signer",
+                ));
             }
         }
 
@@ -181,18 +183,15 @@ impl App {
         for (index, (signing_package, _txin)) in
             signing_packages.iter_mut().zip(tx.input.iter()).enumerate()
         {
-            // get the eth tweak from the psbt unknown fields
-            let eth_tweak = psbt.inputs.get(index).unwrap().unknown.get(&ETH_ADDRESS_FIELD.clone());
-            if let Some(e) = eth_tweak {
-                signing_package.set_addtional_tweak(e.clone());
-            };
-
             partial_sigs.push(frost::round2::sign(
                 &signing_package,
-                &signing_nonces.get(index).expect("valid index"),
+                &signing_nonces.get(index).expect("valid index").0,
                 &key_package,
             )?);
         }
+        // Add partial sig to psbt
+        add_partial_signature_to_psbt(&mut psbt, &partial_sigs, &self.identifier);
+
         // update the utxo set
         let pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let (change_outputs, selected_inputs) = add_remove_utxo_from_psbt(psbt, &pk);
@@ -201,7 +200,7 @@ impl App {
 
         // Clear the signing nonces
         // This finalizes the signing session
-        self.frost_round1_signing_nonces.lock().unwrap().take();
-        Ok(partial_sigs)
+        self.frost_round1_nonces.lock().unwrap().take();
+        Ok(())
     }
 }

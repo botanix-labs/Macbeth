@@ -6,7 +6,10 @@ use std::{
 };
 
 use crate::util::OutPointExt;
-use bitcoin::{OutPoint, TxOut};
+use bitcoin::{
+    psbt::{self, Psbt},
+    OutPoint, TxOut,
+};
 use ciborium;
 use frost_secp256k1_tr as frost;
 
@@ -22,6 +25,7 @@ const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const ROUND1_SIGNING_PACKAGES: &[u8; 5] = b"r1sig";
 const ROUND2_SIGNING_PACKAGES: &[u8; 5] = b"r2sig";
+const PSBT: &[u8; 4] = b"psbt";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -68,6 +72,13 @@ pub struct Db {
     /// Where each Vec is a list of partial signatures for each input of the transaction
     /// Only relevant for the coordinator
     round2_signing_packages: sled::Tree,
+
+    /// A tree of PSBTs
+    ///
+    /// Indexed by signing_session_id
+    /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
+    /// Only relevant for the coordinator
+    psbt: sled::Tree,
 }
 
 impl Db {
@@ -79,6 +90,7 @@ impl Db {
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             round1_signing_packages: db.open_tree(ROUND1_SIGNING_PACKAGES)?,
             round2_signing_packages: db.open_tree(ROUND2_SIGNING_PACKAGES)?,
+            psbt: db.open_tree(PSBT)?,
             db,
         })
     }
@@ -97,7 +109,37 @@ impl Db {
         self.round2_dkg_packages.flush()?;
         self.round1_signing_packages.flush()?;
         self.round2_signing_packages.flush()?;
+        self.psbt.flush()?;
         Ok(())
+    }
+
+    /// Adds a PSBT to the database.
+    ///
+    pub fn update_psbt(&self, signing_session_id: &[u8; 32], psbt: &Psbt) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        if let Some(b) = self.psbt.get(&signing_session_id[..])? {
+            // if there is an existing psbt then we merge the new psbt with the existing one
+            let mut existing_psbt = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
+            existing_psbt.combine(psbt.clone())?;
+            ciborium::into_writer(&existing_psbt, &mut bytes).expect("writing to buffer");
+        } else {
+            ciborium::into_writer(psbt, &mut bytes).expect("writing to buffer");
+        }
+        self.psbt.insert(&signing_session_id[..], &bytes[..])?;
+        Ok(())
+    }
+
+    /// Get PSBT from the database.
+    /// Returns None if the PSBT is not found.
+    /// Rertieves psbt using signing_session_id
+    ///
+    pub fn get_psbt(&self, signing_session_id: &[u8; 32]) -> Result<Option<Psbt>, Error> {
+        if let Some(b) = self.psbt.get(&signing_session_id[..])? {
+            let ret = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
     }
 
     // Adds round 2 signing information to the specified signing session.
@@ -511,6 +553,8 @@ pub enum Error {
     Serialization(#[from] TryFromSliceError),
     #[error("bitcoin serialization error {0}")]
     BitcoinSerialization(#[from] bitcoin::consensus::encode::Error),
+    #[error("PSBT error: {0}")]
+    Psbt(#[from] psbt::Error),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
