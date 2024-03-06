@@ -1,7 +1,7 @@
 use crate::{
     engine_util::{self, BestTransactionsError},
     task::BlockProductionTask,
-    utils::is_epoch_end,
+    utils::{get_recent_block_height_or_zero, is_epoch_end, is_testnet},
 };
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
@@ -11,7 +11,9 @@ use reth_interfaces::blockchain_tree::{
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
-use reth_primitives::{public_key_to_address, Block, SealedBlockWithSenders, B256};
+use reth_primitives::{
+    public_key_to_address, Block, SealedBlockWithSenders, B256, BOTANIX_TESTNET,
+};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
@@ -135,7 +137,15 @@ where
             })
             .unzip();
 
-        let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+        let recent_bitcoin_block_header: Option<(bitcoin::block::Header, u32)> =
+            *self.bitcoin_block_header.read().await;
+        let recent_bitcoin_block_height =
+            get_recent_block_height_or_zero(recent_bitcoin_block_header);
+        if recent_bitcoin_block_height == 0 {
+            error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+            drop(storage);
+            return;
+        }
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
@@ -159,10 +169,13 @@ where
         };
 
         // Process Botanix specific logs
+        let is_testnet = is_testnet(self.chain_spec.chain().id());
         match crate::utils::process_receipts(
             &self.bitcoind_client,
             &mut self.btc_server.clone(),
             &bundle_state,
+            recent_bitcoin_block_height,
+            is_testnet,
             false,
         )
         .await

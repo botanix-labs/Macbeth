@@ -1,3 +1,4 @@
+use bitcoin::block::Header;
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::mint_validation::{
@@ -6,10 +7,15 @@ use reth_botanix_lib::mint_validation::{
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
 
-use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
+use reth_primitives::{
+    constants::{
+        eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
+    },
+    hex, Bloom, BloomInput, Log, Receipt, BOTANIX_TESTNET,
+};
 use reth_provider::BundleStateWithReceipts;
 
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
@@ -72,7 +78,11 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 ///
 /// # Arguments
 ///
+/// * `bitcoind_client` - The bitcoind client.
+/// * `btc_server` - The btc server client.
 /// * `bundle_state` - The bundle state with receipts to process.
+/// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
+/// * `is_testnet` - A boolean indicating whether the chain is a testnet or not.
 /// * `should_broadcast_pegout` - A boolean indicating whether to broadcast pegout or not.
 ///
 /// # Returns
@@ -83,6 +93,8 @@ pub(crate) async fn process_receipts(
     bitcoind_client: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
+    recent_bitcoin_block_height: u32,
+    is_testnet: bool,
     should_broadcast_pegout: bool,
 ) -> Result<(), ProcessBotanixLogError> {
     let receipts_bundle = bundle_state.receipts().iter();
@@ -97,8 +109,15 @@ pub(crate) async fn process_receipts(
                     continue;
                 }
                 for log in &receipt.logs {
-                    process_botanix_log(bitcoind_client, btc_server, log, should_broadcast_pegout)
-                        .await?;
+                    process_botanix_log(
+                        bitcoind_client,
+                        btc_server,
+                        log,
+                        recent_bitcoin_block_height,
+                        is_testnet,
+                        should_broadcast_pegout,
+                    )
+                    .await?;
                 }
             }
             info!(target: "consensus::authority", "Receipt {:?}", receipt);
@@ -147,8 +166,12 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
 ///
 /// # Arguments
 ///
+/// * `bitcoind_client` - The bitcoind client.
+/// * `btc_server` - The btc server client.
 /// * `log` - The log to process.
-/// * `should_broadcast_pegout` - A boolean indicating whether to broadcast pegout or not.
+/// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
+/// * `is_testnet` - A boolean indicating whether the chain is a testnet or not.
+/// * `should_broadcast_pegout` - A boolean indicating whether to broadcast a pegout or not.
 ///
 /// # Returns
 ///
@@ -162,6 +185,8 @@ async fn process_botanix_log(
     bitcoind_client: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     log: &Log,
+    recent_bitcoin_block_height: u32,
+    is_testnet: bool,
     should_broadcast_pegout: bool,
 ) -> Result<(), ProcessBotanixLogError> {
     for topic in &log.topics {
@@ -170,6 +195,14 @@ async fn process_botanix_log(
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
                 let pegin_data = parse_pegin_reth_log_topic(log)
                     .expect("passed evm check should pass this parse attempt");
+                // enforce required confirmation depth by network
+                let confirmation_depth = get_confirmation_depth(is_testnet);
+                if pegin_data.bitcoin_block_height
+                    > recent_bitcoin_block_height - confirmation_depth
+                {
+                    warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
+                    continue;
+                }
                 for pegin in &pegin_data.meta {
                     let request = NotifyPeginRequest {
                         utxo_txid: pegin.outpoint.txid.to_string(),
@@ -227,13 +260,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Returns true if the given block number is the end of an epoch
@@ -250,11 +283,41 @@ pub(crate) fn is_epoch_end(current_block_number: u64) -> bool {
     (current_block_number + 1) % EPOCH_LENGTH == 0
 }
 
+/// Returns the recent block height from the given recent bitcoin block header.
+///
+/// # Arguments
+///
+/// * `recent_bitcoin_block_header` - The recent bitcoin block header
+///
+/// # Returns
+///
+/// Returns the recent block height or 0 if None.
+pub(crate) fn get_recent_block_height_or_zero(
+    recent_bitcoin_block_header: Option<(Header, u32)>,
+) -> u32 {
+    recent_bitcoin_block_header.map(|(_, height)| height).unwrap_or_else(|| {
+        error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+        0
+    })
+}
+
+pub(crate) fn get_confirmation_depth(is_testnet: bool) -> u32 {
+    match is_testnet {
+        true => SIGNET_PEGIN_CONFIRMATION_DEPTH,
+        false => MAINNET_PEGIN_CONFIRMATION_DEPTH,
+    }
+}
+
+pub(crate) fn is_testnet(chain_id: u64) -> bool {
+    chain_id == BOTANIX_TESTNET.chain().id()
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
 
-    use reth_primitives::{address, b256, bloom, bytes, Header, B256, U256};
+    use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, BlockHash, CompactTarget};
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
     use super::*;
 
@@ -368,5 +431,40 @@ mod test {
         assert!(!is_epoch_end(start_block_2));
         assert!(is_epoch_end(end_block_2));
         assert!(!is_epoch_end(start_block_3));
+    }
+
+    #[test]
+    fn test_get_recent_block_height_or_zero() {
+        let block_height = 100_u32;
+        let recent_bitcoin_block_header = Some((
+            bitcoin::block::Header {
+                version: bitcoin::block::Version::default(),
+                prev_blockhash: BlockHash::all_zeros(),
+                merkle_root: TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: CompactTarget::default(),
+                nonce: 0,
+            },
+            block_height,
+        ));
+        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), block_height);
+
+        let recent_bitcoin_block_header = None;
+        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), 0);
+    }
+
+    #[test]
+    fn test_get_confirmation_depth() {
+        assert_eq!(get_confirmation_depth(true), SIGNET_PEGIN_CONFIRMATION_DEPTH);
+        assert_eq!(get_confirmation_depth(false), MAINNET_PEGIN_CONFIRMATION_DEPTH);
+    }
+
+    #[test]
+    fn test_is_testnet() {
+        let chain_id = BOTANIX_TESTNET.chain().id();
+        assert!(is_testnet(chain_id));
+
+        let chain_id = 1;
+        assert!(!is_testnet(chain_id));
     }
 }
