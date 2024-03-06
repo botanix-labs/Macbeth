@@ -23,17 +23,6 @@ pub struct GetPublicKeyRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MakeTxRequest {
-    #[prost(string, tag = "1")]
-    pub address: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub value: u64,
-    /// Fee rate in satoshi per vbyte.
-    #[prost(uint32, tag = "3")]
-    pub fee_rate: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakeTxResponse {
     #[prost(string, tag = "1")]
     pub txid: ::prost::alloc::string::String,
@@ -62,8 +51,8 @@ pub struct DkgPayload {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Round1SigningPackageRequest {
-    #[prost(uint32, tag = "1")]
-    pub number_of_inputs: u32,
+    #[prost(bytes = "vec", tag = "1")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
@@ -72,9 +61,8 @@ pub struct Round1SigningPackageRequest {
 pub struct Round1SigningPackage {
     #[prost(bytes = "vec", tag = "1")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
-    /// This is Vec<frost::round1::SigningCommitments>
     #[prost(bytes = "vec", tag = "2")]
-    pub payload: ::prost::alloc::vec::Vec<u8>,
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
@@ -85,10 +73,7 @@ pub struct Round2SigningPackage {
     pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub identifier: ::prost::alloc::vec::Vec<u8>,
-    /// This is Vec<frost::round2::SignatureShares>
     #[prost(bytes = "vec", tag = "3")]
-    pub payload: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "4")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -109,7 +94,7 @@ pub struct Output {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ToSignRequest {
+pub struct MakeTxRequest {
     #[prost(message, repeated, tag = "1")]
     pub outputs: ::prost::alloc::vec::Vec<Output>,
     /// Fee rate in satoshi per vbyte.
@@ -120,10 +105,14 @@ pub struct ToSignRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToSignRequest {
+    #[prost(bytes = "vec", tag = "3")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSigningRequest {
     #[prost(bytes = "vec", tag = "1")]
-    pub psbt: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -457,7 +446,7 @@ pub mod btc_server_client {
         /// Meant to be used at anytime to perform utxo selection and create a tx
         pub async fn get_psbt(
             &mut self,
-            request: impl tonic::IntoRequest<super::ToSignRequest>,
+            request: impl tonic::IntoRequest<super::MakeTxRequest>,
         ) -> std::result::Result<tonic::Response<super::SignPayload>, tonic::Status> {
             self.inner
                 .ready()

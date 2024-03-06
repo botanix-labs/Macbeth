@@ -1,7 +1,11 @@
 use crate::database::Utxo;
+use crate::util::retrieve_all_partial_signatures;
+use crate::util::retrieve_all_signing_commitments;
+
 use crate::util::VerifyingKeyExtError;
 use crate::DbError;
-use std::collections::BTreeMap;
+use crate::SECP;
+
 use std::collections::HashMap;
 
 use crate::util::{self, VerifyingKeyExt};
@@ -17,7 +21,7 @@ use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::CalculateSighashError;
 use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
-use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
+
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 #[derive(Debug, Error)]
@@ -48,6 +52,10 @@ pub enum CoordinatorError {
     InvaildResultingTx,
     #[error("Failed parse out to sign package: {0}")]
     PsbtToSigningPackageConversionError(#[from] crate::util::PsbtToSigningPackageConversionError),
+    #[error("Could not find psbt")]
+    CouldNotFindPsbt,
+    #[error("Could not find partial signatures: {0}")]
+    CouldNotFindPartialSignatures(#[from] crate::util::RetrieveUnknownKeyError),
 }
 
 impl App {
@@ -65,7 +73,7 @@ impl App {
         &self,
         signing_session_id: &[u8; 32],
         frost_id: frost::Identifier,
-        signing_commitments: Vec<frost::round1::SigningCommitments>,
+        psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         // Can't add our selves
@@ -73,15 +81,14 @@ impl App {
             return Err(CoordinatorError::InvalidFrostPeerId);
         }
 
+        // TODO (armins) need to verify here that the psbt is in a valid round 1 state
+
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
         // The more the better in the case one is unresponsive
         // the frost lib will check if we have enough when we create the signing package
-        if self.db.add_round1_signing(&signing_session_id, frost_id, signing_commitments.clone())? {
-            self.db.flush()?;
-            debug!("Stored round1 signing from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round1 signing from peer: {:?}", frost_id);
-        }
+        self.db.update_psbt(signing_session_id, psbt)?;
+        self.db.flush()?;
+        debug!("Stored round1 signing from peer: {:?}", frost_id);
 
         Ok(())
     }
@@ -90,23 +97,20 @@ impl App {
         &self,
         signing_session_id: &[u8; 32],
         frost_id: frost::Identifier,
-        partial_sigs: Vec<frost::round2::SignatureShare>,
+        psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         // Can't add our selves
         if frost_id == self.identifier {
             return Err(CoordinatorError::InvalidFrostPeerId);
         }
+        // TODO (armins) need to verify here that the psbt is in a valid round 2 state
 
         // TODO Checks if we have enough partial signatures
         let _existing_sigs = self.db.get_round2_signing_packages(signing_session_id)?;
 
-        if self.db.add_round2_signing(signing_session_id, &frost_id, &partial_sigs)? {
-            self.db.flush()?;
-            debug!("Stored round2 signing from peer: {:?}", frost_id);
-        } else {
-            warn!("Duplicate round2 signing from peer: {:?}", frost_id);
-        }
+        self.db.update_psbt(signing_session_id, psbt)?;
+        self.db.flush()?;
 
         Ok(())
     }
@@ -212,71 +216,55 @@ impl App {
         Ok(psbt)
     }
 
+    /// If no Err is return the orignial psbt served to this function is good to go out to the signers
+    /// nothing needs to be added to it as the signers all provided their signing commitments already
+    /// and the coordinator just need to verify them  
     pub(crate) fn get_to_sign(
         &self,
-        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
-        outputs: Vec<TxOut>,
-        fee_rate: FeeRate,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
-        let pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        let signing_commitments = self.db.get_round1_signing_packages(&signing_session_id)?;
-        if signing_commitments.len() < self.min_signers as usize {
-            return Err(CoordinatorError::NotEnoughSigners);
-        }
+        let _pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
 
-        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(secp, &secp_pk);
+        // Note that the tweaks and signing commitments should be explicitly verified by the signers before signing
+        // Instead we can add it to the psbt as a proprietary field for each input
+        // Lastly save this to sign package to the db
 
-        let mut psbt = self.make_tx(outputs, fee_rate, change_script)?;
-        for (index, input) in psbt.inputs.iter_mut().enumerate() {
-            // Get the signing commitments for just this input
-            let mut sc = BTreeMap::new();
-            for (frost_id, signing_commitment) in signing_commitments.iter() {
-                sc.insert(
-                    *frost_id,
-                    signing_commitment
-                        .get(index)
-                        .ok_or(CoordinatorError::NotEnoughSigners)?
-                        .clone(),
-                );
+        if let Some(psbt) = self.db.get_psbt(&signing_session_id)? {
+            let signing_commitments = retrieve_all_signing_commitments(&psbt)?;
+            for sc in signing_commitments.iter() {
+                if sc.len() < self.min_signers as usize {
+                    return Err(CoordinatorError::NotEnoughSigners);
+                }
             }
-            // Keep track of the signing commitments in the psbt inputs
-            // This is a list of public nonce points provided by each signer
-            input.unknown.insert(
-                SIGNING_COMMITMENTS.clone(),
-                serde_json::to_vec(&sc).expect("valid structure"),
-            );
-            println!("input.unknown {:?}", input.unknown);
-            // Note that the tweaks and signing commitments should be explicitly verified by the signers before signing
-            // Instead we can add it to the psbt as a proprietary field for each input
-            // Lastly save this to sign package to the db
+
+            // TODO (armins) verify that the psbt is in a valid state for end of round 1
+            return Ok(psbt);
         }
-        Ok(psbt)
+
+        Err(CoordinatorError::CouldNotFindPsbt)
     }
 
     /// Retruns finalized and ready to braodcast tx
     pub(crate) fn finalize_signing(
         &self,
-        secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
-        psbt: &mut Psbt,
         signing_session_id: &[u8; 32],
     ) -> Result<Transaction, CoordinatorError> {
         // Lock here to prevent a make_tx that uses utxos that will be removed
         let _tx_lock = self.tx_lock.lock().expect("get lock");
+        let mut psbt =
+            self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
+        let partial_sigs = retrieve_all_partial_signatures(&psbt)?;
 
         let tx = psbt.clone().extract_tx();
         let pk_package =
             self.db.get_public_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        let partial_sigs = self.db.get_round2_signing_packages(signing_session_id)?;
         // Check that the inputs match the number of partial sigs
         if tx.input.len() != partial_sigs.len() {
             // TODO(armins) better error variant
             return Err(CoordinatorError::InvalidSigningPackage("Number of inputs does not match"));
         }
         // Get signing packages for this signing session
-        let signing_packages = util::psbt_to_signing_packages(psbt).map_err(|e| {
+        let signing_packages = util::psbt_to_signing_packages(&psbt).map_err(|e| {
             CoordinatorError::PsbtToSigningPackageConversionError(
                 crate::util::PsbtToSigningPackageConversionError::from(e),
             )
@@ -312,7 +300,7 @@ impl App {
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
-        if let Err(errs) = psbt.finalize_mut(secp) {
+        if let Err(errs) = psbt.finalize_mut(&SECP) {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);
@@ -322,11 +310,11 @@ impl App {
         // could do this once we are confident our code works and we don't
         // want to do the effort of tx verification
         // let tx = psbt.clone().extract_tx();
-        let tx = psbt.extract(secp).map_err(|_| CoordinatorError::InvaildResultingTx)?;
+        let tx = psbt.extract(&SECP).map_err(|_| CoordinatorError::InvaildResultingTx)?;
 
         // Finally we should remove the utxos from the db and add the change one
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let (change_outputs, selected_inputs) = util::add_remove_utxo_from_psbt(psbt, &secp_pk);
+        let (change_outputs, selected_inputs) = util::add_remove_utxo_from_psbt(&psbt, &secp_pk);
         self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
         self.db.flush()?;
         Ok(tx)

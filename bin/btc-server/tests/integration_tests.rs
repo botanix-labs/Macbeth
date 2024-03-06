@@ -222,129 +222,6 @@ pub async fn dkg_flow() {
 }
 
 #[tokio::test]
-async fn test_one_input_signing() {
-    let _secp = bitcoin::secp256k1::Secp256k1::new();
-    let signing_session_id = [0u8; 32];
-    let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
-    let tasks = spawn_n_servers(3);
-
-    // let servers come up
-    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-    let mut c1 = client::BtcServerClient::connect("http://localhost:8080").await.unwrap();
-    let mut c2 = client::BtcServerClient::connect("http://localhost:8081").await.unwrap();
-    let mut c3 = client::BtcServerClient::connect("http://localhost:8082").await.unwrap();
-
-    let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
-
-    do_dkg(&mut clients).await;
-    // get the aggregate pk from any of the clients
-    let pk = c1
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-            eth_address: eth_1.clone(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    // Round 1 signing
-    let c1_signing1 = c1
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 1,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    let c2_signing1 = c2
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 1,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
-    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
-
-    // Notify peg in
-    let address1 = reth_btc_wallet::address::gateway_address(
-        &bitcoin::secp256k1::PublicKey::from_str(&pk.publickey).unwrap(),
-        NETWORK,
-    )
-    .unwrap();
-    let prev_out1 =
-        TxOut { script_pubkey: address1.script_pubkey(), value: Amount::from_sat(1000).to_sat() };
-
-    let mut prev_out_bytes1 = Vec::new();
-    prev_out1.consensus_encode(&mut prev_out_bytes1).unwrap();
-
-    c3.notify_pegin(tonic::Request::new(client::NotifyPeginRequest {
-        utxo_txid: "96e7187b4fb26f2d5c1699235ce1702dc373c009063da45aadca41bd85a866f6".to_string(),
-        utxo_vout: 1,
-        eth_address: eth_1.clone(),
-        output: prev_out_bytes1,
-    }))
-    .await
-    .unwrap();
-
-    // Get signing package
-    let signing_package = c3
-        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
-            fee_rate: 2,
-            outputs: vec![client::Output {
-                address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
-                value: 800,
-            }],
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    // Round 2 signing
-    let c1_signing2 = c1
-        .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            psbt: signing_package.clone().psbt,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    let c2_signing2 = c2
-        .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-            psbt: signing_package.clone().psbt,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
-    c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
-
-    let psbt = signing_package.clone().psbt;
-    let finalized = c3
-        .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
-            psbt,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap();
-
-    println!("finalized: {:?}", finalized);
-
-    // Test clean up
-    for task in tasks {
-        task.abort();
-    }
-    // Remove db dirs
-    clean_db(3);
-}
-
-#[tokio::test]
 async fn test_many_inputs_signing() {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
@@ -363,6 +240,7 @@ async fn test_many_inputs_signing() {
 
     do_dkg(&mut clients).await;
     // get the aggregate pk from any of the clients
+    // Here we are signing for a two inputs that are tweaked differently
     let pk1 = c1
         .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
             eth_address: eth_1.clone(),
@@ -379,28 +257,6 @@ async fn test_many_inputs_signing() {
         .unwrap()
         .into_inner();
 
-    // Round 1 signing
-    let c1_signing1 = c1
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 2,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    let c2_signing1 = c2
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 2,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
-    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
-
     let txid1 = rand::random::<[u8; 32]>();
     let txid2 = rand::random::<[u8; 32]>();
     // Notify peg ins to all peers
@@ -414,9 +270,9 @@ async fn test_many_inputs_signing() {
     send_pegin_notification(&secp, &mut c3, eth_1.clone(), pk1.publickey.clone(), txid1).await;
     send_pegin_notification(&secp, &mut c3, eth_2.clone(), pk2.publickey.clone(), txid2).await;
 
-    // Get signing package
-    let signing_package = c3
-        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+    // First step: get the PSBT
+    let original_psbt = c3
+        .get_psbt(tonic::Request::new(client::MakeTxRequest {
             fee_rate: 2,
             outputs: vec![client::Output {
                 address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
@@ -427,9 +283,44 @@ async fn test_many_inputs_signing() {
         }))
         .await
         .unwrap()
+        .into_inner()
+        .psbt;
+
+    // Round 1 signing
+    // Signers will add their signing commitments to the psbt
+    let c1_signing1 = c1
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            psbt: original_psbt.clone(),
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
         .into_inner();
 
-    // Round 2 signing
+    let c2_signing1 = c2
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            psbt: original_psbt.clone(),
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Coordinating node will collect the PSBTs with the signing commitments
+    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
+    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
+
+    // Signing Round 2
+    // Get signing package
+    let signing_package = c3
+        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Signers should add their partial sigs to the psbt for each input
     let c1_signing2 = c1
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
             psbt: signing_package.clone().psbt,
@@ -448,13 +339,13 @@ async fn test_many_inputs_signing() {
         .unwrap()
         .into_inner();
 
+    // Coordinating node will collect the PSBTs with the partial sigs
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
 
     let psbt = signing_package.clone().psbt;
     let _finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
-            psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
         .await
@@ -463,29 +354,9 @@ async fn test_many_inputs_signing() {
     // Lets try spending again, this time should be spending non tweaked inputs (change)
     // First lets get a new signing session id
     let signing_session_id = [1u8; 32];
-    let c1_signing1 = c1
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 1,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    let c2_signing1 = c2
-        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
-            number_of_inputs: 1,
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
-    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
-
-    let signing_package = c3
-        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+    // First step: get the PSBT
+    let original_psbt = c3
+        .get_psbt(tonic::Request::new(client::MakeTxRequest {
             fee_rate: 2,
             outputs: vec![client::Output {
                 address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
@@ -496,9 +367,41 @@ async fn test_many_inputs_signing() {
         }))
         .await
         .unwrap()
+        .into_inner()
+        .psbt;
+    // Round 1 signing
+    // Signers will add their signing commitments to the psbt
+    let c1_signing1 = c1
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            psbt: original_psbt.clone(),
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
         .into_inner();
 
-    // Round 2 signing
+    let c2_signing1 = c2
+        .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            psbt: original_psbt.clone(),
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    // Coordinating node will collect the PSBTs with the signing commitments
+    c3.new_round1_signing_package(tonic::Request::new(c1_signing1)).await.unwrap();
+    c3.new_round1_signing_package(tonic::Request::new(c2_signing1)).await.unwrap();
+
+    // Signing Round 2
+    let signing_package = c3
+        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+            signing_session_id: signing_session_id.to_vec(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Signers should add their partial sigs to the psbt for each input
     let c1_signing2 = c1
         .get_round2_signing_package(tonic::Request::new(client::SignPayload {
             psbt: signing_package.clone().psbt,
@@ -519,10 +422,8 @@ async fn test_many_inputs_signing() {
 
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
-    let psbt = signing_package.clone().psbt;
     let _finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
-            psbt,
             signing_session_id: signing_session_id.to_vec(),
         }))
         .await
