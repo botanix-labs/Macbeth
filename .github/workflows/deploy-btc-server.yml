@@ -1,9 +1,10 @@
 name: Build, Tag, and Deploy Docker BTC Server Image to GCP
 
 on:
-  push:
+  pull_request:
     branches:
       - main
+    types: [closed]
 
 jobs:
   build_and_deploy:
@@ -38,3 +39,45 @@ jobs:
       - name: Push Docker image to Google Container Registry
         run: |
           docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server/botanix_testnet_btc_server:latest
+
+  push_to_gke:
+    runs-on: ubuntu-latest
+    needs: build_and_deploy
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'  || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true) }}
+    env:
+      PROJECT_ID: botanix-391913
+      CLUSTER_NAME: botanixlabs-cluster-dev
+      ZONE: us-central1-a
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up gcloud cli
+        uses: google-github-actions/setup-gcloud@1bee7de035d65ec5da40a31f8589e240eba8fde5
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure docker
+        run: gcloud --quiet auth configure-docker
+      
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GKE_WORKLOAD_KEY }}'
+  
+      - id: 'get-credentials'
+        uses: 'google-github-actions/get-gke-credentials@v2'
+        with:
+          cluster_name: 'botanixlabs-cluster-dev'
+          location: 'us-central1'
+          project_id: 'botanix-391913'
+
+      - name: Set up Kustomize
+        run: |-
+          curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
+          chmod u+x ./kustomize
+          sudo mv ./kustomize /usr/local/bin/kustomize
+
+      - name: Deploy to GKE
+        working-directory: ./k8s/btc-server
+        run: make deploy

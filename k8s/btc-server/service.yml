@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: botanix-bitcoin-server
+  labels:
+    app: botanix-bitcoin-server
+spec:
+  type: ClusterIP
+  ports:
+  - name: http-port
+    port: 8080
+    targetPort: 8080
+  selector:
+    app:  botanix-bitcoin-server

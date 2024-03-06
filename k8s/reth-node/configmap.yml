@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: botanix-reth-init-config
+  namespace: sandbox
+data:
+  extract.sh: |
+    #!/bin/bash
+
+    set -e
+
+    # Set the bucket name and file name
+    BUCKET_NAME="botanix-testnet-snapshot"
+    FILE_NAME="botanix-testnet.tgz"
+
+    # Download the file from the bucket
+    gsutil cp gs://${BUCKET_NAME}/${FILE_NAME} /reth/botanix_testnet
+
+    # Check if the download was successful
+    if [ $? -eq 0 ]; then
+        echo "File downloaded successfully."
+    else
+        echo "Failed to download the file. Exiting..."
+        exit 1
+    fi
+
+    # Extract the downloaded file
+    tar -xzvf /reth/botanix_testnet/${FILE_NAME} -C /reth/botanix_testnet
+
+    # Check if the extraction was successful
+    if [ $? -eq 0 ]; then
+        echo "File extracted successfully."  && rm /reth/botanix_testnet/${FILE_NAME}
+    else
+        echo "Failed to extract the file. Exiting..."
+        exit 1
+    fi
