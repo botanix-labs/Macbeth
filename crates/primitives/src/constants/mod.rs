@@ -184,6 +184,8 @@ pub const BEACON_ROOTS_ADDRESS: Address = address!("000F3df6D732807Ef1319fB7B8bB
 /// The caller to be used when calling the EIP-4788 beacon roots contract at the beginning of the
 /// block.
 pub const SYSTEM_ADDRESS: Address = address!("fffffffffffffffffffffffffffffffffffffffe");
+
+// TODO (scott) - should the constants from here down be in a separate file?
 /// Address of the staking contract.
 /// TODO(armins) this is a dummy staking address, we need to update this to the real staking
 /// contract address
@@ -191,6 +193,12 @@ pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e0845
 
 /// Storage slot index of list of stakers
 pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u64 = 1u64;
+
+/// Signet required confirmation depth for pegins
+pub const SIGNET_PEGIN_CONFIRMATION_DEPTH: u32 = 1;
+
+/// Mainnet required confirmation depth for pegins
+pub const MAINNET_PEGIN_CONFIRMATION_DEPTH: u32 = 100;
 
 #[cfg(test)]
 mod tests {
