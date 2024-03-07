@@ -4,7 +4,12 @@ use crate::{
     database::{Db, Utxo},
     Error, SECP,
 };
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, Amount, OutPoint};
+use bitcoin::{
+    consensus::encode as btcencode,
+    hashes::Hash,
+    psbt::{self, PartiallySignedTransaction, Psbt},
+    Amount, OutPoint,
+};
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
@@ -12,6 +17,7 @@ use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 lazy_static! {
     // TODO get a fee max amount
     static ref MAX_AMOUNT: bitcoin::Amount = bitcoin::Amount::from_sat(21_000_000 * 100_000_000);
+    static ref MAX_FEERATE: bitcoin::FeeRate = bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
 }
 
 // Psbt validation flags
@@ -20,7 +26,6 @@ pub const ROUND1: u8 = 1u8;
 pub const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
 pub const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
 pub const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
-pub const PSBT_FINAL: u8 = 1u8 << 4 | ROUND2_TRANSITION;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
@@ -199,6 +204,8 @@ pub enum ValidatePSBTError {
     NoOutputs,
     #[error("cannot calculate fee")]
     FeeCalculationError(bitcoin::psbt::Error),
+    #[error("cannot calculate fee rate")]
+    FeeRateCalculationError(),
     #[error("failed fee sanity check")]
     FeeSanityCheck(&'static str),
     #[error("missing witness utxo")]
@@ -254,6 +261,14 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be greater than max amount"));
     }
 
+    // Fix fee rate check
+    // let fee_rate = psbt.fee_rate().ok_or(ValidatePSBTError::FeeRateCalculationError())?;
+    // if fee_rate > MAX_FEERATE.clone() {
+    //     return Err(ValidatePSBTError::FeeSanityCheck(
+    //         "Fee rate cannot be greater than max feerate",
+    //     ));
+    // }
+    // TODO (armins) fee rate sanity check
     // If we are just validating sanity checks we can stop here
     if flags == NO_FLAGS {
         return Ok(());
@@ -279,7 +294,7 @@ pub fn validate_psbt(
     if flags & ROUND2 == ROUND2 {
         // if any of the maps have min signers we should fail
         for sig in sigs.iter() {
-            if sig.len() >= min_signers as usize {
+            if sig.len() > min_signers as usize {
                 return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
             }
         }
@@ -292,7 +307,7 @@ pub fn validate_psbt(
         }
         // Each map should have at least min_signers number of partial sigs
         for sig in sigs.iter() {
-            if sig.len() < min_signers as usize {
+            if sig.len() != min_signers as usize {
                 return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
             }
         }
@@ -342,12 +357,242 @@ pub fn validate_psbt(
 
 #[cfg(test)]
 mod util_tests {
+    use crate::{
+        database,
+        test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup},
+    };
     use bitcoin::{ScriptBuf, TxOut};
 
+<<<<<<< HEAD
     use crate::test::{create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup};
     use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
+=======
+>>>>>>> 46b78a5ec (test(btc_server): tests for `validate_psbt()`)
     use super::*;
+
+    fn db_setup() -> database::Db {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let dbdir = tmpdir.path().to_path_buf().join("db.db");
+
+        let db = database::Db::open(&dbdir).unwrap();
+        db
+    }
+
+    #[test]
+    fn should_perform_sanity_checks() {
+        let db = db_setup();
+        let psbt = create_psbt(2);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        assert!(res.is_ok());
+
+        // No inputs
+        let mut psbt = create_psbt(2);
+        psbt.inputs.clear();
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "inputs cannot be 0");
+
+        // No outputs
+        let mut psbt = create_psbt(2);
+        psbt.outputs.clear();
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
+    }
+
+    #[test]
+    fn should_look_for_utxo_in_db() {
+        let db = db_setup();
+        let psbt = create_psbt(1);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
+
+        let tx = psbt.clone().extract_tx();
+        let utxo = Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn should_fail_if_eth_tweak_missing() {
+        let db = db_setup();
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        let eth = eth_vector_to_fixed_bytes(vec![0u8; 20]);
+        let utxo = Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: Some(eth),
+        };
+
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "eth tweak mismatch");
+
+        psbt.inputs[0].unknown.insert(ETH_ADDRESS_FIELD.clone(), vec![0u8; 20]);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn should_fail_if_tx_out_mismatch() {
+        let db = db_setup();
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        let utxo = Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        psbt.inputs[0].witness_utxo = Some(TxOut {
+            value: 100_000_000,
+            script_pubkey: ScriptBuf::from_hex("7e").expect("valid script"),
+        });
+
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "txout mismatch");
+    }
+
+    #[test]
+    fn round_1_transition_tests() {
+        let db = db_setup();
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        let utxo = Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "invalid number of signing commitments");
+
+        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
+        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
+
+        let (shares, _pk_package) = trusted_dealer_setup(2, 3);
+        let key_package1 = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+
+        let key_package2 = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(2u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+        let rng = &mut rand::thread_rng();
+
+        // generate signing commitments for each input for each frost participant
+        let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
+        let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
+
+        add_signing_commitments_to_psbt(&mut psbt, &vec![signing_commits1], &frost_id1);
+        add_signing_commitments_to_psbt(&mut psbt, &vec![signing_commits2], &frost_id2);
+
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
+        assert!(res.is_ok());
+
+        // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of signatures
+        let res = validate_psbt(&psbt, ROUND2, 2, &db);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn round2_psbt_validation_checks() {
+        let db = db_setup();
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        let utxo = Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+        let rng = &mut rand::thread_rng();
+
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+
+        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
+        let (shares, _pk_package) = trusted_dealer_setup(2, 3);
+        let key_package1 = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+
+        let key_package2 = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(2u16).expect("valid id")].clone(),
+        )
+        .expect("valid key package");
+
+        
+
+        let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
+        add_signing_commitments_to_psbt(&mut psbt, &vec![signing_commits1], &frost_id1);
+
+        // Lets add two signatures and use min_signers = 1
+        let sig_share1 =
+            frost::round2::SignatureShare::deserialize([1u8; 32]).expect("valid sig share");
+        let sig_share2 =
+            frost::round2::SignatureShare::deserialize([2u8; 32]).expect("valid sig share");
+
+        add_partial_signature_to_psbt(&mut psbt, &vec![sig_share1], &frost_id1);
+
+        // Should pass with 1 signature
+        let res = validate_psbt(&psbt, ROUND2, 1, &db);
+        assert!(res.is_ok());
+
+        // Should fail with two signatures
+        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
+        add_partial_signature_to_psbt(&mut psbt, &vec![sig_share2], &frost_id2);
+        let res = validate_psbt(&psbt, ROUND2, 1, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
+
+        // Should fail ROUND2_TRANSITION since we havent added other signers signing commit
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
+
+        // Add other signing commit
+        let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
+        add_signing_commitments_to_psbt(&mut psbt, &vec![signing_commits2], &frost_id2);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
+        assert!(res.is_ok());
+
+        // Should fail if there is another signer
+        let frost_id3 = frost::Identifier::try_from(3u16).expect("valid id");
+        let key_package3 = frost::keys::KeyPackage::try_from(
+            shares[&frost::Identifier::try_from(3u16).expect("valid id")].clone(),
+        ).expect("valid key package");
+
+        let (_, signing_commits3) = frost::round1::commit(key_package3.signing_share(), rng);
+        add_signing_commitments_to_psbt(&mut psbt, &vec![signing_commits3], &frost_id3);
+        let sig = frost::round2::SignatureShare::deserialize([3u8; 32]).expect("valid sig share");
+        add_partial_signature_to_psbt(&mut psbt, &vec![sig], &frost_id3);
+
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
+        assert!(res.is_err());
+
+
+    }
 
     #[test]
     fn convert_bdk_fee_rate() {

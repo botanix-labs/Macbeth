@@ -397,7 +397,6 @@ mod test {
     pub fn setup() -> App {
         let tmpdir = tempfile::tempdir().unwrap();
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
-        println!("Starting app with db in '{}'", dbdir.display());
 
         let app = App {
             db: database::Db::open(&dbdir).unwrap(),
@@ -475,7 +474,7 @@ mod test {
         // Hardcoded one output
         let mut outputs = vec![];
         outputs.push(TxOut {
-            value: 0,
+            value: 1000,
             script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
                 .expect("valid address")
                 .assume_checked()
@@ -494,10 +493,14 @@ mod test {
 
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
+<<<<<<< HEAD
             psbt.inputs[i].witness_utxo = Some(TxOut {
                 value: value_per_input,
                 script_pubkey: ScriptBuf::new(),
             });
+=======
+            psbt.inputs[i].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+>>>>>>> 46b78a5ec (test(btc_server): tests for `validate_psbt()`)
         }
         psbt
     }
