@@ -7,7 +7,7 @@ on:
 
 jobs:
   build_and_deploy:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
 
     steps:
       - name: Checkout code
@@ -36,7 +36,7 @@ jobs:
           docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest
 
   push_to_gke:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     needs: build_and_deploy
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/poA-consensus'  || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true) }}
     env:
