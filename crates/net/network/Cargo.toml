@@ -27,7 +27,8 @@ hex = "0.4.3"
 
 # frost
 # TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/mimoo/frost", branch = "mimoo/fix5",  features = ["serde", "serialization"] }
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
+
 
 # Botanix
 client = {path = "../../../bin/btc-server/client"}
