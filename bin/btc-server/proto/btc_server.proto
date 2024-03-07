@@ -10,8 +10,6 @@ service BtcServer {
 
     rpc GetRound1DkgPackage(Empty) returns(DkgPayload){}
 
-    rpc GetRound1DkgPackages(Empty) returns(DkgPayload){}
-
     rpc NewRound1DkgPackage(DkgPayload) returns (Empty) {}
 
     rpc GetRound2DkgPackage(Empty) returns (DkgPayload) {}
