@@ -30,6 +30,10 @@ async fn spawn_server(id: u16, address: String) -> () {
         identifier.as_str(),
         "--address",
         address.as_str(),
+        "--min-signers",
+        "2",
+        "--max-signers",
+        "3",
     ];
 
     // Create a Command instance and set the working directory

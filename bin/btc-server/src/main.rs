@@ -488,6 +488,12 @@ struct Config {
     identifier: u16,
     #[arg(long)]
     address: String,
+    /// max signers
+    #[arg(long)]
+    max_signers: u16,
+    /// min signers
+    #[arg(long)]
+    min_signers: u16,
 }
 
 #[tokio::main]
@@ -503,8 +509,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("valid identifier");
     info!("Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
 
-    let min_signers = 2;
-    let max_signers = 3;
+    let min_signers = config.min_signers;
+    let max_signers = config.max_signers;
+    if min_signers > max_signers {
+        panic!("min_signers should be less than or equal to max_signers");
+    }
+    if min_signers < 2 {
+        panic!("min_signers should be at least 2");
+    }
 
     let mut round1_dkg = None;
     if db.get_public_key_package().expect("failed to get public key package").is_none() {
