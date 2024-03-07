@@ -19,8 +19,7 @@ concurrency:
 jobs:
   test:
     name: test / ${{ matrix.network }} (${{ matrix.partition }}/2)
-    runs-on:
-      group: Reth
+    runs-on: botanix-actions-runner
     strategy:
       matrix:
         partition: [1, 2]
@@ -47,8 +46,7 @@ jobs:
     name: sync / 100k blocks
     # Only run sync tests in merge groups
     if: github.event_name == 'merge_group'
-    runs-on:
-      group: Reth
+    runs-on: botanix-actions-runner
     env:
       RUST_LOG: info,sync=error
     timeout-minutes: 60
@@ -74,7 +72,7 @@ jobs:
 
   integration-success:
     name: integration success
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     if: always()
     needs: [test]
     timeout-minutes: 30
