@@ -16,8 +16,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on:
-      group: Reth
+    runs-on: botanix-actions-runner
     steps:
       - uses: actions/checkout@v4
       - run: mkdir artifacts
