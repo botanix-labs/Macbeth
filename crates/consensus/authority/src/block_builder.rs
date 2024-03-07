@@ -1,8 +1,9 @@
 use crate::{
     engine_util::{self, BestTransactionsError},
     task::BlockProductionTask,
-    utils::{get_recent_block_height_or_zero, is_epoch_end, is_testnet},
+    utils::{get_recent_block_height_or_zero, is_epoch_end, send_pegouts, is_testnet},
 };
+use client::MakeTxRequest;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -43,26 +44,6 @@ where
 
         let mut storage = self.storage.write().await;
         let (best_block, best_hash) = storage.get_best_block_and_hash().expect("best block exists");
-
-        // if epoch end block, process pegouts
-        let current_block = best_block + 1;
-        let pegouts = if is_epoch_end(current_block) {
-            match self.epoch_manager.epoch_pegouts(current_block).await {
-                Ok(pegouts) => pegouts,
-                Err(e) => {
-                    panic!("Failed to get pegouts {}", e)
-                }
-            }
-        } else {
-            vec![]
-        };
-
-        if pegouts.is_empty() {
-            info!(target: "consensus::authority", "No pegouts found");
-        } else {
-            info!(target: "consensus::authority", "Processing pegouts: {:?}", pegouts);
-            // TODO(scott)
-        }
 
         // use authority address as suggested fee recipient
         let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
@@ -170,17 +151,11 @@ where
 
         // Process Botanix specific logs
         let is_testnet = is_testnet(self.chain_spec.chain().id());
-        match crate::utils::process_receipts(
-            &self.bitcoind_client,
-            &mut self.btc_server.clone(),
-            &bundle_state,
-            recent_bitcoin_block_height,
-            is_testnet,
-            false,
-        )
-        .await
-        {
-            Ok(_) => {}
+        let mut current_block_pegouts: Vec<MakeTxRequest> = Vec::new();
+        match crate::utils::process_receipts(&mut self.btc_server.clone(), &bundle_state, recent_bitcoin_block_height, is_testnet).await {
+            Ok(pegouts) => if !pegouts.is_empty() {
+                current_block_pegouts.extend(pegouts);
+            },
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
                 return;
@@ -213,7 +188,6 @@ where
         storage.client.set_canonical_head(sealed_block.header.clone());
         storage.client.set_safe(sealed_block.header.clone());
         storage.client.set_finalized(sealed_block.header.clone());
-        drop(storage);
 
         match engine_util::send_fork_choice_update_payload(
             new_header.hash(),
@@ -234,9 +208,26 @@ where
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
 
-        // TODO (scott) Process pegouts
-        // access pegouts from cache (need to add) or if cache empty
-        // bc busted when node went offline,
-        // use utils method to get all pegouts from epoch
+        // If end of epoch, process pegouts
+        if is_epoch_end(sealed_block.header.number) {
+            // get pegouts up to best block
+            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+            match self.epoch_manager.epoch_pegouts(best_block).await {
+                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
+                    drop(storage);
+                    return;
+                }
+            };
+
+            // add current block pegouts
+            pegouts.extend(current_block_pegouts);
+
+            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+            if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server, pegouts).await {
+                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+            }
+        }
     }
 }
