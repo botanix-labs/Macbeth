@@ -13,7 +13,7 @@ env:
 
 jobs:
   unused-dependencies:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     strategy:
       matrix:
         network: ["ethereum", "optimism"]
