@@ -137,12 +137,10 @@ where
                     // Process Botanix specific logs
                     let is_testnet = is_testnet(self.chain_spec.chain().id());
                     match crate::utils::process_receipts(
-                        &self.bitcoind_client,
                         &mut self.btc_server.clone(),
                         &bundle_state,
                         recent_bitcoin_block_height,
                         is_testnet,
-                        false,
                     )
                     .await
                     {
