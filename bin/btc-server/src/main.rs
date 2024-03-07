@@ -456,11 +456,12 @@ impl rpc::BtcServer for App {
         let utxos = db_utxos
             .into_iter()
             .map(|db_utxo| rpc::Utxo {
-                txid: db_utxo.outpoint.txid.to_string(),
-                vout: db_utxo.outpoint.vout,
-                eth_address: db_utxo.eth_address,
-                script_pubkey: db_utxo.outpoint.script_pubkey,
-                value: db_utxo.value,
+                outpoint: Some(crate::rpc::OutPoint {
+                    txid: AsRef::<[u8]>::as_ref(&db_utxo.outpoint.txid).to_vec(),
+                    vout: db_utxo.outpoint.vout as u32,
+                }),
+                output: bitcoin::consensus::encode::serialize(&db_utxo.output).len() as u32,
+                eth_address: db_utxo.eth_address.map(|addr| hex::encode(addr)).unwrap_or_default(),
             })
             .collect();
         let res = rpc::GetAllUtxosResponse { utxos };

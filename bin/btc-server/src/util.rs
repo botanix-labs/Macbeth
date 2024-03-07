@@ -108,7 +108,8 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Parsi
 ///
 /// # Returns
 ///
-/// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if successful, or an Error if the parsing fails.
+/// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if
+/// successful, or an Error if the parsing fails.
 pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> {
     let eth_addr_vec = hex::decode(eth_address)
         .map_err(|_e| ParsingError::InvalidEthAddress("Failed to decode hex"))?;
@@ -132,13 +133,15 @@ pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Parsin
     Ok(session_id_array)
 }
 
-/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT (Partially Signed Bitcoin Transaction),
-/// public key, and associated Bitcoin transaction details.
+/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT
+/// (Partially Signed Bitcoin Transaction), public key, and associated Bitcoin transaction details.
 ///
 /// # Arguments
 ///
-/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction details.
-/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any taptweaks or eth addresses.
+/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction
+///   details.
+/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any
+///   taptweaks or eth addresses.
 ///
 /// # Returns
 ///
@@ -151,7 +154,7 @@ pub fn add_remove_utxo_from_psbt(
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
     // For change outputs there will always be a no eth tweak
     let mut change_outputs: Vec<Utxo> = vec![];
-    let change_spk = reth_btc_wallet::address::generate_taproot_scriptpubkey(&SECP, pk);
+    let change_spk = reth_btc_wallet::address::generate_taproot_scriptpubkey(pk);
     for (index, output) in tx.output.iter().enumerate() {
         if output.script_pubkey == change_spk {
             change_outputs.push(Utxo {

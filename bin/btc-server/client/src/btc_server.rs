@@ -1,14 +1,37 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Utxo {
-    #[prost(string, tag = "1")]
-    pub txid: ::prost::alloc::string::String,
+pub struct ScriptBuf {
+    /// Represents the Vec<u8> in Rust
+    #[prost(bytes = "vec", tag = "1")]
+    pub script: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TxOut {
+    /// / The value of the output, in satoshis.
+    #[prost(uint64, tag = "1")]
+    pub value: u64,
+    /// / The script which must be satisfied for the output to be spent.
+    #[prost(message, optional, tag = "2")]
+    pub script_pubkey: ::core::option::Option<ScriptBuf>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OutPoint {
+    #[prost(bytes = "vec", tag = "1")]
+    pub txid: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "2")]
     pub vout: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Utxo {
+    #[prost(message, optional, tag = "1")]
+    pub outpoint: ::core::option::Option<OutPoint>,
+    #[prost(uint32, tag = "2")]
+    pub output: u32,
     #[prost(string, tag = "3")]
-    pub script_pubkey: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub value: u64,
+    pub eth_address: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

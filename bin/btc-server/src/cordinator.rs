@@ -224,7 +224,7 @@ impl App {
 
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
         let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(secp, &secp_pk);
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self.make_tx(outputs, fee_rate, change_script)?;
 
