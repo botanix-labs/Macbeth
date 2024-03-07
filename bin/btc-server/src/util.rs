@@ -1,15 +1,26 @@
-
 use std::fmt;
 
-use bitcoin::{
-    consensus::encode as btcencode,
-    hashes::Hash,
-    psbt::Psbt,
-    OutPoint,
+use crate::{
+    database::{Db, Utxo},
+    Error, SECP,
 };
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, Amount, OutPoint};
 use frost_secp256k1_tr as frost;
+use lazy_static::lazy_static;
+use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
-use crate::{database::Utxo, Error, SECP};
+lazy_static! {
+    // TODO get a fee max amount
+    static ref MAX_AMOUNT: bitcoin::Amount = bitcoin::Amount::from_sat(21_000_000 * 100_000_000);
+}
+
+// Psbt validation flags
+pub const NO_FLAGS: u8 = 0u8;
+pub const ROUND1: u8 = 1u8;
+pub const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
+pub const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
+pub const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
+pub const PSBT_FINAL: u8 = 1u8 << 4 | ROUND2_TRANSITION;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
@@ -176,17 +187,165 @@ pub fn add_remove_utxo_from_psbt(
     (change_outputs, selected_inputs)
 }
 
-
 pub fn convert_bdk_feerate_to_bitcoin(fee_rate: bdk::FeeRate) -> bitcoin::FeeRate {
     bitcoin::FeeRate::from_sat_per_kwu((fee_rate.sat_per_kwu()) as u64)
+}
+
+#[derive(Debug, Error)]
+pub enum ValidatePSBTError {
+    #[error("inputs cannot be 0")]
+    NoInputs,
+    #[error("outputs cannot be 0")]
+    NoOutputs,
+    #[error("cannot calculate fee")]
+    FeeCalculationError(bitcoin::psbt::Error),
+    #[error("failed fee sanity check")]
+    FeeSanityCheck(&'static str),
+    #[error("missing witness utxo")]
+    MissingWitnessUtxo,
+    #[error("cannot find UTXO in db")]
+    UtxoNotFound,
+    #[error("invalid number of signing commitments")]
+    InvalidNumberOfSigningCommitments,
+    #[error("invalid number of partial signatures")]
+    InvalidNumberOfPartialSignatures,
+    #[error("frost id mismatch")]
+    FrostIdMismatch,
+    #[error("eth tweak mismatch")]
+    EthTweakMismatch,
+    #[error("txout mismatch")]
+    TxOutMismatch,
+}
+
+/// Validates PSBT structure and content at a given state in the signing session
+///
+/// # Arguments
+///
+/// * `psbt` - The PSBT to be validated.
+/// * `flags` - Flags indicating the validation criteria and actions to be performed.
+/// * `min_signers` - The minimum number of signers required for certain validations.
+/// * `db` - Database reference used for UTXO lookups.
+///
+/// `NO_FLAGS`: Performs basic sanity checks only.
+/// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of the input material.
+/// `ROUND1_TRANSITION`: Validates signing commitments in round 1, ensuring the required signers.
+/// `ROUND2`: Checks if there are enough round 2 partial signatures. Ensuring we never add more than a quorum of signers
+/// `ROUND2_TRANSITION`: Validates partial signatures during the transition to round 2, ensuring signers match and Frost IDs align.
+///
+pub fn validate_psbt(
+    psbt: &Psbt,
+    flags: u8,
+    min_signers: u16,
+    db: &Db,
+) -> Result<(), ValidatePSBTError> {
+    // Sanity check for # of inputs and outputs
+    if psbt.inputs.len() == 0 {
+        return Err(ValidatePSBTError::NoInputs);
+    }
+    if psbt.outputs.len() == 0 {
+        return Err(ValidatePSBTError::NoOutputs);
+    }
+    // Sanity fee checks
+    let fee = psbt.fee().map_err(|e| ValidatePSBTError::FeeCalculationError(e))?;
+    if fee < Amount::ZERO {
+        return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
+    }
+    if fee > MAX_AMOUNT.clone() {
+        return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be greater than max amount"));
+    }
+
+    // If we are just validating sanity checks we can stop here
+    if flags == NO_FLAGS {
+        return Ok(());
+    }
+
+    // validate signing commitments in round 1
+    if flags & ROUND1_TRANSITION == ROUND1_TRANSITION {
+        let scs = psbt.inputs.iter().map(|i| i.all_signing_commitments()).collect::<Vec<_>>();
+        if scs.len() != psbt.inputs.len() {
+            return Err(ValidatePSBTError::InvalidNumberOfSigningCommitments);
+        }
+        // Each map should have atleast min_signers number of signing commitments
+        for sc in scs {
+            if sc.len() < min_signers as usize {
+                return Err(ValidatePSBTError::InvalidNumberOfSigningCommitments);
+            }
+        }
+    }
+
+    // Check if we have enough round 2 partial sigs
+    // TODO is this neccecary? Will signing fail?
+    let sigs = psbt.inputs.iter().map(|i| i.all_partial_signatures()).collect::<Vec<_>>();
+    if flags & ROUND2 == ROUND2 {
+        // if any of the maps have min signers we should fail
+        for sig in sigs.iter() {
+            if sig.len() >= min_signers as usize {
+                return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
+            }
+        }
+    }
+
+    // validate partial sigs in round 2
+    if flags & ROUND2_TRANSITION == ROUND2_TRANSITION {
+        if sigs.len() != psbt.inputs.len() {
+            return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
+        }
+        // Each map should have at least min_signers number of partial sigs
+        for sig in sigs.iter() {
+            if sig.len() < min_signers as usize {
+                return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
+            }
+        }
+
+        // Additionally we should check that the same set of signers provided partial sigs as in round 1
+        for (sc, sig) in scs.iter().zip(sigs.iter()) {
+            if sc.keys().ne(sig.keys()) {
+                return Err(ValidatePSBTError::FrostIdMismatch);
+            }
+        }
+        // Lastly the signers should ensure they are infact in the signing group before providing partial sigs
+        // That should be done outside the context of this function
+    }
+
+    let tx = psbt.clone().extract_tx();
+    for (index, psbt_input) in psbt.inputs.iter().enumerate() {
+        if flags & ROUND1 == ROUND1 {
+            // validate utxo exists in DB
+            let outpoint = tx.input[index].previous_output;
+            let utxo = db.get_utxo(outpoint).expect("valid utxo");
+            if utxo.is_none() {
+                return Err(ValidatePSBTError::UtxoNotFound);
+            }
+            // If the utxo has a eth tweak check the right one is presented in the psbt
+            let eth_tweak = utxo.clone().expect("valid utxo").eth_address;
+            if let Some(e) = eth_tweak {
+                let eth_input_tweak = psbt_input.eth_address().expect("valid eth address");
+                if eth_input_tweak != Some(&e.to_vec()) {
+                    return Err(ValidatePSBTError::EthTweakMismatch);
+                }
+            }
+            // Validate prev out is provided
+            if psbt_input.witness_utxo.is_none() {
+                return Err(ValidatePSBTError::MissingWitnessUtxo);
+            }
+            let txout = psbt_input.witness_utxo.as_ref().expect("valid witness utxo");
+            // Check txout is valid
+            let store_txout = utxo.expect("valid utxo").output;
+            if store_txout != *txout {
+                return Err(ValidatePSBTError::TxOutMismatch);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod util_tests {
     use bitcoin::{ScriptBuf, TxOut};
 
-    use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
     use crate::test::{create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup};
+    use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
     use super::*;
 
@@ -292,7 +451,8 @@ mod util_tests {
         assert!(signing_packages.is_err());
         assert_eq!(
             signing_packages.unwrap_err().to_string(),
-            reth_btc_wallet::psbt::PsbtToSigningPackageConversionError::MissingSigningCommitments.to_string()
+            reth_btc_wallet::psbt::PsbtToSigningPackageConversionError::MissingSigningCommitments
+                .to_string()
         );
     }
 

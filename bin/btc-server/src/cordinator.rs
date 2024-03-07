@@ -1,7 +1,17 @@
+use crate::database::Utxo;
+
+use crate::database::Error as DbError;
+use crate::util::validate_psbt;
+use crate::util::ValidatePSBTError;
+use crate::util::VerifyingKeyExtError;
+use crate::util::NO_FLAGS;
+use crate::util::ROUND1;
+use crate::util::ROUND1_TRANSITION;
+use crate::util::ROUND2;
+use crate::SECP;
 use std::collections::HashMap;
 
 use bdk::{
-    descriptor::error,
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
@@ -10,13 +20,13 @@ use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 use secp256k1::PublicKey;
 
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 use reth_btc_wallet::transaction::CalculateSighashError;
+use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use sled::Db;
 
-use crate::database::{self, Utxo};
-use crate::util::{self, OutPointExt, VerifyingKeyExt, VerifyingKeyExtError};
-use crate::{merkle, SECP, App, Error};
+use crate::util::{self, OutPointExt, VerifyingKeyExt};
+use crate::{merkle, App, Error};
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -39,19 +49,23 @@ pub enum CoordinatorError {
     #[error("internal FROST error: {0}")]
     FrostError(#[from] frost::Error),
     #[error("internal DB error")]
-    Db(#[from] database::Error),
+    Db(#[from] DbError),
     #[error("PSBT finalization failed : {0:?}")]
     PbstFinalizationFailed(Vec<PsbtError>),
     #[error("Invalid resulting transaction")]
     InvaildResultingTx,
     #[error("Failed parse out to sign package: {0}")]
     PsbtToSigningPackageConversionError(
-        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
     ),
     #[error("Could not find psbt")]
     CouldNotFindPsbt,
     #[error("Failed to broadcast tx: {0}")]
     FailedToBroadcastTx(bitcoincore_rpc::Error),
+    #[error("Could not find participant information")]
+    CouldNotFindParticipantInformation(),
+    #[error("Failed to validate psbt: {0}")]
+    FailedToValidatePsbt(#[from] ValidatePSBTError),
 }
 
 impl App {
@@ -77,7 +91,7 @@ impl App {
             let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
             self.db
                 .store_utxo_merkle_root(&merkle_root)
-                .map_err(|e| CoordinatorError::Db(database::Error::from(e)))?;
+                .map_err(|e| CoordinatorError::Db(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
@@ -91,12 +105,19 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // TODO (armins) need to verify here that the psbt is in a valid round 1 state
 
+        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+
+        // TODO Need to check if this frost id actually provided a nonce
+        // let scs = psbt.
+        // if !scs.iter().any(|sc| sc.contains_key(&frost_id)) {
+        //     return Err(CoordinatorError::CouldNotFindParticipantInformation());
+        // }
+
+        // TODO Need to check this psbt affect the other inputs and outputs
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
         // The more the better in the case one is unresponsive
         // the frost lib will check if we have enough when we create the signing package
-        self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
         debug!("Stored round1 signing from peer: {:?}", frost_id);
 
@@ -110,8 +131,12 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // TODO (armins) need to verify here that the psbt is in a valid round 2 state
-        // TODO Checks if we have enough partial signatures
+        // Can't add our selves
+        if frost_id == self.identifier {
+            return Err(CoordinatorError::InvalidFrostPeerId);
+        }
+        // validate PSBT
+        validate_psbt(psbt, ROUND2, self.min_signers, &self.db)?;
 
         self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
@@ -165,7 +190,7 @@ impl App {
         let _tx_lock = self.tx_lock.lock();
 
         // collect all database utxos in a hashmap
-        let utxos = self.db.iter_utxos().fold::<Result<_, database::Error>, _>(
+        let utxos = self.db.iter_utxos().fold::<Result<_, DbError>, _>(
             Ok(HashMap::new()),
             |mut ret, r| {
                 if let Ok(ref mut map) = ret {
@@ -237,6 +262,10 @@ impl App {
             change.clone(),
         );
 
+        // Sanity check that we created a valid PSBT
+        // This should not fail
+        validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;
+
         Ok(psbt)
     }
 
@@ -262,6 +291,7 @@ impl App {
             }
 
             // TODO (armins) verify that the psbt is in a valid state for end of round 1
+            validate_psbt(&psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
             return Ok(psbt);
         }
 

@@ -1,6 +1,6 @@
 use crate::{
     database::{self, Error as DbError},
-    util::{self, VerifyingKeyExt},
+    util::{self, validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
     App, Error, SECP,
 };
 use bdk::miniscript::psbt::Error as PsbtError;
@@ -11,8 +11,8 @@ use bitcoincore_rpc::json::EstimateMode;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 
-use reth_btc_wallet::transaction::CalculateSighashError;
 use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
+use reth_btc_wallet::transaction::CalculateSighashError;
 
 #[derive(Debug)]
 pub enum SigningError {
@@ -45,12 +45,14 @@ pub enum SigningRound1Error {
     Db(#[from] database::Error),
     #[error("failed to add signing commits to psbt")]
     FailedToAddSigningCommitsToPsbt(
-        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
     ),
     #[error("failed to get smart estimate fee rate")]
     FailedToGetEstimateSmartFeeRate,
     #[error("fee rate difference is too great")]
     FeeRateDifferenceTooGreat,
+    #[error("failed to validate psbt: {0}")]
+    FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
 }
 
 #[derive(Debug, Error)]
@@ -71,10 +73,11 @@ pub enum SigningRound2Error {
     FailedToCalculateSighash(#[from] CalculateSighashError),
     #[error("Failed parse out to sign package: {0}")]
     PsbtToSigningPackageConversionError(
-        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
     ),
+    #[error("failed to validate psbt: {0}")]
+    FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
 }
-
 impl From<SigningRound1Error> for SigningError {
     fn from(e: SigningRound1Error) -> Self {
         SigningError::Round1(e)
@@ -108,10 +111,6 @@ impl App {
         _signing_session_id: &[u8; 32],
         bitcoind_client: &impl bitcoincore_rpc::RpcApi,
     ) -> Result<(), SigningRound1Error> {
-        let num_inputs = psbt.inputs.len();
-        if num_inputs == 0 || num_inputs > 15 {
-            return Err(SigningRound1Error::InvalidNumberOfNoncesRequested);
-        }
         // Check if have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
         if nonces_lock.is_some() {
@@ -152,6 +151,9 @@ impl App {
                 return Err(SigningRound1Error::InvalidSigningPackage("UTXO not found in DB"));
             }
         }
+        // Validate PSBT
+        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+        let num_inputs = psbt.inputs.len();
 
         let key_package =
             self.db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
@@ -186,6 +188,10 @@ impl App {
         // to provide new ones
         let key_package =
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
+
+        // Validate PSBT
+        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
+
         let tx = psbt.clone().extract_tx();
         let num_inputs = tx.input.len();
         let mut signing_packages = psbt.signing_packages()?;
