@@ -157,6 +157,7 @@ where
         .expect("if you hash the point into the tweak, this can't really happen")
 }
 
+/// Deprecated
 pub fn generate_tweaked_secret_key<T>(
     eth_address: &T,
     aggregate_key: &PublicKey,
@@ -211,11 +212,7 @@ mod tests {
 
     #[test]
     fn correct_eth_address() {
-        let secp = Secp256k1::new();
         let network: Network = Network::Testnet;
-        let eth_addr = ethers::abi::Address::from_slice(
-            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").expect("hex decode").as_slice(),
-        );
         let key_pair = KeyPair::from_seckey_str(
             &SECP,
             "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
@@ -225,7 +222,7 @@ mod tests {
         let gateway = gateway_address(&key_pair.public_key(), network).unwrap();
         assert_eq!(
             gateway.to_string(),
-            "tb1pjutmjkwrwjejxn988mt35528schetrrsgexhv24fxhn7nk6pvs7qd66dne"
+            "tb1ptn6uxgn7euat3hkqdxx2x0h9ynhvzkjkwnee2smlzx6fvnyn2ejqjyman0"
         );
     }
 
