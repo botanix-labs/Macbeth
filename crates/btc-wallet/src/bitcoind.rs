@@ -1,4 +1,4 @@
-use bitcoincore_rpc::{json::GetChainTipsResultStatus, Auth, Client, RpcApi};
+use bitcoincore_rpc::{json::{self, GetChainTipsResultStatus}, Auth, Client, RpcApi};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -20,6 +20,8 @@ pub enum BitcoindError {
     TransactionBroadcastFailed(bitcoincore_rpc::Error),
     #[error("Block index failed")]
     BlockIndexStatusFailed(bitcoincore_rpc::Error),
+    #[error("Block filter retrieval failed")]
+    BlockFilterRetrievalFailed(bitcoincore_rpc::Error),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +79,14 @@ impl BitcoindClient {
         let block_hash =
             self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
         Ok(block_hash)
+    }
+
+    pub async fn get_block_filter(&self, block_hash: bitcoin::BlockHash) -> Result<json::GetBlockFilterResult, BitcoindError> {
+        let filter = self
+            .rpc
+            .get_block_filter(&block_hash)
+            .map_err(BitcoindError::BlockFilterRetrievalFailed)?;
+        Ok(filter)
     }
 
     pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
@@ -149,6 +159,10 @@ mod tests {
         match tip {
             Ok(tip) => {
                 assert!(tip > 0);
+                // test additional endpoints
+                let block_hash = client.get_block_hash(tip).await;
+                let block_filter = client.get_block_filter(block_hash.unwrap()).await;
+                assert!(block_filter.is_ok());
             }
             Err(e) => {
                 panic!("Got error {:?}", e);
