@@ -173,18 +173,27 @@ impl Botanix {
             client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
                 .await
                 .unwrap();
-        let request =
-            tonic::Request::new(GetPublicKeyRequest { eth_address: eth_address.to_string() });
+        let request = tonic::Request::new(client::GetGatewayAddressRequest {
+            eth_address: eth_address.to_string(),
+        });
 
-        let response = client.get_public_key(request).await.unwrap();
-        let pk_hex = response.into_inner().publickey;
+        let response = client
+            .get_gateway_address(request)
+            .await
+            .map_err(|e| {
+                GatewayAddressRPCError::InvalidParam(
+                    format!("Failed to get public key: {}", e).as_str(),
+                )
+            })?
+            .into_inner();
 
-        let pk = PublicKey::from_str(pk_hex.as_str()).map_err(|_e| {
-            GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
-        })?;
-        let network = self.botanix_rpc_config.bitcoin_network;
-        let address = reth_btc_wallet::address::gateway_address(&pk, network)
+        let address = bitcoin::Address::from_str(response.gateway_address.as_str())
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+
+        let pk = secp256k1::PublicKey::from_slice(
+            &hex::decode(response.aggregate_public_key)
+                .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
+        )?;
 
         Ok((address, pk))
     }
@@ -208,7 +217,7 @@ impl Botanix {
             .await
             .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
         if !txids.contains(&tx_id) {
-            return Err(MerkleProofRPCError::TxIdNotInBlock)
+            return Err(MerkleProofRPCError::TxIdNotInBlock);
         }
 
         let matches = txids.iter().map(|txid| txid == &tx_id).collect::<Vec<_>>();
