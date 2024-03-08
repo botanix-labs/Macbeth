@@ -6635,6 +6635,7 @@ dependencies = [
  "assert_matches",
  "backon",
  "bitcoin",
+ "bitcoincore-rpc",
  "boyer-moore-magiclen",
  "clap",
  "client",

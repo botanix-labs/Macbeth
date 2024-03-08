@@ -12,7 +12,7 @@ use crate::{
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
-use reth_authority_consensus::AuthorityConsensusBuilder;
+use reth_authority_consensus::{AuthorityConsensusBuilder, utils::{is_testnet, get_confirmation_depth}};
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
     BeaconConsensusEngine, BeaconConsensusEngineError, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -55,6 +55,8 @@ use client::BtcServerClient;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use rsntp::AsyncSntpClient;
 use tokio::time::Duration;
+
+use bitcoincore_rpc::json;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
@@ -183,6 +185,60 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 ));
             }
         }
+
+        // fetch and store bitcoin block filters
+        let is_testnet = is_testnet(self.config.chain.chain.id());
+        let confirmation_depth = get_confirmation_depth(is_testnet);
+        let bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>> =
+        Arc::new(RwLock::new(None));
+        let bitcoin_block_filters_clone = bitcoin_block_filters.clone();
+        let bitcoind_config_clone = bitcoind_config.clone();
+
+        executor.spawn_critical("async bitcoin block filter task", Box::pin(async move {
+            let sleep_ms = tokio::time::Duration::from_millis(5000);
+            let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
+
+            let mut current_filters: Vec<(json::GetBlockFilterResult, u64)> = match bitcoin_block_filters.read().await.clone() {
+                Some(filters) => filters,
+                None => Vec::new(),
+            };
+            loop {
+                let tip = match bitcoind_client.get_tip().await {
+                    Ok(tip) => tip,
+                    Err(_) => {
+                        error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                        tokio::time::sleep(sleep_ms).await;
+                        continue;
+                    }
+                };
+                
+                let start = tip -  <u32 as Into<u64>>::into(confirmation_depth);
+                for height in start..=tip {
+                    let block_hash = match bitcoind_client.get_block_hash(height).await {
+                        Ok(block_hash) => block_hash,
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block hash. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    };
+                    
+                    match bitcoind_client.get_block_filter(block_hash).await {
+                        Ok(block_filter) => {
+                            current_filters.push((block_filter, height));
+                        }
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block filter. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    }
+                }
+                let mut filters_write = bitcoin_block_filters.write().await;
+                *filters_write = Some(current_filters.clone());
+                drop(filters_write);
+            }
+        }));
 
         let bitcoind_config = bitcoind_config.clone();
         executor.spawn_critical(
