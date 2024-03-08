@@ -6,7 +6,9 @@ package btc_server;
 service BtcServer {
     rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
 
-    rpc GetPublicKey(GetPublicKeyRequest) returns(GetPublicKeyResponse){}
+    rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
+
+    rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
 
     rpc GetRound1DkgPackage(Empty) returns(DkgPayload){}
 
@@ -49,7 +51,7 @@ message NotifyPeginRequest {
     bytes output = 4;
 }
 
-message GetPublicKeyRequest {
+message GetGatewayAddressRequest {
     // Eth address to tweak by
     string eth_address = 1;
 }
@@ -62,6 +64,13 @@ message MakeTxResponse {
 message GetPublicKeyResponse {
     // hex encoded
     string publickey = 1;
+}
+
+message GetGatewayAddressResponse {
+    // hex encoded
+    string publickey = 1;
+    string tweaked_public_key = 2;
+    string gateway_address = 3;
 }
 
 message Empty {}
