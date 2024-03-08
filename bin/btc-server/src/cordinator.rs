@@ -17,12 +17,15 @@ use bdk::{
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
+use bitcoin::Address;
+use bitcoin::Transaction;
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
 
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use secp256k1::PublicKey;
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -113,16 +116,36 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn get_public_key(
+    pub(crate) fn get_gateway_address(
         &self,
         eth_tweak: &[u8; 20],
-    ) -> Result<frost::VerifyingKey, CoordinatorError> {
+    ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
         // try to get pk package from db incase we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
-            return Ok(pk_package
+            let agg_key = pk_package.verifying_key().to_secp_pk().map_err(|e| {
+                CoordinatorError::FailedToConvertVerifyingKeyToSecpPk(VerifyingKeyExtError::from(e))
+            })?;
+            let tweaked_key = pk_package
                 .verifying_key()
-                .to_owned()
-                .get_tweaked(Some(eth_tweak.as_slice())));
+                .get_tweaked(Some(eth_tweak.as_slice()))
+                .to_secp_pk()
+                .map_err(|e| {
+                    CoordinatorError::FailedToConvertVerifyingKeyToSecpPk(
+                        VerifyingKeyExtError::from(e),
+                    )
+                })?;
+            let gateway_address =
+                reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.network);
+
+            return Ok((agg_key, tweaked_key, gateway_address));
+        }
+        Err(CoordinatorError::MissingKeyPackage)
+    }
+
+    pub(crate) fn get_public_key(&self) -> Result<frost::VerifyingKey, CoordinatorError> {
+        // try to get pk package from db incase we already did dkg round 3
+        if let Some(pk_package) = self.db.get_public_key_package()? {
+            return Ok(pk_package.verifying_key().to_owned());
         }
 
         Err(CoordinatorError::MissingKeyPackage)

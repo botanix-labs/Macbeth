@@ -440,19 +440,39 @@ impl rpc::BtcServer for App {
 
     async fn get_public_key(
         &self,
-        req: tonic::Request<rpc::GetPublicKeyRequest>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
+        let pk = self.get_public_key().map_err(|e| {
+            error!("Failed to get public key: {}", e);
+            internal!("Failed to get public key: {}", e)
+        })?;
+        let pk = hex::encode(pk.serialize());
+
+        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
+    }
+
+    async fn get_gateway_address(
+        &self,
+        req: tonic::Request<rpc::GetGatewayAddressRequest>,
+    ) -> Result<tonic::Response<rpc::GetGatewayAddressResponse>, tonic::Status> {
         let req = req.into_inner();
         let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
             error!("Failed to parse eth address: {}", e);
             badarg!("Failed to parse eth address: {}", e)
         })?;
-        let pk = self.get_public_key(&eth_address).map_err(|e| {
+        let pk_packages = self.get_gateway_address(&eth_address).map_err(|e| {
             error!("Failed to get public key: {}", e);
             internal!("Failed to get public key: {}", e)
         })?;
-        let hex = hex::encode(pk.serialize());
-        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: hex }));
+        let pk = hex::encode(pk_packages.0.serialize());
+        let pk_tweaked = hex::encode(pk_packages.1.serialize());
+        let address = pk_packages.2.to_string();
+
+        return Ok(tonic::Response::new(rpc::GetGatewayAddressResponse {
+            publickey: pk,
+            tweaked_public_key: pk_tweaked,
+            gateway_address: address,
+        }));
     }
 
     /// Adds round2 packages received from a peer
@@ -823,7 +843,7 @@ mod test {
             hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
         );
 
-        let pk_result = app.get_public_key(&eth);
+        let pk_result = app.get_public_key();
         assert!(pk_result.is_err());
         assert_eq!(pk_result.err().unwrap().to_string(), "missing key package");
     }
@@ -1081,8 +1101,8 @@ mod test {
         let eth = eth_vector_to_fixed_bytes(
             hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
         );
-        let pk1 = app1.get_public_key(&eth).expect("valid public key request");
-        let pk2 = app2.get_public_key(&eth).expect("valid public key request");
+        let pk1 = app1.get_public_key().expect("valid public key request");
+        let pk2 = app2.get_public_key().expect("valid public key request");
         assert_eq!(pk1, pk2);
     }
 
@@ -1170,6 +1190,8 @@ mod test {
         assert_eq!(sc2.len(), 1);
         assert_ne!(sc1, sc2);
     }
+
+    
 
     // TODO (armins) fix these tests!!
     // #[test]

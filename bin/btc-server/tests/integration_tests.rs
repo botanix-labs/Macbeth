@@ -5,7 +5,7 @@ use tokio::{
     process::Command,
 };
 
-use bitcoin::{consensus::Encodable, Amount, FeeRate, TxOut, Txid};
+use bitcoin::{consensus::Encodable, Address, Amount, FeeRate, TxOut, Txid};
 use client;
 use tonic::transport::Channel;
 
@@ -128,17 +128,11 @@ async fn do_dkg(clients: &mut Vec<client::BtcServerClient<Channel>>) {
 }
 
 async fn send_pegin_notification(
-    _secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
     client: &mut client::BtcServerClient<Channel>,
+    address: Address,
     eth_address: String,
-    pk: String,
     txid: [u8; 32],
 ) {
-    let address = reth_btc_wallet::address::gateway_address(
-        &bitcoin::secp256k1::PublicKey::from_str(&pk).unwrap(),
-        NETWORK,
-    )
-    .unwrap();
     let prev_out =
         TxOut { script_pubkey: address.script_pubkey(), value: Amount::from_sat(1000).to_sat() };
 
@@ -160,7 +154,6 @@ async fn send_pegin_notification(
 #[tokio::test]
 pub async fn dkg_flow() {
     let _secp = bitcoin::secp256k1::Secp256k1::new();
-    let eth_1 = "86Bb524A1c7703C02BcEc36D1C4218aADb7D643D".to_string();
     let tasks = spawn_n_servers(3);
 
     // let servers come up
@@ -172,11 +165,7 @@ pub async fn dkg_flow() {
     let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
 
     // Getting public key should fail
-    let pk = c1
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-            eth_address: eth_1.clone(),
-        }))
-        .await;
+    let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
     assert!(pk.is_err());
     let err = pk.err().unwrap();
     assert_eq!(err.code(), tonic::Code::Internal);
@@ -184,28 +173,10 @@ pub async fn dkg_flow() {
 
     do_dkg(&mut clients).await;
     // After dkg we should be able to the dkg
-    //// Get the pubkey
-    let pk_1 = c1
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-            eth_address: eth_1.clone(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    let pk_2 = c2
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-            eth_address: eth_1.clone(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    let pk_3 = c3
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
-            eth_address: eth_1.clone(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
+    // Get the pubkey
+    let pk_1 = c1.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+    let pk_2 = c2.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+    let pk_3 = c3.get_public_key(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
 
     // Everyone got the same pks
     assert_eq!(pk_1.publickey, pk_2.publickey);
@@ -246,33 +217,30 @@ async fn test_many_inputs_signing() {
     // get the aggregate pk from any of the clients
     // Here we are signing for a two inputs that are tweaked differently
     let pk1 = c1
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+        .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
             eth_address: eth_1.clone(),
         }))
         .await
         .unwrap()
         .into_inner();
-
     let pk2 = c1
-        .get_public_key(tonic::Request::new(client::GetPublicKeyRequest {
+        .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
             eth_address: eth_2.clone(),
         }))
         .await
         .unwrap()
         .into_inner();
+    let address1 = Address::from_str(&pk1.gateway_address).expect("valid address").assume_checked();
+    let address2 = Address::from_str(&pk2.gateway_address).expect("valid address").assume_checked();
 
     let txid1 = rand::random::<[u8; 32]>();
     let txid2 = rand::random::<[u8; 32]>();
     // Notify peg ins to all peers
     // signers will not sign if they cannot locate the UTXOs they are being requested to sign
-    send_pegin_notification(&secp, &mut c1, eth_1.clone(), pk1.publickey.clone(), txid1).await;
-    send_pegin_notification(&secp, &mut c1, eth_2.clone(), pk2.publickey.clone(), txid2).await;
-
-    send_pegin_notification(&secp, &mut c2, eth_1.clone(), pk1.publickey.clone(), txid1).await;
-    send_pegin_notification(&secp, &mut c2, eth_2.clone(), pk2.publickey.clone(), txid2).await;
-
-    send_pegin_notification(&secp, &mut c3, eth_1.clone(), pk1.publickey.clone(), txid1).await;
-    send_pegin_notification(&secp, &mut c3, eth_2.clone(), pk2.publickey.clone(), txid2).await;
+    for c in clients.iter_mut() {
+        send_pegin_notification(c, address1.clone(), eth_1.clone(), txid1).await;
+        send_pegin_notification(c, address2.clone(), eth_2.clone(), txid2).await;
+    }
 
     // First step: get the PSBT
     let original_psbt = c3
@@ -347,7 +315,6 @@ async fn test_many_inputs_signing() {
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
 
-    let psbt = signing_package.clone().psbt;
     let _finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
