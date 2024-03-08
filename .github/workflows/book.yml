@@ -11,7 +11,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     name: test
     timeout-minutes: 60
 
@@ -34,7 +34,7 @@ jobs:
         run: mdbook test
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     name: lint
     timeout-minutes: 60
 
@@ -53,7 +53,7 @@ jobs:
         run: mdbook-linkcheck --standalone
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

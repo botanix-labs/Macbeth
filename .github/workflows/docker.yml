@@ -18,7 +18,7 @@ env:
 jobs:
   build:
     name: build and push
-    runs-on: ubuntu-20.04
+    runs-on: botanix-actions-runner
     permissions:
       packages: write
       contents: read

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: botanix-bitcoin-server
+  namespace: sandbox
+spec:
+  serviceName: botanix-bitcoin-server
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: botanix-bitcoin-server
+  template:
+    metadata:
+      labels:
+        app: botanix-bitcoin-server
+    spec:
+      nodeSelector:
+        iam.gke.io/gke-metadata-server-enabled: "true"
+      serviceAccountName: workload-runner
+      securityContext:
+        fsGroup: 1000
+      # initContainers:
+      # - name: botanix-bitcoin-init
+      #   image: google/cloud-sdk:latest
+      #   command: ["sh", "-c"]
+      #   args: ["gsutil cp gs://botanix-testnet-snapshot/bitcoin.tgz /bitcoin && tar -xzvf /bitcoin/bitcoin.tgz -C /bitcoin && rm /bitcoin/bitcoin.tgz"]
+      #   volumeMounts:
+      #   - name: botanix-bitcoin-server-data
+      #     mountPath: /bitcoin
+
+      containers:
+      - name: botanix-bitcoin-server
+        image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server/botanix_testnet_btc_server:latest
+        command: [ "/usr/local/bin/server", "--network", "signet", "--pkey", /bitcoin/server/btc-server/key.hex, "--db", "/bitcoin/db"]
+        volumeMounts:
+          - name: botanix-bitcoin-server-data
+            mountPath: /bitcoin
+
+        ports:
+        - containerPort: 8080
+          name: http-port
+          protocol: TCP
+
+  volumeClaimTemplates:
+  - metadata:
+      name: botanix-bitcoin-server-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: botanix-storage-class
+      resources:
+        requests:
+          storage: 10Gi
