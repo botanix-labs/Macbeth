@@ -20,7 +20,7 @@ normal = [
 [dependencies]
 
 # Grpc
-tonic = "0.9.2"
+tonic = "0.11.0"
 
 # hex
 hex = "0.4.3"

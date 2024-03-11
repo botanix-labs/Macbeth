@@ -1,6 +1,7 @@
 //! Defines structure for botanix RPC configurables and business logic
 
 use alloy_primitives::hex;
+use client::GetPublicKeyRequest;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_primitives::U256;
 use secp256k1::PublicKey;
@@ -172,7 +173,8 @@ impl Botanix {
             client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
                 .await
                 .unwrap();
-        let request = tonic::Request::new(client::Empty {});
+        let request =
+            tonic::Request::new(GetPublicKeyRequest { eth_address: eth_address.to_string() });
 
         let response = client.get_public_key(request).await.unwrap();
         let pk_hex = response.into_inner().publickey;
@@ -181,13 +183,8 @@ impl Botanix {
             GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
         })?;
         let network = self.botanix_rpc_config.bitcoin_network;
-        let address = reth_btc_wallet::address::gateway_address(
-            &SECP,
-            &pk,
-            &eth_address.as_slice().to_vec(),
-            network,
-        )
-        .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+        let address = reth_btc_wallet::address::gateway_address(&pk, network)
+            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
 
         Ok((address, pk))
     }

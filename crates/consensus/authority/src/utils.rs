@@ -85,8 +85,8 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 ///
 /// # Returns
 ///
-/// Returns `Ok(Vec<MakeTxRequest>)` if the processing is successful, otherwise returns an error of type
-/// `ProcessBotanixLogError`.
+/// Returns `Ok(Vec<MakeTxRequest>)` if the processing is successful, otherwise returns an error of
+/// type `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
@@ -106,7 +106,14 @@ pub(crate) async fn process_receipts(
                     continue;
                 }
                 for log in &receipt.logs {
-                    match process_botanix_log(btc_server, log, recent_bitcoin_block_height, is_testnet).await {
+                    match process_botanix_log(
+                        btc_server,
+                        log,
+                        recent_bitcoin_block_height,
+                        is_testnet,
+                    )
+                    .await
+                    {
                         Ok(Some(pegout)) => {
                             pegouts.push(pegout);
                         }
@@ -142,8 +149,8 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
                 let fee_rate = 30u32;
                 let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
                 return Some(MakeTxRequest {
-                    address: pegout.destination.to_string(),
-                    value: pegout.amount.to_sat(),
+                    outputs: vec![],            // TODO
+                    signing_session_id: vec![], // TODO
                     fee_rate,
                 });
             }
@@ -162,7 +169,9 @@ pub(crate) async fn send_pegouts(
     pegouts: Vec<MakeTxRequest>,
 ) -> Result<(), ProcessBotanixLogError> {
     for pegout in pegouts {
-        // TODO (scott): call bitcoind's testmempoolaccept to check if tx is valid before proceeding
+        // TODO: FIX (scott): call bitcoind's testmempoolaccept to check if tx is valid before
+        // proceeding
+        /*
         match btc_server.make_tx(pegout).await {
             Ok(response) => {
                 let raw_tx = response.into_inner().tx;
@@ -178,6 +187,7 @@ pub(crate) async fn send_pegouts(
                 continue;
             }
         }
+        */
     }
 
     Ok(())
@@ -187,7 +197,8 @@ pub(crate) async fn send_pegouts(
 ///
 /// This function checks the topics of the log and performs different actions based on the topic.
 /// If the topic is `GenesisContractEvents::MintingEvent`, it parses and sends the minting event to
-/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout and returns it.
+/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout
+/// and returns it.
 ///
 /// # Arguments
 ///
@@ -198,7 +209,8 @@ pub(crate) async fn send_pegouts(
 ///
 /// # Returns
 ///
-/// Returns `Ok(Option<MakeTxRequest>)` if the processing is successful, otherwise returns an error of type `ProcessBotanixLogError`.
+/// Returns `Ok(Option<MakeTxRequest>)` if the processing is successful, otherwise returns an error
+/// of type `ProcessBotanixLogError`.
 async fn process_botanix_log(
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     log: &Log,
@@ -214,8 +226,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height
-                    > recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height >
+                    recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -245,8 +257,8 @@ async fn process_botanix_log(
                 match parse_pegout_reth_log_topic(&log) {
                     Ok(parsed_pegout) => {
                         pegout = Some(MakeTxRequest {
-                            address: parsed_pegout.destination.to_string(),
-                            value: parsed_pegout.amount.to_sat(),
+                            outputs: vec![],            // TODO
+                            signing_session_id: vec![], // TODO
                             fee_rate,
                         });
                     }
@@ -270,13 +282,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Returns true if the given block number is the end of an epoch
@@ -345,8 +357,8 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, BlockHash, CompactTarget};
-    use reth_primitives::{address, b256, bytes, Header, B256, U256};
     use rand::Rng;
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
     use super::*;
 

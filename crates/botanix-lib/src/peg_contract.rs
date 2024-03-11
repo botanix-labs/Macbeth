@@ -10,6 +10,7 @@ use bitcoin::{
 use bitcoin::{self};
 use ethers::types::U256;
 use reth_primitives::Address;
+use secp256k1::Verification;
 use thiserror::Error;
 
 use reth_btc_wallet::address;
@@ -37,7 +38,7 @@ impl PeginData {
     /// Returns the aggregate value of all the pegin amounts
     pub fn validate(
         &self,
-        secp: &secp256k1::Secp256k1<impl secp256k1::Verification>,
+        secp: &secp256k1::Secp256k1<impl Verification>,
         bitcoin_block: &(bitcoin::block::Header, u32),
     ) -> Result<U256, PeginError> {
         // the aggregate value from all the pegin proofs
@@ -72,7 +73,7 @@ impl PeginData {
                 &self.account.as_slice().to_vec(),
                 &AGG_PK,
             );
-            let gateway_script = address::generate_taproot_scriptpubkey(secp, &tweaked_key);
+            let gateway_script = address::generate_taproot_scriptpubkey(&tweaked_key);
 
             let output = &pegin.tx.output[op.vout as usize];
             if gateway_script != output.script_pubkey {
@@ -319,7 +320,7 @@ mod tests {
 
         let eth_address = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
         let tweaked = address::generate_tweaked_public_key(&secp, &eth_address.to_vec(), &AGG_PK);
-        let gateway_script = address::generate_taproot_scriptpubkey(&secp, &tweaked);
+        let gateway_script = address::generate_taproot_scriptpubkey(&tweaked);
 
         let tx_out = TxOut { value: 100_u64, script_pubkey: gateway_script };
         let tx: Transaction = Transaction {
