@@ -243,6 +243,32 @@ impl App {
     }
 }
 
+impl From<database::Utxo> for rpc::Utxo {
+    fn from(item: database::Utxo) -> Self {
+        rpc::Utxo {
+            outpoint: Some(rpc::OutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: item.output.value as u32,
+            eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
+        } 
+    }
+}
+
+impl From<database::Utxo> for rpc::Utxo {
+    fn from(item: database::Utxo) -> Self {
+        rpc::Utxo {
+            outpoint: Some(rpc::OutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: item.output.value as u32,
+            eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl rpc::BtcServer for App {
     // Saves peg'd in UTXO
@@ -658,6 +684,20 @@ impl rpc::BtcServer for App {
 
         Ok(tonic::Response::new(res))
     }
+
+    async fn get_all_utxos(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
+        let db_utxos = self.db.get_all_utxos().await.map_err(|e| {
+            error!("Failed to get utxos: {}", e);
+            internal!("Failed to get utxos: {}", e)
+        })?;
+        let utxos = db_utxos.into_iter().map(|utxo| utxo.into()).collect::<Vec<rpc::Utxo>>();
+        let res = rpc::GetAllUtxosResponse { utxos };
+
+        Ok(tonic::Response::new(res))
+    } 
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -725,6 +765,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     macro_rules! frost_id {
         ($index:expr) => {
             frost::Identifier::try_from($index).expect("valid id")
@@ -736,13 +777,17 @@ mod test {
         rpc::BtcServer, signer::SigningRound2Error, util::retrieve_all_signing_commitments,
     };
 
-    use super::*;
+    use crate::rpc::Empty;
+    use bitcoin::blockdata::script::Script;
+    use bitcoin::blockdata::transaction::TxOut;
+    use rand::{thread_rng, Rng};
+    use tonic::Request;
+
     use bitcoin::{
-        absolute::LockTime, hashes::Hash, Address, Script, ScriptBuf, Sequence, Transaction, TxIn,
-        Txid,
+        absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
     use frost::keys::dkg::round1;
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     use frost_secp256k1_tr as frost;
     use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
@@ -1044,7 +1089,7 @@ mod test {
 
     #[test]
     fn should_add_round2_dkg_packages() {
-        let mut rng: rand::prelude::ThreadRng = thread_rng();
+        let rng: rand::prelude::ThreadRng = thread_rng();
         // We essentially need to emulate dkg here
         let mut app1 = setup();
         let mut app2 = setup();
@@ -1285,4 +1330,42 @@ mod test {
     //     //     Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![]
     // };     // let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
     // }
+    #[tokio::test]
+    async fn test_get_all_utxos_empty() {
+        let app = setup();
+        let request = Request::new(Empty {});
+        let response = app.get_all_utxos(request).await;
+
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert!(response.utxos.is_empty(), "Expected no UTXOs in a fresh database");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_utxos_with_data() {
+        let app = setup();
+        let mut rng = thread_rng();
+
+        for _ in 0..100 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value, script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+        }
+
+        let request = Request::new(Empty {});
+        let response = app.get_all_utxos(request).await;
+
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
+    }
 }

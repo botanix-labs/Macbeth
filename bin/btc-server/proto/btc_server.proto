@@ -38,7 +38,36 @@ service BtcServer {
 
     rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
 
+    rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
+
 }
+
+message ScriptBuf {
+    bytes script = 1; // Represents the Vec<u8> in Rust
+}
+
+message TxOut {
+    /// The value of the output, in satoshis.
+    uint64 value = 1;
+    /// The script which must be satisfied for the output to be spent.
+    ScriptBuf script_pubkey = 2;
+}
+
+message OutPoint {
+    bytes txid = 1;
+    uint32 vout = 2;
+}
+
+message Utxo {
+    OutPoint outpoint = 1; 
+    uint32 output = 2;
+    string eth_address = 3;
+}
+
+message GetAllUtxosResponse {
+    repeated Utxo utxos = 1;
+}
+
 
 message NotifyPeginRequest {
     // The txid of the utxo in hex.

@@ -34,6 +34,11 @@ pub struct Utxo {
     pub eth_address: Option<[u8; 20]>,
 }
 
+impl Utxo {
+    pub fn new(outpoint: OutPoint, output: TxOut, eth_address: Option<[u8; 20]>) -> Self {
+        Utxo { outpoint, output, eth_address }
+    }
+}
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -361,6 +366,17 @@ impl Db {
             Ok(())
         })?;
         Ok(())
+    }
+
+    /// Retrieves all utxos from the database.
+    pub async fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
+        let mut utxos = vec![];
+        for res in self.utxos.iter() {
+            let (_k, v) = res?;
+            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("decoding");
+            utxos.push(utxo);
+        }
+        Ok(utxos)
     }
 }
 

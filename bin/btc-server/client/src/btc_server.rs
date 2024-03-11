@@ -1,5 +1,46 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScriptBuf {
+    /// Represents the Vec<u8> in Rust
+    #[prost(bytes = "vec", tag = "1")]
+    pub script: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TxOut {
+    /// / The value of the output, in satoshis.
+    #[prost(uint64, tag = "1")]
+    pub value: u64,
+    /// / The script which must be satisfied for the output to be spent.
+    #[prost(message, optional, tag = "2")]
+    pub script_pubkey: ::core::option::Option<ScriptBuf>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OutPoint {
+    #[prost(bytes = "vec", tag = "1")]
+    pub txid: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub vout: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Utxo {
+    #[prost(message, optional, tag = "1")]
+    pub outpoint: ::core::option::Option<OutPoint>,
+    #[prost(uint32, tag = "2")]
+    pub output: u32,
+    #[prost(string, tag = "3")]
+    pub eth_address: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetAllUtxosResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotifyPeginRequest {
     /// The txid of the utxo in hex.
     #[prost(string, tag = "1")]
@@ -137,7 +178,7 @@ pub struct FinalizeSigningResponse {
 pub mod btc_server_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
+    use tonic::codegen::http::Uri; 
     #[derive(Debug, Clone)]
     pub struct BtcServerClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -573,6 +614,31 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "FinalizeSigning"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_all_utxos(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAllUtxosResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetAllUtxos",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetAllUtxos"));
             self.inner.unary(req, path, codec).await
         }
     }

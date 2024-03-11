@@ -42,6 +42,7 @@ prost = "0.12.3"
 
 # clap
 clap = { version = "4.3.22", features = [ "derive" ] }
+futures-util = "0.3.30"
 
 [build-dependencies]
 tonic-build = "0.11.0"
