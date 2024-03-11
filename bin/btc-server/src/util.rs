@@ -116,7 +116,8 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Parsi
 ///
 /// # Returns
 ///
-/// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if successful, or an Error if the parsing fails.
+/// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if
+/// successful, or an Error if the parsing fails.
 pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> {
     let eth_addr_vec = hex::decode(eth_address)
         .map_err(|_e| ParsingError::InvalidEthAddress("Failed to decode hex"))?;
@@ -140,13 +141,15 @@ pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], Parsin
     Ok(session_id_array)
 }
 
-/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT (Partially Signed Bitcoin Transaction),
-/// public key, and associated Bitcoin transaction details.
+/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT
+/// (Partially Signed Bitcoin Transaction), public key, and associated Bitcoin transaction details.
 ///
 /// # Arguments
 ///
-/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction details.
-/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any taptweaks or eth addresses.
+/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction
+///   details.
+/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any
+///   taptweaks or eth addresses.
 ///
 /// # Returns
 ///
@@ -191,8 +194,9 @@ pub enum PsbtToSigningPackageConversionError {
 /// Converts a PSBT into a vector of Frost signing packages.
 ///
 /// This function takes a PSBT as input and processes each input to generate the necessary signing
-/// packages for Frost signature generation. It returns a vector of `frost::SigningPackage` instances,
-/// each containing the signing commitments and other relevant information for the corresponding PSBT input.
+/// packages for Frost signature generation. It returns a vector of `frost::SigningPackage`
+/// instances, each containing the signing commitments and other relevant information for the
+/// corresponding PSBT input.
 ///
 /// # Arguments
 ///
@@ -200,9 +204,8 @@ pub enum PsbtToSigningPackageConversionError {
 ///
 /// # Returns
 ///
-/// Returns a `Result` containing a vector of `frost::SigningPackage` instances if the conversion is successful,
-/// or an error of type `PsbtToSigningPackageConversionError` otherwise.
-///
+/// Returns a `Result` containing a vector of `frost::SigningPackage` instances if the conversion is
+/// successful, or an error of type `PsbtToSigningPackageConversionError` otherwise.
 pub fn psbt_to_signing_packages(
     psbt: &Psbt,
 ) -> Result<Vec<frost::SigningPackage>, PsbtToSigningPackageConversionError> {

@@ -51,7 +51,6 @@ fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, Key
     Ok(scalar)
 }
 
-
 // Deprecated
 pub fn tweak_private_key(tweak: &[u8; 32], prv: &SecretKey) -> Result<SecretKey, KeyError> {
     let scalar = generate_tweak_scalar(tweak, &prv.public_key(&SECP))?;
@@ -72,7 +71,7 @@ pub fn tweak_public_key(
 
 #[cfg(test)]
 mod tests {
-    use secp256k1::Secp256k1;
+    use secp256k1::{Message, Secp256k1};
 
     use super::*;
     const ETH_ADDRESS: [u8; 32] = [

@@ -1,4 +1,4 @@
-use client::{BtcServerClient, DkgPayload, GetPublicKeyResponse};
+use client::{BtcServerClient, DkgPayload, GetPublicKeyRequest, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostHandle},
@@ -247,8 +247,12 @@ impl DKGStateMachine {
     }
 
     pub(crate) async fn get_public_key(&mut self) -> Result<GetPublicKeyResponse, Error> {
-        let round3_payload =
-            self.btc_client.get_public_key(tonic::Request::new(client::Empty {})).await;
+        let round3_payload = self
+            .btc_client
+            .get_public_key(tonic::Request::new(GetPublicKeyRequest {
+                eth_address: "XXX".to_string(),
+            }))
+            .await; // TODO: fix me
         let round3_payload = match round3_payload {
             Ok(round3_payload) => round3_payload.into_inner(),
             Err(e) => match e.code() {

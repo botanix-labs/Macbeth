@@ -1,6 +1,4 @@
-use crate::App;
-use crate::DbError;
-use crate::Error;
+use crate::{App, DbError, Error};
 use std::collections::BTreeMap;
 
 use frost_secp256k1_tr as frost;
