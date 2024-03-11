@@ -189,8 +189,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // fetch and store bitcoin block filters
         let is_testnet = is_testnet(self.config.chain.chain.id());
         let confirmation_depth = get_confirmation_depth(is_testnet);
-        let bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>> =
-        Arc::new(RwLock::new(None));
+        let bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>> = Arc::new(RwLock::new(None));
         let bitcoin_block_filters_clone = bitcoin_block_filters.clone();
         let bitcoind_config_clone = bitcoind_config.clone();
 
@@ -206,14 +205,22 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 let tip = match bitcoind_client.get_tip().await {
                     Ok(tip) => tip,
                     Err(_) => {
-                        error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                        error!(target: "reth::cli", "Failed to fetch the tip in block filter task. Retrying...");
                         tokio::time::sleep(sleep_ms).await;
                         continue;
                     }
                 };
+
+                // prune filters older than confirmation_depth
+                let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
+                current_filters.retain(|(_, filter_height)| *filter_height > tip - confirmation_depth_u64);
                 
-                let start = tip -  <u32 as Into<u64>>::into(confirmation_depth);
+                let start = tip -  confirmation_depth_u64;
                 for height in start..=tip {
+                    // don't fetch filters we already have
+                    if !current_filters.is_empty() && current_filters.iter().any(|(_, filter_height)| *filter_height == height) {
+                        continue;
+                    }
                     let block_hash = match bitcoind_client.get_block_hash(height).await {
                         Ok(block_hash) => block_hash,
                         Err(_) => {
@@ -239,6 +246,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 drop(filters_write);
             }
         }));
+        info!(target: "reth::cli", "Spawned async bitcoin block filter task");
 
         let bitcoind_config = bitcoind_config.clone();
         executor.spawn_critical(
@@ -467,6 +475,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             canon_state_notification_sender.clone(),
             btc_server_client.clone(),
             bitcoin_block_headers_clone,
+            bitcoin_block_filters_clone,
             bitcoind_config,
             secp256k1::Secp256k1::new(),
             network_sk,
