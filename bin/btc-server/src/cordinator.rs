@@ -1,26 +1,26 @@
-use crate::database::Utxo;
-use crate::util::retrieve_all_partial_signatures;
-use crate::util::retrieve_all_signing_commitments;
+use crate::{
+    database::Utxo,
+    util::{retrieve_all_partial_signatures, retrieve_all_signing_commitments},
+};
 
-use crate::util::VerifyingKeyExtError;
-use crate::DbError;
-use crate::SECP;
+use crate::{util::VerifyingKeyExtError, DbError, SECP};
 
 use std::collections::HashMap;
 
-use crate::util::{self, VerifyingKeyExt};
-use crate::{database, util::OutPointExt, App, Error};
-use bdk::wallet::coin_selection::CoinSelectionAlgorithm;
+use crate::{
+    database,
+    util::{self, OutPointExt, VerifyingKeyExt},
+    App, Error,
+};
 use bdk::{
-    miniscript::psbt::Error as PsbtError, wallet::coin_selection::Error as BdkCoinselectionError,
+    miniscript::psbt::Error as PsbtError,
+    wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use bitcoin::Transaction;
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
-use reth_btc_wallet::transaction::CalculateSighashError;
-use reth_btc_wallet::transaction::ETH_ADDRESS_FIELD;
+use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
 
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
@@ -214,18 +214,18 @@ impl App {
         Ok(psbt)
     }
 
-    /// If no Err is return the orignial psbt served to this function is good to go out to the signers
-    /// nothing needs to be added to it as the signers all provided their signing commitments already
-    /// and the coordinator just need to verify them  
+    /// If no Err is return the orignial psbt served to this function is good to go out to the
+    /// signers nothing needs to be added to it as the signers all provided their signing
+    /// commitments already and the coordinator just need to verify them  
     pub(crate) fn get_to_sign(
         &self,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
         let _pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
 
-        // Note that the tweaks and signing commitments should be explicitly verified by the signers before signing
-        // Instead we can add it to the psbt as a proprietary field for each input
-        // Lastly save this to sign package to the db
+        // Note that the tweaks and signing commitments should be explicitly verified by the signers
+        // before signing Instead we can add it to the psbt as a proprietary field for each
+        // input Lastly save this to sign package to the db
 
         if let Some(psbt) = self.db.get_psbt(&signing_session_id)? {
             let signing_commitments = retrieve_all_signing_commitments(&psbt)?;
@@ -275,8 +275,8 @@ impl App {
             let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
 
             // Skipping first byte which is encoding the parity of the y cord of R
-            // We only use x-only elements. So we can skip this byte. FROST library only produces x-only keys / points
-            // TODO (armins) remove the unwrap here
+            // We only use x-only elements. So we can skip this byte. FROST library only produces
+            // x-only keys / points TODO (armins) remove the unwrap here
             let secp_sig =
                 bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..])
                     .unwrap();

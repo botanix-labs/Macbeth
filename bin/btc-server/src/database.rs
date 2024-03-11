@@ -85,7 +85,6 @@ impl Db {
     }
 
     /// Adds a PSBT to the database.
-    ///
     pub fn update_psbt(&self, signing_session_id: &[u8; 32], psbt: &Psbt) -> Result<(), Error> {
         let mut bytes = Vec::new();
         if let Some(b) = self.psbt.get(&signing_session_id[..])? {
@@ -103,7 +102,6 @@ impl Db {
     /// Get PSBT from the database.
     /// Returns None if the PSBT is not found.
     /// Rertieves psbt using signing_session_id
-    ///
     pub fn get_psbt(&self, signing_session_id: &[u8; 32]) -> Result<Option<Psbt>, Error> {
         if let Some(b) = self.psbt.get(&signing_session_id[..])? {
             let ret = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
@@ -120,7 +118,6 @@ impl Db {
     /// Returns `Ok(Some(public_key_package))` if the public key package is found in the database.
     /// Returns `Ok(None)` if the public key package is not found.
     /// Returns `Err` in case of deserialization or other errors.
-    ///
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
         if let Some(b) = self.db.get(PUBKEY_PACKAGE)? {
             let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
@@ -189,8 +186,10 @@ impl Db {
     ///
     /// # Arguments
     ///
-    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 2 DKG package is being added.
-    /// * `dkg_round2_package` - The `frost::keys::dkg::round2::Package` representing the round 2 DKG package.
+    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 2 DKG package is being
+    ///   added.
+    /// * `dkg_round2_package` - The `frost::keys::dkg::round2::Package` representing the round 2
+    ///   DKG package.
     ///
     /// # Returns
     ///
@@ -218,8 +217,10 @@ impl Db {
     ///
     /// # Arguments
     ///
-    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 1 DKG package is being added.
-    /// * `dkg_round1` - The `frost::keys::dkg::round1::Package` representing the round 1 DKG package.
+    /// * `peer_id` - The `frost::Identifier` of the peer for whom the round 1 DKG package is being
+    ///   added.
+    /// * `dkg_round1` - The `frost::keys::dkg::round1::Package` representing the round 1 DKG
+    ///   package.
     ///
     /// # Returns
     ///
@@ -252,7 +253,8 @@ impl Db {
     ///
     /// # Errors
     ///
-    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling serialization errors.
+    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling
+    /// serialization errors.
     pub fn get_round2_dkg_packages(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, Error> {
@@ -282,7 +284,8 @@ impl Db {
     ///
     /// # Errors
     ///
-    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling serialization errors.
+    /// Returns an `Err` if there is an issue deserializing the DKG packages or handling
+    /// serialization errors.
     pub fn get_round1_dkg_packages(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round1::Package>, Error> {

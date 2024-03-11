@@ -1,9 +1,10 @@
-use crate::util::{
-    add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
-    psbt_to_signing_packages, VerifyingKeyExt,
+use crate::{
+    util::{
+        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
+        psbt_to_signing_packages, VerifyingKeyExt,
+    },
+    App, DbError, Error,
 };
-use crate::DbError;
-use crate::{App, Error};
 
 use bitcoin::psbt::Psbt;
 
@@ -164,7 +165,8 @@ impl App {
         for (index, signing_package) in signing_packages.iter().enumerate() {
             // Check if this signer is in the signing set
             // This should also implicitly validate the psbt
-            // In other words this signer would have never provided nonce pairs if the psbt was not valid from round 1
+            // In other words this signer would have never provided nonce pairs if the psbt was not
+            // valid from round 1
             let signing_commitments = signing_package.signing_commitments();
             if !signing_commitments.contains_key(&self.identifier) {
                 return Err(SigningRound2Error::SignerNotFound(index));

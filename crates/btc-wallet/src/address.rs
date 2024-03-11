@@ -169,7 +169,7 @@ where
     secret_key.add_tweak(&tweak).expect("legal tweak")
 }
 
-pub fn generate_taproot_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
+pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> ScriptBuf {
     // This is commented out for now b/c the frost library only supports empty merkel root
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
@@ -181,11 +181,14 @@ pub fn generate_taproot_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
     bitcoin::ScriptBuf::new_v1_p2tr_tweaked(tweaked_pk)
 }
 
-pub fn generate_taproot_change_scriptpubkey(secp: &Secp256k1<impl Verification>, public_key: &PublicKey) -> ScriptBuf {
+pub fn generate_taproot_change_scriptpubkey(
+    secp: &Secp256k1<impl Verification>,
+    public_key: &PublicKey,
+) -> ScriptBuf {
     // This is commented out for now b/c the frost library only supports empty merkel root
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
-    
+
     bitcoin::ScriptBuf::new_v1_p2tr(&secp, public_key.x_only_public_key().0, None)
 }
 
@@ -219,7 +222,7 @@ mod tests {
         )
         .unwrap();
 
-        let gateway = gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
+        let gateway = gateway_address(&key_pair.public_key(), network).unwrap();
         assert_eq!(
             gateway.to_string(),
             "tb1pjutmjkwrwjejxn988mt35528schetrrsgexhv24fxhn7nk6pvs7qd66dne"
