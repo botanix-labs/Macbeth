@@ -697,6 +697,27 @@ impl rpc::BtcServer for App {
         let res = rpc::GetAllUtxosResponse { utxos };
 
         Ok(tonic::Response::new(res))
+    }
+
+    async fn remove_utxo(
+        &self,
+        request: tonic::Request<rpc::RemoveUtxoRequest>,
+    ) -> Result<tonic::Response<rpc::RemoveUtxoResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        let txid = bitcoin::Txid::from_str(&req.txid).map_err(|e| {
+            tonic::Status::invalid_argument(format!("Invalid txid: {}", e))
+        })?;
+
+        let outpoint = bitcoin::OutPoint::new(txid, req.vout);
+
+        match self.db.remove_utxo(outpoint).await {
+            Ok(_) => Ok(tonic::Response::new(rpc::RemoveUtxoResponse {
+                success: true,
+                message: "UTXO removed successfully".to_string(),
+            })),
+            Err(e) => Err(tonic::Status::internal(format!("Failed to remove UTXO: {}", e))),
+        }
     } 
 }
 
@@ -1367,5 +1388,36 @@ mod test {
         assert!(response.is_ok());
         let response = response.unwrap().into_inner();
         assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
+    }
+
+    #[tokio::test]
+    async fn test_remove_utxo() {
+        let app = setup();
+        let mut rng = thread_rng();
+    
+        // Create and store a single UTXO
+        let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+        let vout = rng.gen_range(0..u32::MAX);
+        let value = rng.gen_range(1..1_000_000);
+        let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+        let script = Script::from_bytes(script_bytes.as_slice());
+    
+        let utxo = Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value, script_pubkey: script.into() },
+            None,
+        );
+        app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+    
+        // Ensure the UTXO is stored
+        let all_utxos_before = app.db.get_all_utxos().await.expect("Failed to retrieve UTXOs");
+        assert_eq!(all_utxos_before.len(), 1, "Expected 1 UTXO in the database before removal");
+    
+        // Remove the UTXO
+        app.db.remove_utxo(utxo.outpoint).await.expect("Failed to remove UTXO");
+    
+        // Verify the UTXO has been removed
+        let all_utxos_after = app.db.get_all_utxos().await.expect("Failed to retrieve UTXOs");
+        assert!(all_utxos_after.is_empty(), "Expected no UTXOs in the database after removal");
     }
 }

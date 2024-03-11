@@ -41,6 +41,26 @@ pub struct GetAllUtxosResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveUtxoRequest {
+    /// The txid of the UTXO to remove.
+    #[prost(string, tag = "1")]
+    pub txid: ::prost::alloc::string::String,
+    /// The output index of the UTXO to remove.
+    #[prost(uint32, tag = "2")]
+    pub vout: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveUtxoResponse {
+    /// Indicates if the UTXO was successfully removed.
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    /// Optional message with details about the operation.
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotifyPeginRequest {
     /// The txid of the utxo in hex.
     #[prost(string, tag = "1")]
@@ -639,6 +659,32 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetAllUtxos"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Update the RemoveUtxo method to return the new response type
+        pub async fn remove_utxo(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveUtxoRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveUtxoResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/RemoveUtxo",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "RemoveUtxo"));
             self.inner.unary(req, path, codec).await
         }
     }

@@ -40,6 +40,9 @@ service BtcServer {
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
+    // Update the RemoveUtxo method to return the new response type
+    rpc RemoveUtxo(RemoveUtxoRequest) returns (RemoveUtxoResponse) {}
+
 }
 
 message ScriptBuf {
@@ -68,6 +71,19 @@ message GetAllUtxosResponse {
     repeated Utxo utxos = 1;
 }
 
+message RemoveUtxoRequest {
+    // The txid of the UTXO to remove.
+    string txid = 1;
+    // The output index of the UTXO to remove.
+    uint32 vout = 2;
+}
+
+message RemoveUtxoResponse {
+    // Indicates if the UTXO was successfully removed.
+    bool success = 1;
+    // Optional message with details about the operation.
+    string message = 2;
+}
 
 message NotifyPeginRequest {
     // The txid of the utxo in hex.

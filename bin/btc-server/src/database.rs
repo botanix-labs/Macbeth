@@ -378,6 +378,12 @@ impl Db {
         }
         Ok(utxos)
     }
+
+    /// Removes an utxo from the database.
+    pub async fn remove_utxo(&self, outpoint: OutPoint) -> Result<(), Error> {
+        self.utxos.remove(&outpoint.to_bytes()[..])?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error)]
