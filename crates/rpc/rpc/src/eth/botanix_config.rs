@@ -9,11 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use url::Url;
 
-// TODO Secp should be getting pulled from provider
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
-
 /// Settings for the [BotanixConfig]
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BotanixConfig {
@@ -92,9 +87,13 @@ pub enum GatewayAddressRPCError {
     /// Failed to decode value recieved from `btc_server`
     FailedToDecodeAggregatePublicKey(hex::FromHexError),
     /// Invalid param recieved from client
-    InvalidParam(&'static str),
+    InvalidParam(tonic::Status),
     /// Address generation failed
     FailedToGenerateGatewayAddress,
+    /// Secp key conversion failed
+    FailedToConvertPublicKey(secp256k1::Error),
+    /// Address is generated for incorrect Network
+    InvalidNetwork,
 }
 
 /// Errors from get merkle proof RPC endpoint
@@ -180,20 +179,22 @@ impl Botanix {
         let response = client
             .get_gateway_address(request)
             .await
-            .map_err(|e| {
-                GatewayAddressRPCError::InvalidParam(
-                    format!("Failed to get public key: {}", e).as_str(),
-                )
-            })?
+            .map_err(|e| GatewayAddressRPCError::InvalidParam(e))?
             .into_inner();
 
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
-            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?
+            .assume_checked();
+
+        if address.network != self.botanix_rpc_config.bitcoin_network {
+            return Err(GatewayAddressRPCError::InvalidNetwork);
+        }
 
         let pk = secp256k1::PublicKey::from_slice(
-            &hex::decode(response.aggregate_public_key)
+            &hex::decode(response.publickey.as_str())
                 .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
-        )?;
+        )
+        .map_err(|e| GatewayAddressRPCError::FailedToConvertPublicKey(e))?;
 
         Ok((address, pk))
     }
