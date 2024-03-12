@@ -1,4 +1,5 @@
 use crate::{epoch_manager::EpochManager, Storage};
+use bitcoin::BlockHash;
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::bitcoind::BitcoindClient;
@@ -40,7 +41,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Recent bitcoin block filters
-    pub(crate) bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>>,
+    pub(crate) bitcoin_block_filters: Arc<RwLock<Option<Vec<BlockFilterData>>>>,
     /// Bitcoind client
     pub(crate) bitcoind_client: BitcoindClient,
     /// Instance of secp
@@ -79,7 +80,7 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>>,
+        bitcoin_block_filters: Arc<RwLock<Option<Vec<BlockFilterData>>>>,
         bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
@@ -127,4 +128,11 @@ impl<Client, EvmConfig: std::fmt::Debug, Engine: EngineTypes> std::fmt::Debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Authority Block Production Task").finish_non_exhaustive()
     }
+}
+
+#[derive(Clone)]
+pub struct BlockFilterData {
+    pub block_hash: BlockHash,
+    pub block_height: u64,
+    pub filter: Vec<u8>,
 }

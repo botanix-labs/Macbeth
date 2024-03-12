@@ -29,6 +29,7 @@ use tokio::sync::{
 };
 
 use crate::sync::SyncController;
+use crate::task::BlockFilterData;
 use tracing::error;
 
 use bitcoincore_rpc::json;
@@ -43,7 +44,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>>,
+    bitcoin_block_filters: Arc<RwLock<Option<Vec<BlockFilterData>>>>,
     bitcoind_config: BitcoindConfig,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
@@ -91,7 +92,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>>,
+        bitcoin_block_filters: Arc<RwLock<Option<Vec<BlockFilterData>>>>,
         bitcoind_config: BitcoindConfig,
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected

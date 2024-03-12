@@ -12,7 +12,7 @@ use crate::{
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
-use reth_authority_consensus::{AuthorityConsensusBuilder, utils::{is_testnet, get_confirmation_depth}};
+use reth_authority_consensus::{AuthorityConsensusBuilder, task::BlockFilterData, utils::{is_testnet, get_confirmation_depth}};
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
     BeaconConsensusEngine, BeaconConsensusEngineError, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -189,7 +189,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // fetch and store bitcoin block filters
         let is_testnet = is_testnet(self.config.chain.chain.id());
         let confirmation_depth = get_confirmation_depth(is_testnet);
-        let bitcoin_block_filters: Arc<RwLock<Option<Vec<(json::GetBlockFilterResult, u64)>>>> = Arc::new(RwLock::new(None));
+        let bitcoin_block_filters: Arc<RwLock<Option<Vec<BlockFilterData>>>> = Arc::new(RwLock::new(None));
         let bitcoin_block_filters_clone = bitcoin_block_filters.clone();
         let bitcoind_config_clone = bitcoind_config.clone();
 
@@ -197,7 +197,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             let sleep_ms = tokio::time::Duration::from_millis(5000);
             let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
 
-            let mut current_filters: Vec<(json::GetBlockFilterResult, u64)> = match bitcoin_block_filters.read().await.clone() {
+            let mut current_filters: Vec<BlockFilterData> = match bitcoin_block_filters.read().await.clone() {
                 Some(filters) => filters,
                 None => Vec::new(),
             };
@@ -213,12 +213,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
                 // prune filters older than confirmation_depth
                 let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
-                current_filters.retain(|(_, filter_height)| *filter_height > tip - confirmation_depth_u64);
+                current_filters.retain(|filter| filter.block_height > tip - confirmation_depth_u64);
                 
                 let start = tip -  confirmation_depth_u64;
                 for height in start..=tip {
                     // don't fetch filters we already have
-                    if !current_filters.is_empty() && current_filters.iter().any(|(_, filter_height)| *filter_height == height) {
+                    if !current_filters.is_empty() && current_filters.iter().any(|filter| filter.block_height == height) {
                         continue;
                     }
                     let block_hash = match bitcoind_client.get_block_hash(height).await {
@@ -232,7 +232,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                     
                     match bitcoind_client.get_block_filter(block_hash).await {
                         Ok(block_filter) => {
-                            current_filters.push((block_filter, height));
+                            let block_filter_data = BlockFilterData {
+                                block_hash,
+                                block_height: height,
+                                filter: block_filter.filter,
+                            };
+                            current_filters.push(block_filter_data);
                         }
                         Err(_) => {
                             error!(target: "reth::cli", "Failed to fetch block filter. Retrying...");

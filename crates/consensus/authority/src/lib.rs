@@ -59,7 +59,7 @@ mod engine_util;
 mod epoch_manager;
 mod frost_task;
 mod sync;
-mod task;
+pub mod task;
 pub mod utils;
 mod voting;
 
