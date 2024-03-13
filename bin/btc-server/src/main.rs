@@ -5,6 +5,7 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod merkle;
 mod shutdown;
 mod signer;
 mod util;
@@ -284,12 +285,11 @@ impl rpc::BtcServer for App {
             error!("Failed to parse eth address: {}", e);
             badarg!("Failed to parse eth address: {}", e)
         })?;
-        let utxo = Utxo {
+        let utxo = Utxo::new(
             outpoint,
-            output: btcencode::deserialize(&req.output)
-                .map_err(|e| badarg!("bad txout format: {}", e))?,
-            eth_address: Some(eth_addr),
-        };
+            btcencode::deserialize(&req.output).map_err(|e| badarg!("bad txout format: {}", e))?,
+            Some(eth_addr),
+        );
 
         self.add_pegin(&utxo).map_err(|e| {
             error!("Failed to add pegin: {}", e);
@@ -689,7 +689,7 @@ impl rpc::BtcServer for App {
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
-        let db_utxos = self.db.get_all_utxos().await.map_err(|e| {
+        let db_utxos = self.db.get_all_utxos().map_err(|e| {
             error!("Failed to get utxos: {}", e);
             internal!("Failed to get utxos: {}", e)
         })?;
@@ -705,13 +705,12 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::RemoveUtxoResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        let txid = bitcoin::Txid::from_str(&req.txid).map_err(|e| {
-            tonic::Status::invalid_argument(format!("Invalid txid: {}", e))
-        })?;
+        let txid = bitcoin::Txid::from_str(&req.txid)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid txid: {}", e)))?;
 
         let outpoint = bitcoin::OutPoint::new(txid, req.vout);
 
-        match self.db.remove_utxo(outpoint).await {
+        match self.db.remove_utxo(outpoint) {
             Ok(_) => Ok(tonic::Response::new(rpc::RemoveUtxoResponse {
                 success: true,
                 message: "UTXO removed successfully".to_string(),
@@ -808,11 +807,10 @@ mod test {
         absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
     use frost::keys::dkg::round1;
-    use rand::RngCore;
 
     use frost_secp256k1_tr as frost;
     use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
-    use test_log::test;
+    use rand::RngCore;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
 
@@ -1183,11 +1181,7 @@ mod test {
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
         // Add the utxo
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
 
         let nonce_commits = app.get_round1_signing_package(&mut psbt, &signing_session_id);
@@ -1222,11 +1216,8 @@ mod test {
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
         // Add the utxo
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
+
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .expect("valid nonce commits request");
@@ -1244,11 +1235,7 @@ mod test {
 
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .expect("valid nonce commits request");
@@ -1394,30 +1381,30 @@ mod test {
     async fn test_remove_utxo() {
         let app = setup();
         let mut rng = thread_rng();
-    
+
         // Create and store a single UTXO
         let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
         let vout = rng.gen_range(0..u32::MAX);
         let value = rng.gen_range(1..1_000_000);
         let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
         let script = Script::from_bytes(script_bytes.as_slice());
-    
+
         let utxo = Utxo::new(
             OutPoint::new(txid, vout),
             TxOut { value, script_pubkey: script.into() },
             None,
         );
         app.db.store_utxo(&utxo).expect("Failed to store UTXO");
-    
+
         // Ensure the UTXO is stored
-        let all_utxos_before = app.db.get_all_utxos().await.expect("Failed to retrieve UTXOs");
+        let all_utxos_before = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
         assert_eq!(all_utxos_before.len(), 1, "Expected 1 UTXO in the database before removal");
-    
+
         // Remove the UTXO
-        app.db.remove_utxo(utxo.outpoint).await.expect("Failed to remove UTXO");
-    
+        app.db.remove_utxo(utxo.outpoint).expect("Failed to remove UTXO");
+
         // Verify the UTXO has been removed
-        let all_utxos_after = app.db.get_all_utxos().await.expect("Failed to retrieve UTXOs");
+        let all_utxos_after = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
         assert!(all_utxos_after.is_empty(), "Expected no UTXOs in the database after removal");
     }
 }

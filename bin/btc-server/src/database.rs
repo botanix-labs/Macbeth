@@ -13,6 +13,7 @@ use bitcoin::{
 use ciborium;
 use frost_secp256k1_tr as frost;
 
+
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
@@ -24,6 +25,8 @@ const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const PSBT: &[u8; 4] = b"psbt";
+/// sled tree id for the Merkle trees.
+const TREE_MERKLE: &[u8; 6] = b"merkle";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -66,6 +69,9 @@ pub struct Db {
     /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
+
+    /// A tree of merkle trees
+    merkle_trees: sled::Tree,
 }
 
 impl Db {
@@ -76,6 +82,7 @@ impl Db {
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(PSBT)?,
+            merkle_trees: db.open_tree(TREE_MERKLE)?,
             db,
         })
     }
@@ -86,6 +93,7 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
+        self.merkle_trees.flush()?;
         Ok(())
     }
 
@@ -369,7 +377,7 @@ impl Db {
     }
 
     /// Retrieves all utxos from the database.
-    pub async fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
+    pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
         for res in self.utxos.iter() {
             let (_k, v) = res?;
@@ -380,10 +388,33 @@ impl Db {
     }
 
     /// Removes an utxo from the database.
-    pub async fn remove_utxo(&self, outpoint: OutPoint) -> Result<(), Error> {
+    pub fn remove_utxo(&self, outpoint: OutPoint) -> Result<(), Error> {
         self.utxos.remove(&outpoint.to_bytes()[..])?;
         Ok(())
     }
+
+/// Stores the Merkle root of UTXOs for a given transaction ID.
+pub fn store_utxo_merkle_root(
+    &self,
+    txid: &bitcoin::Txid,
+    merkle_root: &[u8; 32],
+) -> Result<(), sled::Error> {
+    let txid_bytes = bitcoin::consensus::encode::serialize(txid);
+    self.merkle_trees.insert(&txid_bytes, merkle_root)?;
+    Ok(())
+}
+
+/// Retrieves the Merkle root of UTXOs for a given transaction ID.
+pub fn get_utxo_merkle_root_txid(&self, txid: &bitcoin::Txid) -> Result<Option<[u8; 32]>, sled::Error> {
+    let txid_bytes = bitcoin::consensus::encode::serialize(txid);
+    self.merkle_trees.get(&txid_bytes).map(|opt| {
+        opt.map(|ivec| {
+            let bytes: [u8; 32] =
+                ivec.as_ref().try_into().expect("Merkle root should be 32 bytes");
+            bytes
+        })
+    })
+}
 }
 
 #[derive(Debug, Error)]
