@@ -9,6 +9,7 @@ use crate::{
         init::init_genesis,
     },
 };
+use bitcoin::hashes::Hash;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
@@ -191,29 +192,22 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 let sleep_ms = tokio::time::Duration::from_millis(5000);
                 let mut tip = 0u64;
                 let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
+                let mut current_block_hash = bitcoin::BlockHash::all_zeros();
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
-                    let current_tip = match bitcoind_client.get_tip().await {
-                        Ok(current_tip) => current_tip,
+                    let best_block_hash = match bitcoind_client.get_best_block_hash().await {
+                        Ok(current_block_hash) => current_block_hash,
                         Err(_) => {
                             drop(header_write);
-                            error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                            error!(target: "reth::cli", "Failed to fetch the best block hash. Retrying...");
                             tokio::time::sleep(sleep_ms).await;
                             continue;
                         }
                     };
-                    if current_tip != tip {
+                   
+                    if current_block_hash != best_block_hash {
                         info!("Async bitcoin worker tip mismatch");
-                        let block_hash = match bitcoind_client.get_block_hash(current_tip).await {
-                            Ok(block_hash) => block_hash,
-                            Err(_) => {
-                                drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch a block hash. Retrying...");
-                                tokio::time::sleep(sleep_ms).await;
-                                continue;
-                            }
-                        };
-                        let block_header = match bitcoind_client.get_block_header(block_hash).await {
+                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash).await {
                             Ok(block_header) => block_header,
                             Err(_) => {
                                 drop(header_write);
@@ -222,10 +216,20 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                                 continue;
                             }
                         };
+
+                        let tip = match bitcoind_client.get_tip().await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch best tip. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
                         // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some((block_header, current_tip.try_into().expect("Failed to convert current tip from u64 to u32")));
+                        *header_write = Some((block_header, tip.try_into().expect("valid conversion")));
                         drop(header_write);
-                        tip = current_tip;
+                        current_block_hash = best_block_hash;
                     }
                     tokio::time::sleep(sleep_ms).await;
                 }
