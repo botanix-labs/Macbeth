@@ -1,5 +1,6 @@
 use client::MakeTxRequest;
 use futures_util::{stream::FuturesUnordered, StreamExt};
+use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
@@ -47,7 +48,7 @@ where
     ///
     /// # Returns
     ///
-    /// A vector of `MakeTxRequest` representing the pegouts in the epoch
+    /// A vector of `PegoutData` representing the pegouts in the epoch
     pub(crate) async fn epoch_pegouts(
         &self,
         best_block: u64,
@@ -63,7 +64,7 @@ where
                         .receipts_by_block(BlockHashOrNumber::Number(block.header.number))
                     {
                         Ok(Some(receipts)) => {
-                            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+                            let mut pegouts: Vec<PegoutData> = Vec::new();
                             let mut futures = Vec::new();
 
                             for receipt in receipts {

@@ -4,7 +4,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{BlockNumber, BlockWithSenders, PruneModes, Receipt, U256};
+use reth_primitives::{botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256};
 use std::sync::Arc;
 /// Test executor with mocked result.
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
-        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest)
@@ -29,7 +29,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
-        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest)
@@ -41,7 +41,7 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
-        _recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         Err(BlockExecutionError::UnavailableForTest)
     }
