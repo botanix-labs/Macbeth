@@ -12,24 +12,24 @@
 To run the stack locally, please go through the following steps to ensure you have all necessary prerequisites:
 
 1. Install `rust` (best way to install it is through the rustup toolchain: [rust](https://rustup.rs/) - depending on your OS). Default to nightly version. Minimum required version is `1.75`.
-2. Install `docker` on your OS - simply follow the instructions here: [docker](https://docs.docker.com/engine/install/)
-3. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
-4. Install and set up `git` to use ssh.
-7. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
-8. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
-9. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
-9. Install [k9s](https://k9scli.io/topics/install/)
+1. Install `docker` on your OS - simply follow the instructions here: [docker](https://docs.docker.com/engine/install/)
+1. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
+1. Install and set up `git` to use ssh.
+1. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
+1. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+1. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
+1. Install [k9s](https://k9scli.io/topics/install/)
 
 ## Connecting to bitcoind on the cluster
 
 1. Install google cloud cli following the link here [gpc](https://cloud.google.com/sdk/docs/install) depending on your platform.
-2. Provided you have been given access by an administrator, connect to the google cloud cluster where the bitcoind server is running using:
+1. Provided you have been given access by an administrator, connect to the google cloud cluster where the bitcoind server is running using:
 
 ```shell
 gcloud container clusters get-credentials botanixlabs-cluster-dev --region us-central1 --project botanix-391913
 ```
-3. Install [k9s](https://k9scli.io/topics/install/) depending on your platform.
-4. Start `k9s` using the following command:
+1. Install [k9s](https://k9scli.io/topics/install/) depending on your platform.
+1. Start `k9s` using the following command:
 ```shell
 KUBE_EDITOR=nano k9s
 ```
