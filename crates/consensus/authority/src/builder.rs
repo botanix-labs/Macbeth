@@ -231,13 +231,14 @@ where
             evm_config.clone(),
         );
 
-        // FIX the unwrap
+        // TODO FIX the unwrap
         let frost_task = FrostTask::new(
             btc_server.clone(),
             network_handle.clone(),
             frost_handle.expect("Requires frost handle"),
             epoch_manager.clone(),
             frost_config,
+            storage.clone(),
         );
 
         let bitcoind_client =

@@ -7781,6 +7781,7 @@ name = "reth-revm"
 version = "0.1.0-alpha.20"
 dependencies = [
  "bitcoin",
+ "lazy_static",
  "reth-botanix-lib",
  "reth-consensus-common",
  "reth-interfaces",
