@@ -45,6 +45,9 @@ pub mod transaction;
 pub mod trie;
 mod withdrawal;
 
+// Botanix specific stuff
+pub mod botanix;
+
 pub use account::{Account, Bytecode};
 pub use block::{
     Block, BlockBody, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, BlockWithSenders,
