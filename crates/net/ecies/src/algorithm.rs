@@ -1,5 +1,4 @@
 #![allow(missing_docs)]
-
 use crate::{
     error::ECIESErrorImpl,
     mac::{HeaderBytes, MAC},
@@ -23,6 +22,7 @@ use secp256k1::{
 };
 use sha2::Sha256;
 use sha3::Keccak256;
+use std::convert::TryFrom;
 
 const PROTOCOL_VERSION: usize = 4;
 
@@ -89,7 +89,7 @@ pub struct ECIES {
 
 fn split_at_mut<T>(arr: &mut [T], idx: usize) -> Result<(&mut [T], &mut [T]), ECIESError> {
     if idx > arr.len() {
-        return Err(ECIESErrorImpl::OutOfBounds { idx, len: arr.len() }.into())
+        return Err(ECIESErrorImpl::OutOfBounds { idx, len: arr.len() }.into());
     }
     Ok(arr.split_at_mut(idx))
 }
@@ -235,7 +235,7 @@ impl ECIES {
 
         let check_tag = hmac_sha256(mac_key.as_ref(), &[iv, encrypted_data], auth_data);
         if check_tag != tag {
-            return Err(ECIESErrorImpl::TagCheckDecryptFailed.into())
+            return Err(ECIESErrorImpl::TagCheckDecryptFailed.into());
         }
 
         let decrypted_data = encrypted_data;
@@ -432,15 +432,18 @@ impl ECIES {
         let iv = B128::default();
         let shared_secret: B256 = {
             let mut hasher = Keccak256::new();
-            hasher.update(self.ephemeral_shared_secret.unwrap().0.as_ref());
-            hasher.update(h_nonce.0.as_ref());
+            // Note: need to use `new()` here b/c of conflicting types with rust bitcoin
+            hasher.update(B256::new(self.ephemeral_shared_secret.unwrap().0));
+            hasher.update(alloy_primitives::FixedBytes::new(h_nonce.0));
+
             B256::from(hasher.finalize().as_ref())
         };
 
         let aes_secret: B256 = {
             let mut hasher = Keccak256::new();
-            hasher.update(self.ephemeral_shared_secret.unwrap().0.as_ref());
-            hasher.update(shared_secret.0.as_ref());
+            // Note: need to use `new()` here b/c of conflicting types with rust bitcoin
+            hasher.update(B256::new(self.ephemeral_shared_secret.unwrap().0));
+            hasher.update(alloy_primitives::FixedBytes::new(shared_secret.0));
             B256::from(hasher.finalize().as_ref())
         };
         self.ingress_aes = Some(Ctr64BE::<Aes256>::new((&aes_secret.0).into(), (&iv.0).into()));
@@ -448,8 +451,9 @@ impl ECIES {
 
         let mac_secret: B256 = {
             let mut hasher = Keccak256::new();
-            hasher.update(self.ephemeral_shared_secret.unwrap().0.as_ref());
-            hasher.update(aes_secret.0.as_ref());
+            // Note: need to use `new()` here b/c of conflicting types with rust bitcoin
+            hasher.update(B256::new(self.ephemeral_shared_secret.unwrap().0));
+            hasher.update(alloy_primitives::FixedBytes::new(aes_secret.0));
             B256::from(hasher.finalize().as_ref())
         };
         self.ingress_mac = Some(MAC::new(mac_secret));
@@ -495,12 +499,12 @@ impl ECIES {
         self.ingress_mac.as_mut().unwrap().update_header(header);
         let check_mac = self.ingress_mac.as_mut().unwrap().digest();
         if check_mac != mac {
-            return Err(ECIESErrorImpl::TagCheckHeaderFailed.into())
+            return Err(ECIESErrorImpl::TagCheckHeaderFailed.into());
         }
 
         self.ingress_aes.as_mut().unwrap().apply_keystream(header);
         if header.as_slice().len() < 3 {
-            return Err(ECIESErrorImpl::InvalidHeader.into())
+            return Err(ECIESErrorImpl::InvalidHeader.into());
         }
 
         let body_size = usize::try_from(header.as_slice().read_uint::<BigEndian>(3)?)?;
@@ -547,7 +551,7 @@ impl ECIES {
         self.ingress_mac.as_mut().unwrap().update_body(body);
         let check_mac = self.ingress_mac.as_mut().unwrap().digest();
         if check_mac != mac {
-            return Err(ECIESErrorImpl::TagCheckBodyFailed.into())
+            return Err(ECIESErrorImpl::TagCheckBodyFailed.into());
         }
 
         let size = self.body_size.unwrap();
