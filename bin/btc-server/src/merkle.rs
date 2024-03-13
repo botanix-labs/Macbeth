@@ -34,8 +34,7 @@ pub fn construct_merkle_tree_from_hashes(hashes: &[Vec<u8>]) -> MerkleTree<Merkl
 mod tests {
     use super::*;
     use crate::database::Utxo;
-    use bitcoin::hashes::Hash;
-    use bitcoin::{OutPoint, Script, TxOut, Txid};
+    use bitcoin::{hashes::Hash, OutPoint, Script, TxOut, Txid};
     use rand::{thread_rng, Rng};
 
     // Helper function to create a UTXO with random values

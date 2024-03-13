@@ -20,7 +20,7 @@ use bdk::{
 use bitcoin::Address;
 use crate::merkle;
 use bitcoin::Transaction;
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut}; 
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut}; 
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
@@ -63,29 +63,6 @@ pub enum CoordinatorError {
 }
 
 impl App {
-    // pub(crate) async fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
-    //     if self.db.store_utxo(&utxo)? {
-    //         self.db.flush()?;
-    //         debug!("Stored utxo {}", utxo.outpoint);
-
-    //                 // Hash the new UTXO
-    //     let utxo_hash = merkle::hash_utxo(&utxo);
-
-    //     // Retrieve all UTXOs, hash them, and construct the Merkle tree
-    //     let utxos = self.db.get_all_utxos().await?;
-    //     let utxo_hashes: Vec<[u8; 32]> = utxos.iter().map(merkle::hash_utxo).collect();
-    //     utxo_hashes.push(utxo_hash); // Include the new UTXO hash
-    //     let merkle_tree = merkle::construct_merkle_tree(&utxo_hashes);
-
-    //     // Store the new Merkle root in the database
-    //     let merkle_root = merkle_tree.root();
-    //     self.db.store_utxo_merkle_root(&block_id, &merkle_root)?;
-    //     } else {
-    //         warn!("Duplicate utxo {}", utxo.outpoint);
-    //     }
-    //     Ok(())
-    // }
-
     pub(crate) fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
         if self.db.store_utxo(utxo)? {
             self.db.flush()?;
@@ -99,7 +76,6 @@ impl App {
             let mut utxo_hashes: Vec<[u8; 32]> = utxos.iter().map(merkle::hash_utxo).collect();
             utxo_hashes.push(utxo_hash); // Include the new UTXO hash
 
-
             // Construct the Merkle tree from hashes
             let utxo_hashes_vec_u8: Vec<Vec<u8>> =
                 utxo_hashes.iter().map(|hash| hash.to_vec()).collect();
@@ -107,7 +83,8 @@ impl App {
 
             // Store the new Merkle root in the database
             let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
-            self.db.store_utxo_merkle_root(&utxo.outpoint.txid, &merkle_root)
+            self.db
+                .store_utxo_merkle_root(&utxo.outpoint.txid, &merkle_root)
                 .map_err(|e| CoordinatorError::DbError(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);

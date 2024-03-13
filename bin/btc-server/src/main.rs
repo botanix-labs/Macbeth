@@ -704,7 +704,7 @@ impl rpc::BtcServer for App {
             })),
             Err(e) => Err(tonic::Status::internal(format!("Failed to remove UTXO: {}", e))),
         }
-    } 
+    }
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -785,8 +785,7 @@ mod test {
     };
 
     use crate::rpc::Empty;
-    use bitcoin::blockdata::script::Script;
-    use bitcoin::blockdata::transaction::TxOut;
+    use bitcoin::blockdata::{script::Script, transaction::TxOut};
     use rand::{thread_rng, Rng};
     use tonic::Request;
 
@@ -796,8 +795,8 @@ mod test {
     use frost::keys::dkg::round1;
 
     use frost_secp256k1_tr as frost;
-    use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
     use rand::RngCore;
+    use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
 

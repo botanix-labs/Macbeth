@@ -13,7 +13,6 @@ use bitcoin::{
 use ciborium;
 use frost_secp256k1_tr as frost;
 
-
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
@@ -393,28 +392,31 @@ impl Db {
         Ok(())
     }
 
-/// Stores the Merkle root of UTXOs for a given transaction ID.
-pub fn store_utxo_merkle_root(
-    &self,
-    txid: &bitcoin::Txid,
-    merkle_root: &[u8; 32],
-) -> Result<(), sled::Error> {
-    let txid_bytes = bitcoin::consensus::encode::serialize(txid);
-    self.merkle_trees.insert(&txid_bytes, merkle_root)?;
-    Ok(())
-}
+    /// Stores the Merkle root of UTXOs for a given transaction ID.
+    pub fn store_utxo_merkle_root(
+        &self,
+        txid: &bitcoin::Txid,
+        merkle_root: &[u8; 32],
+    ) -> Result<(), sled::Error> {
+        let txid_bytes = bitcoin::consensus::encode::serialize(txid);
+        self.merkle_trees.insert(&txid_bytes, merkle_root)?;
+        Ok(())
+    }
 
-/// Retrieves the Merkle root of UTXOs for a given transaction ID.
-pub fn get_utxo_merkle_root_txid(&self, txid: &bitcoin::Txid) -> Result<Option<[u8; 32]>, sled::Error> {
-    let txid_bytes = bitcoin::consensus::encode::serialize(txid);
-    self.merkle_trees.get(&txid_bytes).map(|opt| {
-        opt.map(|ivec| {
-            let bytes: [u8; 32] =
-                ivec.as_ref().try_into().expect("Merkle root should be 32 bytes");
-            bytes
+    /// Retrieves the Merkle root of UTXOs for a given transaction ID.
+    pub fn get_utxo_merkle_root_txid(
+        &self,
+        txid: &bitcoin::Txid,
+    ) -> Result<Option<[u8; 32]>, sled::Error> {
+        let txid_bytes = bitcoin::consensus::encode::serialize(txid);
+        self.merkle_trees.get(&txid_bytes).map(|opt| {
+            opt.map(|ivec| {
+                let bytes: [u8; 32] =
+                    ivec.as_ref().try_into().expect("Merkle root should be 32 bytes");
+                bytes
+            })
         })
-    })
-}
+    }
 }
 
 #[derive(Debug, Error)]

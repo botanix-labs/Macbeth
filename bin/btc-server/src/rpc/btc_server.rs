@@ -192,7 +192,7 @@ pub struct FinalizeSigningRequest {
 pub struct FinalizeSigningResponse {
     /// Finalized tx which includes witness data
     #[prost(bytes = "vec", tag = "1")]
-    pub transaction: ::prost::alloc::vec::Vec<u8>,
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated server implementations.
 pub mod btc_server_server {
@@ -214,11 +214,11 @@ pub mod btc_server_server {
         >;
         async fn get_public_key(
             &self,
-            request: tonic::Request<super::Empty>, 
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::GetPublicKeyResponse>,
             tonic::Status,
-        >;
+        >; 
         async fn get_round1_dkg_package(
             &self,
             request: tonic::Request<super::Empty>,
@@ -428,14 +428,14 @@ pub mod btc_server_server {
                         T: BtcServer,
                     > tonic::server::UnaryService<super::GetGatewayAddressRequest>
                     for GetGatewayAddressSvc<T> {
-                        type Response = super::GetGatewayAddressResponse; 
+                        type Response = super::GetGatewayAddressResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
-                             tonic::Status,
+                            tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetGatewayAddressRequest>, 
+                            request: tonic::Request<super::GetGatewayAddressRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -469,17 +469,17 @@ pub mod btc_server_server {
                 }
                 "/btc_server.BtcServer/GetPublicKey" => {
                     #[allow(non_camel_case_types)]
-                    struct GetRound1DkgPackageSvc<T: BtcServer>(pub Arc<T>);
+                    struct GetPublicKeySvc<T: BtcServer>(pub Arc<T>);
                     impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
-                    for GetRound1DkgPackageSvc<T> {
-                        type Response = super::DkgPayload;
+                    for GetPublicKeySvc<T> {
+                        type Response = super::GetPublicKeyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
-                            tonic::Status,
+                            tonic::Status, 
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>,
+                            request: tonic::Request<super::Empty>, 
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
