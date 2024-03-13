@@ -4,7 +4,6 @@ use alloy_primitives::hex;
 use client::GetPublicKeyRequest;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_primitives::U256;
-use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use url::Url;
@@ -96,6 +95,30 @@ pub enum GatewayAddressRPCError {
     InvalidNetwork,
 }
 
+impl fmt::Display for GatewayAddressRPCError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e) => {
+                write!(f, "Failed to decode aggregate public key: {}", e)
+            }
+            GatewayAddressRPCError::InvalidParam(e) => write!(f, "Invalid param: {}", e),
+            GatewayAddressRPCError::FailedToGenerateGatewayAddress => {
+                write!(f, "Failed to generate gateway address")
+            }
+            GatewayAddressRPCError::FailedToConvertPublicKey(e) => {
+                write!(f, "Failed to convert public key: {}", e)
+            }
+            GatewayAddressRPCError::InvalidNetwork => write!(f, "Invalid network"),
+        }
+    }
+}
+
+impl From<GatewayAddressRPCError> for String {
+    fn from(error: GatewayAddressRPCError) -> Self {
+        error.to_string()
+    }
+}
+
 /// Errors from get merkle proof RPC endpoint
 #[derive(Debug)]
 pub enum MerkleProofRPCError {
@@ -184,11 +207,8 @@ impl Botanix {
 
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?
-            .assume_checked();
-
-        if address.network != self.botanix_rpc_config.bitcoin_network {
-            return Err(GatewayAddressRPCError::InvalidNetwork);
-        }
+            .require_network(self.botanix_rpc_config.bitcoin_network)
+            .map_err(|e| GatewayAddressRPCError::InvalidNetwork)?;
 
         let pk = secp256k1::PublicKey::from_slice(
             &hex::decode(response.publickey.as_str())
