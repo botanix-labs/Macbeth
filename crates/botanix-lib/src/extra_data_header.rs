@@ -188,7 +188,7 @@ impl ExtraDataHeader {
     pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtraDataHeaderDeserialzeError> {
         let version = u32::consensus_decode(reader)?;
         if version > EXTRA_HEADER_VERSION {
-            return Err(ExtraDataHeaderDeserialzeError::InvalidVersion)
+            return Err(ExtraDataHeaderDeserialzeError::InvalidVersion);
         }
         let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
@@ -260,7 +260,7 @@ impl ExtraDataHeader {
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError> {
         if self.authority_signature.is_none() {
-            return Err(ValidateAuthoritySignatureError::MissingSignature)
+            return Err(ValidateAuthoritySignatureError::MissingSignature);
         }
 
         let msg = secp256k1::Message::from_slice(message.as_slice())
@@ -273,7 +273,7 @@ impl ExtraDataHeader {
                 .verify(&msg, signer)
                 .is_ok()
         }) {
-            return Ok(())
+            return Ok(());
         }
 
         Err(ValidateAuthoritySignatureError::InvalidSignature)
@@ -296,7 +296,7 @@ mod tests {
             None,
             Some(authority_signers.clone()),
             None,
-            Some(witness_data.clone()),  
+            Some(witness_data.clone()),
             bitcoin::hash_types::BlockHash::all_zeros(),
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
@@ -349,7 +349,6 @@ mod tests {
         let mut maybe_witness = binding.as_slice();
         let witness = witness::Witness::consensus_decode(&mut maybe_witness).expect("a witness");
         assert_eq!(witness, witness::Witness::default());
-        
     }
 
     // Test case for serializing with a signature

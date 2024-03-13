@@ -19,6 +19,7 @@ reth-provider.workspace = true
 reth-consensus-common.workspace = true
 reth-node-api.workspace = true
 
+
 # revm
 revm.workspace = true
 revm-inspectors.workspace = true
@@ -33,9 +34,6 @@ secp256k1 = { workspace = true, features = [
 # common
 tracing.workspace = true
 tokio.workspace = true
-
-# Lazy static   
-lazy_static = "*"
 
 # Bitcoin
 bitcoin = "0.30.2"

@@ -4,7 +4,9 @@ use crate::{
 };
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_primitives::{SealedBlockWithSenders, TransactionSigned, BOTANIX_TESTNET};
+use reth_primitives::{
+    botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
+};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
 use crate::Storage;
@@ -22,7 +24,7 @@ use tokio::sync::{
     RwLock,
 };
 
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     chain_spec: Arc<ChainSpec>,
@@ -122,10 +124,28 @@ where
             }
             let mut storage = self.storage.write().await;
 
+            if recent_bitcoin_block_header.is_none() {
+                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
+                continue;
+            }
+
+            if storage.aggregate_public_key.is_none() {
+                warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                continue;
+            }
+
+            let botanix_consensus_pkg = BotanixConsensusPackage {
+                recent_header: recent_bitcoin_block_header.expect("recent header is some"),
+                aggregate_public_key: storage
+                    .aggregate_public_key
+                    .clone()
+                    .expect("aggregate pk is some"),
+            };
+
             match storage.execute_imported_block(
                 self.chain_spec.clone(),
                 sealed_block.clone(),
-                recent_bitcoin_block_header,
+                Some(botanix_consensus_pkg),
                 self.evm_config.clone(),
             ) {
                 Ok(bundle_state) => {
