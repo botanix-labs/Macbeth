@@ -242,11 +242,17 @@ pub mod btc_server_server {
         async fn get_round1_signing_package(
             &self,
             request: tonic::Request<super::Round1SigningPackageRequest>,
-        ) -> std::result::Result<tonic::Response<super::Round1SigningPackage>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::Round1SigningPackage>,
+            tonic::Status,
+        >;
         async fn get_round2_signing_package(
             &self,
             request: tonic::Request<super::SignPayload>,
-        ) -> std::result::Result<tonic::Response<super::Round2SigningPackage>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::Round2SigningPackage>,
+            tonic::Status,
+        >;
         /// only meant to be used by the cordinator
         async fn new_round1_signing_package(
             &self,
@@ -274,11 +280,21 @@ pub mod btc_server_server {
             tonic::Response<super::FinalizeSigningResponse>,
             tonic::Status,
         >;
+        async fn get_all_utxos(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAllUtxosResponse>,
+            tonic::Status,
+        >;
         /// Update the RemoveUtxo method to return the new response type
         async fn remove_utxo(
             &self,
             request: tonic::Request<super::RemoveUtxoRequest>,
-        ) -> std::result::Result<tonic::Response<super::RemoveUtxoResponse>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveUtxoResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct BtcServerServer<T: BtcServer> {
@@ -303,7 +319,10 @@ pub mod btc_server_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -359,9 +378,15 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/NotifyPegin" => {
                     #[allow(non_camel_case_types)]
                     struct NotifyPeginSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::NotifyPeginRequest> for NotifyPeginSvc<T> {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::NotifyPeginRequest>
+                    for NotifyPeginSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::NotifyPeginRequest>,
@@ -489,10 +514,17 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetRound1DkgPackage" => {
                     #[allow(non_camel_case_types)]
                     struct GetRound1DkgPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetRound1DkgPackageSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetRound1DkgPackageSvc<T> {
                         type Response = super::DkgPayload;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as BtcServer>::get_round1_dkg_package(&inner, request)
@@ -530,13 +562,19 @@ pub mod btc_server_server {
                     impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
                     for GetRound1DkgPackagesSvc<T> {
                         type Response = super::DkgPayload;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as BtcServer>::get_round1_dkg_packages(&inner, request)
                                     .await
-                            }; 
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -562,13 +600,17 @@ pub mod btc_server_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }  
+                }
                 "/btc_server.BtcServer/NewRound1DkgPackage" => {
                     #[allow(non_camel_case_types)]
                     struct NewRound1DkgPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::DkgPayload> for NewRound1DkgPackageSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::DkgPayload>
+                    for NewRound1DkgPackageSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::DkgPayload>,
@@ -607,10 +649,17 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetRound2DkgPackage" => {
                     #[allow(non_camel_case_types)]
                     struct GetRound2DkgPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetRound2DkgPackageSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetRound2DkgPackageSvc<T> {
                         type Response = super::DkgPayload;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as BtcServer>::get_round2_dkg_package(&inner, request)
@@ -645,9 +694,13 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/NewRound2DkgPackage" => {
                     #[allow(non_camel_case_types)]
                     struct NewRound2DkgPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::DkgPayload> for NewRound2DkgPackageSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::DkgPayload>
+                    for NewRound2DkgPackageSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::DkgPayload>,
@@ -686,12 +739,15 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetRound1SigningPackage" => {
                     #[allow(non_camel_case_types)]
                     struct GetRound1SigningPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer>
-                        tonic::server::UnaryService<super::Round1SigningPackageRequest>
-                        for GetRound1SigningPackageSvc<T>
-                    {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::Round1SigningPackageRequest>
+                    for GetRound1SigningPackageSvc<T> {
                         type Response = super::Round1SigningPackage;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::Round1SigningPackageRequest>,
@@ -734,10 +790,12 @@ pub mod btc_server_server {
                     #[allow(non_camel_case_types)]
                     struct GetRound2SigningPackageSvc<T: BtcServer>(pub Arc<T>);
                     impl<T: BtcServer> tonic::server::UnaryService<super::SignPayload>
-                        for GetRound2SigningPackageSvc<T>
-                    {
+                    for GetRound2SigningPackageSvc<T> {
                         type Response = super::Round2SigningPackage;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SignPayload>,
@@ -779,11 +837,15 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/NewRound1SigningPackage" => {
                     #[allow(non_camel_case_types)]
                     struct NewRound1SigningPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Round1SigningPackage>
-                        for NewRound1SigningPackageSvc<T>
-                    {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::Round1SigningPackage>
+                    for NewRound1SigningPackageSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::Round1SigningPackage>,
@@ -825,9 +887,13 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetPsbt" => {
                     #[allow(non_camel_case_types)]
                     struct GetPsbtSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::MakeTxRequest> for GetPsbtSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::MakeTxRequest>
+                    for GetPsbtSvc<T> {
                         type Response = super::SignPayload;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::MakeTxRequest>,
@@ -865,9 +931,13 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetToSignPackage" => {
                     #[allow(non_camel_case_types)]
                     struct GetToSignPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::ToSignRequest> for GetToSignPackageSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::ToSignRequest>
+                    for GetToSignPackageSvc<T> {
                         type Response = super::SignPayload;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ToSignRequest>,
@@ -905,11 +975,15 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/NewRound2SigningPackage" => {
                     #[allow(non_camel_case_types)]
                     struct NewRound2SigningPackageSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Round2SigningPackage>
-                        for NewRound2SigningPackageSvc<T>
-                    {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::Round2SigningPackage>
+                    for NewRound2SigningPackageSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::Round2SigningPackage>,
@@ -951,11 +1025,15 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/FinalizeSigning" => {
                     #[allow(non_camel_case_types)]
                     struct FinalizeSigningSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::FinalizeSigningRequest>
-                        for FinalizeSigningSvc<T>
-                    {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::FinalizeSigningRequest>
+                    for FinalizeSigningSvc<T> {
                         type Response = super::FinalizeSigningResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FinalizeSigningRequest>,
@@ -993,10 +1071,17 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetAllUtxos" => {
                     #[allow(non_camel_case_types)]
                     struct GetAllUtxosSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetAllUtxosSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetAllUtxosSvc<T> {
                         type Response = super::GetAllUtxosResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
-                        fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as BtcServer>::get_all_utxos(&inner, request).await
@@ -1030,15 +1115,23 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/RemoveUtxo" => {
                     #[allow(non_camel_case_types)]
                     struct RemoveUtxoSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::RemoveUtxoRequest> for RemoveUtxoSvc<T> {
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::RemoveUtxoRequest>
+                    for RemoveUtxoSvc<T> {
                         type Response = super::RemoveUtxoResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::RemoveUtxoRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).remove_utxo(request).await };
+                            let fut = async move {
+                                <T as BtcServer>::remove_utxo(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1064,7 +1157,7 @@ pub mod btc_server_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                } 
+                }
                 _ => {
                     Box::pin(async move {
                         Ok(

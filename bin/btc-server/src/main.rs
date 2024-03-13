@@ -253,19 +253,6 @@ impl From<database::Utxo> for rpc::Utxo {
             }),
             output: item.output.value as u32,
             eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
-        } 
-    }
-}
-
-impl From<database::Utxo> for rpc::Utxo {
-    fn from(item: database::Utxo) -> Self {
-        rpc::Utxo {
-            outpoint: Some(rpc::OutPoint {
-                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
-                vout: item.outpoint.vout,
-            }),
-            output: item.output.value as u32,
-            eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
         }
     }
 }
