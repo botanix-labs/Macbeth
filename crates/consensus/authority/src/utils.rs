@@ -183,7 +183,6 @@ pub(crate) async fn send_pegouts(
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
             return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e));
         }
-        */
     }
 
     Ok(())
