@@ -109,7 +109,7 @@ where
                 aggregate_public_key: value.1.to_string(),
                 eth_address,
             }),
-            Err(_) => None,
+            Err(e) => return Err(internal_rpc_err(e)),
         };
         Ok(address)
     }
@@ -335,7 +335,7 @@ where
     /// Handler for: `eth_blobBaseFee`
     async fn blob_base_fee(&self) -> Result<U256> {
         trace!(target: "rpc::eth", "Serving eth_blobBaseFee");
-        return Ok(EthApi::blob_base_fee(self).await?)
+        return Ok(EthApi::blob_base_fee(self).await?);
     }
 
     /// Handler for: `eth_maxPriorityFeePerGas`
