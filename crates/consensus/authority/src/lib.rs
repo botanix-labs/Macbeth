@@ -318,6 +318,7 @@ where
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &[secp256k1::PublicKey],
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
+        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
@@ -350,6 +351,7 @@ where
             None,
             if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
             vote_for,
+            witness_data.clone(),
             recent_block_hash,
         );
         let sig_hash = reth_consensus_common::utils::create_authority_sighash(
@@ -371,6 +373,7 @@ where
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
+    // TODO(scott): pass in witness data: hardcode to None for now
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
@@ -431,6 +434,7 @@ where
             secp,
             authority_signers,
             vote,
+            &None,
             // This is checked to be Some above
             recent_block_header.expect("valid header").0.block_hash(),
         )?;
