@@ -7153,6 +7153,7 @@ name = "reth-ecies"
 version = "0.1.0-alpha.20"
 dependencies = [
  "aes 0.8.4",
+ "alloy-primitives",
  "alloy-rlp",
  "block-padding",
  "byteorder",
@@ -7680,6 +7681,7 @@ dependencies = [
  "alloy-trie",
  "arbitrary",
  "assert_matches",
+ "bitcoin",
  "byteorder",
  "bytes",
  "c-kzg",
@@ -7778,7 +7780,6 @@ name = "reth-revm"
 version = "0.1.0-alpha.20"
 dependencies = [
  "bitcoin",
- "lazy_static",
  "reth-botanix-lib",
  "reth-consensus-common",
  "reth-interfaces",
