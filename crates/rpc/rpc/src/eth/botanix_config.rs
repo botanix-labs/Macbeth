@@ -1,7 +1,6 @@
 //! Defines structure for botanix RPC configurables and business logic
 
 use alloy_primitives::hex;
-use client::GetPublicKeyRequest;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_primitives::U256;
 use serde::{Deserialize, Serialize};
