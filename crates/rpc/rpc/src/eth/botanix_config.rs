@@ -208,7 +208,7 @@ impl Botanix {
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?
             .require_network(self.botanix_rpc_config.bitcoin_network)
-            .map_err(|e| GatewayAddressRPCError::InvalidNetwork)?;
+            .map_err(|_e| GatewayAddressRPCError::InvalidNetwork)?;
 
         let pk = secp256k1::PublicKey::from_slice(
             &hex::decode(response.publickey.as_str())

@@ -30,6 +30,7 @@ use reth_interfaces::{
 };
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
+    botanix::BotanixConsensusPackage,
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
@@ -152,6 +153,7 @@ where
             signer_index,
             authority: pk,
             authority_votes: AuthorityVoteCollection::default(),
+            aggregate_public_key: None,
         };
 
         Ok(Self { inner: Arc::new(RwLock::new(storage)) })
@@ -182,6 +184,10 @@ pub(crate) struct StorageInner<Client> {
     pub(crate) signer_index: usize,
     /// Authority Signer public key
     pub(crate) authority: secp256k1::PublicKey,
+
+    /// The aggregate public key of the FROST threshold signature scheme
+    /// Should get populated after DKG
+    pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
 }
 
 // === impl StorageInner ===
@@ -282,7 +288,7 @@ where
         block: &BlockWithSenders,
         executor: &mut EVMProcessor<'_, EvmConfig>,
         _senders: Vec<Address>,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -291,7 +297,7 @@ where
         executor.set_first_block(block.number);
 
         let (receipts, gas_used) =
-            executor.execute_transactions(block, U256::ZERO, recent_block_header)?;
+            executor.execute_transactions(block, U256::ZERO, botanix_consensus_pkg)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
@@ -375,7 +381,7 @@ where
         &mut self,
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
@@ -387,7 +393,7 @@ where
     {
         // Check if we have a recent block header
         // Can't validate pegin without it
-        if recent_block_header.is_none() {
+        if botanix_consensus_pkg.is_none() {
             return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
         }
 
@@ -414,8 +420,12 @@ where
 
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
-        let (bundle_state, gas_used) =
-            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
+        let (bundle_state, gas_used) = self.execute(
+            &block_with_senders,
+            &mut executor,
+            senders,
+            botanix_consensus_pkg.clone(),
+        )?;
 
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
@@ -432,7 +442,7 @@ where
             authority_signers,
             vote,
             // This is checked to be Some above
-            recent_block_header.expect("valid header").0.block_hash(),
+            botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
         )?;
 
         // Redundant check. Lets make sure the header is valid
@@ -465,7 +475,7 @@ where
         &mut self,
         chain_spec: Arc<ChainSpec>,
         sealed_block: SealedBlock,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         evm_config: EvmConfig,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
@@ -473,7 +483,7 @@ where
     {
         // Check if we have a recent block header
         // Can't validate pegin without it
-        if recent_block_header.is_none() {
+        if botanix_consensus_pkg.is_none() {
             return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
         }
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
@@ -497,7 +507,7 @@ where
                 .expect("senders are valid");
 
         let (bundle_state, _gas_used) =
-            self.execute(&block_with_senders, &mut executor, senders, recent_block_header)?;
+            self.execute(&block_with_senders, &mut executor, senders, botanix_consensus_pkg)?;
 
         let authority_signers = self.authorities.clone();
         validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(

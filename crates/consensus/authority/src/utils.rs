@@ -1,9 +1,12 @@
 use bitcoin::block::Header;
-use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
+use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest, Output};
 use futures_util::{stream::FuturesUnordered, StreamExt};
-use reth_botanix_lib::mint_validation::{
-    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
-    MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+use reth_botanix_lib::{
+    mint_validation::{
+        parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
+        MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+    },
+    peg_contract::PegoutData,
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
 
@@ -25,8 +28,8 @@ pub(crate) enum ProcessBotanixLogError {
     FailedToNotifyPegin(tonic::Status),
     #[error("Failed to broadcast pegout tx")]
     FailedToBroadcastPegout,
-    #[error("Failed to make pegout tx")]
-    FailedToMakePegoutTx,
+    #[error("Failed to make pegout tx: {0}")]
+    FailedToMakePegoutTx(tonic::Status),
 }
 
 /// Search a receipt for a pegout and return a MakeTxRequest for the pegout
@@ -37,10 +40,8 @@ pub(crate) enum ProcessBotanixLogError {
 ///
 /// # Returns
 ///
-/// Returns `Some(MakeTxRequest)` if a pegout is found in the receipt, otherwise returns `None`.
-pub(crate) async fn make_tx_request_for_pegout_in_receipt(
-    receipt: Receipt,
-) -> Option<MakeTxRequest> {
+/// Returns `Some(PegoutData)` if a pegout is found in the receipt, otherwise returns `None`.
+pub(crate) async fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<PegoutData> {
     if !receipt.success {
         info!(target: "consensus::authority", "Receipt status code is not success {:?}", receipt);
         return None;
@@ -140,19 +141,12 @@ pub(crate) async fn process_receipts(
 /// # Returns
 ///
 /// Returns `Some(MakeTxRequest)` if a pegout is found in the log, otherwise returns `None`.
-async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
+async fn make_tx_request_for_pegout(log: Log) -> Option<PegoutData> {
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
-                // TODO (scott): fetch fee - this will make function async
-                let fee_rate = 30u32;
-                let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
-                return Some(MakeTxRequest {
-                    outputs: vec![],            // TODO
-                    signing_session_id: vec![], // TODO
-                    fee_rate,
-                });
+                return Some(parse_pegout_reth_log_topic(&log).expect("valid pegout request"));
             }
             Err(e) => {
                 debug!(target: "consensus::authority", ?e, "Non burn event");
@@ -166,26 +160,28 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
 pub(crate) async fn send_pegouts(
     bitcoin_block_source: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
-    pegouts: Vec<MakeTxRequest>,
+    pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
-    for pegout in pegouts {
-        // TODO: FIX (scott): call bitcoind's testmempoolaccept to check if tx is valid before
-        // proceeding
-        /*
-        match btc_server.make_tx(pegout).await {
-            Ok(response) => {
-                let raw_tx = response.into_inner().tx;
-                info!(target: "consensus::authority", "broadcasting withdrawal tx");
+    let req = MakeTxRequest {
+        outputs: pegouts
+            .iter()
+            .map(|pegout| Output {
+                address: pegout.destination.to_string(),
+                value: pegout.amount.to_sat(),
+            })
+            .collect(),
+        // TODO Pull from bitcoind
+        fee_rate: 30u32,
+        signing_session_id: [0u8; 32].to_vec(),
+    };
 
-                bitcoin_block_source
-                    .broadcast_tx(&hex::encode(raw_tx))
-                    .await
-                    .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
-            }
-            Err(e) => {
-                error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-                continue;
-            }
+    match btc_server.get_psbt(req).await {
+        Ok(response) => {
+            // TODO progress with FROST signing here
+        }
+        Err(e) => {
+            error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
+            return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e));
         }
         */
     }
@@ -254,19 +250,20 @@ async fn process_botanix_log(
 
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
-                match parse_pegout_reth_log_topic(&log) {
-                    Ok(parsed_pegout) => {
-                        pegout = Some(MakeTxRequest {
-                            outputs: vec![],            // TODO
-                            signing_session_id: vec![], // TODO
-                            fee_rate,
-                        });
-                    }
-                    Err(e) => {
-                        error!(target: "consensus::authority", ?e, "Failed to parse pegout");
-                        return Err(ProcessBotanixLogError::FailedToMakePegoutTx);
-                    }
-                }
+                // TODO comment this back in when FROST signing is implemented
+                // match parse_pegout_reth_log_topic(&log) {
+                //     Ok(parsed_pegout) => {
+                //         pegout = Some(MakeTxRequest {
+                //             address: parsed_pegout.destination.to_string(),
+                //             value: parsed_pegout.amount.to_sat(),
+                //             fee_rate,
+                //         });
+                //     }
+                //     Err(e) => {
+                //         error!(target: "consensus::authority", ?e, "Failed to parse pegout");
+                //         return Err(ProcessBotanixLogError::FailedToMakePegoutTx);
+                //     }
+                // }
             }
             Err(e) => {
                 debug!(target: "consensus::authority", ?e, "Non-genesis contract event");

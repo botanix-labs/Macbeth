@@ -1,9 +1,7 @@
 use std::io;
 
 use bitcoin::{
-    consensus::encode::{self, Decodable, Encodable},
-    hashes::Hash,
-    secp256k1,
+    consensus::encode::{self, Decodable, Encodable}, hashes::Hash, secp256k1
 };
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
