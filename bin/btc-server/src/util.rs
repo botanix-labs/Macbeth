@@ -119,6 +119,7 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Parsi
 /// Returns a Result containing the parsed Ethereum address as a fixed-size byte array if
 /// successful, or an Error if the parsing fails.
 pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> {
+    let eth_address = eth_address.trim_start_matches("0x").to_ascii_lowercase();
     let eth_addr_vec = hex::decode(eth_address)
         .map_err(|_e| ParsingError::InvalidEthAddress("Failed to decode hex"))?;
     if eth_addr_vec.len() != 20 {
@@ -653,6 +654,19 @@ mod util_tests {
     fn test_parse_eth_address() {
         // Valid Ethereum address
         let valid_eth_address = "0123456789abcdef0123456789abcdef01234567".to_string();
+        let result = parse_eth_address(valid_eth_address);
+        assert!(result.is_ok());
+        let parsed_address = result.unwrap();
+        assert_eq!(
+            parsed_address,
+            [
+                1, 35, 69, 103, 137, 171, 205, 239, 1, 35, 69, 103, 137, 171, 205, 239, 1, 35, 69,
+                103
+            ]
+        );
+
+        // Should stip 0x prefix
+        let valid_eth_address = "0x0123456789abcdef0123456789abcdef01234567".to_string();
         let result = parse_eth_address(valid_eth_address);
         assert!(result.is_ok());
         let parsed_address = result.unwrap();
