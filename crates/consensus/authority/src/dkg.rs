@@ -1,9 +1,12 @@
-use client::{BtcServerClient, DkgPayload, GetPublicKeyRequest, GetPublicKeyResponse};
+use crate::Storage;
+use client::{BtcServerClient, DkgPayload, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostHandle},
     EventResponseType, FrostPeerCommand, Response,
 };
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
@@ -109,8 +112,9 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine {
+pub(crate) struct DKGStateMachine<Client> {
     btc_client: BtcServerClient<tonic::transport::Channel>,
+    storage: Storage<Client>,
     frost_handle: FrostHandle,
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
@@ -119,10 +123,19 @@ pub(crate) struct DKGStateMachine {
     max_signers: u16,
 }
 
-impl DKGStateMachine {
+impl<Client> DKGStateMachine<Client>
+where
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+{
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         btc_client: BtcServerClient<tonic::transport::Channel>,
+        storage: Storage<Client>,
         frost_handle: FrostHandle,
         authority_index: u16,
         min_signers: u16,
@@ -133,6 +146,7 @@ impl DKGStateMachine {
         info!("Frost identifier used: {:?} - {:?}", authority_index, personal_frost_identifier);
         Self {
             btc_client,
+            storage,
             frost_handle,
             state: DKGState::Initial,
             personal_frost_identifier,
@@ -147,6 +161,7 @@ impl DKGStateMachine {
     pub(crate) fn reset(self) -> Self {
         Self {
             btc_client: self.btc_client,
+            storage: self.storage,
             frost_handle: self.frost_handle,
             state: DKGState::Initial,
             personal_frost_identifier: self.personal_frost_identifier,
@@ -168,7 +183,15 @@ impl DKGStateMachine {
     }
 }
 
-impl DKGStateMachine {
+impl<Client> DKGStateMachine<Client>
+where
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+{
     async fn get_round1_dkg_package(&mut self) -> Result<DkgPayload, Error> {
         let round1_payload =
             self.btc_client.get_round1_dkg_package(tonic::Request::new(client::Empty {})).await;
@@ -218,27 +241,6 @@ impl DKGStateMachine {
                     if e.message().contains("Failed to generate round 2 dkg") =>
                 {
                     return Err(Error::FailedToGenerateRound2Package)
-                }
-                _ => return Err(Error::InternalGrpc),
-            },
-        };
-        Ok(round2_payload)
-    }
-
-    async fn get_round1_dkg_packages(&mut self) -> Result<DkgPayload, Error> {
-        let round2_payload =
-            self.btc_client.get_round1_dkg_packages(tonic::Request::new(client::Empty {})).await;
-
-        let round2_payload = match round2_payload {
-            Ok(round2_payload) => round2_payload.into_inner(),
-            Err(e) => match e.code() {
-                tonic::Code::AlreadyExists if e.message().contains("already have key package") => {
-                    return Err(Error::KeyPackageAlreadyExists)
-                }
-                tonic::Code::Internal
-                    if e.message().contains("Failed to get round1 dkg packages") =>
-                {
-                    return Err(Error::FailedToGetRound1Packages)
                 }
                 _ => return Err(Error::InternalGrpc),
             },
@@ -357,7 +359,7 @@ impl DKGStateMachine {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!("Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles)
+                return Err(Error::FailedToGetConnectedPeersHandles);
             }
         }
     }
@@ -386,6 +388,7 @@ impl DKGStateMachine {
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
         // get round 1 package from db, if missing, create it
         let dkg1_package = self.get_round1_dkg_package().await?;
+        println!("dkg1_package: {:?}", dkg1_package);
 
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
@@ -449,28 +452,7 @@ impl DKGStateMachine {
             self.state = DKGState::DkgFailed;
             return Err(e);
         }
-
         info!(">>>>>>>>>>> [PROCESS_ROUND1] package added successfully");
-
-        let round1_payload = match self.get_round1_dkg_packages().await {
-            Ok(round1_payload) => round1_payload,
-            Err(e) => {
-                error!("Error getting round 1 dkg package {:?}", e);
-                self.state = DKGState::DkgFailed;
-                return Err(e);
-            }
-        };
-        let round1_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round1::Package> =
-            match serde_json::from_slice(&round1_payload.payload).map_err(Error::Round1PackageParse)
-            {
-                Ok(packages) => packages,
-                Err(e) => {
-                    error!("Error trying to parse round 1 dkg package {:?}", e);
-                    self.state = DKGState::DkgFailed;
-                    return Err(e);
-                }
-            };
-
         info!(">>>>>>>>>>> [PROCESS_ROUND1] further gossiping round 1 packages to all peers...");
         // get round 1 package from db and send it to all peers
         if let Err(e) = self.gossip_round1_to_peers().await {
@@ -480,18 +462,26 @@ impl DKGStateMachine {
         }
 
         // Check if we are ready to progress to round 2
-        if round1_group_packages.len() >= (self.max_signers - 1) as usize {
-            info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
-            // generate round 2 package using the btc server
-            let dkg2_package = match self.get_round2_dkg_package().await {
-                Ok(dkg2_package) => dkg2_package,
+        let dkg2_package = match self.get_round2_dkg_package().await {
+            Ok(dkg2_package) => dkg2_package,
+            Err(e) => {
+                error!("Error getting round 2 dkg package {:?}", e);
+                self.state = DKGState::DkgFailed;
+                return Err(e);
+            }
+        };
+        let round2_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
+            match serde_json::from_slice(&dkg2_package.payload).map_err(Error::Round1PackageParse) {
+                Ok(packages) => packages,
                 Err(e) => {
-                    error!("Error getting round 2 dkg package {:?}", e);
+                    error!("Error trying to parse round 1 dkg package {:?}", e);
                     self.state = DKGState::DkgFailed;
                     return Err(e);
                 }
             };
 
+        if round2_group_packages.len() >= (self.max_signers - 1) as usize {
+            info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
             if let Err(e) = self.gossip_round2_to_peers(dkg2_package).await {
                 error!("Error gossiping round 2 to peers {:?}", e);
                 self.state = DKGState::DkgFailed;
@@ -532,8 +522,18 @@ impl DKGStateMachine {
             self.state = DKGState::DkgFailed;
             return Err(e);
         }
-
         info!(">>>>>>>>>>> [PROCESS_ROUND2] packages added successfully");
+        // By adding this round2 dkg package we could be ready to progress to round 3
+        // Check first before gossiping and then gossip regardless
+        // Lets try to progress to round 3 (getting the agg pk)
+        let public_key_res = self.get_public_key().await;
+        if public_key_res.is_ok() {
+            info!(">>>>>>>>>>> [PROCESS_ROUND2] ready to move to round 3");
+            self.state = DKGState::Round3;
+            self.process_round3().await?;
+        } else {
+            self.state = DKGState::Round2Waiting;
+        }
 
         let round2_payload = match self.get_round2_dkg_package().await {
             Ok(round2_payload) => round2_payload,
@@ -543,16 +543,6 @@ impl DKGStateMachine {
                 return Err(e);
             }
         };
-        let round2_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            match serde_json::from_slice(&round2_payload.payload).map_err(Error::Round2PackageParse)
-            {
-                Ok(packages) => packages,
-                Err(e) => {
-                    error!("Error parsing round2 group packages {:?}", e);
-                    self.state = DKGState::DkgFailed;
-                    return Err(e);
-                }
-            };
 
         info!(">>>>>>>>>>> [PROCESS_ROUND2] further gossiping round 2 packages to all peers...");
         // get round 2 package from db and send it to all peers
@@ -560,15 +550,6 @@ impl DKGStateMachine {
             error!("Error gossiping round 2 to peers {:?}", e);
             self.state = DKGState::DkgFailed;
             return Err(e);
-        }
-
-        // Check if we are ready to progress to round 3
-        if round2_group_packages.len() >= (self.max_signers - 1) as usize {
-            info!(">>>>>>>>>>> [PROCESS_ROUND2] ready to move to round 3");
-            self.state = DKGState::Round3;
-            self.process_round3().await?;
-        } else {
-            self.state = DKGState::Round2Waiting;
         }
 
         Ok(())
@@ -600,6 +581,9 @@ impl DKGStateMachine {
                 return Err(Error::PublicKeyParse(e));
             }
         };
+        let mut storage = self.storage.write().await;
+        storage.aggregate_public_key = self.public_key_package;
+        drop(storage);
         info!(">>>>>>>>>>> [PROCESS_ROUND3] Round 3 finished successfully");
         Ok(())
     }
