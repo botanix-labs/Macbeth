@@ -2,7 +2,6 @@ use displaydoc::Display as DisplayDoc;
 use thiserror::Error;
 use tonic::Status;
 
-/// Error enum representing all errors returned by the library
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
     /// Grpc Server Connect Error {0}
@@ -15,4 +14,10 @@ pub enum Error {
     PubKeyParse(bitcoin::secp256k1::Error),
     /// Public Key Mismatch
     PublicKeyMismatch,
+    /// Round 1 Packages Expected Length Mismatch
+    Round1PackagesLenghtMismatch,
+    /// Round 2 Packages Expected Length Mismatch
+    Round2PackagesLenghtMismatch,
+    /// Pegin Notification Error
+    PeginNotification,
 }

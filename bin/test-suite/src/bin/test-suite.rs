@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
 
     // create the test server instance
     let timeout = Duration::from_millis(args.timeout);
-    let suite_test_server = TestServer::new(args.run_suite, timeout, resources_ctx.clone());
+    let suite_test_server = TestServer::new(args.run_suite, timeout, resources_ctx.clone(), config);
 
     // stop signal for suite
     let (stop_tx, stop_rx) = broadcast::channel(1);
@@ -72,7 +72,7 @@ async fn stop_signal(stop_tx: broadcast::Sender<()>, _resources_ctx: Arc<Resourc
 /// Test Suite Service
 #[derive(FromArgs)]
 struct Args {
-    /// path to the config file
+    /// path to the toml config file
     #[argh(option, short = 'c')]
     config: String,
     /// suite of tests to run: Consensus|all (default: all)

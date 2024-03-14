@@ -18,9 +18,19 @@ pub enum Error {
     ReadMeta(std::io::Error),
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct BitcoindConfig {
+    pub url: String,
+    pub username: String,
+    pub password: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct Config {}
+pub struct Config {
+    pub bitcoind: BitcoindConfig,
+}
 
 impl Config {
     pub async fn new(path: impl AsRef<Path> + Send) -> Result<Self, Error> {

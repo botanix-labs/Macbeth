@@ -5,6 +5,8 @@ use strum_macros::{AsRefStr, EnumString};
 #[async_trait]
 pub trait Suite {
     async fn run(&mut self) -> Outcome;
+    async fn create_context(&mut self);
+    async fn destroy_context(&mut self);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, AsRefStr, EnumString)]

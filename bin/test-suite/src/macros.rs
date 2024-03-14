@@ -22,6 +22,8 @@ macro_rules! run_test {
             "FullRun"
         };
 
+        $self.create_context().await;
+
         tokio::select! {
             result = $module::$scope::$test_name($self $(, $arg )*) => match result {
                 Ok(_) => {
@@ -38,5 +40,7 @@ macro_rules! run_test {
                 $self.outcome = crate::suite::Outcome::Failed;
             }
         }
+
+        $self.destroy_context().await;
     };
 }

@@ -21,9 +21,6 @@ mod rpc {
     };
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
-
-use anyhow::Context;
-
 use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
 use clap::Parser;
 use config::{GrpcConfig, TomlConfig};
@@ -308,7 +305,7 @@ impl rpc::BtcServer for App {
         })?;
 
         // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
-        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes});
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
 
         Ok(res)
     }
@@ -458,7 +455,7 @@ impl rpc::BtcServer for App {
 
     async fn get_public_key(
         &self,
-        req: tonic::Request<rpc::Empty>,
+        _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         let pk = self.get_public_key().map_err(|e| {
             error!("Failed to get public key: {}", e);
