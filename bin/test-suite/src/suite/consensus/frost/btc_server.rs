@@ -3,17 +3,11 @@ use std::{
     process::Stdio,
     vec,
 };
-
-use tokio::{
-    io::{self, AsyncBufReadExt},
-    process::{Child, Command},
-};
-use tracing::info;
+use tokio::process::{Child, Command};
 
 #[derive(Debug)]
 pub struct SpawnedBtcServer {
     pub port: u16,
-    //pub handle: tokio::task::JoinHandle<()>,
     pub db_path: PathBuf,
     pub child_process: Child,
 }
@@ -70,7 +64,7 @@ pub fn spawn_n_btc_servers(n: u16) -> Vec<SpawnedBtcServer> {
     for i in 0..n {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-        let port = 9000 + i;
+        let port = 8000 + i;
         let child_process = spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone());
         tasks.push(SpawnedBtcServer { db_path, port, child_process });
     }

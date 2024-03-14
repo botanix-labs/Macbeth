@@ -18,7 +18,7 @@ use bdk::{
 };
 
 use crate::merkle;
-use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
+use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};

@@ -21,6 +21,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::{config::Config, suite::consensus::frost::btc_server::SpawnedBtcServer};
+
 const RPC_PORT_BASE: u16 = 8545;
 const AUTHRPC_PORT_BASE: u16 = 8551;
 const DISCOVERY_PORT_BASE: u16 = 30303;
@@ -55,6 +57,10 @@ pub struct FederationMemberTestConfig {
     pub rpc_port: u16,
     pub authrpc_port: u16,
     pub discovery_port: u16,
+    pub bitcoind_url: String,
+    pub bitcoind_username: String,
+    pub bitcoind_password: String,
+    pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::mpsc::Sender<ChannelPayload>,
 }
@@ -64,6 +70,10 @@ impl FederationMemberTestConfig {
         index: u16,
         secret_key: SecretKey,
         sender: tokio::sync::mpsc::Sender<ChannelPayload>,
+        bitcoind_url: String,
+        bitcoind_username: String,
+        bitcoind_password: String,
+        bitcoin_server_url: String,
     ) -> Self {
         Self {
             index,
@@ -72,6 +82,10 @@ impl FederationMemberTestConfig {
             rpc_port: RPC_PORT_BASE + index,
             authrpc_port: AUTHRPC_PORT_BASE + index,
             discovery_port: DISCOVERY_PORT_BASE + index,
+            bitcoind_url,
+            bitcoind_username,
+            bitcoind_password,
+            bitcoin_server_url,
             peers_list: vec![],
             sender,
         }
@@ -120,9 +134,13 @@ impl FederationMemberTestConfig {
             "--authrpc.port",
             format!("{}", self.authrpc_port).as_str(),
             "--btc-server",
-            "localhost:8080",
-            "--btc-block-source",
-            "https://mempool.space/signet/api",
+            self.bitcoin_server_url.as_str(),
+            "--bitcoind.url",
+            self.bitcoind_url.as_str(),
+            "--bitcoind.username",
+            self.bitcoind_username.as_str(),
+            "--bitcoind.password",
+            self.bitcoind_password.as_str(),
             "--port",
             format!("{}", self.discovery_port).as_str(),
             "--p2p-secret-key",
@@ -177,6 +195,8 @@ pub fn testnet_custom_chain() -> Arc<ChainSpec> {
 }
 
 pub fn create_poa_federation_members(
+    config: &Config,
+    btc_servers: Option<&Vec<SpawnedBtcServer>>,
 ) -> (HashMap<usize, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<ChannelPayload>) {
     // create two secret keys one for each member
     let sc1 = FED_MEMBER1_SECRET_KEY.parse::<SecretKey>().unwrap();
@@ -184,8 +204,35 @@ pub fn create_poa_federation_members(
 
     // create the member configs
     let (tx, rx) = tokio::sync::mpsc::channel::<ChannelPayload>(10);
-    let mut fed_member_config1 = FederationMemberTestConfig::new(0, sc1, tx.clone());
-    let mut fed_member_config2 = FederationMemberTestConfig::new(1, sc2, tx);
+
+    // create federation members
+    let index: u16 = 0;
+    let port = btc_servers
+        .and_then(|servers| servers.iter().nth(index as usize).map(|val| val.port))
+        .unwrap();
+    let mut fed_member_config1 = FederationMemberTestConfig::new(
+        index,
+        sc1,
+        tx.clone(),
+        config.bitcoind.url.clone(),
+        config.bitcoind.username.clone(),
+        config.bitcoind.password.clone(),
+        format!("http://localhost:{}", port),
+    );
+
+    let index: u16 = 1;
+    let port = btc_servers
+        .and_then(|servers| servers.iter().nth(index as usize).map(|val| val.port))
+        .unwrap();
+    let mut fed_member_config2 = FederationMemberTestConfig::new(
+        index,
+        sc2,
+        tx,
+        config.bitcoind.url.clone(),
+        config.bitcoind.username.clone(),
+        config.bitcoind.password.clone(),
+        format!("http://localhost:{}", port),
+    );
 
     // insert peers
     fed_member_config1.insert_peers_list(vec![fed_member_config2.clone()]);

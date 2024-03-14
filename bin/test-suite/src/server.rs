@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     context::Context,
     suite::{consensus::ConsensusIntegrationTestSuite, Outcome, RunSuite, Suite},
 };
@@ -19,11 +20,12 @@ pub struct TestServer {
     suite: RunSuite,
     timeout: Duration,
     context: Arc<Context>,
+    config: Config,
 }
 
 impl TestServer {
-    pub fn new(suite: RunSuite, timeout: Duration, context: Arc<Context>) -> Self {
-        Self { suite, timeout, context }
+    pub fn new(suite: RunSuite, timeout: Duration, context: Arc<Context>, config: Config) -> Self {
+        Self { suite, timeout, context, config }
     }
 
     pub async fn start(
@@ -58,7 +60,11 @@ impl TestServer {
 
     async fn run_consensus_integration_test_suite(&mut self) -> Result<(), Error> {
         info!(">>>> Starting censensus integration test suite...");
-        let mut test_suite = ConsensusIntegrationTestSuite::new(self.timeout, self.context.clone());
+        let mut test_suite = ConsensusIntegrationTestSuite::new(
+            self.timeout,
+            self.context.clone(),
+            self.config.clone(),
+        );
 
         match test_suite.run().await {
             Outcome::Passed => Ok(()),

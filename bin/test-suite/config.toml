@@ -1,0 +1,4 @@
+[bitcoind]
+url = "http://localhost:38332"
+username = "xxxx"
+password = "xxxx"

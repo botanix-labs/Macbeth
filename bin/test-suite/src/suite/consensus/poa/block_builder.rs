@@ -2,7 +2,6 @@ use reth::core::cli::runner::CliRunner;
 use std::{collections::HashSet, time::Duration};
 
 use crate::suite::consensus::{
-    frost::btc_server::{clean_db, spawn_n_btc_servers},
     poa::{
         payload_sender::TestPayloadSender,
         poa_node::{create_poa_federation_members, is_inturn},
@@ -19,19 +18,14 @@ const SELECTED_FED_MEMBER_INDEX: usize = 0;
 
 pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
     // generate test fed members poa nodes
-    let (test_fed_members, mut rx) = create_poa_federation_members();
+    let (test_fed_members, mut rx) =
+        create_poa_federation_members(&suite.config, suite.local_context.btc_servers.as_ref());
 
     // assign targeted fed memeber
     let targeted_fed_member = test_fed_members.get(&SELECTED_FED_MEMBER_INDEX).cloned().unwrap();
 
     // get total authorities number
     let total_authorities = test_fed_members.len();
-
-    // start btc server
-    let mut tasks = spawn_n_btc_servers(1);
-
-    // wait for the btc server to boot up
-    tokio::time::sleep(Duration::from_secs(10)).await;
 
     // run all poa nodes in the background
     for (_index, fed_member_config) in test_fed_members.into_iter() {
@@ -96,13 +90,6 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
         last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
         tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
     }
-
-    // Test clean up
-    for task in tasks.iter_mut() {
-        let _ = task.child_process.kill().await;
-    }
-    // Remove db dirs
-    clean_db(&tasks);
 
     Ok(())
 }
