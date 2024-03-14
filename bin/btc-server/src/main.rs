@@ -284,13 +284,18 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
-        let tx = self.finalize_signing(&signing_session_id).map_err(|e| {
+        let psbt = self.finalize_signing(&signing_session_id).map_err(|e| {
             error!("Failed to finalize signing: {}", e);
             internal!("Failed to finalize signing: {}", e)
         })?;
 
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+
         let res = tonic::Response::new(rpc::FinalizeSigningResponse {
-            transaction: bitcoin::consensus::encode::serialize(&tx),
+            psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
         });
         Ok(res)
     }

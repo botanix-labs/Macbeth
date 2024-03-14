@@ -17,7 +17,7 @@ use bdk::{
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
@@ -246,7 +246,7 @@ impl App {
     pub(crate) fn finalize_signing(
         &self,
         signing_session_id: &[u8; 32],
-    ) -> Result<Transaction, CoordinatorError> {
+    ) -> Result<Psbt, CoordinatorError> {
         // Lock here to prevent a make_tx that uses utxos that will be removed
         let _tx_lock = self.tx_lock.lock().expect("get lock");
         let mut psbt =
@@ -305,16 +305,12 @@ impl App {
             }
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }
-        // could do this once we are confident our code works and we don't
-        // want to do the effort of tx verification
-        // let tx = psbt.clone().extract_tx();
-        let tx = psbt.extract(&SECP).map_err(|_| CoordinatorError::InvaildResultingTx)?;
 
         // Finally we should remove the utxos from the db and add the change one
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
         let (change_outputs, selected_inputs) = util::add_remove_utxo_from_psbt(&psbt, &secp_pk);
         self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
         self.db.flush()?;
-        Ok(tx)
+        Ok(psbt)
     }
 }
