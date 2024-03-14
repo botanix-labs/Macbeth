@@ -6802,6 +6802,7 @@ dependencies = [
  "futures-util",
  "hex",
  "jsonrpsee",
+ "rand 0.8.5",
  "reth",
  "reth-beacon-consensus",
  "reth-botanix-lib",

@@ -129,6 +129,10 @@ where
         }
         let authority_signers = storage.authorities.clone();
 
+        // TODO(scott) need to have psbt at this point
+        // and extract and pass witness data to `build_and_execute`
+        // utils::get_witness_data_from_psbt(psbt)
+
         // Build and execute current block template
         let (new_header, bundle_state) = match storage.build_and_execute(
             transactions.clone(),

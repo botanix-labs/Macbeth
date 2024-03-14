@@ -84,6 +84,8 @@ serde_json.workspace = true
 
 ethers = "2.0.13"
 
+rand = "0.8.5"
+
 [features]
 # Included solely to ignore certain tests.
 optimism = []
