@@ -79,7 +79,7 @@ impl App {
             // Construct the Merkle tree from hashes
             let utxo_hashes_vec_u8: Vec<Vec<u8>> =
                 utxo_hashes.iter().map(|hash| hash.to_vec()).collect();
-            let merkle_tree = merkle::construct_merkle_tree_from_hashes(&utxo_hashes_vec_u8);
+            let merkle_tree = merkle::construct_merkle_tree(&utxo_hashes_vec_u8);
 
             // Store the new Merkle root in the database
             let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
