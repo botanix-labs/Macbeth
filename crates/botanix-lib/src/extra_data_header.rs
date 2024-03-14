@@ -85,7 +85,8 @@ impl ExtraDataHeader {
         // validated by consensus
         authority_signers: Option<Vec<secp256k1::PublicKey>>,
         authority_vote: Option<secp256k1::PublicKey>,
-        // Optional witness data. Non-optional during a epoch block. This should be validated by consensus
+        // Optional witness data. Non-optional during a epoch block. This should be validated by
+        // consensus
         witness_data: Option<Vec<witness::Witness>>,
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     ) -> Self {

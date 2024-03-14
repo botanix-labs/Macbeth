@@ -351,7 +351,8 @@ where
             .unwrap();
         header.state_root = state_root;
 
-        // TODO(scott): if pegouts are pending but no witness data is provided, we should fail consensus validation
+        // TODO(scott): if pegouts are pending but no witness data is provided, we should fail
+        // consensus validation
         let witness_data_final = if header.is_poa_epoch() {
             witness_data.clone().map_or(Some(vec![]), |witness_data| Some(witness_data))
         } else {

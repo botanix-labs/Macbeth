@@ -131,7 +131,7 @@ pub struct FinalizeSigningRequest {
 pub struct FinalizeSigningResponse {
     /// Finalized tx which includes witness data
     #[prost(bytes = "vec", tag = "1")]
-    pub psbt: ::prost::alloc::vec::Vec<u8>,
+    pub transaction: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
 pub mod btc_server_client {
