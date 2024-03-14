@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "bin/reth/",
     "bin/btc-server",
+    "bin/test-suite",
     "crates/blockchain-tree/",
     "crates/config/",
     "crates/btc-wallet",

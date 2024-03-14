@@ -360,7 +360,12 @@ pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Ve
 mod test {
     use std::str::FromStr;
 
-    use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, psbt::{Input, PartiallySignedTransaction}, BlockHash, CompactTarget, TxIn};
+    use bitcoin::{
+        hash_types::TxMerkleNode,
+        hashes::Hash,
+        psbt::{Input, PartiallySignedTransaction},
+        BlockHash, CompactTarget, TxIn,
+    };
     use rand::Rng;
     use reth_primitives::{address, b256, bytes, Header, B256, U256};
 

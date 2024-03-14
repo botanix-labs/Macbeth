@@ -85,7 +85,8 @@ impl ExtraDataHeader {
         // validated by consensus
         authority_signers: Option<Vec<secp256k1::PublicKey>>,
         authority_vote: Option<secp256k1::PublicKey>,
-        // Optional witness data. Non-optional during a epoch block. This should be validated by consensus
+        // Optional witness data. Non-optional during a epoch block. This should be validated by
+        // consensus
         witness_data: Option<Vec<witness::Witness>>,
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     ) -> Self {
@@ -296,7 +297,7 @@ mod tests {
             None,
             Some(authority_signers.clone()),
             None,
-            Some(witness_data.clone()),  
+            Some(witness_data.clone()),
             bitcoin::hash_types::BlockHash::all_zeros(),
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
@@ -349,7 +350,6 @@ mod tests {
         let mut maybe_witness = binding.as_slice();
         let witness = witness::Witness::consensus_decode(&mut maybe_witness).expect("a witness");
         assert_eq!(witness, witness::Witness::default());
-        
     }
 
     // Test case for serializing with a signature

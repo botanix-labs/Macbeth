@@ -13,7 +13,6 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
 
 use crate::{
     frost::{messages::Request, EventResponseType, Response},
