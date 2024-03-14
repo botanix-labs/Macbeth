@@ -1,4 +1,4 @@
-use bitcoin::block::Header;
+use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
 use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::mint_validation::{
@@ -352,11 +352,15 @@ pub(crate) fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 
+pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
+    psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
 
-    use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, BlockHash, CompactTarget};
+    use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, psbt::{Input, PartiallySignedTransaction}, BlockHash, CompactTarget, TxIn};
     use rand::Rng;
     use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
@@ -522,5 +526,25 @@ mod test {
 
         let chain_id = 1;
         assert!(!is_testnet(chain_id));
+    }
+
+    #[test]
+    fn test_get_witness_data_from_psbt() {
+        let unsigned_tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: bitcoin::absolute::LockTime::from_height(0).unwrap(),
+            input: vec![],
+            output: vec![],
+        };
+        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsigned_tx).unwrap();
+
+        let mut input_1 = Input::default();
+        input_1.final_script_witness = Some(Witness::default());
+        let input_2 = input_1.clone();
+
+        let inputs = vec![input_1, input_2];
+        psbt.inputs = inputs.clone();
+
+        assert!(get_witness_data_from_psbt(psbt).len() == inputs.len());
     }
 }

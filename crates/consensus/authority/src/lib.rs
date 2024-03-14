@@ -345,13 +345,20 @@ where
             .unwrap();
         header.state_root = state_root;
 
+        // TODO(scott): if pegouts are pending but no witness data is provided, we should fail consensus validation
+        let witness_data_final = if header.is_poa_epoch() {
+            witness_data.clone().map_or(Some(vec![]), |witness_data| Some(witness_data))
+        } else {
+            None
+        };
+
         // Serialize the header without signature
         let mut extra_header_content_no_signature = ExtraDataHeader::new(
             0u32,
             None,
             if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
             vote_for,
-            witness_data.clone(),
+            witness_data_final,
             recent_block_hash,
         );
         let sig_hash = reth_consensus_common::utils::create_authority_sighash(
@@ -373,7 +380,6 @@ where
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
-    // TODO(scott): pass in witness data: hardcode to None for now
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
