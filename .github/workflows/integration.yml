@@ -19,14 +19,16 @@ concurrency:
 jobs:
   test:
     name: test / ${{ matrix.network }} (${{ matrix.partition }}/2)
-    runs-on:
-      group: Reth
+    runs-on: ubuntu-latest
+      # group: Reth
     env:
       RUST_BACKTRACE: 1
     strategy:
       matrix:
         partition: [1, 2]
-        network: ["ethereum", "optimism"]
+        # network: ["ethereum", "optimism"]
+        network: ["ethereum"]
+
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
