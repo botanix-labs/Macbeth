@@ -125,5 +125,5 @@ message FinalizeSigningRequest {
 
 message FinalizeSigningResponse {
     // Finalized tx which includes witness data
-    bytes transaction = 1;
+    bytes psbt = 1;
 }
