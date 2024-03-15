@@ -339,14 +339,14 @@ pub(crate) fn get_recent_block_height_or_zero(
     })
 }
 
-pub(crate) fn get_confirmation_depth(is_testnet: bool) -> u32 {
+pub fn get_confirmation_depth(is_testnet: bool) -> u32 {
     match is_testnet {
         true => SIGNET_PEGIN_CONFIRMATION_DEPTH,
         false => MAINNET_PEGIN_CONFIRMATION_DEPTH,
     }
 }
 
-pub(crate) fn is_testnet(chain_id: u64) -> bool {
+pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 

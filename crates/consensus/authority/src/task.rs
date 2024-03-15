@@ -22,6 +22,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use client::BtcServerClient;
 
+use bitcoincore_rpc::json;
+
 pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
@@ -37,6 +39,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) btc_server: BtcServerClient<tonic::transport::Channel>,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    /// Recent bitcoin block tx ids
+    pub(crate) bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
     /// Bitcoind client
     pub(crate) bitcoind_client: BitcoindClient,
     /// Instance of secp
@@ -75,6 +79,7 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
         bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
@@ -91,6 +96,7 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
+            bitcoin_block_tx_ids,
             bitcoind_client,
             secp,
             sk,
