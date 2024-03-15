@@ -19,6 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
+use bitcoin::block;
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
     utils::unix_timestamp,
@@ -374,9 +375,10 @@ where
         Ok(header)
     }
 
+
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
-    /// This returns the header of the executed block, as well as the poststate from execution.
+    /// This returns bundle state, block, and gas used.
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
@@ -385,9 +387,8 @@ where
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
-        authority_signers: &Vec<secp256k1::PublicKey>,
         evm_config: EvmConfig,
-    ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
+    ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
@@ -426,11 +427,27 @@ where
             senders,
             botanix_consensus_pkg.clone(),
         )?;
+        Ok((bundle_state, block, gas_used))
+    }
 
+    /// Builds and validates the current block header with the given transactions, on the provided [Executor].
+    ///
+    /// This returns the current block header.
+    pub(crate) fn build_and_validate_header(
+        &mut self,
+        bundle_state: &BundleStateWithReceipts,
+        block: Block,
+        gas_used: u64,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        vote: &Option<(secp256k1::PublicKey, Vote)>,
+        sk: &secp256k1::SecretKey,
+        secp: &secp256k1::Secp256k1<secp256k1::All>,
+        authority_signers: &Vec<secp256k1::PublicKey>,
+        witness_data: &Option<Vec<bitcoin::witness::Witness>>, // used in current poa branch
+    ) -> Result<SealedHeader, BlockExecutionError>
+    {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
-
-        trace!(target: "consensus::auto", ?bundle_state, ?header, ?body, "executed block, calculating state root and completing header");
 
         // fill in the rest of the fields
         let header = self.complete_header(
@@ -467,7 +484,7 @@ where
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
         let block_hash = header.hash_slow();
         let new_header = header.seal(block_hash);
-        Ok((new_header, bundle_state))
+        Ok(new_header)
     }
 
     // Execute and run poa validation on the block without inserting it into the storage

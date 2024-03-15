@@ -143,7 +143,8 @@ where
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
-        let (new_header, bundle_state) = match storage.build_and_execute(
+        // DB has been updated when this returns
+        let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
@@ -151,8 +152,7 @@ where
             &None,
             &self.sk,
             &self.secp,
-            &authority_signers,
-            self.evm_config.clone(),
+            self.evm_config.clone()
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -162,13 +162,13 @@ where
             }
         };
 
-        // Process Botanix specific logs
+        // Process Botanix specific logs and get current block pegouts
         let is_testnet = is_testnet(self.chain_spec.chain().id());
         let mut current_block_pegouts: Vec<MakeTxRequest> = Vec::new();
         match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
-            botanix_consensus_pkg.recent_header.1,
+            botanix_consensus_pkg.clone().recent_header.1,
             is_testnet,
         )
         .await
@@ -183,6 +183,53 @@ where
                 return;
             }
         }
+
+        // If end of epoch, process pegouts
+        if is_epoch_end(block.header.number) {
+            // get pegouts up to best block
+            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+            match self.epoch_manager.epoch_pegouts(best_block).await {
+                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
+                    drop(storage);
+                    return;
+                }
+            };
+
+            // add current block pegouts
+            pegouts.extend(current_block_pegouts);
+
+            // TODO this is commented out until the FROST networking is implemented
+            // info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server, pegouts).await
+            // {
+            //     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+            // }
+        }
+
+        // TODO(scott): in future ticket `send_pegouts` will return a psbt
+        // pull witness data from the psbt and add pass it down so it can be included in the EDH
+        
+        let new_header = match storage.build_and_validate_header(
+            &bundle_state,
+            block,
+            gas_used,
+            Some(botanix_consensus_pkg),
+            // TODO(armins) read vote in as param
+            &None,
+            &self.sk,
+            &self.secp,
+            &authority_signers,
+            &None
+        ) {
+            Ok(ret) => ret,
+            Err(err) => {
+                error!(target: "consensus::authority", ?err, "failed to build and validate header");
+                drop(storage);
+                return;
+            }
+        };
 
         // Seal the block
         let block = Block {
@@ -229,29 +276,5 @@ where
         let new_block = NewBlock { block, td: Uint::ZERO };
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
-
-        // If end of epoch, process pegouts
-        if is_epoch_end(sealed_block.header.number) {
-            // get pegouts up to best block
-            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
-            match self.epoch_manager.epoch_pegouts(best_block).await {
-                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
-                    drop(storage);
-                    return;
-                }
-            };
-
-            // add current block pegouts
-            pegouts.extend(current_block_pegouts);
-
-            // TODO this is commented out until the FROST networking is implemented
-            // info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server, pegouts).await
-            // {
-            //     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
-            // }
-        }
     }
 }
