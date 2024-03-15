@@ -84,7 +84,7 @@ impl App {
             // Store the new Merkle root in the database
             let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
             self.db
-                .store_utxo_merkle_root(&utxo.outpoint.txid, &merkle_root)
+                .store_utxo_merkle_root(&merkle_root)
                 .map_err(|e| CoordinatorError::DbError(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);

@@ -25,7 +25,9 @@ const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const PSBT: &[u8; 4] = b"psbt";
 /// sled tree id for the Merkle trees.
-const TREE_MERKLE: &[u8; 6] = b"merkle";
+const UTXO_MERKLE_TREE: &[u8; 6] = b"merkle";
+/// sled tree id for the UTXO merkle tree root
+const UTXO_MERKLE_ROOT_KEY: &[u8; 4] = b"root";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -69,8 +71,8 @@ pub struct Db {
     /// Only relevant for the coordinator
     psbt: sled::Tree,
 
-    /// A tree of merkle trees
-    merkle_trees: sled::Tree,
+    /// A tree of utxo merkle trees
+    utxo_merkle_tree: sled::Tree,
 }
 
 impl Db {
@@ -81,7 +83,7 @@ impl Db {
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(PSBT)?,
-            merkle_trees: db.open_tree(TREE_MERKLE)?,
+            utxo_merkle_tree: db.open_tree(UTXO_MERKLE_TREE)?,
             db,
         })
     }
@@ -92,7 +94,7 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
-        self.merkle_trees.flush()?;
+        self.utxo_merkle_tree.flush()?;
         Ok(())
     }
 
@@ -392,29 +394,16 @@ impl Db {
         Ok(())
     }
 
-    /// Stores the Merkle root of UTXOs for a given transaction ID.
-    pub fn store_utxo_merkle_root(
-        &self,
-        txid: &bitcoin::Txid,
-        merkle_root: &[u8; 32],
-    ) -> Result<(), sled::Error> {
-        let txid_bytes = bitcoin::consensus::encode::serialize(txid);
-        self.merkle_trees.insert(&txid_bytes, merkle_root)?;
+    /// Stores the consensus Merkle root of all spendable UTXOs.
+    pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
+        self.utxo_merkle_tree.insert(UTXO_MERKLE_ROOT_KEY, merkle_root)?;
         Ok(())
     }
 
-    /// Retrieves the Merkle root of UTXOs for a given transaction ID.
-    pub fn get_utxo_merkle_root_txid(
-        &self,
-        txid: &bitcoin::Txid,
-    ) -> Result<Option<[u8; 32]>, sled::Error> {
-        let txid_bytes = bitcoin::consensus::encode::serialize(txid);
-        self.merkle_trees.get(&txid_bytes).map(|opt| {
-            opt.map(|ivec| {
-                let bytes: [u8; 32] =
-                    ivec.as_ref().try_into().expect("Merkle root should be 32 bytes");
-                bytes
-            })
+    /// Retrieves the consensus Merkle root of all spendable UTXOs.
+    pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
+        self.utxo_merkle_tree.get(UTXO_MERKLE_ROOT_KEY).map(|opt| {
+            opt.map(|ivec| ivec.as_ref().try_into().expect("Merkle root should be 32 bytes"))
         })
     }
 }
@@ -448,5 +437,38 @@ impl From<sled::transaction::TransactionError<sled::Error>> for Error {
 impl From<Error> for tonic::Status {
     fn from(e: Error) -> tonic::Status {
         tonic::Status::internal(e.to_string())
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_db() -> (Db, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Db::open(temp_dir.path()).unwrap();
+        (db, temp_dir)
+    }
+
+    #[test]
+    fn test_store_and_get_utxo_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+
+        let merkle_root: [u8; 32] = [0; 32]; // Example Merkle root, usually this would be a real hash
+        db.store_utxo_merkle_root(&merkle_root).unwrap();
+
+        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, retrieved_merkle_root, "The stored and retrieved Merkle roots should be the same.");
+    }
+
+    #[test]
+    fn test_get_utxo_merkle_root_not_found() {
+        let (db, _temp_dir) = setup_db();
+
+        // Do not store anything and directly attempt to retrieve
+        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap();
+        assert!(retrieved_merkle_root.is_none(), "Should not retrieve a Merkle root when none has been stored.");
     }
 }

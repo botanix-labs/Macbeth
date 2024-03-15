@@ -194,6 +194,13 @@ pub struct FinalizeSigningResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetUtxoMerkleRootResponse {
+    /// The Merkle root of all spendable UTXOs.
+    #[prost(bytes = "vec", tag = "1")]
+    pub merkle_root: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated client implementations.
 pub mod btc_server_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -661,7 +668,6 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetAllUtxos"));
             self.inner.unary(req, path, codec).await
         }
-        /// Update the RemoveUtxo method to return the new response type
         pub async fn remove_utxo(
             &mut self,
             request: impl tonic::IntoRequest<super::RemoveUtxoRequest>,
@@ -685,6 +691,31 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "RemoveUtxo"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_utxo_merkle_root(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetUtxoMerkleRootResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetUTXOMerkleRoot",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetUTXOMerkleRoot"));
             self.inner.unary(req, path, codec).await
         }
     }

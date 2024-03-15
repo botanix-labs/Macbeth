@@ -40,8 +40,9 @@ service BtcServer {
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
-    // Update the RemoveUtxo method to return the new response type
     rpc RemoveUtxo(RemoveUtxoRequest) returns (RemoveUtxoResponse) {}
+
+    rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
 
 }
 
@@ -171,4 +172,9 @@ message FinalizeSigningRequest {
 message FinalizeSigningResponse {
     // Finalized tx which includes witness data
     bytes psbt = 1;
+}
+
+message GetUTXOMerkleRootResponse {
+    // The Merkle root of all spendable UTXOs.
+    bytes merkle_root = 1;
 }

@@ -8,22 +8,6 @@ pub fn hash_utxo(utxo: &Utxo) -> [u8; 32] {
     Sha256::digest(&utxo_bytes).into()
 }
 
-// pub fn construct_merkle_tree(utxos: &[Utxo]) -> MerkleTree<MerkleSha256> {
-//     let hashes: Vec<[u8; 32]> = utxos.iter().map(hash_utxo).collect();
-//     MerkleTree::from_leaves(&hashes)
-// }
-
-// pub fn construct_merkle_tree_from_utxos(utxos: &[Utxo]) -> MerkleTree<MerkleSha256> {
-//     let hashes: Vec<[u8; 32]> = utxos
-//         .iter()
-//         .map(|utxo| {
-//             let utxo_bytes = serde_cbor::to_vec(utxo).expect("Failed to serialize UTXO");
-//             Sha256::digest(&utxo_bytes).into()
-//         })
-//         .collect();
-//     MerkleTree::from_leaves(&hashes)
-// }
-
 pub fn construct_merkle_tree(hashes: &[Vec<u8>]) -> MerkleTree<MerkleSha256> {
     let fixed_size_hashes: Vec<[u8; 32]> =
         hashes.iter().map(|hash| hash.clone().try_into().expect("Hash must be 32 bytes")).collect();
