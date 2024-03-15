@@ -5,6 +5,8 @@ use secp256k1::{
     KeyPair, PublicKey, Scalar, SecretKey,
 };
 
+use frost_secp256k1_tr as frost;
+
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
 }
@@ -59,6 +61,7 @@ pub fn tweak_private_key(tweak: &[u8; 32], prv: &SecretKey) -> Result<SecretKey,
     Ok(tweaked_prv)
 }
 
+// Deprecated
 pub fn tweak_public_key(
     tweak: &[u8; 32],
     pk: secp256k1::PublicKey,
@@ -66,6 +69,17 @@ pub fn tweak_public_key(
     let scalar = generate_tweak_scalar(tweak, &pk)?;
     let tweaked_pk = pk.add_exp_tweak(&SECP, &scalar)?;
 
+    Ok(tweaked_pk)
+}
+
+pub fn tweak_frost_verifying_key(
+    pk: &secp256k1::PublicKey,
+    tweak: &[u8; 20],
+) -> Result<secp256k1::PublicKey, KeyError> {
+    let pk_slice: [u8; 33] = pk.serialize().try_into().unwrap();
+    let vk = frost::VerifyingKey::deserialize(pk_slice).unwrap().get_tweaked(Some(tweak));
+
+    let tweaked_pk = secp256k1::PublicKey::from_slice(&vk.serialize()).unwrap();
     Ok(tweaked_pk)
 }
 
@@ -79,6 +93,15 @@ mod tests {
         0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
         0xde, 0xf0,
     ];
+    #[test]
+    fn is_should_tweak_pk() {
+        let eth_tweak = [0u8; 20];
+        let kp = generate_bip340_keypair();
+        let pk = kp.public_key();
+        let tpk = tweak_frost_verifying_key(&pk, &eth_tweak).expect("valid tweak");
+
+        assert_ne!(pk, tpk);
+    }
 
     #[test]
     fn it_should_create_key_of_correct_length() {

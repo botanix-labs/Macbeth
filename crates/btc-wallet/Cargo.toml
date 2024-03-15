@@ -32,6 +32,10 @@ thiserror = "1.0.43"
 ## url
 url = { version = "2.2.2", features = ["serde"] }
 
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
+
+
 [features]
 # Included solely to ignore certain tests.
 optimism = []
