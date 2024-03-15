@@ -6975,6 +6975,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "ethers",
+ "frost-secp256k1-tr",
  "hex",
  "lazy_static",
  "miniscript",
