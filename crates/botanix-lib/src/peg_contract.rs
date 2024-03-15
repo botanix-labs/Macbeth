@@ -10,10 +10,9 @@ use bitcoin::{
 use bitcoin::{self};
 use ethers::types::U256;
 use reth_primitives::Address;
-use secp256k1::Verification;
 use thiserror::Error;
 
-use reth_btc_wallet::address;
+use reth_btc_wallet::{address, key};
 
 use crate::utils::AmountExt;
 
@@ -64,7 +63,10 @@ impl PeginData {
                 return Err(PeginError::Invalid("invalid tx or outpoint: output idx"));
             }
 
-            let gateway_script = address::generate_taproot_scriptpubkey(&aggregate_pk);
+            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.0.0).map_err(|_e| {
+                PeginError::InvalidTweak()
+            })?;
+            let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[op.vout as usize];
             if gateway_script != output.script_pubkey {
@@ -189,6 +191,8 @@ pub enum PeginError {
     InvalidPublicKey(secp256k1::Error),
     #[error("invalid bitcoin block height")]
     InvalidBitcoinBlockHeight(),
+    #[error("invalid tweak: failed to tweak aggregate public key")]
+    InvalidTweak(),
 }
 
 #[derive(Debug, Error)]
