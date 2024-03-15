@@ -34,6 +34,8 @@ use tokio::sync::{
 };
 use tracing::error;
 
+use bitcoincore_rpc::json;
+
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     #[allow(dead_code)]
