@@ -1,9 +1,10 @@
 use crate::{
     engine_util::{self, BestTransactionsError},
     task::BlockProductionTask,
-    utils::{get_recent_block_height_or_zero, is_epoch_end, is_testnet, send_pegouts},
+    utils::{is_epoch_end, is_testnet},
 };
-use client::MakeTxRequest;
+
+use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -168,7 +169,7 @@ where
 
         // Process Botanix specific logs
         let is_testnet = is_testnet(self.chain_spec.chain().id());
-        let mut current_block_pegouts: Vec<MakeTxRequest> = Vec::new();
+        let mut current_block_pegouts: Vec<PegoutData> = Vec::new();
         match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
@@ -237,7 +238,7 @@ where
         // If end of epoch, process pegouts
         if is_epoch_end(sealed_block.header.number) {
             // get pegouts up to best block
-            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+            let mut pegouts: Vec<PegoutData> = Vec::new();
             match self.epoch_manager.epoch_pegouts(best_block).await {
                 Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
                 Err(e) => {
