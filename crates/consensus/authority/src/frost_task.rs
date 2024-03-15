@@ -9,7 +9,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct FrostTask<Client> {
     /// Network Handler
@@ -69,7 +69,7 @@ where
                     return;
                 }
                 info!(">>>>>>>>>>> [FROST_TASK] Connected to all frost peers {}", is_connected);
-                // start the dkg process / restart ?
+                // start the dkg process
                 info!(">>>>>>>>>>> [FROST_TASK] Starting the DKG state machine...");
                 let _ = self.dkg_state_machine.start().await;
             }
@@ -94,21 +94,23 @@ where
 
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
-        // if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
-        //     info!(">>>>>>>>>>> [FROST_TASK] Got public key {:?}", public_key);
-        //     if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
-        //         hex::decode(public_key.publickey).unwrap().as_slice(),
-        //     ) {
-        //         let mut storage = self.storage.write().await;
-        //         storage.aggregate_public_key = Some(secp_pk);
+        if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
+            info!(">>>>>>>>>>> [FROST_TASK] Got public key {:?}", public_key);
+            if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
+                hex::decode(public_key.publickey).unwrap().as_slice(),
+            ) {
+                let mut storage = self.storage.write().await;
+                storage.aggregate_public_key = Some(secp_pk);
 
-        //         drop(storage);
-        //     } else {
-        //         warn!(
-        //             ">>>>>>>>>>> [FROST_TASK] Error converting public key to secp256k1 public key"
-        //         );
-        //     }
-        // }
+                drop(storage);
+            } else {
+                warn!(
+                    ">>>>>>>>>>> [FROST_TASK] Error converting public key to secp256k1 public key"
+                );
+            }
+        } else {
+            debug!(">>>>>>>>>>> [FROST_TASK] No public key found, proceeding with DKG");
+        }
 
         loop {
             // Check if we are in_turn and if we need to run the dkg start process
