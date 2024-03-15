@@ -61,7 +61,7 @@ mod epoch_manager;
 mod frost_task;
 mod sync;
 mod task;
-mod utils;
+pub mod utils;
 mod voting;
 
 pub use builder::AuthorityConsensusBuilder;

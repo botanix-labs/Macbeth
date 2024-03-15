@@ -6848,6 +6848,7 @@ dependencies = [
  "assert_matches",
  "backon",
  "bitcoin",
+ "bitcoincore-rpc",
  "boyer-moore-magiclen",
  "clap",
  "client",
@@ -6937,6 +6938,7 @@ name = "reth-authority-consensus"
 version = "0.1.0-alpha.20"
 dependencies = [
  "bitcoin",
+ "bitcoincore-rpc",
  "btc-server",
  "clap",
  "client",
