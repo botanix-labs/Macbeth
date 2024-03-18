@@ -253,8 +253,8 @@ where
         let binding = botanix_consensus_pkg.clone();
         let consensus_pkg = binding.as_ref();
         for log in result.logs() {
-            if log.topics().first() == Some(&MINT_TOPIC) && consensus_pkg.is_some() {
-                let pegin_data = parse_pegin_topic(&log).map_err(|e| {
+            if log.topics().first() == Some(&MINT_TOPIC) && botanix_consensus_pkg.is_some() {
+                let pegin_data = parse_pegin_topic(&log, &result.logs()).map_err(|e| {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
                 })?;
@@ -265,8 +265,9 @@ where
                 match pegin_data.validate(&recent_header, &aggregate_public_key) {
                     Ok(aggregate_value) => {
                         tracing::trace!("Pegin aggregate value: {}", aggregate_value);
-                        if aggregate_value != pegin_data.amount {
-                            warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                        tracing::trace!("Pegin amount: {}", pegin_data.amount);
+                        if aggregate_value == pegin_data.amount {
+                            warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
                             return Err(BlockValidationError::MintContractViolation.into());
                         }
                     }

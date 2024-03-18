@@ -114,6 +114,7 @@ pub(crate) async fn process_receipts(
                         log,
                         recent_bitcoin_block_height,
                         is_testnet,
+                        &receipt.logs,
                     )
                     .await
                     {
@@ -218,13 +219,14 @@ async fn process_botanix_log(
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
+    receipt_logs: &Vec<Log>,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(log)
+                let pegin_data = parse_pegin_reth_log_topic(&log, &receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
