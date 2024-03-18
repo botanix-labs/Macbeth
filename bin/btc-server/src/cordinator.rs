@@ -207,12 +207,17 @@ impl App {
                 change_script.clone().as_script(), // drain_script
             )
             .map_err(CoordinatorError::CoinSelection)?;
-        let selected = selection
+        let mut selected = selection
             .selected
             .iter()
             .map(|u| utxos.get(&OutPoint::from_bdk(u.outpoint())))
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
+
+        // Sort UTXO by outpoint
+        selected.sort_by(|a, b| a.outpoint.txid.cmp(&b.outpoint.txid));
+        selected.sort_by(|a, b| a.outpoint.vout.cmp(&b.outpoint.vout));
+
         let change = match selection.excess {
             bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
                 Some(TxOut { script_pubkey: change_script.clone(), value: amount })
@@ -298,7 +303,8 @@ impl App {
 
             // Skipping first byte which is encoding the parity of the y cord of R
             // We only use x-only elements. So we can skip this byte. FROST library only produces
-            // x-only keys / points TODO (armins) remove the unwrap here
+            // x-only keys / points
+            // TODO (armins) remove the unwrap here
             let secp_sig =
                 bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..])
                     .unwrap();

@@ -21,9 +21,11 @@ mod rpc {
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
-use anyhow::Context;
-
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
+use bitcoin::{
+    consensus::{encode as btcencode, Decodable},
+    psbt::Psbt,
+    secp256k1, FeeRate, OutPoint, TxOut, Witness,
+};
 use clap::Parser;
 use config::{GrpcConfig, TomlConfig};
 use dkg::DKGError;
@@ -296,7 +298,45 @@ impl rpc::BtcServer for App {
             internal!("Failed to serialize psbt: {}", e)
         })?;
 
-        let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
+        Ok(res)
+    }
+
+    async fn signer_finalize(
+        &self,
+        req: tonic::Request<rpc::FinalizeSignerRequest>,
+    ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        let req = req.into_inner();
+        let fee_rate =
+            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
+
+        let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+            })
+            .collect();
+
+        // Witnesses can be get big. Remove this clone()
+        let witnesses = req.witness;
+        let psbt = self.finalize_signer(outputs_result?, fee_rate, witnesses).map_err(|e| {
+            error!("Failed to finalize signer: {}", e);
+            internal!("Failed to finalize signer: {}", e)
+        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            error!("Failed to serialize psbt: {}", e);
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse {
+            psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
+        });
         Ok(res)
     }
 
@@ -452,7 +492,7 @@ impl rpc::BtcServer for App {
     /// Also known as the verifying key
     async fn get_public_key(
         &self,
-        req: tonic::Request<rpc::Empty>,
+        _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         let pk = self.get_public_key().map_err(|e| {
             error!("Failed to get public key: {}", e);
@@ -695,12 +735,6 @@ struct Config {
     toml: Option<PathBuf>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self { network: bitcoin::Network::Signet, ..Default::default() }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
@@ -782,7 +816,15 @@ mod test {
             frost_round1_dkg: None,
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
-            config: Default::default(),
+            config: Config {
+                max_signers: 3,
+                min_signers: 2,
+                db: dbdir,
+                network: NETWORK,
+                identifier: 1,
+                address: "0.0.0.0".to_string(),
+                toml: None,
+            },
         };
 
         app
@@ -1200,12 +1242,9 @@ mod test {
 
         let sc2 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
         assert_eq!(sc2.len(), 1);
-
         assert_eq!(sc2.len(), 1);
         assert_ne!(sc1, sc2);
     }
-
-    
 
     // TODO (armins) fix these tests!!
     // #[test]

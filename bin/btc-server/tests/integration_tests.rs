@@ -1,11 +1,12 @@
 use std::{process::Stdio, str::FromStr, vec};
 
+use reth_btc_wallet::address::EthAddress;
 use tokio::{
     io::{self, AsyncBufReadExt},
     process::Command,
 };
 
-use bitcoin::{consensus::Encodable, Address, Amount, FeeRate, TxOut, Txid};
+use bitcoin::{consensus::Encodable, psbt::Psbt, Address, Amount, FeeRate, TxOut, Txid};
 use client;
 use tonic::transport::Channel;
 
@@ -34,6 +35,8 @@ async fn spawn_server(id: u16, address: String) -> () {
         "2",
         "--max-signers",
         "3",
+        "--toml",
+        "config.toml",
     ];
 
     // Create a Command instance and set the working directory
@@ -315,12 +318,45 @@ async fn test_many_inputs_signing() {
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
 
-    let _finalized = c3
+    let finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
         .await
         .unwrap();
+
+    let psbt = Psbt::deserialize(finalized.into_inner().psbt.as_slice()).expect("valid psbt");
+    let witness = psbt
+        .inputs
+        .iter()
+        .map(|input| input.final_script_witness.clone().expect("witness").to_vec()[0].to_vec())
+        .collect::<Vec<_>>();
+
+    c1.signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
+        // Same fee rate and outputs as the original psbt request
+        fee_rate: 2,
+        outputs: vec![client::Output {
+            address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+            // At this point there should be 2000 sats in the wallet
+            value: 1200,
+        }],
+        witness: witness.clone(),
+    }))
+    .await
+    .unwrap();
+
+    c2.signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
+        // Same fee rate and outputs as the original psbt request
+        fee_rate: 2,
+        outputs: vec![client::Output {
+            address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+            // At this point there should be 2000 sats in the wallet
+            value: 1200,
+        }],
+        witness: witness.clone(),
+    }))
+    .await
+    .unwrap();
 
     // Lets try spending again, this time should be spending non tweaked inputs (change)
     // First lets get a new signing session id
@@ -393,7 +429,7 @@ async fn test_many_inputs_signing() {
 
     c3.new_round2_signing_package(tonic::Request::new(c1_signing2)).await.unwrap();
     c3.new_round2_signing_package(tonic::Request::new(c2_signing2)).await.unwrap();
-    let _finalized = c3
+    let finalized = c3
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))

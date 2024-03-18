@@ -20,9 +20,12 @@ service BtcServer {
 
     rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
 
+    // Signing Endpoints
     rpc GetRound1SigningPackage(Round1SigningPackageRequest) returns (Round1SigningPackage) {}
 
     rpc GetRound2SigningPackage(SignPayload) returns (Round2SigningPackage) {}
+
+    rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
 
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
@@ -98,15 +101,23 @@ message Round2SigningPackage {
     bytes signing_session_id = 3;
 }
 
+message Output {
+    string address = 1;
+    uint64 value = 2;
+}
+
+message FinalizeSignerRequest {
+    repeated bytes witness = 1;
+    repeated Output outputs = 2;
+    // Fee rate in satoshi per vbyte.
+    uint32 fee_rate = 3;
+}
+
 message SignPayload {
     bytes psbt = 1;
     bytes signing_session_id = 3;
 }
 
-message Output {
-    string address = 1;
-    uint64 value = 2;
-}
 
 message MakeTxRequest {
     repeated Output outputs = 1;
