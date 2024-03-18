@@ -22,7 +22,7 @@ use reth_provider::{
 };
 use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -43,7 +43,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
+    bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
     bitcoind_config: BitcoindConfig,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
@@ -91,7 +91,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
+        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_config: BitcoindConfig,
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected

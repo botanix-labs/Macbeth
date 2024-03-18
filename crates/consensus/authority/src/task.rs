@@ -15,7 +15,7 @@ use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
 use secp256k1::{All, Secp256k1};
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -40,7 +40,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Recent bitcoin block tx ids
-    pub(crate) bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
+    pub(crate) bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
     /// Bitcoind client
     pub(crate) bitcoind_client: BitcoindClient,
     /// Instance of secp
@@ -79,7 +79,7 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>>,
+        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
