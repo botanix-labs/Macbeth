@@ -22,6 +22,8 @@ pub enum BitcoindError {
     BlockIndexStatusFailed(bitcoincore_rpc::Error),
     #[error("Best block hash retrieval failed")]
     BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Block info retrieval failed")]
+    BlockInfoRetrievalFailed(bitcoincore_rpc::Error)
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +96,7 @@ impl BitcoindClient {
         let block = self
             .rpc
             .get_block_info(block_hash)
-            .map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
+            .map_err(BitcoindError::BlockInfoRetrievalFailed)?;
         Ok(block)
     }
 

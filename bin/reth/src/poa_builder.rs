@@ -48,7 +48,7 @@ use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, collections::HashMap};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
@@ -190,8 +190,8 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // fetch and store bitcoin block tx ids
         let is_testnet = is_testnet(self.config.chain.chain.id());
         let confirmation_depth = get_confirmation_depth(is_testnet);
-        let bitcoin_block_tx_ids: Arc<RwLock<Option<Vec<(Vec<bitcoin::Txid>, u64)>>>> =
-        Arc::new(RwLock::new(None));
+        let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
+        Arc::new(RwLock::new(HashMap::new()));
         let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
         let bitcoind_config_clone = bitcoind_config.clone();
 
@@ -199,10 +199,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             let sleep_ms = tokio::time::Duration::from_millis(5000);
             let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
 
-            let mut current_tx_ids: Vec<(Vec<bitcoin::Txid>, u64)> = match bitcoin_block_tx_ids.read().await.clone() {
-                Some(tx_ids) => tx_ids,
-                None => Vec::new(),
-            };
+            let mut current_tx_ids: HashMap<u64, Vec<bitcoin::Txid>> = bitcoin_block_tx_ids.read().await.clone();
             loop {
                 let tip = match bitcoind_client.get_tip().await {
                     Ok(tip) => tip,
@@ -215,18 +212,18 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
                 // prune tx ids older than confirmation_depth
                 let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
-                current_tx_ids.retain(|(_, block_height)| *block_height > tip - confirmation_depth_u64);
+                current_tx_ids.retain(|block_height, _| *block_height >= tip - confirmation_depth_u64);
 
                 let start = tip - confirmation_depth_u64;
                 for height in start..=tip {
                     // don't fetch tx ids we already have
-                    if !current_tx_ids.is_empty() && current_tx_ids.iter().any(|(_, block_height)| *block_height == height) {
+                    if !current_tx_ids.is_empty() && current_tx_ids.contains_key(&height) {
                         continue;
                     }
                     let block_hash = match bitcoind_client.get_block_hash(height).await {
                         Ok(block_hash) => block_hash,
                         Err(_) => {
-                            error!(target: "reth::cli", "Failed to fetch block hash. Retrying...");
+                            error!(target: "reth::cli", "Failed to fetch block hash while fetching tx ids. Retrying...");
                             tokio::time::sleep(sleep_ms).await;
                             break;
                         }
@@ -235,17 +232,17 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                     match bitcoind_client.get_block_info(&block_hash).await {
                         Ok(block_info) => {
                             let tx_ids = block_info.tx;
-                            current_tx_ids.push((tx_ids, height));
+                            current_tx_ids.insert(height, tx_ids);
                         }
                         Err(_) => {
-                            error!(target: "reth::cli", "Failed to fetch block info. Retrying...");
+                            error!(target: "reth::cli", "Failed to fetch block info while fetching tx ids. Retrying...");
                             tokio::time::sleep(sleep_ms).await;
                             break;
                         }
                     }
                 }
                 let mut tx_ids_write = bitcoin_block_tx_ids.write().await;
-                *tx_ids_write = Some(current_tx_ids.clone());
+                *tx_ids_write = current_tx_ids.clone();
                 drop(tx_ids_write);
             }
         }));
