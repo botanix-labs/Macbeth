@@ -273,6 +273,8 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Coordinator endpoint for finalizing a signing session
+    /// The outputs of this endpoint is a ready-to-broadcast PSBT
     async fn finalize_signing(
         &self,
         req: tonic::Request<rpc::FinalizeSigningRequest>,
@@ -298,6 +300,8 @@ impl rpc::BtcServer for App {
         Ok(res)
     }
 
+    /// Get a unsigned (not ready to sign) PSBT given a list of outputs and a fee rate
+    /// This is the first step in the signing process. It is essentially just UTXO selection
     async fn get_psbt(
         &self,
         req: tonic::Request<rpc::MakeTxRequest>,
@@ -359,6 +363,7 @@ impl rpc::BtcServer for App {
         Ok(res)
     }
 
+    /// Coordinator endpoint for getting a ready to sign PSBT
     async fn get_to_sign_package(
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
@@ -385,6 +390,7 @@ impl rpc::BtcServer for App {
         Ok(res)
     }
 
+    /// Coordinator endpoint for adding round1 signing packages
     async fn new_round1_signing_package(
         &self,
         req: tonic::Request<rpc::Round1SigningPackage>,
@@ -413,6 +419,7 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Coordinator endpoint for adding round2 signing packages
     async fn new_round2_signing_package(
         &self,
         req: tonic::Request<rpc::Round2SigningPackage>,
@@ -441,6 +448,8 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Retrieves the aggregate FROST public key with no tweaks applied
+    /// Also known as the verifying key
     async fn get_public_key(
         &self,
         req: tonic::Request<rpc::Empty>,
@@ -454,6 +463,7 @@ impl rpc::BtcServer for App {
         return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
     }
 
+    /// generated a taproot gateway address given a eth address tweak
     async fn get_gateway_address(
         &self,
         req: tonic::Request<rpc::GetGatewayAddressRequest>,
@@ -592,7 +602,7 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(res))
     }
 
-    /// Endpoint responds with a nonce commitments for a ONE particular signings session
+    /// Signer endpoint responds with a nonce commitments for a ONE particular signings session
     async fn get_round1_signing_package(
         &self,
         req: tonic::Request<rpc::Round1SigningPackageRequest>,
@@ -628,6 +638,7 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(res))
     }
 
+    /// Signer endpoint to get a round 2 partial signature for a particular signing session‚
     async fn get_round2_signing_package(
         &self,
         req: tonic::Request<rpc::SignPayload>,
