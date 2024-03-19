@@ -22,7 +22,7 @@ endif
 
 # Cargo profile for builds. Default is for local builds, CI uses an override.
 PROFILE ?= release
-
+NODE_1_DIR="bin/btc-server/"
 # Extra flags for Cargo
 CARGO_INSTALL_EXTRA_FLAGS ?=
 
@@ -264,7 +264,7 @@ start-reth-server:
 	--btc-block-source "https://mempool.space/signet/api"
 
 fmt:
-	cargo +nightly fmt
+	cargo fmt
 
 lint-reth:
 	cargo +nightly clippy \
@@ -347,7 +347,6 @@ test:
 	make test-other-targets
 
 pr:
-	make fmt && \
 	make lint && \
 	make docs && \
 	make test
@@ -358,7 +357,11 @@ start-test-suite:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
+<<<<<<< HEAD
 	cargo run --bin btc-server -- --btc-network "${BITCOIND_NETWORK}" --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url "${BITCOIND_URL}" --bitcoind-user "${BITCOIND_USER}" --bitcoind-pass "${BITCOIND_PWD}" --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
+=======
+	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 1 --max-signers 1 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5 
+>>>>>>> f494f4c08 (added jwt authentication to btc server and client)
 
 start-btc-server-2:
 	cd ./bin/btc-server && \

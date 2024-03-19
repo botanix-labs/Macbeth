@@ -60,8 +60,6 @@ use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use rsntp::AsyncSntpClient;
 use tokio::time::Duration;
 
-use bitcoincore_rpc::json;
-
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
 
