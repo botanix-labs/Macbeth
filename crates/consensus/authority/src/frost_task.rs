@@ -91,7 +91,6 @@ where
             }
         };
 
-
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
         if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
@@ -118,9 +117,9 @@ where
             let is_inturn = self.epoch_manager.poll().await;
 
             // start dkg only when we are in turn + initial state + no public key
-            if is_inturn
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_inturn &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }

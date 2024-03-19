@@ -225,7 +225,7 @@ pub mod btc_server_server {
         ) -> std::result::Result<
             tonic::Response<super::GetPublicKeyResponse>,
             tonic::Status,
-        >; 
+        >;
         async fn get_round1_dkg_package(
             &self,
             request: tonic::Request<super::Empty>,
@@ -488,11 +488,11 @@ pub mod btc_server_server {
                         type Response = super::GetPublicKeyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
-                            tonic::Status, 
+                            tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>, 
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

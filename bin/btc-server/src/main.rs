@@ -307,7 +307,9 @@ impl rpc::BtcServer for App {
             internal!("Failed to serialize psbt: {}", e)
         })?;
 
-        let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes});
+
         Ok(res)
     }
 
@@ -706,19 +708,17 @@ impl rpc::BtcServer for App {
         }
     }
     // Gets the merkle root of the utxo set
-    async fn get_utxo_merkle_root(&self, _request: tonic::Request<rpc::Empty>,)
-    -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
+    async fn get_utxo_merkle_root(
+        &self,
+        _request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
         match self.db.get_utxo_merkle_root() {
             Ok(Some(merkle_root)) => {
                 // Successfully found the merkle root, return it
-                let response = rpc::GetUtxoMerkleRootResponse {
-                    merkle_root: merkle_root.to_vec(), 
-                };
+                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root.to_vec() };
                 Ok(tonic::Response::new(response))
-            },
-            Ok(None) => {
-                Err(tonic::Status::not_found("UTXO Merkle root not found."))
-            },
+            }
+            Ok(None) => Err(tonic::Status::not_found("UTXO Merkle root not found.")),
             Err(e) => {
                 // An error occurred while accessing the database
                 Err(tonic::Status::internal(format!("Failed to retrieve UTXO Merkle root: {}", e)))
@@ -1252,8 +1252,6 @@ mod test {
         assert_eq!(sc2.len(), 1);
         assert_ne!(sc1, sc2);
     }
-
-    
 
     // TODO (armins) fix these tests!!
     // #[test]

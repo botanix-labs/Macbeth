@@ -253,8 +253,8 @@ where
 
             // TODO this is commented out until the FROST networking is implemented
             // info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server, pegouts).await
-            // {
+            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server,
+            // pegouts).await {
             //     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
             // }
         }

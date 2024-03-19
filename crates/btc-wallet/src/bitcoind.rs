@@ -88,10 +88,8 @@ impl BitcoindClient {
     }
 
     pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
-        let tip = self
-            .rpc
-            .get_block_count()
-            .map_err(|e| BitcoindError::BlockTipRetrievalFailed(e))?;
+        let tip =
+            self.rpc.get_block_count().map_err(|e| BitcoindError::BlockTipRetrievalFailed(e))?;
 
         Ok(tip)
     }

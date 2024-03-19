@@ -17,10 +17,8 @@ use bdk::{
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use bitcoin::Address;
 use crate::merkle;
-use bitcoin::Transaction;
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut}; 
+use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};

@@ -440,7 +440,6 @@ impl From<Error> for tonic::Status {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,7 +459,10 @@ mod tests {
         db.store_utxo_merkle_root(&merkle_root).unwrap();
 
         let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
-        assert_eq!(merkle_root, retrieved_merkle_root, "The stored and retrieved Merkle roots should be the same.");
+        assert_eq!(
+            merkle_root, retrieved_merkle_root,
+            "The stored and retrieved Merkle roots should be the same."
+        );
     }
 
     #[test]
@@ -469,6 +471,9 @@ mod tests {
 
         // Do not store anything and directly attempt to retrieve
         let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap();
-        assert!(retrieved_merkle_root.is_none(), "Should not retrieve a Merkle root when none has been stored.");
+        assert!(
+            retrieved_merkle_root.is_none(),
+            "Should not retrieve a Merkle root when none has been stored."
+        );
     }
 }

@@ -203,7 +203,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                             continue;
                         }
                     };
-                   
                     if current_block_hash != best_block_hash {
                         info!("Async bitcoin worker tip mismatch");
                         let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash).await {
