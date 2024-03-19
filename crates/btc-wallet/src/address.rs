@@ -130,7 +130,6 @@ where
 {
     let eth = eth_address.as_slice();
     let eth_address_tweak = sha256::Hash::hash(eth);
-    
 
     {
         let mut eng = sha256::Hash::engine();

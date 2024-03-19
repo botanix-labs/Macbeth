@@ -139,9 +139,7 @@ where
 
             let botanix_consensus_pkg = BotanixConsensusPackage {
                 recent_header: recent_bitcoin_block_header.expect("recent header is some"),
-                aggregate_public_key: storage
-                    .aggregate_public_key
-                    .expect("aggregate pk is some"),
+                aggregate_public_key: storage.aggregate_public_key.expect("aggregate pk is some"),
             };
 
             match storage.execute_imported_block(
