@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use tracing::error;
 use url::Url;
+use bitcoincore_rpc::json::EstimateMode;
 
 /// Settings for the [BotanixConfig]
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
