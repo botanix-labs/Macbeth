@@ -13,7 +13,11 @@ use bitcoin::hashes::Hash;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
-use reth_authority_consensus::{AuthorityConsensusBuilder, utils::{is_testnet, get_confirmation_depth}};
+use reth_authority_consensus::{
+    extended_client::BtcServerExtendedClient,
+    utils::{get_confirmation_depth, is_testnet},
+    AuthorityConsensusBuilder,
+};
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
     BeaconConsensusEngine, BeaconConsensusEngineError, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -48,16 +52,13 @@ use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use std::{path::PathBuf, sync::Arc, collections::HashMap};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
-use client::BtcServerClient;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use rsntp::AsyncSntpClient;
 use tokio::time::Duration;
-
-use bitcoincore_rpc::json;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
@@ -156,11 +157,17 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             }),
         );
 
+        // extract the jwt secret from the args if possible
+        let default_jwt_path = self.data_dir.jwt_path();
+        let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
+
         // Connect to btc signining server
-        let btc_server_client: BtcServerClient<tonic::transport::Channel> =
-            BtcServerClient::connect(self.config.rpc.btc_server.clone())
-                .await
-                .expect("connect to btc_server");
+        let btc_server_client = BtcServerExtendedClient::new(
+            self.config.rpc.btc_server.clone(),
+            Some(jwt_secret.clone()),
+        )
+        .await
+        .expect("cannot create btc_server");
         info!(target: "reth::cli", "Btc server connected");
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
@@ -191,7 +198,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let is_testnet = is_testnet(self.config.chain.chain.id());
         let confirmation_depth = get_confirmation_depth(is_testnet);
         let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
-        Arc::new(RwLock::new(HashMap::new()));
+            Arc::new(RwLock::new(HashMap::new()));
         let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
         let bitcoind_config_clone = bitcoind_config.clone();
 
@@ -610,10 +617,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             Box::new(executor.clone()),
         );
         info!(target: "reth::cli", "Engine API handler initialized");
-
-        // extract the jwt secret from the args if possible
-        let default_jwt_path = self.data_dir.jwt_path();
-        let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
 
         // adjust rpc port numbers based on instance number
         self.config.adjust_instance_ports();

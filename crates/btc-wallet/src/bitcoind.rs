@@ -1,4 +1,7 @@
-use bitcoincore_rpc::{json::{GetBlockResult, GetChainTipsResultStatus}, Auth, Client, RpcApi};
+use bitcoincore_rpc::{
+    json::{GetBlockResult, GetChainTipsResultStatus},
+    Auth, Client, RpcApi,
+};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -23,7 +26,7 @@ pub enum BitcoindError {
     #[error("Best block hash retrieval failed")]
     BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
     #[error("Block info retrieval failed")]
-    BlockInfoRetrievalFailed(bitcoincore_rpc::Error)
+    BlockInfoRetrievalFailed(bitcoincore_rpc::Error),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -88,15 +91,13 @@ impl BitcoindClient {
             self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
         Ok(block_hash)
     }
-    
+
     pub async fn get_block_info(
         &self,
         block_hash: &bitcoin::BlockHash,
     ) -> Result<GetBlockResult, BitcoindError> {
-        let block = self
-            .rpc
-            .get_block_info(block_hash)
-            .map_err(BitcoindError::BlockInfoRetrievalFailed)?;
+        let block =
+            self.rpc.get_block_info(block_hash).map_err(BitcoindError::BlockInfoRetrievalFailed)?;
         Ok(block)
     }
 

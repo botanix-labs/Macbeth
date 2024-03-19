@@ -58,6 +58,7 @@ mod builder;
 mod dkg;
 mod engine_util;
 mod epoch_manager;
+pub mod extended_client;
 mod frost_task;
 mod sync;
 mod task;

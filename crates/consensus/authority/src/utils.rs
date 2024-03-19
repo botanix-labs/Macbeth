@@ -1,5 +1,5 @@
 use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
-use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest, Output};
+use client::{MakeTxRequest, NotifyPeginRequest, Output};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::{
     mint_validation::{
@@ -19,6 +19,8 @@ use reth_primitives::{
 use reth_provider::BundleStateWithReceipts;
 
 use tracing::{debug, error, info, warn};
+
+use crate::extended_client::BtcServerExtendedClient;
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
@@ -91,7 +93,7 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> O
 /// Returns `Ok(Vec<PegoutData>)` if the processing is successful, otherwise returns an error of
 /// type `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    btc_server: &mut BtcServerExtendedClient,
     bundle_state: &BundleStateWithReceipts,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
@@ -163,11 +165,11 @@ async fn get_pegout_data(log: Log) -> Option<PegoutData> {
 // TODO this function is not being used currently
 // Add back in when FROST signing is implemented
 pub(crate) async fn send_pegouts(
-    bitcoin_block_source: &BitcoindClient,
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    _bitcoin_block_source: &BitcoindClient,
+    _btc_server: &mut BtcServerExtendedClient,
     pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
-    let req = MakeTxRequest {
+    let _req = MakeTxRequest {
         outputs: pegouts
             .iter()
             .map(|pegout| Output {
@@ -214,7 +216,7 @@ pub(crate) async fn send_pegouts(
 /// Returns `Ok(Option<PegoutData>)` if the processing is successful, otherwise returns an error
 /// of type `ProcessBotanixLogError`.
 async fn process_botanix_log(
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    btc_server: &mut BtcServerExtendedClient,
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
@@ -244,10 +246,9 @@ async fn process_botanix_log(
                             pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
                         ),
                     };
-                    btc_server
-                        .notify_pegin(request)
-                        .await
-                        .map_err(ProcessBotanixLogError::FailedToNotifyPegin)?;
+                    btc_server.notify_pegin(request).await.map_err(|e| {
+                        ProcessBotanixLogError::FailedToNotifyPegin(e.to_tonic_status())
+                    })?;
                     info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                 }
             }

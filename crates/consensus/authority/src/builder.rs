@@ -1,9 +1,9 @@
 use crate::{
-    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager, frost_task::FrostTask,
-    task::BlockProductionTask, voting::AuthorityVote, AuthorityConsensus, Storage,
+    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager,
+    extended_client::BtcServerExtendedClient, frost_task::FrostTask, task::BlockProductionTask,
+    voting::AuthorityVote, AuthorityConsensus, Storage,
 };
 
-use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
@@ -22,7 +22,7 @@ use reth_provider::{
 };
 use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
-use std::{sync::Arc, collections::HashMap};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -30,8 +30,6 @@ use tokio::sync::{
 
 use crate::sync::SyncController;
 use tracing::error;
-
-use bitcoincore_rpc::json;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
@@ -41,7 +39,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     storage: Storage<Client>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: BtcServerClient<tonic::transport::Channel>,
+    btc_server: BtcServerExtendedClient,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
     bitcoind_config: BitcoindConfig,
@@ -89,7 +87,7 @@ where
         client: Client,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
-        btc_server: BtcServerClient<tonic::transport::Channel>,
+        btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_config: BitcoindConfig,
