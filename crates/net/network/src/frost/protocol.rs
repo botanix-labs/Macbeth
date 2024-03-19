@@ -150,7 +150,7 @@ impl Stream for FrostProtoConnection {
             //    ">>>>>>>>> SENDING GREETINGS PING TO PEER I AM CONNECTING WITH {:?}",
             //    initial_ping
             //);
-            return Poll::Ready(Some(initial_ping.encoded()))
+            return Poll::Ready(Some(initial_ping.encoded()));
         }
         let peer_message_forwarder = this.peer_message_forwarder.clone();
         loop {
@@ -252,7 +252,7 @@ impl Stream for FrostProtoConnection {
                             }
                         }
                     }
-                }
+                };
             }
 
             // poll the actual conn to peers for events from other peers
@@ -260,14 +260,14 @@ impl Stream for FrostProtoConnection {
 
             // if deserialization fails, skipp
             let Some(msg) = FrostProtoMessage::decode_message(&mut &msg[..]) else {
-                return Poll::Ready(None)
+                return Poll::Ready(None);
             };
 
             // react on message type
             match msg.message {
                 FrostProtoMessageKind::Ping => {
                     //info!(">>>>>>>>> RECEIVED PING FROM PEER. SENDING PONG...");
-                    return Poll::Ready(Some(FrostProtoMessage::pong().encoded()))
+                    return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
                 }
                 FrostProtoMessageKind::Pong => {
                     //info!(">>>>>>>>> RECEIVED PONG FROM PEER. --.");
@@ -285,7 +285,7 @@ impl Stream for FrostProtoConnection {
                     return Poll::Ready(Some(
                         FrostProtoMessage::pong_message(this.my_peer_id, this.my_authority_index)
                             .encoded(),
-                    ))
+                    ));
                 }
                 // other peers answers with pong message with a peer id and authority index
                 FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
@@ -374,7 +374,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
 
-            return Poll::Pending
+            return Poll::Pending;
         }
     }
 }

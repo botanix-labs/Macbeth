@@ -22,7 +22,7 @@ impl BlockExecutor for TestExecutor {
         _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
-            return Err(BlockExecutionError::UnavailableForTest)
+            return Err(BlockExecutionError::UnavailableForTest);
         }
         Ok(())
     }
@@ -34,7 +34,7 @@ impl BlockExecutor for TestExecutor {
         _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
-            return Err(BlockExecutionError::UnavailableForTest)
+            return Err(BlockExecutionError::UnavailableForTest);
         }
         Ok(())
     }

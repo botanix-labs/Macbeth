@@ -77,7 +77,9 @@ impl PayloadAttributes for CustomPayloadAttributes {
 
         // custom validation logic - ensure that the custom field is not zero
         if self.custom == 0 {
-            return Err(AttributesValidationError::invalid_params(CustomError::CustomFieldIsNotZero))
+            return Err(AttributesValidationError::invalid_params(
+                CustomError::CustomFieldIsNotZero,
+            ));
         }
 
         Ok(())

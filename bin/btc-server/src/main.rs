@@ -251,6 +251,7 @@ impl From<database::Utxo> for rpc::Utxo {
     }
 }
 
+
 #[derive(Clone, Debug, Parser)]
 struct Config {
     /// The path to the database.

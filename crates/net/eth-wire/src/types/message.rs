@@ -84,7 +84,7 @@ impl ProtocolMessage {
                     return Err(EthStreamError::EthInvalidMessageError(
                         version,
                         EthMessageID::GetNodeData,
-                    ))
+                    ));
                 }
                 let request_pair = RequestPair::<GetNodeData>::decode(buf)?;
                 EthMessage::GetNodeData(request_pair)
@@ -94,7 +94,7 @@ impl ProtocolMessage {
                     return Err(EthStreamError::EthInvalidMessageError(
                         version,
                         EthMessageID::GetNodeData,
-                    ))
+                    ));
                 }
                 let request_pair = RequestPair::<NodeData>::decode(buf)?;
                 EthMessage::NodeData(request_pair)

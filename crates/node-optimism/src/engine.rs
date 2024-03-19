@@ -54,18 +54,18 @@ pub fn validate_withdrawals_presence(
     match version {
         EngineApiMessageVersion::V1 => {
             if has_withdrawals {
-                return Err(AttributesValidationError::WithdrawalsNotSupportedInV1)
+                return Err(AttributesValidationError::WithdrawalsNotSupportedInV1);
             }
             if is_shanghai {
-                return Err(AttributesValidationError::NoWithdrawalsPostShanghai)
+                return Err(AttributesValidationError::NoWithdrawalsPostShanghai);
             }
         }
         EngineApiMessageVersion::V2 | EngineApiMessageVersion::V3 => {
             if is_shanghai && !has_withdrawals {
-                return Err(AttributesValidationError::NoWithdrawalsPostShanghai)
+                return Err(AttributesValidationError::NoWithdrawalsPostShanghai);
             }
             if !is_shanghai && has_withdrawals {
-                return Err(AttributesValidationError::HasWithdrawalsPreShanghai)
+                return Err(AttributesValidationError::HasWithdrawalsPreShanghai);
             }
         }
     };

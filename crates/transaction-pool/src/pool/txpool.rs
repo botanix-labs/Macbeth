@@ -1116,7 +1116,7 @@ impl<T: PoolTransaction> AllTransactions<T> {
             while let Some((peek, ref mut tx)) = iter.peek_mut() {
                 if peek.sender != id.sender {
                     // Found the next sender we need to check
-                    continue 'transactions
+                    continue 'transactions;
                 }
 
                 if tx.transaction.nonce() == next_nonce_in_line {

@@ -145,33 +145,35 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
         if block.number <= last_finalized_block {
             // check if block is canonical
             if self.is_block_hash_canonical(&block.hash)? {
-                return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)))
+                return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)));
             }
 
             // check if block is inside database
             if self.externals.provider_factory.provider()?.block_number(block.hash)?.is_some() {
-                return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)))
+                return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)));
             }
 
             return Err(BlockchainTreeError::PendingBlockIsFinalized {
                 last_finalized: last_finalized_block,
             }
-            .into())
+            .into());
         }
 
         // check if block is part of canonical chain
         if self.is_block_hash_canonical(&block.hash)? {
-            return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)))
+            return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)));
         }
 
         // is block inside chain
         if let Some(attachment) = self.is_block_inside_chain(&block) {
-            return Ok(Some(BlockStatus::Valid(attachment)))
+            return Ok(Some(BlockStatus::Valid(attachment)));
         }
 
         // check if block is disconnected
         if let Some(block) = self.state.buffered_blocks.block(&block.hash) {
-            return Ok(Some(BlockStatus::Disconnected { missing_ancestor: block.parent_num_hash() }))
+            return Ok(Some(BlockStatus::Disconnected {
+                missing_ancestor: block.parent_num_hash(),
+            }));
         }
 
         Ok(None)
@@ -262,7 +264,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
 
             // get canonical fork.
             let canonical_fork = self.canonical_fork(chain_id)?;
-            return Some(BundleStateData { state, parent_block_hashed, canonical_fork })
+            return Some(BundleStateData { state, parent_block_hashed, canonical_fork });
         }
 
         // check if there is canonical block
@@ -272,7 +274,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                 canonical_fork: ForkBlock { number: canonical_number, hash: block_hash },
                 state: BundleStateWithReceipts::default(),
                 parent_block_hashed: self.canonical_chain().inner().clone(),
-            })
+            });
         }
 
         None
@@ -295,12 +297,12 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
         // check if block parent can be found in any side chain.
         if let Some(chain_id) = self.block_indices().get_blocks_chain_id(&parent.hash) {
             // found parent in side tree, try to insert there
-            return self.try_insert_block_into_side_chain(block, chain_id, block_validation_kind)
+            return self.try_insert_block_into_side_chain(block, chain_id, block_validation_kind);
         }
 
         // if not found, check if the parent can be found inside canonical chain.
         if self.is_block_hash_canonical(&parent.hash)? {
-            return self.try_append_canonical_chain(block.clone(), block_validation_kind)
+            return self.try_append_canonical_chain(block.clone(), block_validation_kind);
         }
 
         // this is another check to ensure that if the block points to a canonical block its block
@@ -314,7 +316,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                     parent_block_number: canonical_parent_number,
                     block_number: block.number,
                 }
-                .into())
+                .into());
             }
         }
 
@@ -372,7 +374,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
             return Err(BlockExecutionError::Validation(BlockValidationError::BlockPreMerge {
                 hash: block.hash(),
             })
-            .into())
+            .into());
         }
 
         let parent_header = provider
@@ -500,7 +502,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
             } else {
                 // if there is no fork block that point to other chains, break the loop.
                 // it means that this fork joins to canonical block.
-                break
+                break;
             }
         }
         hashes
@@ -521,9 +523,9 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
             // get fork block chain
             if let Some(fork_chain_id) = self.block_indices().get_blocks_chain_id(&fork.hash) {
                 chain_id = fork_chain_id;
-                continue
+                continue;
             }
-            break
+            break;
         }
         (self.block_indices().canonical_hash(&fork.number) == Some(fork.hash)).then_some(fork)
     }
@@ -630,7 +632,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
     pub fn buffer_block(&mut self, block: SealedBlockWithSenders) -> Result<(), InsertBlockError> {
         // validate block consensus rules
         if let Err(err) = self.validate_block(&block) {
-            return Err(InsertBlockError::consensus_error(err, block.block))
+            return Err(InsertBlockError::consensus_error(err, block.block));
         }
 
         self.state.buffered_blocks.insert_block(block);
@@ -648,17 +650,17 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                 "Failed to validate total difficulty for block {}: {e}",
                 block.header.hash()
             );
-            return Err(e)
+            return Err(e);
         }
 
         if let Err(e) = self.externals.consensus.validate_header(block) {
             error!(?block, "Failed to validate header {}: {e}", block.header.hash());
-            return Err(e)
+            return Err(e);
         }
 
         if let Err(e) = self.externals.consensus.validate_block(block) {
             error!(?block, "Failed to validate block {}: {e}", block.header.hash());
-            return Err(e)
+            return Err(e);
         }
 
         Ok(())
@@ -679,7 +681,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                 Some(BlockAttachment::Canonical)
             } else {
                 Some(BlockAttachment::HistoricalFork)
-            }
+            };
         }
         None
     }
@@ -720,7 +722,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
 
         // validate block consensus rules
         if let Err(err) = self.validate_block(&block) {
-            return Err(InsertBlockError::consensus_error(err, block.block))
+            return Err(InsertBlockError::consensus_error(err, block.block));
         }
 
         let status = self
@@ -890,7 +892,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
         }
 
         if header.is_none() && self.is_block_hash_inside_chain(*hash) {
-            return Ok(None)
+            return Ok(None);
         }
 
         if header.is_none() {
@@ -945,9 +947,9 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                 return Err(CanonicalError::from(BlockValidationError::BlockPreMerge {
                     hash: *block_hash,
                 })
-                .into())
+                .into());
             }
-            return Ok(CanonicalOutcome::AlreadyCanonical { header })
+            return Ok(CanonicalOutcome::AlreadyCanonical { header });
         }
 
         let Some(chain_id) = self.block_indices().get_blocks_chain_id(block_hash) else {
@@ -955,7 +957,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
             return Err(CanonicalError::from(BlockchainTreeError::BlockHashNotFoundInChain {
                 block_hash: *block_hash,
             })
-            .into())
+            .into());
         };
         let chain = self.state.chains.remove(&chain_id).expect("To be present");
 
@@ -1133,7 +1135,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
                             block_number: tip.number,
                             block_hash: tip.hash(),
                         },
-                    ))))
+                    ))));
                 }
                 self.metrics.trie_updates_insert_recomputed.increment(1);
                 trie_updates
@@ -1162,7 +1164,7 @@ impl<DB: Database, EVM: ExecutorFactory> BlockchainTree<DB, EVM> {
     pub fn unwind(&mut self, unwind_to: BlockNumber) -> RethResult<()> {
         // nothing to be done if unwind_to is higher then the tip
         if self.block_indices().canonical_tip().number <= unwind_to {
-            return Ok(())
+            return Ok(());
         }
         // revert `N` blocks from current canonical chain and put them inside BlockchanTree
         let old_canon_chain = self.revert_canonical_from_database(unwind_to)?;

@@ -86,17 +86,17 @@ impl TryFrom<u8> for TxType {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         #[cfg(feature = "optimism")]
         if value == TxType::DEPOSIT as u8 {
-            return Ok(TxType::DEPOSIT)
+            return Ok(TxType::DEPOSIT);
         }
 
         if value == TxType::Legacy as u8 {
-            return Ok(TxType::Legacy)
+            return Ok(TxType::Legacy);
         } else if value == TxType::EIP2930 as u8 {
-            return Ok(TxType::EIP2930)
+            return Ok(TxType::EIP2930);
         } else if value == TxType::EIP1559 as u8 {
-            return Ok(TxType::EIP1559)
+            return Ok(TxType::EIP1559);
         } else if value == TxType::EIP4844 as u8 {
-            return Ok(TxType::EIP4844)
+            return Ok(TxType::EIP4844);
         }
 
         Err("invalid tx type")

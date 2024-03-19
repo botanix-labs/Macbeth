@@ -241,13 +241,13 @@ impl Account {
                     return Err(Error::Assertion(format!(
                         "Slot {:?} is missing from the database. Expected {:?}",
                         slot, value
-                    )))
+                    )));
                 }
             } else {
                 return Err(Error::Assertion(format!(
                     "Slot {:?} is missing from the database. Expected {:?}",
                     slot, value
-                )))
+                )));
             }
         }
 

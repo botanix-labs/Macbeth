@@ -129,7 +129,7 @@ impl BlockImport for ProofOfAuthorityBlockImport {
                 }
             }
 
-            return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
+            return Poll::Ready(BlockImportOutcome { peer: pair.0, result });
         }
         Poll::Pending
     }

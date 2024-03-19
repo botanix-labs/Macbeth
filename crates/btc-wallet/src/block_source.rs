@@ -78,7 +78,7 @@ impl BlockSource for MempoolSpace {
             let mut header_bytes = [0u8; 80];
             hex::decode_to_slice(raw_response, &mut header_bytes as &mut [u8])?;
             let header: Header = deserialize(&header_bytes)?;
-            return Ok(header)
+            return Ok(header);
         }
         Err(BlockSourceError::BlockHeaderRetrievalFailed)
     }
@@ -91,7 +91,7 @@ impl BlockSource for MempoolSpace {
                 Ok(hash) => hash,
                 Err(_e) => return Err(BlockSourceError::ParsingBlockSourceResponseError),
             };
-            return Ok(block_hash)
+            return Ok(block_hash);
         }
 
         Err(BlockSourceError::BlockHashRetrievalFailed)
@@ -103,7 +103,7 @@ impl BlockSource for MempoolSpace {
         if response.status().is_success() {
             let raw_response = response.text().await?;
             let height: u32 = raw_response.parse().map_err(BlockSourceError::ParsingIntError)?;
-            return Ok(height)
+            return Ok(height);
         }
 
         Err(BlockSourceError::BlockTipRetrievalFailed)
@@ -122,7 +122,7 @@ impl BlockSource for MempoolSpace {
                 txids.push(bitcoin::Txid::from_str(txid.as_str()).expect("valid txids"));
             }
 
-            return Ok(txids)
+            return Ok(txids);
         }
         Err(BlockSourceError::BlockHeaderRetrievalFailed)
     }
@@ -137,7 +137,7 @@ impl BlockSource for MempoolSpace {
             let mut txid_bytes = [0u8; 32];
             hex::decode_to_slice(raw_response, &mut txid_bytes as &mut [u8])?;
             let tx_id: Txid = deserialize(&txid_bytes)?;
-            return Ok(tx_id)
+            return Ok(tx_id);
         }
 
         let error_message = response.text().await?;

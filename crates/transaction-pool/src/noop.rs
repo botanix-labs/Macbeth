@@ -232,7 +232,7 @@ impl TransactionPool for NoopTransactionPool {
         tx_hashes: Vec<TxHash>,
     ) -> Result<Vec<BlobTransactionSidecar>, BlobStoreError> {
         if tx_hashes.is_empty() {
-            return Ok(vec![])
+            return Ok(vec![]);
         }
         Err(BlobStoreError::MissingSidecar(tx_hashes[0]))
     }
@@ -266,7 +266,7 @@ impl<T: PoolTransaction> TransactionValidator for MockTransactionValidator<T> {
             return TransactionValidationOutcome::Invalid(
                 transaction,
                 reth_primitives::InvalidTransactionError::TxTypeNotSupported.into(),
-            )
+            );
         }
 
         // we return `balance: U256::MAX` to simulate a valid transaction which will never go into

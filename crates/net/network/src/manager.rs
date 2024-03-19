@@ -598,7 +598,7 @@ where
                 if self.handle.mode().is_stake() {
                     // See [EIP-3675](https://eips.ethereum.org/EIPS/eip-3675#devp2p)
                     warn!(target: "net", "Peer performed block propagation, but it is not supported in proof of stake (EIP-3675)");
-                    return
+                    return;
                 }
                 let msg = NewBlockMessage { hash, block: Arc::new(block) };
                 self.swarm.state_mut().announce_new_block(msg);
@@ -729,7 +729,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(msg)) => this.on_handle_message(msg),
             };
@@ -743,7 +743,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     tracing::error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
             };
@@ -757,7 +757,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     tracing::error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
             };
@@ -1034,7 +1034,7 @@ where
                 trace!(target: "net", budget=10, "exhausted network manager budget");
                 // make sure we're woken up again
                 cx.waker().wake_by_ref();
-                break
+                break;
             }
         }
 

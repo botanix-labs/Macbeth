@@ -56,7 +56,7 @@ impl BlobStore for DiskFileBlobStore {
 
     fn insert_all(&self, txs: Vec<(B256, BlobTransactionSidecar)>) -> Result<(), BlobStoreError> {
         if txs.is_empty() {
-            return Ok(())
+            return Ok(());
         }
         self.inner.insert_many(txs)
     }

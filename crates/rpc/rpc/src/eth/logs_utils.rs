@@ -116,7 +116,7 @@ pub(crate) fn log_matches_filter(
             !params.filter_address(&from_primitive_log(log.clone())) ||
             !params.filter_topics(&from_primitive_log(log.clone())))
     {
-        return false
+        return false;
     }
     true
 }

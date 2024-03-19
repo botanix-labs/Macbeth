@@ -19,7 +19,7 @@ pub fn try_payload_v1_to_block(payload: ExecutionPayloadV1) -> Result<Block, Pay
     // }
 
     if payload.base_fee_per_gas < MIN_PROTOCOL_BASE_FEE_U256 {
-        return Err(PayloadError::BaseFee(payload.base_fee_per_gas))
+        return Err(PayloadError::BaseFee(payload.base_fee_per_gas));
     }
 
     let transactions = payload
@@ -290,7 +290,7 @@ pub fn validate_block_hash(
         return Err(PayloadError::BlockHash {
             execution: sealed_block.hash(),
             consensus: expected_block_hash,
-        })
+        });
     }
 
     Ok(sealed_block)

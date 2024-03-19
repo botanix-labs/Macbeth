@@ -129,7 +129,7 @@ impl TxEip4844 {
                 self.blob_versioned_hashes.len(),
                 sidecar.commitments.len()
             ))
-            .into())
+            .into());
         }
 
         // zip and iterate, calculating versioned hashes
@@ -146,7 +146,7 @@ impl TxEip4844 {
                 return Err(BlobTransactionValidationError::WrongVersionedHash {
                     have: *versioned_hash,
                     expected: calculated_versioned_hash,
-                })
+                });
             }
         }
 

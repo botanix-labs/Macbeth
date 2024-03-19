@@ -116,7 +116,7 @@ impl ValidateTx68 for EthAnnouncementFilter {
                     "invalid tx type in eth68 announcement"
                 );
 
-                return ValidationOutcome::ReportPeer
+                return ValidationOutcome::ReportPeer;
             }
         };
 
@@ -137,7 +137,7 @@ impl ValidateTx68 for EthAnnouncementFilter {
                     "invalid tx size in eth68 announcement"
                 );
 
-                return ValidationOutcome::Ignore
+                return ValidationOutcome::Ignore;
             }
         }
         if let Some(reasonable_min_encoded_tx_length) = self.min_encoded_tx_length(tx_type) {
@@ -237,7 +237,7 @@ impl FilterAnnouncement for EthAnnouncementFilter {
                 network=%Self,
                 "empty eth68 announcement"
             );
-            return (FilterOutcome::ReportPeer, ValidAnnouncementData::empty_eth68())
+            return (FilterOutcome::ReportPeer, ValidAnnouncementData::empty_eth68());
         }
 
         let mut should_report_peer = false;
@@ -308,7 +308,7 @@ impl FilterAnnouncement for EthAnnouncementFilter {
                 network=%Self,
                 "empty eth66 announcement"
             );
-            return (FilterOutcome::ReportPeer, ValidAnnouncementData::empty_eth66())
+            return (FilterOutcome::ReportPeer, ValidAnnouncementData::empty_eth66());
         }
 
         //

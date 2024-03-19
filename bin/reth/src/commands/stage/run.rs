@@ -277,7 +277,7 @@ impl Command {
             }
 
             if output.done {
-                break
+                break;
             }
         }
 

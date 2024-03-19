@@ -75,7 +75,7 @@ impl EngineHooksController {
                     self.hooks.push_back(hook);
                 }
 
-                return Poll::Ready(Ok(result))
+                return Poll::Ready(Ok(result));
             }
             Poll::Pending => {
                 self.active_db_write_hook = Some(hook);
@@ -136,7 +136,7 @@ impl EngineHooksController {
         if hook.db_access_level().is_read_write() &&
             (self.active_db_write_hook.is_some() || db_write_active)
         {
-            return Poll::Pending
+            return Poll::Pending;
         }
 
         if let Poll::Ready(event) = hook.poll(cx, args)? {
@@ -150,7 +150,7 @@ impl EngineHooksController {
                 "Polled next hook"
             );
 
-            return Poll::Ready(Ok(result))
+            return Poll::Ready(Ok(result));
         }
 
         Poll::Pending

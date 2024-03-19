@@ -172,7 +172,7 @@ impl EntitiesCheckpoint {
     /// Return [None] if `total == 0`.
     pub fn fmt_percentage(&self) -> Option<String> {
         if self.total == 0 {
-            return None
+            return None;
         }
 
         Some(format!("{:.2}%", 100.0 * self.processed as f64 / self.total as f64))

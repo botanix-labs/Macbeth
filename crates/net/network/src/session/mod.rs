@@ -319,7 +319,7 @@ impl SessionManager {
         let counter = self.graceful_disconnects_counter.clone();
         if counter.exceeds_limit() {
             // simply drop the connection if there are too many active disconnects already
-            return
+            return;
         }
         let secret_key = self.secret_key;
 
@@ -461,7 +461,7 @@ impl SessionManager {
                         peer_id,
                         remote_addr,
                         direction,
-                    })
+                    });
                 }
 
                 let (commands_to_session, commands_rx) = mpsc::channel(self.session_command_buffer);
@@ -843,7 +843,7 @@ async fn start_pending_outbound_session(
                     error,
                 })
                 .await;
-            return
+            return;
         }
     };
     authenticate(
@@ -889,7 +889,7 @@ async fn authenticate(
                     direction,
                 })
                 .await;
-            return
+            return;
         }
     };
 
