@@ -23,7 +23,6 @@ pub fn validate_header_standalone(
             gas_used: header.gas_used,
             gas_limit: header.gas_limit,
         });
-        });
     }
 
     // Check if base fee is set.

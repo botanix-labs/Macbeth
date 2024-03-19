@@ -348,6 +348,7 @@ pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 
+ 
 pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }

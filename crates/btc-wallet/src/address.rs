@@ -57,7 +57,7 @@ enum SafeSpendPathError {
 /// Timelocks are relative
 fn _build_safe_spend_path_script_check_sig_add(
     lock_time: LockTime,
-    public_keys: &Vec<PublicKey>,
+    public_keys: &[PublicKey],
     quorum: i64,
 ) -> Result<ScriptBuf, SafeSpendPathError> {
     if public_keys.len() < 2 {

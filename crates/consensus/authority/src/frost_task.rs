@@ -96,8 +96,7 @@ where
             dkg_state_machine,
             signing_state_machine,
             storage,
-            frost_task_rx,
-        }
+        } 
     }
 
     async fn start_dkg(&mut self) {
