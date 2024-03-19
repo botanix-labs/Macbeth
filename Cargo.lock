@@ -7966,6 +7966,7 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bitcoin",
+ "bitcoincore-rpc",
  "bytes",
  "client",
  "derive_more",

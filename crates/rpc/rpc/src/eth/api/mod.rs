@@ -54,7 +54,7 @@ use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{
-    self, Botanix, BtcFeesRPCError, GatewayAddressRPCError, MerkleProofRPCError,
+    self, Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeeRateRPCError
 };
 
 lazy_static::lazy_static! {
@@ -98,7 +98,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
 
     /// Returns the BTC fee rate for a pegout transaction in sat/vb.
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError>;
 }
 
 /// `Eth` API implementation.
@@ -446,7 +446,7 @@ where
         Ok(pegin_info)
     }
 
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError> {
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
         let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
         Ok(fee_rate)
     }
