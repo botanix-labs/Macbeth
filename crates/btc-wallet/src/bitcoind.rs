@@ -1,4 +1,7 @@
-use bitcoincore_rpc::{json::GetBlockResult, Auth, Client, RpcApi};
+use bitcoincore_rpc::{
+    json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult, GetChainTipsResultStatus},
+    Auth, Client, RpcApi,
+};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -24,6 +27,8 @@ pub enum BitcoindError {
     BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
     #[error("Block info retrieval failed")]
     BlockInfoRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Smart estimate fee retrieval failed")]
+    EstimateSmartFeeFailed(bitcoincore_rpc::Error),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +145,18 @@ impl BitcoindClient {
                 }
             }
         }
+    }
+
+    pub async fn get_estimate_smart_fee(
+        &self,
+        confirmation_target: u16,
+        mode: EstimateMode,
+    ) -> Result<EstimateSmartFeeResult, BitcoindError> {
+        let fee = self
+            .rpc
+            .estimate_smart_fee(confirmation_target, Some(mode))
+            .map_err(BitcoindError::EstimateSmartFeeFailed)?;
+        Ok(fee)
     }
 }
 

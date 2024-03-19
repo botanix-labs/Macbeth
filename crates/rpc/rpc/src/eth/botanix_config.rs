@@ -1,11 +1,13 @@
 //! Defines structure for botanix RPC configurables and business logic
 
 use alloy_primitives::hex;
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
 use reth_primitives::U256;
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use url::Url;
+use bitcoincore_rpc::json::EstimateMode;
+use tracing::error;
 
 /// Settings for the [BotanixConfig]
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -135,10 +137,6 @@ pub enum MerkleProofRPCError {
     BitcoindClientInitialization,
 }
 
-/// Errors from get btc fees RPC endpoint
-#[derive(Debug)]
-pub enum BtcFeesRPCError {}
-
 impl fmt::Display for MerkleProofRPCError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -163,6 +161,23 @@ impl std::error::Error for MerkleProofRPCError {}
 impl From<MerkleProofRPCError> for String {
     fn from(error: MerkleProofRPCError) -> Self {
         error.to_string()
+    }
+}
+
+/// Error from get btc fee rate RPC endpoint
+#[derive(Debug)]
+pub enum BtcFeeRateRPCError {
+    /// Failed to get estimate smart fee rate
+    FailedToGetEstimateSmartFee(BitcoindError),
+}
+
+impl fmt::Display for BtcFeeRateRPCError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e) => {
+                write!(f, "Failed to get estimate smart fee rate: {}", e)
+            }
+        }
     }
 }
 
@@ -246,10 +261,41 @@ impl Botanix {
         Ok(bitcoin::consensus::serialize(&pmt))
     }
 
-    /// Function calls btc_server to get btc fee rate in sat/vb for a pegout transaction.
+    /// Function calls btc_server to get btc fee rate in BTC/kB for a pegout transaction.
     ///
-    /// Currently returns a static fee rate without calling btc_server.
-    pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError> {
-        Ok(U256::from(30u32))
+    /// Converts fee rate to sat/vB and returns it.
+    pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
+        let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
+            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+        let fee_result = bitcoind_client
+            .get_estimate_smart_fee(6, EstimateMode::Conservative)
+            .await
+            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+
+        match fee_result.fee_rate {
+            fee_rate if fee_rate.is_some() => {
+                // convert from BTC/kB to sat/vB
+                let sats_kb = fee_rate.unwrap().to_sat();
+                Ok(U256::from(sats_kb) / U256::from(1000))
+            },
+            _ => {
+                let mut concatenated_errors = String::new();
+                if fee_result.errors.is_some() && fee_result.errors.clone().unwrap().len() > 0
+                {
+                    concatenated_errors = fee_result
+                        .errors
+                        .unwrap()
+                        .join(", ");
+                    
+                    error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
+                }
+
+                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                    BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
+                        (concatenated_errors),
+                    )),
+                ))
+            },
+        }
     }
 }
