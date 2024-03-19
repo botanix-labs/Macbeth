@@ -94,7 +94,10 @@ pub fn parse_pegin_reth_log_topic(
 ) -> Result<PeginData, MintConsensusError> {
     let revm_log = log.into();
 
-    parse_pegin_topic(&revm_log, &logs.iter().map(|log| log.into()).collect::<Vec<revm::primitives::Log>>())
+    parse_pegin_topic(
+        &revm_log,
+        &logs.iter().map(|log| log.into()).collect::<Vec<revm::primitives::Log>>(),
+    )
 }
 
 pub fn parse_pegout_reth_log_topic(
@@ -105,7 +108,9 @@ pub fn parse_pegout_reth_log_topic(
     parse_pegout_topic(&revm_log)
 }
 
-pub fn parse_pegin_mint_amount_topic(log: &revm::primitives::Log) -> Result<ethers::types::U256, MintConsensusError> {
+pub fn parse_pegin_mint_amount_topic(
+    log: &revm::primitives::Log,
+) -> Result<ethers::types::U256, MintConsensusError> {
     for topic in log.topics() {
         if *topic == *MINT_AMOUNT_TOPIC {
             // first topic is the event signature, second topic is the indexed amount
@@ -120,7 +125,10 @@ pub fn parse_pegin_mint_amount_topic(log: &revm::primitives::Log) -> Result<ethe
     Err(MintConsensusError::MintContractDidNotEmitMintTopic())
 }
 
-pub fn parse_pegin_topic(log: &revm::primitives::Log, logs: &Vec<revm::primitives::Log>) -> Result<PeginData, MintConsensusError> {
+pub fn parse_pegin_topic(
+    log: &revm::primitives::Log,
+    logs: &Vec<revm::primitives::Log>,
+) -> Result<PeginData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
     }
@@ -255,7 +263,7 @@ mod test {
 
     #[test]
     fn mint_amount_topic() {
-        let topic = 
+        let topic =
             B256::from_str("0x8e37eb2ee3a6f3c8b13b8973588daad75a4ce752de14c00006bd8247f4e212e8")
                 .unwrap();
 
@@ -314,9 +322,6 @@ mod test {
         let decoded = topic_to_amount(B256::from_str(topic).unwrap());
 
         assert!(decoded.is_ok());
-        assert_eq!(
-            decoded.unwrap(),
-            ethers::types::U256::one() * 42
-        );
+        assert_eq!(decoded.unwrap(), ethers::types::U256::one() * 42);
     }
 }

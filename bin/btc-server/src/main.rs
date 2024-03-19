@@ -5,6 +5,7 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod merkle;
 mod shutdown;
 mod signer;
 mod util;
@@ -243,6 +244,19 @@ impl App {
     }
 }
 
+impl From<database::Utxo> for rpc::Utxo {
+    fn from(item: database::Utxo) -> Self {
+        rpc::Utxo {
+            outpoint: Some(rpc::OutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: item.output.value as u32,
+            eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl rpc::BtcServer for App {
     // Saves peg'd in UTXO
@@ -258,12 +272,11 @@ impl rpc::BtcServer for App {
             error!("Failed to parse eth address: {}", e);
             badarg!("Failed to parse eth address: {}", e)
         })?;
-        let utxo = Utxo {
+        let utxo = Utxo::new(
             outpoint,
-            output: btcencode::deserialize(&req.output)
-                .map_err(|e| badarg!("bad txout format: {}", e))?,
-            eth_address: Some(eth_addr),
-        };
+            btcencode::deserialize(&req.output).map_err(|e| badarg!("bad txout format: {}", e))?,
+            Some(eth_addr),
+        );
 
         self.add_pegin(&utxo).map_err(|e| {
             error!("Failed to add pegin: {}", e);
@@ -294,7 +307,9 @@ impl rpc::BtcServer for App {
             internal!("Failed to serialize psbt: {}", e)
         })?;
 
-        let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes});
+
         Ok(res)
     }
 
@@ -658,6 +673,58 @@ impl rpc::BtcServer for App {
 
         Ok(tonic::Response::new(res))
     }
+
+    async fn get_all_utxos(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
+        let db_utxos = self.db.get_all_utxos().map_err(|e| {
+            error!("Failed to get utxos: {}", e);
+            internal!("Failed to get utxos: {}", e)
+        })?;
+        let utxos = db_utxos.into_iter().map(|utxo| utxo.into()).collect::<Vec<rpc::Utxo>>();
+        let res = rpc::GetAllUtxosResponse { utxos };
+
+        Ok(tonic::Response::new(res))
+    }
+
+    async fn remove_utxo(
+        &self,
+        request: tonic::Request<rpc::RemoveUtxoRequest>,
+    ) -> Result<tonic::Response<rpc::RemoveUtxoResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        let txid = bitcoin::Txid::from_str(&req.txid)
+            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid txid: {}", e)))?;
+
+        let outpoint = bitcoin::OutPoint::new(txid, req.vout);
+
+        match self.db.remove_utxo(outpoint) {
+            Ok(_) => Ok(tonic::Response::new(rpc::RemoveUtxoResponse {
+                success: true,
+                message: "UTXO removed successfully".to_string(),
+            })),
+            Err(e) => Err(tonic::Status::internal(format!("Failed to remove UTXO: {}", e))),
+        }
+    }
+    // Gets the merkle root of the utxo set
+    async fn get_utxo_merkle_root(
+        &self,
+        _request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
+        match self.db.get_utxo_merkle_root() {
+            Ok(Some(merkle_root)) => {
+                // Successfully found the merkle root, return it
+                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root.to_vec() };
+                Ok(tonic::Response::new(response))
+            }
+            Ok(None) => Err(tonic::Status::not_found("UTXO Merkle root not found.")),
+            Err(e) => {
+                // An error occurred while accessing the database
+                Err(tonic::Status::internal(format!("Failed to retrieve UTXO Merkle root: {}", e)))
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -725,6 +792,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     macro_rules! frost_id {
         ($index:expr) => {
             frost::Identifier::try_from($index).expect("valid id")
@@ -736,17 +804,19 @@ mod test {
         rpc::BtcServer, signer::SigningRound2Error, util::retrieve_all_signing_commitments,
     };
 
-    use super::*;
+    use crate::rpc::Empty;
+    use bitcoin::blockdata::{script::Script, transaction::TxOut};
+    use rand::{thread_rng, Rng};
+    use tonic::Request;
+
     use bitcoin::{
-        absolute::LockTime, hashes::Hash, Address, Script, ScriptBuf, Sequence, Transaction, TxIn,
-        Txid,
+        absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
     use frost::keys::dkg::round1;
-    use rand::{thread_rng, RngCore};
 
     use frost_secp256k1_tr as frost;
+    use rand::RngCore;
     use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
-    use test_log::test;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
 
@@ -1044,7 +1114,7 @@ mod test {
 
     #[test]
     fn should_add_round2_dkg_packages() {
-        let mut rng: rand::prelude::ThreadRng = thread_rng();
+        let rng: rand::prelude::ThreadRng = thread_rng();
         // We essentially need to emulate dkg here
         let mut app1 = setup();
         let mut app2 = setup();
@@ -1117,11 +1187,7 @@ mod test {
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
         // Add the utxo
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
 
         let nonce_commits = app.get_round1_signing_package(&mut psbt, &signing_session_id);
@@ -1156,11 +1222,8 @@ mod test {
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
         // Add the utxo
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
+
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .expect("valid nonce commits request");
@@ -1178,11 +1241,7 @@ mod test {
 
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx();
-        let utxo = Utxo {
-            outpoint: tx.input[0].previous_output,
-            eth_address: None,
-            output: tx.output[0].clone(),
-        };
+        let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .expect("valid nonce commits request");
@@ -1193,8 +1252,6 @@ mod test {
         assert_eq!(sc2.len(), 1);
         assert_ne!(sc1, sc2);
     }
-
-    
 
     // TODO (armins) fix these tests!!
     // #[test]
@@ -1285,4 +1342,73 @@ mod test {
     //     //     Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![]
     // };     // let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
     // }
+    #[tokio::test]
+    async fn test_get_all_utxos_empty() {
+        let app = setup();
+        let request = Request::new(Empty {});
+        let response = app.get_all_utxos(request).await;
+
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert!(response.utxos.is_empty(), "Expected no UTXOs in a fresh database");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_utxos_with_data() {
+        let app = setup();
+        let mut rng = thread_rng();
+
+        for _ in 0..100 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value, script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+        }
+
+        let request = Request::new(Empty {});
+        let response = app.get_all_utxos(request).await;
+
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
+    }
+
+    #[tokio::test]
+    async fn test_remove_utxo() {
+        let app = setup();
+        let mut rng = thread_rng();
+
+        // Create and store a single UTXO
+        let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+        let vout = rng.gen_range(0..u32::MAX);
+        let value = rng.gen_range(1..1_000_000);
+        let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+        let script = Script::from_bytes(script_bytes.as_slice());
+
+        let utxo = Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value, script_pubkey: script.into() },
+            None,
+        );
+        app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+
+        // Ensure the UTXO is stored
+        let all_utxos_before = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
+        assert_eq!(all_utxos_before.len(), 1, "Expected 1 UTXO in the database before removal");
+
+        // Remove the UTXO
+        app.db.remove_utxo(utxo.outpoint).expect("Failed to remove UTXO");
+
+        // Verify the UTXO has been removed
+        let all_utxos_after = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
+        assert!(all_utxos_after.is_empty(), "Expected no UTXOs in the database after removal");
+    }
 }

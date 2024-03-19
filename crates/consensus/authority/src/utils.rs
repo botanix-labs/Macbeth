@@ -160,7 +160,6 @@ async fn get_pegout_data(log: Log) -> Option<PegoutData> {
     None
 }
 
-
 // TODO this function is not being used currently
 // Add back in when FROST signing is implemented
 pub(crate) async fn send_pegouts(

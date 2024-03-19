@@ -48,8 +48,8 @@ impl PeginData {
 
             // pegin block headers list should contain the tip header as the last element in the
             // list
-            if pegin.block_headers.last().expect("header should exist").block_hash()
-                != bitcoin_block.0.block_hash()
+            if pegin.block_headers.last().expect("header should exist").block_hash() !=
+                bitcoin_block.0.block_hash()
             {
                 return Err(PeginError::Invalid("recent block hash mismatch"));
             }
@@ -63,9 +63,8 @@ impl PeginData {
                 return Err(PeginError::Invalid("invalid tx or outpoint: output idx"));
             }
 
-            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.0.0).map_err(|_e| {
-                PeginError::InvalidTweak()
-            })?;
+            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.0 .0)
+                .map_err(|_e| PeginError::InvalidTweak())?;
             let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[op.vout as usize];

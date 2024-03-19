@@ -24,6 +24,10 @@ const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const KEY_PACKAGE: &[u8; 5] = b"keypk";
 const PSBT: &[u8; 4] = b"psbt";
+/// sled tree id for the Merkle trees.
+const UTXO_MERKLE_TREE: &[u8; 6] = b"merkle";
+/// sled tree id for the UTXO merkle tree root
+const UTXO_MERKLE_ROOT_KEY: &[u8; 4] = b"root";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -34,6 +38,11 @@ pub struct Utxo {
     pub eth_address: Option<[u8; 20]>,
 }
 
+impl Utxo {
+    pub fn new(outpoint: OutPoint, output: TxOut, eth_address: Option<[u8; 20]>) -> Self {
+        Utxo { outpoint, output, eth_address }
+    }
+}
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -61,6 +70,9 @@ pub struct Db {
     /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
+
+    /// A tree of utxo merkle trees
+    utxo_merkle_tree: sled::Tree,
 }
 
 impl Db {
@@ -71,6 +83,7 @@ impl Db {
             round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(PSBT)?,
+            utxo_merkle_tree: db.open_tree(UTXO_MERKLE_TREE)?,
             db,
         })
     }
@@ -81,6 +94,7 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
+        self.utxo_merkle_tree.flush()?;
         Ok(())
     }
 
@@ -362,6 +376,36 @@ impl Db {
         })?;
         Ok(())
     }
+
+    /// Retrieves all utxos from the database.
+    pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
+        let mut utxos = vec![];
+        for res in self.utxos.iter() {
+            let (_k, v) = res?;
+            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("decoding");
+            utxos.push(utxo);
+        }
+        Ok(utxos)
+    }
+
+    /// Removes an utxo from the database.
+    pub fn remove_utxo(&self, outpoint: OutPoint) -> Result<(), Error> {
+        self.utxos.remove(&outpoint.to_bytes()[..])?;
+        Ok(())
+    }
+
+    /// Stores the consensus Merkle root of all spendable UTXOs.
+    pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
+        self.utxo_merkle_tree.insert(UTXO_MERKLE_ROOT_KEY, merkle_root)?;
+        Ok(())
+    }
+
+    /// Retrieves the consensus Merkle root of all spendable UTXOs.
+    pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
+        self.utxo_merkle_tree.get(UTXO_MERKLE_ROOT_KEY).map(|opt| {
+            opt.map(|ivec| ivec.as_ref().try_into().expect("Merkle root should be 32 bytes"))
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -393,5 +437,43 @@ impl From<sled::transaction::TransactionError<sled::Error>> for Error {
 impl From<Error> for tonic::Status {
     fn from(e: Error) -> tonic::Status {
         tonic::Status::internal(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_db() -> (Db, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Db::open(temp_dir.path()).unwrap();
+        (db, temp_dir)
+    }
+
+    #[test]
+    fn test_store_and_get_utxo_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+
+        let merkle_root: [u8; 32] = [0; 32]; // Example Merkle root, usually this would be a real hash
+        db.store_utxo_merkle_root(&merkle_root).unwrap();
+
+        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
+        assert_eq!(
+            merkle_root, retrieved_merkle_root,
+            "The stored and retrieved Merkle roots should be the same."
+        );
+    }
+
+    #[test]
+    fn test_get_utxo_merkle_root_not_found() {
+        let (db, _temp_dir) = setup_db();
+
+        // Do not store anything and directly attempt to retrieve
+        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap();
+        assert!(
+            retrieved_merkle_root.is_none(),
+            "Should not retrieve a Merkle root when none has been stored."
+        );
     }
 }

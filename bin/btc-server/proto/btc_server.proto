@@ -38,6 +38,52 @@ service BtcServer {
 
     rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
 
+    rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
+
+    rpc RemoveUtxo(RemoveUtxoRequest) returns (RemoveUtxoResponse) {}
+
+    rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
+
+}
+
+message ScriptBuf {
+    bytes script = 1; // Represents the Vec<u8> in Rust
+}
+
+message TxOut {
+    /// The value of the output, in satoshis.
+    uint64 value = 1;
+    /// The script which must be satisfied for the output to be spent.
+    ScriptBuf script_pubkey = 2;
+}
+
+message OutPoint {
+    bytes txid = 1;
+    uint32 vout = 2;
+}
+
+message Utxo {
+    OutPoint outpoint = 1; 
+    uint32 output = 2;
+    string eth_address = 3;
+}
+
+message GetAllUtxosResponse {
+    repeated Utxo utxos = 1;
+}
+
+message RemoveUtxoRequest {
+    // The txid of the UTXO to remove.
+    string txid = 1;
+    // The output index of the UTXO to remove.
+    uint32 vout = 2;
+}
+
+message RemoveUtxoResponse {
+    // Indicates if the UTXO was successfully removed.
+    bool success = 1;
+    // Optional message with details about the operation.
+    string message = 2;
 }
 
 message NotifyPeginRequest {
@@ -126,4 +172,9 @@ message FinalizeSigningRequest {
 message FinalizeSigningResponse {
     // Finalized tx which includes witness data
     bytes psbt = 1;
+}
+
+message GetUTXOMerkleRootResponse {
+    // The Merkle root of all spendable UTXOs.
+    bytes merkle_root = 1;
 }

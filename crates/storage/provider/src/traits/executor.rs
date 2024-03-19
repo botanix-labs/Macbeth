@@ -2,7 +2,9 @@
 
 use crate::{bundle_state::BundleStateWithReceipts, StateProvider};
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{BlockNumber, BlockWithSenders, PruneModes, Receipt, U256, botanix::BotanixConsensusPackage };
+use reth_primitives::{
+    botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256,
+};
 use std::time::Duration;
 use tracing::debug;
 

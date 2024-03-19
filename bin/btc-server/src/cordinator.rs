@@ -17,8 +17,8 @@ use bdk::{
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use bitcoin::Address;
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use crate::merkle;
+use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
@@ -62,9 +62,28 @@ pub enum CoordinatorError {
 
 impl App {
     pub(crate) fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
-        if self.db.store_utxo(&utxo)? {
+        if self.db.store_utxo(utxo)? {
             self.db.flush()?;
             debug!("Stored utxo {}", utxo.outpoint);
+
+            // Hash the new UTXO
+            let utxo_hash = merkle::hash_utxo(utxo);
+
+            // Retrieve all UTXOs, hash them
+            let utxos = self.db.get_all_utxos()?;
+            let mut utxo_hashes: Vec<[u8; 32]> = utxos.iter().map(merkle::hash_utxo).collect();
+            utxo_hashes.push(utxo_hash); // Include the new UTXO hash
+
+            // Construct the Merkle tree from hashes
+            let utxo_hashes_vec_u8: Vec<Vec<u8>> =
+                utxo_hashes.iter().map(|hash| hash.to_vec()).collect();
+            let merkle_tree = merkle::construct_merkle_tree(&utxo_hashes_vec_u8);
+
+            // Store the new Merkle root in the database
+            let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
+            self.db
+                .store_utxo_merkle_root(&merkle_root)
+                .map_err(|e| CoordinatorError::DbError(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
