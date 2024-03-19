@@ -88,6 +88,7 @@ impl TransactionFetcher {
             if let Some(inflight_count) = self.active_peers.get(peer_id) {
                 if *inflight_count <= DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS_PER_PEER {
                     return true;
+                    return true;
                 }
                 *inflight_count -= 1;
             }
@@ -117,7 +118,13 @@ impl TransactionFetcher {
         let TxFetchMetadata { fallback_peers, .. } =
             self.hashes_fetch_inflight_and_pending_fetch.peek(&hash)?;
 
-        fallback_peers.iter().find(|&peer_id| self.is_idle(peer_id) && is_session_active(peer_id))
+        for peer_id in fallback_peers.iter() {
+            if self.is_idle(peer_id) && is_session_active(peer_id) {
+                return Some(peer_id);
+            }
+        }
+
+        None
     }
 
     /// Returns any idle peer for any hash pending fetch. If one is found, the corresponding
