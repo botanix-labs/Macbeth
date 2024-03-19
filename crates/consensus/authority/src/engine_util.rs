@@ -143,7 +143,7 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
-pub(crate) async fn start_new_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn start_new_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_attributes: EthPayloadBuilderAttributes,
 ) -> Result<PayloadId, StartNewPayloadError> {
@@ -172,7 +172,7 @@ pub(crate) enum BestTransactionsError {
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn best_transactions_from_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_id: PayloadId,
 ) -> Result<EthBuiltPayload, BestTransactionsError> {

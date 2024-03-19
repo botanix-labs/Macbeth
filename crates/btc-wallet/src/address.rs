@@ -57,7 +57,7 @@ enum SafeSpendPathError {
 /// Timelocks are relative
 fn _build_safe_spend_path_script_check_sig_add(
     lock_time: LockTime,
-    public_keys: &Vec<PublicKey>,
+    public_keys: &[PublicKey],
     quorum: i64,
 ) -> Result<ScriptBuf, SafeSpendPathError> {
     if public_keys.len() < 2 {
@@ -130,16 +130,16 @@ where
 {
     let eth = eth_address.as_slice();
     let eth_address_tweak = sha256::Hash::hash(eth);
-    let tweak = {
+    
+
+    {
         let mut eng = sha256::Hash::engine();
         eng.write_all(&aggregate_key.serialize()).unwrap();
         eng.write_all(&eth_address_tweak[..]).unwrap();
         let hash = sha256::Hash::from_engine(eng);
         secp256k1::Scalar::from_be_bytes(hash.to_byte_array())
             .expect("safe hash values should be under the curve order")
-    };
-
-    tweak
+    }
 }
 
 /// Deprecated
@@ -190,13 +190,13 @@ pub fn generate_taproot_change_scriptpubkey(
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
 
-    bitcoin::ScriptBuf::new_v1_p2tr(&secp, public_key.x_only_public_key().0, None)
+    bitcoin::ScriptBuf::new_v1_p2tr(secp, public_key.x_only_public_key().0, None)
 }
 
 /// Note: pk provided to this address is the frost public key already tweaked
 /// with the eth address and the taptree merkel root.
 pub fn gateway_address(pk: &PublicKey, network: Network) -> anyhow::Result<Address> {
-    Ok(generate_taproot_address(&pk, network))
+    Ok(generate_taproot_address(pk, network))
 }
 
 #[cfg(test)]

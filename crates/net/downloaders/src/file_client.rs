@@ -1,5 +1,5 @@
 use super::file_codec::BlockFileCodec;
-use alloy_rlp::{Decodable, Header as RlpHeader};
+// use alloy_rlp::{Decodable, Header as RlpHeader};
 use itertools::Either;
 use reth_interfaces::p2p::{
     bodies::client::{BodiesClient, BodiesFut},

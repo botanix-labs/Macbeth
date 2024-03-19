@@ -45,6 +45,9 @@ pub mod transaction;
 pub mod trie;
 mod withdrawal;
 
+// Allow dead code
+
+#[allow(dead_code, missing_docs)]
 // Botanix specific stuff
 pub mod botanix;
 

@@ -95,6 +95,7 @@ macro_rules! set_value {
             MockTransaction::Deposit(ref mut tx) => {
                 op_set_value!(tx, $this, new_value);
             }
+            #[allow(unreachable_patterns)]
             MockTransaction::Eip2930 { ref mut $field, .. } => {
                 *$field = new_value;
             }

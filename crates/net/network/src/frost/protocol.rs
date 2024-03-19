@@ -153,6 +153,8 @@ impl Stream for FrostProtoConnection {
             return Poll::Ready(Some(initial_ping.encoded()));
         }
         let peer_message_forwarder = this.peer_message_forwarder.clone();
+        // TODO: remove once we clarify: https://github.com/botanix-labs/botanix/issues/369
+        #[allow(clippy::never_loop)]
         loop {
             // poll the commands send by us to another peer
             if let Poll::Ready(Some(cmd)) = this.commands.poll_next_unpin(cx) {

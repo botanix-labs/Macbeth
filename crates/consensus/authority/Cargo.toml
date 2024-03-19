@@ -46,7 +46,7 @@ btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
 
 ## Ethereum
-ethers = "2.0.11"
+## ethers = "2.0.11"
 
 base64 = "0.22.0"
 
@@ -72,7 +72,7 @@ secp256k1 = { workspace = true, features = [
 tonic = "0.11.0"
 
 ## url
-url = "2.2"
+## url = "2.2"
 
 displaydoc = "0.2"
 

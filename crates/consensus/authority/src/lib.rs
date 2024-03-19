@@ -138,7 +138,7 @@ where
 {
     fn try_new(
         client: Client,
-        headers: &mut Vec<SealedHeader>,
+        headers: &mut [SealedHeader],
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
@@ -225,7 +225,7 @@ where
     /// transactions.
     pub(crate) fn build_header_template(
         &self,
-        transactions: &Vec<TransactionSigned>,
+        transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
@@ -317,6 +317,7 @@ where
 
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn complete_header(
         &self,
         mut header: Header,
@@ -355,6 +356,11 @@ where
 
         // TODO(scott): if pegouts are pending but no witness data is provided, we should fail
         // consensus validation
+        let witness_data_final = if header.is_poa_epoch() {
+            witness_data.clone().map_or(Some(vec![]), Some)
+        } else {
+            None
+        };
 
         // Serialize the header without signature
         let mut extra_header_content_no_signature = ExtraDataHeader::new(
@@ -383,7 +389,8 @@ where
 
     //// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
-    /// This returns bundle state, block, and gas used.
+    /// This returns the header of the executed block, as well as the poststate from execution.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
@@ -392,6 +399,7 @@ where
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
+        authority_signers: &[secp256k1::PublicKey],
         evm_config: EvmConfig,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where

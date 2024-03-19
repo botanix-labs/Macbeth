@@ -186,6 +186,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
+    #[allow(clippy::type_complexity)]
     pub fn build(
         self,
     ) -> (

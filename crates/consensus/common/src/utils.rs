@@ -308,7 +308,7 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
 /// Validates that the authority was in turn when producing the block
 pub fn validate_inturn(
     header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
+    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     let singer_pk = recovery_authority(header)?;
     let signer_index = authority_signers

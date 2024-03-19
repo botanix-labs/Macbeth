@@ -58,6 +58,7 @@ where
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
@@ -140,7 +141,6 @@ where
                 recent_header: recent_bitcoin_block_header.expect("recent header is some"),
                 aggregate_public_key: storage
                     .aggregate_public_key
-                    .clone()
                     .expect("aggregate pk is some"),
             };
 

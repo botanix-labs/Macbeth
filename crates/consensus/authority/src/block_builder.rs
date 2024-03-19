@@ -16,7 +16,7 @@ use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_node_ethereum::EthEngineTypes;
+
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_primitives::{
     botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
@@ -68,7 +68,7 @@ where
 
         // start new payload
         let payload_id =
-            engine_util::start_new_payload::<EthEngineTypes>(&self.payload_builder, payload_attr)
+            engine_util::start_new_payload(&self.payload_builder, payload_attr)
                 .await;
 
         if payload_id.is_err() {
@@ -86,8 +86,7 @@ where
             Err(BestTransactionsError::PayloadEmpty);
         loop {
             // get payload by id
-            // TODO replate this with async/await
-            let transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
+            let transactions = engine_util::best_transactions_from_payload(
                 &self.payload_builder,
                 payload_id,
             )
@@ -158,6 +157,7 @@ where
             &None,
             &self.sk,
             &self.secp,
+            authority_signers.as_slice(),
             self.evm_config.clone(),
         ) {
             Ok(ret) => ret,

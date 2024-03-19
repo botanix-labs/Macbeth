@@ -32,13 +32,19 @@ use crate::{
 pub(crate) enum ProcessBotanixLogError {
     /// Failed to notify btc server about pegin
     #[error("Failed to notify btc server about pegin")]
-    FailedToNotifyPegin(tonic::Status),
+    NotifyPegin(tonic::Status),
     #[error("Failed to broadcast pegout tx")]
-    FailedToBroadcastPegout,
+    #[allow(dead_code)]
+    BroadcastPegout,
     #[error("Failed to make pegout tx: {0}")]
-    FailedToMakePegoutTx(tonic::Status),
+    #[allow(dead_code)]
+    MakePegoutTx(tonic::Status),
     #[error("Failed to parse pegout data")]
-    FailedToParsePegout,
+    ParsePegout,
+    #[error("Failed to make pegout tx")]
+    FailedToMakePegoutTx,
+    #[error("Failed to notify pegout tx: {0}")]
+    FailedToNotifyPegin(tonic::Status),
 }
 
 /// Repersents an error related to frost operations
@@ -48,7 +54,7 @@ pub(crate) enum FrostParseError {
     #[error("Invalid frost peer id")]
     InvalidFrostPeerId,
     #[error("Invalid frost signing session id")]
-    InvalidSigningSessionId,
+    InvalidSigningSessionId, 
 }
 
 /// Search a receipt for a pegout and return a MakeTxRequest for the pegout
@@ -167,8 +173,9 @@ fn get_pegout_data(log: Log) -> Option<PegoutData> {
     None
 }
 
-// send pegouts and initiate the frost signing
-// TODO better name for this function
+// TODO this function is not being used currently
+// Add back in when FROST signing is implemented
+#[allow(dead_code)]
 pub(crate) async fn send_pegouts(
     _bitcoin_block_source: &BitcoindClient,
     btc_server: &mut BtcServerExtendedClient,
@@ -204,7 +211,7 @@ pub(crate) async fn send_pegouts(
         }
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-            return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()));
+            return Err(ProcessBotanixLogError::FailedToMakePegoutTx);
         }
     }
 
@@ -234,14 +241,14 @@ async fn process_botanix_log(
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
-    receipt_logs: &Vec<Log>,
+    receipt_logs: &[Log],
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(&log, &receipt_logs)
+                let pegin_data = parse_pegin_reth_log_topic(log, receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
@@ -267,15 +274,17 @@ async fn process_botanix_log(
                 }
             }
             Ok(GenesisContractEvents::BurnEvent) => {
+                // TODO(scott): make dynamic
+                let _fee_rate = 30u32;
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
-                match parse_pegout_reth_log_topic(&log) {
+                match parse_pegout_reth_log_topic(log) {
                     Ok(parsed_pegout) => {
                         pegout = Some(parsed_pegout);
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", ?e, "Failed to parse pegout");
-                        return Err(ProcessBotanixLogError::FailedToParsePegout);
+                        return Err(ProcessBotanixLogError::ParsePegout);
                     }
                 }
             }
@@ -297,6 +306,7 @@ pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
         bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
+#[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
     bloom_contains_minting_contract_address(bloom) &&
         bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
@@ -349,6 +359,8 @@ pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 
+
+#[allow(dead_code)]
 pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }
