@@ -1,5 +1,6 @@
 use crate::{
     engine_util,
+    extended_client::BtcServerExtendedClient,
     utils::{get_recent_block_height_or_zero, is_testnet},
 };
 
@@ -10,7 +11,6 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
 use crate::Storage;
-use client::BtcServerClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_network::message::NewBlockMessage;
@@ -33,7 +33,7 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
-    btc_server: BtcServerClient<tonic::transport::Channel>,
+    btc_server: BtcServerExtendedClient,
     /// bitcoin block source
     bitcoind_client: BitcoindClient,
     /// Consensus cache
@@ -61,7 +61,7 @@ where
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
-        btc_server: BtcServerClient<tonic::transport::Channel>,
+        btc_server: BtcServerExtendedClient,
         bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,

@@ -1,5 +1,7 @@
-use crate::{dkg::DKGStateMachine, epoch_manager::EpochManager, Storage};
-use client::BtcServerClient;
+use crate::{
+    dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
+    Storage,
+};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::{
@@ -36,7 +38,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        btc_server: BtcServerClient<tonic::transport::Channel>,
+        btc_server: BtcServerExtendedClient,
         network_handle: NetworkHandle,
         frost_handle: FrostHandle,
         epoch_manager: EpochManager<Client>,

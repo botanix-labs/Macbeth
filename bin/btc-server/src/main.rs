@@ -5,6 +5,7 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod jwt;
 mod merkle;
 mod shutdown;
 mod signer;
@@ -26,6 +27,7 @@ use clap::Parser;
 use config::{GrpcConfig, TomlConfig};
 use dkg::DKGError;
 use frost_secp256k1_tr as frost;
+use jwt::{JwtError, JwtSecret};
 use rand::thread_rng;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
@@ -41,13 +43,15 @@ use std::{
     time::Duration,
 };
 
-use crate::database::Utxo;
+use crate::{database::Utxo, jwt::get_or_create_jwt_secret_from_path};
 
 use database::Error as DbError;
 use futures_util::future::FutureExt;
 use thiserror::Error;
 use tokio::sync::oneshot;
 use tonic::{codegen::CompressionEncoding, transport::Server};
+
+const JWT_HEADER_KEY: &'static str = "jwt-auth";
 
 lazy_static::lazy_static! {
     pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -68,6 +72,12 @@ macro_rules! already_exists {
 macro_rules! internal {
     ($($arg:tt)*) => {{
         tonic::Status::internal(format!($($arg)*))
+    }};
+}
+
+macro_rules! unauthenticated {
+    ($($arg:tt)*) => {{
+        tonic::Status::unauthenticated(format!($($arg)*))
     }};
 }
 
@@ -95,6 +105,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("frost error: {0}")]
     Frost(frost_secp256k1_tr::Error),
+    #[error("jwt error: {0}")]
+    Jwt(#[from] JwtError),
     #[error("grpc reflection server error: {0}")]
     ReflectionServer(tonic_reflection::server::Error),
 }
@@ -118,6 +130,8 @@ struct App {
         Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>,
     /// configuration
     config: Config,
+    /// Jwt Secret
+    jwt_secret: Option<JwtSecret>,
 }
 
 impl App {
@@ -138,6 +152,11 @@ impl App {
         if min_signers < 2 {
             panic!("min_signers should be at least 2");
         }
+
+        let mut jwt_secret = None;
+        if let Some(jwt_path) = config.jwt_secret.as_ref() {
+            jwt_secret = Some(get_or_create_jwt_secret_from_path(jwt_path).map_err(Error::Jwt)?)
+        };
 
         let mut round1_dkg = None;
         if db.get_public_key_package().expect("failed to get public key package").is_none() {
@@ -160,6 +179,7 @@ impl App {
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             config,
+            jwt_secret,
         })
     }
 
@@ -239,6 +259,25 @@ impl App {
 
         Ok(StopHandle { stop_cmd_sender: shutdown_send })
     }
+
+    fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
+        if let Some(jwt_secret) = self.jwt_secret.as_ref() {
+            if let Some(jwt_request_token) = request.metadata().get(JWT_HEADER_KEY) {
+                let jwt_request_token = jwt_request_token
+                    .to_str()
+                    .map_err(|e| {
+                        error!("Failed to get request token from request metadata: {}", e);
+                        badarg!("Failed to get request token from request metadata: {}", e)
+                    })?
+                    .to_string();
+                if jwt_secret.validate(jwt_request_token).is_err() {
+                    error!("Request authentication failed");
+                    unauthenticated!("Request authentication failed");
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl From<database::Utxo> for rpc::Utxo {
@@ -261,6 +300,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::NotifyPeginRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let txid = req.utxo_txid.parse().map_err(|e| badarg!("bad txid: {}", e))?;
         let outpoint = OutPoint::new(txid, req.utxo_vout);
@@ -287,6 +327,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -314,6 +355,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::MakeTxRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -375,6 +417,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -401,6 +444,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round1SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -429,6 +473,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round2SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -455,8 +500,9 @@ impl rpc::BtcServer for App {
 
     async fn get_public_key(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let pk = self.get_public_key().map_err(|e| {
             error!("Failed to get public key: {}", e);
             internal!("Failed to get public key: {}", e)
@@ -470,6 +516,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::GetGatewayAddressRequest>,
     ) -> Result<tonic::Response<rpc::GetGatewayAddressResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
             error!("Failed to parse eth address: {}", e);
@@ -495,6 +542,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
             error!("Failed to parse frost peer id: {}", e);
@@ -517,8 +565,9 @@ impl rpc::BtcServer for App {
     /// packages)
     async fn get_round2_dkg_package(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let round2_packages = self.get_round2_dkg().map_err(|e| {
             error!("Failed to get round2 dkg package: {}", e);
             internal!("Failed to get round2 dkg package: {}", e)
@@ -536,6 +585,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let frost_id =
             crate::util::deserialize_frost_peer_id(req.identifier.clone()).map_err(|e| {
@@ -560,8 +610,9 @@ impl rpc::BtcServer for App {
     /// btc server
     async fn get_round1_dkg_package(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let round1_dkg_package = self.get_round1_dkg().map_err(|e| {
             error!("Failed to get round1 dkg package: {}", e);
             internal!("Failed to get round1 dkg package: {}", e)
@@ -584,8 +635,9 @@ impl rpc::BtcServer for App {
     /// Gets round 1 pkgs we have collected so far - includes our own package
     async fn get_round1_dkg_packages(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
         if self.db.get_public_key_package()?.is_some() {
             warn!("recieved notification about round 2 DKG while having key package");
             return Err(already_exists!("already have key package"));
@@ -609,6 +661,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::Round1SigningPackageRequest>,
     ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -644,6 +697,7 @@ impl rpc::BtcServer for App {
         &self,
         req: tonic::Request<rpc::SignPayload>,
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -673,8 +727,9 @@ impl rpc::BtcServer for App {
 
     async fn get_all_utxos(
         &self,
-        _req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
         let db_utxos = self.db.get_all_utxos().map_err(|e| {
             error!("Failed to get utxos: {}", e);
             internal!("Failed to get utxos: {}", e)
@@ -689,6 +744,7 @@ impl rpc::BtcServer for App {
         &self,
         request: tonic::Request<rpc::RemoveUtxoRequest>,
     ) -> Result<tonic::Response<rpc::RemoveUtxoResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
         let req = request.into_inner();
 
         let txid = bitcoin::Txid::from_str(&req.txid)
@@ -707,8 +763,9 @@ impl rpc::BtcServer for App {
     // Gets the merkle root of the utxo set
     async fn get_utxo_merkle_root(
         &self,
-        _request: tonic::Request<rpc::Empty>,
+        request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
         match self.db.get_utxo_merkle_root() {
             Ok(Some(merkle_root)) => {
                 // Successfully found the merkle root, return it
@@ -746,6 +803,9 @@ struct Config {
     /// toml configuration path
     #[arg(long)]
     toml: Option<PathBuf>,
+    /// jwt secret path
+    #[arg(long)]
+    jwt_secret: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -797,9 +857,7 @@ mod test {
     }
     use std::collections::BTreeMap;
 
-    use crate::{
-        rpc::BtcServer, signer::SigningRound2Error, util::retrieve_all_signing_commitments,
-    };
+    use crate::{rpc::BtcServer, util::retrieve_all_signing_commitments};
 
     use crate::rpc::Empty;
     use bitcoin::blockdata::{script::Script, transaction::TxOut};
@@ -809,11 +867,8 @@ mod test {
     use bitcoin::{
         absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
-    use frost::keys::dkg::round1;
-
     use frost_secp256k1_tr as frost;
     use rand::RngCore;
-    use reth_btc_wallet::transaction::SIGNING_COMMITMENTS;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
 
@@ -839,6 +894,7 @@ mod test {
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             config: Default::default(),
+            jwt_secret: None,
         };
 
         app

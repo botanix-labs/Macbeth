@@ -402,11 +402,11 @@ start-test-suite:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml
+	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml --jwt-secret ../../../node1/jwt.hex
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml --jwt-secret ../../../node2/jwt.hex
 
 start-poa-server-1:
 	cd ./bin/reth && \

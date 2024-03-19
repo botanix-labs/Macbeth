@@ -1,4 +1,4 @@
-use crate::{epoch_manager::EpochManager, Storage};
+use crate::{epoch_manager::EpochManager, extended_client::BtcServerExtendedClient, Storage};
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::bitcoind::BitcoindClient;
@@ -15,7 +15,7 @@ use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
 use secp256k1::{All, Secp256k1};
-use std::{sync::Arc, collections::HashMap};
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -36,7 +36,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// The pipeline events to listen on
     pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
     /// BTC Server client
-    pub(crate) btc_server: BtcServerClient<tonic::transport::Channel>,
+    pub(crate) btc_server: BtcServerExtendedClient,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// Recent bitcoin block tx ids
@@ -77,7 +77,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         _canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
-        btc_server: BtcServerClient<tonic::transport::Channel>,
+        btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_client: BitcoindClient,
