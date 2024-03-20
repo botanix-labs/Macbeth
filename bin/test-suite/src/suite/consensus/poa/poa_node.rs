@@ -17,6 +17,7 @@ use std::{
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -63,6 +64,7 @@ pub struct FederationMemberTestConfig {
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::mpsc::Sender<ChannelPayload>,
+    pub jwt_secret_path: PathBuf,
 }
 
 impl FederationMemberTestConfig {
@@ -74,6 +76,7 @@ impl FederationMemberTestConfig {
         bitcoind_username: String,
         bitcoind_password: String,
         bitcoin_server_url: String,
+        jwt_secrets_dir: PathBuf,
     ) -> Self {
         Self {
             index,
@@ -88,6 +91,7 @@ impl FederationMemberTestConfig {
             bitcoin_server_url,
             peers_list: vec![],
             sender,
+            jwt_secret_path: jwt_secrets_dir.join(format!("{}.hex", index + 1)),
         }
     }
 
@@ -112,6 +116,8 @@ impl FederationMemberTestConfig {
             .unwrap();
         file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
 
+        let jwt_secret_path = self.jwt_secret_path.display().to_string();
+
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgsCliExt<FederationMemberTestConfig>>::parse_from([
             "poa",
@@ -133,6 +139,8 @@ impl FederationMemberTestConfig {
             "127.0.0.1",
             "--authrpc.port",
             format!("{}", self.authrpc_port).as_str(),
+            "--authrpc.jwtsecret",
+            jwt_secret_path.as_str(),
             "--btc-server",
             self.bitcoin_server_url.as_str(),
             "--bitcoind.url",
@@ -218,6 +226,7 @@ pub fn create_poa_federation_members(
         config.bitcoind.username.clone(),
         config.bitcoind.password.clone(),
         format!("http://localhost:{}", port),
+        config.jwt_secrets_dir.clone(),
     );
 
     let index: u16 = 1;
@@ -232,6 +241,7 @@ pub fn create_poa_federation_members(
         config.bitcoind.username.clone(),
         config.bitcoind.password.clone(),
         format!("http://localhost:{}", port),
+        config.jwt_secrets_dir.clone(),
     );
 
     // insert peers

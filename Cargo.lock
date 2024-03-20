@@ -902,6 +902,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "base64"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
+
+[[package]]
 name = "base64ct"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1387,6 +1393,7 @@ name = "btc-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.0",
  "bdk",
  "bitcoin",
  "bitcoin_hashes 0.13.0",
@@ -1407,6 +1414,7 @@ dependencies = [
  "prost-build 0.12.3",
  "rand 0.8.5",
  "reth-btc-wallet",
+ "reth-primitives",
  "rs_merkle",
  "secp256k1 0.27.0",
  "serde",
@@ -6938,6 +6946,7 @@ dependencies = [
 name = "reth-authority-consensus"
 version = "0.1.0-alpha.20"
 dependencies = [
+ "base64 0.22.0",
  "bitcoin",
  "bitcoincore-rpc",
  "btc-server",

@@ -1,5 +1,5 @@
 use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
-use client::{MakeTxRequest, NotifyPeginRequest, Output};
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::{
     mint_validation::{
@@ -10,6 +10,7 @@ use reth_botanix_lib::{
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
 
+use reth_network::frost::manager::{FrostCommand, FrostHandle};
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -34,6 +35,16 @@ pub(crate) enum ProcessBotanixLogError {
     FailedToMakePegoutTx(tonic::Status),
     #[error("Failed to parse pegout data")]
     FailedToParsePegout,
+}
+
+/// Repersents an error related to frost operations
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FrostParseError {
+    /// Failed to notify btc server about pegin
+    #[error("Invalid frost peer id")]
+    InvalidFrostPeerId,
+    #[error("Invalid frost signing session id")]
+    InvalidSigningSessionId,
 }
 
 /// Search a receipt for a pegout and return a MakeTxRequest for the pegout
@@ -162,14 +173,16 @@ async fn get_pegout_data(log: Log) -> Option<PegoutData> {
     None
 }
 
-// TODO this function is not being used currently
-// Add back in when FROST signing is implemented
+// send pegouts and initiate the frost signing
 pub(crate) async fn send_pegouts(
-    _bitcoin_block_source: &BitcoindClient,
-    _btc_server: &mut BtcServerExtendedClient,
+    bitcoin_block_source: &BitcoindClient,
+    btc_server: &mut BtcServerExtendedClient,
+    frost_handle: &FrostHandle,
     pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
-    let _req = MakeTxRequest {
+    // TODO Pull fee_rate from bitcoind
+    // TODO pull signing_session_id from parent block hash
+    let req = MakeTxRequest {
         outputs: pegouts
             .iter()
             .map(|pegout| Output {
@@ -177,22 +190,43 @@ pub(crate) async fn send_pegouts(
                 value: pegout.amount.to_sat(),
             })
             .collect(),
-        // TODO Pull from bitcoind
+        // TODO
         fee_rate: 30u32,
-        // TODO pull from parent block hash
+        // TODO
         signing_session_id: [0u8; 32].to_vec(),
     };
 
-    // TODO comment this back in when FROST signing is implemented
-    // match btc_server.get_psbt(req).await {
-    //     Ok(response) => {
-    //         // TODO progress with FROST signing here
-    //     }
-    //     Err(e) => {
-    //         error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-    //         return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e));
-    //     }
-    // }
+    match btc_server.get_psbt(req).await {
+        Ok(response) => {
+            // start the frost signing session
+            let SignPayload { signing_session_id, psbt } = response;
+
+            let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+            frost_handle.send_command(FrostCommand::InitiateSigning(
+                sender,
+                signing_session_id,
+                psbt,
+            ));
+            match receiver.await {
+                Ok(request_acknowledged) => {
+                    info!(
+                        "Signing request send to frost task. Acknowledgement status = {:?}",
+                        request_acknowledged
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Signing intention request was sent but the receiver channel failed {:?}",
+                        e
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
+            return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()));
+        }
+    }
 
     Ok(())
 }
@@ -353,6 +387,41 @@ pub fn is_testnet(chain_id: u64) -> bool {
 
 pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
+}
+
+// Deserializes a Frost peer ID.
+///
+/// # Arguments
+///
+/// * `id` - The peer ID to be decoded.
+///
+/// # Returns
+///
+/// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
+/// the peer ID is invalid.
+/// use frost_secp256k1_tr
+pub(crate) fn deserialize_frost_peer_id(
+    id: Vec<u8>,
+) -> Result<frost_secp256k1_tr::Identifier, FrostParseError> {
+    if id.len() != 32 {
+        return Err(FrostParseError::InvalidFrostPeerId);
+    }
+    let peer_id_bytes: &[u8; 32] =
+        id.as_slice().try_into().map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
+
+    let frost_id = frost_secp256k1_tr::Identifier::deserialize(&peer_id_bytes)
+        .map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
+
+    Ok(frost_id)
+}
+
+pub(crate) fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], FrostParseError> {
+    if session_id.len() != 32 {
+        return Err(FrostParseError::InvalidSigningSessionId);
+    }
+    let mut session_id_array = [0u8; 32];
+    session_id_array.copy_from_slice(&session_id);
+    Ok(session_id_array)
 }
 
 #[cfg(test)]

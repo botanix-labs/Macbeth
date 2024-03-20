@@ -15,13 +15,16 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
-    frost::{messages::Request, EventResponseType, Response},
+    frost::{
+        messages::DkgRequest, DkgEventResponseType, DkgResponse, SigningEventResponseType,
+        SigningResponse,
+    },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind},
-    FrostPeerCommand, FrostProtocolEvent, ProtocolState,
+    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
+    FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, ProtocolState,
 };
 
 /// Frost Protocol Handler
@@ -168,23 +171,95 @@ impl Stream for FrostProtoConnection {
                         ))
                     }
                     FrostPeerCommand::PeerMessage(response) => {
-                        let Response { response_type, identifier, data } = response;
-                        match response_type {
-                            EventResponseType::DkgRound1 => {
-                                let req = Request::new(identifier, data);
-                                //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 DKG DATA = {:?}",
-                                // req);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round1_dkg_message(req).encoded(),
-                                ))
+                        match response {
+                            PeerMessageResponse::Dkg(dkg_response) => {
+                                let DkgResponse { response_type, identifier, data } = dkg_response;
+                                match response_type {
+                                    DkgEventResponseType::DkgRound1 => {
+                                        let req = DkgRequest::new(identifier, data);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 DKG DATA =
+                                        // {:?}", req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round1_dkg_message(req).encoded(),
+                                        ))
+                                    }
+                                    DkgEventResponseType::DkgRound2 => {
+                                        let req = DkgRequest::new(identifier, data);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 2 DKG DATA =
+                                        // {:?}", req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round2_dkg_message(req).encoded(),
+                                        ))
+                                    }
+                                }
                             }
-                            EventResponseType::DkgRound2 => {
-                                let req = Request::new(identifier, data);
-                                //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 2 DKG DATA = {:?}",
-                                // req);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round2_dkg_message(req).encoded(),
-                                ))
+                            PeerMessageResponse::Signing(signing_response) => {
+                                let SigningResponse {
+                                    response_type,
+                                    identifier,
+                                    signing_session_id,
+                                    psbt,
+                                } = signing_response;
+                                match response_type {
+                                    SigningEventResponseType::SignerRound1SigningPackage => {
+                                        let req =
+                                            SignRequest::new(identifier, signing_session_id, psbt);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 SIGNING DATA
+                                        // = {:?}", req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round1_signer_package_message(req)
+                                                .encoded(),
+                                        ))
+                                    }
+                                    SigningEventResponseType::CoordinatorRound1SigningPackage => {
+                                        let req =
+                                            SignRequest::new(identifier, signing_session_id, psbt);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
+                                        // DATA = {:?}",
+                                        // req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round1_coordinator_signing_package_message(
+                                                req,
+                                            )
+                                            .encoded(),
+                                        ))
+                                    }
+                                    SigningEventResponseType::SignerRound2SigningPackage => {
+                                        let req =
+                                            SignRequest::new(identifier, signing_session_id, psbt);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
+                                        // DATA = {:?}",
+                                        // req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round2_signer_package_message(req)
+                                                .encoded(),
+                                        ))
+                                    }
+                                    SigningEventResponseType::CoordinatorRound2SigningPackage => {
+                                        let req =
+                                            SignRequest::new(identifier, signing_session_id, psbt);
+                                        //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
+                                        // DATA = {:?}",
+                                        // req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::round2_coordinator_signing_package_message(
+                                                req,
+                                            )
+                                            .encoded(),
+                                        ))
+                                    }
+                                    SigningEventResponseType::InitiateSigningSession => {
+                                        let req =
+                                            SignRequest::new(identifier, signing_session_id, psbt);
+                                        //info!(">>>>>>>>> [PROTOCOL] INITIATING SIGNING SESSION
+                                        // DATA = {:?}",
+                                        // req);
+                                        Poll::Ready(Some(
+                                            FrostProtoMessage::initiate_signing_session(req)
+                                                .encoded(),
+                                        ))
+                                    }
+                                }
                             }
                         }
                     }
@@ -240,21 +315,85 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostProtoMessageKind::Round1Dkg(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 1 PACKAGE FROM PEER. {:?}", data);
-                    let _ =
-                        peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(Response {
-                            response_type: EventResponseType::DkgRound1,
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Dkg(DkgResponse {
+                            response_type: DkgEventResponseType::DkgRound1,
                             identifier: data.identifier,
                             data: data.data,
-                        }));
+                        }),
+                    ));
                 }
                 FrostProtoMessageKind::Round2Dkg(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 2 PACKAGE FROM PEER. {:?}", data);
-                    let _ =
-                        peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(Response {
-                            response_type: EventResponseType::DkgRound2,
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Dkg(DkgResponse {
+                            response_type: DkgEventResponseType::DkgRound2,
                             identifier: data.identifier,
                             data: data.data,
-                        }));
+                        }),
+                    ));
+                }
+                FrostProtoMessageKind::InitiateSigningSession(data) => {
+                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED INITIATE A NEW SIGNING ROUND MESSAGE
+                    // FROM PEER. {:?}", data);
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Signing(SigningResponse {
+                            response_type: SigningEventResponseType::InitiateSigningSession,
+                            identifier: data.identifier,
+                            signing_session_id: data.signing_session_id,
+                            psbt: data.psbt,
+                        }),
+                    ));
+                }
+                FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
+                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 1 PACKAGE FROM PEER.
+                    // {:?}", data);
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Signing(SigningResponse {
+                            response_type: SigningEventResponseType::SignerRound1SigningPackage,
+                            identifier: data.identifier,
+                            signing_session_id: data.signing_session_id,
+                            psbt: data.psbt,
+                        }),
+                    ));
+                }
+                FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
+                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 1 PACKAGE FROM PEER.
+                    // {:?}", data);
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Signing(SigningResponse {
+                            response_type:
+                                SigningEventResponseType::CoordinatorRound1SigningPackage,
+                            identifier: data.identifier,
+                            signing_session_id: data.signing_session_id,
+                            psbt: data.psbt,
+                        }),
+                    ));
+                }
+                FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
+                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 2 PACKAGE FROM PEER.
+                    // {:?}", data);
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Signing(SigningResponse {
+                            response_type: SigningEventResponseType::SignerRound2SigningPackage,
+                            identifier: data.identifier,
+                            signing_session_id: data.signing_session_id,
+                            psbt: data.psbt,
+                        }),
+                    ));
+                }
+                FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
+                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 2 PACKAGE FROM PEER.
+                    // {:?}", data);
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
+                        PeerMessageResponse::Signing(SigningResponse {
+                            response_type:
+                                SigningEventResponseType::CoordinatorRound2SigningPackage,
+                            identifier: data.identifier,
+                            signing_session_id: data.signing_session_id,
+                            psbt: data.psbt,
+                        }),
+                    ));
                 }
             }
 

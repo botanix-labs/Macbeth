@@ -298,6 +298,13 @@ pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
     (timestamp / authorities_len) % authorities_len == signer_index
 }
 
+/// Returns the index of the authority which is currently in turn
+pub fn current_inturn_index(authorities_len: u64) -> u64 {
+    // use minutes as time unit to determine in turn
+    let timestamp = unix_timestamp() / 60;
+    (timestamp / authorities_len) % authorities_len
+}
+
 /// Validates that the authority was in turn when producing the block
 pub fn validate_inturn(
     header: &Header,

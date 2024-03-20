@@ -48,6 +48,8 @@ client = {path = "../../../bin/btc-server/client"}
 ## Ethereum
 ethers = "2.0.11"
 
+base64 = "0.22.0"
+
 # hex
 hex = "0.4.3"
 

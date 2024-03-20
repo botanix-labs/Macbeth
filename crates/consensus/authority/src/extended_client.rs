@@ -1,13 +1,11 @@
+use base64::decode as base64_decode;
 ///! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
-use reth_primitives::hex::encode as hex_encode;
+use reth_primitives::hex::{decode as hex_decode, encode as hex_encode};
 use reth_rpc::{Claims, JwtSecret};
-use std::{
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tonic::metadata::MetadataValue;
+use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSigningRequest, FinalizeSigningResponse,
@@ -16,7 +14,7 @@ use client::{
     SignPayload, ToSignRequest,
 };
 
-const JWT_HEADER_KEY: &'static str = "jwt-auth";
+const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
 
 fn to_u64(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH).unwrap().as_secs()
@@ -55,8 +53,9 @@ macro_rules! generate_method {
             // Insert JWT auth token if available
             if let Some(jwt_auth_token) = self.generate_jwt_token() {
                 let computed = hex_encode(jwt_auth_token.as_bytes());
-                let jwt_auth_token = MetadataValue::from_str(computed.as_str()).unwrap();
-                req.metadata_mut().insert(JWT_HEADER_KEY, jwt_auth_token);
+                let jwt_auth_token = MetadataValue::from_bytes(computed.as_bytes());
+                let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+                req.metadata_mut().insert_bin(key, jwt_auth_token);
             }
 
             // Perform the gRPC call and handle the response
@@ -93,9 +92,9 @@ impl BtcServerExtendedClient {
     pub fn generate_jwt_token(&mut self) -> Option<String> {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
-            let jwt = jwt_secret.encode(&claims).unwrap();
-            let _ = jwt_secret.validate(jwt.clone());
-            jwt
+            let jwt_token = jwt_secret.encode(&claims).unwrap();
+            let _ = jwt_secret.validate(jwt_token.clone());
+            jwt_token
         })
     }
 
@@ -114,4 +113,32 @@ impl BtcServerExtendedClient {
     generate_method!(get_to_sign_package, ToSignRequest, SignPayload);
     generate_method!(new_round2_signing_package, Round2SigningPackage, Empty);
     generate_method!(finalize_signing, FinalizeSigningRequest, FinalizeSigningResponse);
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_metadata_jwt_decode_encode() {
+        // create a random jwt secret
+        let jwt_secret = JwtSecret::random();
+
+        // create jwt token using the secret
+        let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
+        let jwt_token = jwt_secret.encode(&claims).unwrap();
+
+        // encode and set the token as a metadata value
+        let computed = hex_encode(jwt_token.as_bytes());
+        let metadata_value = MetadataValue::from_bytes(computed.as_bytes());
+
+        // try to verify the received token
+        let jwt_request_token_received = metadata_value.as_encoded_bytes();
+        let jwt_token_base64_decoded = base64_decode(jwt_request_token_received).unwrap();
+        let jwt_token_hex_decoded = hex_decode(jwt_token_base64_decoded).unwrap();
+
+        let jwt_stringified = String::from_utf8(jwt_token_hex_decoded).unwrap();
+
+        // validate the request token
+        assert!(jwt_secret.validate(jwt_stringified).is_ok());
+    }
 }

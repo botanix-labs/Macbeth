@@ -22,6 +22,7 @@ mod rpc {
     };
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
+use base64::decode as base64_decode;
 use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
 use clap::Parser;
 use config::{GrpcConfig, TomlConfig};
@@ -29,6 +30,7 @@ use dkg::DKGError;
 use frost_secp256k1_tr as frost;
 use jwt::{JwtError, JwtSecret};
 use rand::thread_rng;
+use reth_primitives::hex::decode as hex_decode;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
 use signer::SigningError;
@@ -49,9 +51,9 @@ use database::Error as DbError;
 use futures_util::future::FutureExt;
 use thiserror::Error;
 use tokio::sync::oneshot;
-use tonic::{codegen::CompressionEncoding, transport::Server};
+use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
-const JWT_HEADER_KEY: &'static str = "jwt-auth";
+const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
 
 lazy_static::lazy_static! {
     pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -262,15 +264,24 @@ impl App {
 
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
         if let Some(jwt_secret) = self.jwt_secret.as_ref() {
-            if let Some(jwt_request_token) = request.metadata().get(JWT_HEADER_KEY) {
-                let jwt_request_token = jwt_request_token
-                    .to_str()
-                    .map_err(|e| {
-                        error!("Failed to get request token from request metadata: {}", e);
-                        badarg!("Failed to get request token from request metadata: {}", e)
-                    })?
-                    .to_string();
-                if jwt_secret.validate(jwt_request_token).is_err() {
+            let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+            if let Some(metadata_value) = request.metadata().get_bin(key) {
+                let jwt_request_token_received = metadata_value.as_encoded_bytes();
+                let jwt_token_base64_decoded =
+                    base64_decode(jwt_request_token_received).map_err(|e| {
+                        error!("Failed to base64 decode request metadata: {}", e);
+                        badarg!("Failed to base64 decode request metadata: {}", e)
+                    })?;
+                let jwt_token_hex_decoded = hex_decode(jwt_token_base64_decoded).map_err(|e| {
+                    error!("Failed to hex decode jwt value: {}", e);
+                    badarg!("Failed to hex decode jwt value: {}", e)
+                })?;
+                let jwt_stringified = String::from_utf8(jwt_token_hex_decoded).map_err(|e| {
+                    error!("Failed to utf8 decode jwt value: {}", e);
+                    badarg!("Failed to utf8 decode jwt value: {}", e)
+                })?;
+
+                if jwt_secret.validate(jwt_stringified).is_err() {
                     error!("Request authentication failed");
                     unauthenticated!("Request authentication failed");
                 }

@@ -12,7 +12,7 @@ pub struct SpawnedBtcServer {
     pub child_process: Child,
 }
 
-fn spawn_btc_server(id: u16, address: String, db_path: PathBuf) -> Child {
+fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path: PathBuf) -> Child {
     let db_path_arg = db_path.display().to_string();
 
     let mut working_directory = std::env::current_dir().unwrap();
@@ -21,6 +21,8 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf) -> Child {
     }
     working_directory.push("bin");
     working_directory.push("btc-server");
+
+    let jwt_secrets_dir = jwt_secret_path.display().to_string();
 
     let identifier = id.to_string();
 
@@ -42,6 +44,8 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf) -> Child {
         "3",
         "--toml",
         "./config.toml",
+        "--jwt-secret",
+        jwt_secrets_dir.as_str(),
     ];
 
     // Create a Command instance and set the working directory
@@ -59,13 +63,15 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(n: u16) -> Vec<SpawnedBtcServer> {
+pub fn spawn_n_btc_servers(n: u16, jwt_secrets_path: PathBuf) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..n {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
         let port = 8000 + i;
-        let child_process = spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone());
+        let jwt_secret_file = jwt_secrets_path.join(format!("{}.hex", i + 1));
+        let child_process =
+            spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone(), jwt_secret_file);
         tasks.push(SpawnedBtcServer { db_path, port, child_process });
     }
     tasks

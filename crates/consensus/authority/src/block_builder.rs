@@ -1,7 +1,7 @@
 use crate::{
     engine_util::{self, BestTransactionsError},
     task::BlockProductionTask,
-    utils::{is_epoch_end, is_testnet},
+    utils::{is_epoch_end, is_testnet, send_pegouts},
 };
 
 use reth_botanix_lib::peg_contract::PegoutData;
@@ -251,12 +251,18 @@ where
             // add current block pegouts
             pegouts.extend(current_block_pegouts);
 
-            // TODO this is commented out until the FROST networking is implemented
-            // info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server,
-            // pegouts).await {
-            //     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
-            // }
+            // send pegouts
+            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+            if let Err(e) = send_pegouts(
+                &self.bitcoind_client,
+                &mut self.btc_server,
+                &self.frost_handle,
+                pegouts,
+            )
+            .await
+            {
+                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+            }
         }
     }
 }
