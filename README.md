@@ -107,6 +107,13 @@ NODE_2_DIR=[PATH_TO_NODE2] make start-btc-server-2
 
 When starting the btc servers please adjust the argument `--jwt` in the arguments list to point to the location of your jwt.hex token. The latter is to be usually found under e.g. `NODE_1_DIR/jwt.hex` and respectively for node2 `NODE_2_DIR/jwt.hex`. The btc server needs to be authenticated against the node jwt token in order to work properly.
 
+To start the 2 btc servers run the following commands:
+
+```bash
+NODE_1_DIR=[PATH_TO_NODE1] make start-btc-server-1
+NODE_2_DIR=[PATH_TO_NODE2] make start-btc-server-2
+```
+
 4. Start the 2 botanix nodes as follows:
 
 ```bash

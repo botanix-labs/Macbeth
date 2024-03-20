@@ -32,6 +32,7 @@ use clap::Parser;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
+use reth_primitives::hex::decode as hex_decode;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;

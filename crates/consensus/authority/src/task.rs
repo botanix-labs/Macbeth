@@ -26,10 +26,6 @@ use tokio::sync::{
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use client::BtcServerClient;
-
-use bitcoincore_rpc::json;
-
 pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// The configured chain spec
     pub(crate) chain_spec: Arc<ChainSpec>,
