@@ -33,24 +33,61 @@ impl ProtocolState {
     }
 }
 
+/// Enum for peer message responses for dkg and signing
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PeerMessageResponse {
+    /// Dkg response
+    Dkg(DkgResponse),
+    /// Signing response
+    Signing(SigningResponse),
+}
+
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Response {
+pub struct DkgResponse {
     /// The Response Type
-    pub response_type: EventResponseType,
+    pub response_type: DkgEventResponseType,
     /// Frost Identifier
     pub identifier: Vec<u8>,
     /// Frost Data
     pub data: Vec<u8>,
 }
 
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SigningResponse {
+    /// The Response Type
+    pub response_type: SigningEventResponseType,
+    /// Frost identifier
+    pub identifier: Vec<u8>,
+    /// Signing session id
+    pub signing_session_id: Vec<u8>,
+    /// Frost data
+    pub psbt: Vec<u8>,
+}
+
 /// Event Response Variants indicating the type of response
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub enum EventResponseType {
+pub enum DkgEventResponseType {
     /// DKG round 1
     DkgRound1,
     /// DKG round 2
     DkgRound2,
+}
+
+/// Event Response Variants indicating the type of response
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub enum SigningEventResponseType {
+    /// Initiates a new signing session
+    InitiateSigningSession,
+    /// Signers will add their signing commitments to the psbt
+    SignerRound1SigningPackage,
+    /// Coordinating node will collect the PSBTs with the signing commitments
+    CoordinatorRound1SigningPackage,
+    /// Signers get round 2 signing package
+    SignerRound2SigningPackage,
+    /// Coordinating node will collect the PSBTs with the partial sigs
+    CoordinatorRound2SigningPackage,
 }
 
 /// Frost Protocol Events
@@ -67,7 +104,7 @@ pub enum FrostProtocolEvent {
         to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
-    PeerMessage(Response),
+    PeerMessage(PeerMessageResponse),
     /// Peer confirmation
     PeerConfirmed(PeerId, u16),
 }
@@ -88,7 +125,7 @@ pub enum NetworkFrostEvent {
         to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
-    PeerMessage(Response),
+    PeerMessage(PeerMessageResponse),
     /// Peer Confirmation
     PeerConfirmed(PeerId, u16),
 }
@@ -104,5 +141,5 @@ pub enum FrostPeerCommand {
         response: oneshot::Sender<String>,
     },
     /// An emitted event once a peer sends a message to another peer
-    PeerMessage(Response),
+    PeerMessage(PeerMessageResponse),
 }

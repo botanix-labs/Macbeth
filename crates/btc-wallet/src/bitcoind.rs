@@ -1,7 +1,4 @@
-use bitcoincore_rpc::{
-    json::{GetBlockResult, GetChainTipsResultStatus},
-    Auth, Client, RpcApi,
-};
+use bitcoincore_rpc::{json::GetBlockResult, Auth, Client, RpcApi};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;

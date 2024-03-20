@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
+reth-primitives.workspace = true
 
 anyhow = "1.0.71"
 bitcoin = { version = "0.30.2", features = [ "base64", "rand", "serde" ] }
@@ -33,6 +34,7 @@ sled = "0.34.7"
 thiserror = "1.0.43"
 displaydoc = "0.2"
 toml = "0.8.4"
+base64 = "0.22.0"
 
 # for tonic
 tokio = { version = "1.29.1", features = ["full"] }

@@ -1,9 +1,14 @@
 use crate::{
-    block_fetcher::BlockFetcherTask, epoch_manager::EpochManager,
-    extended_client::BtcServerExtendedClient, frost_task::FrostTask, task::BlockProductionTask,
-    voting::AuthorityVote, AuthorityConsensus, Storage,
+    block_fetcher::BlockFetcherTask,
+    epoch_manager::EpochManager,
+    extended_client::BtcServerExtendedClient,
+    frost_task::{FrostNotificationMessage, FrostTask},
+    task::BlockProductionTask,
+    voting::AuthorityVote,
+    AuthorityConsensus, Storage,
 };
 
+use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
@@ -27,8 +32,6 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-
-use crate::sync::SyncController;
 use tracing::error;
 
 /// Builder type for confirguring the setup
@@ -235,6 +238,9 @@ where
             evm_config.clone(),
         );
 
+        let (frost_task_notifications_tx, frost_task_notifications_rx) =
+            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
+
         // TODO FIX the unwrap
         let frost_task = FrostTask::new(
             btc_server.clone(),
@@ -243,6 +249,7 @@ where
             epoch_manager.clone(),
             frost_config,
             storage.clone(),
+            frost_task_notifications_tx,
         );
 
         let bitcoind_client =
@@ -260,9 +267,11 @@ where
             sk,
             epoch_manager,
             network_handle,
+            frost_task.frost_handle.clone(),
             task_executor,
             evm_config.clone(),
             payload_builder,
+            frost_task_notifications_rx,
         );
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)

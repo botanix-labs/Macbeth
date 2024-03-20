@@ -1,6 +1,9 @@
 use displaydoc::Display as DisplayDoc;
 use serde::Deserialize;
-use std::{path::Path, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 
@@ -30,6 +33,7 @@ pub struct BitcoindConfig {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Config {
     pub bitcoind: BitcoindConfig,
+    pub jwt_secrets_dir: PathBuf,
 }
 
 impl Config {

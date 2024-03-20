@@ -395,8 +395,10 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         )
         .expect("Failed to get authority index");
 
-        // TODO: make this configurable
-        let frost_config = FrostConfig::new(authority_index, total_authorities, 2, 2);
+        // create frost config
+        let mut frost_config: FrostConfig = self.config.rpc.frost.clone().into();
+        frost_config.set_authority_index(authority_index);
+        frost_config.set_total_authorities(total_authorities);
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();

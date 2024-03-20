@@ -1,17 +1,35 @@
 use crate::{
     dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    Storage,
+    signing::SigningStateMachine, Storage,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, FrostHandle},
-        EventResponseType, Response,
+        DkgEventResponseType, DkgResponse, PeerMessageResponse, SigningEventResponseType,
+        SigningResponse,
     },
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
+
+/// Enum defining posisble frost message notifications
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FrostNotificationMessage {
+    /// Finalized frost signing signature
+    FinalizedSignature(FrostFinalizedSignatureMessage),
+}
+
+/// Finalised frost signature message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FrostFinalizedSignatureMessage {
+    /// The signing session id
+    pub(crate) signing_session_id: Vec<u8>,
+    /// The agglomerated psbts
+    pub(crate) psbt: Vec<u8>,
+}
 
 pub struct FrostTask<Client> {
     /// Network Handler
@@ -22,6 +40,8 @@ pub struct FrostTask<Client> {
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
     pub(crate) dkg_state_machine: DKGStateMachine<Client>,
+    /// signing state machine
+    pub(crate) signing_state_machine: SigningStateMachine<Client>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
 }
@@ -44,20 +64,33 @@ where
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
         storage: Storage<Client>,
+        frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     ) -> Self {
-        let FrostConfig { authority_index, total_authorities, min_signers, max_signers } = config;
-        info!("Frost authority index: {}/{}", authority_index, total_authorities);
+        info!("Frost authority index: {}/{}", config.authority_index, config.total_authorities);
 
         let dkg_state_machine = DKGStateMachine::new(
+            btc_server.clone(),
+            storage.clone(),
+            frost_handle.clone(),
+            config.clone(),
+        );
+
+        let signing_state_machine = SigningStateMachine::new(
             btc_server,
             storage.clone(),
             frost_handle.clone(),
-            authority_index as u16,
-            min_signers,
-            max_signers,
+            config,
+            frost_task_tx,
         );
 
-        Self { network_handle, frost_handle, epoch_manager, dkg_state_machine, storage }
+        Self {
+            network_handle,
+            frost_handle,
+            epoch_manager,
+            dkg_state_machine,
+            signing_state_machine,
+            storage,
+        }
     }
 
     async fn start_dkg(&mut self) {
@@ -129,26 +162,105 @@ where
             // receive over a channel message from other peers and update our state machine
             if let Ok(msg) = peer_messages_rx.try_recv() {
                 info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
-                let Response { response_type, identifier, data } = msg;
-                match response_type {
-                    EventResponseType::DkgRound1 => {
-                        match self.dkg_state_machine.process_round1(identifier, data).await {
-                            Ok(_) => {
-                                info!(">>>>>>>>>>> [FROST_TASK] Processed Round 1 package successfully")
+
+                match msg {
+                    PeerMessageResponse::Dkg(dkg_response) => {
+                        let DkgResponse { response_type, identifier, data } = dkg_response;
+                        match response_type {
+                            DkgEventResponseType::DkgRound1 => {
+                                match self.dkg_state_machine.process_round1(identifier, data).await
+                                {
+                                    Ok(_) => {
+                                        info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 1 dkg package successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(">>>>>>>>>>> [FROST_TASK::DKG] Error processing round 1 dkg package {:?}", e);
+                                    }
+                                }
                             }
-                            Err(e) => {
-                                error!(">>>>>>>>>>> [FROST_TASK] Error processing round 1 package {:?}", e);
+                            DkgEventResponseType::DkgRound2 => {
+                                match self.dkg_state_machine.process_round2(identifier, data).await
+                                {
+                                    Ok(_) => {
+                                        info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 2 dkg package successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(">>>>>>>>>>> [FROST_TASK::DKG] Error processing round 2 dkg package {:?}", e);
+                                    }
+                                }
                             }
                         }
                     }
-                    EventResponseType::DkgRound2 => {
-                        match self.dkg_state_machine.process_round2(identifier, data).await {
-                            Ok(_) => {
-                                info!(">>>>>>>>>>> [FROST_TASK] Processed Round 2 package successfully")
+                    PeerMessageResponse::Signing(signing_response) => {
+                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
+                            signing_response;
+                        match response_type {
+                            SigningEventResponseType::InitiateSigningSession => {
+                                match self
+                                    .signing_state_machine
+                                    .initate_signing_session(identifier, signing_session_id, psbt)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Started new signing session successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Error starting new signing session {:?}", e);
+                                    }
+                                }
                             }
-                            Err(e) => {
-                                error!(">>>>>>>>>>> [FROST_TASK] Error processing round 2 package {:?}", e);
+                            SigningEventResponseType::SignerRound1SigningPackage => {
+                                match self
+                                    .signing_state_machine
+                                    .signer_process_round1(identifier, signing_session_id, psbt)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Processed Round 1 signing successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 1 signing {:?}", e);
+                                    }
+                                }
                             }
+                            SigningEventResponseType::CoordinatorRound1SigningPackage => match self
+                                .signing_state_machine
+                                .coordinator_process_round1(identifier, signing_session_id, psbt)
+                                .await
+                            {
+                                Ok(_) => {
+                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 2 signing package successfully")
+                                }
+                                Err(e) => {
+                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 2 signing package {:?}", e);
+                                }
+                            },
+                            SigningEventResponseType::SignerRound2SigningPackage => {
+                                match self
+                                    .signing_state_machine
+                                    .signer_process_round2(identifier, signing_session_id, psbt)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Processed Round 2 signing package successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 2 signing package {:?}", e);
+                                    }
+                                }
+                            }
+                            SigningEventResponseType::CoordinatorRound2SigningPackage => match self
+                                .signing_state_machine
+                                .coordinator_process_round2(identifier, signing_session_id, psbt)
+                                .await
+                            {
+                                Ok(_) => {
+                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 2 signing package successfully")
+                                }
+                                Err(e) => {
+                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 2 signing package {:?}", e);
+                                }
+                            },
                         }
                     }
                 }

@@ -328,7 +328,9 @@ where
         let (protocol_events_tx, protocol_events_rx) = mpsc::unbounded_channel();
         let (frost_peer_messages_forwarder_tx, frost_peer_messages_forwarder_rx) =
             mpsc::unbounded_channel::<FrostProtocolEvent>();
-        let authority_index = frost_config.map(|f| f.authority_index as u16).unwrap_or_default();
+        let authority_index =
+            frost_config.as_ref().map(|f| f.authority_index as u16).unwrap_or_default();
+
         let protocol_state = ProtocolState::new(
             protocol_events_tx,
             frost_peer_messages_forwarder_tx,

@@ -41,7 +41,8 @@ impl Suite for ConsensusIntegrationTestSuite {
     async fn create_context(&mut self) {
         // cleanup if needed
         // create new context
-        self.local_context.btc_servers = Some(spawn_n_btc_servers(3));
+        self.local_context.btc_servers =
+            Some(spawn_n_btc_servers(3, self.config.jwt_secrets_dir.clone()));
 
         // let servers come up
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;

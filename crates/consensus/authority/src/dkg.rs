@@ -1,10 +1,14 @@
-use crate::{extended_client::BtcServerExtendedClient, Storage};
+use crate::{
+    extended_client::BtcServerExtendedClient,
+    utils::{deserialize_frost_peer_id, FrostParseError},
+    Storage,
+};
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostHandle},
-    EventResponseType, FrostPeerCommand, Response,
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::{
@@ -58,6 +62,17 @@ pub(crate) enum Error {
     FailedToGetConnectedPeersHandles,
     #[error("Invalid frost peer id")]
     InvalidFrostPeerId,
+    #[error("invalid signing session id")]
+    InvalidSigningSessionId,
+}
+
+impl From<FrostParseError> for Error {
+    fn from(value: FrostParseError) -> Self {
+        match value {
+            FrostParseError::InvalidFrostPeerId => Error::InvalidFrostPeerId,
+            FrostParseError::InvalidSigningSessionId => Error::InvalidSigningSessionId,
+        }
+    }
 }
 
 /// Defines the states of the state machine
@@ -101,13 +116,6 @@ impl DKGState {
             _ => false,
         }
     }
-    /// Returns true if we are in round 3 of dkg
-    pub(crate) fn is_round3(&self) -> bool {
-        match self {
-            DKGState::Round3 => true,
-            _ => false,
-        }
-    }
 }
 
 /// A state machine for transitioning between different DKG states
@@ -119,8 +127,7 @@ pub(crate) struct DKGStateMachine<Client> {
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
     public_key_package: Option<secp256k1::PublicKey>,
-    min_signers: u16,
-    max_signers: u16,
+    frost_config: FrostConfig,
 }
 
 impl<Client> DKGStateMachine<Client>
@@ -137,13 +144,14 @@ where
         btc_client: BtcServerExtendedClient,
         storage: Storage<Client>,
         frost_handle: FrostHandle,
-        authority_index: u16,
-        min_signers: u16,
-        max_signers: u16,
+        frost_config: FrostConfig,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
-            peer_id_to_identifier(authority_index as u16);
-        info!("Frost identifier used: {:?} - {:?}", authority_index, personal_frost_identifier);
+            peer_id_to_identifier(frost_config.authority_index as u16);
+        info!(
+            "Frost identifier used: {:?} - {:?}",
+            frost_config.authority_index, personal_frost_identifier
+        );
         Self {
             btc_client,
             storage,
@@ -151,8 +159,7 @@ where
             state: DKGState::Initial,
             personal_frost_identifier,
             public_key_package: None,
-            min_signers,
-            max_signers,
+            frost_config,
         }
     }
 
@@ -166,8 +173,7 @@ where
             state: DKGState::Initial,
             personal_frost_identifier: self.personal_frost_identifier,
             public_key_package: None,
-            min_signers: self.min_signers,
-            max_signers: self.max_signers,
+            frost_config: self.frost_config,
         }
     }
 
@@ -242,7 +248,7 @@ where
                         return Err(Error::MissingRound1Package)
                     }
                     tonic::Code::Internal
-                        if e.message().contains("Failed to get round2 dkg packages") =>
+                        if e.message().contains("Failed to get round2 dkg package") =>
                     {
                         return Err(Error::FailedToGetRound2Packages)
                     }
@@ -271,12 +277,12 @@ where
                         return Err(Error::FailedToGetPubKeyPackage)
                     }
                     tonic::Code::Internal
-                        if e.message().contains("Failed to get round1 dkg packages") =>
+                        if e.message().contains("Failed to get round1 dkg package") =>
                     {
                         return Err(Error::FailedToGetRound1Packages)
                     }
                     tonic::Code::Internal
-                        if e.message().contains("Failed to get round2 dkg packages") =>
+                        if e.message().contains("Failed to get round2 dkg package") =>
                     {
                         return Err(Error::FailedToGetRound2Packages)
                     }
@@ -394,11 +400,11 @@ where
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         connected_peers.iter().for_each(|(frost_id, sender)| {
             if *frost_id != self.personal_frost_identifier {
-                let resp = Response {
-                    response_type: EventResponseType::DkgRound2,
+                let resp = PeerMessageResponse::Dkg(DkgResponse {
+                    response_type: DkgEventResponseType::DkgRound2,
                     identifier: dkg_payload.identifier.clone(),
                     data: dkg_payload.payload.clone(),
-                };
+                });
                 let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
             }
         });
@@ -416,11 +422,11 @@ where
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         connected_peers.iter().for_each(|(frost_id, sender)| {
             if *frost_id != self.personal_frost_identifier {
-                let resp = Response {
-                    response_type: EventResponseType::DkgRound1,
+                let resp = PeerMessageResponse::Dkg(DkgResponse {
+                    response_type: DkgEventResponseType::DkgRound1,
                     identifier: dkg1_package.identifier.clone(),
                     data: dkg1_package.payload.clone(),
-                };
+                });
                 let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
             }
         });
@@ -491,7 +497,7 @@ where
             }
         };
         let round2_group_packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            match serde_json::from_slice(&dkg2_package.payload).map_err(Error::Round1PackageParse) {
+            match serde_json::from_slice(&dkg2_package.payload).map_err(Error::Round2PackageParse) {
                 Ok(packages) => packages,
                 Err(e) => {
                     error!("Error trying to parse round 1 dkg package {:?}", e);
@@ -500,7 +506,7 @@ where
                 }
             };
 
-        if round2_group_packages.len() >= (self.max_signers - 1) as usize {
+        if round2_group_packages.len() >= (self.frost_config.max_signers - 1) as usize {
             info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
             if let Err(e) = self.gossip_round2_to_peers(dkg2_package).await {
                 error!("Error gossiping round 2 to peers {:?}", e);
@@ -607,27 +613,4 @@ where
         info!(">>>>>>>>>>> [PROCESS_ROUND3] Round 3 finished successfully");
         Ok(())
     }
-}
-
-// Deserializes a Frost peer ID.
-///
-/// # Arguments
-///
-/// * `id` - The peer ID to be decoded.
-///
-/// # Returns
-///
-/// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
-/// the peer ID is invalid.
-pub(crate) fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Error> {
-    if id.len() != 32 {
-        return Err(Error::InvalidFrostPeerId);
-    }
-    let peer_id_bytes: &[u8; 32] =
-        id.as_slice().try_into().map_err(|_e| Error::InvalidFrostPeerId)?;
-
-    let frost_id =
-        frost::Identifier::deserialize(&peer_id_bytes).map_err(|_e| Error::InvalidFrostPeerId)?;
-
-    Ok(frost_id)
 }

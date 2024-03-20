@@ -200,6 +200,7 @@ pub enum PegoutError {
     Invalid(&'static str),
 }
 
+#[derive(Debug)]
 pub struct PegoutData {
     pub amount: bitcoin::Amount,
     pub destination: bitcoin::Address,

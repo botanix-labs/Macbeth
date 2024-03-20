@@ -60,6 +60,7 @@ mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
+mod signing;
 mod sync;
 mod task;
 pub mod utils;
