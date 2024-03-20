@@ -104,8 +104,9 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         if header.is_empty() {
             continue;
         }
-            let extra_data_header = ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-    .map_err(|_err| GetVotesError::DeserializeBlockHeaderExtraData)?;
+        let extra_data_header =
+            ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
+                .map_err(|_err| GetVotesError::DeserializeBlockHeaderExtraData)?;
         if extra_data_header.authority_vote.is_none() {
             continue;
         }
@@ -130,10 +131,10 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         .unwrap();
 
         let authority_that_votes = extra_data_header
-        .authority_signature
-        .expect("valid signature")
-        .recover(&sig_hash)
-        .map_err(|_err| GetVotesError::RecoverAuthority)?;
+            .authority_signature
+            .expect("valid signature")
+            .recover(&sig_hash)
+            .map_err(|_err| GetVotesError::RecoverAuthority)?;
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)
         {
