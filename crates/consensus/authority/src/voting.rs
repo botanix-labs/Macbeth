@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::utils::create_authority_sighash;
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
@@ -83,9 +83,15 @@ impl AuthorityVoteCollection {
 
 #[derive(Debug)]
 pub(crate) enum GetVotesError {
-    DeserializeBlockHeaderExtraData(ExtraDataHeaderDeserialzeError),
-    RecoverAuthority(secp256k1::Error),
+    DeserializeBlockHeaderExtraData,
+    RecoverAuthority,
     ParseNonceVote,
+}
+
+impl From<secp256k1::Error> for GetVotesError {
+    fn from(_err: secp256k1::Error) -> Self {
+        GetVotesError::RecoverAuthority
+    }
 }
 
 /// Given a range of block headers we want a utility function that will return a list of votes
@@ -98,11 +104,8 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         if header.is_empty() {
             continue;
         }
-        // Check if there is a authority being voted on in the extra data
-        let extra_data_header =
-            ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-                .map_err(GetVotesError::DeserializeBlockHeaderExtraData)?;
-
+            let extra_data_header = ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
+    .map_err(|_err| GetVotesError::DeserializeBlockHeaderExtraData)?;
         if extra_data_header.authority_vote.is_none() {
             continue;
         }
@@ -127,15 +130,13 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         .unwrap();
 
         let authority_that_votes = extra_data_header
-            .authority_signature
-            .expect("valid signature")
-            .recover(&sig_hash)
-            .map_err(GetVotesError::RecoverAuthority)?;
-        // Already keeping track of this authority
+        .authority_signature
+        .expect("valid signature")
+        .recover(&sig_hash)
+        .map_err(|_err| GetVotesError::RecoverAuthority)?;
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)
         {
-            // Check if the authority that signed block currently has a vote for this authority
             current_votes.add_vote(
                 &authority_that_votes,
                 header.nonce.try_into().map_err(|_e| GetVotesError::ParseNonceVote)?,

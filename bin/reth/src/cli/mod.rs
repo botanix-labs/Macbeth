@@ -26,6 +26,7 @@ pub use crate::core::cli::*;
 
 /// Default [Directive] for [EnvFilter] which disables high-frequency debug logs from `hyper` and
 /// `trust-dns`
+#[allow(dead_code)]
 const DEFAULT_ENV_FILTER_DIRECTIVE: &str =
     "hyper::proto::h1=off,trust_dns_proto=off,trust_dns_resolver=off";
 

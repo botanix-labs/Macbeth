@@ -397,6 +397,7 @@ impl NodeConfig {
     /// Create the [NetworkBuilder].
     ///
     /// This only configures it and does not spawn it.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_network<C>(
         &self,
         config: &Config,
@@ -761,6 +762,7 @@ impl NodeConfig {
     }
 
     /// Builds the [NetworkConfig] with the given [ProviderFactory].
+    #[allow(clippy::too_many_arguments)]
     pub fn load_network_config<C>(
         &self,
         config: &Config,

@@ -266,6 +266,7 @@ where
 /// This is the key type for spam detection cache. The counter is ignored during `PartialEq` and
 /// `Hash`.
 #[derive(Debug, PartialEq, Hash)]
+#[allow(dead_code)]
 struct RespondedGetBlockHeaders {
     req: (PeerId, GetBlockHeaders),
 }
