@@ -114,8 +114,8 @@ jobs:
 
   deploy:
     # Only deploy if a push to main
-    if: github.ref_name == 'main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    if: github.ref_name == 'feature/poA-consensus' && github.event_name == 'push'
+    runs-on: botanix-actions-runner
     needs: [test, lint, build]
 
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment

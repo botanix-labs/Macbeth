@@ -16,12 +16,6 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v1
 
-      - name: Log in to Google Container Registry
-        run: |
-          echo ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }} | docker login -u _json_key_base64 --password-stdin https://us-central1-docker.pkg.dev
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }}
-
       - name: Build Docker image
         run: |
           docker build --platform linux/amd64 -t botanix_testnet -f Dockerfile.testnet .
@@ -29,6 +23,7 @@ jobs:
 
       - name: Tag Docker image
         run: |
+          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
           docker tag botanix_testnet:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest
 
       - name: Push Docker image to Google Container Registry
@@ -63,9 +58,9 @@ jobs:
       - id: 'get-credentials'
         uses: 'google-github-actions/get-gke-credentials@v2'
         with:
-          cluster_name: 'botanixlabs-cluster-dev'
-          location: 'us-central1'
-          project_id: 'botanix-391913'
+          cluster_name: $CLUSTER_NAME
+          location: $ZONE
+          project_id: $PROJECT_ID
 
       - name: Set up Kustomize
         run: |-

@@ -6,7 +6,7 @@ on:
   pull_request:
   merge_group:
   push:
-    branches: [main]
+    branches: [feature/poA-consensus]
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,7 +25,7 @@ jobs:
     strategy:
       matrix:
         partition: [1, 2]
-        network: ["ethereum", "optimism"]
+        network: ["ethereum"]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -84,3 +84,18 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
+
+  botanix-integration:
+    name: botanix integration
+    runs-on: botanix-actions-runner
+    if: always()
+    steps:
+      - name: Check for make installation
+        run: make --version
+
+      - name: Check for rust installation
+        run: rustc --version
+
+      - name: Start botanix test suite
+        run: make start-test-suite
+        working-directory: ./
