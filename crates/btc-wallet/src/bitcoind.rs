@@ -1,4 +1,4 @@
-use bitcoincore_rpc::{json::GetChainTipsResultStatus, Auth, Client, RpcApi};
+use bitcoincore_rpc::{json::{GetBlockResult, GetChainTipsResultStatus}, Auth, Client, RpcApi};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -20,6 +20,10 @@ pub enum BitcoindError {
     TransactionBroadcastFailed(bitcoincore_rpc::Error),
     #[error("Block index failed")]
     BlockIndexStatusFailed(bitcoincore_rpc::Error),
+    #[error("Best block hash retrieval failed")]
+    BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
+    #[error("Block info retrieval failed")]
+    BlockInfoRetrievalFailed(bitcoincore_rpc::Error)
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +57,12 @@ impl BitcoindClient {
         &self.rpc
     }
 
+    pub async fn get_best_block_hash(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
+        let best_block_hash =
+            self.rpc.get_best_block_hash().map_err(BitcoindError::BestBlockHashRetrievalFailed)?;
+        Ok(best_block_hash)
+    }
+
     pub async fn get_block_header(
         &self,
         block_hash: bitcoin::BlockHash,
@@ -78,20 +88,23 @@ impl BitcoindClient {
             self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
         Ok(block_hash)
     }
+    
+    pub async fn get_block_info(
+        &self,
+        block_hash: &bitcoin::BlockHash,
+    ) -> Result<GetBlockResult, BitcoindError> {
+        let block = self
+            .rpc
+            .get_block_info(block_hash)
+            .map_err(BitcoindError::BlockInfoRetrievalFailed)?;
+        Ok(block)
+    }
 
     pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
-        let mut chain_tips = self
-            .rpc
-            .get_chain_tips()
-            .map_err(BitcoindError::BlockTipRetrievalFailed)?
-            .iter()
-            .filter_map(|tip| match tip.status {
-                GetChainTipsResultStatus::Active => Some(tip.height),
-                _ => None,
-            })
-            .collect::<Vec<u64>>();
-        chain_tips.sort();
-        chain_tips.iter().last().cloned().ok_or(BitcoindError::EmptyBlockTip)
+        let tip =
+            self.rpc.get_block_count().map_err(|e| BitcoindError::BlockTipRetrievalFailed(e))?;
+
+        Ok(tip)
     }
 
     pub async fn get_txids(

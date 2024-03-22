@@ -22,7 +22,7 @@ use reth_provider::{
 };
 use reth_tasks::TaskExecutor;
 use secp256k1::{All, Secp256k1};
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -30,6 +30,8 @@ use tokio::sync::{
 
 use crate::sync::SyncController;
 use tracing::error;
+
+use bitcoincore_rpc::json;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
@@ -41,6 +43,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     canon_state_notification: CanonStateNotificationSender,
     btc_server: BtcServerClient<tonic::transport::Channel>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
     bitcoind_config: BitcoindConfig,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
@@ -88,6 +91,7 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server: BtcServerClient<tonic::transport::Channel>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_config: BitcoindConfig,
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected
@@ -161,6 +165,7 @@ where
             canon_state_notification,
             btc_server,
             bitcoin_block_header,
+            bitcoin_block_tx_ids,
             bitcoind_config,
             secp,
             sk,
@@ -197,6 +202,7 @@ where
             to_engine,
             canon_state_notification,
             bitcoin_block_header,
+            bitcoin_block_tx_ids,
             bitcoind_config,
             secp,
             sk,
@@ -231,13 +237,14 @@ where
             evm_config.clone(),
         );
 
-        // FIX the unwrap
+        // TODO FIX the unwrap
         let frost_task = FrostTask::new(
             btc_server.clone(),
             network_handle.clone(),
             frost_handle.expect("Requires frost handle"),
             epoch_manager.clone(),
             frost_config,
+            storage.clone(),
         );
 
         let bitcoind_client =
@@ -249,6 +256,7 @@ where
             storage,
             btc_server,
             bitcoin_block_header,
+            bitcoin_block_tx_ids,
             bitcoind_client,
             secp,
             sk,

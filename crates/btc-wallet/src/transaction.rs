@@ -1,19 +1,15 @@
 use bitcoin::{
-    psbt::{self, Psbt},
-    secp256k1::{KeyPair, SecretKey},
-    sighash::TapSighashType,
+    psbt::{self, PartiallySignedTransaction, Psbt},
+    sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
 };
 
-use crate::address::{generate_taproot_spend_info, generate_tweaked_secret_key};
-
-const USER_ETH_ADDRESS_FIELD: u8 = 1;
-
-static ETH_ADDRESS_FIELD: psbt::raw::ProprietaryKey = psbt::raw::ProprietaryKey {
-    prefix: Vec::new(),
-    subtype: USER_ETH_ADDRESS_FIELD,
-    key: Vec::new(),
-};
+lazy_static::lazy_static!(
+    pub static ref ETH_ADDRESS_FIELD: psbt::raw::Key = psbt::raw::Key { type_value: 0xff, key: vec![0, 0xff] };
+    pub static ref SIGNING_COMMITMENTS_KEY_TYPE: u8 = 0xde;
+    pub static ref PARTIAL_SIGNATURE_KEY_TYPE: u8 = 0xdf;
+    pub static ref SIGNING_COMMITMENTS: psbt::raw::Key = psbt::raw::Key { type_value: 0xde, key: vec![0, 0xde] };
+);
 
 /// Utxo DTO struct
 pub struct Input {
@@ -46,12 +42,12 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
     };
 
     // Create PSBT
-    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
-    for (psbt, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
-        psbt.witness_utxo = Some(utxo.output.clone());
-        // store the user tweak if used
+    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx).expect("tx is unsigned");
+    for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
+        psbt_input.witness_utxo = Some(utxo.output.clone());
         if utxo.eth_address.is_some() {
-            psbt.proprietary.insert(
+            // Key stores no keydata, only the type value
+            psbt_input.unknown.insert(
                 ETH_ADDRESS_FIELD.clone(),
                 utxo.eth_address.expect("have eth address").to_vec(),
             );
@@ -61,67 +57,27 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
     psbt
 }
 
-#[derive(Debug)]
-pub enum SignPsbtError {
-    NonceProvidedMissingEthTweak,
-    FailedToGetTaprootInfo(bitcoin::taproot::TaprootError),
+#[derive(Debug, thiserror::Error)]
+pub enum CalculateSighashError {
+    #[error("Failed to calculate sighash: {0}")]
+    FailedToCalculateSighash(#[from] bitcoin::sighash::Error),
 }
 
-pub fn sign_psbt(
-    secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
-    secret_key: &SecretKey,
-    psbt: &mut Psbt,
-) -> Result<(), SignPsbtError> {
+/// Calculate the sighash for a taproot keyspend
+/// Using tapsighash type ALL
+pub fn calculate_sighash(
+    psbt: &Psbt,
+    input_index: usize,
+) -> Result<TapSighash, CalculateSighashError> {
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
-    for i in 0..psbt.inputs.len() {
-        let input = &psbt.inputs[i];
-        // Get address tweaks if applicaple
-        let eth_address_tweak = input.proprietary.get(&ETH_ADDRESS_FIELD);
 
-        let aggregate_pk = secret_key.public_key(secp);
+    // TODO(armins) remove unwrap
+    let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
+    let sighash = sighashcache.taproot_key_spend_signature_hash(
+        input_index,
+        &psbt::Prevouts::All(&prevouts),
+        TapSighashType::All,
+    )?;
 
-        let mut internal_sk = *secret_key;
-
-        // Not signing change
-        // So we need to tweak the key before signing
-        if eth_address_tweak.is_some() {
-            let eth_address = ethers::types::Address::from_slice(
-                eth_address_tweak.expect("eth address tweak").as_slice(),
-            );
-
-            internal_sk = generate_tweaked_secret_key(&eth_address, &aggregate_pk, secret_key);
-        }
-
-        let internal = KeyPair::from_secret_key(secp, &internal_sk);
-        let taproot_spend_info = generate_taproot_spend_info(secp, &internal.public_key())
-            .map_err(SignPsbtError::FailedToGetTaprootInfo)?;
-        let keypair = bitcoin::key::TapTweak::tap_tweak(
-            internal.clone(),
-            secp,
-            taproot_spend_info.merkle_root(),
-        );
-        let signature = {
-            let prevouts =
-                psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
-            let sighash = sighashcache
-                .taproot_signature_hash(
-                    i,
-                    &bitcoin::sighash::Prevouts::All(&prevouts),
-                    None, // annex
-                    None, // leaf_hash_code_separator
-                    TapSighashType::All,
-                )
-                .expect("error calculating taproot keyspend sighash");
-            let msg = bitcoin::secp256k1::Message::from_slice(&sighash[..]).expect("sane sighash");
-            let sig = secp.sign_schnorr(&msg, &keypair.to_inner());
-            bitcoin::taproot::Signature { sig, hash_ty: TapSighashType::All }
-        };
-        // modify the psbt input by placing the signature
-        psbt.inputs.get_mut(i).unwrap().sighash_type = Some(TapSighashType::All.into());
-        psbt.inputs.get_mut(i).unwrap().tap_internal_key = Some(internal.x_only_public_key().0);
-        psbt.inputs.get_mut(i).unwrap().tap_key_sig = Some(signature);
-        psbt.inputs.get_mut(i).unwrap().tap_merkle_root = taproot_spend_info.merkle_root()
-    }
-
-    Ok(())
+    Ok(sighash)
 }

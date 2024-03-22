@@ -2,7 +2,9 @@
 
 use crate::{bundle_state::BundleStateWithReceipts, StateProvider};
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{BlockNumber, BlockWithSenders, PruneModes, Receipt, U256};
+use reth_primitives::{
+    botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256,
+};
 use std::time::Duration;
 use tracing::debug;
 
@@ -27,7 +29,7 @@ pub trait BlockExecutor {
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError>;
 
     /// Executes the block and checks receipts.
@@ -37,7 +39,7 @@ pub trait BlockExecutor {
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError>;
 
     /// Runs the provided transactions and commits their state to the run-time database.
@@ -56,7 +58,7 @@ pub trait BlockExecutor {
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError>;
 
     /// Return bundle state. This is output of executed blocks.

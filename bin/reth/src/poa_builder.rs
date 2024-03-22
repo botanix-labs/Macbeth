@@ -9,10 +9,11 @@ use crate::{
         init::init_genesis,
     },
 };
+use bitcoin::hashes::Hash;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{future::Either, stream, stream_select, StreamExt};
-use reth_authority_consensus::AuthorityConsensusBuilder;
+use reth_authority_consensus::{AuthorityConsensusBuilder, utils::{is_testnet, get_confirmation_depth}};
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook},
     BeaconConsensusEngine, BeaconConsensusEngineError, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -47,7 +48,7 @@ use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, collections::HashMap};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
@@ -55,6 +56,8 @@ use client::BtcServerClient;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use rsntp::AsyncSntpClient;
 use tokio::time::Duration;
+
+use bitcoincore_rpc::json;
 
 /// Re-export `NodeConfig` from `reth_node_core`.
 pub use reth_node_core::node_config::NodeConfig;
@@ -184,36 +187,88 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             }
         }
 
+        // fetch and store bitcoin block tx ids
+        let is_testnet = is_testnet(self.config.chain.chain.id());
+        let confirmation_depth = get_confirmation_depth(is_testnet);
+        let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+        let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
+        let bitcoind_config_clone = bitcoind_config.clone();
+
+        executor.spawn_critical("async bitcoin block tx ids task", Box::pin(async move {
+            let sleep_ms = tokio::time::Duration::from_millis(5000);
+            let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
+
+            let mut current_tx_ids: HashMap<u64, Vec<bitcoin::Txid>> = bitcoin_block_tx_ids.read().await.clone();
+            loop {
+                let tip = match bitcoind_client.get_tip().await {
+                    Ok(tip) => tip,
+                    Err(_) => {
+                        error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                        tokio::time::sleep(sleep_ms).await;
+                        continue;
+                    }
+                };
+
+                // prune tx ids older than confirmation_depth
+                let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
+                current_tx_ids.retain(|block_height, _| *block_height >= tip - confirmation_depth_u64);
+
+                let start = tip - confirmation_depth_u64;
+                for height in start..=tip {
+                    // don't fetch tx ids we already have
+                    if !current_tx_ids.is_empty() && current_tx_ids.contains_key(&height) {
+                        continue;
+                    }
+                    let block_hash = match bitcoind_client.get_block_hash(height).await {
+                        Ok(block_hash) => block_hash,
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block hash while fetching tx ids. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    };
+
+                    match bitcoind_client.get_block_info(&block_hash).await {
+                        Ok(block_info) => {
+                            let tx_ids = block_info.tx;
+                            current_tx_ids.insert(height, tx_ids);
+                        }
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block info while fetching tx ids. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    }
+                }
+                let mut tx_ids_write = bitcoin_block_tx_ids.write().await;
+                *tx_ids_write = current_tx_ids.clone();
+                drop(tx_ids_write);
+            }
+        }));
+        info!(target: "reth::cli", "Spawned async bitcoin block tx ids task");
+
         let bitcoind_config = bitcoind_config.clone();
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
                 let sleep_ms = tokio::time::Duration::from_millis(5000);
-                let mut tip = 0u64;
                 let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
+                let mut current_block_hash = bitcoin::BlockHash::all_zeros();
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
-                    let current_tip = match bitcoind_client.get_tip().await {
-                        Ok(current_tip) => current_tip,
+                    let best_block_hash = match bitcoind_client.get_best_block_hash().await {
+                        Ok(current_block_hash) => current_block_hash,
                         Err(_) => {
                             drop(header_write);
-                            error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                            error!(target: "reth::cli", "Failed to fetch the best block hash. Retrying...");
                             tokio::time::sleep(sleep_ms).await;
                             continue;
                         }
                     };
-                    if current_tip != tip {
+                    if current_block_hash != best_block_hash {
                         info!("Async bitcoin worker tip mismatch");
-                        let block_hash = match bitcoind_client.get_block_hash(current_tip).await {
-                            Ok(block_hash) => block_hash,
-                            Err(_) => {
-                                drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch a block hash. Retrying...");
-                                tokio::time::sleep(sleep_ms).await;
-                                continue;
-                            }
-                        };
-                        let block_header = match bitcoind_client.get_block_header(block_hash).await {
+                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash).await {
                             Ok(block_header) => block_header,
                             Err(_) => {
                                 drop(header_write);
@@ -222,10 +277,20 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                                 continue;
                             }
                         };
+
+                        let tip = match bitcoind_client.get_tip().await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch best tip. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
                         // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some((block_header, current_tip.try_into().expect("Failed to convert current tip from u64 to u32")));
+                        *header_write = Some((block_header, tip.try_into().expect("valid conversion")));
                         drop(header_write);
-                        tip = current_tip;
+                        current_block_hash = best_block_hash;
                     }
                     tokio::time::sleep(sleep_ms).await;
                 }
@@ -411,6 +476,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             canon_state_notification_sender.clone(),
             btc_server_client.clone(),
             bitcoin_block_headers_clone,
+            bitcoin_block_tx_ids_clone,
             bitcoind_config,
             secp256k1::Secp256k1::new(),
             network_sk,

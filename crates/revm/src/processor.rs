@@ -10,9 +10,10 @@ use reth_botanix_lib::mint_validation::{
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_node_api::ConfigureEvm;
 use reth_primitives::{
-    Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork,
-    Header, PruneMode, PruneModes, PruneSegmentError, Receipt, ReceiptWithBloom, Receipts,
-    TransactionSigned, Withdrawals, B256, MINIMUM_PRUNING_DISTANCE, U256,
+    botanix::BotanixConsensusPackage, Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes,
+    ChainSpec, GotExpected, Hardfork, Header, PruneMode, PruneModes, PruneSegmentError, Receipt,
+    ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256, MINIMUM_PRUNING_DISTANCE,
+    U256,
 };
 use reth_provider::{
     BlockExecutor, BlockExecutorStats, ProviderError, PrunableBlockExecutor, StateProvider,
@@ -38,10 +39,6 @@ use reth_provider::BundleStateWithReceipts;
 use revm::DatabaseCommit;
 #[cfg(not(feature = "optimism"))]
 use tracing::{debug, trace};
-
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.
 ///
@@ -251,20 +248,26 @@ where
     /// Performs additional checks on mint contract transactions.
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
+        let binding = botanix_consensus_pkg.clone();
+        let consensus_pkg = binding.as_ref();
         for log in result.logs() {
-            if log.topics().first() == Some(&MINT_TOPIC) && recent_block_header.is_some() {
-                let pegin_data = parse_pegin_topic(&log).map_err(|e| {
+            if log.topics().first() == Some(&MINT_TOPIC) && botanix_consensus_pkg.is_some() {
+                let pegin_data = parse_pegin_topic(&log, &result.logs()).map_err(|e| {
                     error!("Failed to parse pegin topic! {:?}", e);
                     BlockValidationError::MintContractViolation
                 })?;
 
-                match pegin_data.validate(&SECP, &recent_block_header.expect("valid header")) {
+                let recent_header = consensus_pkg.expect("is some").recent_header;
+                let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
+
+                match pegin_data.validate(&recent_header, &aggregate_public_key) {
                     Ok(aggregate_value) => {
                         tracing::trace!("Pegin aggregate value: {}", aggregate_value);
-                        if aggregate_value != pegin_data.amount {
-                            warn!("Failed pegin attempt! Aggregate value does not match pegin amount!");
+                        tracing::trace!("Pegin amount: {}", pegin_data.amount);
+                        if aggregate_value == pegin_data.amount {
+                            warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
                             return Err(BlockValidationError::MintContractViolation.into());
                         }
                     }
@@ -294,7 +297,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        recent_block_header: Option<(bitcoin::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
@@ -326,11 +329,11 @@ where
             self.evm.transact()
         };
 
-        // ***** Botanix specific checks
+        // ***** Botanix specific checks ******
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(result, recent_block_header) {
+                    match Self::botanix_mint_contract_checks(result, botanix_consensus_pkg) {
                         Ok(()) => out,
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);
@@ -370,12 +373,12 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used) =
-            self.execute_transactions(block, total_difficulty, recent_block_header)?;
+            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -491,9 +494,9 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
+        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
         self.save_receipts(receipts)
     }
 
@@ -501,10 +504,10 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, recent_block_header)?;
+        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -516,7 +519,7 @@ where
                 verify_receipt(block.header.receipts_root, block.header.logs_bloom, receipts.iter())
             {
                 debug!(target: "evm", %error, ?receipts, "receipts verification failed");
-                return Err(error)
+                return Err(error);
             };
             self.stats.receipt_root_duration += time.elapsed();
         }
@@ -528,7 +531,7 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        recent_block_header: Option<(bitcoin::blockdata::block::Header, u32)>,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
@@ -553,7 +556,7 @@ where
             }
             // Execute transaction.
             let ResultAndState { result, state } =
-                self.transact(transaction, *sender, recent_block_header)?;
+                self.transact(transaction, *sender, botanix_consensus_pkg.clone())?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -813,8 +816,8 @@ mod tests {
                     },
                     senders: vec![],
                 },
-                None,
                 U256::ZERO,
+                None,
             )
             .expect_err(
                 "Executing cancun block without parent beacon block root field should fail",
@@ -981,6 +984,7 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
+                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -1039,6 +1043,7 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
+                None,
             )
             .expect_err(
                 "Executing genesis cancun block with non-zero parent beacon block root field should fail",
@@ -1195,7 +1200,7 @@ mod tests {
             Signature::default(),
         );
 
-        let result = executor.transact(&transaction, Address::random());
+        let result = executor.transact(&transaction, Address::random(), None);
 
         let expected_hash = transaction.recalculate_hash();
 

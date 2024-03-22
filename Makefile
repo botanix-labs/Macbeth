@@ -396,14 +396,17 @@ pr:
 	make docs && \
 	make test
 
+start-test-suite:
+	cd ./bin/test-suite && \
+	cargo run --bin test-suite -- --config "./config.toml" --run-suite all --timeout 2000000 --dry-run false
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1"
+	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2"
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml
 
 start-poa-server-1:
 	cd ./bin/reth && \

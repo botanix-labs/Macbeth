@@ -1,9 +1,10 @@
 use crate::{
     engine_util::{self, BestTransactionsError},
     task::BlockProductionTask,
-    utils::{get_recent_block_height_or_zero, is_epoch_end, send_pegouts, is_testnet},
+    utils::{is_epoch_end, is_testnet},
 };
-use client::MakeTxRequest;
+
+use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -13,7 +14,7 @@ use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_primitives::{
-    public_key_to_address, Block, SealedBlockWithSenders, B256, BOTANIX_TESTNET,
+    botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
@@ -118,22 +119,39 @@ where
             })
             .unzip();
 
-        let recent_bitcoin_block_header: Option<(bitcoin::block::Header, u32)> =
-            *self.bitcoin_block_header.read().await;
-        let recent_bitcoin_block_height =
-            get_recent_block_height_or_zero(recent_bitcoin_block_header);
-        if recent_bitcoin_block_height == 0 {
-            error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
-            drop(storage);
+        let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+        println!("recent_bitcoin_block_header: {:?}", recent_bitcoin_block_header);
+
+        if recent_bitcoin_block_header.is_none() {
+            warn!(target: "consensus::authority", "Failed to get recent bitcoin block header, async bitcoin worker is probably down");
             return;
         }
+
+        // retrieve aggregate key
+        let secp_pk = match storage.aggregate_public_key {
+            Some(pk) => pk,
+            None => {
+                warn!(target: "consensus::authority", "Failed to get aggregate public key from cache. DKG is probably not finished yet. Skipping block production");
+                drop(storage);
+                return;
+            }
+        };
+        let botanix_consensus_pkg = BotanixConsensusPackage {
+            recent_header: recent_bitcoin_block_header.expect("valid header and height tuple"),
+            aggregate_public_key: secp_pk,
+        };
+
         let authority_signers = storage.authorities.clone();
+
+        // TODO(scott) need to have psbt at this point
+        // and extract and pass witness data to `build_and_execute`
+        // utils::get_witness_data_from_psbt(psbt)
 
         // Build and execute current block template
         let (new_header, bundle_state) = match storage.build_and_execute(
             transactions.clone(),
             self.chain_spec.clone(),
-            recent_bitcoin_block_header,
+            Some(botanix_consensus_pkg.clone()),
             // TODO(armins) read vote in as param
             &None,
             &self.sk,
@@ -151,11 +169,20 @@ where
 
         // Process Botanix specific logs
         let is_testnet = is_testnet(self.chain_spec.chain().id());
-        let mut current_block_pegouts: Vec<MakeTxRequest> = Vec::new();
-        match crate::utils::process_receipts(&mut self.btc_server.clone(), &bundle_state, recent_bitcoin_block_height, is_testnet).await {
-            Ok(pegouts) => if !pegouts.is_empty() {
-                current_block_pegouts.extend(pegouts);
-            },
+        let mut current_block_pegouts: Vec<PegoutData> = Vec::new();
+        match crate::utils::process_receipts(
+            &mut self.btc_server.clone(),
+            &bundle_state,
+            botanix_consensus_pkg.recent_header.1,
+            is_testnet,
+        )
+        .await
+        {
+            Ok(pegouts) => {
+                if !pegouts.is_empty() {
+                    current_block_pegouts.extend(pegouts);
+                }
+            }
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
                 return;
@@ -211,7 +238,7 @@ where
         // If end of epoch, process pegouts
         if is_epoch_end(sealed_block.header.number) {
             // get pegouts up to best block
-            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+            let mut pegouts: Vec<PegoutData> = Vec::new();
             match self.epoch_manager.epoch_pegouts(best_block).await {
                 Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
                 Err(e) => {
@@ -224,10 +251,12 @@ where
             // add current block pegouts
             pegouts.extend(current_block_pegouts);
 
-            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server, pegouts).await {
-                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
-            }
+            // TODO this is commented out until the FROST networking is implemented
+            // info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+            // if let Err(e) = send_pegouts(&self.bitcoind_client, &mut self.btc_server,
+            // pegouts).await {
+            //     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+            // }
         }
     }
 }

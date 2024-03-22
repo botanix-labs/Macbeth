@@ -37,7 +37,7 @@ jobs:
       - name: Run tests
         run: |
           cargo nextest run \
-            --locked --features "${{ matrix.network }}" \
+            --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
             --partition hash:${{ matrix.partition }}/2 \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
@@ -81,7 +81,7 @@ jobs:
         with:
           cache-on-failure: true
       - name: Run doctests
-        run: cargo test --doc --workspace --features "${{ matrix.network }}"
+        run: cargo test --doc --workspace --features "ethereum"
 
   unit-success:
     name: unit success

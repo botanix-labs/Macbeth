@@ -3,15 +3,9 @@
 use alloy_primitives::hex;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_primitives::U256;
-use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use url::Url;
-
-// TODO Secp should be getting pulled from provider
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 /// Settings for the [BotanixConfig]
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -91,9 +85,37 @@ pub enum GatewayAddressRPCError {
     /// Failed to decode value recieved from `btc_server`
     FailedToDecodeAggregatePublicKey(hex::FromHexError),
     /// Invalid param recieved from client
-    InvalidParam(&'static str),
+    InvalidParam(tonic::Status),
     /// Address generation failed
     FailedToGenerateGatewayAddress,
+    /// Secp key conversion failed
+    FailedToConvertPublicKey(secp256k1::Error),
+    /// Address is generated for incorrect Network
+    InvalidNetwork,
+}
+
+impl fmt::Display for GatewayAddressRPCError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e) => {
+                write!(f, "Failed to decode aggregate public key: {}", e)
+            }
+            GatewayAddressRPCError::InvalidParam(e) => write!(f, "Invalid param: {}", e),
+            GatewayAddressRPCError::FailedToGenerateGatewayAddress => {
+                write!(f, "Failed to generate gateway address")
+            }
+            GatewayAddressRPCError::FailedToConvertPublicKey(e) => {
+                write!(f, "Failed to convert public key: {}", e)
+            }
+            GatewayAddressRPCError::InvalidNetwork => write!(f, "Invalid network"),
+        }
+    }
+}
+
+impl From<GatewayAddressRPCError> for String {
+    fn from(error: GatewayAddressRPCError) -> Self {
+        error.to_string()
+    }
 }
 
 /// Errors from get merkle proof RPC endpoint
@@ -172,22 +194,26 @@ impl Botanix {
             client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
                 .await
                 .unwrap();
-        let request = tonic::Request::new(client::Empty {});
+        let request = tonic::Request::new(client::GetGatewayAddressRequest {
+            eth_address: eth_address.to_string(),
+        });
 
-        let response = client.get_public_key(request).await.unwrap();
-        let pk_hex = response.into_inner().publickey;
+        let response = client
+            .get_gateway_address(request)
+            .await
+            .map_err(|e| GatewayAddressRPCError::InvalidParam(e))?
+            .into_inner();
 
-        let pk = PublicKey::from_str(pk_hex.as_str()).map_err(|_e| {
-            GatewayAddressRPCError::InvalidParam("Failed to derive aggregate public key from input")
-        })?;
-        let network = self.botanix_rpc_config.bitcoin_network;
-        let address = reth_btc_wallet::address::gateway_address(
-            &SECP,
-            &pk,
-            &eth_address.as_slice().to_vec(),
-            network,
+        let address = bitcoin::Address::from_str(response.gateway_address.as_str())
+            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?
+            .require_network(self.botanix_rpc_config.bitcoin_network)
+            .map_err(|_e| GatewayAddressRPCError::InvalidNetwork)?;
+
+        let pk = secp256k1::PublicKey::from_slice(
+            &hex::decode(response.publickey.as_str())
+                .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
         )
-        .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?;
+        .map_err(|e| GatewayAddressRPCError::FailedToConvertPublicKey(e))?;
 
         Ok((address, pk))
     }
@@ -211,7 +237,7 @@ impl Botanix {
             .await
             .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
         if !txids.contains(&tx_id) {
-            return Err(MerkleProofRPCError::TxIdNotInBlock)
+            return Err(MerkleProofRPCError::TxIdNotInBlock);
         }
 
         let matches = txids.iter().map(|txid| txid == &tx_id).collect::<Vec<_>>();

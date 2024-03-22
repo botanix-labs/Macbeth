@@ -1,5 +1,5 @@
-use client::MakeTxRequest;
 use futures_util::{stream::FuturesUnordered, StreamExt};
+use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
@@ -47,14 +47,14 @@ where
     ///
     /// # Returns
     ///
-    /// A vector of `MakeTxRequest` representing the pegouts in the epoch
+    /// A vector of [PegoutData] representing the pegouts in the epoch
     pub(crate) async fn epoch_pegouts(
         &self,
         best_block: u64,
-    ) -> Result<Vec<MakeTxRequest>, EpochManagerError> {
+    ) -> Result<Vec<PegoutData>, EpochManagerError> {
         let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
         let storage = self.storage.inner.read().await;
-        let pegouts: Vec<MakeTxRequest> = vec![];
+        let mut pegouts: Vec<PegoutData> = vec![];
         for block in start_block..=best_block {
             match storage.client.block_by_number(block) {
                 Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
@@ -63,7 +63,6 @@ where
                         .receipts_by_block(BlockHashOrNumber::Number(block.header.number))
                     {
                         Ok(Some(receipts)) => {
-                            let mut pegouts: Vec<MakeTxRequest> = Vec::new();
                             let mut futures = Vec::new();
 
                             for receipt in receipts {

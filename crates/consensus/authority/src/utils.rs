@@ -1,9 +1,12 @@
-use bitcoin::block::Header;
-use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest};
+use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
+use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest, Output};
 use futures_util::{stream::FuturesUnordered, StreamExt};
-use reth_botanix_lib::mint_validation::{
-    parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
-    MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+use reth_botanix_lib::{
+    mint_validation::{
+        parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
+        MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+    },
+    peg_contract::PegoutData,
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
 
@@ -25,8 +28,10 @@ pub(crate) enum ProcessBotanixLogError {
     FailedToNotifyPegin(tonic::Status),
     #[error("Failed to broadcast pegout tx")]
     FailedToBroadcastPegout,
-    #[error("Failed to make pegout tx")]
-    FailedToMakePegoutTx,
+    #[error("Failed to make pegout tx: {0}")]
+    FailedToMakePegoutTx(tonic::Status),
+    #[error("Failed to parse pegout data")]
+    FailedToParsePegout,
 }
 
 /// Search a receipt for a pegout and return a MakeTxRequest for the pegout
@@ -37,10 +42,8 @@ pub(crate) enum ProcessBotanixLogError {
 ///
 /// # Returns
 ///
-/// Returns `Some(MakeTxRequest)` if a pegout is found in the receipt, otherwise returns `None`.
-pub(crate) async fn make_tx_request_for_pegout_in_receipt(
-    receipt: Receipt,
-) -> Option<MakeTxRequest> {
+/// Returns `Some(PegoutData)` if a pegout is found in the receipt, otherwise returns `None`.
+pub(crate) async fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<PegoutData> {
     if !receipt.success {
         info!(target: "consensus::authority", "Receipt status code is not success {:?}", receipt);
         return None;
@@ -48,7 +51,7 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 
     let mut futures = Vec::new();
     for log in receipt.logs {
-        futures.push(make_tx_request_for_pegout(log));
+        futures.push(get_pegout_data(log));
     }
 
     let mut results_stream = futures.into_iter().map(tokio::spawn).collect::<FuturesUnordered<_>>();
@@ -85,15 +88,15 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(
 ///
 /// # Returns
 ///
-/// Returns `Ok(Vec<MakeTxRequest>)` if the processing is successful, otherwise returns an error of type
-/// `ProcessBotanixLogError`.
+/// Returns `Ok(Vec<PegoutData>)` if the processing is successful, otherwise returns an error of
+/// type `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     bundle_state: &BundleStateWithReceipts,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
-) -> Result<Vec<MakeTxRequest>, ProcessBotanixLogError> {
-    let mut pegouts: Vec<MakeTxRequest> = Vec::new();
+) -> Result<Vec<PegoutData>, ProcessBotanixLogError> {
+    let mut pegouts: Vec<PegoutData> = Vec::new();
     let receipts_bundle = bundle_state.receipts().iter();
     for (index, receipts) in receipts_bundle.enumerate() {
         for receipt in receipts {
@@ -106,7 +109,15 @@ pub(crate) async fn process_receipts(
                     continue;
                 }
                 for log in &receipt.logs {
-                    match process_botanix_log(btc_server, log, recent_bitcoin_block_height, is_testnet).await {
+                    match process_botanix_log(
+                        btc_server,
+                        log,
+                        recent_bitcoin_block_height,
+                        is_testnet,
+                        &receipt.logs,
+                    )
+                    .await
+                    {
                         Ok(Some(pegout)) => {
                             pegouts.push(pegout);
                         }
@@ -124,7 +135,7 @@ pub(crate) async fn process_receipts(
     Ok(pegouts)
 }
 
-/// Search a log for a pegout and return a MakeTxRequest for the pegout
+/// Search a log for a pegout and return [PegoutData] for a burn request
 ///
 /// # Arguments
 ///
@@ -132,20 +143,13 @@ pub(crate) async fn process_receipts(
 ///
 /// # Returns
 ///
-/// Returns `Some(MakeTxRequest)` if a pegout is found in the log, otherwise returns `None`.
-async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
+/// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
+async fn get_pegout_data(log: Log) -> Option<PegoutData> {
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
-                // TODO (scott): fetch fee - this will make function async
-                let fee_rate = 30u32;
-                let pegout = parse_pegout_reth_log_topic(&log).expect("valid pegout request");
-                return Some(MakeTxRequest {
-                    address: pegout.destination.to_string(),
-                    value: pegout.amount.to_sat(),
-                    fee_rate,
-                });
+                return Some(parse_pegout_reth_log_topic(&log).expect("valid pegout request"));
             }
             Err(e) => {
                 debug!(target: "consensus::authority", ?e, "Non burn event");
@@ -156,29 +160,37 @@ async fn make_tx_request_for_pegout(log: Log) -> Option<MakeTxRequest> {
     None
 }
 
+// TODO this function is not being used currently
+// Add back in when FROST signing is implemented
 pub(crate) async fn send_pegouts(
     bitcoin_block_source: &BitcoindClient,
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
-    pegouts: Vec<MakeTxRequest>,
+    pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
-    for pegout in pegouts {
-        // TODO (scott): call bitcoind's testmempoolaccept to check if tx is valid before proceeding
-        match btc_server.make_tx(pegout).await {
-            Ok(response) => {
-                let raw_tx = response.into_inner().tx;
-                info!(target: "consensus::authority", "broadcasting withdrawal tx");
+    let req = MakeTxRequest {
+        outputs: pegouts
+            .iter()
+            .map(|pegout| Output {
+                address: pegout.destination.to_string(),
+                value: pegout.amount.to_sat(),
+            })
+            .collect(),
+        // TODO Pull from bitcoind
+        fee_rate: 30u32,
+        // TODO pull from parent block hash
+        signing_session_id: [0u8; 32].to_vec(),
+    };
 
-                bitcoin_block_source
-                    .broadcast_tx(&hex::encode(raw_tx))
-                    .await
-                    .map_err(|_| ProcessBotanixLogError::FailedToBroadcastPegout)?;
-            }
-            Err(e) => {
-                error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-                continue;
-            }
-        }
-    }
+    // TODO comment this back in when FROST signing is implemented
+    // match btc_server.get_psbt(req).await {
+    //     Ok(response) => {
+    //         // TODO progress with FROST signing here
+    //     }
+    //     Err(e) => {
+    //         error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
+    //         return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e));
+    //     }
+    // }
 
     Ok(())
 }
@@ -187,7 +199,8 @@ pub(crate) async fn send_pegouts(
 ///
 /// This function checks the topics of the log and performs different actions based on the topic.
 /// If the topic is `GenesisContractEvents::MintingEvent`, it parses and sends the minting event to
-/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout and returns it.
+/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout
+/// and returns it.
 ///
 /// # Arguments
 ///
@@ -198,24 +211,26 @@ pub(crate) async fn send_pegouts(
 ///
 /// # Returns
 ///
-/// Returns `Ok(Option<MakeTxRequest>)` if the processing is successful, otherwise returns an error of type `ProcessBotanixLogError`.
+/// Returns `Ok(Option<PegoutData>)` if the processing is successful, otherwise returns an error
+/// of type `ProcessBotanixLogError`.
 async fn process_botanix_log(
     btc_server: &mut BtcServerClient<tonic::transport::Channel>,
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
-) -> Result<Option<MakeTxRequest>, ProcessBotanixLogError> {
-    let mut pegout: Option<MakeTxRequest> = None;
+    receipt_logs: &Vec<Log>,
+) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
+    let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(log)
+                let pegin_data = parse_pegin_reth_log_topic(&log, &receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height
-                    > recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height >
+                    recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -239,20 +254,15 @@ async fn process_botanix_log(
             Ok(GenesisContractEvents::BurnEvent) => {
                 // TODO(scott): make dynamic
                 let fee_rate = 30u32;
-
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
                 match parse_pegout_reth_log_topic(&log) {
                     Ok(parsed_pegout) => {
-                        pegout = Some(MakeTxRequest {
-                            address: parsed_pegout.destination.to_string(),
-                            value: parsed_pegout.amount.to_sat(),
-                            fee_rate,
-                        });
+                        pegout = Some(parsed_pegout);
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", ?e, "Failed to parse pegout");
-                        return Err(ProcessBotanixLogError::FailedToMakePegoutTx);
+                        return Err(ProcessBotanixLogError::FailedToParsePegout);
                     }
                 }
             }
@@ -270,13 +280,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Returns true if the given block number is the end of an epoch
@@ -329,24 +339,33 @@ pub(crate) fn get_recent_block_height_or_zero(
     })
 }
 
-pub(crate) fn get_confirmation_depth(is_testnet: bool) -> u32 {
+pub fn get_confirmation_depth(is_testnet: bool) -> u32 {
     match is_testnet {
         true => SIGNET_PEGIN_CONFIRMATION_DEPTH,
         false => MAINNET_PEGIN_CONFIRMATION_DEPTH,
     }
 }
 
-pub(crate) fn is_testnet(chain_id: u64) -> bool {
+pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
+}
+
+pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
+    psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }
 
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
 
-    use bitcoin::{hash_types::TxMerkleNode, hashes::Hash, BlockHash, CompactTarget};
-    use reth_primitives::{address, b256, bytes, Header, B256, U256};
+    use bitcoin::{
+        hash_types::TxMerkleNode,
+        hashes::Hash,
+        psbt::{Input, PartiallySignedTransaction},
+        BlockHash, CompactTarget, TxIn,
+    };
     use rand::Rng;
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
     use super::*;
 
@@ -510,5 +529,25 @@ mod test {
 
         let chain_id = 1;
         assert!(!is_testnet(chain_id));
+    }
+
+    #[test]
+    fn test_get_witness_data_from_psbt() {
+        let unsigned_tx = bitcoin::Transaction {
+            version: 2,
+            lock_time: bitcoin::absolute::LockTime::from_height(0).unwrap(),
+            input: vec![],
+            output: vec![],
+        };
+        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsigned_tx).unwrap();
+
+        let mut input_1 = Input::default();
+        input_1.final_script_witness = Some(Witness::default());
+        let input_2 = input_1.clone();
+
+        let inputs = vec![input_1, input_2];
+        psbt.inputs = inputs.clone();
+
+        assert!(get_witness_data_from_psbt(psbt).len() == inputs.len());
     }
 }

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use ethers::abi::decode;
-use reth_primitives::{keccak256, Address, B256};
+use reth_primitives::{keccak256, Address, Log, B256};
 use secp256k1::{self, PublicKey};
 
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
 lazy_static::lazy_static! {
     pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
+    pub static ref MINT_AMOUNT_TOPIC: B256 = keccak256("MintAmount(uint256)");
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
     static ref FROST_PUB_KEY: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
 }
@@ -72,12 +73,31 @@ fn topic_to_address(t: B256) -> Result<Address, MintConsensusError> {
     Ok(address)
 }
 
+fn topic_to_amount(t: B256) -> Result<ethers::types::U256, MintConsensusError> {
+    let decoded_params: Vec<ethers::abi::Token> =
+        decode(&[ethers::abi::param_type::ParamType::Uint(256_usize)], &t.0)
+            .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
+
+    let amount = decoded_params
+        .first()
+        .ok_or(MintConsensusError::LogParsingError("Failed to parse amount"))?
+        .clone()
+        .into_uint()
+        .ok_or(MintConsensusError::UintParsingError("Failed to parse amount"))?;
+
+    Ok(amount)
+}
+
 pub fn parse_pegin_reth_log_topic(
     log: &reth_primitives::Log,
+    logs: &[Log],
 ) -> Result<PeginData, MintConsensusError> {
     let revm_log = log.into();
 
-    parse_pegin_topic(&revm_log)
+    parse_pegin_topic(
+        &revm_log,
+        &logs.iter().map(|log| log.into()).collect::<Vec<revm::primitives::Log>>(),
+    )
 }
 
 pub fn parse_pegout_reth_log_topic(
@@ -88,9 +108,39 @@ pub fn parse_pegout_reth_log_topic(
     parse_pegout_topic(&revm_log)
 }
 
-pub fn parse_pegin_topic(log: &revm::primitives::Log) -> Result<PeginData, MintConsensusError> {
+pub fn parse_pegin_mint_amount_topic(
+    log: &revm::primitives::Log,
+) -> Result<ethers::types::U256, MintConsensusError> {
+    for topic in log.topics() {
+        if *topic == *MINT_AMOUNT_TOPIC {
+            // first topic is the event signature, second topic is the indexed amount
+            if log.topics().len() != 2 {
+                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
+            }
+
+            let amount = topic_to_amount(log.topics()[1])?;
+            return Ok(amount);
+        }
+    }
+    Err(MintConsensusError::MintContractDidNotEmitMintTopic())
+}
+
+pub fn parse_pegin_topic(
+    log: &revm::primitives::Log,
+    logs: &Vec<revm::primitives::Log>,
+) -> Result<PeginData, MintConsensusError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
+    }
+
+    // get mint amount from MintAmount event
+    let mut amount: ethers::types::U256 = ethers::types::U256::zero();
+    for log in logs {
+        if let Ok(mint_amount) = parse_pegin_mint_amount_topic(log) {
+            amount = mint_amount;
+        } else {
+            continue;
+        }
     }
 
     for topic in log.topics() {
@@ -111,13 +161,6 @@ pub fn parse_pegin_topic(log: &revm::primitives::Log) -> Result<PeginData, MintC
                 &data.data,
             )
             .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
-
-            let amount = decoded_params
-                .first()
-                .ok_or(MintConsensusError::LogParsingError("Failed to parse amount"))?
-                .clone()
-                .into_uint()
-                .ok_or(MintConsensusError::UintParsingError("Failed to parse amount"))?;
 
             let bitcoin_block_height = decoded_params
                 .get(1)
@@ -213,9 +256,18 @@ mod test {
     #[test]
     fn mint_topic() {
         let topic =
-            B256::from_str("0x9de7365c663dc09a824437fcfe283fde0349736c62570a07a36e47f9a5dcaf0f")
+            B256::from_str("0x922344dc04648c0ce028ecdf9b2c9eed9a6794dbb47b777b54b0cfe069f128aa")
                 .unwrap();
         assert!(topic == *MINT_TOPIC);
+    }
+
+    #[test]
+    fn mint_amount_topic() {
+        let topic =
+            B256::from_str("0x8e37eb2ee3a6f3c8b13b8973588daad75a4ce752de14c00006bd8247f4e212e8")
+                .unwrap();
+
+        assert!(topic == *MINT_AMOUNT_TOPIC);
     }
 
     #[test]
@@ -262,5 +314,14 @@ mod test {
             decoded.unwrap(),
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap()
         );
+    }
+
+    #[test]
+    fn decode_amount_topic() {
+        let topic = "0x000000000000000000000000000000000000000000000000000000000000002a"; // 42
+        let decoded = topic_to_amount(B256::from_str(topic).unwrap());
+
+        assert!(decoded.is_ok());
+        assert_eq!(decoded.unwrap(), ethers::types::U256::one() * 42);
     }
 }

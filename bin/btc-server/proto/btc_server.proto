@@ -6,7 +6,7 @@ package btc_server;
 service BtcServer {
     rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
 
-    rpc MakeTx(MakeTxRequest) returns (MakeTxResponse) {}
+    rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
 
@@ -19,6 +19,71 @@ service BtcServer {
     rpc GetRound2DkgPackage(Empty) returns (DkgPayload) {}
 
     rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
+
+    rpc GetRound1SigningPackage(Round1SigningPackageRequest) returns (Round1SigningPackage) {}
+
+    rpc GetRound2SigningPackage(SignPayload) returns (Round2SigningPackage) {}
+
+    // only meant to be used by the cordinator
+    rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
+
+    // Meant to be used at anytime to perform utxo selection and create a tx
+    rpc GetPsbt(MakeTxRequest) returns (SignPayload) {}
+
+    // Meant to be used to transition the signing round to round 2 after round 1
+    // signing commitments have been collected
+    rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
+
+    rpc NewRound2SigningPackage(Round2SigningPackage) returns (Empty) {}
+
+    rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
+
+    rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
+
+    rpc RemoveUtxo(RemoveUtxoRequest) returns (RemoveUtxoResponse) {}
+
+    rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
+
+}
+
+message ScriptBuf {
+    bytes script = 1; // Represents the Vec<u8> in Rust
+}
+
+message TxOut {
+    /// The value of the output, in satoshis.
+    uint64 value = 1;
+    /// The script which must be satisfied for the output to be spent.
+    ScriptBuf script_pubkey = 2;
+}
+
+message OutPoint {
+    bytes txid = 1;
+    uint32 vout = 2;
+}
+
+message Utxo {
+    OutPoint outpoint = 1; 
+    uint32 output = 2;
+    string eth_address = 3;
+}
+
+message GetAllUtxosResponse {
+    repeated Utxo utxos = 1;
+}
+
+message RemoveUtxoRequest {
+    // The txid of the UTXO to remove.
+    string txid = 1;
+    // The output index of the UTXO to remove.
+    uint32 vout = 2;
+}
+
+message RemoveUtxoResponse {
+    // Indicates if the UTXO was successfully removed.
+    bool success = 1;
+    // Optional message with details about the operation.
+    string message = 2;
 }
 
 message NotifyPeginRequest {
@@ -32,11 +97,9 @@ message NotifyPeginRequest {
     bytes output = 4;
 }
 
-message MakeTxRequest {
-    string address = 1;
-    uint64 value = 2;
-    // Fee rate in satoshi per vbyte.
-    uint32 fee_rate = 3;
+message GetGatewayAddressRequest {
+    // Eth address to tweak by
+    string eth_address = 1;
 }
 
 message MakeTxResponse {
@@ -49,10 +112,69 @@ message GetPublicKeyResponse {
     string publickey = 1;
 }
 
+message GetGatewayAddressResponse {
+    // hex encoded
+    string publickey = 1;
+    string tweaked_public_key = 2;
+    string gateway_address = 3;
+}
+
 message Empty {}
 
 // Frost things
 message DkgPayload {
     bytes identifier = 1;
     bytes payload = 2;
+}
+
+message Round1SigningPackageRequest {
+    bytes psbt = 1;
+    bytes signing_session_id = 2;
+}
+
+message Round1SigningPackage {
+    bytes identifier = 1;
+    bytes psbt = 2;
+    bytes signing_session_id = 3;
+}
+
+message Round2SigningPackage {
+    bytes psbt = 1;
+    bytes identifier = 2;
+    bytes signing_session_id = 3;
+}
+
+message SignPayload {
+    bytes psbt = 1;
+    bytes signing_session_id = 3;
+}
+
+message Output {
+    string address = 1;
+    uint64 value = 2;
+}
+
+message MakeTxRequest {
+    repeated Output outputs = 1;
+    // Fee rate in satoshi per vbyte.
+    uint32 fee_rate = 2;
+    bytes signing_session_id = 3;
+}
+
+message ToSignRequest {
+    bytes signing_session_id = 3;
+}
+
+message FinalizeSigningRequest {
+    bytes signing_session_id = 1;
+}
+
+message FinalizeSigningResponse {
+    // Finalized tx which includes witness data
+    bytes psbt = 1;
+}
+
+message GetUTXOMerkleRootResponse {
+    // The Merkle root of all spendable UTXOs.
+    bytes merkle_root = 1;
 }

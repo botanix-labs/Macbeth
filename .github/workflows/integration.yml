@@ -29,6 +29,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      # Needed for BTC server
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Geth
         run: .github/scripts/install_geth.sh
@@ -39,9 +42,8 @@ jobs:
       - name: Run tests
         run: |
           cargo nextest run \
-            --locked --features "${{ matrix.network }}" \
+            --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
-            --partition hash:${{ matrix.partition }}/2 \
             -E 'kind(test)'
 
   sync:

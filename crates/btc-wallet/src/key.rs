@@ -2,9 +2,10 @@ use secp256k1::{
     hashes::{sha256, Hash},
     rand::rngs::OsRng,
     scalar::OutOfRangeError,
-    schnorr::Signature,
-    KeyPair, Message, PublicKey, Scalar, SecretKey,
+    KeyPair, PublicKey, Scalar, SecretKey,
 };
+
+use frost_secp256k1_tr as frost;
 
 lazy_static::lazy_static! {
     static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -52,6 +53,7 @@ fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, Key
     Ok(scalar)
 }
 
+// Deprecated
 pub fn tweak_private_key(tweak: &[u8; 32], prv: &SecretKey) -> Result<SecretKey, KeyError> {
     let scalar = generate_tweak_scalar(tweak, &prv.public_key(&SECP))?;
     let tweaked_prv = prv.add_tweak(&scalar)?;
@@ -59,6 +61,7 @@ pub fn tweak_private_key(tweak: &[u8; 32], prv: &SecretKey) -> Result<SecretKey,
     Ok(tweaked_prv)
 }
 
+// Deprecated
 pub fn tweak_public_key(
     tweak: &[u8; 32],
     pk: secp256k1::PublicKey,
@@ -69,13 +72,20 @@ pub fn tweak_public_key(
     Ok(tweaked_pk)
 }
 
-pub fn sign_with_tweaked_key(tweaked_key_pair: KeyPair, message: &Message) -> Signature {
-    SECP.sign_schnorr(message, &tweaked_key_pair)
+pub fn tweak_frost_verifying_key(
+    pk: &secp256k1::PublicKey,
+    tweak: &[u8; 20],
+) -> Result<secp256k1::PublicKey, KeyError> {
+    let pk_slice: [u8; 33] = pk.serialize().try_into().unwrap();
+    let vk = frost::VerifyingKey::deserialize(pk_slice).unwrap().get_tweaked(Some(tweak));
+
+    let tweaked_pk = secp256k1::PublicKey::from_slice(&vk.serialize()).unwrap();
+    Ok(tweaked_pk)
 }
 
 #[cfg(test)]
 mod tests {
-    use secp256k1::Secp256k1;
+    use secp256k1::{Message, Secp256k1};
 
     use super::*;
     const ETH_ADDRESS: [u8; 32] = [
@@ -83,6 +93,15 @@ mod tests {
         0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
         0xde, 0xf0,
     ];
+    #[test]
+    fn is_should_tweak_pk() {
+        let eth_tweak = [0u8; 20];
+        let kp = generate_bip340_keypair();
+        let pk = kp.public_key();
+        let tpk = tweak_frost_verifying_key(&pk, &eth_tweak).expect("valid tweak");
+
+        assert_ne!(pk, tpk);
+    }
 
     #[test]
     fn it_should_create_key_of_correct_length() {

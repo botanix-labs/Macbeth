@@ -12,17 +12,12 @@ use ethers::types::U256;
 use reth_primitives::Address;
 use thiserror::Error;
 
-use reth_btc_wallet::address;
+use reth_btc_wallet::{address, key};
 
 use crate::utils::AmountExt;
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
-
-lazy_static::lazy_static! {
-    // TODO (armins) this should be coming in a vec of pubkeys to the validate function
-    static ref AGG_PK: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
-}
 
 #[derive(Debug)]
 pub struct PeginData {
@@ -37,18 +32,18 @@ impl PeginData {
     /// Returns the aggregate value of all the pegin amounts
     pub fn validate(
         &self,
-        secp: &secp256k1::Secp256k1<impl secp256k1::Verification>,
         bitcoin_block: &(bitcoin::block::Header, u32),
+        aggregate_pk: &secp256k1::PublicKey,
     ) -> Result<U256, PeginError> {
         // the aggregate value from all the pegin proofs
-        let mut aggregate_value = U256::from_str_radix("0", 10).unwrap();
+        let mut aggregate_value = U256::from_str_radix("0", 10).expect("valid amount");
         for pegin in &self.meta {
             if pegin.version != PEGIN_META_VERSION {
-                return Err(PeginError::Invalid("invalid meta version: only accepting version 0"))
+                return Err(PeginError::Invalid("invalid meta version: only accepting version 0"));
             }
 
             if pegin.block_headers.is_empty() {
-                return Err(PeginError::Invalid("no block headers found"))
+                return Err(PeginError::Invalid("no block headers found"));
             }
 
             // pegin block headers list should contain the tip header as the last element in the
@@ -56,27 +51,25 @@ impl PeginData {
             if pegin.block_headers.last().expect("header should exist").block_hash() !=
                 bitcoin_block.0.block_hash()
             {
-                return Err(PeginError::Invalid("recent block hash mismatch"))
+                return Err(PeginError::Invalid("recent block hash mismatch"));
             }
 
             let op = pegin.outpoint;
             if pegin.tx.txid() != op.txid {
-                return Err(PeginError::Invalid("invalid tx or outpoint: txid"))
+                return Err(PeginError::Invalid("invalid tx or outpoint: txid"));
             }
 
             if pegin.tx.output.len() < op.vout as usize {
-                return Err(PeginError::Invalid("invalid tx or outpoint: output idx"))
+                return Err(PeginError::Invalid("invalid tx or outpoint: output idx"));
             }
-            let tweaked_key = address::generate_tweaked_public_key(
-                secp,
-                &self.account.as_slice().to_vec(),
-                &AGG_PK,
-            );
-            let gateway_script = address::generate_taproot_scriptpubkey(secp, &tweaked_key);
+
+            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.0 .0)
+                .map_err(|_e| PeginError::InvalidTweak())?;
+            let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[op.vout as usize];
             if gateway_script != output.script_pubkey {
-                return Err(PeginError::Invalid("invalid script pubkey"))
+                return Err(PeginError::Invalid("invalid script pubkey"));
             }
 
             let output_value = bitcoin::Amount::from_sat(output.value).to_wei();
@@ -90,7 +83,7 @@ impl PeginData {
             let merkle = &pegin.merkle_proof;
             let root = merkle.extract_matches(&mut txids, &mut idxs).unwrap();
             if !txids.contains(&op.txid) {
-                return Err(PeginError::Invalid("invalid merkle proof: inclusion"))
+                return Err(PeginError::Invalid("invalid merkle proof: inclusion"));
             }
 
             // check that the user provided an actual valid block header sequence
@@ -98,7 +91,7 @@ impl PeginData {
             while let Some(header) = iter.next() {
                 if let Some(next) = iter.peek() {
                     if next.prev_blockhash != header.block_hash() {
-                        return Err(PeginError::Invalid("invalid block header sequence"))
+                        return Err(PeginError::Invalid("invalid block header sequence"));
                     }
                 }
             }
@@ -109,7 +102,7 @@ impl PeginData {
                 .iter()
                 .any(|header| header.block_hash() == bitcoin_block.0.block_hash())
             {
-                return Err(PeginError::Invalid("block header not found"))
+                return Err(PeginError::Invalid("block header not found"));
             }
             // At this point the user proven that the proof is n blocks deep
             // (assuming that `block_header` is n blocks deep)
@@ -129,7 +122,7 @@ impl PeginData {
             // the latest block height minus the position of the user block in the list is the
             // height of the user block
             if bitcoin_block.1 - (diff as u32) != self.bitcoin_block_height {
-                return Err(PeginError::InvalidBitcoinBlockHeight())
+                return Err(PeginError::InvalidBitcoinBlockHeight());
             }
         }
 
@@ -197,6 +190,8 @@ pub enum PeginError {
     InvalidPublicKey(secp256k1::Error),
     #[error("invalid bitcoin block height")]
     InvalidBitcoinBlockHeight(),
+    #[error("invalid tweak: failed to tweak aggregate public key")]
+    InvalidTweak(),
 }
 
 #[derive(Debug, Error)]
@@ -237,6 +232,7 @@ mod tests {
         absolute::LockTime, block::Version, hashes::Hash, BlockHash, CompactTarget, OutPoint,
         Transaction, TxIn, TxOut, Txid,
     };
+    use secp256k1::rand::thread_rng;
 
     use super::*;
     #[test]
@@ -282,27 +278,8 @@ mod tests {
         tx: Transaction,
     }
 
-    fn create_header_metadata(
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
-        nonce: Option<u32>,
-    ) -> HeaderMetadata {
-        let txids: Vec<Txid> = [
-            "c06fbab289f723c6261d3030ddb6be121f7d2508d77862bb1e484f5cd7f92b25",
-            "4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526",
-        ]
-        .iter()
-        .map(|hex| hex.parse::<Txid>().unwrap())
-        .collect();
-        let mut tx_matches = vec![txids[1]];
-        let mut vouts = vec![0];
-        let merkle_proof = {
-            let matches = vec![false, true];
-            PartialMerkleTree::from_txids(&txids, &matches)
-        };
-        let merkle_root = merkle_proof.extract_matches(&mut tx_matches, &mut vouts).unwrap();
-
-        // create transaction
-        // dummy outpoint
+    fn create_header_metadata(nonce: Option<u32>, pk: &secp256k1::PublicKey) -> HeaderMetadata {
+        // create dummy transaction -- spending utxo that doesn't exist
         let temp_outpoint: OutPoint = OutPoint {
             txid: bitcoin::Txid::from_str(
                 "9c6ee70c67738bb63bddc4a15de391cc13f950cb8715de75b508f52efe6d88bb",
@@ -317,9 +294,7 @@ mod tests {
             witness: Default::default(),
         };
 
-        let eth_address = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
-        let tweaked = address::generate_tweaked_public_key(&secp, &eth_address.to_vec(), &AGG_PK);
-        let gateway_script = address::generate_taproot_scriptpubkey(&secp, &tweaked);
+        let gateway_script = address::generate_taproot_scriptpubkey(&pk);
 
         let tx_out = TxOut { value: 100_u64, script_pubkey: gateway_script };
         let tx: Transaction = Transaction {
@@ -329,13 +304,20 @@ mod tests {
             output: vec![tx_out],
         };
 
-        let outpoint = OutPoint {
-            txid: bitcoin::Txid::from_str(
-                "4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526",
-            )
-            .unwrap(),
-            vout: 0,
+        let outpoint = OutPoint { txid: tx.txid(), vout: 0 };
+
+        let txids = vec![
+            Txid::from_str("4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526")
+                .expect("valid txid"),
+            tx.txid(),
+        ];
+        let mut tx_matches = vec![txids[1]];
+        let mut vouts = vec![0];
+        let merkle_proof = {
+            let matches = vec![false, true];
+            PartialMerkleTree::from_txids(&txids, &matches)
         };
+        let merkle_root = merkle_proof.extract_matches(&mut tx_matches, &mut vouts).unwrap();
 
         let header = Header {
             version: Version::default(),
@@ -350,18 +332,18 @@ mod tests {
     }
 
     fn pegin_data_setup(
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         version: Option<u32>,
         block_headers: Option<Vec<Header>>,
+        pk: &secp256k1::PublicKey,
     ) -> PeginData {
-        let header_metadata = create_header_metadata(&secp, None);
+        let header_metadata = create_header_metadata(None, pk);
 
         let meta = PeginMeta {
             version: if version.is_some() { version.unwrap() } else { 0_u32 },
             merkle_proof: header_metadata.merkle_proof,
             outpoint: header_metadata.outpoint,
             address: Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap(),
-            aggregate_publickey: *AGG_PK,
+            aggregate_publickey: *pk,
             block_headers: if block_headers.is_some() {
                 block_headers.unwrap()
             } else {
@@ -382,11 +364,13 @@ mod tests {
     #[test]
     fn validate_pegin_data() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let mut rng = thread_rng();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
-        let pegin_data = pegin_data_setup(&secp, None, None);
+        let pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
-        let aggregate_amount = pegin_data.validate(&secp, &(*header, 1_u32)).unwrap();
+        let aggregate_amount = pegin_data.validate(&(*header, 1_u32), &pk).expect("valid");
         println!("aggregate amount {:?}", aggregate_amount);
     }
 
@@ -394,33 +378,39 @@ mod tests {
     #[should_panic(expected = "invalid meta version: only accepting version 0")]
     fn validate_pegin_data_with_incorrect_version() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let mut rng = thread_rng();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
-        let pegin_data = pegin_data_setup(&secp, Some(1_u32), None);
+        let pegin_data = pegin_data_setup(Some(1_u32), None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
-        pegin_data.validate(&secp, &(*header, 1_u32)).unwrap();
+        pegin_data.validate(&(*header, 1_u32), &pk).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "no block headers found")]
     fn validate_pegin_data_without_headers() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let mut rng = thread_rng();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
-        let pegin_data = pegin_data_setup(&secp, None, Some(Vec::new()));
-        let header = create_header_metadata(&secp, None).header;
+        let pegin_data = pegin_data_setup(None, Some(Vec::new()), &pk);
+        let header = create_header_metadata(None, &pk).header;
 
-        pegin_data.validate(&secp, &(header, 1_u32)).unwrap();
+        pegin_data.validate(&(header, 1_u32), &pk).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "recent block hash mismatch")]
     fn validate_pegin_data_with_incorrect_block_hash() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let mut rng = thread_rng();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
-        let pegin_data = pegin_data_setup(&secp, None, None);
-        let header = create_header_metadata(&secp, Some(1_u32)).header;
+        let pegin_data = pegin_data_setup(None, None, &pk);
+        let header = create_header_metadata(Some(1_u32), &pk).header;
 
-        pegin_data.validate(&secp, &(header, 1_u32)).unwrap();
+        pegin_data.validate(&(header, 1_u32), &pk).unwrap();
     }
 
     // TODO: scott - add tests for all possible errors returned in validate()
