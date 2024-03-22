@@ -35,9 +35,9 @@ use super::mint_contract::MintContractInstance;
 const RPC_PORT_BASE: u16 = 8545;
 const AUTHRPC_PORT_BASE: u16 = 8551;
 const DISCOVERY_PORT_BASE: u16 = 30303;
-const FED_MEMBER1_SECRET_KEY: &'static str =
+const FED_MEMBER1_SECRET_KEY:  &str =
     "0a35afe1386497890e1dce7286a5b378b978ede20db900e6ce5b4eb1a0449ad6";
-const FED_MEMBER2_SECRET_KEY: &'static str =
+const FED_MEMBER2_SECRET_KEY:  &str =
     "0cc8f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe057f094135f2c9b019";
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 

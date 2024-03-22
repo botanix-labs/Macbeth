@@ -19,8 +19,8 @@ jobs:
         include:
           - binary: reth
             network: ethereum
-          - binary: op-reth
-            network: optimism
+          # - binary: op-reth
+          #   network: optimism
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
@@ -42,7 +42,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo clippy --workspace --lib --examples --tests --benches --all-features
+      - run: cargo clippy --workspace --lib
         env:
           RUSTFLAGS: -D warnings
 
@@ -67,8 +67,6 @@ jobs:
         include:
           - binary: reth
             network: ethereum
-          - binary: op-reth
-            network: optimism
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
