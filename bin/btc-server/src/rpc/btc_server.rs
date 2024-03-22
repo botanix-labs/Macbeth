@@ -766,14 +766,18 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/SignerFinalize" => {
+                "/btc_server.BtcServer/SignerFinalize" => { 
                     #[allow(non_camel_case_types)]
                     struct SignerFinalizeSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::FinalizeSignerRequest>
-                        for SignerFinalizeSvc<T>
-                    {
-                        type Response = super::FinalizeSigningResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::FinalizeSignerRequest>
+                    for SignerFinalizeSvc<T> {
+                        type Response = super::FinalizeSigningResponse; 
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status, 
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FinalizeSignerRequest>,
@@ -822,7 +826,7 @@ pub mod btc_server_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as BtcServer>::new_round1_signing_package(&inner, request).await
+                                <T as BtcServer>::new_round1_signing_package(&inner, request).await 
                             };
                             Box::pin(fut)
                         }

@@ -140,8 +140,8 @@ impl<DB: Database> ProviderFactory<DB> {
         provider: DatabaseProviderRO<DB>,
         mut block_number: BlockNumber,
     ) -> ProviderResult<StateProviderBox> {
-        if block_number == provider.best_block_number().unwrap_or_default() &&
-            block_number == provider.last_block_number().unwrap_or_default()
+        if block_number == provider.best_block_number().unwrap_or_default()
+            && block_number == provider.last_block_number().unwrap_or_default()
         {
             return Ok(Box::new(LatestStateProvider::new(provider.into_tx())));
         }

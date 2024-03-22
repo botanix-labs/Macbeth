@@ -221,7 +221,7 @@ impl Botanix {
         let response = client
             .get_gateway_address(request)
             .await
-            .map_err(GatewayAddressRPCError::InvalidParam)?
+            .map_err(|e| GatewayAddressRPCError::InvalidParam(e))?
             .into_inner();
 
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
@@ -233,7 +233,7 @@ impl Botanix {
             &hex::decode(response.publickey.as_str())
                 .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
         )
-        .map_err(GatewayAddressRPCError::FailedToConvertPublicKey)?;
+        .map_err(|e| GatewayAddressRPCError::FailedToConvertPublicKey(e))?;
 
         Ok((address, pk))
     }

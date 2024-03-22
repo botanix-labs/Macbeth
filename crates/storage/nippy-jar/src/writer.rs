@@ -134,8 +134,8 @@ impl<'a, H: NippyJarHeader> NippyJarWriter<'a, H> {
                 self.jar.rows = ((actual_offsets_file_size.
                     saturating_sub(1). // first byte is the size of one offset
                     saturating_sub(OFFSET_SIZE_BYTES) / // expected size of the data file
-                    (self.jar.columns as u64)) /
-                    OFFSET_SIZE_BYTES) as usize;
+                    (self.jar.columns as u64))
+                    / OFFSET_SIZE_BYTES) as usize;
 
                 // Freeze row count changed
                 self.jar.freeze_config()?;

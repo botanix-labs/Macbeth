@@ -26,8 +26,8 @@ pub fn validate_header_standalone(
     }
 
     // Check if base fee is set.
-    if chain_spec.fork(Hardfork::London).active_at_block(header.number) &&
-        header.base_fee_per_gas.is_none()
+    if chain_spec.fork(Hardfork::London).active_at_block(header.number)
+        && header.base_fee_per_gas.is_none()
     {
         return Err(ConsensusError::BaseFeeMissing);
     }
@@ -37,14 +37,14 @@ pub fn validate_header_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_none() &&
-        chain_spec.chain.id() != 3636 &&
-        wd_root_missing
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_none()
+        && chain_spec.chain.id() != 3636
+        && wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing);
-    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_some()
+    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_some()
     {
         return Err(ConsensusError::WithdrawalsRootUnexpected);
     }
@@ -76,8 +76,8 @@ pub fn validate_transaction_regarding_header(
     let chain_id = match transaction {
         Transaction::Legacy(TxLegacy { chain_id, .. }) => {
             // EIP-155: Simple replay attack protection: https://eips.ethereum.org/EIPS/eip-155
-            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number) &&
-                chain_id.is_some()
+            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number)
+                && chain_id.is_some()
             {
                 return Err(InvalidTransactionError::OldLegacyChainId.into());
             }
@@ -228,8 +228,8 @@ pub fn validate_block_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != 3636
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp)
+        && chain_spec.chain.id() != 3636
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;

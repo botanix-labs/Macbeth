@@ -7,10 +7,10 @@ use bitcoin::{
         Encodable, ReadExt,
     },
     merkle_tree::PartialMerkleTree,
-    secp256k1::PublicKey,
+    secp256k1::{self, PublicKey},
 };
 
-// use bitcoin::{self};
+use bitcoin::{self};
 use ethers::types::U256;
 use reth_primitives::Address;
 use thiserror::Error;
