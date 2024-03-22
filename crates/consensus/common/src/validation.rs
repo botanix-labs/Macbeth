@@ -43,8 +43,8 @@ pub fn validate_header_standalone(
         && wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing);
-    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_some()
+    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_some()
     {
         return Err(ConsensusError::WithdrawalsRootUnexpected);
     }
