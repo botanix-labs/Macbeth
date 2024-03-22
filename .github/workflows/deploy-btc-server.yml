@@ -42,7 +42,7 @@ jobs:
     env:
       PROJECT_ID: botanix-391913
       CLUSTER_NAME: botanixlabs-cluster-dev
-      ZONE: us-central1-a
+      ZONE: us-central1
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
