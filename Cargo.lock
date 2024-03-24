@@ -1415,7 +1415,6 @@ dependencies = [
  "prost-build 0.12.3",
  "rand 0.8.5",
  "reth-btc-wallet",
- "reth-node-core",
  "reth-primitives",
  "rs_merkle",
  "secp256k1 0.27.0",

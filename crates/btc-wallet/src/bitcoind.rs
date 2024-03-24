@@ -1,5 +1,5 @@
 use bitcoincore_rpc::{
-    json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult, GetChainTipsResultStatus},
+    json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult},
     Auth, Client, RpcApi,
 };
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,6 @@ impl BitcoindConfig {
         Self { url, username, password }
     }
 }
-
 #[derive(Debug)]
 pub struct BitcoindClient {
     rpc: Client,
@@ -147,16 +146,13 @@ impl BitcoindClient {
         }
     }
 
-    pub async fn get_estimate_smart_fee(
-        &self,
-        confirmation_target: u16,
-        mode: EstimateMode,
-    ) -> Result<EstimateSmartFeeResult, BitcoindError> {
-        let fee = self
+    pub async fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
+        let fee_res = self
             .rpc
-            .estimate_smart_fee(confirmation_target, Some(mode))
-            .map_err(BitcoindError::EstimateSmartFeeFailed)?;
-        Ok(fee)
+            .estimate_smart_fee(1, Some(EstimateMode::Conservative))
+            .map_err(BitcoindError::EstimateSmartFeeFailed);
+
+        Ok(fee_res?)
     }
 }
 

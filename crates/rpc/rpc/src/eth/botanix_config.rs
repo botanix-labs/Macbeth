@@ -268,7 +268,7 @@ impl Botanix {
         let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
             .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
         let fee_result = bitcoind_client
-            .get_estimate_smart_fee(1, EstimateMode::Conservative)
+            .get_estimate_smart_fee()
             .await
             .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
 

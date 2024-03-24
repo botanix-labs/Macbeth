@@ -156,8 +156,6 @@ message Output {
 
 message MakeTxRequest {
     repeated Output outputs = 1;
-    // Fee rate in satoshi per vbyte.
-    uint32 fee_rate = 2;
     bytes signing_session_id = 3;
 }
 
