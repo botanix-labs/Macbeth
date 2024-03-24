@@ -19,6 +19,8 @@ use reth_primitives::{
 };
 use reth_provider::BundleStateWithReceipts;
 
+use bitcoincore_rpc::json::EstimateMode;
+
 use tracing::{debug, error, info, warn};
 
 use crate::extended_client::BtcServerExtendedClient;
@@ -190,9 +192,7 @@ pub(crate) async fn send_pegouts(
                 value: pegout.amount.to_sat(),
             })
             .collect(),
-        // TODO
-        fee_rate: 30u32,
-        // TODO
+        // TODO pull from parent block hash
         signing_session_id: [0u8; 32].to_vec(),
     };
 
@@ -287,8 +287,6 @@ async fn process_botanix_log(
                 }
             }
             Ok(GenesisContractEvents::BurnEvent) => {
-                // TODO(scott): make dynamic
-                let fee_rate = 30u32;
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
                 match parse_pegout_reth_log_topic(&log) {

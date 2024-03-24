@@ -169,9 +169,6 @@ pub struct Output {
 pub struct MakeTxRequest {
     #[prost(message, repeated, tag = "1")]
     pub outputs: ::prost::alloc::vec::Vec<Output>,
-    /// Fee rate in satoshi per vbyte.
-    #[prost(uint32, tag = "2")]
-    pub fee_rate: u32,
     #[prost(bytes = "vec", tag = "3")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }

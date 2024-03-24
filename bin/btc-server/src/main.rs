@@ -34,7 +34,7 @@ use reth_primitives::hex::decode as hex_decode;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
 use signer::SigningError;
-use util::{parse_eth_address, ParsingError, VerifyingKeyExt};
+use util::{parse_eth_address, sats_kb_to_vb_u64, ParsingError, VerifyingKeyExt};
 
 use std::{
     collections::BTreeMap,
@@ -47,6 +47,7 @@ use std::{
 
 use crate::{database::Utxo, jwt::get_or_create_jwt_secret_from_path};
 
+use bitcoincore_rpc::json::EstimateMode;
 use database::Error as DbError;
 use futures_util::future::FutureExt;
 use thiserror::Error;
@@ -374,8 +375,30 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
+        let bitcoind_client =
+            BitcoindClient::new(self.config.bitcoind.clone().into()).map_err(|_e| {
+                error!("Failed to create bitcoind client");
+                internal!("Failed to create bitcoind client")
+            })?;
+        let fee_rate = bitcoind_client
+            .get_estimate_smart_fee(1, EstimateMode::Conservative)
+            .await
+            .map_err(|_e| {
+                error!("Failed to get fee rate");
+                internal!("Failed to get fee rate")
+            })?
+            .fee_rate;
+
+        let fee_rate_sat_vb: u64 = match fee_rate {
+            Some(fee_rate) if fee_rate.to_sat() > 0 => sats_kb_to_vb_u64(fee_rate.to_sat()),
+            _ => {
+                error!(target: "consensus::authority", "Fee rate is none or 0");
+                return Err(internal!("failed to get fee rate"));
+            }
+        };
+
         let fee_rate =
-            FeeRate::from_sat_per_vb(req.fee_rate as u64).ok_or(internal!("overflowed value"))?;
+            FeeRate::from_sat_per_vb(fee_rate_sat_vb).ok_or(internal!("overflowed value"))?;
 
         let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
             .outputs
@@ -685,7 +708,7 @@ impl rpc::BtcServer for App {
             internal!("Failed to deserialize psbt: {}", e)
         })?;
 
-        self.get_round1_signing_package(&mut psbt, &signing_session_id).map_err(|e| {
+        self.get_round1_signing_package(&mut psbt, &signing_session_id).await.map_err(|e| {
             error!("Failed to get round1 signing package: {}", e);
             internal!("Failed to get round1 signing package: {}", e)
         })?;
@@ -817,6 +840,12 @@ struct Config {
     /// jwt secret path
     #[arg(long)]
     jwt_secret: Option<PathBuf>,
+    /// bitcoind configuration
+    #[clap(flatten)]
+    pub bitcoind: BitcoindArgs,
+    #[arg(long)]
+    /// acceptable fee rate difference percentage as an integer (ex. 2 = 20%)
+    pub fee_rate_diff_percentage: u32,
 }
 
 impl Default for Config {

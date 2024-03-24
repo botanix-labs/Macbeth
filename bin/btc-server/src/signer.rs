@@ -1,16 +1,18 @@
 use crate::{
     util::{
         add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
-        psbt_to_signing_packages, VerifyingKeyExt,
+        psbt_to_signing_packages, fee_rate_into_u32, sats_kb_to_vb_u32, VerifyingKeyExt,
     },
     App, DbError, Error,
 };
 
-use bitcoin::psbt::Psbt;
+use bdk::psbt::PsbtUtils;
+use bitcoin::{blockdata::fee_rate, psbt::Psbt};
+use bitcoincore_rpc::json::EstimateMode;
 
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-use reth_btc_wallet::transaction::CalculateSighashError;
+use reth_btc_wallet::{transaction::CalculateSighashError, bitcoind::BitcoindClient};
 
 #[derive(Debug)]
 pub enum SigningError {
@@ -41,6 +43,10 @@ pub enum SigningRound1Error {
     DbError(#[from] DbError),
     #[error("failed to add signing commits to psbt")]
     FailedToAddSigningCommitsToPsbt(#[from] crate::util::PsbtToSigningPackageConversionError),
+    #[error("failed to get smart estimate fee rate")]
+    FailedToGetEstimateSmartFeeRate,
+    #[error("fee rate difference is too great")]
+    FeeRateDifferenceTooGreat,
 }
 
 #[derive(Debug, Error)]
@@ -76,7 +82,7 @@ impl From<SigningRound2Error> for SigningError {
 }
 
 impl App {
-    pub(crate) fn get_round1_signing_package(
+    pub(crate) async fn get_round1_signing_package(
         &self,
         mut psbt: &mut Psbt,
         _signing_session_id: &[u8; 32],
@@ -89,6 +95,41 @@ impl App {
         if self.frost_round1_nonces.lock().unwrap().is_some() {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
+
+        // check fee is within acceptable range
+        let psbt_fee_rate = psbt.fee_rate();
+        if psbt_fee_rate.is_none() {
+            return Err(SigningRound1Error::InvalidSigningPackage("fee rate is missing"));
+        }
+        
+        // fetch fee rate from bitcoind
+        let bitcoind_client = BitcoindClient::new(self.config.bitcoind.clone().into())
+            .map_err(|e| SigningRound1Error::FailedToGetEstimateSmartFeeRate)?;
+
+        let fee_result = bitcoind_client
+            .get_estimate_smart_fee(1, EstimateMode::Conservative)
+            .await
+            .map_err(|e| SigningRound1Error::FailedToGetEstimateSmartFeeRate)?;
+
+        if fee_result.fee_rate.is_none() {
+            return Err(SigningRound1Error::FailedToGetEstimateSmartFeeRate);
+        }
+
+        let fee_rate_u32 = fee_rate_into_u32(fee_result.fee_rate.unwrap().to_sat());
+        let fee_rate_sat_vb = if fee_rate_u32 > 0 {
+            sats_kb_to_vb_u32(fee_rate_u32)
+        } else {
+            error!("Failed to convert fee rate to sat/vb bc of overflow");
+            return Err(SigningRound1Error::FailedToGetEstimateSmartFeeRate);
+        };
+
+        // convert config field to percentage
+        let acceptable_fee_rate_diff = self.config.fee_rate_diff_percentage / 10;
+        let fee_rate_sat_vb_f32 = f32::from_bits(fee_rate_sat_vb);
+        if (fee_rate_sat_vb_f32 - psbt_fee_rate.unwrap().as_sat_per_vb()).abs() > f32::from_bits(acceptable_fee_rate_diff) * fee_rate_sat_vb_f32 {
+            return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
+        }
+
         let tx = psbt.clone().extract_tx();
         // Validate the psbt
         for (index, input) in psbt.inputs.iter().enumerate() {
