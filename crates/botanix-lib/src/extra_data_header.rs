@@ -29,7 +29,7 @@ pub struct ExtraDataHeader {
     pub witness_data: Option<Vec<witness::Witness>>,
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     // TODO add bitcoin fee
-    pub authority_signature: Option<secp256k1::ecdsa::RecoverableSignature>,
+    pub authority_signatures: Option<Vec<secp256k1::ecdsa::RecoverableSignature>>,
 }
 
 impl Default for ExtraDataHeader {
@@ -41,7 +41,7 @@ impl Default for ExtraDataHeader {
             authority_vote: None,
             witness_data: None,
             bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
-            authority_signature: None,
+            authority_signatures: None,
         }
     }
 }
@@ -64,8 +64,10 @@ pub enum ValidateAuthoritySignatureError {
     InvalidSignature,
     #[error("invalid message")]
     InvalidMessage,
-    #[error("missing Signature")]
+    #[error("missing signature")]
     MissingSignature,
+    #[error("quorum of signatures missing")]
+    QuorumMissing,
 }
 
 /// Errors that can occur when serializing the extra data header
@@ -80,7 +82,7 @@ impl ExtraDataHeader {
         version: u32,
         // This field is only optional b/c the block producer will need to sign the extra header
         // data without a signature appended at the end
-        authority_signature: Option<secp256k1::ecdsa::RecoverableSignature>,
+        authority_signatures: Option<Vec<secp256k1::ecdsa::RecoverableSignature>>,
         // Optional set of authority signers. Non-optional during a epoch block. This should be
         // validated by consensus
         authority_signers: Option<Vec<secp256k1::PublicKey>>,
@@ -97,7 +99,7 @@ impl ExtraDataHeader {
         if authority_vote.is_some() {
             optional_fields |= 1 << HAS_VOTE_POS;
         }
-        if authority_signature.is_some() {
+        if authority_signatures.is_some() {
             optional_fields |= 1 << HAS_SIGNATURE_POS;
         }
         if witness_data.is_some() {
@@ -110,13 +112,13 @@ impl ExtraDataHeader {
             authority_vote,
             witness_data,
             bitcoin_block_hash,
-            authority_signature,
+            authority_signatures,
             optional_fields,
         }
     }
 
-    pub fn set_signature(&mut self, signature: RecoverableSignature) {
-        self.authority_signature = Some(signature);
+    pub fn set_signature(&mut self, signature: Vec<RecoverableSignature>) {
+        self.authority_signatures = Some(signature);
         self.set_optional_fields_bitmask();
     }
 
@@ -128,7 +130,7 @@ impl ExtraDataHeader {
         if self.authority_vote.is_some() {
             optional_fields |= 1 << HAS_VOTE_POS;
         }
-        if self.authority_signature.is_some() {
+        if self.authority_signatures.is_some() {
             optional_fields |= 1 << HAS_SIGNATURE_POS;
         }
         if self.witness_data.is_some() {
@@ -174,10 +176,15 @@ impl ExtraDataHeader {
     /// Serialize the extra data header into the writer.
     pub fn encode_into(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
         self.encode_into_without_signature(writer)?;
-        if let Some(sig) = self.authority_signature {
-            let (recovery_id, sig) = &sig.serialize_compact();
-            let _ = i32::consensus_encode(&recovery_id.to_i32(), writer);
-            writer.write_all(&sig[..])?;
+        if let Some(sigs) = &self.authority_signatures {
+            // Write length of signatures
+            let len = sigs.len() as u32;
+            (len).consensus_encode(writer)?;
+            for sig in sigs {
+                let (recovery_id, sig) = &sig.serialize_compact();
+                let _ = i32::consensus_encode(&recovery_id.to_i32(), writer);
+                writer.write_all(&sig[..])?;
+            }
         }
         Ok(())
     }
@@ -234,15 +241,20 @@ impl ExtraDataHeader {
             None
         };
 
-        let signature = if optional_fields & (1u8 << HAS_SIGNATURE_POS) != 0 {
-            let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
+        let signatures = if optional_fields & (1u8 << HAS_SIGNATURE_POS) != 0 {
+            let mut sigs = vec![];
+            let signature_len = u32::consensus_decode(reader)?;
+            for i in 0..signature_len {
+                let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
+                let mut buf = [0; 64];
+                reader.read_exact(&mut buf)?;
+                let signature =
+                    secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, recovery_id)
+                        .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?;
+                sigs.push(signature);
+            }
 
-            let mut buf = [0; 64];
-            reader.read_exact(&mut buf)?;
-            let signature = secp256k1::ecdsa::RecoverableSignature::from_compact(&buf, recovery_id)
-                .map_err(|_| encode::Error::ParseFailed("Invalid signature"))?;
-
-            Some(signature)
+            Some(sigs)
         } else {
             None
         };
@@ -254,7 +266,7 @@ impl ExtraDataHeader {
             authority_signers,
             authority_vote,
             witness_data,
-            authority_signature: signature,
+            authority_signatures: signatures,
         })
     }
 
@@ -263,23 +275,27 @@ impl ExtraDataHeader {
         message: &Vec<u8>,
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError> {
-        if self.authority_signature.is_none() {
+        if self.authority_signatures.is_none() {
             return Err(ValidateAuthoritySignatureError::MissingSignature);
         }
 
         let msg = secp256k1::Message::from_slice(message.as_slice())
             .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
 
-        if authority_signers.iter().any(|signer| {
-            self.authority_signature
-                .expect("signature exists")
-                .to_standard()
-                .verify(&msg, signer)
-                .is_ok()
-        }) {
+        let mut signer_count = 0;
+        for sig in self.authority_signatures.expect("is some") {
+            let recovered_pk =
+                sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::InvalidSignature)?;
+            for signer in authority_signers {
+                if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
+                    signer_count += 1;
+                }
+            }
+        }
+        // TODO (armins) change this to be a quorum of signatures
+        if signer_count >= authority_signers.len() {
             return Ok(());
         }
-
         Err(ValidateAuthoritySignatureError::InvalidSignature)
     }
 }
@@ -304,7 +320,7 @@ mod tests {
             bitcoin::hash_types::BlockHash::all_zeros(),
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
-        assert_eq!(header.authority_signature, None);
+        assert_eq!(header.authority_signatures, None);
         assert_eq!(header.authority_signers, Some(authority_signers));
         assert_eq!(header.authority_vote, None);
         assert_eq!(header.witness_data, Some(witness_data));
@@ -369,7 +385,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             Some(authority_signers),
             None,
             None,
@@ -390,14 +406,12 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
-        assert_eq!(deserialized_header.authority_signature.unwrap(), signature);
+        assert_eq!(deserialized_header.authority_signatures.clone().unwrap(), vec![signature]);
 
         let recovered_pk = signature.recover(&message).unwrap();
         assert_eq!(recovered_pk, public_key);
 
-        deserialized_header
-            .authority_signature
-            .unwrap()
+        deserialized_header.authority_signatures.unwrap()[0]
             .to_standard()
             .verify(&message, &public_key)
             .expect("signature from same pk");
@@ -419,7 +433,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             Some(authority_signers),
             Some(pubkey_to_vote),
             Some(witness_data.clone()),
@@ -444,16 +458,14 @@ mod tests {
 
         assert_eq!(deserialized_header.witness_data, Some(witness_data));
 
-        assert!(deserialized_header.authority_signature.is_some());
+        assert!(deserialized_header.authority_signatures.is_some());
 
         assert_eq!(
-            deserialized_header.authority_signature.unwrap().to_standard(),
+            deserialized_header.authority_signatures.clone().unwrap()[0].to_standard(),
             signature.to_standard()
         );
 
-        deserialized_header
-            .authority_signature
-            .unwrap()
+        deserialized_header.authority_signatures.unwrap()[0]
             .to_standard()
             .verify(&message, &public_key)
             .expect("signature from same pk");
@@ -470,7 +482,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             None,
             None,
             None,
@@ -490,15 +502,13 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
-        assert_eq!(deserialized_header.authority_signature.is_some(), true);
+        assert_eq!(deserialized_header.authority_signatures.is_some(), true);
         assert_eq!(
-            deserialized_header.authority_signature.unwrap().to_standard(),
+            deserialized_header.authority_signatures.clone().unwrap()[0].to_standard(),
             signature.to_standard()
         );
 
-        deserialized_header
-            .authority_signature
-            .unwrap()
+        deserialized_header.authority_signatures.unwrap()[0]
             .to_standard()
             .verify(&message, &public_key)
             .expect("signature from same pk");
@@ -509,16 +519,19 @@ mod tests {
     fn test_validate_authority_signature() {
         let mut authority_signers = vec![];
         let secp = Secp256k1::new();
-        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key);
+        let (secret_key1, public_key1) = secp.generate_keypair(&mut OsRng);
+        let (secret_key2, public_key2) = secp.generate_keypair(&mut OsRng);
+        authority_signers.push(public_key1);
+        authority_signers.push(public_key2);
 
         let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
         let message = Message::from(hello_world_hash);
-        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+        let signature1 = secp.sign_ecdsa_recoverable(&message, &secret_key1);
+        let signature2 = secp.sign_ecdsa_recoverable(&message, &secret_key2);
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature1, signature2]),
             Some(authority_signers.clone()),
             None,
             None,
@@ -530,7 +543,43 @@ mod tests {
                 &hello_world_hash.as_byte_array().to_vec(),
                 &authority_signers,
             )
-            .unwrap()
+            .unwrap();
+
+        // Should fail if there is a signature missing
+        let header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            Some(vec![signature1]),
+            Some(authority_signers.clone()),
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+
+        assert!(header
+            .validate_authority_signature(
+                &hello_world_hash.as_byte_array().to_vec(),
+                &authority_signers,
+            )
+            .is_err());
+
+        // Should fail if there is a signature from non-authority
+        let (secret_key3, _public_key3) = secp.generate_keypair(&mut OsRng);
+        let signature3 = secp.sign_ecdsa_recoverable(&message, &secret_key3);
+        let header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            Some(vec![signature1, signature3]),
+            Some(authority_signers.clone()),
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+
+        assert!(header
+            .validate_authority_signature(
+                &hello_world_hash.as_byte_array().to_vec(),
+                &authority_signers,
+            )
+            .is_err());
     }
 
     #[test]
@@ -546,7 +595,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             Some(authority_signers.clone()),
             None,
             None,
@@ -559,7 +608,7 @@ mod tests {
             .expect("Deserialization failed");
 
         let recovered_pk =
-            deserialized_header.authority_signature.unwrap().recover(&message).unwrap();
+            deserialized_header.authority_signatures.unwrap()[0].recover(&message).unwrap();
 
         assert_eq!(recovered_pk, public_key);
     }
@@ -578,7 +627,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             Some(authority_signers.clone()),
             None,
             None,
@@ -628,7 +677,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
-            Some(signature),
+            Some(vec![signature]),
             Some(authority_signers),
             None,
             None,
@@ -666,14 +715,14 @@ mod tests {
             bitcoin::hash_types::BlockHash::all_zeros()
         );
         assert_eq!(deserialized_header.authority_vote, None);
-        assert_eq!(deserialized_header.authority_signature, None);
+        assert_eq!(deserialized_header.authority_signatures, None);
     }
 
     #[test]
     fn can_set_signature() {
         let mut edh = ExtraDataHeader::default();
 
-        assert_eq!(edh.authority_signature, None);
+        assert_eq!(edh.authority_signatures, None);
         assert_eq!(edh.optional_fields, 0);
         let secp = Secp256k1::new();
         let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
@@ -682,8 +731,8 @@ mod tests {
         let message = Message::from(hello_world_hash);
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
-        edh.set_signature(signature);
-        assert_eq!(edh.authority_signature.is_some(), true);
+        edh.set_signature(vec![signature]);
+        assert_eq!(edh.authority_signatures.is_some(), true);
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 
