@@ -279,6 +279,24 @@ pub fn add_partial_signature_to_psbt(
     }
 }
 
+pub(crate) fn fee_rate_into_u32(fee_rate: u64) -> u32 {
+    match <u64 as TryInto<u32>>::try_into(fee_rate) {
+        Ok(fee_rate) => fee_rate,
+        Err(e) => {
+            error!("Failed to convert fee rate to u32: {}", e);
+            0
+        }
+    }
+}
+
+pub(crate) fn sats_kb_to_vb_u32(fee_rate: u32) -> u32 {
+    fee_rate / 1000
+}
+
+pub(crate) fn sats_kb_to_vb_u64(fee_rate: u64) -> u64 {
+    fee_rate / 1000
+}
+
 #[derive(Debug, Error)]
 pub enum RetrieveUnknownKeyError {
     #[error("key was not found in input unknown fields")]

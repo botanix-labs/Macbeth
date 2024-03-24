@@ -1,8 +1,9 @@
 use crate::{
     database::{self, Error as DbError},
     util::{
-        self, add_partial_signature_to_psbt, add_signing_commitments_to_psbt,
-        convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt,
+        self, add_partial_signature_to_psbt, add_remove_utxo_from_psbt,
+        add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages,
+        VerifyingKeyExt, 
     },
     App, Error, SECP,
 };
@@ -10,6 +11,9 @@ use bdk::miniscript::psbt::Error as PsbtError;
 
 use bdk::psbt::PsbtUtils;
 use bitcoin::{psbt::Psbt, FeeRate, TxOut};
+use bitcoincore_rpc::json::EstimateMode;
+use bdk::psbt::PsbtUtils;
+use bitcoin::{blockdata::fee_rate, psbt::Psbt};
 use bitcoincore_rpc::json::EstimateMode;
 
 use frost_secp256k1_tr as frost;
@@ -136,7 +140,7 @@ impl App {
         if diff > acceptable_fee_rate_diff * (fee_rate.to_sat_per_kwu() as f64) {
             return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
         }
-
+ 
         let tx = psbt.clone().extract_tx();
         // Validate the psbt
         for (index, input) in psbt.inputs.iter().enumerate() {
