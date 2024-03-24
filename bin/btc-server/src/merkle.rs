@@ -1,4 +1,4 @@
-use crate::database::{Db, Utxo};
+use crate::database::{Utxo};
 use rs_merkle::{algorithms::Sha256 as MerkleSha256, MerkleTree};
 use serde_cbor;
 use sha2::{Digest, Sha256};
