@@ -16,7 +16,7 @@ use std::{
     str::FromStr,
 };
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -544,9 +544,9 @@ where
 
         // add the transmitted round 2 package data
         if let Err(e) = self.add_round2_dkg_package(identifier, payload).await {
-            error!("Error adding round 2 dkg package {:?}", e);
-            self.state = DKGState::DkgFailed;
-            return Err(e);
+            warn!("Error adding round 2 dkg package {:?}", e);
+            // We dont want to fail the whole dkg process if we can't add another's round2
+            return Ok(())
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2] packages added successfully");
         // By adding this round2 dkg package we could be ready to progress to round 3
