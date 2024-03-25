@@ -5,9 +5,8 @@ use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
 use reth_primitives::U256;
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
-use url::Url;
-use bitcoincore_rpc::json::EstimateMode;
 use tracing::error;
+use url::Url;
 
 /// Settings for the [BotanixConfig]
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -272,30 +271,28 @@ impl Botanix {
             .await
             .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
 
-        match fee_result.fee_rate {
-            fee_rate if fee_rate.is_some() => {
-                // convert from BTC/kB to sat/vB
-                let sats_kb = fee_rate.unwrap().to_sat();
-                Ok(U256::from(sats_kb) / U256::from(1000))
-            },
-            _ => {
-                let mut concatenated_errors = String::new();
-                if fee_result.errors.is_some() && fee_result.errors.clone().unwrap().len() > 0
-                {
-                    concatenated_errors = fee_result
-                        .errors
-                        .unwrap()
-                        .join(", ");
-                    
-                    error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
-                }
-
-                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+        if let Some(fee) = fee_result.fee_rate {
+            let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
+            // this really doesnt need to be a U256 can be U64
+            return Ok(U256::from(sats_kb.to_sat_per_vb_ceil()));
+        } else {
+            // Use errors if available
+            if let Some(errors) = fee_result.errors {
+                let concatenated_errors = errors.join(", ");
+                error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
+                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
                     BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
-                        (concatenated_errors),
+                        concatenated_errors,
                     )),
-                ))
-            },
+                ));
+            } else {
+                // else use default generic error
+                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                    BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
+                        "Failed to get estimate smart fee rate".to_string(),
+                    )),
+                ));
+            }
         }
     }
 }
