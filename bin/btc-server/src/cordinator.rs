@@ -284,12 +284,12 @@ impl App {
     }
 
     /// Retruns finalized and ready to braodcast tx
-    pub(crate) fn finalize_signing(
+    pub(crate) async fn finalize_signing(
         &self,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
         // Lock here to prevent a make_tx that uses utxos that will be removed
-        let _tx_lock = self.tx_lock.lock().expect("get lock");
+        let _tx_lock = self.tx_lock.lock().await;
         let mut psbt =
             self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
         let partial_sigs = retrieve_all_partial_signatures(&psbt)?;

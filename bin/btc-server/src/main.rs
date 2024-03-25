@@ -22,37 +22,37 @@ mod rpc {
     };
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
+
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
+
 use base64::decode as base64_decode;
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, secp256k1, FeeRate, OutPoint, TxOut};
+use bitcoin::{secp256k1, FeeRate, OutPoint, TxOut};
+use bitcoin::consensus::encode as btcencode;
+
+use bitcoin::psbt::Psbt;
+use bitcoincore_rpc::{json::EstimateMode, Auth, RpcApi};
 use clap::Parser;
-use config::{GrpcConfig, TomlConfig};
-use dkg::DKGError;
 use frost_secp256k1_tr as frost;
-use jwt::{JwtError, JwtSecret};
+use futures_util::future::FutureExt;
 use rand::thread_rng;
 use reth_primitives::hex::decode as hex_decode;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
-use signer::SigningError;
+use thiserror::Error;
+use tokio::sync::{oneshot, Mutex};
+use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 use util::{parse_eth_address, ParsingError, VerifyingKeyExt};
 
-use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    path::PathBuf,
-    str::FromStr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
-use crate::{database::Utxo, jwt::get_or_create_jwt_secret_from_path};
-
-use bitcoincore_rpc::{json::EstimateMode, Auth, RpcApi};
-use database::Error as DbError;
-use futures_util::future::FutureExt;
-use thiserror::Error;
-use tokio::sync::oneshot;
-use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
+use crate::config::{GrpcConfig, TomlConfig};
+use crate::dkg::DKGError;
+use crate::signer::SigningError;
+use crate::database::{Error as DbError, Utxo};
+use crate::jwt::{JwtError, JwtSecret, get_or_create_jwt_secret_from_path};
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
 
@@ -366,7 +366,7 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
-        let psbt = self.finalize_signing(&signing_session_id).map_err(|e| {
+        let psbt = self.finalize_signing(&signing_session_id).await.map_err(|e| {
             internal!("Failed to finalize signing: {}", e)
         })?;
 
@@ -580,7 +580,7 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to deserialize round2 dkg package: {}", e)
             })?;
 
-        self.add_round2_dkg(frost_id, packages).map_err(|e| {
+        self.add_round2_dkg(frost_id, packages).await.map_err(|e| {
             error!("Failed to add round2 dkg: {}", e);
             badarg!("Failed to add round2 dkg")
         })?;
@@ -594,7 +594,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let round2_packages = self.get_round2_dkg().map_err(|e| {
+        let round2_packages = self.get_round2_dkg().await.map_err(|e| {
             internal!("Failed to get round2 dkg package: {}", e)
         })?;
         let json = serde_json::to_string(&round2_packages).unwrap();
@@ -695,7 +695,7 @@ impl rpc::BtcServer for App {
         })?;
 
         let bitcoind = self.bitcoind_client.as_ref().expect("bitcoind client");
-        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind).map_err(|e| {
+        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind).await.map_err(|e| {
             internal!("Failed to get round1 signing package: {}", e)
         })?;
 
@@ -726,7 +726,7 @@ impl rpc::BtcServer for App {
         let mut psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
             internal!("Failed to deserialize psbt: {}", e)
         })?;
-        let _partial_signature = self.get_round2_signing_package(&mut psbt).map_err(|e| {
+        let _partial_signature = self.get_round2_signing_package(&mut psbt).await.map_err(|e| {
             internal!("Failed to get round2 signing package: {}", e)
         })?;
         let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
@@ -1179,8 +1179,8 @@ mod test {
     /**
      * Round 2 DKG Tests
      */
-    #[test]
-    fn round2_dkg_should_fail_when_missing_keys() {
+    #[tokio::test]
+    async fn round2_dkg_should_fail_when_missing_keys() {
         let app = setup();
         let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
         let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
@@ -1191,21 +1191,21 @@ mod test {
         app.db.set_pubkey_package(pk_pkg.clone()).unwrap();
         app.db.set_key_package(key_package.clone()).unwrap();
 
-        let round2_pkg = app.get_round2_dkg();
+        let round2_pkg = app.get_round2_dkg().await;
         assert!(round2_pkg.is_err());
         assert_eq!(round2_pkg.err().unwrap().to_string(), "already have key package");
     }
 
-    #[test]
-    fn round2_dkg_should_fail_when_missing_round1_keys() {
+    #[tokio::test]
+    async fn round2_dkg_should_fail_when_missing_round1_keys() {
         let app = setup();
-        let round2_dkg = app.get_round2_dkg();
+        let round2_dkg = app.get_round2_dkg().await;
         assert!(round2_dkg.is_err());
         assert_eq!(round2_dkg.err().unwrap().to_string(), "missing round1 dkg package");
     }
 
-    #[test]
-    fn round2_dkg_should_succeed_when_round1_pkgs_exist() {
+    #[tokio::test]
+    async fn round2_dkg_should_succeed_when_round1_pkgs_exist() {
         let mut app = setup();
         let rng = thread_rng();
         let mut round1_dkgs = vec![];
@@ -1223,7 +1223,7 @@ mod test {
         }
         app.frost_round1_dkg = Some(round1_dkgs[0].clone());
 
-        let round2_dkg = app.get_round2_dkg();
+        let round2_dkg = app.get_round2_dkg().await;
         assert!(round2_dkg.is_err());
         assert_eq!(
             round2_dkg.err().unwrap().to_string(),
@@ -1233,14 +1233,14 @@ mod test {
         app.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
         app.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
 
-        let round2_dkg = app.get_round2_dkg().expect("valid round 2 transition");
+        let round2_dkg = app.get_round2_dkg().await.expect("valid round 2 transition");
         assert_eq!(round2_dkg.len(), 2);
         assert!(round2_dkg.contains_key(&frost_id!(2)));
         assert!(round2_dkg.contains_key(&frost_id!(3)));
     }
 
-    #[test]
-    fn should_add_round2_dkg_packages() {
+    #[tokio::test]
+    async fn should_add_round2_dkg_packages() {
         let rng: rand::prelude::ThreadRng = thread_rng();
         // We essentially need to emulate dkg here
         let mut app1 = setup();
@@ -1264,24 +1264,24 @@ mod test {
         app1.frost_round1_dkg = Some(round1_dkgs[0].clone());
         app1.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
         app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
-        let p1_dkg2 = app1.get_round2_dkg().expect("valid round 2 transition");
+        let p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
 
         // 2nd participant round 1
         app2.frost_round1_dkg = Some(round1_dkgs[1].clone());
         app2.identifier = frost_id!(2);
         app2.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1).expect("valid round1 dkg");
         app2.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1).expect("valid round1 dkg");
-        let p2_dkg2 = app2.get_round2_dkg().expect("valid round 2 transition");
+        let p2_dkg2 = app2.get_round2_dkg().await.expect("valid round 2 transition");
         // 3rd participant round 1
         app3.frost_round1_dkg = Some(round1_dkgs[2].clone());
         app3.identifier = frost_id!(3);
         app3.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1).expect("valid round1 dkg");
         app3.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1).expect("valid round1 dkg");
-        let p3_dkg2 = app3.get_round2_dkg().expect("valid round 2 transition");
+        let p3_dkg2 = app3.get_round2_dkg().await.expect("valid round 2 transition");
 
         // Round 2 dkg for 1st participant
-        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone()).expect("valid round2 dkg");
-        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone()).await.expect("valid round2 dkg");
+        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).await.expect("valid round2 dkg");
 
         // The dkg session should have concluded by now
         let pk_package1 = app1.db.get_public_key_package().expect("valid pk package");
@@ -1291,8 +1291,8 @@ mod test {
 
         // Lets complete the round 2 dkg for the another participant
         // And compare the results
-        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone()).expect("valid round2 dkg");
-        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone()).await.expect("valid round2 dkg");
+        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).await.expect("valid round2 dkg");
 
         let pk_package2 = app1.db.get_public_key_package().expect("valid pk package");
         assert!(pk_package2.is_some());
@@ -1307,8 +1307,8 @@ mod test {
     }
 
     // Signing tests
-    #[test]
-    fn should_fail_to_get_to_sign_package_without_dkg() {
+    #[tokio::test]
+    async fn should_fail_to_get_to_sign_package_without_dkg() {
         let app = setup();
         let signing_session_id = [0u8; 32];
         let mut psbt = create_psbt(1);
@@ -1319,20 +1319,20 @@ mod test {
         let mock_bitcoind = MockBitcoind::new();
 
         let nonce_commits =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind);
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(nonce_commits.is_err());
         assert_eq!(nonce_commits.err().unwrap().to_string(), "missing key package");
     }
 
-    #[test]
-    fn should_fail_when_requesting_too_many_nonces() {
+    #[tokio::test]
+    async fn should_fail_when_requesting_too_many_nonces() {
         let app = setup();
         let signing_session_id = [0u8; 32];
         let mut psbt = create_psbt(100);
         let mock_bitcoind = MockBitcoind::new();
 
         let nonce_commits =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind);
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(nonce_commits.is_err());
         assert_eq!(
             nonce_commits.err().unwrap().to_string(),
@@ -1340,8 +1340,8 @@ mod test {
         );
     }
 
-    #[test]
-    fn should_get_round1_nonce_commitments() {
+    #[tokio::test]
+    async fn should_get_round1_nonce_commitments() {
         let mut app = setup();
         let signing_session_id = [0u8; 32];
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
@@ -1358,12 +1358,12 @@ mod test {
 
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
-            .expect("valid nonce commits request");
+            .await.expect("valid nonce commits request");
         let sc1 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
         assert_eq!(sc1.len(), 1);
 
         // Should not be able to get a new set of nonces
-        let res = app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind);
+        let res = app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "already in signing session");
 
@@ -1376,7 +1376,7 @@ mod test {
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
-            .expect("valid nonce commits request");
+            .await.expect("valid nonce commits request");
 
         let sc2 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
         assert_eq!(sc2.len(), 1);

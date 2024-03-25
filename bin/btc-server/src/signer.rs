@@ -81,7 +81,7 @@ impl From<SigningRound2Error> for SigningError {
 }
 
 impl App {
-    pub(crate) fn get_round1_signing_package(
+    pub(crate) async fn get_round1_signing_package(
         &self,
         mut psbt: &mut Psbt,
         _signing_session_id: &[u8; 32],
@@ -92,7 +92,8 @@ impl App {
             return Err(SigningRound1Error::InvalidNumberOfNoncesRequested);
         }
         // Check if have already provided nonces for the current session
-        if self.frost_round1_nonces.lock().unwrap().is_some() {
+        let mut nonces_lock = self.frost_round1_nonces.lock().await;
+        if nonces_lock.is_some() {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
@@ -156,12 +157,11 @@ impl App {
         let signing_nonces =
             nonces.iter().map(|nonce| (nonce.0.clone(), nonce.1.clone())).collect::<Vec<_>>();
 
-        self.frost_round1_nonces.lock().unwrap().replace(signing_nonces.clone());
-
+        nonces_lock.replace(signing_nonces.clone());
         Ok(())
     }
 
-    pub(crate) fn get_round2_signing_package(
+    pub(crate) async fn get_round2_signing_package(
         &self,
         mut psbt: &mut Psbt,
     ) -> Result<(), SigningRound2Error> {
@@ -175,12 +175,8 @@ impl App {
         let mut signing_packages = psbt_to_signing_packages(psbt)?;
 
         // Get signing nonces from round 1
-        let signing_nonces = self
-            .frost_round1_nonces
-            .lock()
-            // TODO (armins) remove unwrap
-            .unwrap()
-            .clone()
+        let mut nonces_lock = self.frost_round1_nonces.lock().await;
+        let signing_nonces = nonces_lock.clone()
             .ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
 
         if signing_nonces.len() != num_inputs {
@@ -229,7 +225,7 @@ impl App {
 
         // Clear the signing nonces
         // This finalizes the signing session
-        self.frost_round1_nonces.lock().unwrap().take();
+        nonces_lock.take();
         Ok(())
     }
 }
