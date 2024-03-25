@@ -1,8 +1,9 @@
 use crate::{
+    database,
     util::{
         add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt
     },
-    App, DbError, Error,
+    App, Error,
 };
 
 use bdk::psbt::PsbtUtils;
@@ -39,7 +40,7 @@ pub enum SigningRound1Error {
     #[error("invalid signing package: {0}")]
     InvalidSigningPackage(&'static str),
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    Db(#[from] database::Error),
     #[error("failed to add signing commits to psbt")]
     FailedToAddSigningCommitsToPsbt(#[from] crate::util::PsbtToSigningPackageConversionError),
     #[error("failed to get smart estimate fee rate")]
@@ -59,7 +60,7 @@ pub enum SigningRound2Error {
     #[error("missing round 1 signing nonces")]
     MissingRound1SigningNonce,
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    Db(#[from] database::Error),
     #[error("signer not found in signing package at index: {0}")]
     SignerNotFound(usize),
     #[error("Failed to calculate sighash: {0}")]

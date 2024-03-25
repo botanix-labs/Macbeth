@@ -1,13 +1,14 @@
+use std::{
+    fs,
+    path::Path,
+    str::FromStr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
 use hex::{self, encode as hex_encode};
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::{Path},
-    str::FromStr,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
 use thiserror::Error;
 
 /// Errors returned by the [`JwtSecret`]

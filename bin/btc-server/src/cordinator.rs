@@ -1,23 +1,12 @@
-use crate::{
-    database::Utxo,
-    util::{retrieve_all_partial_signatures, retrieve_all_signing_commitments},
-};
-
-use crate::{util::VerifyingKeyExtError, DbError, SECP};
 
 use std::collections::HashMap;
 
-use crate::{
-    database,
-    util::{self, OutPointExt, VerifyingKeyExt},
-    App, Error,
-};
+
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
-use crate::merkle;
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
@@ -25,6 +14,13 @@ use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
 
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 use secp256k1::PublicKey;
+
+use crate::database::{self, Utxo};
+use crate::util::{
+    self, OutPointExt, VerifyingKeyExt, VerifyingKeyExtError, retrieve_all_partial_signatures,
+    retrieve_all_signing_commitments,
+};
+use crate::{merkle, SECP, App, Error};
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -47,7 +43,7 @@ pub enum CoordinatorError {
     #[error("internal FROST error: {0}")]
     FrostError(#[from] frost::Error),
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    Db(#[from] database::Error),
     #[error("PSBT finalization failed : {0:?}")]
     PbstFinalizationFailed(Vec<PsbtError>),
     #[error("Invalid resulting transaction")]
@@ -83,7 +79,7 @@ impl App {
             let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
             self.db
                 .store_utxo_merkle_root(&merkle_root)
-                .map_err(|e| CoordinatorError::DbError(DbError::from(e)))?;
+                .map_err(|e| CoordinatorError::Db(database::Error::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
