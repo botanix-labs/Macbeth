@@ -186,7 +186,8 @@ impl App {
         .expect("bitcoind client");
 
         let fall_back_fee_rate =
-            bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte).expect("valid fee rate");
+            bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
+                .expect("valid fee rate");
 
         Ok(Self {
             db,
@@ -862,12 +863,6 @@ struct Config {
     fall_back_fee_rate_sat_per_vbyte: u64,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self { network: bitcoin::Network::Signet, ..Default::default() }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
@@ -978,10 +973,26 @@ mod test {
             frost_round1_dkg: None,
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
-            config: Default::default(),
             jwt_secret: None,
             bitcoind_client: None,
             fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
+            // This config doesnt matter since we are setting app up manually
+            // Normally this would be read from a config file
+            config: Config {
+                db: dbdir,
+                network: bitcoin::Network::Regtest,
+                identifier: 1,
+                address: "localhost".to_string(),
+                max_signers: 3,
+                min_signers: 3,
+                toml: None,
+                jwt_secret: None,
+                bitcoind_url: "http://localhost:18443".to_string(),
+                bitcoind_user: "foo".to_string(),
+                bitcoind_pass: "bar".to_string(),
+                fee_rate_diff_percentage: 30,
+                fall_back_fee_rate_sat_per_vbyte: 30,
+            },
         };
 
         println!("App setup complete");
@@ -1042,7 +1053,8 @@ mod test {
         let tx = create_tx(num_inputs);
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
-            psbt.inputs[i].witness_utxo = Some(TxOut { value: 100_000, script_pubkey: ScriptBuf::new() });
+            psbt.inputs[i].witness_utxo =
+                Some(TxOut { value: 100_000, script_pubkey: ScriptBuf::new() });
         }
         psbt
     }
