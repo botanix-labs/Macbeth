@@ -24,7 +24,7 @@ pub enum DKGError {
 }
 
 impl App {
-    pub(crate) fn get_round2_dkg(
+    pub(crate) async fn get_round2_dkg(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, DKGError> {
         // Already have done dkg
@@ -41,7 +41,7 @@ impl App {
 
             let (round2_secret_package, round2_packages) =
                 frost::keys::dkg::part2(round1_dkg.0.clone(), &round1_packages)?;
-            self.frost_round2_dkg.lock().unwrap().replace(round2_secret_package.clone());
+            self.frost_round2_dkg.lock().await.replace(round2_secret_package.clone());
 
             Ok(round2_packages)
         } else {
@@ -62,7 +62,7 @@ impl App {
         }
     }
 
-    pub(crate) fn add_round2_dkg(
+    pub(crate) async fn add_round2_dkg(
         &self,
         frost_id: frost::Identifier,
         packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
@@ -87,7 +87,7 @@ impl App {
                 let round2_packages = self.db.get_round2_dkg_packages()?;
                 if round2_packages.len() as u16 == self.max_signers - 1 {
                     let round1_packages = self.db.get_round1_dkg_packages()?;
-                    if let Some(round2_secret) = self.frost_round2_dkg.lock().unwrap().clone() {
+                    if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
                         let pk_res = frost::keys::dkg::part3(
                             &round2_secret,
                             &round1_packages,
