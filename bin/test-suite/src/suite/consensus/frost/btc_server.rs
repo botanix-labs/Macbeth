@@ -14,6 +14,7 @@ pub struct SpawnedBtcServer {
 
 fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path: PathBuf) -> Child {
     let db_path_arg = db_path.display().to_string();
+    println!("db_path_arg: {}", db_path_arg);
 
     let mut working_directory = std::env::current_dir().unwrap();
     for _ in 0..2 {
@@ -53,7 +54,9 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
         "--bitcoind-pass",
         "bar",
         "--fee-rate-diff-percentage",
-        "20",
+        "30",
+        "--fall-back-fee-rate-sat-per-vbyte",
+        "5",
     ];
 
     // Create a Command instance and set the working directory

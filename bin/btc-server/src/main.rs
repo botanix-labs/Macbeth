@@ -139,6 +139,8 @@ struct App {
     jwt_secret: Option<JwtSecret>,
     /// bitcoind client
     bitcoind_client: Option<bitcoincore_rpc::Client>,
+    /// Fall back fee rate
+    fall_back_fee_rate: bitcoin::FeeRate,
 }
 
 impl App {
@@ -183,6 +185,9 @@ impl App {
         )
         .expect("bitcoind client");
 
+        let fall_back_fee_rate =
+            bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte).expect("valid fee rate");
+
         Ok(Self {
             db,
             network: config.network,
@@ -196,6 +201,7 @@ impl App {
             config,
             jwt_secret,
             bitcoind_client: Some(bitcoind_client),
+            fall_back_fee_rate,
         })
     }
 
@@ -387,15 +393,15 @@ impl rpc::BtcServer for App {
             })?;
 
         let bitcoind_rpc = self.bitcoind_client.as_ref().expect("bitcoind client");
-        let fee = bitcoind_rpc
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(|_e| {
-                error!("Failed to get fee rate");
-                internal!("Failed to get fee rate")
-            })?
-            .fee_rate;
+        let fee_res = bitcoind_rpc.estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let mut fee_rate = self.fall_back_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+            }
+        }
 
-        let fee_rate = FeeRate::from_sat_per_kwu(fee.expect("fee").to_sat() / 4);
+        debug!(">>>>>>>>> Cord Fee rate: {:?}", fee_rate);
 
         let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
             .outputs
@@ -852,6 +858,8 @@ struct Config {
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     pub fee_rate_diff_percentage: u32,
+    #[arg(long)]
+    fall_back_fee_rate_sat_per_vbyte: u64,
 }
 
 impl Default for Config {
@@ -973,6 +981,7 @@ mod test {
             config: Default::default(),
             jwt_secret: None,
             bitcoind_client: None,
+            fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
         };
 
         println!("App setup complete");
@@ -1033,7 +1042,7 @@ mod test {
         let tx = create_tx(num_inputs);
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
-            psbt.inputs[i].witness_utxo = Some(TxOut { value: 0, script_pubkey: ScriptBuf::new() });
+            psbt.inputs[i].witness_utxo = Some(TxOut { value: 100_000, script_pubkey: ScriptBuf::new() });
         }
         psbt
     }
