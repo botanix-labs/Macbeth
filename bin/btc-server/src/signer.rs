@@ -1,7 +1,8 @@
 use crate::{
     database,
     util::{
-        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt
+        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
+        convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt,
     },
     App, Error,
 };
@@ -98,12 +99,12 @@ impl App {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
-        let psbt_fee_rate = convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+        let psbt_fee_rate =
+            convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
-        let fee_res = bitcoind_client
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let fee_res = bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
@@ -177,8 +178,8 @@ impl App {
 
         // Get signing nonces from round 1
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
-        let signing_nonces = nonces_lock.clone()
-            .ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
+        let signing_nonces =
+            nonces_lock.clone().ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
 
         if signing_nonces.len() != num_inputs {
             return Err(SigningRound2Error::InvalidSigningPackage(

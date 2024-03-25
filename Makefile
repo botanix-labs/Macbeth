@@ -394,7 +394,7 @@ pr:
 
 start-test-suite:
 	cd ./bin/test-suite && \
-	cargo run --bin test-suite -- --config "./config.toml" --run-suite all --timeout 2000000 --dry-run false
+	cargo run --bin test-suite -- --config "./config.toml" --run-suite all --timeout 100000 --dry-run false
 
 start-btc-server-1:
 	cd ./bin/btc-server && \

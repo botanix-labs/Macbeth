@@ -1,4 +1,5 @@
 use clap::Parser;
+use client::Empty;
 use reth::{
     cli::{
         components::RethNodeComponents,
@@ -7,7 +8,9 @@ use reth::{
     commands::poa::PoaNodeCommand,
     network::Peers,
     tasks::TaskSpawner,
+    utils::get_or_create_jwt_secret_from_path,
 };
+use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_primitives::{ChainSpec, BOTANIX_TESTNET};
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -19,7 +22,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{config::Config, suite::consensus::frost::btc_server::SpawnedBtcServer};
@@ -44,7 +47,19 @@ pub fn unix_timestamp() -> u64 {
 }
 
 #[derive(Clone, Debug)]
-pub struct ChannelPayload {
+pub enum Notifications {
+    CanonState(CannonStateNofificationPayload),
+    DkgFinished(DkgPayload),
+}
+
+#[derive(Clone, Debug)]
+pub struct DkgPayload {
+    pub engine_index: u16,
+    pub ts: tokio::time::Instant,
+}
+
+#[derive(Clone, Debug)]
+pub struct CannonStateNofificationPayload {
     pub engine_index: u16,
     pub ts: tokio::time::Instant,
     pub notification: CanonStateNotification,
@@ -63,20 +78,27 @@ pub struct FederationMemberTestConfig {
     pub bitcoind_password: String,
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
-    pub sender: tokio::sync::mpsc::Sender<ChannelPayload>,
+    pub sender: tokio::sync::mpsc::Sender<Notifications>,
     pub jwt_secret_path: PathBuf,
+    pub frost_min_signers: u16,
+    pub frost_max_signers: u16,
+    pub peer_id: PeerId,
+    pub is_dkg_ready: bool,
 }
 
 impl FederationMemberTestConfig {
     pub fn new(
         index: u16,
         secret_key: SecretKey,
-        sender: tokio::sync::mpsc::Sender<ChannelPayload>,
+        sender: tokio::sync::mpsc::Sender<Notifications>,
         bitcoind_url: String,
         bitcoind_username: String,
         bitcoind_password: String,
         bitcoin_server_url: String,
         jwt_secrets_dir: PathBuf,
+        frost_min_signers: u16,
+        frost_max_signers: u16,
+        peer_id: PeerId,
     ) -> Self {
         Self {
             index,
@@ -92,11 +114,19 @@ impl FederationMemberTestConfig {
             peers_list: vec![],
             sender,
             jwt_secret_path: jwt_secrets_dir.join(format!("{}.hex", index + 1)),
+            frost_min_signers,
+            frost_max_signers,
+            peer_id,
+            is_dkg_ready: false,
         }
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
         self.peers_list = peers;
+    }
+
+    pub fn is_dkg_ready(&self) -> bool {
+        self.is_dkg_ready
     }
 
     pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
@@ -149,6 +179,10 @@ impl FederationMemberTestConfig {
             self.bitcoind_username.as_str(),
             "--bitcoind.password",
             self.bitcoind_password.as_str(),
+            "--frost.min_signers",
+            self.frost_min_signers.to_string().as_str(),
+            "--frost.max_signers",
+            self.frost_max_signers.to_string().as_str(),
             "--port",
             format!("{}", self.discovery_port).as_str(),
             "--p2p-secret-key",
@@ -166,12 +200,11 @@ impl FederationMemberTestConfig {
 impl RethNodeCommandConfig for FederationMemberTestConfig {
     fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
         println!("Engine {} started task", self.index);
-
         // add the peers
         for peer in self.peers_list.iter() {
             let peer_socket =
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), peer.discovery_port);
-            components.network().add_peer(PeerId::random(), peer_socket);
+            components.network().add_peer(self.peer_id, peer_socket);
         }
         println!("Engine {} added peers", self.index);
 
@@ -180,16 +213,48 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
         let rx_sender = self.sender.clone();
         let engine_index = self.index;
 
+        let bitcoin_server_url = self.bitcoin_server_url.clone();
+        let jwt_secret_path = self.jwt_secret_path.clone();
+
         components.task_executor().spawn(Box::pin(async move {
-            // TODO: test the block creation per index
-            while let Some(canon_event) = canon_events.recv().await.ok() {
-                println!("Engine {} canonical tip", engine_index);
+            // create a btc client
+            let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
+            let mut btc_server_client = BtcServerExtendedClient::new(
+                format!("http://{}", bitcoin_server_url),
+                Some(jwt_secret),
+            )
+            .await
+            .unwrap();
+
+            // wait for the dkg to finish
+            loop {
+                match btc_server_client.get_public_key(Empty {}).await {
+                    Ok(_) => {
+                        println!("Dkg Finished !");
+                        break;
+                    }
+                    Err(_) => {
+                        println!("Dkg Pending...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
+            }
+            let _ = rx_sender
+                .send(Notifications::DkgFinished(DkgPayload {
+                    engine_index,
+                    ts: tokio::time::Instant::now(),
+                }))
+                .await;
+
+            // start waiting for canon event notifications
+            while let Some(canon_state_notification) = canon_events.recv().await.ok() {
                 let _ = rx_sender
-                    .send(ChannelPayload {
+                    .send(Notifications::CanonState(CannonStateNofificationPayload {
                         engine_index,
                         ts: tokio::time::Instant::now(),
-                        notification: canon_event,
-                    })
+                        notification: canon_state_notification,
+                    }))
                     .await;
             }
         }));
@@ -202,16 +267,23 @@ pub fn testnet_custom_chain() -> Arc<ChainSpec> {
     BOTANIX_TESTNET.clone()
 }
 
+pub fn is_dkg_ready(federation_memebers: &HashMap<usize, FederationMemberTestConfig>) -> bool {
+    !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
+}
+
 pub fn create_poa_federation_members(
     config: &Config,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
-) -> (HashMap<usize, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<ChannelPayload>) {
+) -> (HashMap<usize, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<Notifications>) {
     // create two secret keys one for each member
     let sc1 = FED_MEMBER1_SECRET_KEY.parse::<SecretKey>().unwrap();
     let sc2 = FED_MEMBER2_SECRET_KEY.parse::<SecretKey>().unwrap();
 
+    let peer_id_1 = PeerId::from_str("bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826").unwrap();
+    let peer_id_2 = PeerId::from_str("9bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d50a117189201f0ad9096d36cd690ae34e79a42d9e71c972e55048dabdc8f9651").unwrap();
+
     // create the member configs
-    let (tx, rx) = tokio::sync::mpsc::channel::<ChannelPayload>(10);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
 
     // create federation members
     let index: u16 = 0;
@@ -225,8 +297,11 @@ pub fn create_poa_federation_members(
         config.bitcoind.url.clone(),
         config.bitcoind.username.clone(),
         config.bitcoind.password.clone(),
-        format!("http://localhost:{}", port),
+        format!("localhost:{}", port),
         config.jwt_secrets_dir.clone(),
+        config.frost_min_signers.clone(),
+        config.frost_max_signers.clone(),
+        peer_id_1,
     );
 
     let index: u16 = 1;
@@ -240,8 +315,11 @@ pub fn create_poa_federation_members(
         config.bitcoind.url.clone(),
         config.bitcoind.username.clone(),
         config.bitcoind.password.clone(),
-        format!("http://localhost:{}", port),
+        format!("localhost:{}", port),
         config.jwt_secrets_dir.clone(),
+        config.frost_min_signers.clone(),
+        config.frost_max_signers.clone(),
+        peer_id_2,
     );
 
     // insert peers
