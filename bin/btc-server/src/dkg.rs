@@ -1,4 +1,4 @@
-use crate::{App, DbError, Error};
+use crate::{database, App, Error};
 use std::collections::BTreeMap;
 
 use frost_secp256k1_tr as frost;
@@ -20,7 +20,7 @@ pub enum DKGError {
     #[error("internal FROST error: {0}")]
     FrostError(#[from] frost::Error),
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    Db(#[from] database::Error),
 }
 
 impl App {
