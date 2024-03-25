@@ -46,6 +46,14 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
         "./config.toml",
         "--jwt-secret",
         jwt_secrets_dir.as_str(),
+        "--bitcoind-url",
+        "localhost:18443",
+        "--bitcoind-user",
+        "foo",
+        "--bitcoind-pass",
+        "bar",
+        "--fee-rate-diff-percentage",
+        "20",
     ];
 
     // Create a Command instance and set the working directory
