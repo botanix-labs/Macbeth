@@ -54,7 +54,7 @@ use crate::BlockingTaskPool;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{
-    self, Botanix, GatewayAddressRPCError, MerkleProofRPCError, BtcFeeRateRPCError
+    self, Botanix, BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError,
 };
 
 lazy_static::lazy_static! {

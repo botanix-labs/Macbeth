@@ -1,19 +1,14 @@
-use std::collections::BTreeMap;
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use base64::decode as base64_decode;
-use bitcoin::consensus::encode as btcencode;
-use bitcoin::psbt::Psbt;
-use bitcoin::{FeeRate, OutPoint, TxOut};
+use bitcoin::{consensus::encode as btcencode, psbt::Psbt, FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use reth_primitives::hex::decode as hex_decode;
-use tonic;
-use tonic::metadata::BinaryMetadataKey;
+use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::database::Utxo;
-use crate::{rpc, util, App, SECP};
+use crate::{database::Utxo, rpc, util, App, SECP};
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
 

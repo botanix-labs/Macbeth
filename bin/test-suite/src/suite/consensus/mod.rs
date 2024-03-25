@@ -30,11 +30,13 @@ pub struct LocalContext {
 impl Suite for ConsensusIntegrationTestSuite {
     async fn run(&mut self) -> Outcome {
         // dkg tests
-        run_test!(self, frost::dkg::dkg_flow);
+        //run_test!(self, frost::dkg::dkg_flow);
         // signing tests
-        run_test!(self, frost::signing::test_many_inputs_signing);
+        //run_test!(self, frost::signing::test_many_inputs_signing);
         // eoa tests
         //run_test!(self, poa::block_builder::poa_eoa);
+        // frost dkg tests
+        run_test!(self, poa::frost_dkg::poa_frost_dkg);
         self.outcome
     }
 

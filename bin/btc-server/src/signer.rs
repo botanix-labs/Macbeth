@@ -1,9 +1,8 @@
 use crate::{
     database::{self, Error as DbError},
     util::{
-        self, add_partial_signature_to_psbt, add_remove_utxo_from_psbt,
-        add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages,
-        VerifyingKeyExt,
+        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
+        convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt,
     },
     App, Error, SECP,
 };

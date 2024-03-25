@@ -1,6 +1,8 @@
-jwt-secrets-dir = "jwt"
+jwt-secrets-dir = "./jwt"
+frost-min-signers = 2
+frost-max-signers = 2
 
 [bitcoind]
-url = "http://localhost:38332"
-username = "xxxx"
-password = "xxxx"
+url = "http://localhost:18443"
+username = "evgeni"
+password = "jhtGscpII38P1pLRFDDYqkEmiO8s0mEkbJk_F3BtYIo"
