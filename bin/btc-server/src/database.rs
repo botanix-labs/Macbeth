@@ -1,33 +1,31 @@
-use std::{
-    array::TryFromSliceError,
-    collections::BTreeMap,
-    io::{self},
-    path::Path,
-};
 
-use crate::util::OutPointExt;
+use std::array::TryFromSliceError;
+use std::collections::BTreeMap;
+use std::io;
+use std::path::Path;
+
 use bitcoin::{
     psbt::{self, Psbt},
     OutPoint, TxOut,
 };
 use ciborium;
 use frost_secp256k1_tr as frost;
-
 use serde::{Deserialize, Serialize};
 use sled;
 use thiserror::Error;
 
+use crate::util::OutPointExt;
+
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
-const ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
-const ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
-const PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
-const KEY_PACKAGE: &[u8; 5] = b"keypk";
-const PSBT: &[u8; 4] = b"psbt";
-/// sled tree id for the Merkle trees.
-const UTXO_MERKLE_TREE: &[u8; 6] = b"merkle";
-/// sled tree id for the UTXO merkle tree root
-const UTXO_MERKLE_ROOT_KEY: &[u8; 4] = b"root";
+const TREE_ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
+const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
+const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
+const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
+const TREE_PSBT: &[u8; 4] = b"psbt";
+
+/// sled key for the UTXO merkle tree root
+const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -71,8 +69,6 @@ pub struct Db {
     /// Only relevant for the coordinator
     psbt: sled::Tree,
 
-    /// A tree of utxo merkle trees
-    utxo_merkle_tree: sled::Tree,
 }
 
 impl Db {
@@ -80,10 +76,9 @@ impl Db {
         let db = sled::open(path)?;
         Ok(Db {
             utxos: db.open_tree(&TREE_UTXOS)?,
-            round1_dkg_packages: db.open_tree(ROUND1_DKG_PERSONAL_PACKAGE)?,
-            round2_dkg_packages: db.open_tree(ROUND2_DKG_PERSONAL_PACKAGE)?,
-            psbt: db.open_tree(PSBT)?,
-            utxo_merkle_tree: db.open_tree(UTXO_MERKLE_TREE)?,
+            round1_dkg_packages: db.open_tree(TREE_ROUND1_DKG_PERSONAL_PACKAGE)?,
+            round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
+            psbt: db.open_tree(TREE_PSBT)?,
             db,
         })
     }
@@ -94,7 +89,6 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
-        self.utxo_merkle_tree.flush()?;
         Ok(())
     }
 
@@ -133,7 +127,7 @@ impl Db {
     /// Returns `Ok(None)` if the public key package is not found.
     /// Returns `Err` in case of deserialization or other errors.
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
-        if let Some(b) = self.db.get(PUBKEY_PACKAGE)? {
+        if let Some(b) = self.db.get(TREE_PUBKEY_PACKAGE)? {
             let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
             Ok(Some(ret))
         } else {
@@ -149,7 +143,7 @@ impl Db {
     /// Returns `Ok(None)` if the key package is not found.
     /// Returns `Err` in case of deserialization or other errors.
     pub fn get_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
-        if let Some(b) = self.db.get(KEY_PACKAGE)? {
+        if let Some(b) = self.db.get(TREE_KEY_PACKAGE)? {
             let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
             Ok(Some(ret))
         } else {
@@ -171,7 +165,7 @@ impl Db {
         let mut bytes = Vec::new();
         ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
 
-        self.db.insert(KEY_PACKAGE, &bytes[..])?;
+        self.db.insert(TREE_KEY_PACKAGE, &bytes[..])?;
         Ok(())
     }
 
@@ -192,7 +186,7 @@ impl Db {
         let mut bytes = Vec::new();
         ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
 
-        self.db.insert(PUBKEY_PACKAGE, &bytes[..])?;
+        self.db.insert(TREE_PUBKEY_PACKAGE, &bytes[..])?;
         Ok(())
     }
 
@@ -382,7 +376,7 @@ impl Db {
         let mut utxos = vec![];
         for res in self.utxos.iter() {
             let (_k, v) = res?;
-            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("decoding");
+            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
             utxos.push(utxo);
         }
         Ok(utxos)
@@ -396,15 +390,15 @@ impl Db {
 
     /// Stores the consensus Merkle root of all spendable UTXOs.
     pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
-        self.utxo_merkle_tree.insert(UTXO_MERKLE_ROOT_KEY, merkle_root)?;
+        self.db.insert(KEY_UTXO_MERKLE_ROOT, merkle_root)?;
         Ok(())
     }
 
     /// Retrieves the consensus Merkle root of all spendable UTXOs.
     pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
-        self.utxo_merkle_tree.get(UTXO_MERKLE_ROOT_KEY).map(|opt| {
-            opt.map(|ivec| ivec.as_ref().try_into().expect("Merkle root should be 32 bytes"))
-        })
+        Ok(self.db.get(KEY_UTXO_MERKLE_ROOT)?.map(|b| {
+            b.as_ref().try_into().expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 }
 
