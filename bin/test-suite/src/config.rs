@@ -34,6 +34,8 @@ pub struct BitcoindConfig {
 pub struct Config {
     pub bitcoind: BitcoindConfig,
     pub jwt_secrets_dir: PathBuf,
+    pub frost_min_signers: u16,
+    pub frost_max_signers: u16,
 }
 
 impl Config {

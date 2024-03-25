@@ -42,7 +42,7 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
         "--min-signers",
         "2",
         "--max-signers",
-        "3",
+        "2",
         "--toml",
         "./config.toml",
         "--jwt-secret",
@@ -79,7 +79,7 @@ pub fn spawn_n_btc_servers(n: u16, jwt_secrets_path: PathBuf) -> Vec<SpawnedBtcS
     for i in 0..n {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-        let port = 8000 + i;
+        let port = 8080 + i;
         let jwt_secret_file = jwt_secrets_path.join(format!("{}.hex", i + 1));
         let child_process =
             spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone(), jwt_secret_file);

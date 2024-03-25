@@ -1,4 +1,3 @@
-
 use rs_merkle::{algorithms::Sha256 as MerkleSha256, MerkleTree};
 use serde_cbor;
 use sha2::{Digest, Sha256};

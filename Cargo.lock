@@ -9864,6 +9864,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_distr",
  "reth",
+ "reth-authority-consensus",
+ "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-interfaces",
  "reth-node-core",

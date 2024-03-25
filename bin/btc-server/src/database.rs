@@ -1,8 +1,4 @@
-
-use std::array::TryFromSliceError;
-use std::collections::BTreeMap;
-use std::io;
-use std::path::Path;
+use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use bitcoin::{
     psbt::{self, Psbt},
@@ -68,7 +64,6 @@ pub struct Db {
     /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
-
 }
 
 impl Db {
@@ -396,9 +391,10 @@ impl Db {
 
     /// Retrieves the consensus Merkle root of all spendable UTXOs.
     pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
-        Ok(self.db.get(KEY_UTXO_MERKLE_ROOT)?.map(|b| {
-            b.as_ref().try_into().expect("corrupt db: Merkle root should be 32 bytes")
-        }))
+        Ok(self
+            .db
+            .get(KEY_UTXO_MERKLE_ROOT)?
+            .map(|b| b.as_ref().try_into().expect("corrupt db: Merkle root should be 32 bytes")))
     }
 }
 

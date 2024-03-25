@@ -398,7 +398,7 @@ mod util_tests {
     use super::*;
 
     #[test]
-    fn convert_bdk_fee_rate(){
+    fn convert_bdk_fee_rate() {
         let bdk_fee = bdk::FeeRate::from_sat_per_vb(10.0);
         let rust_bitcoin_fee = bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
 

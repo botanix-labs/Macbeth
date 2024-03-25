@@ -4,7 +4,7 @@ use std::{collections::HashSet, time::Duration};
 use crate::suite::consensus::{
     poa::{
         payload_sender::TestPayloadSender,
-        poa_node::{create_poa_federation_members, is_inturn},
+        poa_node::{create_poa_federation_members, is_inturn, Notifications},
     },
     ConsensusIntegrationTestSuite,
 };
@@ -52,43 +52,52 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
 
     // wait for canonical chain updates reported by the node, then send new tx
     let test_rounds = 0;
-    while let Some(x) = rx.recv().await {
-        println!("======> Received payload from engine index {:?}", x.engine_index);
-        assert_eq!(x.engine_index, SELECTED_FED_MEMBER_INDEX as u16);
-        if test_rounds == INTEGRATION_TEST_ROUNDS {
-            break;
-        }
+    while let Some(notification) = rx.recv().await {
+        match notification {
+            Notifications::CanonState(canon_state_notification) => {
+                println!(
+                    "======> Received payload from engine index {:?}",
+                    canon_state_notification.engine_index
+                );
+                assert_eq!(canon_state_notification.engine_index, SELECTED_FED_MEMBER_INDEX as u16);
+                if test_rounds == INTEGRATION_TEST_ROUNDS {
+                    break;
+                }
 
-        // after first successful tx, send invalid tx with too low nonce
-        if test_rounds == 1 {
-            println!("======>  Sending eoa transaction with too low nonce...");
-            payload_client.send_invalid(RECEIVER_ADDRESS).await;
-        }
+                // after first successful tx, send invalid tx with too low nonce
+                if test_rounds == 1 {
+                    println!("======>  Sending eoa transaction with too low nonce...");
+                    payload_client.send_invalid(RECEIVER_ADDRESS).await;
+                }
 
-        // block verfication
-        let block_receipts = x.notification.block_receipts();
-        println!("Block receipts? {:?}", block_receipts);
-        assert_eq!(block_receipts.len(), 1);
-        let block_payload = block_receipts.first().cloned().unwrap();
-        assert!(!block_payload.1);
-        assert_eq!(block_payload.0.tx_receipts.len(), 1);
-        assert!(block_payload.0.block.number > 0);
+                // block verfication
+                let block_receipts = canon_state_notification.notification.block_receipts();
+                println!("Block receipts? {:?}", block_receipts);
+                assert_eq!(block_receipts.len(), 1);
+                let block_payload = block_receipts.first().cloned().unwrap();
+                assert!(!block_payload.1);
+                assert_eq!(block_payload.0.tx_receipts.len(), 1);
+                assert!(block_payload.0.block.number > 0);
 
-        // wait until current turn changes
-        let current_turn = is_inturn(total_authorities as u64, targeted_fed_member.index.into());
-        'inner: loop {
-            let is_test_fed_member_inturn =
-                is_inturn(total_authorities as u64, targeted_fed_member.index.into());
-            println!("Is in turn? {}", is_test_fed_member_inturn);
-            if is_test_fed_member_inturn != current_turn {
-                break 'inner;
+                // wait until current turn changes
+                let current_turn =
+                    is_inturn(total_authorities as u64, targeted_fed_member.index.into());
+                'inner: loop {
+                    let is_test_fed_member_inturn =
+                        is_inturn(total_authorities as u64, targeted_fed_member.index.into());
+                    println!("Is in turn? {}", is_test_fed_member_inturn);
+                    if is_test_fed_member_inturn != current_turn {
+                        break 'inner;
+                    }
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+                println!("======>  Sending eoa transaction...");
+                last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
+                tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
             }
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
+            _ => {}
         }
-        println!("======>  Sending eoa transaction...");
-        last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
-        tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
     }
 
     Ok(())

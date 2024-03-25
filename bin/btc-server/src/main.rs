@@ -24,10 +24,7 @@ mod rpc {
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use bitcoin::secp256k1;
 use bitcoincore_rpc::Auth;
@@ -41,13 +38,13 @@ use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, transport::Server};
 
-use crate::config::{GrpcConfig, TomlConfig};
-use crate::dkg::DKGError;
-use crate::jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret};
-use crate::signer::SigningError;
-use crate::util::ParsingError;
-
-const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
+use crate::{
+    config::{GrpcConfig, TomlConfig},
+    dkg::DKGError,
+    jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret},
+    signer::SigningError,
+    util::ParsingError,
+};
 
 lazy_static::lazy_static! {
     pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
@@ -333,8 +330,7 @@ mod test {
     use super::*;
     use std::str::FromStr;
 
-    use bitcoin::psbt::Psbt;
-    use bitcoin::OutPoint;
+    use bitcoin::{psbt::Psbt, OutPoint};
 
     use crate::database::Utxo;
 
@@ -348,9 +344,11 @@ mod test {
     use crate::{rpc::BtcServer, util::retrieve_all_signing_commitments};
 
     use crate::rpc::Empty;
-    use bitcoin::blockdata::{script::Script, transaction::TxOut};
-    use bitcoin::Amount;
-    use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
+    use bitcoin::{
+        blockdata::{script::Script, transaction::TxOut},
+        Amount,
+    };
+    use bitcoincore_rpc::json::EstimateSmartFeeResult;
     use rand::{thread_rng, Rng};
     use tonic::Request;
 
