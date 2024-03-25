@@ -385,13 +385,26 @@ pub fn retrieve_signing_commitments(
     Ok(ret)
 }
 
+pub fn convert_bdk_feerate_to_bitcoin(fee_rate: bdk::FeeRate) -> bitcoin::FeeRate {
+    bitcoin::FeeRate::from_sat_per_kwu((fee_rate.sat_per_kwu()) as u64)
+}
+
 #[cfg(test)]
 mod util_tests {
-    use bitcoin::{FeeRate, ScriptBuf, TxOut};
+    use bitcoin::{ScriptBuf, TxOut};
 
-    use crate::test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup};
+    use crate::test::{create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup};
 
     use super::*;
+
+    #[test]
+    fn convert_bdk_fee_rate(){
+        let bdk_fee = bdk::FeeRate::from_sat_per_vb(10.0);
+        let rust_bitcoin_fee = bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
+
+        let converted_fee = convert_bdk_feerate_to_bitcoin(bdk_fee);
+        assert_eq!(converted_fee, rust_bitcoin_fee);
+    }
 
     #[test]
     fn should_add_signing_commits_to_psbt() {

@@ -1,7 +1,6 @@
 use crate::{
     util::{
-        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt,
-        psbt_to_signing_packages, VerifyingKeyExt,
+        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt
     },
     App, DbError, Error,
 };
@@ -96,31 +95,24 @@ impl App {
         if self.frost_round1_nonces.lock().unwrap().is_some() {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
-        let tx = psbt.clone().extract_tx();
         // check fee is within acceptable range
-        let psbt_fee_rate = FeeRate::from_sat_per_kwu(
-            (*psbt)
-                .fee_rate()
-                .ok_or(SigningRound1Error::InvalidSigningPackage("fee rate is missing"))?
-                .fee_wu(tx.weight())
-                * 1000,
-        );
+        let psbt_fee_rate = convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+        debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
-        let fee_result = bitcoind_client
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(|e| SigningRound1Error::FailedToGetEstimateSmartFeeRate)?;
+        let fee_res = bitcoind_client
+            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
-        if fee_result.fee_rate.is_none() {
-            return Err(SigningRound1Error::FailedToGetEstimateSmartFeeRate);
+        let mut fee_rate = self.fall_back_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+            }
         }
-
-        let fee_rate = FeeRate::from_sat_per_kwu(fee_result.fee_rate.unwrap().to_sat() / 4);
-        let diff = fee_rate.to_sat_per_vb_ceil().abs_diff(psbt_fee_rate.to_sat_per_vb_ceil());
-
+        let diff: f64 = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
         // convert config field to percentage
-        let acceptable_fee_rate_diff: u64 = (self.config.fee_rate_diff_percentage / 100).into();
-        if diff > acceptable_fee_rate_diff * fee_rate.to_sat_per_vb_ceil() {
+        let acceptable_fee_rate_diff: f64 = (self.config.fee_rate_diff_percentage as f64) / 100.0;
+        if diff > acceptable_fee_rate_diff * (fee_rate.to_sat_per_kwu() as f64) {
             return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
         }
 
