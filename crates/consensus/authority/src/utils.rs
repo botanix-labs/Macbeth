@@ -322,20 +322,6 @@ pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
         bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
-/// Returns true if the given block number is the end of an epoch
-/// by checking if the next block is the start of a new epoch
-///
-/// # Arguments
-///
-/// * `current_block_number` - The current block number
-///
-/// # Returns
-///
-/// Returns `true` if the given block number is the end of an epoch, otherwise returns `false`.
-pub(crate) fn is_epoch_end(current_block_number: u64) -> bool {
-    (current_block_number + 1) % EPOCH_LENGTH == 0
-}
-
 /// Finds the starting block number for the current epoch based on the current block number
 ///
 /// # Arguments
@@ -532,21 +518,6 @@ mod test {
 
         // assert true
         assert!(bloom_contains_pegin(bloom))
-    }
-
-    #[test]
-    fn test_is_epoch_end() {
-        let start_block_1 = 0;
-        let end_block_1 = EPOCH_LENGTH - 1;
-        let start_block_2 = end_block_1 + 1;
-        let end_block_2 = start_block_2 + EPOCH_LENGTH - 1;
-        let start_block_3 = end_block_2 + 1;
-
-        assert!(!is_epoch_end(start_block_1));
-        assert!(is_epoch_end(end_block_1));
-        assert!(!is_epoch_end(start_block_2));
-        assert!(is_epoch_end(end_block_2));
-        assert!(!is_epoch_end(start_block_3));
     }
 
     #[test]

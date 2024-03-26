@@ -61,7 +61,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Ethereum Payload Builder
     pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     /// Frost Task Receiver
-    pub(crate) frost_task_rx: UnboundedReceiverStream<FrostNotificationMessage>,
+    pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -114,7 +114,7 @@ where
             task_executor,
             evm_config,
             payload_builder,
-            frost_task_rx: UnboundedReceiverStream::new(frost_task_rx),
+            frost_task_rx,
         }
     }
 

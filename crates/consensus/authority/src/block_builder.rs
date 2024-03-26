@@ -1,9 +1,10 @@
+use std::time::Duration;
+
 use crate::{
-    engine_util::{self, BestTransactionsError},
-    task::BlockProductionTask,
-    utils::{is_epoch_end, is_testnet, send_pegouts},
+    engine_util::{self, BestTransactionsError}, frost_task::{FrostFinalizedSignatureMessage, FrostNotificationMessage}, task::BlockProductionTask, utils::{is_testnet, send_pegouts, get_witness_data_from_psbt}
 };
 
+use bitcoin::{Witness, psbt::Psbt};
 use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
@@ -19,6 +20,7 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
+use tokio_stream::StreamExt;
 use tracing::{error, info, warn};
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
@@ -143,12 +145,8 @@ where
 
         let authority_signers = storage.authorities.clone();
 
-        // TODO(scott) need to have psbt at this point
-        // and extract and pass witness data to `build_and_execute`
-        // utils::get_witness_data_from_psbt(psbt)
-
         // Build and execute current block template
-        let (new_header, bundle_state) = match storage.build_and_execute(
+        let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
@@ -156,7 +154,6 @@ where
             &None,
             &self.sk,
             &self.secp,
-            &authority_signers,
             self.evm_config.clone(),
         ) {
             Ok(ret) => ret,
@@ -167,7 +164,7 @@ where
             }
         };
 
-        // Process Botanix specific logs
+        // Process Botanix specific logs and get current block pegouts
         let is_testnet = is_testnet(self.chain_spec.chain().id());
         let mut current_block_pegouts: Vec<PegoutData> = Vec::new();
         match crate::utils::process_receipts(
@@ -188,6 +185,74 @@ where
                 return;
             }
         }
+
+        // If end of epoch, process pegouts
+        let mut witness_data: Option<Vec<Witness>> = None;
+        if block.header.is_poa_epoch() {
+            // get pegouts up to best block
+            let mut pegouts: Vec<PegoutData> = Vec::new();
+            match self.epoch_manager.epoch_pegouts(best_block).await {
+                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
+                    drop(storage);
+                    return;
+                }
+            };
+
+            // add current block pegouts
+            pegouts.extend(current_block_pegouts);
+
+            // send pegouts
+            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+            if let Err(e) = send_pegouts(
+                &self.bitcoind_client,
+                &mut self.btc_server,
+                &self.frost_handle,
+                pegouts,
+            )
+            .await
+            {
+                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+                return;
+            }
+
+            // wait until the psbt is finalized
+            let mut psbt_message: Option<FrostFinalizedSignatureMessage> = None;
+            match tokio::time::timeout(Duration::from_secs(45), self.frost_task_rx.recv()).await {
+                Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
+                    psbt_message = Some(message);
+                },
+                _ => {
+                    error!(target: "consensus::authority", "Failed to get finalized psbt from frost task");
+                    return;
+                },
+            }
+            // TODO(scott): check psbt matches expected session id
+            let psbt_result = Psbt::deserialize(&psbt_message.expect("psbt exists").psbt).expect("valid psbt");
+            witness_data = Some(get_witness_data_from_psbt(psbt_result));
+
+        }
+
+        let new_header = match storage.build_and_validate_header(
+            &bundle_state,
+            block,
+            gas_used,
+            Some(botanix_consensus_pkg),
+            // TODO(armins) read vote in as param
+            &None,
+            &self.sk,
+            &self.secp,
+            &authority_signers,
+            &witness_data,
+        ) {
+            Ok(ret) => ret,
+            Err(err) => {
+                error!(target: "consensus::authority", ?err, "failed to build and validate header");
+                drop(storage);
+                return;
+            }
+        };
 
         // Seal the block
         let block = Block {
@@ -234,35 +299,5 @@ where
         let new_block = NewBlock { block, td: Uint::ZERO };
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
-
-        // If end of epoch, process pegouts
-        if is_epoch_end(sealed_block.header.number) {
-            // get pegouts up to best block
-            let mut pegouts: Vec<PegoutData> = Vec::new();
-            match self.epoch_manager.epoch_pegouts(best_block).await {
-                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
-                    drop(storage);
-                    return;
-                }
-            };
-
-            // add current block pegouts
-            pegouts.extend(current_block_pegouts);
-
-            // send pegouts
-            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            if let Err(e) = send_pegouts(
-                &self.bitcoind_client,
-                &mut self.btc_server,
-                &self.frost_handle,
-                pegouts,
-            )
-            .await
-            {
-                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
-            }
-        }
     }
 }
