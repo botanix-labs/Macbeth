@@ -25,7 +25,7 @@ pub struct BotanixConfig {
 impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
-            bitcoin_network: bitcoin::Network::Signet,
+            bitcoin_network: bitcoin::Network::Regtest,
             btc_server: "http://localhost:8080".to_string(),
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
