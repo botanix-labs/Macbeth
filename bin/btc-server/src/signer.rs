@@ -238,12 +238,6 @@ impl App {
         // Add partial sig to psbt
         add_partial_signature_to_psbt(&mut psbt, &partial_sigs, &self.identifier);
 
-        // update the utxo set
-        let pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
-        let (change_outputs, selected_inputs) = add_remove_utxo_from_psbt(psbt, &pk);
-        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
-        self.db.flush()?;
-
         // Clear the signing nonces
         // This finalizes the signing session
         nonces_lock.take();
