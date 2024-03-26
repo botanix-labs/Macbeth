@@ -7669,6 +7669,7 @@ dependencies = [
  "alloy-chains",
  "alloy-rlp",
  "assert_matches",
+ "bitcoin",
  "clap",
  "const-str",
  "dirs-next",
