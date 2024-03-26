@@ -50,6 +50,8 @@ pub enum CoordinatorError {
     ),
     #[error("Could not find psbt")]
     CouldNotFindPsbt,
+    #[error("Failed to broadcast tx: {0}")]
+    FailedToBroadcastTx(bitcoincore_rpc::Error),
 }
 
 impl App {
