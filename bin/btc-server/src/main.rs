@@ -29,8 +29,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bitcoin::{secp256k1};
-use bitcoincore_rpc::{Auth};
+use bitcoin::secp256k1;
+use bitcoincore_rpc::Auth;
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
@@ -42,10 +42,10 @@ use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, transport::Server};
 
 use crate::config::{GrpcConfig, TomlConfig};
-use crate::util::ParsingError;
 use crate::dkg::DKGError;
-use crate::jwt::{JwtError, JwtSecret, get_or_create_jwt_secret_from_path};
+use crate::jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret};
 use crate::signer::SigningError;
+use crate::util::ParsingError;
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
 
@@ -333,8 +333,8 @@ mod test {
     use super::*;
     use std::str::FromStr;
 
-    use bitcoin::OutPoint;
     use bitcoin::psbt::Psbt;
+    use bitcoin::OutPoint;
 
     use crate::database::Utxo;
 
@@ -350,7 +350,7 @@ mod test {
     use crate::rpc::Empty;
     use bitcoin::blockdata::{script::Script, transaction::TxOut};
     use bitcoin::Amount;
-    use bitcoincore_rpc::json::EstimateSmartFeeResult;
+    use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use rand::{thread_rng, Rng};
     use tonic::Request;
 
@@ -376,7 +376,7 @@ mod test {
             _estimate_mode: Option<EstimateMode>,
         ) -> Result<EstimateSmartFeeResult, bitcoincore_rpc::Error> {
             Ok(EstimateSmartFeeResult {
-                fee_rate: Some(Amount::from_sat(1)),
+                fee_rate: Some(Amount::from_sat(5)),
                 errors: None,
                 blocks: 1,
             })
@@ -429,11 +429,10 @@ mod test {
                 bitcoind_url: "http://localhost:18443".to_string(),
                 bitcoind_user: "foo".to_string(),
                 bitcoind_pass: "bar".to_string(),
-                fee_rate_diff_percentage: 30,
+                fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
             },
         };
-
         println!("App setup complete");
 
         app
@@ -824,12 +823,14 @@ mod test {
 
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
-            .await.expect("valid nonce commits request");
+            .await
+            .expect("valid nonce commits request");
         let sc1 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
         assert_eq!(sc1.len(), 1);
 
         // Should not be able to get a new set of nonces
-        let res = app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
+        let res =
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "already in signing session");
 
@@ -842,7 +843,8 @@ mod test {
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
-            .await.expect("valid nonce commits request");
+            .await
+            .expect("valid nonce commits request");
 
         let sc2 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
         assert_eq!(sc2.len(), 1);
