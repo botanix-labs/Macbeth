@@ -5,25 +5,18 @@ use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
-
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
-use miniscript::psbt::PsbtExt;
-use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
-
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 use secp256k1::PublicKey;
 
-use crate::{
-    database::{self, Utxo},
-    merkle,
-    util::{
-        self, retrieve_all_partial_signatures, retrieve_all_signing_commitments, OutPointExt,
-        VerifyingKeyExt, VerifyingKeyExtError,
-    },
-    App, Error, SECP,
-};
+use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
+use reth_btc_wallet::transaction::CalculateSighashError;
+
+use crate::database::{self, Utxo};
+use crate::util::{self, OutPointExt, VerifyingKeyExt, VerifyingKeyExtError};
+use crate::{merkle, SECP, App, Error};
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -52,13 +45,11 @@ pub enum CoordinatorError {
     #[error("Invalid resulting transaction")]
     InvaildResultingTx,
     #[error("Failed parse out to sign package: {0}")]
-    PsbtToSigningPackageConversionError(#[from] crate::util::PsbtToSigningPackageConversionError),
+    PsbtToSigningPackageConversionError(
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+    ),
     #[error("Could not find psbt")]
     CouldNotFindPsbt,
-    #[error("Could not find partial signatures: {0}")]
-    CouldNotFindPartialSignatures(#[from] crate::util::RetrieveUnknownKeyError),
-    #[error("Failed to broadcast tx: {0}")]
-    FailedToBroadcastTx(bitcoincore_rpc::Error),
 }
 
 impl App {
@@ -261,8 +252,8 @@ impl App {
         // input Lastly save this to sign package to the db
 
         if let Some(psbt) = self.db.get_psbt(&signing_session_id)? {
-            let signing_commitments = retrieve_all_signing_commitments(&psbt)?;
-            for sc in signing_commitments.iter() {
+            for input in &psbt.inputs {
+                let sc = input.all_signing_commitments();
                 if sc.len() < self.min_signers as usize {
                     return Err(CoordinatorError::NotEnoughSigners);
                 }
@@ -284,27 +275,19 @@ impl App {
         let _tx_lock = self.tx_lock.lock().await;
         let mut psbt =
             self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
-        let partial_sigs = retrieve_all_partial_signatures(&psbt)?;
 
-        let tx = psbt.clone().extract_tx();
         let pk_package =
             self.db.get_public_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // Check that the inputs match the number of partial sigs
-        if tx.input.len() != partial_sigs.len() {
-            // TODO(armins) better error variant
-            return Err(CoordinatorError::InvalidSigningPackage("Number of inputs does not match"));
-        }
         // Get signing packages for this signing session
-        let signing_packages = util::psbt_to_signing_packages(&psbt).map_err(|e| {
+        let signing_packages = psbt.signing_packages().map_err(|e| {
             CoordinatorError::PsbtToSigningPackageConversionError(
-                crate::util::PsbtToSigningPackageConversionError::from(e),
+                reth_btc_wallet::psbt::PsbtToSigningPackageConversionError::from(e),
             )
         })?;
 
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
             let signing_package = signing_packages.get(index).expect("valid index").clone();
-            let eth_tweak = psbt_input.unknown.get(&ETH_ADDRESS_FIELD.clone());
-            let partial_sig = partial_sigs.get(index).expect("valid index");
+            let partial_sig = psbt_input.all_partial_signatures();
             let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
 
             // Skipping first byte which is encoding the parity of the y cord of R
@@ -315,7 +298,7 @@ impl App {
                     .unwrap();
 
             // Verify signature -- redundant check finalize psbt already checks this
-            if let Some(e) = eth_tweak {
+            if let Some(e) = psbt_input.eth_address() {
                 pk_package.verifying_key().verify(
                     signing_package.message(),
                     &agg_sig,
@@ -331,7 +314,7 @@ impl App {
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
-        if let Err(errs) = psbt.finalize_mut(&SECP) {
+        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, &SECP) {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);

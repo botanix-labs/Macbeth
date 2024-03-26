@@ -1,9 +1,6 @@
 use crate::{
     database::{self, Error as DbError},
-    util::{
-        self, add_partial_signature_to_psbt, add_signing_commitments_to_psbt,
-        convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt,
-    },
+    util::{self, VerifyingKeyExt},
     App, Error, SECP,
 };
 use bdk::miniscript::psbt::Error as PsbtError;
@@ -11,11 +8,11 @@ use bdk::miniscript::psbt::Error as PsbtError;
 use bdk::psbt::PsbtUtils;
 use bitcoin::{psbt::Psbt, FeeRate, TxOut};
 use bitcoincore_rpc::json::EstimateMode;
-
 use frost_secp256k1_tr as frost;
-use miniscript::psbt::PsbtExt;
 use rand::thread_rng;
+
 use reth_btc_wallet::transaction::CalculateSighashError;
+use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
 #[derive(Debug)]
 pub enum SigningError {
@@ -47,7 +44,9 @@ pub enum SigningRound1Error {
     #[error("internal DB error")]
     Db(#[from] database::Error),
     #[error("failed to add signing commits to psbt")]
-    FailedToAddSigningCommitsToPsbt(#[from] crate::util::PsbtToSigningPackageConversionError),
+    FailedToAddSigningCommitsToPsbt(
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+    ),
     #[error("failed to get smart estimate fee rate")]
     FailedToGetEstimateSmartFeeRate,
     #[error("fee rate difference is too great")]
@@ -71,7 +70,9 @@ pub enum SigningRound2Error {
     #[error("Failed to calculate sighash: {0}")]
     FailedToCalculateSighash(#[from] CalculateSighashError),
     #[error("Failed parse out to sign package: {0}")]
-    PsbtToSigningPackageConversionError(#[from] crate::util::PsbtToSigningPackageConversionError),
+    PsbtToSigningPackageConversionError(
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError
+    ),
 }
 
 impl From<SigningRound1Error> for SigningError {
@@ -103,7 +104,7 @@ pub enum SigningFinalizeError {
 impl App {
     pub(crate) async fn get_round1_signing_package(
         &self,
-        mut psbt: &mut Psbt,
+        psbt: &mut Psbt,
         _signing_session_id: &[u8; 32],
         bitcoind_client: &impl bitcoincore_rpc::RpcApi,
     ) -> Result<(), SigningRound1Error> {
@@ -118,7 +119,7 @@ impl App {
         }
         // check fee is within acceptable range
         let psbt_fee_rate =
-            convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+            util::convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
@@ -163,27 +164,22 @@ impl App {
         // Each nonce pair is commitment to a input of the tx
         // When the signing package is produced the signer should be careful to
         // Verify that the nonce pairs are in the same order as the inputs
-        for _ in 0..num_inputs {
+        for i in 0..num_inputs {
             let nonce_pkg = frost::round1::commit(secret, &mut rng);
+            psbt.inputs[i].set_signing_commitment(self.identifier, &nonce_pkg.1);
             nonces.push(nonce_pkg);
         }
-
-        let signing_commitments =
-            nonces.iter().map(|nonce| nonce.1).collect::<Vec<frost::round1::SigningCommitments>>();
-        // Add the signing commitments to the psbt
-        add_signing_commitments_to_psbt(&mut psbt, &signing_commitments, &self.identifier);
 
         // Save signing nonces in memory
         let signing_nonces =
             nonces.iter().map(|nonce| (nonce.0.clone(), nonce.1.clone())).collect::<Vec<_>>();
-
-        nonces_lock.replace(signing_nonces.clone());
+        nonces_lock.replace(signing_nonces);
         Ok(())
     }
 
     pub(crate) async fn get_round2_signing_package(
         &self,
-        mut psbt: &mut Psbt,
+        psbt: &mut Psbt,
     ) -> Result<(), SigningRound2Error> {
         // Important note here is that we never re-use the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
@@ -192,7 +188,7 @@ impl App {
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
         let tx = psbt.clone().extract_tx();
         let num_inputs = tx.input.len();
-        let mut signing_packages = psbt_to_signing_packages(psbt)?;
+        let mut signing_packages = psbt.signing_packages()?;
 
         // Get signing nonces from round 1
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -204,7 +200,6 @@ impl App {
                 "Number of signing nonces does not match number of inputs",
             ));
         }
-        let tx = psbt.clone().extract_tx();
         for (index, signing_package) in signing_packages.iter().enumerate() {
             // Check if this signer is in the signing set
             // This should also implicitly validate the psbt
@@ -224,18 +219,16 @@ impl App {
         }
 
         // Get a parital sig for each input
-        let mut partial_sigs = vec![];
-        for (index, (signing_package, _txin)) in
-            signing_packages.iter_mut().zip(tx.input.iter()).enumerate()
+        for (index, (signing_package, psbt_in)) in
+            signing_packages.iter_mut().zip(psbt.inputs.iter_mut()).enumerate()
         {
-            partial_sigs.push(frost::round2::sign(
+            let sigs = frost::round2::sign(
                 &signing_package,
                 &signing_nonces.get(index).expect("valid index").0,
                 &key_package,
-            )?);
+            )?;
+            psbt_in.set_partial_signature(self.identifier, &sigs);
         }
-        // Add partial sig to psbt
-        add_partial_signature_to_psbt(&mut psbt, &partial_sigs, &self.identifier);
 
         // Clear the signing nonces
         // This finalizes the signing session
@@ -265,7 +258,7 @@ impl App {
             original_psbt.inputs[index].tap_key_sig = Some(signature);
         }
 
-        if let Err(errs) = original_psbt.finalize_mut(&SECP) {
+        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(&mut original_psbt, &SECP) {
             error!("Signer finalize: Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);

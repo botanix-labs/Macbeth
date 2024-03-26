@@ -329,10 +329,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::BTreeMap;
     use std::str::FromStr;
 
-    use bitcoin::{psbt::Psbt, OutPoint};
+    use bitcoin::psbt::Psbt;
+    use bitcoin::OutPoint;
+    use bitcoin::blockdata::{script::Script, transaction::TxOut};
+    use bitcoin::Amount;
+    use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
+    use rand::{thread_rng, Rng};
+    use tonic::Request;
+    use bitcoin::{
+        absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+    };
+    use frost_secp256k1_tr as frost;
+    use rand::RngCore;
 
+    use reth_btc_wallet::psbt::PsbtInputExt;
+
+    use crate::rpc::{self, BtcServer};
     use crate::database::Utxo;
 
     macro_rules! frost_id {
@@ -340,24 +355,6 @@ mod test {
             frost::Identifier::try_from($index).expect("valid id")
         };
     }
-    use std::collections::BTreeMap;
-
-    use crate::{rpc::BtcServer, util::retrieve_all_signing_commitments};
-
-    use crate::rpc::Empty;
-    use bitcoin::{
-        blockdata::{script::Script, transaction::TxOut},
-        Amount,
-    };
-    use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
-    use rand::{thread_rng, Rng};
-    use tonic::Request;
-
-    use bitcoin::{
-        absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
-    };
-    use frost_secp256k1_tr as frost;
-    use rand::RngCore;
 
     struct MockBitcoind;
     impl bitcoincore_rpc::RpcApi for MockBitcoind {
@@ -824,7 +821,7 @@ mod test {
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
             .expect("valid nonce commits request");
-        let sc1 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
+        let sc1 = psbt.inputs[0].all_signing_commitments();
         assert_eq!(sc1.len(), 1);
 
         // Should not be able to get a new set of nonces
@@ -845,7 +842,7 @@ mod test {
             .await
             .expect("valid nonce commits request");
 
-        let sc2 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
+        let sc2 = psbt.inputs[0].all_signing_commitments();
         assert_eq!(sc2.len(), 1);
 
         assert_eq!(sc2.len(), 1);
@@ -944,7 +941,7 @@ mod test {
     #[tokio::test]
     async fn test_get_all_utxos_empty() {
         let app = setup();
-        let request = Request::new(Empty {});
+        let request = Request::new(rpc::Empty {});
         let response = app.get_all_utxos(request).await;
 
         assert!(response.is_ok());
@@ -972,7 +969,7 @@ mod test {
             app.db.store_utxo(&utxo).expect("Failed to store UTXO");
         }
 
-        let request = Request::new(Empty {});
+        let request = Request::new(rpc::Empty {});
         let response = app.get_all_utxos(request).await;
 
         assert!(response.is_ok());
