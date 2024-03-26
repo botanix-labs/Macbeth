@@ -389,7 +389,7 @@ where
 
     //// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
-    /// This returns the header of the executed block, as well as the poststate from execution.
+    /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
@@ -399,7 +399,6 @@ where
         vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
-        authority_signers: &[secp256k1::PublicKey],
         evm_config: EvmConfig,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
