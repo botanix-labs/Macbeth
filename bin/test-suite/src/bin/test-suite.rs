@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use argh::{self, FromArgs};
+use ethers::contract::Abigen;
 use std::{sync::Arc, time::Duration};
 use test_suite::{
     config::Config, context::Context as ResourcesContext, server::TestServer, suite::RunSuite,
@@ -13,6 +14,14 @@ use tracing_subscriber::fmt::format::FmtSpan;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<()> {
+    // generate contract abi
+    Abigen::new("MintContract", "mint_contract_abi.json")
+        .expect("Error reading mint contract json abi")
+        .generate()
+        .expect("Error generating mint contract rust defintions")
+        .write_to_file("./src/mint_contract_abi.rs")
+        .expect("Error writing mint contract rust file");
+
     // init config
     dotenv::dotenv().ok();
     let args: Args = argh::from_env();
