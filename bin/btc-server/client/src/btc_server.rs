@@ -1,5 +1,13 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizeSignerRequest {
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub witness: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(message, repeated, tag = "2")]
+    pub outputs: ::prost::alloc::vec::Vec<Output>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScriptBuf {
     /// Represents the Vec<u8> in Rust
     #[prost(bytes = "vec", tag = "1")]
@@ -517,6 +525,31 @@ pub mod btc_server_client {
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "GetRound2SigningPackage"),
                 );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn signer_finalize(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FinalizeSignerRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FinalizeSigningResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/SignerFinalize",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "SignerFinalize"));
             self.inner.unary(req, path, codec).await
         }
         /// only meant to be used by the cordinator

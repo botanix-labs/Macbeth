@@ -1,11 +1,10 @@
-
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use base64::decode as base64_decode;
-use bitcoin::{FeeRate, OutPoint, TxOut};
 use bitcoin::consensus::encode as btcencode;
 use bitcoin::psbt::Psbt;
+use bitcoin::{FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use reth_primitives::hex::decode as hex_decode;
@@ -14,7 +13,7 @@ use tonic::metadata::BinaryMetadataKey;
 use util::{parse_eth_address, VerifyingKeyExt};
 
 use crate::database::Utxo;
-use crate::{rpc, util, SECP, App};
+use crate::{rpc, util, App, SECP};
 
 const JWT_HEADER_KEY: &'static str = "jwt-auth";
 
@@ -53,7 +52,6 @@ impl<T> ToStatus<T> for Result<T, crate::Error> {
         self.map_err(|e| internal!("{}", e))
     }
 }
-
 
 impl App {
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
@@ -107,9 +105,7 @@ impl rpc::BtcServer for App {
             Some(eth_addr),
         );
 
-        self.add_pegin(&utxo).map_err(|e| {
-            internal!("Failed to add pegin: {}", e)
-        })?;
+        self.add_pegin(&utxo).map_err(|e| internal!("Failed to add pegin: {}", e))?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -126,13 +122,13 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
-        let psbt = self.finalize_signing(&signing_session_id).await.map_err(|e| {
-            internal!("Failed to finalize signing: {}", e)
-        })?;
+        let psbt = self
+            .finalize_signing(&signing_session_id)
+            .await
+            .map_err(|e| internal!("Failed to finalize signing: {}", e))?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
         // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
@@ -161,7 +157,7 @@ impl rpc::BtcServer for App {
             }
         }
 
-        debug!(">>>>>>>>> Cord Fee rate: {:?}", fee_rate);
+        debug!("Cord Fee rate: {:?}", fee_rate);
 
         let outputs = req
             .outputs
@@ -177,27 +173,28 @@ impl rpc::BtcServer for App {
             .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
 
         // TODO this should live in coordinator.rs
-        let pk_package = self.db.get_key_package()?.ok_or_else(|| {
-            internal!("missing key package, run the dkg process first")
-        })?;
+        let pk_package = self
+            .db
+            .get_key_package()?
+            .ok_or_else(|| internal!("missing key package, run the dkg process first"))?;
 
-        let secp_pk = pk_package.verifying_key().to_secp_pk().map_err(|e| {
-            internal!("Failed to convert verifying key to secp pk: {}", e)
-        })?;
+        let secp_pk = pk_package
+            .verifying_key()
+            .to_secp_pk()
+            .map_err(|e| internal!("Failed to convert verifying key to secp pk: {}", e))?;
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
 
-        let psbt = self.make_tx(outputs, fee_rate, change_script).map_err(|e| {
-            internal!("Failed to make tx: {}", e)
-        })?;
+        let psbt = self
+            .make_tx(outputs, fee_rate, change_script)
+            .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
         // Save psbt to db
         self.db.update_psbt(&signing_session_id, &psbt)?;
         self.db.flush()?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
         let res = tonic::Response::new(rpc::SignPayload {
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
@@ -216,13 +213,12 @@ impl rpc::BtcServer for App {
                 error!("Failed to parse signing session id: {}", e);
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
-        let psbt = self.get_to_sign(&signing_session_id).map_err(|e| {
-            internal!("Failed to get to sign: {}", e)
-        })?;
+        let psbt = self
+            .get_to_sign(&signing_session_id)
+            .map_err(|e| internal!("Failed to get to sign: {}", e))?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
         let res = tonic::Response::new(rpc::SignPayload {
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
@@ -246,9 +242,8 @@ impl rpc::BtcServer for App {
             badarg!("Failed to parse frost peer id: {}", e)
         })?;
 
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
-            internal!("Failed to deserialize psbt: {}", e)
-        })?;
+        let psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
         self.add_round1_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
             error!("Failed to add round1 signing: {}", e);
@@ -274,9 +269,8 @@ impl rpc::BtcServer for App {
             badarg!("Failed to parse frost peer id: {}", e)
         })?;
 
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
-            internal!("Failed to deserialize psbt: {}", e)
-        })?;
+        let psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
         self.add_round2_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
             error!("Failed to add round2 signing: {}", e);
@@ -291,9 +285,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let pk = self.get_public_key().map_err(|e| {
-            internal!("Failed to get public key: {}", e)
-        })?;
+        let pk = self.get_public_key().map_err(|e| internal!("Failed to get public key: {}", e))?;
         let pk = hex::encode(pk.serialize());
 
         return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
@@ -309,9 +301,9 @@ impl rpc::BtcServer for App {
             error!("Failed to parse eth address: {}", e);
             badarg!("Failed to parse eth address: {}", e)
         })?;
-        let pk_packages = self.get_gateway_address(&eth_address).map_err(|e| {
-            internal!("Failed to get public key: {}", e)
-        })?;
+        let pk_packages = self
+            .get_gateway_address(&eth_address)
+            .map_err(|e| internal!("Failed to get public key: {}", e))?;
         let pk = hex::encode(pk_packages.0.serialize());
         let pk_tweaked = hex::encode(pk_packages.1.serialize());
         let address = pk_packages.2.to_string();
@@ -354,9 +346,10 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let round2_packages = self.get_round2_dkg().await.map_err(|e| {
-            internal!("Failed to get round2 dkg package: {}", e)
-        })?;
+        let round2_packages = self
+            .get_round2_dkg()
+            .await
+            .map_err(|e| internal!("Failed to get round2 dkg package: {}", e))?;
         let json = serde_json::to_string(&round2_packages).unwrap();
         let res = rpc::DkgPayload {
             identifier: self.identifier.serialize().to_vec(),
@@ -384,9 +377,8 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to deserialize round1 dkg package: {}", e)
             })?;
 
-        self.add_round1_dkg(frost_id, dkg_round1).map_err(|_e| {
-            internal!("Failed to add round1 dkg")
-        })?;
+        self.add_round1_dkg(frost_id, dkg_round1)
+            .map_err(|_e| internal!("Failed to add round1 dkg"))?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
@@ -397,17 +389,15 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let round1_dkg_package = self.get_round1_dkg().map_err(|e| {
-            internal!("Failed to get round1 dkg package: {}", e)
-        })?;
+        let round1_dkg_package = self
+            .get_round1_dkg()
+            .map_err(|e| internal!("Failed to get round1 dkg package: {}", e))?;
 
         let res = rpc::DkgPayload {
             identifier: self.identifier.serialize().to_vec(),
             payload: round1_dkg_package
                 .serialize()
-                .map_err(|e| {
-                    internal!("Failed to serialize round1 dkg package: {}", e)
-                })?
+                .map_err(|e| internal!("Failed to serialize round1 dkg package: {}", e))?
                 .to_vec(),
         };
 
@@ -425,9 +415,10 @@ impl rpc::BtcServer for App {
             return Err(already_exists!("already have key package"));
         }
 
-        let round1_packages = self.db.get_round1_dkg_packages().map_err(|e| {
-            internal!("Failed to get round1 dkg packages: {}", e)
-        })?;
+        let round1_packages = self
+            .db
+            .get_round1_dkg_packages()
+            .map_err(|e| internal!("Failed to get round1 dkg packages: {}", e))?;
 
         let json = serde_json::to_string(&round1_packages).unwrap();
         let res = rpc::DkgPayload {
@@ -450,18 +441,16 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
-            internal!("Failed to deserialize psbt: {}", e)
-        })?;
+        let mut psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
         let bitcoind = self.bitcoind_client.as_ref().expect("bitcoind client");
-        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind).await.map_err(|e| {
-            internal!("Failed to get round1 signing package: {}", e)
-        })?;
+        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind)
+            .await
+            .map_err(|e| internal!("Failed to get round1 signing package: {}", e))?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
         let res = rpc::Round1SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -483,15 +472,14 @@ impl rpc::BtcServer for App {
                 error!("Failed to parse signing session id: {}", e);
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).map_err(|e| {
-            internal!("Failed to deserialize psbt: {}", e)
-        })?;
-        let _partial_signature = self.get_round2_signing_package(&mut psbt).await.map_err(|e| {
-            internal!("Failed to get round2 signing package: {}", e)
-        })?;
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let mut psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
+        let _partial_signature = self
+            .get_round2_signing_package(&mut psbt)
+            .await
+            .map_err(|e| internal!("Failed to get round2 signing package: {}", e))?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
         let res = rpc::Round2SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
@@ -501,14 +489,57 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(res))
     }
 
+    async fn signer_finalize(
+        &self,
+        req: tonic::Request<rpc::FinalizeSignerRequest>,
+    ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        let req = req.into_inner();
+        let fee_res = self
+            .bitcoind_client
+            .as_ref()
+            .expect("instatiated bitcoin rpc")
+            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let mut fee_rate = self.fall_back_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+            }
+        }
+        let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+            })
+            .collect();
+
+        // Witnesses can be get big. Remove this clone()
+        let witnesses = req.witness;
+        let psbt = self.finalize_signer(outputs_result?, fee_rate, witnesses).map_err(|e| {
+            internal!("Failed to finalize signer: {}", e)
+        })?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
+            internal!("Failed to serialize psbt: {}", e)
+        })?;
+
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse {
+            psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
+        });
+        Ok(res)
+    }
+
     async fn get_all_utxos(
         &self,
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let db_utxos = self.db.get_all_utxos().map_err(|e| {
-            internal!("Failed to get utxos: {}", e)
-        })?;
+        let db_utxos =
+            self.db.get_all_utxos().map_err(|e| internal!("Failed to get utxos: {}", e))?;
         let utxos = db_utxos.into_iter().map(|utxo| utxo.into()).collect::<Vec<rpc::Utxo>>();
         let res = rpc::GetAllUtxosResponse { utxos };
 

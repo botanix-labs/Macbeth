@@ -1,16 +1,20 @@
 use crate::{
-    database,
+    database::{self, Error as DbError},
     util::{
-        add_partial_signature_to_psbt, add_remove_utxo_from_psbt, add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages, VerifyingKeyExt
+        self, add_partial_signature_to_psbt, add_remove_utxo_from_psbt,
+        add_signing_commitments_to_psbt, convert_bdk_feerate_to_bitcoin, psbt_to_signing_packages,
+        VerifyingKeyExt,
     },
-    App, Error,
+    App, Error, SECP,
 };
+use bdk::miniscript::psbt::Error as PsbtError;
 
 use bdk::psbt::PsbtUtils;
-use bitcoin::{psbt::Psbt, FeeRate};
+use bitcoin::{psbt::Psbt, FeeRate, TxOut};
 use bitcoincore_rpc::json::EstimateMode;
 
 use frost_secp256k1_tr as frost;
+use miniscript::psbt::PsbtExt;
 use rand::thread_rng;
 use reth_btc_wallet::transaction::CalculateSighashError;
 
@@ -18,6 +22,7 @@ use reth_btc_wallet::transaction::CalculateSighashError;
 pub enum SigningError {
     Round1(SigningRound1Error),
     Round2(SigningRound2Error),
+    Finalize(SigningFinalizeError),
 }
 
 impl From<SigningError> for Error {
@@ -25,6 +30,7 @@ impl From<SigningError> for Error {
         match e {
             SigningError::Round1(e) => Error::Signing(SigningError::Round1(e)),
             SigningError::Round2(e) => Error::Signing(SigningError::Round2(e)),
+            SigningError::Finalize(e) => Error::Signing(SigningError::Finalize(e)),
         }
     }
 }
@@ -81,6 +87,20 @@ impl From<SigningRound2Error> for SigningError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum SigningFinalizeError {
+    #[error("missing key package")]
+    MissingKeyPackage,
+    #[error("too many witness items")]
+    TooManyWitnessItems,
+    #[error("PSBT finalization failed : {0:?}")]
+    PsbtFinalizationFailed(Vec<PsbtError>),
+    #[error("Taproot Signature validation error: {0}")]
+    TaprootSignatureValidationError(#[from] bitcoin::taproot::Error),
+    #[error("internal DB error")]
+    DbError(#[from] DbError),
+}
+
 impl App {
     pub(crate) async fn get_round1_signing_package(
         &self,
@@ -98,12 +118,12 @@ impl App {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
-        let psbt_fee_rate = convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+        let psbt_fee_rate =
+            convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
-        let fee_res = bitcoind_client
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let fee_res = bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
@@ -177,8 +197,8 @@ impl App {
 
         // Get signing nonces from round 1
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
-        let signing_nonces = nonces_lock.clone()
-            .ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
+        let signing_nonces =
+            nonces_lock.clone().ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
 
         if signing_nonces.len() != num_inputs {
             return Err(SigningRound2Error::InvalidSigningPackage(
@@ -218,15 +238,47 @@ impl App {
         // Add partial sig to psbt
         add_partial_signature_to_psbt(&mut psbt, &partial_sigs, &self.identifier);
 
-        // update the utxo set
-        let pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
-        let (change_outputs, selected_inputs) = add_remove_utxo_from_psbt(psbt, &pk);
-        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
-        self.db.flush()?;
-
         // Clear the signing nonces
         // This finalizes the signing session
         nonces_lock.take();
         Ok(())
+    }
+
+    pub(crate) fn finalize_signer(
+        &self,
+        outputs: Vec<TxOut>,
+        fee_rate: FeeRate,
+        witness: Vec<Vec<u8>>,
+    ) -> Result<Psbt, SigningFinalizeError> {
+        let key_package =
+            self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
+        let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
+        let mut original_psbt = self.make_tx(outputs, fee_rate, change_script).unwrap();
+
+        let hash_ty = bitcoin::sighash::TapSighashType::All;
+        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
+        // Add witness to the psbt
+        for (index, w) in witness.iter().enumerate() {
+            let signature = bitcoin::taproot::Signature::from_slice(w.as_slice())?;
+            original_psbt.inputs[index].sighash_type = Some(sighash_type);
+            original_psbt.inputs[index].tap_key_sig = Some(signature);
+        }
+
+        if let Err(errs) = original_psbt.finalize_mut(&SECP) {
+            error!("Signer finalize: Had {} PSBT finalization errors:", errs.len());
+            for e in &errs {
+                error!("  PSBT finalization error: {}", e);
+            }
+            return Err(SigningFinalizeError::PsbtFinalizationFailed(errs));
+        }
+
+        let (change_outputs, selected_inputs) =
+            util::add_remove_utxo_from_psbt(&original_psbt, &secp_pk);
+        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
+        self.db.flush()?;
+
+        Ok(original_psbt)
     }
 }
