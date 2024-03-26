@@ -74,7 +74,7 @@ const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
 ///
 /// See also: [Secret key - Engine API specs](https://github.com/ethereum/execution-apis/blob/main/src/engine/authentication.md#key-distribution)
 #[derive(Clone, PartialEq, Eq)]
-pub struct JwtSecret([u8; 32]);
+pub struct JwtSecret(pub [u8; 32]);
 
 impl JwtSecret {
     /// Creates an instance of [`JwtSecret`].

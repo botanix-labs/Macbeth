@@ -20,9 +20,13 @@ service BtcServer {
 
     rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
 
+    // Signing Endpoints
+
     rpc GetRound1SigningPackage(Round1SigningPackageRequest) returns (Round1SigningPackage) {}
 
     rpc GetRound2SigningPackage(SignPayload) returns (Round2SigningPackage) {}
+
+    rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
 
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
@@ -44,6 +48,11 @@ service BtcServer {
 
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
 
+}
+
+message FinalizeSignerRequest {
+    repeated bytes witness = 1;
+    repeated Output outputs = 2;
 }
 
 message ScriptBuf {
@@ -156,8 +165,6 @@ message Output {
 
 message MakeTxRequest {
     repeated Output outputs = 1;
-    // Fee rate in satoshi per vbyte.
-    uint32 fee_rate = 2;
     bytes signing_session_id = 3;
 }
 

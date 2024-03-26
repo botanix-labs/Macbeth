@@ -77,7 +77,6 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // First step: get the PSBT
     let original_psbt = c3
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
-            fee_rate: 2,
             outputs: vec![client::Output {
                 address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
                 // At this point there should be 2000 sats in the wallet
@@ -168,7 +167,6 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // First step: get the PSBT
     let original_psbt = c3
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
-            fee_rate: 2,
             outputs: vec![client::Output {
                 address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
                 // At this point there should be 800 sats in the wallet

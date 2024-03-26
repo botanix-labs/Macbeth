@@ -247,10 +247,6 @@ maxperf: ## Builds `reth` with the most aggressive optimisations.
 maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
 
-start-btc-server:
-	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --pkey ./key.hex --db "./db"
-
 start-reth-server:
 	cd ./bin/reth && \
 	cargo run --bin reth node \
@@ -402,11 +398,11 @@ start-test-suite:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml
+	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml
+	cargo run --bin btc-server -- --network testnet --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_2_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
 
 start-poa-server-1:
 	cd ./bin/reth && \
@@ -426,6 +422,8 @@ start-poa-server-1:
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303
 
@@ -447,5 +445,7 @@ start-poa-server-2:
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304

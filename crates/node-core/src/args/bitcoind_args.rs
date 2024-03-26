@@ -2,9 +2,9 @@ use clap::Args;
 use reth_btc_wallet::bitcoind::BitcoindConfig;
 use url::Url;
 
-/// Parameters to configure RPC state cache.
+/// Parameters to configure Bitcoind.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
-#[clap(next_help_heading = "RPC State Cache")]
+#[clap(next_help_heading = "Bitcoind")]
 
 pub struct BitcoindArgs {
     /// Btcd url
@@ -35,7 +35,7 @@ pub struct BitcoindArgs {
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {
-    fn from(value: BitcoindArgs) -> Self {
-        BitcoindConfig::new(value.url.clone(), value.username.clone(), value.password.clone())
+    fn from(args: BitcoindArgs) -> Self {
+        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password.clone())
     }
 }

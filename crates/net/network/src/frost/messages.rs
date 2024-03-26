@@ -7,9 +7,9 @@ use reth_rpc_types::PeerId;
 
 const MESSAGE_VERSION: usize = 1;
 
-/// A structured frost message
+/// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Request {
+pub struct DkgRequest {
     /// The version of the request message
     pub version: u16,
     /// Frost identifier
@@ -18,10 +18,31 @@ pub struct Request {
     pub data: Vec<u8>,
 }
 
-impl Request {
-    /// Constructs a new Request using a frost identifier and a data payload.
+impl DkgRequest {
+    /// Constructs a new DKG Request using a frost identifier and a data payload.
     pub fn new(identifier: Vec<u8>, data: Vec<u8>) -> Self {
-        Request { version: MESSAGE_VERSION as u16, identifier, data }
+        DkgRequest { version: MESSAGE_VERSION as u16, identifier, data }
+    }
+}
+
+/// A structured frost sign message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignRequest {
+    /// The version of the request message
+    pub version: u16,
+    /// Frost identifier
+    pub identifier: Vec<u8>,
+    /// Signing session id
+    pub signing_session_id: Vec<u8>,
+    /// Frost data
+    pub psbt: Vec<u8>,
+}
+
+impl SignRequest {
+    /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
+    /// payload.
+    pub fn new(identifier: Vec<u8>, signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
+        SignRequest { version: MESSAGE_VERSION as u16, identifier, signing_session_id, psbt }
     }
 }
 
@@ -41,15 +62,25 @@ pub enum FrostProtoMessageId {
     PingMessage = 0x04,
     /// Pong message with a user-defined message
     PongMessage = 0x05,
+    /// Signers will add their signing commitments to the psbt
+    SignerRound1SigningPackage = 0x06,
+    /// Coordinating node will collect the PSBTs with the signing commitments
+    CoordinatorRound1SigningPackage = 0x07,
+    /// Signers get round 2 signing package
+    SignerRound2SigningPackage = 0x08,
+    /// Coordinating node will collect the PSBTs with the partial sigs
+    CoordinatorRound2SigningPackage = 0x09,
+    /// Initiate a new signing session
+    InitiateSigningSession = 0x0A,
 }
 
 /// Enum defining the frost message kind
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FrostProtoMessageKind {
     /// Round 1 package
-    Round1Dkg(Request),
+    Round1Dkg(DkgRequest),
     /// Round 2 package
-    Round2Dkg(Request),
+    Round2Dkg(DkgRequest),
     /// Ping
     Ping,
     /// Pong
@@ -58,6 +89,16 @@ pub enum FrostProtoMessageKind {
     PingMessage(PeerId, u16),
     /// Pong message with a user peer id and an authority index
     PongMessage(PeerId, u16),
+    /// Signers will add their signing commitments to the psbt
+    SignerRound1SigningPackage(SignRequest),
+    /// Coordinating node will collect the PSBTs with the signing commitments
+    CoordinatorRound1SigningPackage(SignRequest),
+    /// Signers get round 2 signing package
+    SignerRound2SigningPackage(SignRequest),
+    /// Coordinating node will collect the PSBTs with the partial sigs
+    CoordinatorRound2SigningPackage(SignRequest),
+    /// Iniates a new signing session with PBST
+    InitiateSigningSession(SignRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -106,7 +147,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a round1 package message
-    pub fn round1_dkg_message(resource: Request) -> Self {
+    pub fn round1_dkg_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round1Dkg,
             message: FrostProtoMessageKind::Round1Dkg(resource),
@@ -114,10 +155,50 @@ impl FrostProtoMessage {
     }
 
     /// Creates a round2 package message
-    pub fn round2_dkg_message(resource: Request) -> Self {
+    pub fn round2_dkg_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round2Dkg,
             message: FrostProtoMessageKind::Round2Dkg(resource),
+        }
+    }
+
+    /// Signers adding their signing commitments to the psbt
+    pub fn round1_signer_package_message(resource: SignRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::SignerRound1SigningPackage,
+            message: FrostProtoMessageKind::SignerRound1SigningPackage(resource),
+        }
+    }
+
+    /// Coordinating node collecting the PSBTs with the signing commitments
+    pub fn round1_coordinator_signing_package_message(resource: SignRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::CoordinatorRound1SigningPackage,
+            message: FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource),
+        }
+    }
+
+    /// Signers get round 2 signing package
+    pub fn round2_signer_package_message(resource: SignRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::SignerRound2SigningPackage,
+            message: FrostProtoMessageKind::SignerRound2SigningPackage(resource),
+        }
+    }
+
+    /// Coordinating node collecting the PSBTs with the partial sigs
+    pub fn round2_coordinator_signing_package_message(resource: SignRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::CoordinatorRound2SigningPackage,
+            message: FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource),
+        }
+    }
+
+    /// Initiates a new signing session with pbst
+    pub fn initiate_signing_session(resource: SignRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::InitiateSigningSession,
+            message: FrostProtoMessageKind::InitiateSigningSession(resource),
         }
     }
 
@@ -127,32 +208,95 @@ impl FrostProtoMessage {
         buf.put_u8(self.message_type as u8);
         match &self.message {
             FrostProtoMessageKind::Round1Dkg(resource) => {
+                // identifier
                 buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
                 buf.put_slice(&resource.identifier);
+                // data
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Round2Dkg(resource) => {
+                // identifier
                 buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
                 buf.put_slice(&resource.identifier);
+                // data
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Ping => {}
             FrostProtoMessageKind::Pong => {}
             FrostProtoMessageKind::PingMessage(peer_id, authority_index) => {
+                // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
+                                              // authority index
                 buf.put_u16_le(*authority_index); // Store the authority_index
             }
             FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
+                // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
+                                              // authority index
                 buf.put_u16_le(*authority_index); // Store the authority_index
+            }
+            FrostProtoMessageKind::InitiateSigningSession(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // signing session id
+                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.signing_session_id);
+                // psbt
+                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.psbt);
+            }
+            FrostProtoMessageKind::SignerRound1SigningPackage(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // signing session id
+                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.signing_session_id);
+                // psbt
+                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.psbt);
+            }
+            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // signing session id
+                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.signing_session_id);
+                // psbt
+                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.psbt);
+            }
+            FrostProtoMessageKind::SignerRound2SigningPackage(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // signing session id
+                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.signing_session_id);
+                // psbt
+                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.psbt);
+            }
+            FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // signing session id
+                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.signing_session_id);
+                // psbt
+                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.psbt);
             }
         }
         buf
@@ -172,6 +316,11 @@ impl FrostProtoMessage {
             0x03 => FrostProtoMessageId::Pong,
             0x04 => FrostProtoMessageId::PingMessage,
             0x05 => FrostProtoMessageId::PongMessage,
+            0x06 => FrostProtoMessageId::SignerRound1SigningPackage,
+            0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
+            0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
+            0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
+            0x0A => FrostProtoMessageId::InitiateSigningSession,
             _ => return None,
         };
         let message = match message_type {
@@ -187,7 +336,7 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Round1Dkg(Request::new(identifier, data))
+                FrostProtoMessageKind::Round1Dkg(DkgRequest::new(identifier, data))
             }
             FrostProtoMessageId::Round2Dkg => {
                 let id_len = buf[0] as usize;
@@ -200,7 +349,7 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Round2Dkg(Request::new(identifier, data))
+                FrostProtoMessageKind::Round2Dkg(DkgRequest::new(identifier, data))
             }
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
@@ -228,6 +377,131 @@ impl FrostProtoMessage {
 
                 FrostProtoMessageKind::PongMessage(peer_id, authority_index)
             }
+            FrostProtoMessageId::InitiateSigningSession => {
+                // id
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                // Decode signing_session_id as u32
+                let session_id_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
+                ) as usize;
+                buf.advance(4);
+                let signing_session_id = buf[..session_id_len].to_vec();
+                buf.advance(session_id_len);
+                // psbt
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::InitiateSigningSession(SignRequest::new(
+                    identifier,
+                    signing_session_id,
+                    psbt,
+                ))
+            }
+            FrostProtoMessageId::SignerRound1SigningPackage => {
+                // id
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                // Decode signing_session_id as u32
+                let session_id_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
+                ) as usize;
+                buf.advance(4);
+                let signing_session_id = buf[..session_id_len].to_vec();
+                buf.advance(session_id_len);
+                // psbt
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::SignerRound1SigningPackage(SignRequest::new(
+                    identifier,
+                    signing_session_id,
+                    psbt,
+                ))
+            }
+            FrostProtoMessageId::CoordinatorRound1SigningPackage => {
+                // id
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                // Decode signing_session_id as u32
+                let session_id_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
+                ) as usize;
+                buf.advance(4);
+                let signing_session_id = buf[..session_id_len].to_vec();
+                buf.advance(session_id_len);
+                // psbt
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::CoordinatorRound1SigningPackage(SignRequest::new(
+                    identifier,
+                    signing_session_id,
+                    psbt,
+                ))
+            }
+            FrostProtoMessageId::SignerRound2SigningPackage => {
+                // id
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                // Decode signing_session_id as u32
+                let session_id_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
+                ) as usize;
+                buf.advance(4);
+                let signing_session_id = buf[..session_id_len].to_vec();
+                buf.advance(session_id_len);
+                // psbt
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::SignerRound2SigningPackage(SignRequest::new(
+                    identifier,
+                    signing_session_id,
+                    psbt,
+                ))
+            }
+            FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+                // id
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                // Decode signing_session_id as u32
+                let session_id_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
+                ) as usize;
+                buf.advance(4);
+                let signing_session_id = buf[..session_id_len].to_vec();
+                buf.advance(session_id_len);
+                // psbt
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::CoordinatorRound2SigningPackage(SignRequest::new(
+                    identifier,
+                    signing_session_id,
+                    psbt,
+                ))
+            }
         };
         Some(Self { message_type, message })
     }
@@ -243,13 +517,13 @@ mod tests {
 
     #[test]
     fn test_dkg_encoding_decoding() {
-        use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, Request};
+        use super::{DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind};
 
-        let request = Request::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
+        let dkg_request = DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Round1Dkg,
-            message: FrostProtoMessageKind::Round1Dkg(request),
+            message: FrostProtoMessageKind::Round1Dkg(dkg_request),
         };
 
         // Encode the message
@@ -260,6 +534,29 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode message");
 
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_signing_encoding_decoding() {
+        use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest};
+
+        let signing_request =
+            SignRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::SignerRound1SigningPackage,
+            message: FrostProtoMessageKind::SignerRound1SigningPackage(signing_request),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
     }

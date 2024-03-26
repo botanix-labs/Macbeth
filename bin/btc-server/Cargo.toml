@@ -7,6 +7,8 @@ edition = "2021"
 [dependencies]
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
+reth-primitives.workspace = true
+bitcoincore-rpc = "0.17.0"
 
 anyhow = "1.0.71"
 bitcoin = { version = "0.30.2", features = [ "base64", "rand", "serde" ] }
@@ -19,6 +21,7 @@ bdk = "1.0.0-alpha.1" # maybe try remove this dep as it's quite big
 ciborium = "0.2.1"
 env_logger = "0.11.3"
 hex = "0.4.3"
+jsonwebtoken = "8"
 futures-util = "0.3.25"
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 lazy_static = "1.4.0"
@@ -32,6 +35,7 @@ sled = "0.34.7"
 thiserror = "1.0.43"
 displaydoc = "0.2"
 toml = "0.8.4"
+base64 = "0.22.0"
 
 # for tonic
 tokio = { version = "1.29.1", features = ["full"] }

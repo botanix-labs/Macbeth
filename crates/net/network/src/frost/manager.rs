@@ -1,5 +1,8 @@
-use super::{FrostPeerCommand, NetworkFrostEvent};
-use crate::{frost::Response, session::Direction, NetworkHandle};
+use super::{
+    FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse, SigningEventResponseType,
+    SigningResponse,
+};
+use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use reth_rpc_types::PeerId;
@@ -29,6 +32,7 @@ impl FrostHandle {
 /// Frost Manager implementation
 #[derive(Debug)]
 pub struct FrostManager {
+    authority_index: u16,
     /// Network access.
     network: NetworkHandle,
     /// Subscriptions to all network related events.
@@ -51,7 +55,7 @@ pub struct FrostManager {
     /// total authorities to connect to
     total_authorities: usize,
     /// Forwards for message to the frost task
-    frost_task_forwarder_tx: Option<mpsc::UnboundedSender<Response>>,
+    frost_task_forwarder_tx: Option<mpsc::UnboundedSender<PeerMessageResponse>>,
 }
 
 impl FrostManager {
@@ -61,11 +65,12 @@ impl FrostManager {
         network: NetworkHandle,
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
-        let FrostConfig { authority_index: _, total_authorities, min_signers: _, max_signers: _ } =
+        let FrostConfig { authority_index, total_authorities, min_signers: _, max_signers: _ } =
             config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
 
         Self {
+            authority_index: authority_index as u16,
             command_tx,
             command_rx: UnboundedReceiverStream::new(command_rx),
             network,
@@ -99,6 +104,7 @@ impl FrostManager {
                      self.network.peer_id().to_string()
                  );
                  */
+
                 // make sure we ignore our own connection
                 let my_peer_id = self.network.peer_id();
                 if *my_peer_id != peer_id {
@@ -110,22 +116,19 @@ impl FrostManager {
                 //info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
                 if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
                     let _send_res = frost_task_forwarder_tx.send(response); // TODO:  handle error
-                                                                            // here
-                                                                            // info!(">>>>>>>>>>>
-                                                                            // FROST PEER MESSAGE
-                                                                            // FORWARDED {:?}",
-                                                                            // send_res);
                 }
             }
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
                 //info!(">>>>>>>>>>> FROST PEER CONFIRMATION RECEIVED (PEER_ID = {:?}, AUTH_INDEX =
                 // {:?})", peer_id, authority_index);
+
                 if self.peers_connections.contains_key(&peer_id) {
                     // only if we have an already connection established
                     if let Some(conn) = self.peers_connections.get(&peer_id).cloned() {
                         // add the peer conn mapped to a frost id based on authority index
-                        self.frost_peers_connections
-                            .insert(peer_id_to_identifier(authority_index), conn);
+                        let frost_identifier = peer_id_to_identifier(authority_index);
+
+                        self.frost_peers_connections.insert(frost_identifier, conn);
                     }
                 }
             }
@@ -144,13 +147,33 @@ impl FrostManager {
                 let _ = tx.send(self.frost_peers_connections.clone());
             }
             FrostCommand::GetPeerMessagesStream(tx) => {
-                // create channel wherby keeping the sender half and sending to the caller the
+                // create channel whereby keeping the sender half and sending to the caller the
                 // receiver
                 let (frost_task_forwarder_tx, frost_task_forwarder_rx) =
-                    mpsc::unbounded_channel::<Response>();
+                    mpsc::unbounded_channel::<PeerMessageResponse>();
                 self.frost_task_forwarder_tx = Some(frost_task_forwarder_tx);
                 // reply to caller
                 let _ = tx.send(frost_task_forwarder_rx);
+            }
+            FrostCommand::InitiateSigning(tx, signing_session_id, psbt) => {
+                if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
+                    let identifier = peer_id_to_identifier(self.authority_index);
+                    let request = PeerMessageResponse::Signing(SigningResponse {
+                        response_type: SigningEventResponseType::InitiateSigningSession,
+                        identifier: identifier.serialize().to_vec(),
+                        signing_session_id,
+                        psbt,
+                    });
+                    // reply to caller
+                    match frost_task_forwarder_tx.send(request) {
+                        Ok(_) => {
+                            let _ = tx.send(true);
+                        }
+                        Err(_) => {
+                            let _ = tx.send(false);
+                        }
+                    }
+                }
             }
         }
     }
@@ -204,7 +227,9 @@ pub enum FrostCommand {
         oneshot::Sender<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>>,
     ),
     /// Get a receiver for streaming peer messages
-    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<Response>>),
+    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageResponse>>),
+    /// Initiate the signing round
+    InitiateSigning(oneshot::Sender<bool>, Vec<u8>, Vec<u8>),
 }
 
 /// Config type for initiating a [`FrostManager`] instance.
@@ -229,6 +254,26 @@ impl FrostConfig {
         max_signers: u16,
     ) -> Self {
         Self { authority_index, total_authorities, min_signers, max_signers }
+    }
+
+    /// Sets the authority index
+    pub fn set_authority_index(&mut self, authority_index: usize) {
+        self.authority_index = authority_index;
+    }
+
+    /// Sets total authorities
+    pub fn set_total_authorities(&mut self, total_authorities: usize) {
+        self.total_authorities = total_authorities;
+    }
+
+    /// Sets minimum signers
+    pub fn set_min_signers(&mut self, min_signers: u16) {
+        self.min_signers = min_signers;
+    }
+
+    /// Sets maximum signers
+    pub fn set_max_signers(&mut self, max_signers: u16) {
+        self.max_signers = max_signers;
     }
 }
 

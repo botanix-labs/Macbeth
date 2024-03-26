@@ -1,5 +1,5 @@
 use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
-use client::{BtcServerClient, MakeTxRequest, NotifyPeginRequest, Output};
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::{
     mint_validation::{
@@ -10,6 +10,7 @@ use reth_botanix_lib::{
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
 
+use reth_network::frost::manager::{FrostCommand, FrostHandle};
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -18,7 +19,11 @@ use reth_primitives::{
 };
 use reth_provider::BundleStateWithReceipts;
 
+use bitcoincore_rpc::json::EstimateMode;
+
 use tracing::{debug, error, info, warn};
+
+use crate::extended_client::BtcServerExtendedClient;
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +37,16 @@ pub(crate) enum ProcessBotanixLogError {
     FailedToMakePegoutTx(tonic::Status),
     #[error("Failed to parse pegout data")]
     FailedToParsePegout,
+}
+
+/// Repersents an error related to frost operations
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FrostParseError {
+    /// Failed to notify btc server about pegin
+    #[error("Invalid frost peer id")]
+    InvalidFrostPeerId,
+    #[error("Invalid frost signing session id")]
+    InvalidSigningSessionId,
 }
 
 /// Search a receipt for a pegout and return a MakeTxRequest for the pegout
@@ -91,7 +106,7 @@ pub(crate) async fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> O
 /// Returns `Ok(Vec<PegoutData>)` if the processing is successful, otherwise returns an error of
 /// type `ProcessBotanixLogError`.
 pub(crate) async fn process_receipts(
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    btc_server: &mut BtcServerExtendedClient,
     bundle_state: &BundleStateWithReceipts,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
@@ -160,13 +175,15 @@ async fn get_pegout_data(log: Log) -> Option<PegoutData> {
     None
 }
 
-// TODO this function is not being used currently
-// Add back in when FROST signing is implemented
+// send pegouts and initiate the frost signing
 pub(crate) async fn send_pegouts(
     bitcoin_block_source: &BitcoindClient,
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    btc_server: &mut BtcServerExtendedClient,
+    frost_handle: &FrostHandle,
     pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
+    // TODO Pull fee_rate from bitcoind
+    // TODO pull signing_session_id from parent block hash
     let req = MakeTxRequest {
         outputs: pegouts
             .iter()
@@ -175,22 +192,41 @@ pub(crate) async fn send_pegouts(
                 value: pegout.amount.to_sat(),
             })
             .collect(),
-        // TODO Pull from bitcoind
-        fee_rate: 30u32,
         // TODO pull from parent block hash
         signing_session_id: [0u8; 32].to_vec(),
     };
 
-    // TODO comment this back in when FROST signing is implemented
-    // match btc_server.get_psbt(req).await {
-    //     Ok(response) => {
-    //         // TODO progress with FROST signing here
-    //     }
-    //     Err(e) => {
-    //         error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-    //         return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e));
-    //     }
-    // }
+    match btc_server.get_psbt(req).await {
+        Ok(response) => {
+            // start the frost signing session
+            let SignPayload { signing_session_id, psbt } = response;
+
+            let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+            frost_handle.send_command(FrostCommand::InitiateSigning(
+                sender,
+                signing_session_id,
+                psbt,
+            ));
+            match receiver.await {
+                Ok(request_acknowledged) => {
+                    info!(
+                        "Signing request send to frost task. Acknowledgement status = {:?}",
+                        request_acknowledged
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Signing intention request was sent but the receiver channel failed {:?}",
+                        e
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
+            return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()));
+        }
+    }
 
     Ok(())
 }
@@ -214,7 +250,7 @@ pub(crate) async fn send_pegouts(
 /// Returns `Ok(Option<PegoutData>)` if the processing is successful, otherwise returns an error
 /// of type `ProcessBotanixLogError`.
 async fn process_botanix_log(
-    btc_server: &mut BtcServerClient<tonic::transport::Channel>,
+    btc_server: &mut BtcServerExtendedClient,
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
@@ -244,16 +280,13 @@ async fn process_botanix_log(
                             pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
                         ),
                     };
-                    btc_server
-                        .notify_pegin(request)
-                        .await
-                        .map_err(ProcessBotanixLogError::FailedToNotifyPegin)?;
+                    btc_server.notify_pegin(request).await.map_err(|e| {
+                        ProcessBotanixLogError::FailedToNotifyPegin(e.to_tonic_status())
+                    })?;
                     info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                 }
             }
             Ok(GenesisContractEvents::BurnEvent) => {
-                // TODO(scott): make dynamic
-                let fee_rate = 30u32;
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
                 match parse_pegout_reth_log_topic(&log) {
@@ -287,20 +320,6 @@ pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
     bloom_contains_minting_contract_address(bloom) &&
         bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
-}
-
-/// Returns true if the given block number is the end of an epoch
-/// by checking if the next block is the start of a new epoch
-///
-/// # Arguments
-///
-/// * `current_block_number` - The current block number
-///
-/// # Returns
-///
-/// Returns `true` if the given block number is the end of an epoch, otherwise returns `false`.
-pub(crate) fn is_epoch_end(current_block_number: u64) -> bool {
-    (current_block_number + 1) % EPOCH_LENGTH == 0
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -352,6 +371,41 @@ pub fn is_testnet(chain_id: u64) -> bool {
 
 pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
+}
+
+// Deserializes a Frost peer ID.
+///
+/// # Arguments
+///
+/// * `id` - The peer ID to be decoded.
+///
+/// # Returns
+///
+/// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
+/// the peer ID is invalid.
+/// use frost_secp256k1_tr
+pub(crate) fn deserialize_frost_peer_id(
+    id: Vec<u8>,
+) -> Result<frost_secp256k1_tr::Identifier, FrostParseError> {
+    if id.len() != 32 {
+        return Err(FrostParseError::InvalidFrostPeerId);
+    }
+    let peer_id_bytes: &[u8; 32] =
+        id.as_slice().try_into().map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
+
+    let frost_id = frost_secp256k1_tr::Identifier::deserialize(&peer_id_bytes)
+        .map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
+
+    Ok(frost_id)
+}
+
+pub(crate) fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], FrostParseError> {
+    if session_id.len() != 32 {
+        return Err(FrostParseError::InvalidSigningSessionId);
+    }
+    let mut session_id_array = [0u8; 32];
+    session_id_array.copy_from_slice(&session_id);
+    Ok(session_id_array)
 }
 
 #[cfg(test)]
@@ -464,21 +518,6 @@ mod test {
 
         // assert true
         assert!(bloom_contains_pegin(bloom))
-    }
-
-    #[test]
-    fn test_is_epoch_end() {
-        let start_block_1 = 0;
-        let end_block_1 = EPOCH_LENGTH - 1;
-        let start_block_2 = end_block_1 + 1;
-        let end_block_2 = start_block_2 + EPOCH_LENGTH - 1;
-        let start_block_3 = end_block_2 + 1;
-
-        assert!(!is_epoch_end(start_block_1));
-        assert!(is_epoch_end(end_block_1));
-        assert!(!is_epoch_end(start_block_2));
-        assert!(is_epoch_end(end_block_2));
-        assert!(!is_epoch_end(start_block_3));
     }
 
     #[test]

@@ -51,7 +51,7 @@ use url::Url;
 
 use super::{
     utils::{parse_grpc_address, parse_url},
-    BitcoindArgs,
+    BitcoindArgs, FrostArgs,
 };
 
 /// Default max number of subscriptions per connection.
@@ -202,6 +202,12 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[clap(flatten)]
     pub bitcoind: BitcoindArgs,
+
+    /// Frost
+    ///
+    /// Frost Arguments
+    #[clap(flatten)]
+    pub frost: FrostArgs,
 
     /// Notifications Webhook Url
     ///
@@ -635,6 +641,7 @@ impl Default for RpcServerArgs {
                 password: "usr".to_string(),
                 username: "pwd".to_string(),
             },
+            frost: FrostArgs { min_signers: 2, max_signers: 2 },
             slack_notifications_webhook_url: None,
         }
     }

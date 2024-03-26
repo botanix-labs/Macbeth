@@ -23,6 +23,7 @@ reth-revm = { path = "../../revm" }
 reth-payload-builder.workspace = true
 # reth-beacon-imports
 reth-tasks.workspace = true
+reth-rpc.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
@@ -47,6 +48,8 @@ client = {path = "../../../bin/btc-server/client"}
 ## Ethereum
 ethers = "2.0.11"
 
+base64 = "0.22.0"
+
 # hex
 hex = "0.4.3"
 
@@ -70,6 +73,8 @@ tonic = "0.11.0"
 
 ## url
 url = "2.2"
+
+displaydoc = "0.2"
 
 ## this error
 thiserror.workspace = true
