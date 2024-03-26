@@ -32,7 +32,7 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
         "run",
         "--",
         "--network",
-        "testnet",
+        "regtest",
         "--db",
         db_path_arg.as_str(),
         "--identifier",

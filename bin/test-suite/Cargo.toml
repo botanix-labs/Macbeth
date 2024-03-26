@@ -34,6 +34,9 @@ client = { path = "../btc-server/client" }
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 tempfile.workspace = true
 
+## Bitcoin rpc
+bitcoincore-rpc = "0.17.0"
+
 # crates.io dependencies
 anyhow = "1.0.71"
 argh = "0.1.10"
