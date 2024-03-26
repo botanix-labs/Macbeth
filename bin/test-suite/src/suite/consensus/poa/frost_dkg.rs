@@ -1,6 +1,11 @@
-use bitcoin::Amount;
-use ethers::providers::{Http, ProviderError};
+use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
+use ethers::{
+    providers::{Http, ProviderError},
+    types::U256,
+};
 use reth::core::cli::runner::CliRunner;
+use reth_botanix_lib::peg_contract::{PeginData, PeginMeta};
+use reth_primitives::{Account, Address};
 use std::{str::FromStr, time::Duration};
 
 use crate::suite::consensus::{
@@ -10,7 +15,7 @@ use crate::suite::consensus::{
 use ethers::prelude::Provider;
 
 use super::poa_node::is_dkg_ready;
-use bitcoincore_rpc::{Auth, RpcApi};
+use bitcoincore_rpc::{Auth, RawTx, RpcApi};
 
 const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 
@@ -94,29 +99,56 @@ pub async fn poa_frost_dkg(
     )
     .expect("could not instantiate HTTP Provider");
 
-    let res = provider
+    let gateway_address_response = provider
         .request::<Vec<String>, GatewayAddressResponse>(
             "eth_getGatewayAddress",
             vec![hex::encode(eth_address)],
         )
         .await
         .expect("should get gateway address");
-    println!("Gateway address: {:?}", res);
 
     // Send some bitcoin to that gateway address
-    let btc_address = bitcoin::Address::from_str(res.gateway_address.as_str())
+    let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
         .assume_checked();
     let tx = bitcoin_rpc
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
-    bitcoin_rpc.generate_to_address(1, &address).expect("generate to address");
+    bitcoin_rpc.generate_to_address(2, &address).expect("generate to address");
 
     // retrieve the transaction
     let tx_res = bitcoin_rpc.get_transaction(&tx, None).expect("valid tx");
     let tx = tx_res.transaction().expect("valid tx");
 
+    let eth_account = Address::from_slice(&eth_address);
+    let vout = 1 as usize;
+    let amount = U256::from(tx.output[vout].value);
+
+    // get block headers
+    let mut block_headers = vec![];
+
+    // let txids = bitcoin_rpc.get_transaction(52).expect("valid txids");
+    let pmt = PartialMerkleTree::from_txids(&[tx.txid()], &[true]);
+    let meta = PeginMeta {
+        version: 0,
+        outpoint: bitcoin::OutPoint::new(tx.txid(), vout as u32),
+        address: eth_account,
+        aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        )
+        .expect("valid public key"),
+        tx,
+        merkle_proof: pmt,
+        block_headers,
+    };
     println!("Transaction: {:?}", tx);
+    let pegin_proof = PeginData {
+        account: eth_account,
+        amount,
+        bitcoin_block_height: 52,
+        meta: vec![meta],
+    };
+    
 
     // let block = provider.get_block(100u64).await?;
     // TODO: btc rpc
