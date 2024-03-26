@@ -1,5 +1,6 @@
 use clap::Parser;
 use client::Empty;
+use ethers::core::types::Address as EtherAddress;
 use reth::{
     cli::{
         components::RethNodeComponents,
@@ -27,6 +28,8 @@ use std::{
 
 use crate::{config::Config, suite::consensus::frost::btc_server::SpawnedBtcServer};
 
+use super::mint_contract::MintContractInstance;
+
 const RPC_PORT_BASE: u16 = 8545;
 const AUTHRPC_PORT_BASE: u16 = 8551;
 const DISCOVERY_PORT_BASE: u16 = 30303;
@@ -34,11 +37,11 @@ const FED_MEMBER1_SECRET_KEY: &'static str =
     "0a35afe1386497890e1dce7286a5b378b978ede20db900e6ce5b4eb1a0449ad6";
 const FED_MEMBER2_SECRET_KEY: &'static str =
     "0cc8f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe057f094135f2c9b019";
+const MINT_CONTRACT_ADDRESS: &'static str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
     // use minutes as time unit to determine in turn
     let timestamp = unix_timestamp() / 60;
-
     (timestamp / authorities_len) % authorities_len == signer_index
 }
 
@@ -69,7 +72,7 @@ pub struct CannonStateNofificationPayload {
 pub struct FederationMemberTestConfig {
     pub index: u16,
     pub temp_path: PathBuf,
-    pub secret_key: SecretKey,
+    pub secret_key: String,
     pub rpc_port: u16,
     pub authrpc_port: u16,
     pub discovery_port: u16,
@@ -87,9 +90,9 @@ pub struct FederationMemberTestConfig {
 }
 
 impl FederationMemberTestConfig {
-    pub fn new(
+    pub async fn new(
         index: u16,
-        secret_key: SecretKey,
+        secret_key: String,
         sender: tokio::sync::mpsc::Sender<Notifications>,
         bitcoind_url: String,
         bitcoind_username: String,
@@ -100,25 +103,35 @@ impl FederationMemberTestConfig {
         frost_max_signers: u16,
         peer_id: PeerId,
     ) -> Self {
+        let rpc_port = RPC_PORT_BASE + index;
+        let authrpc_port = AUTHRPC_PORT_BASE + index;
+        let discovery_port = DISCOVERY_PORT_BASE + index;
+        let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
             temp_path: tempfile::TempDir::new().expect("tempdir is okay").into_path(),
             secret_key,
-            rpc_port: RPC_PORT_BASE + index,
-            authrpc_port: AUTHRPC_PORT_BASE + index,
-            discovery_port: DISCOVERY_PORT_BASE + index,
+            rpc_port,
+            authrpc_port,
+            discovery_port,
             bitcoind_url,
             bitcoind_username,
             bitcoind_password,
             bitcoin_server_url,
             peers_list: vec![],
             sender,
-            jwt_secret_path: jwt_secrets_dir.join(format!("{}.hex", index + 1)),
+            jwt_secret_path,
             frost_min_signers,
             frost_max_signers,
             peer_id,
             is_dkg_ready: false,
         }
+    }
+
+    pub async fn create_mint_contract_instance(&self) -> MintContractInstance {
+        let mint_contract_address: EtherAddress =
+            MINT_CONTRACT_ADDRESS.parse().expect("Must be a valid ethereum address");
+        MintContractInstance::new(self.rpc_port, &self.secret_key, mint_contract_address).await
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
@@ -131,11 +144,7 @@ impl FederationMemberTestConfig {
 
     pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
         println!("Engine {} data directory", self.index);
-        println!(
-            "Engine {} secret key = {}",
-            self.index,
-            &self.secret_key.display_secret().to_string()
-        );
+        println!("Engine {} secret key = {}", self.index, &self.secret_key);
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -144,7 +153,7 @@ impl FederationMemberTestConfig {
             .create(true)
             .open(discovery_secret_path.clone())
             .unwrap();
-        file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
+        file.write_all(&self.secret_key.as_bytes()).unwrap();
 
         let jwt_secret_path = self.jwt_secret_path.display().to_string();
 
@@ -271,14 +280,10 @@ pub fn is_dkg_ready(federation_memebers: &HashMap<usize, FederationMemberTestCon
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
 
-pub fn create_poa_federation_members(
+pub async fn create_poa_federation_members(
     config: &Config,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
 ) -> (HashMap<usize, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<Notifications>) {
-    // create two secret keys one for each member
-    let sc1 = FED_MEMBER1_SECRET_KEY.parse::<SecretKey>().unwrap();
-    let sc2 = FED_MEMBER2_SECRET_KEY.parse::<SecretKey>().unwrap();
-
     let peer_id_1 = PeerId::from_str("bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826").unwrap();
     let peer_id_2 = PeerId::from_str("9bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d50a117189201f0ad9096d36cd690ae34e79a42d9e71c972e55048dabdc8f9651").unwrap();
 
@@ -292,7 +297,7 @@ pub fn create_poa_federation_members(
         .unwrap();
     let mut fed_member_config1 = FederationMemberTestConfig::new(
         index,
-        sc1,
+        FED_MEMBER1_SECRET_KEY.to_string(),
         tx.clone(),
         config.bitcoind.url.clone(),
         config.bitcoind.username.clone(),
@@ -302,7 +307,8 @@ pub fn create_poa_federation_members(
         config.frost_min_signers.clone(),
         config.frost_max_signers.clone(),
         peer_id_1,
-    );
+    )
+    .await;
 
     let index: u16 = 1;
     let port = btc_servers
@@ -310,7 +316,7 @@ pub fn create_poa_federation_members(
         .unwrap();
     let mut fed_member_config2 = FederationMemberTestConfig::new(
         index,
-        sc2,
+        FED_MEMBER2_SECRET_KEY.to_string(),
         tx,
         config.bitcoind.url.clone(),
         config.bitcoind.username.clone(),
@@ -320,7 +326,8 @@ pub fn create_poa_federation_members(
         config.frost_min_signers.clone(),
         config.frost_max_signers.clone(),
         peer_id_2,
-    );
+    )
+    .await;
 
     // insert peers
     fed_member_config1.insert_peers_list(vec![fed_member_config2.clone()]);
