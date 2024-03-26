@@ -74,7 +74,9 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, config: Config) 
 
 pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     for task in tasks.iter() {
-        std::fs::remove_dir_all(task.db_path.clone()).unwrap();
+        if let Err(e) = std::fs::remove_dir_all(&task.db_path) {
+            warn!("Couldn't remove db dir at {}: {}", task.db_path.display(), e);
+        }
     }
 }
 
