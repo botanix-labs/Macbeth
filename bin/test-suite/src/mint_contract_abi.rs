@@ -12,7 +12,7 @@ pub use mint_contract::*;
 pub mod mint_contract {
     const _: () = {
         ::core::include_bytes!(
-            "/home/evgeni/Documents/BOTANIX/Macbeth/bin/test-suite/mint_contract_abi.json",
+            "/Users/armins/Dev/botanix/macbeth/bin/test-suite/mint_contract_abi.json",
         );
     };
     #[allow(deprecated)]
