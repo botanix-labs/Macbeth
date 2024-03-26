@@ -41,6 +41,9 @@
 // Allow some lints while testing
 #![cfg_attr(test, allow(clippy::non_ascii_literal, clippy::unwrap_used))]
 
+#[macro_use]
+extern crate tracing;
+
 pub mod config;
 pub mod context;
 pub mod error;
