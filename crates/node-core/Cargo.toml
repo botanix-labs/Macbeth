@@ -95,6 +95,9 @@ secp256k1 = { workspace = true, features = [
 # async
 futures.workspace = true
 
+# bitcoin
+bitcoin = "0.30.2"
+
 ## url
 url = "2.2"
 
