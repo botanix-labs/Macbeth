@@ -1,3 +1,9 @@
+
+#[macro_use]
+extern crate tracing;
+
+use std::{sync::Arc, time::Duration};
+
 use anyhow::{anyhow, Context, Result};
 use argh::{self, FromArgs};
 use ethers::contract::Abigen;

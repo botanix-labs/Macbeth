@@ -27,16 +27,16 @@ macro_rules! run_test {
         tokio::select! {
             result = $module::$scope::$test_name($self $(, $arg )*) => match result {
                 Ok(_) => {
-                    tracing::info!("({}) {} {} ({}ms)", purple(test_type), cyan(test), green("\u{2713} PASSED"), elapsed());
+                    info!("({}) {} {} ({}ms)", purple(test_type), cyan(test), green("\u{2713} PASSED"), elapsed());
                 }
                 Err(err) => {
-                    tracing::error!("({}) {} {} ({}ms): {}", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed(), err);
+                    error!("({}) {} {} ({}ms): {}", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed(), err);
                     $self.outcome = crate::suite::Outcome::Failed;
                 }
             },
 
             _ = &mut timer => {
-                tracing::error!("({}) {} {} ({}ms): timeout", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed());
+                error!("({}) {} {} ({}ms): timeout", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed());
                 $self.outcome = crate::suite::Outcome::Failed;
             }
         }
