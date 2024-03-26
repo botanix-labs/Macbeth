@@ -13,7 +13,8 @@ pub async fn poa_frost_dkg(
 ) -> Result<(), super::error::Error> {
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) =
-        create_poa_federation_members(&suite.config, suite.local_context.btc_servers.as_ref());
+        create_poa_federation_members(&suite.config, suite.local_context.btc_servers.as_ref())
+            .await;
 
     // run all poa nodes in the background
     for (_index, fed_member_config) in test_fed_members.iter() {
@@ -43,6 +44,11 @@ pub async fn poa_frost_dkg(
             _ => {}
         }
     }
+
+    let _minter_instance_member_1 =
+        test_fed_members.get(&0).cloned().unwrap().create_mint_contract_instance().await;
+    let _minter_instance_member_2 =
+        test_fed_members.get(&1).cloned().unwrap().create_mint_contract_instance().await;
 
     // TODO: gateway address
     // TODO: btc rpc
