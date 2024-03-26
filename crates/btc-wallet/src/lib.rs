@@ -1,11 +1,13 @@
-extern crate anyhow;
-extern crate hex;
+
+#[macro_use] extern crate thiserror;
 
 pub mod address;
 pub mod bitcoind;
 pub mod block_source;
 pub mod key;
+pub mod psbt;
 pub mod transaction;
+pub mod util;
 
 use bitcoin::Weight;
 
