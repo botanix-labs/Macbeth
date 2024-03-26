@@ -9842,6 +9842,7 @@ dependencies = [
  "argh",
  "async-trait",
  "bitcoin",
+ "bitcoincore-rpc",
  "bytes",
  "chrono",
  "clap",
