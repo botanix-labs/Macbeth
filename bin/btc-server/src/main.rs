@@ -333,9 +333,8 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::psbt::Psbt;
-    use bitcoin::OutPoint;
+    use bitcoin::{Amount, FeeRate, OutPoint};
     use bitcoin::blockdata::{script::Script, transaction::TxOut};
-    use bitcoin::Amount;
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use rand::{thread_rng, Rng};
     use tonic::Request;
@@ -350,6 +349,8 @@ mod test {
     use crate::rpc::{self, BtcServer};
     use crate::database::Utxo;
 
+    const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
+
     macro_rules! frost_id {
         ($index:expr) => {
             frost::Identifier::try_from($index).expect("valid id")
@@ -358,24 +359,24 @@ mod test {
 
     struct MockBitcoind;
     impl bitcoincore_rpc::RpcApi for MockBitcoind {
-        fn call<T: for<'a> serde::de::Deserialize<'a>>(
-            &self,
-            _method: &str,
-            _params: &[serde_json::Value],
-        ) -> Result<T, bitcoincore_rpc::Error> {
-            unimplemented!()
-        }
-
         fn estimate_smart_fee(
             &self,
             _conf_target: u16,
             _estimate_mode: Option<EstimateMode>,
         ) -> Result<EstimateSmartFeeResult, bitcoincore_rpc::Error> {
             Ok(EstimateSmartFeeResult {
-                fee_rate: Some(Amount::from_sat(5)),
+                fee_rate: Some(Amount::from_sat(FEERATE.to_sat_per_kwu() * 4)),
                 errors: None,
                 blocks: 1,
             })
+        }
+
+        fn call<T: for<'a> serde::de::Deserialize<'a>>(
+            &self,
+            _method: &str,
+            _params: &[serde_json::Value],
+        ) -> Result<T, bitcoincore_rpc::Error> {
+            unimplemented!()
         }
     }
 
@@ -485,10 +486,18 @@ mod test {
 
     pub fn create_psbt(num_inputs: usize) -> Psbt {
         let tx = create_tx(num_inputs);
+
+        let weight = tx.weight();
+        let fee = FEERATE * weight;
+        let input_needed = fee.to_sat() + tx.output.iter().map(|o| o.value).sum::<u64>();
+        let value_per_input = input_needed / num_inputs as u64 + 1;
+
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
-            psbt.inputs[i].witness_utxo =
-                Some(TxOut { value: 100_000, script_pubkey: ScriptBuf::new() });
+            psbt.inputs[i].witness_utxo = Some(TxOut {
+                value: value_per_input,
+                script_pubkey: ScriptBuf::new(),
+            });
         }
         psbt
     }
