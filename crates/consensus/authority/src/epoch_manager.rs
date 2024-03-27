@@ -51,16 +51,14 @@ where
     pub(crate) async fn epoch_pegouts(
         &self,
         best_block: u64,
+        client: &Client,
     ) -> Result<Vec<PegoutData>, EpochManagerError> {
         let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
-        let storage = self.storage.inner.read().await;
         let mut pegouts: Vec<PegoutData> = vec![];
         for block in start_block..=best_block {
-            match storage.client.block_by_number(block) {
+            match client.block_by_number(block) {
                 Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-                    match storage
-                        .client
-                        .receipts_by_block(BlockHashOrNumber::Number(block.header.number))
+                    match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number))
                     {
                         Ok(Some(receipts)) => {
                             let mut futures = Vec::new();
