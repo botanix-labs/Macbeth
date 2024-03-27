@@ -523,12 +523,11 @@ impl rpc::BtcServer for App {
 
         // Witnesses can be get big. Remove this clone()
         let witnesses = req.witness;
-        let psbt = self.finalize_signer(outputs_result?, fee_rate, witnesses).map_err(|e| {
-            internal!("Failed to finalize signer: {}", e)
-        })?;
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt = self
+            .finalize_signer(outputs_result?, fee_rate, witnesses)
+            .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse {
             psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),

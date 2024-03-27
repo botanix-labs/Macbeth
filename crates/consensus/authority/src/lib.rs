@@ -435,7 +435,8 @@ where
         Ok((bundle_state, block, gas_used))
     }
 
-    /// Builds and validates the current block header with the given transactions, on the provided [Executor].
+    /// Builds and validates the current block header with the given transactions, on the provided
+    /// [Executor].
     ///
     /// This returns the current block header.
     pub(crate) fn build_and_validate_header(
@@ -449,8 +450,7 @@ where
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>, // used in current poa branch
-    ) -> Result<SealedHeader, BlockExecutionError>
-    {
+    ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
 

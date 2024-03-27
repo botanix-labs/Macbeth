@@ -37,7 +37,7 @@ const FED_MEMBER1_SECRET_KEY: &'static str =
     "0a35afe1386497890e1dce7286a5b378b978ede20db900e6ce5b4eb1a0449ad6";
 const FED_MEMBER2_SECRET_KEY: &'static str =
     "0cc8f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe057f094135f2c9b019";
-const MINT_CONTRACT_ADDRESS: &'static str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
     // use minutes as time unit to determine in turn
@@ -176,6 +176,8 @@ impl FederationMemberTestConfig {
             "eth,net,trace,txpool,web3,rpc,admin",
             "--authrpc.addr",
             "127.0.0.1",
+            "--btc-network",
+            "regtest",
             "--authrpc.port",
             format!("{}", self.authrpc_port).as_str(),
             "--authrpc.jwtsecret",

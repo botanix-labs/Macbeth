@@ -419,6 +419,7 @@ start-poa-server-1:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8551 \
 	--btc-server "localhost:8080" \
+	--btc-network regtest \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
@@ -442,6 +443,7 @@ start-poa-server-2:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8552 \
 	--btc-server "localhost:8081" \
+	--btc-network regtest \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
