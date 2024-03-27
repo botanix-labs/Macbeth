@@ -61,25 +61,9 @@ where
                     match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number))
                     {
                         Ok(Some(receipts)) => {
-                            let mut futures = Vec::new();
-
                             for receipt in receipts {
-                                let future = make_tx_request_for_pegout_in_receipt(receipt);
-                                futures.push(future);
-                            }
-
-                            let mut results_stream = futures
-                                .into_iter()
-                                .map(tokio::spawn)
-                                .collect::<FuturesUnordered<_>>();
-                            while let Some(pegout) = results_stream.next().await {
-                                match pegout {
-                                    Ok(Some(pegout)) => pegouts.push(pegout),
-                                    Ok(None) => continue,
-                                    Err(e) => {
-                                        error!("Error fetching pegout: {}", e);
-                                        return Err(EpochManagerError::FailedToFetchPegouts);
-                                    }
+                                if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt) {
+                                    pegouts.push(p);
                                 }
                             }
                         }
