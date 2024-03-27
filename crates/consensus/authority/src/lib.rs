@@ -355,11 +355,6 @@ where
 
         // TODO(scott): if pegouts are pending but no witness data is provided, we should fail
         // consensus validation
-        let witness_data_final = if header.is_poa_epoch() {
-            witness_data.clone().map_or(Some(vec![]), |witness_data| Some(witness_data))
-        } else {
-            None
-        };
 
         // Serialize the header without signature
         let mut extra_header_content_no_signature = ExtraDataHeader::new(
@@ -367,7 +362,7 @@ where
             None,
             if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
             vote_for,
-            witness_data_final,
+            witness_data.clone(),
             recent_block_hash,
         );
         let sig_hash = reth_consensus_common::utils::create_authority_sighash(
