@@ -203,6 +203,10 @@ pub struct RpcServerArgs {
     #[clap(flatten)]
     pub bitcoind: BitcoindArgs,
 
+    /// The bitcoin network to operate on.
+    #[arg(long, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network", required = true)]
+    pub btc_network: bitcoin::Network,
+
     /// Frost
     ///
     /// Frost Arguments
@@ -478,7 +482,7 @@ impl RethRpcConfig for RpcServerArgs {
 
     fn eth_config(&self) -> EthConfig {
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoind(
+        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoin_network(self.btc_network).bitcoind(
             self.bitcoind.url.clone(),
             self.bitcoind.username.clone(),
             self.bitcoind.password.clone(),
@@ -641,6 +645,7 @@ impl Default for RpcServerArgs {
                 password: "usr".to_string(),
                 username: "pwd".to_string(),
             },
+            btc_network: bitcoin::Network::Signet,
             frost: FrostArgs { min_signers: 2, max_signers: 2 },
             slack_notifications_webhook_url: None,
         }

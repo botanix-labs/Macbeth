@@ -73,6 +73,12 @@ impl BotanixConfig {
         self
     }
 
+    /// Set bitcoin network
+    pub fn bitcoin_network(mut self, bitcoin_network: bitcoin::Network) -> Self {
+        self.bitcoin_network = bitcoin_network;
+        self
+    }
+
     /// Set mempool space block source url
     pub fn bitcoind(mut self, url: Url, username: String, password: String) -> Self {
         self.bitcoind_config = BitcoindConfig::new(url, username, password);
