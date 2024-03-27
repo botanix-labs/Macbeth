@@ -58,28 +58,18 @@ pub(crate) enum FrostParseError {
 /// # Returns
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the receipt, otherwise returns `None`.
-pub(crate) async fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<PegoutData> {
+pub(crate) fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<PegoutData> {
     if !receipt.success {
         info!(target: "consensus::authority", "Receipt status code is not success {:?}", receipt);
         return None;
     }
 
-    let mut futures = Vec::new();
     for log in receipt.logs {
-        futures.push(get_pegout_data(log));
-    }
-
-    let mut results_stream = futures.into_iter().map(tokio::spawn).collect::<FuturesUnordered<_>>();
-    while let Some(pegout) = results_stream.next().await {
-        match pegout {
-            Ok(Some(pegout)) => return Some(pegout),
-            Ok(None) => continue,
-            Err(e) => {
-                error!(target: "consensus::authority", ?e, "Error fetching pegout");
-                return None;
-            }
+        if let Some(pegout_data) = get_pegout_data(log) {
+            return Some(pegout_data);
         }
     }
+
     None
 }
 
@@ -159,7 +149,7 @@ pub(crate) async fn process_receipts(
 /// # Returns
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
-async fn get_pegout_data(log: Log) -> Option<PegoutData> {
+fn get_pegout_data(log: Log) -> Option<PegoutData> {
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,

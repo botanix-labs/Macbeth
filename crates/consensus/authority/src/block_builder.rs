@@ -224,8 +224,8 @@ where
                     Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
                         psbt_message = Some(message);
                     },
-                    _ => {
-                        error!(target: "consensus::authority", "Failed to get finalized psbt from frost task");
+                    e => {
+                        error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
                         return;
                     },
                 }
