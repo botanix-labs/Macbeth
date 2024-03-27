@@ -204,34 +204,35 @@ where
             pegouts.extend(current_block_pegouts);
 
             // send pegouts
-            info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-            if let Err(e) = send_pegouts(
-                &self.bitcoind_client,
-                &mut self.btc_server,
-                &self.frost_handle,
-                pegouts,
-            )
-            .await
-            {
-                error!(target: "consensus::authority", ?e, "Failed to send pegouts");
-                return;
-            }
-
-            // wait until the psbt is finalized
-            let mut psbt_message: Option<FrostFinalizedSignatureMessage> = None;
-            match tokio::time::timeout(Duration::from_secs(45), self.frost_task_rx.recv()).await {
-                Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
-                    psbt_message = Some(message);
-                },
-                _ => {
-                    error!(target: "consensus::authority", "Failed to get finalized psbt from frost task");
+            if !pegouts.is_empty() {
+                info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
+                if let Err(e) = send_pegouts(
+                    &self.bitcoind_client,
+                    &mut self.btc_server,
+                    &self.frost_handle,
+                    pegouts,
+                )
+                .await
+                {
+                    error!(target: "consensus::authority", ?e, "Failed to send pegouts");
                     return;
-                },
+                }
+    
+                // wait until the psbt is finalized
+                let mut psbt_message: Option<FrostFinalizedSignatureMessage> = None;
+                match tokio::time::timeout(Duration::from_secs(45), self.frost_task_rx.recv()).await {
+                    Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
+                        psbt_message = Some(message);
+                    },
+                    _ => {
+                        error!(target: "consensus::authority", "Failed to get finalized psbt from frost task");
+                        return;
+                    },
+                }
+                // TODO(scott): check psbt matches expected session id
+                let psbt_result = Psbt::deserialize(&psbt_message.expect("psbt exists").psbt).expect("valid psbt");
+                witness_data = Some(get_witness_data_from_psbt(psbt_result));
             }
-            // TODO(scott): check psbt matches expected session id
-            let psbt_result = Psbt::deserialize(&psbt_message.expect("psbt exists").psbt).expect("valid psbt");
-            witness_data = Some(get_witness_data_from_psbt(psbt_result));
-
         }
 
         let new_header = match storage.build_and_validate_header(
