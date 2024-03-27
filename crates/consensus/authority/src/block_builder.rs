@@ -191,7 +191,7 @@ where
         if block.header.is_poa_epoch() {
             // get pegouts up to best block
             let mut pegouts: Vec<PegoutData> = Vec::new();
-            match self.epoch_manager.epoch_pegouts(best_block).await {
+            match self.epoch_manager.epoch_pegouts(best_block, &storage.client).await {
                 Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
                 Err(e) => {
                     error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
