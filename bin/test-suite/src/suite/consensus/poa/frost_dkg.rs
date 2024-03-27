@@ -174,23 +174,31 @@ pub async fn poa_frost_dkg(
     let tx = bitcoin_rpc
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
-
-    // generate som btc blocks
+    // Generate some block to confirm it
     bitcoin_rpc.generate_to_address(2, &address).expect("generate to address");
-
+    
+    
     // retrieve the transaction
     let tx_res = bitcoin_rpc.get_transaction(&tx, None).expect("valid tx");
     let tx = tx_res.transaction().expect("valid tx");
+    println!("Tx: {:?}", tx);
 
     let eth_account = Address::from_slice(eth_destination.as_slice());
     let vout = 1;
     let amount = U256::from(tx.output[vout].value);
 
     // get block headers
-    let mut block_headers = vec![];
+    // first we need the block hash of the block with the conf'd pegin tx
+    let tip = bitcoin_rpc.get_block_count().expect("valid block count");
+    println!("Tip: {}", tip);
+    
+    let conf_block_hash = bitcoin_rpc.get_block_hash(tip-2).expect("valid block hash");
+    let block_header = bitcoin_rpc.get_block_header(&conf_block_hash).expect("valid block header");
+    let block_headers = vec![block_header];
 
-    // create partial merkle tree
-    let pmt = PartialMerkleTree::from_txids(&[tx.txid()], &[false, true]);
+    let conf_block_info = bitcoin_rpc.get_block_info(&conf_block_hash).expect("valid txids");
+    println!("Block info: {:?}", conf_block_info);
+    let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[true]);
 
     // create pegin meta
     let bitcoin_block_height = 52;
