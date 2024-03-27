@@ -3,7 +3,7 @@ use std::{collections::HashSet, time::Duration};
 
 use crate::suite::consensus::{
     poa::{
-        payload_sender::TestPayloadSender,
+        payload_client::PayloadClient,
         poa_node::{create_poa_federation_members, is_inturn, Notifications},
     },
     ConsensusIntegrationTestSuite,
@@ -40,15 +40,15 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
     }
 
     // create payload client
-    let payload_client =
-        TestPayloadSender::new(targeted_fed_member.rpc_port, SENDER_SECRET_KEY).await;
+    let payload_client = PayloadClient::new(targeted_fed_member.rpc_port, SENDER_SECRET_KEY).await;
 
     // create a hashmap to store tx hashes
     let mut tx_hashes_set = HashSet::new();
 
     // send eoa messages to the node at selected index
     println!("======>  Sending eoa transaction...");
-    let mut last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
+    let mut last_tx_hash =
+        payload_client.send_botanix(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
     tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
 
     // wait for canonical chain updates reported by the node, then send new tx
@@ -68,7 +68,7 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
                 // after first successful tx, send invalid tx with too low nonce
                 if test_rounds == 1 {
                     println!("======>  Sending eoa transaction with too low nonce...");
-                    payload_client.send_invalid(RECEIVER_ADDRESS).await;
+                    payload_client.send_invalid_botanix(RECEIVER_ADDRESS).await;
                 }
 
                 // block verfication
@@ -94,7 +94,8 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
                     continue;
                 }
                 println!("======>  Sending eoa transaction...");
-                last_tx_hash = payload_client.send(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
+                last_tx_hash =
+                    payload_client.send_botanix(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
                 tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
             }
             _ => {}

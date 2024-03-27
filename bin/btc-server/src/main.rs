@@ -348,7 +348,7 @@ mod test {
         blockdata::{script::Script, transaction::TxOut},
         Amount,
     };
-    use bitcoincore_rpc::json::EstimateSmartFeeResult;
+    use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use rand::{thread_rng, Rng};
     use tonic::Request;
 

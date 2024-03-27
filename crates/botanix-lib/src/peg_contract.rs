@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use bitcoin::{
     block::Header,
-    consensus::{encode::{self as btcencode, Decodable}, Encodable, ReadExt},
+    consensus::{
+        encode::{self as btcencode, Decodable},
+        Encodable, ReadExt,
+    },
     merkle_tree::PartialMerkleTree,
     secp256k1::{self, PublicKey},
 };
@@ -159,7 +162,7 @@ impl PeginMeta {
 
         bytes
     }
-    
+
     pub fn deserialize(mut bytes: &[u8]) -> Result<(PeginMeta, usize), PeginError> {
         // bytes is a list of proofs
         let proofs_size = bytes.len();
@@ -247,7 +250,8 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin::{
-        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid
+        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, BlockHash,
+        CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
     use secp256k1::rand::thread_rng;
 
@@ -261,10 +265,7 @@ mod tests {
         let pegin_metadata = PeginMeta {
             version: PEGIN_META_VERSION,
             merkle_proof: PartialMerkleTree::from_txids(&[txid], &[true]),
-            outpoint: OutPoint {
-                txid,
-                vout: 0,
-            },
+            outpoint: OutPoint { txid, vout: 0 },
             address: Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap(),
             aggregate_publickey: PublicKey::from_str(
                 "0376698beebe8ee5c74d8cc50ab84ac301ee8f10af6f28d0ffd6adf4d6d3b9b762",
@@ -282,18 +283,12 @@ mod tests {
                 version: 1,
                 lock_time: LockTime::from_str("0").unwrap(),
                 input: vec![TxIn {
-                    previous_output: OutPoint {
-                        txid,
-                        vout: 0,
-                    },
+                    previous_output: OutPoint { txid, vout: 0 },
                     sequence: bitcoin::Sequence::MAX,
                     script_sig: bitcoin::ScriptBuf::new(),
                     witness: Default::default(),
                 }],
-                output: vec![TxOut {
-                    value: 100,
-                    script_pubkey: ScriptBuf::new(),
-                }],
+                output: vec![TxOut { value: 100, script_pubkey: ScriptBuf::new() }],
             },
         };
 
@@ -305,7 +300,10 @@ mod tests {
         assert_eq!(pegin_metadata.aggregate_publickey, deserialized.aggregate_publickey);
         assert_eq!(pegin_metadata.block_headers.len(), deserialized.block_headers.len());
         assert_eq!(pegin_metadata.tx, deserialized.tx);
-        assert_eq!(pegin_metadata.merkle_proof.num_transactions(), deserialized.merkle_proof.num_transactions());
+        assert_eq!(
+            pegin_metadata.merkle_proof.num_transactions(),
+            deserialized.merkle_proof.num_transactions()
+        );
         assert_eq!(serialized.len(), size);
     }
 

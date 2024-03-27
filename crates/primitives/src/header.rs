@@ -1,6 +1,5 @@
 use crate::{
     basefee::calculate_next_block_base_fee,
-    constants,
     constants::{
         eip225::EPOCH_LENGTH, ALLOWED_FUTURE_BLOCK_TIME_SECONDS, EMPTY_OMMER_ROOT_HASH,
         EMPTY_ROOT_HASH, MINIMUM_GAS_LIMIT,

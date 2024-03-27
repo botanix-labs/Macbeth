@@ -482,11 +482,14 @@ impl RethRpcConfig for RpcServerArgs {
 
     fn eth_config(&self) -> EthConfig {
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoin_network(self.btc_network).bitcoind(
-            self.bitcoind.url.clone(),
-            self.bitcoind.username.clone(),
-            self.bitcoind.password.clone(),
-        );
+        botanix_config = botanix_config
+            .btc_server(self.btc_server.clone())
+            .bitcoin_network(self.btc_network)
+            .bitcoind(
+                self.bitcoind.url.clone(),
+                self.bitcoind.username.clone(),
+                self.bitcoind.password.clone(),
+            );
 
         EthConfig::default()
             .max_tracing_requests(self.rpc_max_tracing_requests)

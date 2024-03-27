@@ -12,12 +12,12 @@ use secp256k1::SecretKey;
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct TestPayloadSender {
+pub struct PayloadClient {
     pub client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
     pub sender_address: Address,
 }
 
-impl TestPayloadSender {
+impl PayloadClient {
     pub async fn new(rpc_port: u16, sender_secret_key: &str) -> Self {
         // Connect to the network
         let provider =
@@ -46,7 +46,13 @@ impl TestPayloadSender {
         Self { client, sender_address }
     }
 
-    pub async fn send(
+    pub async fn get_botanix_balance(&self, address: &str) -> U256 {
+        let sender_account = NameOrAddress::from_str(address).unwrap();
+        let sender_cur_balance = self.client.get_balance(sender_account, None).await.unwrap();
+        sender_cur_balance
+    }
+
+    pub async fn send_botanix(
         &self,
         receiver_address: &str,
         amount_botanix: u64,
@@ -72,7 +78,7 @@ impl TestPayloadSender {
         Ok(pending_tx.tx_hash())
     }
 
-    pub async fn send_invalid(&self, receiver_address: &str) {
+    pub async fn send_invalid_botanix(&self, receiver_address: &str) {
         let tx = Eip1559TransactionRequest::new()
             .to(receiver_address)
             .value(utils::parse_ether(0).unwrap())
