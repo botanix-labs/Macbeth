@@ -21,6 +21,7 @@ spec:
       serviceAccountName: workload-runner
       nodeSelector:
         iam.gke.io/gke-metadata-server-enabled: "true"
+        app: reth-node
       securityContext:
         fsGroup: 1000
       # initContainers:
@@ -73,6 +74,23 @@ spec:
           name: engine-api-port
           protocol: TCP
         imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "500m"
+          limits:
+            memory: "8Gi"
+            cpu: "1"
+        livenessProbe:
+          tcpSocket:
+            port: http-port
+          initialDelaySeconds: 10
+          periodSeconds: 15 
+        readinessProbe:
+          tcpSocket:
+            port: http-port
+          initialDelaySeconds: 10
+          periodSeconds: 15
 
   volumeClaimTemplates:
   - metadata:
