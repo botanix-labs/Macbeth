@@ -231,7 +231,9 @@ where
                 }
                 // TODO(scott): check psbt matches expected session id
                 let psbt_result = Psbt::deserialize(&psbt_message.expect("psbt exists").psbt).expect("valid psbt");
-                witness_data = Some(get_witness_data_from_psbt(psbt_result));
+                witness_data = Some(get_witness_data_from_psbt(psbt_result));       
+
+                // TODO(scott): call btc_server.signer_finalize()
             }
         }
 

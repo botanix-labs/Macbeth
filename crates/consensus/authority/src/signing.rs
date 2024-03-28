@@ -4,8 +4,12 @@ use crate::{
     utils::{deserialize_frost_peer_id, parse_signing_session_id, FrostParseError},
     Storage,
 };
-use client::{FinalizeSigningResponse, Round1SigningPackage, Round2SigningPackage, SignPayload};
+use client::{
+    FinalizeSigningResponse, Output, Round1SigningPackage, Round2SigningPackage, SignPayload,
+};
+use ethers::types::transaction::request;
 use frost_secp256k1_tr as frost;
+use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils::{current_inturn_index, is_inturn};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
@@ -416,6 +420,49 @@ where
         Ok(finalized_signing)
     }
 
+    async fn finalize_signer(
+        &mut self,
+        witness: Vec<bitcoin::Witness>,
+        pegouts: Vec<PegoutData>,
+    ) -> Result<FinalizeSigningResponse, Error> {
+        let wit = witness
+            .iter()
+            .map(|witness| witness.iter().map(|w| w.to_vec()[0]).collect::<Vec<u8>>())
+            .collect();
+
+        let outputs = pegouts
+            .iter()
+            .map(|pegout| Output {
+                address: pegout.destination.to_string(),
+                value: pegout.amount.to_sat(),
+            })
+            .collect();
+
+        let request = client::FinalizeSignerRequest { witness: wit, outputs };
+
+        let finalized_signing = match self.btc_client.signer_finalize(request).await {
+            Ok(finalized_signing) => finalized_signing,
+            Err(e) => {
+                let e = e.to_tonic_status();
+                match e.code() {
+                    tonic::Code::InvalidArgument
+                        if e.message().contains("Failed to parse signing session id") =>
+                    {
+                        return Err(Error::FailedToParseSigningSessionId)
+                    }
+                    tonic::Code::Internal if e.message().contains("Failed to finalize signing") => {
+                        return Err(Error::FailedToFinalizeSigning)
+                    }
+                    tonic::Code::Internal if e.message().contains("Failed to serialize psbt") => {
+                        return Err(Error::FailedToSerializePsbt)
+                    }
+                    _ => return Err(Error::InternalGrpc),
+                }
+            }
+        };
+        Ok(finalized_signing)
+    }
+
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
@@ -579,7 +626,8 @@ where
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
             });
-            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map error
+            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp));
+            // TODO: map error
         }
 
         Ok(())
@@ -636,6 +684,8 @@ where
 
         Ok(())
     }
+
+    // ====================================== 2 =========================================
 
     pub(crate) async fn gossip_round2_to_peers(
         &mut self,
@@ -718,7 +768,8 @@ where
                 signing_session_id: signing_package_round2.signing_session_id.clone(),
                 psbt: signing_package_round2.psbt.clone(),
             });
-            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map error
+            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp));
+            // TODO: map error
         }
 
         Ok(())
