@@ -238,7 +238,9 @@ where
             evm_config.clone(),
         );
 
-        let (frost_task_notifications_tx, frost_task_notifications_rx) =
+        let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
+            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
+        let (frost_task_notifications2_tx, frost_task_notifications2_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
 
         // TODO FIX the unwrap
@@ -249,7 +251,8 @@ where
             epoch_manager.clone(),
             frost_config,
             storage.clone(),
-            frost_task_notifications_tx,
+            frost_task_notifications1_rx,
+            frost_task_notifications2_tx,
         );
 
         let bitcoind_client =
@@ -271,7 +274,8 @@ where
             task_executor,
             evm_config.clone(),
             payload_builder,
-            frost_task_notifications_rx,
+            frost_task_notifications2_rx,
+            frost_task_notifications1_tx
         );
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)

@@ -93,11 +93,6 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(CoordinatorError::InvalidFrostPeerId);
-        }
-
         // TODO (armins) need to verify here that the psbt is in a valid round 1 state
 
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
@@ -117,10 +112,6 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(CoordinatorError::InvalidFrostPeerId);
-        }
         // TODO (armins) need to verify here that the psbt is in a valid round 2 state
         // TODO Checks if we have enough partial signatures
 

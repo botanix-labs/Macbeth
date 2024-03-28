@@ -12,19 +12,21 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
 /// Enum defining posisble frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FrostNotificationMessage {
     /// Finalized frost signing signature
-    FinalizedSignature(FrostFinalizedSignatureMessage),
+    FinalizedSignature(FrostNotification),
+    /// Initiate signing session
+    InitiateSigning(FrostNotification),
 }
 
 /// Finalised frost signature message
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct FrostFinalizedSignatureMessage {
+pub(crate) struct FrostNotification {
     /// The signing session id
     pub(crate) signing_session_id: Vec<u8>,
     /// The agglomerated psbts
@@ -44,6 +46,9 @@ pub struct FrostTask<Client> {
     pub(crate) signing_state_machine: SigningStateMachine<Client>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
+    /// Channel to receive frost notifications (from the block production task)
+    /// We only wait for init signing messages
+    frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
 impl<Client> FrostTask<Client>
@@ -64,6 +69,7 @@ where
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
         storage: Storage<Client>,
+        frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     ) -> Self {
         info!("Frost authority index: {}/{}", config.authority_index, config.total_authorities);
@@ -90,6 +96,7 @@ where
             dkg_state_machine,
             signing_state_machine,
             storage,
+            frost_task_rx,
         }
     }
 
@@ -152,17 +159,37 @@ where
             let is_inturn = self.epoch_manager.poll().await;
 
             // start dkg only when we are in turn + initial state + no public key
-            if is_inturn &&
-                !self.dkg_state_machine.get_dkg_state().is_running() &&
-                self.dkg_state_machine.get_public_key().await.is_err()
+            // TODO this logic is wrong you only need dkg if there is no public key
+            if is_inturn
+                && !self.dkg_state_machine.get_dkg_state().is_running()
+                && self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
-
+            while let Ok(message) = self.frost_task_rx.try_recv() {
+                if let FrostNotificationMessage::InitiateSigning(frost_notification) = message {
+                    match self
+                        .signing_state_machine
+                        .initate_signing_session(
+                            frost_notification.signing_session_id,
+                            frost_notification.psbt,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Started new signing session successfully")
+                        }
+                        Err(e) => {
+                            error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Error starting new signing session {:?}", e);
+                        }
+                    }
+                } else {
+                    warn!(">>>>>>>>>>> [FROST_TASK] Unhandled frost notification message {:?}", message);
+                }
+            }
             // receive over a channel message from other peers and update our state machine
             if let Ok(msg) = peer_messages_rx.try_recv() {
                 info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
-
                 match msg {
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
@@ -196,9 +223,11 @@ where
                             signing_response;
                         match response_type {
                             SigningEventResponseType::InitiateSigningSession => {
+                                panic!("dont end up here");
+                                // TODO delete this case
                                 match self
                                     .signing_state_machine
-                                    .initate_signing_session(identifier, signing_session_id, psbt)
+                                    .initate_signing_session(signing_session_id, psbt)
                                     .await
                                 {
                                     Ok(_) => {
@@ -229,10 +258,10 @@ where
                                 .await
                             {
                                 Ok(_) => {
-                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 2 signing package successfully")
+                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 1 signing package successfully")
                                 }
                                 Err(e) => {
-                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 2 signing package {:?}", e);
+                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 1 signing package {:?}", e);
                                 }
                             },
                             SigningEventResponseType::SignerRound2SigningPackage => {
