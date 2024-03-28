@@ -23,6 +23,15 @@ use reth_provider::{chain::BlockReceipts, CanonStateNotification};
 use std::{collections::HashMap, str::FromStr, time::Duration};
 use tracing::info;
 
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        poa::poa_node::{create_poa_federation_members, Notifications},
+        ConsensusIntegrationTestSuite,
+    },
+};
+use ethers::prelude::Provider;
+
 use super::poa_node::{is_dkg_ready, FederationMemberTestConfig};
 use bitcoincore_rpc::{Auth, RpcApi};
 
@@ -187,7 +196,6 @@ pub async fn poa_frost_dkg(
     let tx_res = bitcoind_rpc.get_transaction(&tx, None).expect("valid tx");
     let tx = tx_res.transaction().expect("valid tx");
     it_info_print!("Bitcoin Tx", tx);
-
     it_info_print!("Gateway Data", gateway_address_response);
     it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
