@@ -1,15 +1,13 @@
-use crate::{
-    database::{self, Error as DbError},
-    util::{self, validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
-    App, Error,
-};
-use bdk::miniscript::psbt::Error as PsbtError;
 
+use std::time::SystemTime;
+
+use bdk::miniscript::psbt::Error as PsbtError;
 use bdk::psbt::PsbtUtils;
 use bitcoin::{
+    hashes::sha256,
     psbt::{ExtractTxError, Psbt},
     taproot::SigFromSliceError,
-    FeeRate, TxOut,
+    BlockHash, FeeRate, TxOut,
 };
 use bitcoincore_rpc::json::EstimateMode;
 use frost_secp256k1_tr as frost;
@@ -17,6 +15,12 @@ use rand::thread_rng;
 use reth_btc_wallet::{
     psbt::{PsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
+};
+
+use crate::{
+    database,
+    util::{ROUND1, ROUND1_TRANSITION, validate_psbt, VerifyingKeyExt},
+    App, Error
 };
 
 #[derive(Debug)]
@@ -112,7 +116,7 @@ pub enum SigningFinalizeError {
     #[error("Taproot Signature validation error: {0}")]
     TaprootSignatureValidationError(#[from] bitcoin::taproot::TaprootError),
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    DbError(#[from] database::Error),
     #[error("sig from slice error: {0}")]
     SigFromSliceError(#[from] SigFromSliceError),
     #[error("extract tx error: {0}")]
@@ -124,7 +128,7 @@ pub enum SigningAbortError {
     #[error("missing key package")]
     MissingKeyPackage,
     #[error("internal DB error")]
-    DbError(#[from] DbError),
+    DbError(#[from] database::Error),
 }
 
 impl App {
@@ -278,18 +282,22 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn finalize_signer(
+    pub(crate) async fn finalize_signer(
         &self,
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
         witness: Vec<Vec<u8>>,
+        checkpoint_block: BlockHash,
+        utxo_merkle_root: sha256::Hash,
     ) -> Result<Psbt, SigningFinalizeError> {
         let key_package =
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let mut original_psbt = self.make_tx(outputs, fee_rate, change_script).unwrap();
+        let mut original_psbt = self.make_tx(
+            outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root,
+        ).await.unwrap();
 
         let hash_ty = bitcoin::sighash::TapSighashType::All;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
@@ -311,10 +319,15 @@ impl App {
             return Err(SigningFinalizeError::PsbtFinalizationFailed(errs));
         }
 
-        let (change_outputs, selected_inputs) =
-            util::add_remove_utxo_from_psbt(&original_psbt, &secp_pk);
-        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
-        self.db.flush()?;
+        let tx = match miniscript::psbt::PsbtExt::extract(&original_psbt, bitcoin::secp256k1::SECP256K1) {
+            Ok(tx) => tx,
+            Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
+        };
+        let targets = tx.output.iter()
+            .filter(|o| o.script_pubkey != change_script)
+            .cloned().collect::<Vec<_>>();
+        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
+        self.add_index_tx(tx, &targets, tx_timestamp).await?;
 
         Ok(original_psbt)
     }

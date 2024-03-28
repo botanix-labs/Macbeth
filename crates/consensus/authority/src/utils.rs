@@ -1,8 +1,13 @@
 //! Botanix consensus utility functions
 use std::time::Duration;
 
-use bitcoin::{block::Header, psbt::Psbt, witness::Witness};
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
+use bitcoin::{
+    BlockHash,
+    block::Header,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    witness::Witness,
+};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -20,10 +25,10 @@ use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
 use uuid::Uuid;
-
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
 
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use crate::extended_client::BtcServerExtendedClient;
 
 /// Checks if the network is undergoing an active sync or not
@@ -232,6 +237,8 @@ pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
+    bitcoin_checkpoint: BlockHash,
+    utxo_merkle_root: sha256::Hash,
 ) -> Result<SigningPackage, ProcessBotanixLogError> {
     let req = MakeTxRequest {
         outputs: pegouts
@@ -242,8 +249,8 @@ pub(crate) async fn get_psbt(
             })
             .collect(),
         signing_session_id: signing_session_id.to_vec(),
-        checkpoint_block_hash: todo!(),
-        utxo_merkle_root: todo!(),
+        checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
+        utxo_merkle_root: utxo_merkle_root[..].to_vec(),
     };
 
     match btc_server.get_psbt(req).await {

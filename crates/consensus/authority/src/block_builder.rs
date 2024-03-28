@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bitcoin::{psbt::Psbt, Witness};
+use bitcoin::{hashes::{sha256, Hash}, psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
@@ -184,6 +184,15 @@ where
             }
         };
 
+        // Retrieve the current UTXO commitment
+        let utxo_commitment = match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
+            Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
+                return;
+            }
+        };
+
         let storage = self.storage.read().await;
         // If end of epoch, process pegouts
         let mut epoch_witness: Option<Vec<Witness>> = None;
@@ -211,9 +220,15 @@ where
                     e
                 }).expect("valid signing session id");
 
-                match crate::utils::get_psbt(&mut self.btc_server, &pegouts, &signing_session_id)
-                    .await
-                {
+                let bitcoin_checkpoint = self.bitcoin_block_header.read().await
+                    .expect("should have tip").0;
+                match crate::utils::get_psbt(
+                    &mut self.btc_server,
+                    &pegouts,
+                    &signing_session_id,
+                    bitcoin_checkpoint.block_hash(),
+                    utxo_commitment,
+                ).await {
                     Ok(psbt_payload) => self
                         .frost_task_tx
                         .send(FrostNotificationMessage::InitiateSigning(FrostNotification {
@@ -255,19 +270,6 @@ where
         }
         drop(storage);
 
-        // Retrieve the current UTXO commitment
-        let utxo_commitment: [u8; 32] =
-            match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
-                Ok(utxo_commitment) => utxo_commitment,
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
-                    return;
-                }
-            }
-            .merkle_root
-            .try_into()
-            .expect("valid UTXO commitment");
-
         info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
 
         let mut storage = self.storage.write().await;
@@ -280,7 +282,7 @@ where
             &self.sk,
             &authority_signers,
             &epoch_witness,
-            &utxo_commitment,
+            utxo_commitment,
             &self.consensus,
         ) {
             Ok(ret) => ret,

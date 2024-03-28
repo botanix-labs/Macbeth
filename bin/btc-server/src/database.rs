@@ -389,32 +389,6 @@ impl Db {
         }
     }
 
-    /// Add new utxos and remove some utxos in one atomic transaction.
-    pub fn add_remove_utxos(
-        &self,
-        remove: impl Iterator<Item = OutPoint> + Clone,
-        new: impl Iterator<Item = Utxo> + Clone,
-    ) -> Result<(), Error> {
-        // NB the clones on the args is because the closure in the
-        // transaction can be called multiple times in the case where
-        // the transaction is aborted because of a conflict.
-        // But since it's outpoints (small) and references (very small),
-        // the clone operation is really cheap.
-
-        self.utxos.transaction(move |utxos| {
-            for r in remove.clone() {
-                utxos.remove(&r.to_bytes()[..])?;
-            }
-            for n in new.clone() {
-                let mut bytes = Vec::new();
-                ciborium::into_writer(&n, &mut bytes).expect("writing to buffer");
-                utxos.insert(&n.outpoint.to_bytes()[..], &bytes[..])?;
-            }
-            Ok(())
-        })?;
-        Ok(())
-    }
-
     /// Retrieves all utxos from the database.
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
@@ -554,20 +528,6 @@ mod tests {
         let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
         let signing_status = db.get_signing_status(&signing_session_id).unwrap();
         assert!(signing_status == SigningStatus::Running);
-    }
-
-    #[test]
-    fn test_store_and_get_utxo_merkle_root() {
-        let (db, _temp_dir) = setup_db();
-
-        let merkle_root: [u8; 32] = [0; 32]; // Example Merkle root, usually this would be a real hash
-        db.store_utxo_merkle_root(&merkle_root).unwrap();
-
-        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
-        assert_eq!(
-            merkle_root, retrieved_merkle_root,
-            "The stored and retrieved Merkle roots should be the same."
-        );
     }
 
     #[test]

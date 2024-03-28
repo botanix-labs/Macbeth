@@ -1,19 +1,20 @@
 //! Clap parser utilities
 
-use askama::Template;
-use bitcoin::hashes::Hash;
-use reth_primitives::{
-    chain::spec::BotanixTestnetGenesisConfig,
-    create_botanix_config_with_genesis,
-    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
-};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::PathBuf,
     str::FromStr,
     sync::Arc,
     time::Duration,
+};
+
+use askama::Template;
+use bitcoin::hashes::{sha256, Hash};
+use reth_primitives::{
+    chain::spec::BotanixTestnetGenesisConfig,
+    create_botanix_config_with_genesis,
+    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
 };
 use url::Url;
 
@@ -162,7 +163,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                         None,
                         None,
                         bitcoin::hash_types::BlockHash::all_zeros(),
-                        [0u8; 32],
+                        sha256::Hash::all_zeros(),
                     );
                     let edh = hex::encode(extra_data_header.serialize());
                     let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
