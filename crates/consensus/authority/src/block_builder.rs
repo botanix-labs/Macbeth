@@ -1,10 +1,13 @@
 use std::time::Duration;
 
 use crate::{
-    engine_util::{self, BestTransactionsError}, frost_task::{FrostFinalizedSignatureMessage, FrostNotificationMessage}, task::BlockProductionTask, utils::{is_testnet, send_pegouts, get_witness_data_from_psbt}
+    engine_util::{self, BestTransactionsError},
+    frost_task::FrostNotificationMessage,
+    task::BlockProductionTask,
+    utils::{get_witness_data_from_psbt, is_testnet, send_pegouts},
 };
 
-use bitcoin::{Witness, psbt::Psbt};
+use bitcoin::{psbt::Psbt, Witness};
 use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
@@ -45,8 +48,9 @@ where
             return;
         }
 
-        let mut storage = self.storage.write().await;
+        let storage = self.storage.write().await;
         let (best_block, best_hash) = storage.get_best_block_and_hash().expect("best block exists");
+        drop(storage);
 
         // use authority address as suggested fee recipient
         let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
@@ -129,12 +133,12 @@ where
             return;
         }
 
+        let mut storage = self.storage.write().await;
         // retrieve aggregate key
         let secp_pk = match storage.aggregate_public_key {
             Some(pk) => pk,
             None => {
                 warn!(target: "consensus::authority", "Failed to get aggregate public key from cache. DKG is probably not finished yet. Skipping block production");
-                drop(storage);
                 return;
             }
         };
@@ -142,7 +146,6 @@ where
             recent_header: recent_bitcoin_block_header.expect("valid header and height tuple"),
             aggregate_public_key: secp_pk,
         };
-
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
@@ -159,10 +162,10 @@ where
             Ok(ret) => ret,
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "failed to execute block");
-                drop(storage);
                 return;
             }
         };
+        drop(storage);
 
         // Process Botanix specific logs and get current block pegouts
         let is_testnet = is_testnet(self.chain_spec.chain().id());
@@ -186,6 +189,7 @@ where
             }
         }
 
+        let storage = self.storage.read().await;
         // If end of epoch, process pegouts
         let mut witness_data: Option<Vec<Witness>> = None;
         if block.header.is_poa_epoch() {
@@ -195,7 +199,6 @@ where
                 Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
                 Err(e) => {
                     error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
-                    drop(storage);
                     return;
                 }
             };
@@ -209,7 +212,7 @@ where
                 if let Err(e) = send_pegouts(
                     &self.bitcoind_client,
                     &mut self.btc_server,
-                    &self.frost_handle,
+                    &self.frost_task_tx,
                     pegouts,
                 )
                 .await
@@ -217,26 +220,31 @@ where
                     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
                     return;
                 }
-    
+                drop(storage);
+
                 // wait until the psbt is finalized
-                let mut psbt_message: Option<FrostFinalizedSignatureMessage> = None;
-                match tokio::time::timeout(Duration::from_secs(45), self.frost_task_rx.recv()).await {
+                match tokio::time::timeout(Duration::from_secs(60), self.frost_task_rx.recv()).await
+                {
                     Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
-                        psbt_message = Some(message);
-                    },
-                    e => {
+                        let psbt_result =
+                            Psbt::deserialize(message.psbt.as_slice()).expect("valid psbt");
+                        witness_data = Some(get_witness_data_from_psbt(psbt_result));
+                    }
+                    Err(e) => {
                         error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
-                        return;
-                    },
+                        panic!("Failed to get finalized psbt from frost task");
+                        // return;
+                    }
+                    _ => {
+                        warn!(target: "consensus::authority", "Recieved unknown message from frost task");
+                    }
                 }
                 // TODO(scott): check psbt matches expected session id
-                let psbt_result = Psbt::deserialize(&psbt_message.expect("psbt exists").psbt).expect("valid psbt");
-                witness_data = Some(get_witness_data_from_psbt(psbt_result));       
-
                 // TODO(scott): call btc_server.signer_finalize()
             }
         }
 
+        let mut storage = self.storage.write().await;
         let new_header = match storage.build_and_validate_header(
             &bundle_state,
             block,
@@ -252,7 +260,6 @@ where
             Ok(ret) => ret,
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "failed to build and validate header");
-                drop(storage);
                 return;
             }
         };
@@ -297,6 +304,7 @@ where
                 return;
             }
         }
+        drop(storage);
 
         // Notify peers
         let new_block = NewBlock { block, td: Uint::ZERO };

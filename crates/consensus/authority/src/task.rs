@@ -62,6 +62,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     /// Frost Task Receiver
     pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
+    /// Frost Task Sender
+    pub(crate) frost_task_tx: UnboundedSender<FrostNotificationMessage>,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -96,6 +98,7 @@ where
         evm_config: EvmConfig,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
+        frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     ) -> Self {
         Self {
             chain_spec,
@@ -115,6 +118,7 @@ where
             evm_config,
             payload_builder,
             frost_task_rx,
+            frost_task_tx,
         }
     }
 

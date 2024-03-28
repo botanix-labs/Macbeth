@@ -1,6 +1,6 @@
 use crate::{
     extended_client::BtcServerExtendedClient,
-    frost_task::{FrostFinalizedSignatureMessage, FrostNotificationMessage},
+    frost_task::{FrostNotification, FrostNotificationMessage},
     utils::{deserialize_frost_peer_id, parse_signing_session_id, FrostParseError},
     Storage,
 };
@@ -18,8 +18,8 @@ use reth_network::frost::{
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::collections::HashMap;
-use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -517,23 +517,26 @@ where
     }
 
     // ====================================== 1 =========================================
-
-    // A non-coordinator initiates a new signing session
+    // Coordinator initiates a new signing session
     pub(crate) async fn initate_signing_session(
         &mut self,
-        identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
         let _ = self.get_or_insert_signing_state(session_id, SigningState::Initial);
+        info!(">>>>>>>>>>> [START NEW SIGNING SESSION]");
 
-        info!(">>>>>>>>>>> [START NEW SIGNING SESSION] sending round 1 package to coordinator");
-
-        // peer get round 1 signing package
+        // As the cord we generate round 1 nonces and save them
+        // then we send the psbt to other peers
         let signing_round1_package =
-            self.get_round1_signing_package(signing_session_id, psbt).await?;
-        println!("signing_round1_package: {:?}", signing_round1_package);
+            self.get_round1_signing_package(signing_session_id.clone(), psbt.clone()).await?;
+        self.new_round1_signing_package(
+            self.personal_frost_identifier.serialize().to_vec(),
+            signing_session_id,
+            psbt,
+        )
+        .await?;
 
         // send to all other peers
         if let Err(e) = self.gossip_round1_to_peers(signing_round1_package).await {
@@ -552,6 +555,7 @@ where
     ) -> Result<(), Error> {
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
+        info!(">>>>>>>>>>> [GOSSIP_ROUND1] {:?}", connected_peers.len());
 
         let Round1SigningPackage { signing_session_id, psbt, identifier } = round1_signing_package;
 
@@ -579,13 +583,16 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let is_round1 =
-            self.signing_states.get(&session_id).map(|state| state.is_round1()).unwrap_or_default();
+        let is_round2 =
+            self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not peer and not in round 1
-        if self.is_coordinator() || !is_round1 {
+        if is_round2 {
             return Ok(());
+        } else {
+            self.get_or_insert_signing_state(session_id, SigningState::Round1);
         }
+
         info!(
             ">>>>>>>>>>> [PROCESS_ROUND1] identifiers {:?} {:?}",
             self.personal_frost_identifier,
@@ -610,16 +617,17 @@ where
 
         // get coordinator
         let coordinator = self.get_coordinator().await?;
+        info!(">>>>>>>>>>> [PROCESS_ROUND1] coordinator {:?}", coordinator);
         // if none, we are coordinator ?
         if coordinator.is_none() {
             return Ok(());
         }
 
         let (coordinator_frost_id, coordinator_sender) = coordinator.unwrap();
-
+        info!(">>>>>>>>>>> [PROCESS_ROUND1] coordinator {:?}", coordinator_frost_id);
         // Broadcast signing round 1 to the coordinator
         if coordinator_frost_id != self.personal_frost_identifier {
-            // fix unwrap
+            // TODO fix unwrap
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 identifier: signing_package_round1.identifier.clone(),
@@ -642,11 +650,11 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let is_round1 =
+        let _is_round1 =
             self.signing_states.get(&session_id).map(|state| state.is_round1()).unwrap_or_default();
 
         // return if we are not in round 1 or not a coordinator
-        if !self.is_coordinator() || !is_round1 {
+        if !self.is_coordinator() {
             return Ok(());
         }
         info!(
@@ -671,15 +679,27 @@ where
         }
 
         // try to generate signing package
-        if let Ok(sign_payload) = self.get_to_sign_package(signing_session_id).await {
+        if let Ok(sign_payload) = self.get_to_sign_package(signing_session_id.clone()).await {
+            // we should add the cord partial sig
+            let cord_round2 = self
+                .get_round2_signing_package(signing_session_id.clone(), sign_payload.psbt.clone())
+                .await?;
+            self.new_round2_signing_package(
+                self.personal_frost_identifier.serialize().to_vec(),
+                signing_session_id,
+                cord_round2.psbt,
+            )
+            .await?;
+
             // if we can, we go to round 2
             let _ = self.get_or_insert_signing_state(session_id, SigningState::Round2);
             // if ok, send to all peers
-            if let Err(e) = self.gossip_round2_to_peers(sign_payload, identifier).await {
+            if let Err(e) = self.gossip_round2_to_peers(sign_payload.clone(), identifier).await {
                 error!("Error gossiping round 2 to peers {:?}", e);
                 let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
+            info!(">>>>>>>>>>> [PROCESS_ROUND1] to sign payload send to signers {:?}", sign_payload);
         }
 
         Ok(())
@@ -712,7 +732,7 @@ where
         Ok(())
     }
 
-    /// A signer processes round 2 signing packages
+    /// A signer processes round 2 signing request
     pub(crate) async fn signer_process_round2(
         &mut self,
         identifier: Vec<u8>,
@@ -725,7 +745,7 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not peer and not in round 2
-        if self.is_coordinator() || !is_round2 {
+        if self.is_coordinator() {
             return Ok(());
         }
         info!(
@@ -735,9 +755,9 @@ where
         );
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            return Ok(());
-        }
+        // if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        //     return Ok(());
+        // }
 
         // add the transmitted round 2 package data
         let signing_package_round2 =
@@ -749,11 +769,12 @@ where
                     return Err(e);
                 }
             };
-
+        info!(">>>>>>>>>>> [PROCESS_ROUND2] signing_package_round2 {:?}", signing_package_round2);
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator ?
         if coordinator.is_none() {
+            warn!("No coordinator found");
             return Ok(());
         }
 
@@ -788,17 +809,18 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not in round 2 or not a coordinator
-        if !self.is_coordinator() || !is_round2 {
+        if !self.is_coordinator(){
             return Ok(());
         }
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND2] identifiers {:?} {:?}",
+            ">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] identifier {:?} {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+            info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] identifier is us");
             return Ok(());
         }
 
@@ -811,11 +833,12 @@ where
             let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
+        info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] round 2 added");
 
         // try to finalize the signing
         if let Ok(sign_payload) = self.finalize_signing(signing_session_id.clone()).await {
             if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
-                FrostFinalizedSignatureMessage { signing_session_id, psbt: sign_payload.psbt },
+                FrostNotification { signing_session_id, psbt: sign_payload.psbt },
             )) {
                 error!("Error sending finalized signature {:?}", e);
             }

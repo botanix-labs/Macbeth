@@ -21,9 +21,13 @@ use reth_provider::BundleStateWithReceipts;
 
 use bitcoincore_rpc::json::EstimateMode;
 
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
-use crate::extended_client::BtcServerExtendedClient;
+use crate::{
+    extended_client::BtcServerExtendedClient,
+    frost_task::{FrostNotification, FrostNotificationMessage},
+};
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
@@ -166,10 +170,11 @@ fn get_pegout_data(log: Log) -> Option<PegoutData> {
 }
 
 // send pegouts and initiate the frost signing
+// TODO better name for this function
 pub(crate) async fn send_pegouts(
-    bitcoin_block_source: &BitcoindClient,
+    _bitcoin_block_source: &BitcoindClient,
     btc_server: &mut BtcServerExtendedClient,
-    frost_handle: &FrostHandle,
+    frost_notification_tx: &UnboundedSender<FrostNotificationMessage>,
     pegouts: Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
     // TODO Pull fee_rate from bitcoind
@@ -190,27 +195,14 @@ pub(crate) async fn send_pegouts(
         Ok(response) => {
             // start the frost signing session
             let SignPayload { signing_session_id, psbt } = response;
+            info!(target: "consensus::authority", "Initiating signing session with id {:?}", signing_session_id);
 
-            let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-            frost_handle.send_command(FrostCommand::InitiateSigning(
-                sender,
-                signing_session_id,
-                psbt,
-            ));
-            match receiver.await {
-                Ok(request_acknowledged) => {
-                    info!(
-                        "Signing request send to frost task. Acknowledgement status = {:?}",
-                        request_acknowledged
-                    );
-                }
-                Err(e) => {
-                    error!(
-                        "Signing intention request was sent but the receiver channel failed {:?}",
-                        e
-                    );
-                }
-            }
+            frost_notification_tx
+                .send(FrostNotificationMessage::InitiateSigning(FrostNotification {
+                    psbt,
+                    signing_session_id,
+                }))
+                .expect("message sent");
         }
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
@@ -255,8 +247,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height >
-                    recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height
+                    > recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -303,13 +295,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
