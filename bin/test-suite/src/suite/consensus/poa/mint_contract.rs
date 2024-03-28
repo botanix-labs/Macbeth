@@ -14,7 +14,6 @@ use ethers::{
 use reth_primitives::{alloy_primitives::TxHash, BOTANIX_TESTNET};
 use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
-use tracing::info;
 
 /// Contract Error
 #[derive(Debug, DisplayDoc, Error)]
