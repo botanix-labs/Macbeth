@@ -130,6 +130,8 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
                 value: 1200,
             }],
             signing_session_id: signing_session_id.to_vec(),
+            checkpoint_block_hash: todo!(),
+            utxo_merkle_root: todo!(),
         }))
         .await
         .map_err(Error::Request)?

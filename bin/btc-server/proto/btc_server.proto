@@ -26,6 +26,7 @@ service BtcServer {
 
     rpc GetRound2SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
 
+    // Ran by the signer.
     rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
 
     rpc AbortSigning(Empty) returns (Empty) {}
@@ -42,6 +43,7 @@ service BtcServer {
     // signing commitments have been collected
     rpc GetToSignPackage(ToSignRequest) returns (SigningPackage) {}
 
+    // Ran by the coordinator.
     rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
@@ -56,6 +58,10 @@ service BtcServer {
 message FinalizeSignerRequest {
     repeated bytes witness = 1;
     repeated Output outputs = 2;
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 3;
+    // The merkle root of our wallet's UTXO set.
+    bytes utxo_merkle_root = 4;
 }
 
 message ScriptBuf {
@@ -63,9 +69,9 @@ message ScriptBuf {
 }
 
 message TxOut {
-    /// The value of the output, in satoshis.
+    // The value of the output, in satoshis.
     uint64 value = 1;
-    /// The script which must be satisfied for the output to be spent.
+    // The script which must be satisfied for the output to be spent.
     ScriptBuf script_pubkey = 2;
 }
 
@@ -143,7 +149,11 @@ message Output {
 
 message MakeTxRequest {
     repeated Output outputs = 1;
-    bytes signing_session_id = 3;
+    bytes signing_session_id = 2;
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 3;
+    // The merkle root of our wallet's UTXO.
+    bytes utxo_merkle_root = 4;
 }
 
 message ToSignRequest {

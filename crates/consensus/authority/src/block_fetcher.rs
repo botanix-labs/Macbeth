@@ -276,7 +276,12 @@ where
                                 .btc_server
                                 .clone()
                                 .expect("btc_server exists")
-                                .signer_finalize(FinalizeSignerRequest { witness: wit, outputs })
+                                .signer_finalize(FinalizeSignerRequest {
+                                    witness: wit,
+                                    outputs: outputs,
+                                    checkpoint_block_hash: todo!(),
+                                    utxo_merkle_root: todo!(),
+                                })
                                 .await;
 
                             if let Err(e) = res {
