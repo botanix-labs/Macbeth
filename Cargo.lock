@@ -7817,7 +7817,6 @@ name = "reth-authority-consensus"
 version = "0.2.0-beta.6"
 dependencies = [
  "bitcoin",
- "btc-server",
  "client",
  "displaydoc",
  "frost-secp256k1-tr",

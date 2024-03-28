@@ -19,6 +19,8 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
+
+use bitcoin::hashes::sha256;
 use reth_consensus::{Consensus, ConsensusError};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities},
@@ -483,7 +485,7 @@ where
         authorities: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
-        utxo_commitment: &[u8; 32],
+        utxo_commitment: sha256::Hash,
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -530,7 +532,7 @@ where
             None,
             witness_data.clone(),
             recent_block_hash,
-            utxo_commitment.clone(),
+            utxo_commitment,
         );
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk).map_err(|e| {
@@ -609,7 +611,7 @@ where
         sk: &secp256k1::SecretKey,
         authority_signers: &Vec<secp256k1::PublicKey>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
-        utxo_commitment: &[u8; 32],
+        utxo_commitment: sha256::Hash,
         consensus: &AuthorityConsensus,
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;

@@ -29,8 +29,7 @@ mod rpc {
 use std::{net::SocketAddr, sync::Arc, time::Duration, time::SystemTime};
 
 use bitcoin::{BlockHash, Transaction, TxOut};
-use bitcoin::hashes::Hash;
-use bitcoincore_rpc::Auth;
+use bitcoincore_rpc::{Auth, RpcApi};
 use config::{load_config, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
@@ -108,12 +107,16 @@ struct App {
 }
 
 impl App {
-    fn load_txindex(db: &database::Db) -> Result<TxIndex, database::Error> {
+    fn load_txindex(
+        db: &database::Db,
+        fallback_checkpoint: BlockHash,
+        pegin_conf_depth: u32,
+    ) -> Result<TxIndex, database::Error> {
         if let Some(latest) = db.get_txindex_finalized_block()? {
             let txs = db.get_pending_txs()?;
-            Ok(TxIndex::new(100, txs, latest))
+            Ok(TxIndex::new(pegin_conf_depth, txs, latest))
         } else {
-            Ok(TxIndex::new(100, vec![], BlockHash::all_zeros()))
+            Ok(TxIndex::new(pegin_conf_depth, vec![], fallback_checkpoint))
         }
     }
 
@@ -165,7 +168,15 @@ impl App {
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
                 .expect("valid fee rate");
 
-        let txindex = Mutex::new(Self::load_txindex(&db)?);
+        let fallback_checkpoint = {
+            let tip_height = bitcoind_client.get_block_count()
+                .map_err(|e| Error::TxIndexSync(e.into()))?;
+            bitcoind_client.get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
+                .map_err(|e| Error::TxIndexSync(e.into()))?
+        };
+        let txindex = Mutex::new(Self::load_txindex(
+            &db, fallback_checkpoint, config.pegin_confirmation_depth,
+        )?);
         Ok(Self {
             btc_network: config.btc_network,
             db,
@@ -278,9 +289,10 @@ impl App {
         &self,
         tx: Transaction,
         targets: &[TxOut],
+        timestamp: SystemTime,
     ) -> Result<(), database::Error> {
         let mut txindex = self.txindex.lock().await;
-        let tx = txindex.add_tx(tx, targets, SystemTime::now());
+        let tx = txindex.add_tx(tx, targets, timestamp);
         self.db.store_pending_tx(tx)?;
         self.db.flush()?;
         Ok(())
@@ -409,7 +421,7 @@ mod test {
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
         let db = database::Db::open(&dbdir).unwrap();
-        let txindex = Mutex::new(App::load_txindex(&db).unwrap());
+        let txindex = Mutex::new(App::load_txindex(&db, BlockHash::all_zeros(), 6).unwrap());
         let app = App {
             db, txindex,
             btc_network: NETWORK,
@@ -440,6 +452,7 @@ mod test {
                 bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
+                pegin_confirmation_depth: 6,
             },
         };
         println!("App setup complete");

@@ -175,10 +175,13 @@ pub(crate) struct CliConfig {
     bitcoind_pass: Option<String>,
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
-    pub fee_rate_diff_percentage: Option<u32>,
+    fee_rate_diff_percentage: Option<u32>,
     /// Fall back fee rate expressed in sat per vbyte
     #[arg(long)]
     fall_back_fee_rate_sat_per_vbyte: Option<u64>,
+    /// The number of confirmations required for pegins.
+    #[arg(long)]
+    pegin_confirmation_depth: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -208,6 +211,8 @@ pub(crate) struct Config {
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
     pub(crate) fall_back_fee_rate_sat_per_vbyte: u64,
+    /// The number of confirmations required for pegins.
+    pub(crate) pegin_confirmation_depth: u32,
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
@@ -261,6 +266,10 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
             .fall_back_fee_rate_sat_per_vbyte
             .or(file_config.fall_back_fee_rate_sat_per_vbyte)
             .expect("fall_back_fee_rate_sat_per_vbyte is required"),
+        pegin_confirmation_depth: cli_config
+            .pegin_confirmation_depth
+            .or(file_config.pegin_confirmation_depth)
+            .expect("pegin_confirmation_depth is required"),
     };
 
     Ok(config)
