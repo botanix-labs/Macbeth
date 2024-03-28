@@ -11,7 +11,7 @@ use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSigningRequest, FinalizeSigningResponse,
     GetGatewayAddressRequest, GetGatewayAddressResponse, GetPublicKeyResponse, MakeTxRequest,
     NotifyPeginRequest, Round1SigningPackage, Round1SigningPackageRequest, Round2SigningPackage,
-    SignPayload, ToSignRequest,
+    SignPayload, ToSignRequest, FinalizeSignerRequest
 };
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
@@ -113,6 +113,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_to_sign_package, ToSignRequest, SignPayload);
     generate_method!(new_round2_signing_package, Round2SigningPackage, Empty);
     generate_method!(finalize_signing, FinalizeSigningRequest, FinalizeSigningResponse);
+    generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
 }
 
 mod tests {
