@@ -74,7 +74,7 @@ trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
 
 struct App {
     db: database::Db,
-    network: bitcoin::Network,
+    btc_network: bitcoin::Network,
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
     tx_lock: Arc<Mutex<()>>,
@@ -147,7 +147,7 @@ impl App {
 
         Ok(Self {
             db,
-            network: config.network,
+            btc_network: config.btc_network,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_identifier,
             max_signers,
@@ -258,7 +258,7 @@ struct Config {
     db: PathBuf,
     /// The bitcoin network to operate on.
     #[arg(long)]
-    network: bitcoin::Network,
+    btc_network: bitcoin::Network,
     /// Frost participant identifier
     #[arg(long)]
     identifier: u16,
@@ -288,6 +288,7 @@ struct Config {
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     pub fee_rate_diff_percentage: u32,
+    /// Fall back fee rate expressed in sat per vbyte
     #[arg(long)]
     fall_back_fee_rate_sat_per_vbyte: u64,
 }
@@ -387,7 +388,7 @@ mod test {
         }
     }
 
-    const NETWORK: bitcoin::Network = bitcoin::Network::Signet;
+    const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 
     pub fn eth_vector_to_fixed_bytes(eth: Vec<u8>) -> [u8; 20] {
         let mut eth_addr = [0u8; 20];
@@ -402,7 +403,7 @@ mod test {
 
         let app = App {
             db: database::Db::open(&dbdir).unwrap(),
-            network: NETWORK,
+            btc_network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_id!(1u16),
             max_signers: 3,
@@ -417,7 +418,7 @@ mod test {
             // Normally this would be read from a config file
             config: Config {
                 db: dbdir,
-                network: bitcoin::Network::Regtest,
+                btc_network: bitcoin::Network::Regtest,
                 identifier: 1,
                 address: "localhost".to_string(),
                 max_signers: 3,

@@ -10,4 +10,4 @@
 **/*.rs.bk
 
 # Config file
-/config.toml
+config.toml

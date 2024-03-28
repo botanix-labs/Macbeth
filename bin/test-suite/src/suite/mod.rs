@@ -7,6 +7,7 @@ pub trait Suite {
     async fn run(&mut self) -> Outcome;
     async fn create_context(&mut self);
     async fn destroy_context(&mut self);
+    fn set_panic_hook(&self);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, AsRefStr, EnumString)]

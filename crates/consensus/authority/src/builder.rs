@@ -275,7 +275,7 @@ where
             evm_config.clone(),
             payload_builder,
             frost_task_notifications2_rx,
-            frost_task_notifications1_tx
+            frost_task_notifications1_tx,
         );
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)

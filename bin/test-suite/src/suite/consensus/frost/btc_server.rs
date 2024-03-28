@@ -5,6 +5,8 @@ use std::{
 };
 use tokio::process::{Child, Command};
 
+use crate::config::Config;
+
 #[derive(Debug)]
 pub struct SpawnedBtcServer {
     pub port: u16,
@@ -12,9 +14,8 @@ pub struct SpawnedBtcServer {
     pub child_process: Child,
 }
 
-fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path: PathBuf) -> Child {
+fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, config: Config) -> Child {
     let db_path_arg = db_path.display().to_string();
-    println!("db_path_arg: {}", db_path_arg);
 
     let mut working_directory = std::env::current_dir().unwrap();
     for _ in 0..2 {
@@ -23,15 +24,18 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
     working_directory.push("bin");
     working_directory.push("btc-server");
 
-    let jwt_secrets_dir = jwt_secret_path.display().to_string();
+    let jwt_secret_file =
+        config.jwt_secrets_dir.join(format!("{}.hex", id + 1)).display().to_string();
 
     let identifier = id.to_string();
+    let frost_min_signers = config.frost_min_signers.to_string();
+    let frost_max_signers = config.frost_max_signers.to_string();
 
     let command = "cargo";
     let args = vec![
         "run",
         "--",
-        "--network",
+        "--btc-network",
         "regtest",
         "--db",
         db_path_arg.as_str(),
@@ -40,19 +44,19 @@ fn spawn_btc_server(id: u16, address: String, db_path: PathBuf, jwt_secret_path:
         "--address",
         address.as_str(),
         "--min-signers",
-        "2",
+        frost_min_signers.as_str(),
         "--max-signers",
-        "2",
+        frost_max_signers.as_str(),
         "--toml",
         "./config.toml",
         "--jwt-secret",
-        jwt_secrets_dir.as_str(),
+        jwt_secret_file.as_str(),
         "--bitcoind-url",
         "localhost:18443",
         "--bitcoind-user",
-        "foo",
+        config.bitcoind.username.as_str(),
         "--bitcoind-pass",
-        "bar",
+        config.bitcoind.password.as_str(),
         "--fee-rate-diff-percentage",
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
@@ -74,15 +78,14 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(n: u16, jwt_secrets_path: PathBuf) -> Vec<SpawnedBtcServer> {
+pub fn spawn_n_btc_servers(n: u16, config: Config) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..n {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
         let port = 8080 + i;
-        let jwt_secret_file = jwt_secrets_path.join(format!("{}.hex", i + 1));
         let child_process =
-            spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone(), jwt_secret_file);
+            spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone(), config.clone());
         tasks.push(SpawnedBtcServer { db_path, port, child_process });
     }
     tasks

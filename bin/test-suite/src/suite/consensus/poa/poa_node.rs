@@ -15,7 +15,6 @@ use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_primitives::{ChainSpec, BOTANIX_TESTNET};
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
-use secp256k1::SecretKey;
 use std::{
     collections::HashMap,
     io::Write,
@@ -26,7 +25,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{config::Config, suite::consensus::frost::btc_server::SpawnedBtcServer};
+use crate::{
+    config::Config, it_info_print, it_warn_print,
+    suite::consensus::frost::btc_server::SpawnedBtcServer,
+};
 
 use super::mint_contract::MintContractInstance;
 
@@ -131,7 +133,12 @@ impl FederationMemberTestConfig {
     pub async fn create_mint_contract_instance(&self) -> MintContractInstance {
         let mint_contract_address: EtherAddress =
             MINT_CONTRACT_ADDRESS.parse().expect("Must be a valid ethereum address");
-        MintContractInstance::new(self.rpc_port, &self.secret_key, mint_contract_address).await
+        MintContractInstance::new(
+            self.rpc_port,
+            "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29",
+            mint_contract_address,
+        )
+        .await
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
@@ -143,8 +150,7 @@ impl FederationMemberTestConfig {
     }
 
     pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
-        println!("Engine {} data directory", self.index);
-        println!("Engine {} secret key = {}", self.index, &self.secret_key);
+        it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -210,14 +216,14 @@ impl FederationMemberTestConfig {
 
 impl RethNodeCommandConfig for FederationMemberTestConfig {
     fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
-        println!("Engine {} started task", self.index);
+        it_info_print!("Engine started task with index: ", self.index);
         // add the peers
         for peer in self.peers_list.iter() {
             let peer_socket =
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), peer.discovery_port);
             components.network().add_peer(self.peer_id, peer_socket);
         }
-        println!("Engine {} added peers", self.index);
+        it_info_print!("Engine added peers: ", self.index);
 
         let _pool = components.pool();
         let mut canon_events = components.events().subscribe_to_canonical_state();
@@ -241,11 +247,11 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
             loop {
                 match btc_server_client.get_public_key(Empty {}).await {
                     Ok(_) => {
-                        println!("Dkg Finished !");
+                        it_info_print!("Dkg Finished !");
                         break;
                     }
                     Err(_) => {
-                        println!("Dkg Pending...");
+                        it_warn_print!("Dkg Pending...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }

@@ -64,6 +64,8 @@ pub(crate) enum Error {
     InvalidFrostPeerId,
     #[error("invalid signing session id")]
     InvalidSigningSessionId,
+    #[error("missing key package")]
+    MissingKeyPackage,
 }
 
 impl From<FrostParseError> for Error {
@@ -275,6 +277,9 @@ where
                         if e.message().contains("Failed to get public key package") =>
                     {
                         return Err(Error::FailedToGetPubKeyPackage)
+                    }
+                    tonic::Code::Internal if e.message().contains("missing key package") => {
+                        return Err(Error::MissingKeyPackage)
                     }
                     tonic::Code::Internal
                         if e.message().contains("Failed to get round1 dkg package") =>

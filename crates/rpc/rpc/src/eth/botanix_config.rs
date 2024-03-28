@@ -29,9 +29,7 @@ impl Default for BotanixConfig {
             btc_server: "http://localhost:8080".to_string(),
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
-                "https://bitcoind.botanixlabs.dev"
-                    .parse::<Url>()
-                    .expect("must be valid url address"),
+                "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
                 "usr".to_string(),
                 "pwd".to_string(),
             ),
@@ -53,6 +51,8 @@ impl BotanixConfig {
             bitcoin::Network::Bitcoin => "https://bitcoind.botanixlabs.dev", // TODO: update this
             bitcoin::Network::Testnet => "https://bitcoind.botanixlabs.dev", // TODO: update this
             bitcoin::Network::Signet => "https://bitcoind.botanixlabs.dev/", // TODO: update this
+            bitcoin::Network::Regtest => "http://localhost:18443",           /* local regetest */
+            // network
             _ => panic!("Unsupported network"),
         };
 

@@ -264,8 +264,8 @@ where
 
                 match pegin_data.validate(&recent_header, &aggregate_public_key) {
                     Ok(aggregate_value) => {
-                        tracing::trace!("Pegin aggregate value: {}", aggregate_value);
-                        tracing::trace!("Pegin amount: {}", pegin_data.amount);
+                        tracing::info!("Pegin aggregate value: {}", aggregate_value);
+                        tracing::info!("Pegin amount: {}", pegin_data.amount);
                         if aggregate_value == pegin_data.amount {
                             warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
                             return Err(BlockValidationError::MintContractViolation.into());

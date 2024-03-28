@@ -1,10 +1,9 @@
-use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
 
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     utils::{bloom_contains_pegout, find_epoch_start, make_tx_request_for_pegout_in_receipt},
@@ -58,8 +57,7 @@ where
         for block in start_block..=best_block {
             match client.block_by_number(block) {
                 Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-                    match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number))
-                    {
+                    match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
                         Ok(Some(receipts)) => {
                             for receipt in receipts {
                                 if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt) {
@@ -140,7 +138,7 @@ where
                 // made info instead of warn since this prints as soon as
                 // a block is produced and the node is still in turn
                 drop(storage);
-                info!("Current signer failed validation against last signer.");
+                debug!("Already produced the block for this turn.");
                 return false;
             }
         }

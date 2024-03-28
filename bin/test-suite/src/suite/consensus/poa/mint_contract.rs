@@ -1,4 +1,4 @@
-use crate::mint_contract_abi::MintContract;
+use crate::{it_info_print, mint_contract_abi::MintContract};
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,
@@ -6,11 +6,13 @@ use ethers::{
     middleware::SignerMiddleware,
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{TransactionReceipt, U256},
+    types::{
+        Eip1559TransactionRequest, NameOrAddress, TransactionReceipt, TransactionRequest, U256,
+    },
+    utils,
 };
-use reth_primitives::BOTANIX_TESTNET;
-use secp256k1::SecretKey;
-use std::sync::Arc;
+use reth_primitives::{alloy_primitives::TxHash, BOTANIX_TESTNET};
+use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
 use tracing::info;
 
@@ -26,6 +28,7 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct MintContractInstance {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    provider: Provider<Http>,
 }
 
 impl MintContractInstance {
@@ -37,7 +40,7 @@ impl MintContractInstance {
         // Connect to the network
         let provider =
             Provider::<Http>::try_from(&format!("http://127.0.0.1:{}", rpc_port)).unwrap();
-        info!("Node URL: {}", &format!("http://127.0.0.1:{}", rpc_port));
+        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{}", rpc_port));
 
         // get chain id
         let chain_id = provider.get_chainid().await.unwrap();
@@ -48,11 +51,11 @@ impl MintContractInstance {
             sender_secret_key.parse::<LocalWallet>().unwrap().with_chain_id(chain_id.as_u64());
 
         // connect the wallet to the provider
-        let client = SignerMiddleware::new(provider, wallet);
+        let client = SignerMiddleware::new(provider.clone(), wallet);
 
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(client));
 
-        Self { mint_contract }
+        Self { mint_contract, provider }
     }
 
     pub async fn mint(
@@ -61,10 +64,15 @@ impl MintContractInstance {
         amount: ethers::core::types::U256,
         bitcoin_block_height: u32,
         metadata: ethers::core::types::Bytes,
+        refund_address: ethers::core::types::Address,
     ) -> Result<Option<TransactionReceipt>, Error> {
+        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
+
         let tx_receipt = self
             .mint_contract
-            .mint(destination, amount, bitcoin_block_height, metadata)
+            .mint(destination, amount, bitcoin_block_height, metadata, refund_address)
+            .gas_price(gas_price)
+            .gas(U256::from(1_000_000))
             .send()
             .await
             .map_err(Error::Contract)?
@@ -77,15 +85,51 @@ impl MintContractInstance {
         &self,
         destination: ethers::core::types::Bytes,
         data: ethers::core::types::Bytes,
+        value: U256,
     ) -> Result<Option<TransactionReceipt>, Error> {
+        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
+
         let tx_receipt = self
             .mint_contract
             .burn(destination, data)
+            .gas_price(gas_price)
+            .value(value)
             .send()
             .await
             .map_err(Error::Contract)?
             .await
             .map_err(Error::Provider)?;
+        Ok(tx_receipt)
+    }
+
+    pub async fn send_eoa(
+        &self,
+        receiver_address: ethers::core::types::Address,
+        amount: u64,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        // Eip1559TransactionRequest
+        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
+        let accounts = self.provider.get_accounts().await.map_err(Error::Provider)?;
+        let amount = utils::parse_ether(amount.to_string()).unwrap();
+
+        // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
+        let tx = TransactionRequest::new()
+            .chain_id(BOTANIX_TESTNET.chain().id())
+            .from(accounts[0])
+            .to(receiver_address)
+            .value(amount)
+            .gas_price(gas_price)
+            .gas(U256::from(50_000));
+
+        // send the tx with the initialized signer client
+        let tx_receipt = self
+            .provider
+            .send_transaction(tx, None)
+            .await
+            .map_err(Error::Provider)?
+            .await
+            .map_err(Error::Provider)?;
+
         Ok(tx_receipt)
     }
 }

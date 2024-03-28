@@ -1,6 +1,5 @@
 use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
-use futures_util::{stream::FuturesUnordered, StreamExt};
 use reth_botanix_lib::{
     mint_validation::{
         parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
@@ -9,8 +8,6 @@ use reth_botanix_lib::{
     peg_contract::PegoutData,
 };
 use reth_btc_wallet::bitcoind::BitcoindClient;
-
-use reth_network::frost::manager::{FrostCommand, FrostHandle};
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -18,8 +15,6 @@ use reth_primitives::{
     hex, Bloom, BloomInput, Log, Receipt, BOTANIX_TESTNET,
 };
 use reth_provider::BundleStateWithReceipts;
-
-use bitcoincore_rpc::json::EstimateMode;
 
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
@@ -247,8 +242,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height
-                    > recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height >
+                    recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -295,13 +290,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number

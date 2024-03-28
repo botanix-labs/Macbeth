@@ -248,17 +248,6 @@ impl Stream for FrostProtoConnection {
                                             .encoded(),
                                         ))
                                     }
-                                    SigningEventResponseType::InitiateSigningSession => {
-                                        let req =
-                                            SignRequest::new(identifier, signing_session_id, psbt);
-                                        //info!(">>>>>>>>> [PROTOCOL] INITIATING SIGNING SESSION
-                                        // DATA = {:?}",
-                                        // req);
-                                        Poll::Ready(Some(
-                                            FrostProtoMessage::initiate_signing_session(req)
-                                                .encoded(),
-                                        ))
-                                    }
                                 }
                             }
                         }
@@ -330,18 +319,6 @@ impl Stream for FrostProtoConnection {
                             response_type: DkgEventResponseType::DkgRound2,
                             identifier: data.identifier,
                             data: data.data,
-                        }),
-                    ));
-                }
-                FrostProtoMessageKind::InitiateSigningSession(data) => {
-                    //info!(">>>>>>>>> [PROTOCOL] RECEIVED INITIATE A NEW SIGNING ROUND MESSAGE
-                    // FROM PEER. {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Signing(SigningResponse {
-                            response_type: SigningEventResponseType::InitiateSigningSession,
-                            identifier: data.identifier,
-                            signing_session_id: data.signing_session_id,
-                            psbt: data.psbt,
                         }),
                     ));
                 }

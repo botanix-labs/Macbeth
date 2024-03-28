@@ -3,14 +3,17 @@ use argh::{self, FromArgs};
 use ethers::contract::Abigen;
 use std::{sync::Arc, time::Duration};
 use test_suite::{
-    config::Config, context::Context as ResourcesContext, server::TestServer, suite::RunSuite,
+    config::Config, context::Context as ResourcesContext, it_info_print, server::TestServer,
+    suite::RunSuite,
 };
 use tokio::{
     signal::unix::{signal, SignalKind},
     sync::broadcast,
 };
-use tracing::info;
-use tracing_subscriber::fmt::format::FmtSpan;
+//use tracing_subscriber::fmt::format::FmtSpan;
+use reth_tracing::{
+    tracing_subscriber::filter::LevelFilter, LayerInfo, LogFormat, RethTracer, Tracer,
+};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<()> {
@@ -25,12 +28,18 @@ async fn main() -> Result<()> {
     // init config
     dotenv::dotenv().ok();
     let args: Args = argh::from_env();
-    info!("{:?}", args.config);
 
     // set up log filter to be used by tracing
     let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "test_suite=info".to_string());
 
-    tracing_subscriber::fmt().with_env_filter(log_filter).with_span_events(FmtSpan::CLOSE).init();
+    let _ = RethTracer::new()
+        .with_stdout(LayerInfo::new(
+            LogFormat::Terminal,
+            LevelFilter::INFO.to_string(),
+            log_filter,
+            Some("always".to_string()),
+        ))
+        .init();
 
     // init config
     let mut config = Config::new(args.config).await.context("Failed to load config")?;
@@ -38,7 +47,7 @@ async fn main() -> Result<()> {
     // update config using envs
     config.from_envs();
 
-    tracing::info!("Configuration loaded successfully",);
+    it_info_print!("Configuration loaded successfully");
 
     // create the shared resources
     let resources_ctx = Arc::new(ResourcesContext::new(args.dry_run));
@@ -57,7 +66,7 @@ async fn main() -> Result<()> {
     result
         .await
         .context("Failed to read test server result")?
-        .map(|()| info!("Testing complete."))
+        .map(|()| it_info_print!("Testing complete."))
         .map_err(|err| anyhow!("Testing failed: {}", err))?;
 
     Ok(())
@@ -68,11 +77,11 @@ async fn stop_signal(stop_tx: broadcast::Sender<()>, _resources_ctx: Arc<Resourc
     let mut sigterm = signal(SignalKind::terminate()).expect("shutdown_listener");
     tokio::select! {
         _ = sigint.recv() => {
-            tracing::info!("Received SIGINT ...");
+            it_info_print!("Received SIGINT ...");
             let _ = stop_tx.send(());
         }
         _ = sigterm.recv() => {
-            tracing::info!("Received SIGTERM ...");
+            it_info_print!("Received SIGTERM ...");
             let _ = stop_tx.send(());
         }
     }

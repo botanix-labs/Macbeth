@@ -36,6 +36,36 @@ KUBE_EDITOR=nano k9s
 and automatically select the cluster context. Then find the pod where bitcoind is running, press `Shift+f` for port-forwarding and select the local port
 onto which the pod traffic is to be forwarded. Usually that is `38332`.
 
+## Running your local bitcoind instance
+
+For integration tests and in general spinning up the node locally, it is recommended to run your local bitcoind instance using the `regtest` bitcoin network configuration.
+
+The following links explain in details how to setup the local bitcoind instance, generate username, password and rpc auth credentials:
+
+- https://learn.saylor.org/mod/page/view.php?id=36347
+- https://gist.github.com/System-Glitch/cb4e87bf1ae3fec9925725bb3ebe223a
+
+It is recommended to use the following `bitcoin.conf`:
+
+```bash
+#daemon=1
+datadir=[directory where your data will be persisted]
+regtest=1
+rpcuser=[your username]
+rpcpassword=[your password]
+rpcauth=[your rpc auth string]
+server=1
+txindex=1
+fallbackfee=0.00001
+```
+
+when running the bitcoind command:
+
+```shell
+bitcoind -conf=[path to your config file above]
+
+```
+
 ## Runing a local federation
 
 Once you have connected to bitcoind, you can run a local federation of two and more nodes easily.
@@ -43,12 +73,13 @@ These instructions set up federation nodes running poa consensus on your local s
 Please note that the federation on feature/poA-consensus consists of at least two federation members
 
 
-1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD` with regards to the locally port-forwarded traffic. Ask adminstrator for username and password.
+1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIN_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask adminstrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
 
 ```bash
-BITCOIND_URL=http://localhost:38332
-BITCOIND_USER=[USER]
-BITCOIND_PWD=[PWD]
+BITCOIN_NETWORK=[BTC NETWORK e.g. regtest]
+BITCOIND_URL=[BITCOIND PROTOCOL URL WITH PORT e.g. http://localhost:18443 for regtest]
+BITCOIND_USER=[USERNAME]
+BITCOIND_PWD=[PASSWORD]
 ```
 
 2. Set up directories for a two different reth nodes, `[PATH_TO_NODE1]`, `[PATH_TO_NODE2]` and add a federation secret key to each of them. You can use the code snippets provided below directly.
@@ -102,6 +133,23 @@ cargo test --workspace --features all
 ```
 
 We recommend using [`cargo nextest`](https://nexte.st/) to speed up testing. With nextest installed, simply substitute `cargo test` with `cargo nextest run`.
+
+## Running integration tests
+
+To run the integration tests suite:
+
+```sh
+make start-test-suite
+```
+
+However, integration tests can ONLY be run using the local bitcoind instance with `regtest`. Running them on the `signet` is not feasible as block times are quite long there and the test will not finish in time. You are advised, prior to running the integration tests suite to update the tests suite config file located under `root/bin/test-suite` with the following configuration block:
+
+```sh
+[bitcoind]
+url = "http://localhost:[your local bitcoind port]"
+username = "[your local bitcoind username]"
+password = "[your local bitcoind password]"
+```
 
 ## Building and pushing the Botanix images (TODO)
 

@@ -648,7 +648,7 @@ impl Default for RpcServerArgs {
                 password: "usr".to_string(),
                 username: "pwd".to_string(),
             },
-            btc_network: bitcoin::Network::Signet,
+            btc_network: bitcoin::Network::Regtest,
             frost: FrostArgs { min_signers: 2, max_signers: 2 },
             slack_notifications_webhook_url: None,
         }

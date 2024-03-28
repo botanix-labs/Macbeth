@@ -398,11 +398,11 @@ start-test-suite:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network regtest --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
+	cargo run --bin btc-server -- --btc-network "${BITCOIND_NETWORK}" --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url "${BITCOIND_URL}" --bitcoind-user "${BITCOIND_USER}" --bitcoind-pass "${BITCOIND_PWD}" --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network regtest --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_2_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
+	cargo run --bin btc-server -- --btc-network "${BITCOIND_NETWORK}" --identifier 1 --address 0.0.0.0:8081 --db "./db2" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url "${BITCOIND_URL}" --bitcoind-user "${BITCOIND_USER}" --bitcoind-pass "${BITCOIND_PWD}" --jwt-secret "${NODE_2_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
 
 start-poa-server-1:
 	cd ./bin/reth && \
@@ -419,7 +419,7 @@ start-poa-server-1:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8551 \
 	--btc-server "localhost:8080" \
-	--btc-network regtest \
+	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
@@ -443,7 +443,7 @@ start-poa-server-2:
 	--authrpc.addr "127.0.0.1" \
 	--authrpc.port 8552 \
 	--btc-server "localhost:8081" \
-	--btc-network regtest \
+	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \

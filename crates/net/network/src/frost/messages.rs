@@ -70,8 +70,6 @@ pub enum FrostProtoMessageId {
     SignerRound2SigningPackage = 0x08,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage = 0x09,
-    /// Initiate a new signing session
-    InitiateSigningSession = 0x0A,
 }
 
 /// Enum defining the frost message kind
@@ -97,8 +95,6 @@ pub enum FrostProtoMessageKind {
     SignerRound2SigningPackage(SignRequest),
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage(SignRequest),
-    /// Iniates a new signing session with PBST
-    InitiateSigningSession(SignRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -194,14 +190,6 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Initiates a new signing session with pbst
-    pub fn initiate_signing_session(resource: SignRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::InitiateSigningSession,
-            message: FrostProtoMessageKind::InitiateSigningSession(resource),
-        }
-    }
-
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -242,17 +230,6 @@ impl FrostProtoMessage {
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
                                               // authority index
                 buf.put_u16_le(*authority_index); // Store the authority_index
-            }
-            FrostProtoMessageKind::InitiateSigningSession(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // signing session id
-                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.signing_session_id);
-                // psbt
-                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.psbt);
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(resource) => {
                 // identifier
@@ -320,7 +297,6 @@ impl FrostProtoMessage {
             0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
             0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
             0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
-            0x0A => FrostProtoMessageId::InitiateSigningSession,
             _ => return None,
         };
         let message = match message_type {
@@ -376,31 +352,6 @@ impl FrostProtoMessage {
                 buf.advance(2);
 
                 FrostProtoMessageKind::PongMessage(peer_id, authority_index)
-            }
-            FrostProtoMessageId::InitiateSigningSession => {
-                // id
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
-                buf.advance(id_len);
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::InitiateSigningSession(SignRequest::new(
-                    identifier,
-                    signing_session_id,
-                    psbt,
-                ))
             }
             FrostProtoMessageId::SignerRound1SigningPackage => {
                 // id

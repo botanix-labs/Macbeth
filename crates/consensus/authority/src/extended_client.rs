@@ -8,10 +8,10 @@ use thiserror::Error;
 use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 
 use client::{
-    BtcServerClient, DkgPayload, Empty, FinalizeSigningRequest, FinalizeSigningResponse,
-    GetGatewayAddressRequest, GetGatewayAddressResponse, GetPublicKeyResponse, MakeTxRequest,
-    NotifyPeginRequest, Round1SigningPackage, Round1SigningPackageRequest, Round2SigningPackage,
-    SignPayload, ToSignRequest, FinalizeSignerRequest
+    BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
+    FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
+    GetPublicKeyResponse, MakeTxRequest, NotifyPeginRequest, Round1SigningPackage,
+    Round1SigningPackageRequest, Round2SigningPackage, SignPayload, ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";

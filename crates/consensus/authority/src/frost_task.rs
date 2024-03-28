@@ -160,9 +160,9 @@ where
 
             // start dkg only when we are in turn + initial state + no public key
             // TODO this logic is wrong you only need dkg if there is no public key
-            if is_inturn
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_inturn &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
@@ -184,7 +184,10 @@ where
                         }
                     }
                 } else {
-                    warn!(">>>>>>>>>>> [FROST_TASK] Unhandled frost notification message {:?}", message);
+                    warn!(
+                        ">>>>>>>>>>> [FROST_TASK] Unhandled frost notification message {:?}",
+                        message
+                    );
                 }
             }
             // receive over a channel message from other peers and update our state machine
@@ -222,22 +225,6 @@ where
                         let SigningResponse { response_type, identifier, signing_session_id, psbt } =
                             signing_response;
                         match response_type {
-                            SigningEventResponseType::InitiateSigningSession => {
-                                panic!("dont end up here");
-                                // TODO delete this case
-                                match self
-                                    .signing_state_machine
-                                    .initate_signing_session(signing_session_id, psbt)
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Started new signing session successfully")
-                                    }
-                                    Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Error starting new signing session {:?}", e);
-                                    }
-                                }
-                            }
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self
                                     .signing_state_machine
