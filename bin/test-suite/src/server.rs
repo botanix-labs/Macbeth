@@ -4,9 +4,9 @@ use crate::{
     suite::{consensus::ConsensusIntegrationTestSuite, Outcome, RunSuite, Suite},
 };
 use displaydoc::Display as DisplayDoc;
+use reth_tracing::tracing::info;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
-use tracing::info;
 
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {

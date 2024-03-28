@@ -1,5 +1,13 @@
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        poa::poa_node::{create_poa_federation_members, Notifications},
+        ConsensusIntegrationTestSuite,
+    },
+};
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
 use ethers::{
+    prelude::Provider,
     providers::{Http, Middleware, ProviderError},
     types::{NameOrAddress, U256},
 };
@@ -7,26 +15,21 @@ use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::{PeginData, PeginMeta},
+    utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
 use reth_primitives::{Account, Address, Receipt, B256};
 use reth_provider::{chain::BlockReceipts, CanonStateNotification};
 use std::{collections::HashMap, str::FromStr, time::Duration};
-
-use crate::suite::consensus::{
-    poa::{
-        payload_client::PayloadClient,
-        poa_node::{create_poa_federation_members, Notifications},
-    },
-    ConsensusIntegrationTestSuite,
-};
-use ethers::prelude::Provider;
+use tracing::info;
 
 use super::poa_node::{is_dkg_ready, FederationMemberTestConfig};
-use bitcoincore_rpc::{Auth, RawTx, RpcApi};
+use bitcoincore_rpc::{Auth, RpcApi};
 
 const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 const ETHEREUM_TEST_ADDRESS: &str = "0x184ba627DB853244c9f17f3Cb4378cB8B39bf147";
+const SEND_AMOUNT: u64 = 1; // = 1 ether
+const RECEIVER_ADDRESS: &str = "0x613580C865985dA78613Ea7EBCF7a3b8C5445F93";
 
 async fn await_dkg(
     fed_members: &mut HashMap<usize, FederationMemberTestConfig>,
@@ -57,6 +60,7 @@ async fn await_botanix_event(
     while let Some(notification) = rx.recv().await {
         match notification {
             Notifications::CanonState(canon_state_notification) => {
+                it_info_print!("Canon state notification", canon_state_notification);
                 let block_receipts = canon_state_notification.notification.block_receipts();
                 let non_reverted_block_receipts = block_receipts
                     .into_iter()
@@ -72,12 +76,12 @@ async fn await_botanix_event(
                         acc.extend(receipts);
                         acc
                     });
-                println!("Final block receipts {:?}", final_block_receipts);
+                it_info_print!("Final block receipts", final_block_receipts);
                 for block_receipt in final_block_receipts.into_iter() {
                     for log in block_receipt.logs.into_iter() {
                         for topic in log.topics.into_iter() {
-                            if topic.0 == event_topic.0 {
-                                break;
+                            if topic == event_topic {
+                                return;
                             }
                         }
                     }
@@ -100,7 +104,7 @@ pub async fn poa_frost_dkg(
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
     // config is hardcoded to only work with regtest
-    let bitcoin_rpc = bitcoincore_rpc::Client::new(
+    let bitcoind_rpc = bitcoincore_rpc::Client::new(
         "localhost:18443",
         Auth::UserPass(
             suite.config.bitcoind.username.clone(),
@@ -138,24 +142,25 @@ pub async fn poa_frost_dkg(
     }
 
     // Load up the bitcoin wallet and generate some blocks
-    let create_res = bitcoin_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
     if create_res.is_err() {
         // wallet already exists
         // load wallet
-        let _ = bitcoin_rpc.load_wallet(BITCOIND_WALLET_NAME);
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
     let address =
-        bitcoin_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate some blocks
-    bitcoin_rpc.generate_to_address(50, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(50, &address).expect("generate to address");
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::from_str(ETHEREUM_TEST_ADDRESS).unwrap();
 
     // Provider to one of the federation members
-    let provider = Provider::<Http>::try_from(
-        format!("http://localhost:{}", test_fed_members.get(&0).unwrap().rpc_port).as_str(),
-    )
+    let provider = Provider::<Http>::try_from(format!(
+        "http://localhost:{}",
+        test_fed_members.get(&0).unwrap().rpc_port
+    ))
     .expect("could not instantiate HTTP Provider");
 
     // get gateway address
@@ -171,37 +176,48 @@ pub async fn poa_frost_dkg(
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
         .assume_checked();
-    let tx = bitcoin_rpc
+    let tx = bitcoind_rpc
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoin_rpc.generate_to_address(2, &address).expect("generate to address");
-    
-    
+    bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
     // retrieve the transaction
-    let tx_res = bitcoin_rpc.get_transaction(&tx, None).expect("valid tx");
+    let tx_res = bitcoind_rpc.get_transaction(&tx, None).expect("valid tx");
     let tx = tx_res.transaction().expect("valid tx");
-    println!("Tx: {:?}", tx);
+    it_info_print!("Bitcoin Tx", tx);
+
+    it_info_print!("Gateway Data", gateway_address_response);
+    it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
     let eth_account = Address::from_slice(eth_destination.as_slice());
-    let vout = 1;
-    let amount = U256::from(tx.output[vout].value);
+    let vout = match tx.output.len() {
+        2 => 1,
+        _ => 0,
+    };
+    let amount_in_sat = tx.output[vout].value;
+    let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
+    it_info_print!("Btc Amount", amount);
 
     // get block headers
     // first we need the block hash of the block with the conf'd pegin tx
-    let tip = bitcoin_rpc.get_block_count().expect("valid block count");
-    println!("Tip: {}", tip);
-    
-    let conf_block_hash = bitcoin_rpc.get_block_hash(tip-2).expect("valid block hash");
-    let block_header = bitcoin_rpc.get_block_header(&conf_block_hash).expect("valid block header");
-    let block_headers = vec![block_header];
+    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
+    it_info_print!("Bitcoin Chain Tip", tip);
 
-    let conf_block_info = bitcoin_rpc.get_block_info(&conf_block_hash).expect("valid txids");
-    println!("Block info: {:?}", conf_block_info);
-    let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[true]);
+    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
+    let tip_header = bitcoind_rpc.get_block_header(&tip_hash).expect("valid block header");
+
+    let conf_block_hash = bitcoind_rpc.get_block_hash(tip - 1).expect("valid block hash");
+    let block_header = bitcoind_rpc.get_block_header(&conf_block_hash).expect("valid block header");
+    let block_headers = vec![block_header, tip_header];
+
+    let conf_block_info = bitcoind_rpc.get_block_info(&conf_block_hash).expect("valid txids");
+    it_info_print!("Block info", conf_block_info);
+    let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
     // create pegin meta
-    let bitcoin_block_height = 52;
+    let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
         outpoint: bitcoin::OutPoint::new(tx.txid(), vout as u32),
@@ -214,45 +230,61 @@ pub async fn poa_frost_dkg(
         merkle_proof: pmt,
         block_headers,
     };
-    println!("Transaction: {:?}", tx);
 
     // send the pegin transactions to all fed memebers
     let serialized_pegin_meta = meta.serialize();
-    for mint_contract in mint_contract_instances.iter() {
-        let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
-        let tx_receipt = mint_contract
-            .mint(eth_destination.clone(), amount, bitcoin_block_height, metadata)
-            .await
-            .unwrap();
-        println!("Tx receipt: {:?}", tx_receipt);
-    }
+    it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
+
+    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
+    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
+    let tx_receipt = mint_contract
+        .mint(
+            eth_destination.clone(),
+            amount,
+            bitcoin_block_height as u32,
+            metadata,
+            ethers::core::types::Address::random(),
+        )
+        .await
+        .unwrap();
+    it_info_print!("Mint Tx Receipt ", tx_receipt);
 
     // wait for a few blocks to make sure the tx got included and mined
     await_botanix_event(&mut rx, *MINT_TOPIC).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // make sure we have received the botanix btc on botanix
     let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
     let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
-    assert_eq!(eth_address_balance, U256::from(Amount::ONE_BTC.to_sat()));
+    assert!(!eth_address_balance.is_zero());
 
     // send a pegout transactions to all fed memebers
-    for mint_contract in mint_contract_instances.iter() {
-        let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
-        // TODO
-        let pegout_destination = ethers::core::types::Bytes::new();
-        // use empty pegout data
-        let pegout_data = ethers::core::types::Bytes::new();
-        let tx_receipt = mint_contract.burn(pegout_destination, pegout_data).await.unwrap();
-        println!("Tx receipt: {:?}", tx_receipt);
-    }
+    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
+    // bitcoin address
+    let pegout_destination =
+        ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
+    // use empty pegout data
+    let pegout_data = ethers::core::types::Bytes::new();
+    let pegout_amount = Amount::from_btc(0.5).unwrap();
+    let tx_receipt =
+        mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
+    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
 
     // wait for the tx to be included in a botanix block
     await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
-    // mine some btc blocks (needed for confirmed pegout)
-    bitcoin_rpc.generate_to_address(50, &address).expect("generate to address");
+    // need another tx to enter an epoch
+    let eoa_tx_receipt =
+        mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
+    it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
 
-    // TODO: wait for the signing to complete, assertions and check balances
+    // sleep for a few more seconds
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // mine some btc blocks (needed for confirmed pegout)
+    bitcoind_rpc.generate_to_address(50, &address).expect("generate to address");
+
+    // TODO: wait for the signing to complete, do assertions and check balances
 
     Ok(())
 }

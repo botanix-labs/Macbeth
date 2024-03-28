@@ -23,7 +23,6 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
-use tokio_stream::StreamExt;
 use tracing::{error, info, warn};
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
@@ -126,7 +125,7 @@ where
             .unzip();
 
         let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
-        println!("recent_bitcoin_block_header: {:?}", recent_bitcoin_block_header);
+        info!("recent_bitcoin_block_header: {:?}", recent_bitcoin_block_header);
 
         if recent_bitcoin_block_header.is_none() {
             warn!(target: "consensus::authority", "Failed to get recent bitcoin block header, async bitcoin worker is probably down");
@@ -162,6 +161,7 @@ where
             Ok(ret) => ret,
             Err(err) => {
                 error!(target: "consensus::authority", ?err, "failed to execute block");
+                drop(storage);
                 return;
             }
         };
@@ -220,7 +220,6 @@ where
                     error!(target: "consensus::authority", ?e, "Failed to send pegouts");
                     return;
                 }
-                drop(storage);
 
                 // wait until the psbt is finalized
                 match tokio::time::timeout(Duration::from_secs(60), self.frost_task_rx.recv()).await
@@ -243,6 +242,7 @@ where
                 // TODO(scott): call btc_server.signer_finalize()
             }
         }
+        drop(storage);
 
         let mut storage = self.storage.write().await;
         let new_header = match storage.build_and_validate_header(

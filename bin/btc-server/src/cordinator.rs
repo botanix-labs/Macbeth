@@ -141,7 +141,7 @@ impl App {
                     )
                 })?;
             let gateway_address =
-                reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.network);
+                reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.btc_network);
 
             return Ok((agg_key, tweaked_key, gateway_address));
         }

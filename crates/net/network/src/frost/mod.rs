@@ -78,8 +78,6 @@ pub enum DkgEventResponseType {
 /// Event Response Variants indicating the type of response
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum SigningEventResponseType {
-    /// Initiates a new signing session
-    InitiateSigningSession,
     /// Signers will add their signing commitments to the psbt
     SignerRound1SigningPackage,
     /// Coordinating node will collect the PSBTs with the signing commitments

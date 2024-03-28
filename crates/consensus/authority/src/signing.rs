@@ -7,7 +7,6 @@ use crate::{
 use client::{
     FinalizeSigningResponse, Output, Round1SigningPackage, Round2SigningPackage, SignPayload,
 };
-use ethers::types::transaction::request;
 use frost_secp256k1_tr as frost;
 use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils::{current_inturn_index, is_inturn};
@@ -18,7 +17,7 @@ use reth_network::frost::{
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::collections::HashMap;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -699,7 +698,10 @@ where
                 let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
-            info!(">>>>>>>>>>> [PROCESS_ROUND1] to sign payload send to signers {:?}", sign_payload);
+            info!(
+                ">>>>>>>>>>> [PROCESS_ROUND1] to sign payload send to signers {:?}",
+                sign_payload
+            );
         }
 
         Ok(())
@@ -809,7 +811,7 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not in round 2 or not a coordinator
-        if !self.is_coordinator(){
+        if !self.is_coordinator() {
             return Ok(());
         }
         info!(

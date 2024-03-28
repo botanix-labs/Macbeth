@@ -1,5 +1,3 @@
-use tracing::info;
-
 use ethers::{
     core::k256::ecdsa::SigningKey,
     prelude::*,
@@ -10,6 +8,8 @@ use ethers::{
 use reth_primitives::{public_key_to_address, Address, BOTANIX_TESTNET};
 use secp256k1::SecretKey;
 use std::str::FromStr;
+
+use crate::{it_error_print, it_info_print};
 
 #[derive(Debug)]
 pub struct PayloadClient {
@@ -22,7 +22,7 @@ impl PayloadClient {
         // Connect to the network
         let provider =
             Provider::<Http>::try_from(&format!("http://127.0.0.1:{}", rpc_port)).unwrap();
-        info!("Node URL: {}", &format!("http://127.0.0.1:{}", rpc_port));
+        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{}", rpc_port));
 
         // get chain id
         let chain_id = provider.get_chainid().await.unwrap();
@@ -60,12 +60,12 @@ impl PayloadClient {
         // get current receiver balance
         let receiver_account = NameOrAddress::from_str(receiver_address).unwrap();
         let receiver_cur_balance = self.client.get_balance(receiver_account, None).await.unwrap();
-        println!("Receiver current balance: {:?}", receiver_cur_balance.to_string());
+        it_info_print!("Receiver current balance: ", receiver_cur_balance.to_string());
 
         // get current sender balance
         let sender_account = NameOrAddress::from_str(&self.sender_address.to_string()).unwrap();
         let sender_cur_balance = self.client.get_balance(sender_account, None).await.unwrap();
-        println!("Sender current balance: {:?}", sender_cur_balance.to_string());
+        it_info_print!("Sender current balance: ", sender_cur_balance.to_string());
 
         // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
         let tx = Eip1559TransactionRequest::new()
@@ -91,6 +91,6 @@ impl PayloadClient {
             .send_transaction(tx, None)
             .await
             .expect_err("should fail with nonce too low");
-        println!("Error: {:?}", err);
+        it_error_print!("Error: ", err);
     }
 }

@@ -100,6 +100,13 @@ pub mod mint_contract {
                                     ::std::borrow::ToOwned::to_owned("bytes"),
                                 ),
                             },
+                            ::ethers::core::abi::ethabi::Param {
+                                name: ::std::borrow::ToOwned::to_owned("refundAddress"),
+                                kind: ::ethers::core::abi::ethabi::ParamType::Address,
+                                internal_type: ::core::option::Option::Some(
+                                    ::std::borrow::ToOwned::to_owned("address"),
+                                ),
+                            },
                         ],
                         outputs: ::std::vec![],
                         constant: ::core::option::Option::None,
@@ -250,18 +257,19 @@ pub mod mint_contract {
                 .method_hash([165, 208, 187, 147], (destination, data))
                 .expect("method not found (this should never happen)")
         }
-        ///Calls the contract's `mint` (0x5a6008ee) function
+        ///Calls the contract's `mint` (0x5fe03f45) function
         pub fn mint(
             &self,
             destination: ::ethers::core::types::Address,
             amount: ::ethers::core::types::U256,
             bitcoin_block_height: u32,
             metadata: ::ethers::core::types::Bytes,
+            refund_address: ::ethers::core::types::Address,
         ) -> ::ethers::contract::builders::ContractCall<M, ()> {
             self.0
                 .method_hash(
-                    [90, 96, 8, 238],
-                    (destination, amount, bitcoin_block_height, metadata),
+                    [95, 224, 63, 69],
+                    (destination, amount, bitcoin_block_height, metadata, refund_address),
                 )
                 .expect("method not found (this should never happen)")
         }
@@ -404,7 +412,7 @@ pub mod mint_contract {
         pub data: ::ethers::core::types::Bytes,
     }
     ///Container type for all input parameters for the `mint` function with signature
-    /// `mint(address,uint256,uint32,bytes)` and selector `0x5a6008ee`
+    /// `mint(address,uint256,uint32,bytes,address)` and selector `0x5fe03f45`
     #[derive(
         Clone,
         ::ethers::contract::EthCall,
@@ -415,12 +423,13 @@ pub mod mint_contract {
         Eq,
         Hash,
     )]
-    #[ethcall(name = "mint", abi = "mint(address,uint256,uint32,bytes)")]
+    #[ethcall(name = "mint", abi = "mint(address,uint256,uint32,bytes,address)")]
     pub struct MintCall {
         pub destination: ::ethers::core::types::Address,
         pub amount: ::ethers::core::types::U256,
         pub bitcoin_block_height: u32,
         pub metadata: ::ethers::core::types::Bytes,
+        pub refund_address: ::ethers::core::types::Address,
     }
     ///Container type for all input parameters for the `peginBitcoinBlockHeight` function with
     /// signature `peginBitcoinBlockHeight(address)` and selector `0x6f194dc9`

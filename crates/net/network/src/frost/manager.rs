@@ -155,26 +155,6 @@ impl FrostManager {
                 // reply to caller
                 let _ = tx.send(frost_task_forwarder_rx);
             }
-            FrostCommand::InitiateSigning(tx, signing_session_id, psbt) => {
-                if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
-                    let identifier = peer_id_to_identifier(self.authority_index);
-                    let request = PeerMessageResponse::Signing(SigningResponse {
-                        response_type: SigningEventResponseType::InitiateSigningSession,
-                        identifier: identifier.serialize().to_vec(),
-                        signing_session_id,
-                        psbt,
-                    });
-                    // reply to caller
-                    match frost_task_forwarder_tx.send(request) {
-                        Ok(_) => {
-                            let _ = tx.send(true);
-                        }
-                        Err(_) => {
-                            let _ = tx.send(false);
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -228,8 +208,6 @@ pub enum FrostCommand {
     ),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageResponse>>),
-    /// Initiate the signing round
-    InitiateSigning(oneshot::Sender<bool>, Vec<u8>, Vec<u8>),
 }
 
 /// Config type for initiating a [`FrostManager`] instance.

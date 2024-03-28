@@ -1,12 +1,15 @@
 use reth::core::cli::runner::CliRunner;
 use std::{collections::HashSet, time::Duration};
 
-use crate::suite::consensus::{
-    poa::{
-        payload_client::PayloadClient,
-        poa_node::{create_poa_federation_members, is_inturn, Notifications},
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        poa::{
+            payload_client::PayloadClient,
+            poa_node::{create_poa_federation_members, is_inturn, Notifications},
+        },
+        ConsensusIntegrationTestSuite,
     },
-    ConsensusIntegrationTestSuite,
 };
 
 const RECEIVER_ADDRESS: &'static str = "0x613580C865985dA78613Ea7EBCF7a3b8C5445F93";
@@ -46,7 +49,7 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
     let mut tx_hashes_set = HashSet::new();
 
     // send eoa messages to the node at selected index
-    println!("======>  Sending eoa transaction...");
+    it_info_print!("Sending eoa transaction...");
     let mut last_tx_hash =
         payload_client.send_botanix(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
     tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());
@@ -56,8 +59,8 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
     while let Some(notification) = rx.recv().await {
         match notification {
             Notifications::CanonState(canon_state_notification) => {
-                println!(
-                    "======> Received payload from engine index {:?}",
+                it_info_print!(
+                    "Received payload from engine index",
                     canon_state_notification.engine_index
                 );
                 assert_eq!(canon_state_notification.engine_index, SELECTED_FED_MEMBER_INDEX as u16);
@@ -67,13 +70,13 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
 
                 // after first successful tx, send invalid tx with too low nonce
                 if test_rounds == 1 {
-                    println!("======>  Sending eoa transaction with too low nonce...");
+                    it_info_print!("Sending eoa transaction with too low nonce...");
                     payload_client.send_invalid_botanix(RECEIVER_ADDRESS).await;
                 }
 
                 // block verfication
                 let block_receipts = canon_state_notification.notification.block_receipts();
-                println!("Block receipts? {:?}", block_receipts);
+                it_info_print!("Block receipts ?", block_receipts);
                 assert_eq!(block_receipts.len(), 1);
                 let block_payload = block_receipts.first().cloned().unwrap();
                 assert!(!block_payload.1);
@@ -86,14 +89,14 @@ pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super:
                 'inner: loop {
                     let is_test_fed_member_inturn =
                         is_inturn(total_authorities as u64, targeted_fed_member.index.into());
-                    println!("Is in turn? {}", is_test_fed_member_inturn);
+                    it_info_print!("Is in turn?", is_test_fed_member_inturn);
                     if is_test_fed_member_inturn != current_turn {
                         break 'inner;
                     }
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
-                println!("======>  Sending eoa transaction...");
+                it_info_print!("Sending eoa transaction...");
                 last_tx_hash =
                     payload_client.send_botanix(RECEIVER_ADDRESS, SEND_AMOUNT).await.unwrap();
                 tx_hashes_set.insert(last_tx_hash.to_fixed_bytes());

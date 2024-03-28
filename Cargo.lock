@@ -1402,7 +1402,7 @@ dependencies = [
  "clap",
  "client",
  "displaydoc",
- "env_logger 0.11.3",
+ "env_logger",
  "frost-secp256k1-tr",
  "futures-util",
  "hex",
@@ -2839,19 +2839,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38b35839ba51819680ba087cd351788c9a3c476841207e0b8cee0b04722343b9"
@@ -3621,16 +3608,6 @@ dependencies = [
  "typenum",
  "version_check",
  "zeroize",
-]
-
-[[package]]
-name = "gethostname"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1ebd34e35c46e00bb73e81363248d627782724609fe1b6396f553f68fe3862e"
-dependencies = [
- "libc",
- "winapi",
 ]
 
 [[package]]
@@ -6107,16 +6084,6 @@ checksum = "af7cee1a6c8a5b9208b3cb1061f10c0cb689087b3d8ce85fb9d2dd7a29b6ba66"
 dependencies = [
  "diff",
  "yansi",
-]
-
-[[package]]
-name = "pretty_env_logger"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "865724d4dbe39d9f3dd3b52b88d859d66bcb2d6a0acfd5ea68a65fb66d4bdc1c"
-dependencies = [
- "env_logger 0.10.2",
- "log",
 ]
 
 [[package]]
@@ -9818,7 +9785,7 @@ version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b319995299c65d522680decf80f2c108d85b861d81dfe340a10d16cee29d9e6"
 dependencies = [
- "env_logger 0.11.3",
+ "env_logger",
  "test-log-macros",
 ]
 
@@ -9850,7 +9817,6 @@ dependencies = [
  "derive_more",
  "displaydoc",
  "dotenv",
- "env_logger 0.11.3",
  "ethers",
  "eyre",
  "futures 0.3.30",
@@ -9858,10 +9824,8 @@ dependencies = [
  "futures-util",
  "hex",
  "lazy_static",
- "log",
  "num-bigint",
  "pretty_assertions",
- "pretty_env_logger",
  "rand 0.8.5",
  "rand_distr",
  "reth",
@@ -9873,6 +9837,7 @@ dependencies = [
  "reth-primitives",
  "reth-provider",
  "reth-rpc-types",
+ "reth-tracing",
  "secp256k1 0.27.0",
  "serde",
  "serde_json",
@@ -9885,9 +9850,6 @@ dependencies = [
  "toml",
  "tonic",
  "tracing",
- "tracing-bunyan-formatter",
- "tracing-log 0.2.0",
- "tracing-subscriber",
  "url",
  "uuid 1.7.0",
 ]
@@ -10404,24 +10366,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-bunyan-formatter"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5c266b9ac83dedf0e0385ad78514949e6d89491269e7065bee51d2bb8ec7373"
-dependencies = [
- "ahash",
- "gethostname",
- "log",
- "serde",
- "serde_json",
- "time",
- "tracing",
- "tracing-core",
- "tracing-log 0.1.4",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "tracing-core"
 version = "0.1.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10452,17 +10396,6 @@ dependencies = [
  "libc",
  "tracing-core",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "tracing-log"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f751112709b4e791d8ce53e32c4ed2d353565a795ce84da2285393f41557bdf2"
-dependencies = [
- "log",
- "once_cell",
- "tracing-core",
 ]
 
 [[package]]
@@ -10515,7 +10448,7 @@ dependencies = [
  "thread_local",
  "tracing",
  "tracing-core",
- "tracing-log 0.2.0",
+ "tracing-log",
  "tracing-serde",
 ]
 

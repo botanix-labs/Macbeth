@@ -259,7 +259,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
-                let sleep_ms = tokio::time::Duration::from_millis(5000);
+                let sleep_ms = tokio::time::Duration::from_millis(10);
                 let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
                 let mut current_block_hash = bitcoin::BlockHash::all_zeros();
                 loop {

@@ -1,7 +1,7 @@
 //! EIP-225: Clique Proof-of-Authority consensus protocol.
 
 /// The number of blocks to reset pending votes.
-pub const EPOCH_LENGTH: u64 = 30;
+pub const EPOCH_LENGTH: u64 = 3;
 
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;
