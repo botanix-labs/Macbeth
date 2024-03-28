@@ -4,7 +4,7 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    OutPoint, TxOut,
+    BlockHash, OutPoint, TxOut,
 };
 use ciborium;
 use client::SigningStatus;
@@ -13,6 +13,7 @@ use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::txindex;
 use crate::util::OutPointExt;
 
 /// sled tree id for the utxos tree.
@@ -22,9 +23,14 @@ const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
+/// sled tree id for the pending txs
+const TREE_PENDING_TXS: &[u8; 10] = b"pendingtxs";
 
 /// sled key for the UTXO merkle tree root
 const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
+
+/// sled key for storing the latest finalized block of the txindex.
+const KEY_TXINDEX_TIP: &[u8; 10] = b"txindextip";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -67,6 +73,11 @@ pub struct Db {
     /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
+
+    /// A tree of pending txs, serialized as the [txindex::Tx] format.
+    ///
+    /// Indexed by txid.
+    pending_txs: sled::Tree,
 }
 
 impl Db {
@@ -77,16 +88,18 @@ impl Db {
             round1_dkg_packages: db.open_tree(TREE_ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
+            pending_txs: db.open_tree(TREE_PENDING_TXS)?,
             db,
         })
     }
 
     pub fn flush(&self) -> Result<(), Error> {
-        self.utxos.flush()?;
         self.db.flush()?;
+        self.utxos.flush()?;
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
+        self.pending_txs.flush()?;
         Ok(())
     }
 
@@ -411,6 +424,34 @@ impl Db {
             utxos.push(utxo);
         }
         Ok(utxos)
+    }
+
+    pub fn store_pending_tx(&self, tx: &txindex::Tx) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
+        self.pending_txs.insert(tx.txid, &bytes[..])?;
+        Ok(())
+    }
+
+    pub fn get_pending_txs(&self) -> Result<Vec<txindex::Tx>, Error> {
+        let mut ret = Vec::new();
+        for res in self.pending_txs.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
+    }
+
+    pub fn store_txindex_finalized_block(&self, block_hash: BlockHash) -> Result<(), Error> {
+        self.db.insert(KEY_TXINDEX_TIP, &block_hash.to_byte_array())?;
+        Ok(())
+    }
+
+    pub fn get_txindex_finalized_block(&self) -> Result<Option<BlockHash>, Error> {
+        Ok(self.db.get(KEY_TXINDEX_TIP)?.map(|t| {
+            BlockHash::from_slice(&t).expect("corrupt db: txindex block hash")
+        }))
     }
 
     /// Stores the consensus Merkle root of all spendable UTXOs.
