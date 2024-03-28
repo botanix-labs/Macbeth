@@ -242,6 +242,8 @@ pub(crate) async fn get_psbt(
             })
             .collect(),
         signing_session_id: signing_session_id.to_vec(),
+        checkpoint_block_hash: todo!(),
+        utxo_merkle_root: todo!(),
     };
 
     match btc_server.get_psbt(req).await {

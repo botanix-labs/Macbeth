@@ -6,6 +6,12 @@ pub struct FinalizeSignerRequest {
     pub witness: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(message, repeated, tag = "2")]
     pub outputs: ::prost::alloc::vec::Vec<Output>,
+    /// The checkpoint of the best finalized Bitcoin block hash.
+    #[prost(bytes = "vec", tag = "3")]
+    pub checkpoint_block_hash: ::prost::alloc::vec::Vec<u8>,
+    /// The merkle root of our wallet's UTXO set.
+    #[prost(bytes = "vec", tag = "4")]
+    pub utxo_merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -17,10 +23,10 @@ pub struct ScriptBuf {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TxOut {
-    /// / The value of the output, in satoshis.
+    /// The value of the output, in satoshis.
     #[prost(uint64, tag = "1")]
     pub value: u64,
-    /// / The script which must be satisfied for the output to be spent.
+    /// The script which must be satisfied for the output to be spent.
     #[prost(message, optional, tag = "2")]
     pub script_pubkey: ::core::option::Option<ScriptBuf>,
 }
@@ -140,8 +146,14 @@ pub struct Output {
 pub struct MakeTxRequest {
     #[prost(message, repeated, tag = "1")]
     pub outputs: ::prost::alloc::vec::Vec<Output>,
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "2")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+    /// The checkpoint of the best finalized Bitcoin block hash.
+    #[prost(bytes = "vec", tag = "3")]
+    pub checkpoint_block_hash: ::prost::alloc::vec::Vec<u8>,
+    /// The merkle root of our wallet's UTXO.
+    #[prost(bytes = "vec", tag = "4")]
+    pub utxo_merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -275,6 +287,7 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::SigningPackageRequest>,
         ) -> std::result::Result<tonic::Response<super::SigningPackage>, tonic::Status>;
+        /// Ran by the signer.
         async fn signer_finalize(
             &self,
             request: tonic::Request<super::FinalizeSignerRequest>,
@@ -306,6 +319,7 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::ToSignRequest>,
         ) -> std::result::Result<tonic::Response<super::SigningPackage>, tonic::Status>;
+        /// Ran by the coordinator.
         async fn finalize_signing(
             &self,
             request: tonic::Request<super::FinalizeSigningRequest>,
