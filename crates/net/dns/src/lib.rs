@@ -411,7 +411,7 @@ mod tests {
     use crate::tree::TreeRootEntry;
     use alloy_chains::Chain;
     use alloy_rlp::Encodable;
-    use enr::{*, EnrKey};
+    use enr::{EnrKey, *};
     use reth_primitives::{Hardfork, MAINNET};
     use secp256k1::rand::thread_rng;
     use std::{future::poll_fn, net::Ipv4Addr};

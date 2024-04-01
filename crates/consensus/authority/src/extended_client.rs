@@ -1,7 +1,6 @@
-
 ///! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
-use reth_primitives::hex::{encode as hex_encode};
+use reth_primitives::hex::encode as hex_encode;
 use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -117,7 +116,6 @@ impl BtcServerExtendedClient {
 }
 
 // mod tests {
-    
 
 //     #[test]
 //     fn test_metadata_jwt_decode_encode() {
