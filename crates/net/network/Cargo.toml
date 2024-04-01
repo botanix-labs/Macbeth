@@ -105,7 +105,6 @@ ethers-providers = { workspace = true, default-features = false, features = ["ws
 ethers-signers = { workspace = true, default-features = false }
 ethers-middleware = { workspace = true, default-features = false }
 
-enr = { workspace = true, features = ["serde", "rust-secp256k1"] }
 
 # misc
 serial_test.workspace = true
@@ -132,3 +131,7 @@ optimism = [
 name = "bench"
 required-features = ["test-utils"]
 harness = false
+
+
+   [patch.crates-io]
+   enr = { version = "0.9.1" }

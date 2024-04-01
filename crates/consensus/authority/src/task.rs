@@ -87,7 +87,7 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>, 
+        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,

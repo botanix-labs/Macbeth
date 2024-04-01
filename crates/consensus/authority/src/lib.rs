@@ -464,7 +464,7 @@ where
         // fill in the rest of the fields
         let header = self.complete_header(
             header,
-            &bundle_state,
+            bundle_state,
             gas_used,
             sk,
             secp,

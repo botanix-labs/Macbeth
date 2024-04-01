@@ -543,7 +543,7 @@ where
         if let Err(e) = self.add_round2_dkg_package(identifier, payload).await {
             warn!("Error adding round 2 dkg package {:?}", e);
             // We dont want to fail the whole dkg process if we can't add another's round2
-            return Ok(())
+            return Ok(());
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2] packages added successfully");
         // By adding this round2 dkg package we could be ready to progress to round 3

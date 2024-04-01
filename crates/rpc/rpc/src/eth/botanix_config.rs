@@ -271,33 +271,33 @@ impl Botanix {
     /// Converts fee rate to sat/vB and returns it.
     pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
         let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
-            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
         let fee_result = bitcoind_client
             .get_estimate_smart_fee()
             .await
-            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {
             let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
             // this really doesnt need to be a U256 can be U64
-            return Ok(U256::from(sats_kb.to_sat_per_vb_ceil()));
+            Ok(U256::from(sats_kb.to_sat_per_vb_ceil()))
         } else {
             // Use errors if available
             if let Some(errors) = fee_result.errors {
                 let concatenated_errors = errors.join(", ");
                 error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
-                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
                     BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
                         concatenated_errors,
                     )),
-                ));
+                ))
             } else {
                 // else use default generic error
-                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
                     BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
                         "Failed to get estimate smart fee rate".to_string(),
                     )),
-                ));
+                ))
             }
         }
     }

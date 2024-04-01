@@ -151,7 +151,7 @@ impl BitcoindClient {
             .estimate_smart_fee(1, Some(EstimateMode::Conservative))
             .map_err(BitcoindError::EstimateSmartFeeFailed);
 
-        Ok(fee_res?)
+        fee_res
     }
 }
 

@@ -783,7 +783,7 @@ mod test {
         let mock_bitcoind = MockBitcoind::new();
 
         let nonce_commits =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id).await;
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(nonce_commits.is_err());
         assert_eq!(nonce_commits.err().unwrap().to_string(), "missing key package");
     }
@@ -796,7 +796,7 @@ mod test {
         let mock_bitcoind = MockBitcoind::new();
 
         let nonce_commits =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, ).await;
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(nonce_commits.is_err());
         assert_eq!(
             nonce_commits.err().unwrap().to_string(),
@@ -821,7 +821,7 @@ mod test {
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
 
         app.add_pegin(&utxo).expect("valid pegin utxo");
-        app.get_round1_signing_package(&mut psbt, &signing_session_id)
+        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
             .expect("valid nonce commits request");
         let sc1 = retrieve_all_signing_commitments(&psbt).expect("valid psbt");
@@ -829,7 +829,7 @@ mod test {
 
         // Should not be able to get a new set of nonces
         let res =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, ).await;
+            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "already in signing session");
 
@@ -841,7 +841,7 @@ mod test {
         let tx = psbt.clone().extract_tx();
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegin(&utxo).expect("valid pegin utxo");
-        app.get_round1_signing_package(&mut psbt, &signing_session_id,)
+        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
             .expect("valid nonce commits request");
 

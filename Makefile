@@ -23,6 +23,7 @@ endif
 # Cargo profile for builds. Default is for local builds, CI uses an override.
 PROFILE ?= release
 NODE_1_DIR="bin/btc-server/"
+NODE_1_DIR="bin/btc-server/"
 # Extra flags for Cargo
 CARGO_INSTALL_EXTRA_FLAGS ?=
 

@@ -72,6 +72,13 @@ pub(crate) fn test_auto_mine() {
         "--debug.max-block",
         "1",
         "--debug.terminate",
+        "--btc-server", "http://localhost:8080",
+        "--bitcoind.url", "http://localhost:18443",
+        "--bitcoind.username", "foo",
+        "--bitcoind.password", "bar",
+        "--btc-network", "testnet",
+        "--frost.min_signers", "1",
+        "--frost.max_signers", "2",
     ])
     .with_ext::<NoArgsCliExt<AutoMineConfig>>(no_args);
 

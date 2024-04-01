@@ -35,7 +35,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - name: Run tests
+      - name: Start Macbeth Test Suite
+        run: make start-test-suite
+      - name: Start BTC Server
+        run: make start-btc-server-1
+      - name: Run Reth tests
         run: |
           cargo nextest run \
             --locked --features "ethereum" \
