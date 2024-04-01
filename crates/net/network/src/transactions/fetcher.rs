@@ -88,7 +88,6 @@ impl TransactionFetcher {
             if let Some(inflight_count) = self.active_peers.get(peer_id) {
                 if *inflight_count <= DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS_PER_PEER {
                     return true;
-                    return true;
                 }
                 *inflight_count -= 1;
             }

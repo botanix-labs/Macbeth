@@ -34,9 +34,9 @@ pub(crate) enum ProcessBotanixLogError {
     #[error("Failed to notify btc server about pegin")]
     FailedToNotifyPegin(tonic::Status),
     #[error("Failed to broadcast pegout tx")]
-    FailedToBroadcastPegout,
+    FailedToBroadcastPegout, 
     #[error("Failed to make pegout tx: {0}")]
-    FailedToMakePegoutTx(tonic::Status),
+    FailedToMakePegoutTx(tonic::Status),  
     #[error("Failed to parse pegout data")]
     FailedToParsePegout,
 }
