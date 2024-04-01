@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use bdk::{
+    descriptor::error,
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
@@ -55,6 +57,8 @@ pub enum CoordinatorError {
     CouldNotFindPsbt,
     #[error("Could not find partial signatures: {0}")]
     CouldNotFindPartialSignatures(#[from] crate::util::RetrieveUnknownKeyError),
+    #[error("Failed to broadcast tx: {0}")]
+    FailedToBroadcastTx(bitcoincore_rpc::Error),
 }
 
 impl App {
@@ -271,7 +275,7 @@ impl App {
         Err(CoordinatorError::CouldNotFindPsbt)
     }
 
-    /// Retruns finalized and ready to braodcast tx
+    /// Retruns finalized and ready to broadcast tx
     pub(crate) async fn finalize_signing(
         &self,
         signing_session_id: &[u8; 32],
@@ -334,6 +338,17 @@ impl App {
             }
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }
+
+        // Lets broadcast the tx
+        let txid = self.bitcoind_client
+            .as_ref()
+            .expect("bitcoind client")
+            .send_raw_transaction(&psbt.clone().extract_tx())
+            .map_err(|e| {
+                error!("Failed to broadcast tx: {}", e);
+                CoordinatorError::FailedToBroadcastTx(e)
+            })?;
+        info!("Broadcasted tx: {}", txid);
 
         // Finally we should remove the utxos from the db and add the change one
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
