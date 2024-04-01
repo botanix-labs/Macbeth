@@ -419,49 +419,6 @@ where
         Ok(finalized_signing)
     }
 
-    async fn finalize_signer(
-        &mut self,
-        witness: Vec<bitcoin::Witness>,
-        pegouts: Vec<PegoutData>,
-    ) -> Result<FinalizeSigningResponse, Error> {
-        let wit = witness
-            .iter()
-            .map(|witness| witness.iter().map(|w| w.to_vec()[0]).collect::<Vec<u8>>())
-            .collect();
-
-        let outputs = pegouts
-            .iter()
-            .map(|pegout| Output {
-                address: pegout.destination.to_string(),
-                value: pegout.amount.to_sat(),
-            })
-            .collect();
-
-        let request = client::FinalizeSignerRequest { witness: wit, outputs };
-
-        let finalized_signing = match self.btc_client.signer_finalize(request).await {
-            Ok(finalized_signing) => finalized_signing,
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to finalize signing") => {
-                        return Err(Error::FailedToFinalizeSigning)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to serialize psbt") => {
-                        return Err(Error::FailedToSerializePsbt)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
-        };
-        Ok(finalized_signing)
-    }
-
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
