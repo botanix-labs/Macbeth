@@ -3,7 +3,8 @@ use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,
     core::{k256::ecdsa::SigningKey, types::Address as EtherAddress},
-    middleware::SignerMiddleware,
+    etherscan::account,
+    middleware::{signer::SignerMiddlewareError, SignerMiddleware},
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
     types::{
@@ -11,7 +12,7 @@ use ethers::{
     },
     utils,
 };
-use reth_primitives::{alloy_primitives::TxHash, BOTANIX_TESTNET};
+use reth_primitives::BOTANIX_TESTNET;
 use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
 
@@ -22,12 +23,14 @@ pub enum Error {
     Contract(ContractError<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>),
     /// Provider error: `{0}`
     Provider(ProviderError),
+    /// Signer middleware error: `{0}`
+    SignerMiddleware(SignerMiddlewareError<Provider<Http>, Wallet<SigningKey>>),
 }
 
 #[derive(Clone, Debug)]
 pub struct MintContractInstance {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
-    provider: Provider<Http>,
+    client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
 }
 
 impl MintContractInstance {
@@ -51,10 +54,11 @@ impl MintContractInstance {
 
         // connect the wallet to the provider
         let client = SignerMiddleware::new(provider.clone(), wallet);
+        let client2 = client.clone();
 
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(client));
 
-        Self { mint_contract, provider }
+        Self { mint_contract, client: client2 }
     }
 
     pub async fn mint(
@@ -65,7 +69,7 @@ impl MintContractInstance {
         metadata: ethers::core::types::Bytes,
         refund_address: ethers::core::types::Address,
     ) -> Result<Option<TransactionReceipt>, Error> {
-        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
 
         let tx_receipt = self
             .mint_contract
@@ -86,7 +90,7 @@ impl MintContractInstance {
         data: ethers::core::types::Bytes,
         value: U256,
     ) -> Result<Option<TransactionReceipt>, Error> {
-        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
 
         let tx_receipt = self
             .mint_contract
@@ -107,14 +111,12 @@ impl MintContractInstance {
         amount: u64,
     ) -> Result<Option<TransactionReceipt>, Error> {
         // Eip1559TransactionRequest
-        let gas_price = self.provider.get_gas_price().await.ok().unwrap_or_default();
-        let accounts = self.provider.get_accounts().await.map_err(Error::Provider)?;
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
         let amount = utils::parse_ether(amount.to_string()).unwrap();
 
         // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
         let tx = TransactionRequest::new()
             .chain_id(BOTANIX_TESTNET.chain().id())
-            .from(accounts[0])
             .to(receiver_address)
             .value(amount)
             .gas_price(gas_price)
@@ -122,10 +124,10 @@ impl MintContractInstance {
 
         // send the tx with the initialized signer client
         let tx_receipt = self
-            .provider
+            .client
             .send_transaction(tx, None)
             .await
-            .map_err(Error::Provider)?
+            .map_err(Error::SignerMiddleware)?
             .await
             .map_err(Error::Provider)?;
 

@@ -4,6 +4,8 @@ use crate::{
     utils::{get_recent_block_height_or_zero, is_testnet},
 };
 
+use client::{FinalizeSignerRequest, Output};
+use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
@@ -156,7 +158,7 @@ where
                             .expect("senders are valid");
                     // Process Botanix specific logs
                     let is_testnet = is_testnet(self.chain_spec.chain().id());
-                    match crate::utils::process_receipts(
+                    let mut pegouts = match crate::utils::process_receipts(
                         &mut self.btc_server.clone(),
                         &bundle_state,
                         recent_bitcoin_block_height,
@@ -164,12 +166,56 @@ where
                     )
                     .await
                     {
-                        Ok(_) => {}
+                        Ok(pegouts) => pegouts,
                         Err(e) => {
                             error!(target: "consensus::authority", ?e, "Failed to process botanix log");
                             continue;
                         }
+                    };
+
+                    let header = sealed_block.header.clone();
+                    let (best_block, _best_hash) =
+                        storage.get_best_block_and_hash().expect("best block exists");
+                    if header.is_poa_epoch() {
+                        // get the pegouts from during the epoch
+                        let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client).await.map_err(|e| {
+                            error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
+                            return;
+                        }).unwrap();
+                        pegouts.extend(past_pegouts);
+                        // TODO (armins) deserialize extra data can be implenented on header
+                        let extra_data = ExtraDataHeader::deserialize(
+                            &mut header.extra_data.clone().to_vec().as_slice(),
+                        )
+                        .expect("extra data is valid");
+                        // finalizing signing if there are pegouts
+                        // at this point this singer or others have provided partial signatures and
+                        // completed the signing session
+                        if let Some(witness) = extra_data.witness_data {
+                            let wit = witness
+                                .iter()
+                                .map(|witness| witness.to_vec()[0].clone())
+                                .collect::<Vec<Vec<u8>>>();
+                            let outputs = pegouts
+                                .iter()
+                                .map(|pegout| Output {
+                                    address: pegout.destination.to_string(),
+                                    value: pegout.amount.to_sat(),
+                                })
+                                .collect();
+                            let res = self
+                                .btc_server
+                                .signer_finalize(FinalizeSignerRequest { witness: wit, outputs })
+                                .await;
+
+                            if let Err(e) = res {
+                                error!(target: "consensus::authority", ?e, "Failed to finalize signer");
+                                continue;
+                            }
+                            info!(target: "consensus::authority", "Witness data valid and finalized");
+                        }
                     }
+
                     // Notify engine api about new FCU
                     engine_util::send_fork_choice_update_payload(
                         sealed_block.clone().hash(),
@@ -181,10 +227,9 @@ where
 
                     // update canon chain for rpc
                     // TODO do we need to insert the block here?
-                    storage.client.set_canonical_head(sealed_block.header.clone());
+                    storage.client.set_canonical_head(header);
                     storage.client.set_safe(sealed_block.header.clone());
                     storage.client.set_finalized(sealed_block.header.clone());
-
                     drop(storage);
 
                     // TODO(armins) trie updates here are non. is that correct?
