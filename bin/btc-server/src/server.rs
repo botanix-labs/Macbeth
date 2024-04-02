@@ -4,8 +4,8 @@ use base64::decode as base64_decode;
 use bitcoin::{consensus::encode as btcencode, psbt::Psbt, FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
-use reth_primitives::hex::decode as hex_decode;
-use tonic::{self, metadata::BinaryMetadataKey};
+use tonic;
+use tonic::metadata::BinaryMetadataKey;
 use util::{parse_eth_address, VerifyingKeyExt};
 
 use crate::{database::Utxo, rpc, util, App, SECP};
@@ -59,7 +59,7 @@ impl App {
                         error!("Failed to base64 decode request metadata: {}", e);
                         badarg!("Failed to base64 decode request metadata: {}", e)
                     })?;
-                let jwt_token_hex_decoded = hex_decode(jwt_token_base64_decoded).map_err(|e| {
+                let jwt_token_hex_decoded = hex::decode(jwt_token_base64_decoded).map_err(|e| {
                     error!("Failed to hex decode jwt value: {}", e);
                     badarg!("Failed to hex decode jwt value: {}", e)
                 })?;
