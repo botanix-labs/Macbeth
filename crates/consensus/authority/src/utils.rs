@@ -1,4 +1,11 @@
-use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
+use std::io::Write;
+
+use bitcoin::{
+    block::Header,
+    hashes::{sha256, Hash, HashEngine},
+    psbt::PartiallySignedTransaction,
+    witness::Witness,
+};
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
 use reth_botanix_lib::{
     mint_validation::{
@@ -19,6 +26,7 @@ use reth_provider::{
 };
 
 use reth_rpc_types::BlockHashOrNumber;
+use secp256k1::ThirtyTwoByteHash;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
@@ -245,8 +253,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height >
-                    recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height
+                    > recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -293,13 +301,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -452,6 +460,27 @@ where
     Ok(pegouts)
 }
 
+/// Errors that can occur while generating a signing session ID
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum GenerateSigningSesssionIdError {
+    #[error("Failed to generate hash")]
+    HashError(#[from] std::io::Error),
+}
+
+// Generates a signing session id by hashing the best hash and authority public key
+// This id is not needed for consensus but is used to identify the signing session for the cordinator
+pub(crate) fn generate_signing_session_id(
+    best_hash: &[u8],
+    authority_pk: &secp256k1::PublicKey,
+) -> Result<[u8; 32], GenerateSigningSesssionIdError> {
+    let mut engine = sha256::HashEngine::default();
+    engine.write_all(best_hash)?;
+    engine.write_all(authority_pk.serialize().as_ref())?;
+    let hash = sha256::Hash::from_engine(engine);
+
+    Ok(hash.into_32())
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
@@ -466,6 +495,25 @@ mod test {
     use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
     use super::*;
+
+    #[test]
+    fn should_generate_signing_session_id() {
+        let best_hash = [0u8; 32];
+        let my_pk = secp256k1::PublicKey::from_str(
+            "02b4632d08485ff1df2db55b9dafd23347d1c47a457072a1e87be26896549a8737",
+        )
+        .expect("valid pk");
+
+        let id = generate_signing_session_id(&best_hash, &my_pk).expect("id");
+        // assert the id is always the same
+        assert_eq!(
+            [
+                251, 119, 193, 213, 198, 77, 183, 205, 141, 55, 4, 1, 19, 183, 230, 108, 197, 65,
+                114, 41, 112, 157, 10, 228, 224, 67, 81, 39, 238, 67, 248, 208
+            ],
+            id
+        );
+    }
 
     #[test]
     fn test_bloom_contains_pegout() {
