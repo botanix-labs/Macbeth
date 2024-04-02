@@ -340,7 +340,8 @@ impl App {
         }
 
         // Lets broadcast the tx
-        let txid = self.bitcoind_client
+        let txid = self
+            .bitcoind_client
             .as_ref()
             .expect("bitcoind client")
             .send_raw_transaction(&psbt.clone().extract_tx())

@@ -14,8 +14,11 @@ use reth_primitives::{
     },
     hex, Bloom, BloomInput, Log, Receipt, BOTANIX_TESTNET,
 };
-use reth_provider::BundleStateWithReceipts;
+use reth_provider::{
+    BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
+};
 
+use reth_rpc_types::BlockHashOrNumber;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
@@ -170,7 +173,7 @@ pub(crate) async fn send_pegouts(
     _bitcoin_block_source: &BitcoindClient,
     btc_server: &mut BtcServerExtendedClient,
     frost_notification_tx: &UnboundedSender<FrostNotificationMessage>,
-    pegouts: Vec<PegoutData>,
+    pegouts: &Vec<PegoutData>,
 ) -> Result<(), ProcessBotanixLogError> {
     // TODO Pull fee_rate from bitcoind
     // TODO pull signing_session_id from parent block hash
@@ -383,6 +386,70 @@ pub(crate) fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32],
     let mut session_id_array = [0u8; 32];
     session_id_array.copy_from_slice(&session_id);
     Ok(session_id_array)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum EpochPegoutsError {
+    #[error("Failed to fetch pegouts for an epoch")]
+    FailedToFetchPegouts,
+}
+
+/// Returns all pegouts in an epoch iterating through an inclusive block range
+///
+/// # Arguments
+///
+/// * `current_block` - The current block number
+/// * `client` - Reth database client
+///
+/// # Returns
+///
+/// A vector of [PegoutData] representing the pegouts in the epoch
+pub(crate) async fn epoch_pegouts<Client>(
+    best_block: u64,
+    client: &Client,
+) -> Result<Vec<PegoutData>, EpochPegoutsError>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
+    let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
+    let mut pegouts: Vec<PegoutData> = vec![];
+    for block in start_block..=best_block {
+        match client.block_by_number(block) {
+            Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+                match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
+                    Ok(Some(receipts)) => {
+                        for receipt in receipts {
+                            if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt) {
+                                pegouts.push(p);
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        info!("No receipts found for block {:?}", block);
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("Error fetching receipts for block {:?}: {}", block, e);
+                        return Err(EpochPegoutsError::FailedToFetchPegouts);
+                    }
+                }
+            }
+            Ok(Some(_)) => {
+                info!("No pegouts found in block {}", block);
+                continue;
+            }
+            Ok(None) => {
+                error!("Block {} not found", block);
+                return Err(EpochPegoutsError::FailedToFetchPegouts);
+            }
+            Err(e) => {
+                error!("Error fetching block {}: {}", block, e);
+                return Err(EpochPegoutsError::FailedToFetchPegouts);
+            }
+        }
+    }
+
+    Ok(pegouts)
 }
 
 #[cfg(test)]

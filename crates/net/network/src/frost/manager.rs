@@ -1,7 +1,4 @@
-use super::{
-    FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse, SigningEventResponseType,
-    SigningResponse,
-};
+use super::{FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};

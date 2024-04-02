@@ -8,7 +8,7 @@ use crate::{
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
 use ethers::{
     prelude::Provider,
-    providers::{Http, Middleware, ProviderError},
+    providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
 use reth::core::cli::runner::CliRunner;
@@ -18,19 +18,9 @@ use reth_botanix_lib::{
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_primitives::{Account, Address, Receipt, B256};
-use reth_provider::{chain::BlockReceipts, CanonStateNotification};
+use reth_primitives::{Address, Receipt, B256};
+use reth_provider::chain::BlockReceipts;
 use std::{collections::HashMap, str::FromStr, time::Duration};
-use tracing::info;
-
-use crate::{
-    it_info_print,
-    suite::consensus::{
-        poa::poa_node::{create_poa_federation_members, Notifications},
-        ConsensusIntegrationTestSuite,
-    },
-};
-use ethers::prelude::Provider;
 
 use super::poa_node::{is_dkg_ready, FederationMemberTestConfig};
 use bitcoincore_rpc::{Auth, RpcApi};

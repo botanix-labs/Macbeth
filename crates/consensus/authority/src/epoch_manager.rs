@@ -1,21 +1,8 @@
-use reth_botanix_lib::peg_contract::PegoutData;
+use crate::Storage;
 use reth_consensus_common::utils;
-use reth_primitives::{constants::eip225::EPOCH_LENGTH, BlockHashOrNumber};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider};
-
-use tracing::{debug, error, info, warn};
-
-use crate::{
-    utils::{bloom_contains_pegout, find_epoch_start, make_tx_request_for_pegout_in_receipt},
-    Storage,
-};
-use reth_provider::StateProviderFactory;
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum EpochManagerError {
-    #[error("Failed to fetch pegouts for an epoch")]
-    FailedToFetchPegouts,
-}
+use reth_primitives::BlockHashOrNumber;
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider, StateProviderFactory};
+use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug)]
 /// Manages the block production epochs
@@ -36,61 +23,6 @@ where
 {
     pub(crate) fn new(storage: Storage<Client>) -> Self {
         Self { storage }
-    }
-
-    /// Returns all pegouts in an epoch iterating through an inclusive block range
-    ///
-    /// # Arguments
-    ///
-    /// * `current_block` - The current block number
-    ///
-    /// # Returns
-    ///
-    /// A vector of [PegoutData] representing the pegouts in the epoch
-    pub(crate) async fn epoch_pegouts(
-        &self,
-        best_block: u64,
-        client: &Client,
-    ) -> Result<Vec<PegoutData>, EpochManagerError> {
-        let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
-        let mut pegouts: Vec<PegoutData> = vec![];
-        for block in start_block..=best_block {
-            match client.block_by_number(block) {
-                Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-                    match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
-                        Ok(Some(receipts)) => {
-                            for receipt in receipts {
-                                if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt) {
-                                    pegouts.push(p);
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            info!("No receipts found for block {:?}", block);
-                            continue;
-                        }
-                        Err(e) => {
-                            error!("Error fetching receipts for block {:?}: {}", block, e);
-                            return Err(EpochManagerError::FailedToFetchPegouts);
-                        }
-                    }
-                }
-                Ok(Some(_)) => {
-                    info!("No pegouts found in block {}", block);
-                    continue;
-                }
-                Ok(None) => {
-                    error!("Block {} not found", block);
-                    return Err(EpochManagerError::FailedToFetchPegouts);
-                }
-                Err(e) => {
-                    error!("Error fetching block {}: {}", block, e);
-                    return Err(EpochManagerError::FailedToFetchPegouts);
-                }
-            }
-        }
-
-        Ok(pegouts)
     }
 
     pub(crate) async fn poll(&mut self) -> bool {
