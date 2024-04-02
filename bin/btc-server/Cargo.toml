@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
-reth-primitives.workspace = true
 bitcoincore-rpc = "0.17.0"
 
 anyhow = "1.0.71"
