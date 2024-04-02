@@ -463,7 +463,7 @@ where
             secp,
             authority_signers,
             vote,
-            &None,
+            &witness_data,
             // This is checked to be Some above
             botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
         )?;
