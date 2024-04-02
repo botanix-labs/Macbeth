@@ -131,6 +131,9 @@ impl ExtraDataHeader {
         if self.authority_signature.is_some() {
             optional_fields |= 1 << HAS_SIGNATURE_POS;
         }
+        if self.witness_data.is_some() {
+            optional_fields |= 1 << HAS_WITNESS_DATA_POS;
+        }
 
         self.optional_fields = optional_fields;
     }
