@@ -193,6 +193,10 @@ optimism = [
 ]
 
 [[bin]]
+name = "btc-server"
+path = "src/main.rs"
+
+[[bin]]
 name = "reth"
 path = "src/main.rs"
 
