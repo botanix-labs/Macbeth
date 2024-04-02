@@ -8,6 +8,7 @@ use crate::{
 };
 
 use bitcoin::{psbt::Psbt, Witness};
+use client::Output;
 use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
@@ -85,6 +86,7 @@ where
             Err(BestTransactionsError::PayloadEmpty);
         loop {
             // get payload by id
+            // TODO replate this with async/await
             let transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
                 &self.payload_builder,
                 payload_id,
@@ -169,8 +171,7 @@ where
 
         // Process Botanix specific logs and get current block pegouts
         let is_testnet = is_testnet(self.chain_spec.chain().id());
-        let mut current_block_pegouts: Vec<PegoutData> = Vec::new();
-        match crate::utils::process_receipts(
+        let current_block_pegouts = match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
             botanix_consensus_pkg.recent_header.1,
@@ -178,31 +179,25 @@ where
         )
         .await
         {
-            Ok(pegouts) => {
-                if !pegouts.is_empty() {
-                    current_block_pegouts.extend(pegouts);
-                }
-            }
+            Ok(pegouts) => pegouts,
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
                 return;
             }
-        }
+        };
 
         let storage = self.storage.read().await;
         // If end of epoch, process pegouts
-        let mut witness_data: Option<Vec<Witness>> = None;
+        let mut epoch_witness: Option<Vec<Witness>> = None;
         if block.header.is_poa_epoch() {
             // get pegouts up to best block
-            let mut pegouts: Vec<PegoutData> = Vec::new();
-            match self.epoch_manager.epoch_pegouts(best_block, &storage.client).await {
-                Ok(epoch_pegouts) => pegouts.extend(epoch_pegouts),
+            let mut pegouts = match crate::utils::epoch_pegouts(best_block, &storage.client).await {
+                Ok(epoch_pegouts) => epoch_pegouts,
                 Err(e) => {
                     error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
                     return;
                 }
             };
-
             // add current block pegouts
             pegouts.extend(current_block_pegouts);
 
@@ -213,7 +208,7 @@ where
                     &self.bitcoind_client,
                     &mut self.btc_server,
                     &self.frost_task_tx,
-                    pegouts,
+                    &pegouts,
                 )
                 .await
                 {
@@ -222,24 +217,29 @@ where
                 }
 
                 // wait until the psbt is finalized
-                match tokio::time::timeout(Duration::from_secs(60), self.frost_task_rx.recv()).await
+                let witness_data = match tokio::time::timeout(
+                    Duration::from_secs(60),
+                    self.frost_task_rx.recv(),
+                )
+                .await
                 {
                     Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
                         let psbt_result =
                             Psbt::deserialize(message.psbt.as_slice()).expect("valid psbt");
-                        witness_data = Some(get_witness_data_from_psbt(psbt_result));
+                        let witness_data = get_witness_data_from_psbt(psbt_result);
+                        witness_data
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
-                        panic!("Failed to get finalized psbt from frost task");
-                        // return;
+                        return;
                     }
                     _ => {
                         warn!(target: "consensus::authority", "Recieved unknown message from frost task");
+                        return;
                     }
-                }
+                };
+                epoch_witness = Some(witness_data);
                 // TODO(scott): check psbt matches expected session id
-                // TODO(scott): call btc_server.signer_finalize()
             }
         }
         drop(storage);
@@ -255,7 +255,7 @@ where
             &self.sk,
             &self.secp,
             &authority_signers,
-            &witness_data,
+            &epoch_witness,
         ) {
             Ok(ret) => ret,
             Err(err) => {
