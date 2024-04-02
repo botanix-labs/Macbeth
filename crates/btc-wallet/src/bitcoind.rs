@@ -146,12 +146,9 @@ impl BitcoindClient {
     }
 
     pub async fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
-        let fee_res = self
-            .rpc
+        self.rpc
             .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(BitcoindError::EstimateSmartFeeFailed);
-
-        fee_res
+            .map_err(BitcoindError::EstimateSmartFeeFailed)
     }
 }
 

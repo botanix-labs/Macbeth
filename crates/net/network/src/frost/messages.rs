@@ -519,7 +519,7 @@ mod tests {
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::PingMessage,
-            message: FrostProtoMessageKind::PingMessage(peer_id.clone(), authority_index),
+            message: FrostProtoMessageKind::PingMessage(peer_id, authority_index),
         };
 
         // Encode the message
@@ -548,7 +548,7 @@ mod tests {
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::PongMessage,
-            message: FrostProtoMessageKind::PongMessage(peer_id.clone(), authority_index),
+            message: FrostProtoMessageKind::PongMessage(peer_id, authority_index),
         };
 
         // Encode the message

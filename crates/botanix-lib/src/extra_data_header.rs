@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(buf[37..41], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
         // Check the pk
         let maybe_pk = buf[41..74].to_vec();
-        let pk = secp256k1::PublicKey::from_slice(&maybe_pk.as_slice()).expect("a public key");
+        let pk = secp256k1::PublicKey::from_slice(maybe_pk.as_slice()).expect("a public key");
         // Check the public key is the same as one provided
         assert_eq!(pk, public_key);
         // Check the length of the witness data
@@ -490,7 +490,7 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
-        assert_eq!(deserialized_header.authority_signature.is_some(), true);
+        assert!(deserialized_header.authority_signature.is_some(), "{}", true);
         assert_eq!(
             deserialized_header.authority_signature.unwrap().to_standard(),
             signature.to_standard()
@@ -683,7 +683,7 @@ mod tests {
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         edh.set_signature(signature);
-        assert_eq!(edh.authority_signature.is_some(), true);
+        assert!(edh.authority_signature.is_some());
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 

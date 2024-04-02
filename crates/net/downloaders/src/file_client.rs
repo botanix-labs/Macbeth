@@ -240,7 +240,7 @@ mod tests {
         headers::{reverse_headers::ReverseHeadersDownloaderBuilder, test_utils::child_header},
         test_utils::{generate_bodies, generate_bodies_file},
     };
-    use alloy_rlp::Encodable;
+
     use assert_matches::assert_matches;
     use futures_util::stream::StreamExt;
     use reth_db::test_utils::create_test_rw_db;
