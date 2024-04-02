@@ -2,7 +2,7 @@ use std::io::Write;
 
 use bitcoin::{
     block::Header,
-    hashes::{sha256, Hash, HashEngine},
+    hashes::{sha256, Hash},
     psbt::PartiallySignedTransaction,
     witness::Witness,
 };
@@ -30,10 +30,11 @@ use secp256k1::ThirtyTwoByteHash;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
-use crate::{
-    extended_client::BtcServerExtendedClient,
-    frost_task::{FrostNotification, FrostNotificationMessage},
-};
+use crate::extended_client::BtcServerExtendedClient;
+
+/// 32 byte signing session id used by the frost coordinator to identify a signing session
+/// not consensus critical
+pub type SigningSessionId = [u8; 32];
 
 /// Repersents an error while processing a botanix log
 #[derive(Debug, thiserror::Error)]
@@ -82,9 +83,6 @@ pub(crate) fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<
 
     None
 }
-
-// TODO(armins) ideally processing these reciepts dont have sideeffects or make network calls
-// in the future the caller should be responsible for doing this
 
 /// Processes the receipts in the given `bundle_state` and performs actions based on the receipt
 /// logs.
@@ -175,16 +173,13 @@ fn get_pegout_data(log: Log) -> Option<PegoutData> {
     None
 }
 
-// send pegouts and initiate the frost signing
+// send pegouts to the btc server and recieve a psbt
 // TODO better name for this function
-pub(crate) async fn send_pegouts(
-    _bitcoin_block_source: &BitcoindClient,
+pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
-    frost_notification_tx: &UnboundedSender<FrostNotificationMessage>,
     pegouts: &Vec<PegoutData>,
-) -> Result<(), ProcessBotanixLogError> {
-    // TODO Pull fee_rate from bitcoind
-    // TODO pull signing_session_id from parent block hash
+    signing_session_id: &SigningSessionId,
+) -> Result<SignPayload, ProcessBotanixLogError> {
     let req = MakeTxRequest {
         outputs: pegouts
             .iter()
@@ -193,30 +188,19 @@ pub(crate) async fn send_pegouts(
                 value: pegout.amount.to_sat(),
             })
             .collect(),
-        // TODO pull from parent block hash
-        signing_session_id: [0u8; 32].to_vec(),
+        signing_session_id: signing_session_id.to_vec(),
     };
 
     match btc_server.get_psbt(req).await {
         Ok(response) => {
             // start the frost signing session
-            let SignPayload { signing_session_id, psbt } = response;
-            info!(target: "consensus::authority", "Initiating signing session with id {:?}", signing_session_id);
-
-            frost_notification_tx
-                .send(FrostNotificationMessage::InitiateSigning(FrostNotification {
-                    psbt,
-                    signing_session_id,
-                }))
-                .expect("message sent");
+            return Ok(response);
         }
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
             return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()));
         }
     }
-
-    Ok(())
 }
 
 /// Processes a single botanix log and performs actions based on the log's topics.
@@ -472,7 +456,7 @@ pub(crate) enum GenerateSigningSesssionIdError {
 pub(crate) fn generate_signing_session_id(
     best_hash: &[u8],
     authority_pk: &secp256k1::PublicKey,
-) -> Result<[u8; 32], GenerateSigningSesssionIdError> {
+) -> Result<SigningSessionId, GenerateSigningSesssionIdError> {
     let mut engine = sha256::HashEngine::default();
     engine.write_all(best_hash)?;
     engine.write_all(authority_pk.serialize().as_ref())?;
