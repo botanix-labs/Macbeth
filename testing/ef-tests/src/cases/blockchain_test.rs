@@ -67,13 +67,13 @@ impl Case for BlockchainTestCase {
         for case in self.tests.values().filter(|case| {
             !matches!(
                 case.network,
-                ForkSpec::ByzantiumToConstantinopleAt5
-                    | ForkSpec::Constantinople
-                    | ForkSpec::ConstantinopleFix
-                    | ForkSpec::MergeEOF
-                    | ForkSpec::MergeMeterInitCode
-                    | ForkSpec::MergePush0
-                    | ForkSpec::Unknown
+                ForkSpec::ByzantiumToConstantinopleAt5 |
+                    ForkSpec::Constantinople |
+                    ForkSpec::ConstantinopleFix |
+                    ForkSpec::MergeEOF |
+                    ForkSpec::MergeMeterInitCode |
+                    ForkSpec::MergePush0 |
+                    ForkSpec::Unknown
             )
         }) {
             // Create a new test database and initialize a provider for the test case.

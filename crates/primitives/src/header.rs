@@ -209,9 +209,9 @@ impl Header {
 
     /// Checks if the header is empty - has no transactions and no ommers
     pub fn is_empty(&self) -> bool {
-        self.transaction_root_is_empty()
-            && self.ommers_hash_is_empty()
-            && self.withdrawals_root.map_or(true, |root| root == EMPTY_ROOT_HASH)
+        self.transaction_root_is_empty() &&
+            self.ommers_hash_is_empty() &&
+            self.withdrawals_root.map_or(true, |root| root == EMPTY_ROOT_HASH)
     }
 
     /// Check if the ommers hash equals to empty hash list.
@@ -354,10 +354,10 @@ impl Header {
         if let Some(base_fee) = self.base_fee_per_gas {
             // Adding base fee length if it exists.
             length += U256::from(base_fee).length();
-        } else if self.has_withdrawals_root()
-            || self.has_blob_gas_used()
-            || self.has_excess_blob_gas()
-            || self.has_parent_beacon_block_root()
+        } else if self.has_withdrawals_root() ||
+            self.has_blob_gas_used() ||
+            self.has_excess_blob_gas() ||
+            self.has_parent_beacon_block_root()
         {
             // Placeholder code for empty lists.
             length += 1;
@@ -366,9 +366,9 @@ impl Header {
         if let Some(root) = self.withdrawals_root {
             // Adding withdrawals_root length if it exists.
             length += root.length();
-        } else if self.has_blob_gas_used()
-            || self.has_excess_blob_gas()
-            || self.has_parent_beacon_block_root()
+        } else if self.has_blob_gas_used() ||
+            self.has_excess_blob_gas() ||
+            self.has_parent_beacon_block_root()
         {
             // Placeholder code for a missing string value.
             length += 1;
@@ -440,10 +440,10 @@ impl Encodable for Header {
         // but withdrawals root is present.
         if let Some(ref base_fee) = self.base_fee_per_gas {
             U256::from(*base_fee).encode(out);
-        } else if self.has_withdrawals_root()
-            || self.has_blob_gas_used()
-            || self.has_excess_blob_gas()
-            || self.has_parent_beacon_block_root()
+        } else if self.has_withdrawals_root() ||
+            self.has_blob_gas_used() ||
+            self.has_excess_blob_gas() ||
+            self.has_parent_beacon_block_root()
         {
             out.put_u8(EMPTY_LIST_CODE);
         }
@@ -452,9 +452,9 @@ impl Encodable for Header {
         // but blob gas used is present.
         if let Some(ref root) = self.withdrawals_root {
             root.encode(out);
-        } else if self.has_blob_gas_used()
-            || self.has_excess_blob_gas()
-            || self.has_parent_beacon_block_root()
+        } else if self.has_blob_gas_used() ||
+            self.has_excess_blob_gas() ||
+            self.has_parent_beacon_block_root()
         {
             out.put_u8(EMPTY_STRING_CODE);
         }

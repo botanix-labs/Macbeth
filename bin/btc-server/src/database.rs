@@ -1,7 +1,4 @@
-use std::array::TryFromSliceError;
-use std::collections::BTreeMap;
-use std::io;
-use std::path::Path;
+use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use bitcoin::{
     psbt::{self, Psbt},

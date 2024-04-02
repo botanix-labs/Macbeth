@@ -108,9 +108,9 @@ where
         let mut collected = 0;
         let mut non_empty_headers = 0;
         let headers = self.provider.sealed_headers_while(range.clone(), |header| {
-            let should_take = range.contains(&header.number)
-                && non_empty_headers < max_non_empty
-                && collected < self.stream_batch_size;
+            let should_take = range.contains(&header.number) &&
+                non_empty_headers < max_non_empty &&
+                collected < self.stream_batch_size;
 
             if should_take {
                 collected += 1;
@@ -167,10 +167,10 @@ where
                 .map(|last| last == *self.download_range.end())
                 .unwrap_or_default();
 
-        nothing_to_request
-            && self.in_progress_queue.is_empty()
-            && self.buffered_responses.is_empty()
-            && self.queued_bodies.is_empty()
+        nothing_to_request &&
+            self.in_progress_queue.is_empty() &&
+            self.buffered_responses.is_empty() &&
+            self.queued_bodies.is_empty()
     }
 
     /// Clear all download related data.
@@ -212,8 +212,8 @@ where
     /// Adds a new response to the internal buffer
     fn buffer_bodies_response(&mut self, response: Vec<BlockResponse>) {
         // take into account capacity
-        let size = response.iter().map(BlockResponse::size).sum::<usize>()
-            + response.capacity() * mem::size_of::<BlockResponse>();
+        let size = response.iter().map(BlockResponse::size).sum::<usize>() +
+            response.capacity() * mem::size_of::<BlockResponse>();
 
         let response = OrderedBodiesResponse { resp: response, size };
         let response_len = response.len();
@@ -304,8 +304,8 @@ where
         }
 
         // Check if the provided range is the subset of the existing range.
-        let is_current_range_subset = self.download_range.contains(range.start())
-            && *range.end() == *self.download_range.end();
+        let is_current_range_subset = self.download_range.contains(range.start()) &&
+            *range.end() == *self.download_range.end();
         if is_current_range_subset {
             tracing::trace!(target: "downloaders::bodies", ?range, "Download range already in progress");
             // The current range already includes requested.
@@ -371,8 +371,8 @@ where
             let mut new_request_submitted = false;
             // Submit new requests
             let concurrent_requests_limit = this.concurrent_request_limit();
-            'inner: while this.in_progress_queue.len() < concurrent_requests_limit
-                && this.has_buffer_capacity()
+            'inner: while this.in_progress_queue.len() < concurrent_requests_limit &&
+                this.has_buffer_capacity()
             {
                 match this.next_headers_request() {
                     Ok(Some(request)) => {
@@ -502,8 +502,8 @@ impl BodiesDownloaderBuilder {
             .with_request_limit(config.downloader_request_limit)
             .with_max_buffered_blocks_size_bytes(config.downloader_max_buffered_blocks_size_bytes)
             .with_concurrent_requests_range(
-                config.downloader_min_concurrent_requests
-                    ..=config.downloader_max_concurrent_requests,
+                config.downloader_min_concurrent_requests..=
+                    config.downloader_max_concurrent_requests,
             )
     }
 }

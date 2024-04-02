@@ -1140,8 +1140,8 @@ where
     /// `false` if [`TransactionsManager`] is operating close to full capacity.
     fn has_capacity_for_fetching_pending_hashes(&self) -> bool {
         self.pending_pool_imports_info
-            .has_capacity(self.pending_pool_imports_info.max_pending_pool_imports)
-            && self.transaction_fetcher.has_capacity_for_fetching_pending_hashes()
+            .has_capacity(self.pending_pool_imports_info.max_pending_pool_imports) &&
+            self.transaction_fetcher.has_capacity_for_fetching_pending_hashes()
     }
 }
 
@@ -1393,8 +1393,8 @@ impl FullTransactionsBuilder {
     /// [`TransactionFetcher::fill_request_from_hashes_pending_fetch`].
     fn push(&mut self, transaction: &PropagateTransaction) {
         let new_size = self.total_size + transaction.size;
-        if new_size > DEFAULT_SOFT_LIMIT_BYTE_SIZE_TRANSACTIONS_BROADCAST_MESSAGE
-            && self.total_size > 0
+        if new_size > DEFAULT_SOFT_LIMIT_BYTE_SIZE_TRANSACTIONS_BROADCAST_MESSAGE &&
+            self.total_size > 0
         {
             return;
         }

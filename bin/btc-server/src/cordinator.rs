@@ -15,12 +15,15 @@ use reth_btc_wallet::transaction::{CalculateSighashError, ETH_ADDRESS_FIELD};
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 use secp256k1::PublicKey;
 
-use crate::database::{self, Utxo};
-use crate::util::{
-    self, retrieve_all_partial_signatures, retrieve_all_signing_commitments, OutPointExt,
-    VerifyingKeyExt, VerifyingKeyExtError,
+use crate::{
+    database::{self, Utxo},
+    merkle,
+    util::{
+        self, retrieve_all_partial_signatures, retrieve_all_signing_commitments, OutPointExt,
+        VerifyingKeyExt, VerifyingKeyExtError,
+    },
+    App, Error, SECP,
 };
-use crate::{merkle, App, Error, SECP};
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {

@@ -253,9 +253,9 @@ where
     K: EnrKey,
 {
     fn encode(&self, out: &mut dyn BufMut) {
-        let payload_length = self.0.signature().length()
-            + self.0.seq().length()
-            + self.0.iter().fold(0, |acc, (k, v)| acc + k.as_slice().length() + v.len());
+        let payload_length = self.0.signature().length() +
+            self.0.seq().length() +
+            self.0.iter().fold(0, |acc, (k, v)| acc + k.as_slice().length() + v.len());
 
         let header = Header { list: true, payload_length };
         header.encode(out);
@@ -272,9 +272,9 @@ where
     }
 
     fn length(&self) -> usize {
-        let payload_length = self.0.signature().length()
-            + self.0.seq().length()
-            + self.0.iter().fold(0, |acc, (k, v)| acc + k.as_slice().length() + v.len());
+        let payload_length = self.0.signature().length() +
+            self.0.seq().length() +
+            self.0.iter().fold(0, |acc, (k, v)| acc + k.as_slice().length() + v.len());
         payload_length + length_of_length(payload_length)
     }
 }
@@ -285,8 +285,8 @@ fn to_alloy_rlp_error(e: rlp::DecoderError) -> RlpError {
         rlp::DecoderError::RlpInvalidLength => RlpError::Overflow,
         rlp::DecoderError::RlpExpectedToBeList => RlpError::UnexpectedString,
         rlp::DecoderError::RlpExpectedToBeData => RlpError::UnexpectedList,
-        rlp::DecoderError::RlpDataLenWithZeroPrefix
-        | rlp::DecoderError::RlpListLenWithZeroPrefix => RlpError::LeadingZero,
+        rlp::DecoderError::RlpDataLenWithZeroPrefix |
+        rlp::DecoderError::RlpListLenWithZeroPrefix => RlpError::LeadingZero,
         rlp::DecoderError::RlpInvalidIndirection => RlpError::NonCanonicalSize,
         rlp::DecoderError::RlpIncorrectListLen => {
             RlpError::Custom("incorrect list length when decoding rlp")

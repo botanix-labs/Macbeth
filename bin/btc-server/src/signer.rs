@@ -10,7 +10,7 @@ use crate::{
 use bdk::miniscript::psbt::Error as PsbtError;
 
 use bdk::psbt::PsbtUtils;
-use bitcoin::{psbt::Psbt, FeeRate, TxOut, blockdata::fee_rate};
+use bitcoin::{blockdata::fee_rate, psbt::Psbt, FeeRate, TxOut};
 use bitcoincore_rpc::json::EstimateMode;
 
 use frost_secp256k1_tr as frost;

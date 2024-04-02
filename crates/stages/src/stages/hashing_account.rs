@@ -184,8 +184,8 @@ impl<DB: Database> Stage<DB> for AccountHashingStage {
                     .walk(start_address.clone())?
                     .take(self.commit_threshold as usize)
                     .chunks(
-                        max(self.commit_threshold as usize, rayon::current_num_threads())
-                            / rayon::current_num_threads(),
+                        max(self.commit_threshold as usize, rayon::current_num_threads()) /
+                            rayon::current_num_threads(),
                     )
                 {
                     // An _unordered_ channel to receive results from a rayon job

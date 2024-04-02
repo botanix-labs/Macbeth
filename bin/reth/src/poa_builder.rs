@@ -249,7 +249,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                     }
                 }
                 let mut tx_ids_write = bitcoin_block_tx_ids.write().await;
-                *tx_ids_write = current_tx_ids.clone();
+                tx_ids_write.clone_from(&current_tx_ids);
                 drop(tx_ids_write);
             }
         }));

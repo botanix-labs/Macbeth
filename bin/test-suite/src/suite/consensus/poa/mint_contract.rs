@@ -1,4 +1,4 @@
-use crate::{it_info_print, mint_contract_abi::MintContract};
+use crate::{it_info_print, mint_contract_abi::Minting as MintContract};
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,

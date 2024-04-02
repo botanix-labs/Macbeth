@@ -19,7 +19,7 @@ const SEND_AMOUNT: u64 = 1; // = 1 Botanix
 const INTEGRATION_TEST_ROUNDS: u8 = 3;
 const SELECTED_FED_MEMBER_INDEX: usize = 0;
 
-pub async fn poa_eoa(_suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
+pub async fn poa_eoa(suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
     // generate test fed members poa nodes
     let (test_fed_members, mut rx) =
         create_poa_federation_members(&suite.config, suite.local_context.btc_servers.as_ref())

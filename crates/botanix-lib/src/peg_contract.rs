@@ -51,8 +51,8 @@ impl PeginData {
 
             // pegin block headers list should contain the tip header as the last element in the
             // list
-            if pegin.block_headers.last().expect("header should exist").block_hash()
-                != bitcoin_block.0.block_hash()
+            if pegin.block_headers.last().expect("header should exist").block_hash() !=
+                bitcoin_block.0.block_hash()
             {
                 return Err(PeginError::Invalid("recent block hash mismatch"));
             }

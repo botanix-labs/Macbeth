@@ -11,6 +11,7 @@ DB_TOOLS_DIR = "db-tools"
 FULL_DB_TOOLS_DIR := $(shell pwd)/$(DB_TOOLS_DIR)/
 
 BUILD_PATH = "target"
+BITCOIND_NETWORK := testnet
 
 # List of features to use when building. Can be overriden via the environment.
 # No jemalloc on Windows
@@ -265,10 +266,10 @@ start-reth-server:
 	--btc-block-source "https://mempool.space/signet/api"
 
 fmt:
-	cargo fmt
+	cargo +nightly fmt
 
 lint-reth:
-	cargo clippy \
+	cargo +nightly clippy \
 	--workspace \
 	--bin "reth" \
 	--lib \
@@ -290,7 +291,7 @@ lint-op-reth:
 	-- -D warnings
 
 lint-other-targets:
-	cargo clippy \
+	cargo +nightly clippy \
 	--workspace \
 	--lib \
 	--examples \
@@ -301,9 +302,8 @@ lint-other-targets:
 	-- -D warnings
 
 lint:
-	make fmt && \ 
+	make fmt && \
 	make lint-reth && \
-	make lint-op-reth && \
 	make lint-other-targets
 
 rustdocs:
@@ -359,11 +359,7 @@ start-test-suite:
 
 start-btc-server-1:
 	cd ./bin/btc-server && \
-<<<<<<< HEAD
 	cargo run --bin btc-server -- --btc-network "${BITCOIND_NETWORK}" --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 2 --max-signers 2 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url "${BITCOIND_URL}" --bitcoind-user "${BITCOIND_USER}" --bitcoind-pass "${BITCOIND_PWD}" --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5
-=======
-	cargo run --bin btc-server -- --network testnet --identifier 0 --address 0.0.0.0:8080 --db "./db1" --min-signers 1 --max-signers 1 --toml ./config.toml  --fee-rate-diff-percentage 30 --bitcoind-url localhost:18443 --bitcoind-user foo --bitcoind-pass bar --jwt-secret "${NODE_1_DIR}/jwt.hex" --fall-back-fee-rate-sat-per-vbyte 5 
->>>>>>> f494f4c08 (added jwt authentication to btc server and client)
 
 start-btc-server-2:
 	cd ./bin/btc-server && \

@@ -432,7 +432,7 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!("Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                Err(Error::FailedToGetConnectedPeersHandles);
             }
         }
     }
@@ -460,7 +460,7 @@ where
                 let sender_channel = all_connected_frost_peers
                     .get(&current_inturn_authority_frost_identifier)
                     .cloned();
-                return Ok(Some(current_inturn_authority_frost_identifier).zip(sender_channel));
+                Ok(Some(current_inturn_authority_frost_identifier).zip(sender_channel));
             }
         }
     }

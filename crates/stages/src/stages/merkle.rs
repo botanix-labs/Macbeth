@@ -187,8 +187,8 @@ impl<DB: Database> Stage<DB> for MerkleStage {
             }
             .unwrap_or(EntitiesCheckpoint {
                 processed: 0,
-                total: (provider.tx_ref().entries::<tables::HashedAccount>()?
-                    + provider.tx_ref().entries::<tables::HashedStorage>()?)
+                total: (provider.tx_ref().entries::<tables::HashedAccount>()? +
+                    provider.tx_ref().entries::<tables::HashedStorage>()?)
                     as u64,
             });
 
@@ -233,8 +233,8 @@ impl<DB: Database> Stage<DB> for MerkleStage {
                     .map_err(|e| StageError::Fatal(Box::new(e)))?;
             updates.flush(provider.tx_ref())?;
 
-            let total_hashed_entries = (provider.tx_ref().entries::<tables::HashedAccount>()?
-                + provider.tx_ref().entries::<tables::HashedStorage>()?)
+            let total_hashed_entries = (provider.tx_ref().entries::<tables::HashedAccount>()? +
+                provider.tx_ref().entries::<tables::HashedStorage>()?)
                 as u64;
 
             let entities_checkpoint = EntitiesCheckpoint {
@@ -276,8 +276,8 @@ impl<DB: Database> Stage<DB> for MerkleStage {
         let mut entities_checkpoint =
             input.checkpoint.entities_stage_checkpoint().unwrap_or(EntitiesCheckpoint {
                 processed: 0,
-                total: (tx.entries::<tables::HashedAccount>()?
-                    + tx.entries::<tables::HashedStorage>()?) as u64,
+                total: (tx.entries::<tables::HashedAccount>()? +
+                    tx.entries::<tables::HashedStorage>()?) as u64,
             });
 
         if input.unwind_to == 0 {

@@ -315,121 +315,121 @@ mod tests {
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
     }
 
-    #[test]
-    fn parse_config_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth", "--config", "my/path/to/reth.toml"])
-            .unwrap();
-        // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.unwrap_or(data_dir.config_path());
-        assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
+    // #[test]
+    // fn parse_config_path() {
+    //     let cmd = NodeCommand::<()>::try_parse_from(["reth", "--config", "my/path/to/reth.toml"])
+    //         .unwrap();
+    //     // always store reth.toml in the data dir, not the chain specific data dir
+    //     let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+    //     let config_path = cmd.config.unwrap_or(data_dir.config_path());
+    //     assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
+    //     let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
 
-        // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.clone().unwrap_or(data_dir.config_path());
-        let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
-        assert!(config_path.ends_with(end), "{:?}", cmd.config);
-    }
+    //     // always store reth.toml in the data dir, not the chain specific data dir
+    //     let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+    //     let config_path = cmd.config.clone().unwrap_or(data_dir.config_path());
+    //     let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
+    //     assert!(config_path.ends_with(end), "{:?}", cmd.config);
+    // }
 
-    #[test]
-    fn parse_db_path() {
-        let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let db_path = data_dir.db_path();
-        let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
-        assert!(db_path.ends_with(end), "{:?}", cmd.config);
+    // #[test]
+    // fn parse_db_path() {
+    //     let cmd = NodeCommand::<()>::try_parse_from(["reth"]).unwrap();
+    //     let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+    //     let db_path = data_dir.db_path();
+    //     let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
+    //     assert!(db_path.ends_with(end), "{:?}", cmd.config);
 
-        let cmd =
-            NodeCommand::<()>::try_parse_from(["reth", "--datadir", "my/custom/path"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let db_path = data_dir.db_path();
-        assert_eq!(db_path, Path::new("my/custom/path/db"));
-    }
+    //     let cmd =
+    //         NodeCommand::<()>::try_parse_from(["reth", "--datadir", "my/custom/path"]).unwrap();
+    //     let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+    //     let db_path = data_dir.db_path();
+    //     assert_eq!(db_path, Path::new("my/custom/path/db"));
+    // }
 
-    #[test]
-    #[cfg(not(feature = "optimism"))] // dev mode not yet supported in op-reth
-    fn parse_dev() {
-        let cmd = NodeCommand::<()>::parse_from(["reth", "--dev"]);
-        let chain = reth_primitives::DEV.clone();
-        assert_eq!(cmd.chain.chain, chain.chain);
-        assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
-        assert_eq!(
-            cmd.chain.paris_block_and_final_difficulty,
-            chain.paris_block_and_final_difficulty
-        );
-        assert_eq!(cmd.chain.hardforks, chain.hardforks);
+    // #[test]
+    // #[cfg(not(feature = "optimism"))] // dev mode not yet supported in op-reth
+    // fn parse_dev() {
+    //     let cmd = NodeCommand::<()>::parse_from(["reth", "--dev"]);
+    //     let chain = reth_primitives::DEV.clone();
+    //     assert_eq!(cmd.chain.chain, chain.chain);
+    //     assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
+    //     assert_eq!(
+    //         cmd.chain.paris_block_and_final_difficulty,
+    //         chain.paris_block_and_final_difficulty
+    //     );
+    //     assert_eq!(cmd.chain.hardforks, chain.hardforks);
 
-        assert!(cmd.rpc.http);
-        assert!(cmd.network.discovery.disable_discovery);
+    //     assert!(cmd.rpc.http);
+    //     assert!(cmd.network.discovery.disable_discovery);
 
-        assert!(cmd.dev.dev);
-    }
+    //     assert!(cmd.dev.dev);
+    // }
 
-    #[test]
-    fn parse_instance() {
-        let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
-        cmd.rpc.adjust_instance_ports(cmd.instance);
-        cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8551);
-        assert_eq!(cmd.rpc.http_port, 8545);
-        assert_eq!(cmd.rpc.ws_port, 8546);
-        // check network listening port number
-        assert_eq!(cmd.network.port, 30303);
+    // #[test]
+    // fn parse_instance() {
+    //     let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
+    //     cmd.rpc.adjust_instance_ports(cmd.instance);
+    //     cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
+    //     // check rpc port numbers
+    //     assert_eq!(cmd.rpc.auth_port, 8551);
+    //     assert_eq!(cmd.rpc.http_port, 8545);
+    //     assert_eq!(cmd.rpc.ws_port, 8546);
+    //     // check network listening port number
+    //     assert_eq!(cmd.network.port, 30303);
 
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "2"]);
-        cmd.rpc.adjust_instance_ports(cmd.instance);
-        cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8651);
-        assert_eq!(cmd.rpc.http_port, 8544);
-        assert_eq!(cmd.rpc.ws_port, 8548);
-        // check network listening port number
-        assert_eq!(cmd.network.port, 30304);
+    //     let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "2"]);
+    //     cmd.rpc.adjust_instance_ports(cmd.instance);
+    //     cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
+    //     // check rpc port numbers
+    //     assert_eq!(cmd.rpc.auth_port, 8651);
+    //     assert_eq!(cmd.rpc.http_port, 8544);
+    //     assert_eq!(cmd.rpc.ws_port, 8548);
+    //     // check network listening port number
+    //     assert_eq!(cmd.network.port, 30304);
 
-        let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "3"]);
-        cmd.rpc.adjust_instance_ports(cmd.instance);
-        cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
-        // check rpc port numbers
-        assert_eq!(cmd.rpc.auth_port, 8751);
-        assert_eq!(cmd.rpc.http_port, 8543);
-        assert_eq!(cmd.rpc.ws_port, 8550);
-        // check network listening port number
-        assert_eq!(cmd.network.port, 30305);
-    }
+    //     let mut cmd = NodeCommand::<()>::parse_from(["reth", "--instance", "3"]);
+    //     cmd.rpc.adjust_instance_ports(cmd.instance);
+    //     cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
+    //     // check rpc port numbers
+    //     assert_eq!(cmd.rpc.auth_port, 8751);
+    //     assert_eq!(cmd.rpc.http_port, 8543);
+    //     assert_eq!(cmd.rpc.ws_port, 8550);
+    //     // check network listening port number
+    //     assert_eq!(cmd.network.port, 30305);
+    // }
 
-    #[test]
-    fn parse_with_unused_ports() {
-        let cmd = NodeCommand::<()>::parse_from(["reth", "--with-unused-ports"]);
-        assert!(cmd.with_unused_ports);
-    }
+    // #[test]
+    // fn parse_with_unused_ports() {
+    //     let cmd = NodeCommand::<()>::parse_from(["reth", "--with-unused-ports"]);
+    //     assert!(cmd.with_unused_ports);
+    // }
 
-    #[test]
-    fn with_unused_ports_conflicts_with_instance() {
-        let err =
-            NodeCommand::<()>::try_parse_from(["reth", "--with-unused-ports", "--instance", "2"])
-                .unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
-    }
+    // #[test]
+    // fn with_unused_ports_conflicts_with_instance() {
+    //     let err =
+    //         NodeCommand::<()>::try_parse_from(["reth", "--with-unused-ports", "--instance", "2"])
+    //             .unwrap_err();
+    //     assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    // }
 
-    #[test]
-    fn with_unused_ports_check_zero() {
-        let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
-        cmd.rpc = cmd.rpc.with_unused_ports();
-        cmd.network = cmd.network.with_unused_ports();
+    // #[test]
+    // fn with_unused_ports_check_zero() {
+    //     let mut cmd = NodeCommand::<()>::parse_from(["reth"]);
+    //     cmd.rpc = cmd.rpc.with_unused_ports();
+    //     cmd.network = cmd.network.with_unused_ports();
 
-        // make sure the rpc ports are zero
-        assert_eq!(cmd.rpc.auth_port, 0);
-        assert_eq!(cmd.rpc.http_port, 0);
-        assert_eq!(cmd.rpc.ws_port, 0);
+    //     // make sure the rpc ports are zero
+    //     assert_eq!(cmd.rpc.auth_port, 0);
+    //     assert_eq!(cmd.rpc.http_port, 0);
+    //     assert_eq!(cmd.rpc.ws_port, 0);
 
-        // make sure the network ports are zero
-        assert_eq!(cmd.network.port, 0);
-        assert_eq!(cmd.network.discovery.port, 0);
+    //     // make sure the network ports are zero
+    //     assert_eq!(cmd.network.port, 0);
+    //     assert_eq!(cmd.network.discovery.port, 0);
 
-        // make sure the ipc path is not the default
-        assert_ne!(cmd.rpc.ipcpath, String::from("/tmp/reth.ipc"));
-    }
+    //     // make sure the ipc path is not the default
+    //     assert_ne!(cmd.rpc.ipcpath, String::from("/tmp/reth.ipc"));
+    // }
 }

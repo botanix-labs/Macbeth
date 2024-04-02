@@ -250,8 +250,8 @@ impl<DB: Database> Pruner<DB> {
             // Saturating subtraction is needed for the case when the chain was reverted, meaning
             // current block number might be less than the previous tip block number.
             // If that's the case, no pruning is needed as outdated data is also reverted.
-            tip_block_number.saturating_sub(previous_tip_block_number)
-                >= self.min_block_interval as u64
+            tip_block_number.saturating_sub(previous_tip_block_number) >=
+                self.min_block_interval as u64
         }) {
             debug!(
                 target: "pruner",
