@@ -170,6 +170,8 @@ pub async fn poa_frost_dkg(
         .await
         .expect("should get gateway address");
 
+    it_info_print!("Gateway Address Response", gateway_address_response);
+
     // Send some bitcoin to that gateway address
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
@@ -193,6 +195,7 @@ pub async fn poa_frost_dkg(
         2 => 1,
         _ => 0,
     };
+    it_info_print!("Vout", vout);
     let amount_in_sat = pegin_tx.output[vout].value;
     let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
     it_info_print!("Btc Amount", amount);
@@ -303,6 +306,19 @@ pub async fn poa_frost_dkg(
     assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.txid());
     assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
     assert_eq!(pegout_tx.output.len(), 2);
+    // One of the values here should be the pegout address
+    let mut match_found = false;
+    for output in pegout_tx.output.iter() {
+        let pegout_address = output.script_pubkey.clone();
+        let address_spk = btc_address.script_pubkey();
+        match_found = pegout_address == address_spk;
+        if match_found {
+            break;
+        }
+    }
+    assert!(match_found);
+    // TODO We could do a percise amounts check here
+    assert!(pegout_tx.output[1].value > 0);
 
     Ok(())
 }
