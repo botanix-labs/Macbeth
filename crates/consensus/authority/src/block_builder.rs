@@ -2,14 +2,12 @@ use std::time::Duration;
 
 use crate::{
     engine_util::{self, BestTransactionsError},
-    frost_task::FrostNotificationMessage,
+    frost_task::{FrostNotification, FrostNotificationMessage},
     task::BlockProductionTask,
-    utils::{get_witness_data_from_psbt, is_testnet, send_pegouts},
+    utils::{get_witness_data_from_psbt, is_testnet},
 };
 
 use bitcoin::{psbt::Psbt, Witness};
-use client::Output;
-use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
@@ -204,16 +202,27 @@ where
             // send pegouts
             if !pegouts.is_empty() {
                 info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
-                if let Err(e) = send_pegouts(
-                    &self.bitcoind_client,
-                    &mut self.btc_server,
-                    &self.frost_task_tx,
-                    &pegouts,
-                )
-                .await
-                {
-                    error!(target: "consensus::authority", ?e, "Failed to send pegouts");
+
+                let signing_session_id = crate::utils::generate_signing_session_id(&best_hash.0, &storage.authority).map_err(|e| {
+                    error!(target: "consensus::authority", ?e, "Failed to generate signing session id");
                     return;
+                }).expect("valid signing session id");
+
+                match crate::utils::get_psbt(&mut self.btc_server, &pegouts, &signing_session_id)
+                    .await
+                {
+                    Ok(psbt_payload) => self
+                        .frost_task_tx
+                        .send(FrostNotificationMessage::InitiateSigning(FrostNotification {
+                            signing_session_id: psbt_payload.signing_session_id,
+                            psbt: psbt_payload.psbt,
+                        }))
+                        .expect("send frost task message"),
+
+                    Err(e) => {
+                        error!(target: "consensus::authority", ?e, "Failed to get psbt");
+                        return;
+                    }
                 }
 
                 // wait until the psbt is finalized
