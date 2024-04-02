@@ -14,7 +14,7 @@ use ethers::{
 use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta},
+    peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
@@ -28,7 +28,6 @@ use bitcoincore_rpc::{Auth, RpcApi};
 const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 const ETHEREUM_TEST_ADDRESS: &str = "0x184ba627DB853244c9f17f3Cb4378cB8B39bf147";
 const SEND_AMOUNT: u64 = 1; // = 1 ether
-const RECEIVER_ADDRESS: &str = "0x613580C865985dA78613Ea7EBCF7a3b8C5445F93";
 
 async fn await_dkg(
     fed_members: &mut HashMap<usize, FederationMemberTestConfig>,
@@ -149,8 +148,8 @@ pub async fn poa_frost_dkg(
     }
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate some blocks
-    bitcoind_rpc.generate_to_address(50, &address).expect("generate to address");
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::from_str(ETHEREUM_TEST_ADDRESS).unwrap();
@@ -175,7 +174,7 @@ pub async fn poa_frost_dkg(
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
         .assume_checked();
-    let tx = bitcoind_rpc
+    let pegin_txid = bitcoind_rpc
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
@@ -183,18 +182,18 @@ pub async fn poa_frost_dkg(
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
-    let tx_res = bitcoind_rpc.get_transaction(&tx, None).expect("valid tx");
-    let tx = tx_res.transaction().expect("valid tx");
-    it_info_print!("Bitcoin Tx", tx);
+    let tx_res = bitcoind_rpc.get_transaction(&pegin_txid, None).expect("valid tx");
+    let pegin_tx = tx_res.transaction().expect("valid tx");
+    it_info_print!("Bitcoin pegin Tx", pegin_tx);
     it_info_print!("Gateway Data", gateway_address_response);
     it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
     let eth_account = Address::from_slice(eth_destination.as_slice());
-    let vout = match tx.output.len() {
+    let vout = match pegin_tx.output.len() {
         2 => 1,
         _ => 0,
     };
-    let amount_in_sat = tx.output[vout].value;
+    let amount_in_sat = pegin_tx.output[vout].value;
     let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
     it_info_print!("Btc Amount", amount);
 
@@ -218,13 +217,13 @@ pub async fn poa_frost_dkg(
     let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
-        outpoint: bitcoin::OutPoint::new(tx.txid(), vout as u32),
+        outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
         address: eth_account,
         aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
         )
         .expect("valid public key"),
-        tx: tx.clone(),
+        tx: pegin_tx.clone(),
         merkle_proof: pmt,
         block_headers,
     };
@@ -256,8 +255,7 @@ pub async fn poa_frost_dkg(
     let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
     assert!(!eth_address_balance.is_zero());
 
-    // send a pegout transactions to all fed memebers
-    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
+    // Generate and send pegout tx
     // bitcoin address
     let pegout_destination =
         ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
@@ -279,10 +277,32 @@ pub async fn poa_frost_dkg(
     // sleep for a few more seconds
     tokio::time::sleep(Duration::from_secs(5)).await;
 
+    // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
+    // processes connecting
+    let bitcoind_rpc = bitcoincore_rpc::Client::new(
+        "localhost:18443",
+        Auth::UserPass(
+            suite.config.bitcoind.username.clone(),
+            suite.config.bitcoind.password.clone(),
+        ),
+    )
+    .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(50, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
-    // TODO: wait for the signing to complete, do assertions and check balances
+    // Retrieve the last block
+    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
+    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
+    let tip_block = bitcoind_rpc.get_block(&tip_hash).expect("valid block");
+    // there should be 2 transaction one of which is the pegout the other is coinbase
+    assert_eq!(tip_block.txdata.len(), 2);
+    let pegout_tx = tip_block.txdata.get(1).unwrap();
+    it_info_print!("Pegout tx: ", pegout_tx);
+
+    assert_eq!(pegout_tx.input.len(), 1);
+    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.txid());
+    assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
+    assert_eq!(pegout_tx.output.len(), 2);
 
     Ok(())
 }

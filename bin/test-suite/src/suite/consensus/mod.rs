@@ -7,8 +7,10 @@ use crate::{
     suite::consensus::frost::btc_server::{clean_db, spawn_n_btc_servers},
 };
 use async_trait::async_trait;
+use port_killer::kill;
 use reth_tracing::tracing::error;
-use std::{panic, process::Command, sync::Arc, time::Duration};
+use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
+use tracing::{info, warn};
 
 // scopes
 mod frost;
@@ -60,6 +62,15 @@ impl Suite for ConsensusIntegrationTestSuite {
             .filter_map(|process_id| process_id)
             .collect::<Vec<u32>>();
 
+        let dbs_to_delete = self
+            .local_context
+            .btc_servers
+            .as_ref()
+            .map(|btc_servers| {
+                btc_servers.iter().map(|server| server.db_path.clone()).collect::<Vec<PathBuf>>()
+            })
+            .unwrap_or_default();
+
         // set the panic hook so it kills them whenever activated
         std::panic::set_hook(Box::new(move |panic_info| {
             error!("Test suite panicked {:?}", panic_info);
@@ -70,13 +81,36 @@ impl Suite for ConsensusIntegrationTestSuite {
                     .arg(format!("{}", process_id))
                     .output();
             }
+            // delete db leftovers
+            for db_to_delete in dbs_to_delete.iter() {
+                let _ = std::fs::remove_dir_all(db_to_delete.clone());
+            }
         }));
     }
 
     async fn create_context(&mut self) {
-        // cleanup if needed
+        // kill all processes at designated ports
+        let start_port: u16 = 8000;
+        let btc_servers: u16 = 3;
+        (0..btc_servers).for_each(|i| {
+            let port = start_port + i;
+            match kill(port) {
+                Ok(pid) => {
+                    if pid {
+                        info!("Sucessfully killed process on port process on port {:?}", port);
+                    } else {
+                        warn!("Unable to successfully kill process on port {:?}", port);
+                    }
+                }
+                Err(err) => {
+                    error!("Error attempting to kill process on port {:?} -> {:?}", port, err);
+                }
+            }
+        });
+
         // create new context
-        self.local_context.btc_servers = Some(spawn_n_btc_servers(3, self.config.clone()));
+        self.local_context.btc_servers =
+            Some(spawn_n_btc_servers(btc_servers, start_port, self.config.clone()));
 
         // let servers come up
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;

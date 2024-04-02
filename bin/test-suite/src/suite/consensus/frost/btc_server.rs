@@ -78,12 +78,12 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(n: u16, config: Config) -> Vec<SpawnedBtcServer> {
+pub fn spawn_n_btc_servers(n: u16, start_port: u16, config: Config) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..n {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-        let port = 8080 + i;
+        let port = start_port + i;
         let child_process =
             spawn_btc_server(i, format!("0.0.0.0:{}", port), db_path.clone(), config.clone());
         tasks.push(SpawnedBtcServer { db_path, port, child_process });
