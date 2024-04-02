@@ -5989,6 +5989,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "port-killer"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f8f8abaf06419461fc718f5a0929c18d06dd825f26c066e376f365f2d8c2ec2"
+
+[[package]]
 name = "portable-atomic"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9825,6 +9831,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "num-bigint",
+ "port-killer",
  "pretty_assertions",
  "rand 0.8.5",
  "rand_distr",

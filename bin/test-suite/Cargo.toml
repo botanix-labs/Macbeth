@@ -40,6 +40,7 @@ reth-tracing.workspace = true
 bitcoincore-rpc = "0.17.0"
 
 # crates.io dependencies
+port-killer = "0.1.0"
 anyhow = "1.0.71"
 argh = "0.1.10"
 async-trait = "0.1.68"
