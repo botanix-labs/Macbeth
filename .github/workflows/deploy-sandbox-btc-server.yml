@@ -22,10 +22,6 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCR_SERVICE_ACCOUNT_KEY }}
 
-      # NOTE: this operation should be replaced by a cloud or someother form of HSM once software is mainnet ready
-      - name: Copy key hex
-        run: cp bin/btc-server/key.template.hex bin/btc-server/key.hex
-
       - name: Build Docker image
         run: |
           docker build -t botanix_sandbox_btc_server -f Dockerfile.btc_server .
