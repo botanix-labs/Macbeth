@@ -1,6 +1,6 @@
 use crate::{
     extended_client::BtcServerExtendedClient,
-    utils::{deserialize_frost_peer_id, FrostParseError},
+    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
     Storage,
 };
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
@@ -14,8 +14,9 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
+    time::Duration,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +67,8 @@ pub(crate) enum Error {
     InvalidSigningSessionId,
     #[error("missing key package")]
     MissingKeyPackage,
+    #[error("Failed to send peer command {0}")]
+    Send(SendError<FrostPeerCommand>),
 }
 
 impl From<FrostParseError> for Error {
@@ -399,21 +402,25 @@ where
         &mut self,
         dkg_payload: DkgPayload,
     ) -> Result<(), Error> {
-        // get all connected peers
-        let connected_peers = self.get_all_peers_handle().await?;
+        let fut = || async {
+            // get all connected peers
+            let connected_peers = self.get_all_peers_handle().await?;
 
-        // Broadcast dkg round 1 package to all peers (excluding ourselves)
-        connected_peers.iter().for_each(|(frost_id, sender)| {
-            if *frost_id != self.personal_frost_identifier {
-                let resp = PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound2,
-                    identifier: dkg_payload.identifier.clone(),
-                    data: dkg_payload.payload.clone(),
-                });
-                let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
+            // Broadcast dkg round 1 package to all peers (excluding ourselves)
+            for (frost_id, sender) in connected_peers.iter() {
+                if *frost_id != self.personal_frost_identifier {
+                    let resp = PeerMessageResponse::Dkg(DkgResponse {
+                        response_type: DkgEventResponseType::DkgRound2,
+                        identifier: dkg_payload.identifier.clone(),
+                        data: dkg_payload.payload.clone(),
+                    });
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
-        });
-        Ok(())
+            Ok(())
+        };
+
+        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
@@ -421,21 +428,25 @@ where
         let dkg1_package = self.get_round1_dkg_package().await?;
         info!("dkg1_package: {:?}", dkg1_package);
 
-        // get all connected peers
-        let connected_peers = self.get_all_peers_handle().await?;
+        let fut = || async {
+            // get all connected peers
+            let connected_peers = self.get_all_peers_handle().await?;
 
-        // Broadcast dkg round 1 package to all peers (excluding ourselves)
-        connected_peers.iter().for_each(|(frost_id, sender)| {
-            if *frost_id != self.personal_frost_identifier {
-                let resp = PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound1,
-                    identifier: dkg1_package.identifier.clone(),
-                    data: dkg1_package.payload.clone(),
-                });
-                let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
+            // Broadcast dkg round 1 package to all peers (excluding ourselves)
+            for (frost_id, sender) in connected_peers.iter() {
+                if *frost_id != self.personal_frost_identifier {
+                    let resp = PeerMessageResponse::Dkg(DkgResponse {
+                        response_type: DkgEventResponseType::DkgRound1,
+                        identifier: dkg1_package.identifier.clone(),
+                        data: dkg1_package.payload.clone(),
+                    });
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
-        });
-        Ok(())
+            Ok(())
+        };
+
+        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     pub(crate) async fn start(&mut self) -> Result<(), Error> {

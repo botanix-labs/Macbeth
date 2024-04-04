@@ -497,6 +497,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             evm_config,
             frost_config,
             payload_builder.clone(),
+            self.config.rpc.btc_network,
         )
         .expect("Failed to create authority consensus builder")
         .build();

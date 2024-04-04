@@ -64,6 +64,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
     /// Frost Task Sender
     pub(crate) frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    /// Bitcoin Network
+    pub(crate) btc_network: bitcoin::Network,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
@@ -99,6 +101,7 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        btc_network: bitcoin::Network,
     ) -> Self {
         Self {
             chain_spec,
@@ -119,6 +122,7 @@ where
             payload_builder,
             frost_task_rx,
             frost_task_tx,
+            btc_network,
         }
     }
 

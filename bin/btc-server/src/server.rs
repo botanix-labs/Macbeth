@@ -4,8 +4,7 @@ use base64::decode as base64_decode;
 use bitcoin::{consensus::encode as btcencode, psbt::Psbt, FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
-use tonic;
-use tonic::metadata::BinaryMetadataKey;
+use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
 use crate::{database::Utxo, rpc, util, App, SECP};
@@ -203,10 +202,10 @@ impl rpc::BtcServer for App {
         let req = req.into_inner();
         info!("Received to sign package request, signing session id: {:?}", req.signing_session_id);
         let signing_session_id =
-        util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-            error!("Failed to parse signing session id: {}", e);
-            badarg!("Failed to parse signing session id: {}", e)
-        })?;
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
         let psbt = self
             .get_to_sign(&signing_session_id)
             .map_err(|e| internal!("Failed to get to sign: {}", e))?;
@@ -281,7 +280,10 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let pk = self.get_public_key().map_err(|e| internal!("Failed to get public key: {}", e))?;
+        let pk = self.get_public_key().map_err(|e| {
+            debug!("Unable to get public key: {}", e);
+            tonic::Status::internal(format!("internal error: {}", e))
+        })?;
         let pk = hex::encode(pk.serialize());
 
         return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));

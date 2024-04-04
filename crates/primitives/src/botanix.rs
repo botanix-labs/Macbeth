@@ -11,4 +11,6 @@ pub struct BotanixConsensusPackage {
     pub recent_header: RecentHeader,
     /// Aggregate public key
     pub aggregate_public_key: secp256k1::PublicKey,
+    /// Bitcoin network
+    pub btc_network: bitcoin::Network,
 }

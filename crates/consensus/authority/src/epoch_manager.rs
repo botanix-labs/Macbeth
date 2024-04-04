@@ -76,7 +76,7 @@ where
         }
 
         drop(storage);
-        info!("Epoch manager inturn: {}", is_inturn);
+        info!("Epoch manager. Member index = {}. Inturn?: {}", signer_index, is_inturn);
 
         is_inturn
     }

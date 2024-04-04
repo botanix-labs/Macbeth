@@ -1,14 +1,11 @@
 use crate::{
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotification, FrostNotificationMessage},
-    utils::{deserialize_frost_peer_id, parse_signing_session_id, FrostParseError},
+    utils::{deserialize_frost_peer_id, parse_signing_session_id, retry_exec, FrostParseError},
     Storage,
 };
-use client::{
-    FinalizeSigningResponse, Output, Round1SigningPackage, Round2SigningPackage, SignPayload,
-};
+use client::{FinalizeSigningResponse, Round1SigningPackage, Round2SigningPackage, SignPayload};
 use frost_secp256k1_tr as frost;
-use reth_botanix_lib::peg_contract::PegoutData;
 use reth_consensus_common::utils::{current_inturn_index, is_inturn};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
@@ -16,8 +13,8 @@ use reth_network::frost::{
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
-use std::collections::HashMap;
-use tokio::sync::mpsc::UnboundedSender;
+use std::{collections::HashMap, time::Duration};
+use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +49,8 @@ pub(crate) enum Error {
     FailedToGetToSign,
     #[error("invalid signing session id")]
     InvalidSigningSessionId,
+    #[error("Failed to send peer command {0}")]
+    Send(SendError<FrostPeerCommand>),
 }
 
 impl From<FrostParseError> for Error {
@@ -517,25 +516,31 @@ where
         &mut self,
         round1_signing_package: Round1SigningPackage,
     ) -> Result<(), Error> {
-        // get all connected peers
-        let connected_peers = self.get_all_peers_handle().await?;
-        info!(">>>>>>>>>>> [GOSSIP_ROUND1] number of peers connected: {:?}", connected_peers.len());
-
         let Round1SigningPackage { signing_session_id, psbt, identifier } = round1_signing_package;
+        let fut = || async {
+            // get all connected peers
+            let connected_peers = self.get_all_peers_handle().await?;
+            info!(
+                ">>>>>>>>>>> [GOSSIP_ROUND1] number of peers connected: {:?}",
+                connected_peers.len()
+            );
 
-        // Broadcast signing round 1 package to all peers (excluding ourselves)
-        connected_peers.iter().for_each(|(frost_id, sender)| {
-            if *frost_id != self.personal_frost_identifier {
-                let resp = PeerMessageResponse::Signing(SigningResponse {
-                    response_type: SigningEventResponseType::SignerRound1SigningPackage,
-                    identifier: identifier.clone(),
-                    signing_session_id: signing_session_id.clone(),
-                    psbt: psbt.clone(),
-                });
-                let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
+            // Broadcast signing round 1 package to all peers (excluding ourselves)
+            for (frost_id, sender) in connected_peers.iter() {
+                if *frost_id != self.personal_frost_identifier {
+                    let resp = PeerMessageResponse::Signing(SigningResponse {
+                        response_type: SigningEventResponseType::SignerRound1SigningPackage,
+                        identifier: identifier.clone(),
+                        signing_session_id: signing_session_id.clone(),
+                        psbt: psbt.clone(),
+                    });
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
-        });
-        Ok(())
+            Ok(())
+        };
+
+        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     /// A signer processes round 1 signing packages
@@ -690,24 +695,27 @@ where
         sign_payload: SignPayload,
         frost_identifier: Vec<u8>,
     ) -> Result<(), Error> {
-        // get all connected peers
-        let connected_peers = self.get_all_peers_handle().await?;
-
         let SignPayload { signing_session_id, psbt } = sign_payload;
 
-        // Broadcast signing round 2 package to all peers (excluding ourselves)
-        connected_peers.iter().for_each(|(frost_id, sender)| {
-            if *frost_id != self.personal_frost_identifier {
-                let resp = PeerMessageResponse::Signing(SigningResponse {
-                    response_type: SigningEventResponseType::SignerRound2SigningPackage,
-                    identifier: frost_identifier.clone(),
-                    signing_session_id: signing_session_id.clone(),
-                    psbt: psbt.clone(),
-                });
-                let _ = sender.send(FrostPeerCommand::PeerMessage(resp)); // TODO: map to error ?
+        let fut = || async {
+            // get all connected peers
+            let connected_peers = self.get_all_peers_handle().await?;
+            // Broadcast signing round 2 package to all peers (excluding ourselves)
+            for (frost_id, sender) in connected_peers.iter() {
+                if *frost_id != self.personal_frost_identifier {
+                    let resp = PeerMessageResponse::Signing(SigningResponse {
+                        response_type: SigningEventResponseType::SignerRound2SigningPackage,
+                        identifier: frost_identifier.clone(),
+                        signing_session_id: signing_session_id.clone(),
+                        psbt: psbt.clone(),
+                    });
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
-        });
-        Ok(())
+            Ok(())
+        };
+
+        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     /// A signer processes round 2 signing request

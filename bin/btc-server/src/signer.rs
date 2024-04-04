@@ -10,7 +10,6 @@ use bitcoin::{psbt::Psbt, FeeRate, TxOut};
 use bitcoincore_rpc::json::EstimateMode;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
-
 use reth_btc_wallet::{
     psbt::{PsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,

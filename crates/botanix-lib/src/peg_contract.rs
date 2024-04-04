@@ -228,9 +228,11 @@ pub struct PegoutData {
 }
 
 impl PegoutData {
-    pub fn new(amount: bitcoin::Amount, address: String) -> Result<Self, PegoutError> {
-        // TODO (armins) This should be coming from config
-        let network = bitcoin::Network::Regtest;
+    pub fn new(
+        amount: bitcoin::Amount,
+        address: String,
+        btc_network: bitcoin::Network,
+    ) -> Result<Self, PegoutError> {
         // Check for valid addres
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
@@ -238,10 +240,10 @@ impl PegoutData {
 
         // For is address if valid for network
         let network_checked_destination = destination
-            .require_network(network)
+            .require_network(btc_network)
             .map_err(|_e| PegoutError::Invalid("Address not valid for network"))?;
 
-        Ok(Self { amount, destination: network_checked_destination, network })
+        Ok(Self { amount, destination: network_checked_destination, network: btc_network })
     }
 }
 

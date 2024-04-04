@@ -7021,6 +7021,7 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.1.0-alpha.20"
 dependencies = [
+ "bitcoin",
  "clap",
  "eyre",
  "futures-util",

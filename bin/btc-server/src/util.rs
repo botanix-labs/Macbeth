@@ -234,11 +234,11 @@ pub enum ValidatePSBTError {
 /// * `db` - Database reference used for UTXO lookups.
 ///
 /// `NO_FLAGS`: Performs basic sanity checks only.
-/// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of the input material.
-/// `ROUND1_TRANSITION`: Validates signing commitments in round 1, ensuring the required signers.
-/// `ROUND2`: Checks if there are enough round 2 partial signatures. Ensuring we never add more than a quorum of signers
-/// `ROUND2_TRANSITION`: Validates partial signatures during the transition to round 2, ensuring signers match and Frost IDs align.
-///
+/// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of
+/// the input material. `ROUND1_TRANSITION`: Validates signing commitments in round 1, ensuring the
+/// required signers. `ROUND2`: Checks if there are enough round 2 partial signatures. Ensuring we
+/// never add more than a quorum of signers `ROUND2_TRANSITION`: Validates partial signatures during
+/// the transition to round 2, ensuring signers match and Frost IDs align.
 pub fn validate_psbt(
     psbt: &Psbt,
     flags: u8,
@@ -304,14 +304,15 @@ pub fn validate_psbt(
             }
         }
 
-        // Additionally we should check that the same set of signers provided partial sigs as in round 1
+        // Additionally we should check that the same set of signers provided partial sigs as in
+        // round 1
         for (sc, sig) in scs.iter().zip(sigs.iter()) {
             if sc.keys().ne(sig.keys()) {
                 return Err(ValidatePSBTError::FrostIdMismatch);
             }
         }
-        // Lastly the signers should ensure they are infact in the signing group before providing partial sigs
-        // That should be done outside the context of this function
+        // Lastly the signers should ensure they are infact in the signing group before providing
+        // partial sigs That should be done outside the context of this function
     }
 
     let tx = psbt.clone().extract_tx();
@@ -352,8 +353,9 @@ mod util_tests {
     use crate::{
         database,
         test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup},
+        util::*,
     };
-    use bitcoin::{ScriptBuf, TxOut};
+    use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
     use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
     fn db_setup() -> database::Db {
@@ -495,7 +497,8 @@ mod util_tests {
         let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
-        // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of signatures
+        // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of
+        // signatures
         let res = validate_psbt(&psbt, ROUND2, 2, &db);
         assert!(res.is_ok());
     }
