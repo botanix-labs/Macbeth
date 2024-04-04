@@ -19,7 +19,7 @@ pub struct ProtocolState {
     peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
     authority_index: u16,
     peer_id: PeerId,
-    authorities: Vec<PeerId>
+    authorities: Vec<PeerId>,
 }
 
 impl ProtocolState {

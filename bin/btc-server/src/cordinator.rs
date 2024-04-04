@@ -1,11 +1,9 @@
-use crate::database::Error as DbError;
-use crate::util::validate_psbt;
 use crate::{
-    database::Utxo,
+    database::{Error as DbError, Utxo},
     merkle,
     util::{
-        self, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError, NO_FLAGS,
-        ROUND1, ROUND1_TRANSITION, ROUND2,
+        self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
+        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
     },
     App, Error, SECP,
 };

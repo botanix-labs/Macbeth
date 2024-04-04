@@ -445,7 +445,6 @@ where
         let (mut pipeline, client) = if config.dev.dev {
             info!(target: "reth::cli", "Starting Reth in dev mode");
             let mining_mode = config.mining_mode(transaction_pool.pending_transactions_listener());
-
             let (_, client, mut task) = reth_auto_seal_consensus::AutoSealBuilder::new(
                 Arc::clone(&config.chain),
                 blockchain_db.clone(),

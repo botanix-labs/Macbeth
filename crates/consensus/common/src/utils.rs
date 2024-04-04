@@ -174,10 +174,7 @@ where
 
     let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
-    Ok((
-        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
-        authorities,
-    ))
+    Ok((signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?, authorities))
 }
 
 /// Returns the unix timestamp in seconds

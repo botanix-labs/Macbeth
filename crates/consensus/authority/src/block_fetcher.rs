@@ -44,6 +44,8 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
+    /// Bitcoin network
+    btc_network: bitcoin::Network,
 }
 
 impl<Client, EvmConfig, Engine> BlockFetcherTask<Client, EvmConfig, Engine>
@@ -68,6 +70,7 @@ where
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
+        btc_network: bitcoin::Network,
     ) -> Self {
         Self {
             chain_spec,
@@ -79,6 +82,7 @@ where
             storage,
             bitcoin_block_header,
             evm_config,
+            btc_network,
         }
     }
 
@@ -148,6 +152,7 @@ where
                     .aggregate_public_key
                     .clone()
                     .expect("aggregate pk is some"),
+                btc_network: self.btc_network,
             };
 
             match storage.execute_imported_block(
@@ -169,6 +174,7 @@ where
                         &bundle_state,
                         recent_bitcoin_block_height,
                         is_testnet,
+                        self.btc_network,
                     )
                     .await
                     {
@@ -184,7 +190,7 @@ where
                         storage.get_best_block_and_hash().expect("best block exists");
                     if header.is_poa_epoch() {
                         // get the pegouts from during the epoch
-                        let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client).await.map_err(|e| {
+                        let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
                             error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
                             return;
                         }).unwrap();

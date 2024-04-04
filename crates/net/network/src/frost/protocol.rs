@@ -325,7 +325,7 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostProtoMessageKind::Round2Dkg(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 2 PACKAGE FROM PEER. {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage{
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound2,
                             identifier: data.identifier,

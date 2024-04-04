@@ -144,6 +144,7 @@ where
         let botanix_consensus_pkg = BotanixConsensusPackage {
             recent_header: recent_bitcoin_block_header.expect("valid header and height tuple"),
             aggregate_public_key: secp_pk,
+            btc_network: self.btc_network,
         };
         let authority_signers = storage.authorities.clone();
 
@@ -174,6 +175,7 @@ where
             &bundle_state,
             botanix_consensus_pkg.recent_header.1,
             is_testnet,
+            self.btc_network,
         )
         .await
         {
@@ -189,13 +191,16 @@ where
         let mut epoch_witness: Option<Vec<Witness>> = None;
         if block.header.is_poa_epoch() {
             // get pegouts up to best block
-            let mut pegouts = match crate::utils::epoch_pegouts(best_block, &storage.client).await {
-                Ok(epoch_pegouts) => epoch_pegouts,
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
-                    return;
-                }
-            };
+            let mut pegouts =
+                match crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network)
+                    .await
+                {
+                    Ok(epoch_pegouts) => epoch_pegouts,
+                    Err(e) => {
+                        error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
+                        return;
+                    }
+                };
             // add current block pegouts
             pegouts.extend(current_block_pegouts);
 

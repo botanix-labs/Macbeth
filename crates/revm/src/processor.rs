@@ -279,7 +279,10 @@ where
             }
 
             if log.topics().first() == Some(&BURN_TOPIC) {
-                if let Err(e) = parse_pegout_topic(&log) {
+                let btc_network = consensus_pkg
+                    .map(|package| package.btc_network)
+                    .unwrap_or_else(|| bitcoin::Network::Regtest);
+                if let Err(e) = parse_pegout_topic(&log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
                     return Err(BlockValidationError::MintContractViolation.into());
                 }

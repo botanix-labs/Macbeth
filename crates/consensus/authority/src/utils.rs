@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, time::Duration};
 
 use bitcoin::{
     block::Header,
@@ -7,6 +7,7 @@ use bitcoin::{
     witness::Witness,
 };
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
+use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
         parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
@@ -14,7 +15,6 @@ use reth_botanix_lib::{
     },
     peg_contract::PegoutData,
 };
-use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -27,10 +27,34 @@ use reth_provider::{
 
 use reth_rpc_types::BlockHashOrNumber;
 use secp256k1::ThirtyTwoByteHash;
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::extended_client::BtcServerExtendedClient;
+
+/// Function for retrying an async closure with retries and delays
+pub async fn retry_exec<T, E, F, Fut>(
+    fut: F,
+    max_retries: u32,
+    retry_delay: Duration,
+) -> Result<T, E>
+where
+    E: std::error::Error,
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let mut retries = 0;
+    loop {
+        match fut().await {
+            Ok(result) => return Ok(result),
+            Err(e) if retries < max_retries => {
+                error!("Error retrying the execution {:?}", e);
+                retries += 1;
+                tokio::time::sleep(retry_delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 
 /// 32 byte signing session id used by the frost coordinator to identify a signing session
 /// not consensus critical
@@ -69,14 +93,17 @@ pub(crate) enum FrostParseError {
 /// # Returns
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the receipt, otherwise returns `None`.
-pub(crate) fn make_tx_request_for_pegout_in_receipt(receipt: Receipt) -> Option<PegoutData> {
+pub(crate) fn make_tx_request_for_pegout_in_receipt(
+    receipt: Receipt,
+    btc_network: bitcoin::Network,
+) -> Option<PegoutData> {
     if !receipt.success {
         info!(target: "consensus::authority", "Receipt status code is not success {:?}", receipt);
         return None;
     }
 
     for log in receipt.logs {
-        if let Some(pegout_data) = get_pegout_data(log) {
+        if let Some(pegout_data) = get_pegout_data(log, btc_network) {
             return Some(pegout_data);
         }
     }
@@ -108,6 +135,7 @@ pub(crate) async fn process_receipts(
     bundle_state: &BundleStateWithReceipts,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
+    btc_network: bitcoin::Network,
 ) -> Result<Vec<PegoutData>, ProcessBotanixLogError> {
     let mut pegouts: Vec<PegoutData> = Vec::new();
     let receipts_bundle = bundle_state.receipts().iter();
@@ -128,6 +156,7 @@ pub(crate) async fn process_receipts(
                         recent_bitcoin_block_height,
                         is_testnet,
                         &receipt.logs,
+                        btc_network,
                     )
                     .await
                     {
@@ -157,12 +186,14 @@ pub(crate) async fn process_receipts(
 /// # Returns
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
-fn get_pegout_data(log: Log) -> Option<PegoutData> {
+fn get_pegout_data(log: Log, btc_network: bitcoin::Network) -> Option<PegoutData> {
     for topic in &log.topics {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
-                return Some(parse_pegout_reth_log_topic(&log).expect("valid pegout request"));
+                return Some(
+                    parse_pegout_reth_log_topic(&log, btc_network).expect("valid pegout request"),
+                );
             }
             Err(e) => {
                 debug!(target: "consensus::authority", ?e, "Non burn event");
@@ -227,6 +258,7 @@ async fn process_botanix_log(
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
     receipt_logs: &Vec<Log>,
+    btc_network: bitcoin::Network,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics {
@@ -261,7 +293,7 @@ async fn process_botanix_log(
             Ok(GenesisContractEvents::BurnEvent) => {
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
-                match parse_pegout_reth_log_topic(&log) {
+                match parse_pegout_reth_log_topic(&log, btc_network) {
                     Ok(parsed_pegout) => {
                         pegout = Some(parsed_pegout);
                     }
@@ -399,6 +431,7 @@ pub(crate) enum EpochPegoutsError {
 pub(crate) async fn epoch_pegouts<Client>(
     best_block: u64,
     client: &Client,
+    btc_network: bitcoin::Network,
 ) -> Result<Vec<PegoutData>, EpochPegoutsError>
 where
     Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
@@ -411,7 +444,9 @@ where
                 match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
                     Ok(Some(receipts)) => {
                         for receipt in receipts {
-                            if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt) {
+                            if let Some(p) =
+                                make_tx_request_for_pegout_in_receipt(receipt, btc_network)
+                            {
                                 pegouts.push(p);
                             }
                         }

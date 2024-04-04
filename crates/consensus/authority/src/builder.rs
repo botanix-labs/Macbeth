@@ -59,6 +59,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     evm_config: EvmConfig,
     frost_config: FrostConfig,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+    btc_network: bitcoin::Network,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -105,6 +106,7 @@ where
         evm_config: EvmConfig,
         frost_config: FrostConfig,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+        btc_network: bitcoin::Network,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -149,6 +151,7 @@ where
             authorities,
             signer_index.expect("valid index"),
             pk,
+            btc_network,
         )
         .map_err(|e| {
             error!("Failed to instantiate storage: {:?}", e);
@@ -179,6 +182,7 @@ where
             evm_config,
             frost_config,
             payload_builder,
+            btc_network,
         })
     }
 
@@ -216,6 +220,7 @@ where
             evm_config,
             frost_config,
             payload_builder,
+            btc_network,
         } = self;
 
         let sync_task = SyncController::new(
@@ -236,6 +241,7 @@ where
             storage.clone(),
             bitcoin_block_header.clone(),
             evm_config.clone(),
+            btc_network,
         );
 
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
@@ -276,6 +282,7 @@ where
             payload_builder,
             frost_task_notifications2_rx,
             frost_task_notifications1_tx,
+            btc_network,
         );
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)
