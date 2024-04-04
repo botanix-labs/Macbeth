@@ -1,7 +1,7 @@
 use crate::{
     it_info_print,
     suite::consensus::{
-        poa::poa_node::{create_poa_federation_members, Notifications},
+        frost::poa_node::{create_poa_federation_members, Notifications},
         ConsensusIntegrationTestSuite,
     },
 };
@@ -26,19 +26,16 @@ use super::poa_node::{is_dkg_ready, FederationMemberTestConfig};
 use bitcoincore_rpc::{Auth, RpcApi};
 
 const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
-const ETHEREUM_TEST_ADDRESS: &str = "0x184ba627DB853244c9f17f3Cb4378cB8B39bf147";
 const SEND_AMOUNT: u64 = 1; // = 1 ether
 
-async fn await_dkg(
-    fed_members: &mut HashMap<usize, FederationMemberTestConfig>,
+pub async fn await_dkg(
+    fed_members: &mut HashMap<u16, FederationMemberTestConfig>,
     rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
 ) {
     while let Some(notification) = rx.recv().await {
         match notification {
             Notifications::DkgFinished(dkg_notification) => {
-                if let Some(fed_member) =
-                    fed_members.get_mut(&(dkg_notification.engine_index as usize))
-                {
+                if let Some(fed_member) = fed_members.get_mut(&dkg_notification.engine_index) {
                     fed_member.is_dkg_ready = true;
                 }
                 if is_dkg_ready(&fed_members) {
@@ -97,24 +94,28 @@ struct GatewayAddressResponse {
     eth_address: String,
 }
 
-pub async fn poa_frost_dkg(
-    suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
     // Set up regtest connection
     // config is hardcoded to only work with regtest
+    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
+    let port =
+        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
+    let bitcoind_url = format!("{}:{}", host, port);
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        "localhost:18443",
+        &bitcoind_url,
         Auth::UserPass(
-            suite.config.bitcoind.username.clone(),
-            suite.config.bitcoind.password.clone(),
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
         ),
     )
     .expect("bitcoind client");
 
     // generate test fed members poa nodes
-    let (mut test_fed_members, mut rx) =
-        create_poa_federation_members(&suite.config, suite.local_context.btc_servers.as_ref())
-            .await;
+    let (mut test_fed_members, mut rx) = create_poa_federation_members(
+        suite.global_context.clone(),
+        suite.local_context.btc_servers.as_ref(),
+    )
+    .await;
 
     // run all poa nodes in the background
     for (_index, fed_member_config) in test_fed_members.iter() {
@@ -134,9 +135,9 @@ pub async fn poa_frost_dkg(
     // generate mint contract test instances
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
-        let minter_instance_member =
-            test_fed_members.get(index).cloned().unwrap().create_mint_contract_instance().await;
-        mint_contract_instances.push(minter_instance_member);
+        let botanix_eth_client =
+            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+        mint_contract_instances.push(botanix_eth_client);
     }
 
     // Load up the bitcoin wallet and generate some blocks
@@ -152,7 +153,7 @@ pub async fn poa_frost_dkg(
     bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Set up dummy eth address
-    let eth_destination = ethers::core::types::Address::from_str(ETHEREUM_TEST_ADDRESS).unwrap();
+    let eth_destination = ethers::core::types::Address::random();
 
     // Provider to one of the federation members
     let provider = Provider::<Http>::try_from(format!(
@@ -272,6 +273,9 @@ pub async fn poa_frost_dkg(
     // wait for the tx to be included in a botanix block
     await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
+    // make sure we have enough time for the nonce to be updated
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
     // need another tx to enter an epoch
     let eoa_tx_receipt =
         mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
@@ -282,11 +286,15 @@ pub async fn poa_frost_dkg(
 
     // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
     // processes connecting
+    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
+    let port =
+        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
+    let btcd_url = format!("{}:{}", host, port);
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        "localhost:18443",
+        &btcd_url,
         Auth::UserPass(
-            suite.config.bitcoind.username.clone(),
-            suite.config.bitcoind.password.clone(),
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
         ),
     )
     .expect("bitcoind client");

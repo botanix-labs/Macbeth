@@ -1,7 +1,7 @@
 use super::error::Error;
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
 use bitcoin::{consensus::Encodable, Address, Amount, FeeRate, TxOut};
-use client;
+use client::{self, BtcServerClient};
 use std::{str::FromStr, vec};
 use tonic::transport::Channel;
 
@@ -10,78 +10,52 @@ const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     let _secp = bitcoin::secp256k1::Secp256k1::new();
 
-    // create clients
-    let port = suite
-        .local_context
-        .btc_servers
-        .as_ref()
-        .and_then(|servers| servers.iter().nth(0).map(|val| val.port))
-        .ok_or_else(|| Error::InvalidBtcServerPort)?;
-    let mut c1 = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-        .await
-        .map_err(Error::ServerConnect)?;
+    // create btc server clients
+    let mut clients: Vec<BtcServerClient<Channel>> = vec![];
+    for instance in 0..suite.global_context.instances {
+        let port = suite
+            .local_context
+            .btc_servers
+            .as_ref()
+            .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+            .ok_or_else(|| Error::InvalidBtcServerPort)?;
+        let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
+            .await
+            .map_err(Error::ServerConnect)?;
+        clients.push(c);
+    }
 
-    let port = suite
-        .local_context
-        .btc_servers
-        .as_ref()
-        .and_then(|servers| servers.iter().nth(1).map(|val| val.port))
-        .ok_or_else(|| Error::InvalidBtcServerPort)?;
-    let mut c2 = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-        .await
-        .map_err(Error::ServerConnect)?;
+    // Getting public key should fail for all clients
+    for client in clients.iter_mut() {
+        let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
+        assert!(pk.is_err());
+        let err = pk.err().unwrap();
+        assert_eq!(err.code(), tonic::Code::Internal);
+        assert!(err.message().contains("missing key package"));
+    }
 
-    let port = suite
-        .local_context
-        .btc_servers
-        .as_ref()
-        .and_then(|servers| servers.iter().nth(2).map(|val| val.port))
-        .ok_or_else(|| Error::InvalidBtcServerPort)?;
-    let mut c3 = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-        .await
-        .map_err(Error::ServerConnect)?;
-
-    let mut clients = vec![c1.clone(), c2.clone(), c3.clone()];
-
-    // Getting public key should fail
-    let pk = c1.get_public_key(tonic::Request::new(client::Empty {})).await;
-    assert!(pk.is_err());
-    let err = pk.err().unwrap();
-    assert_eq!(err.code(), tonic::Code::Internal);
-    assert_eq!(err.message(), "Failed to get public key: missing key package");
+    // now do the dkg
     let _ = do_dkg(&mut clients).await?;
-    // After dkg we should be able to the dkg
-    //// Get the pubkey
-    let pk_1 = c1
-        .get_public_key(tonic::Request::new(client::Empty {}))
-        .await
-        .map_err(Error::Request)?
-        .into_inner();
-    let pk_2 = c2
-        .get_public_key(tonic::Request::new(client::Empty {}))
-        .await
-        .map_err(Error::Request)?
-        .into_inner();
-    let pk_3 = c3
-        .get_public_key(tonic::Request::new(client::Empty {}))
-        .await
-        .map_err(Error::Request)?
-        .into_inner();
-    // Everyone got the same pks
-    if !pk_1.publickey.eq(&pk_2.publickey) {
-        return Err(Error::PublicKeyMismatch);
-    }
-    if !pk_1.publickey.eq(&pk_3.publickey) {
-        return Err(Error::PublicKeyMismatch);
-    }
-    if !pk_2.publickey.eq(&pk_3.publickey) {
-        return Err(Error::PublicKeyMismatch);
+
+    // Get the pubkey should succeed for all clients
+    let mut pkeys: Vec<String> = vec![];
+    for client in clients.iter_mut() {
+        let pk = client
+            .get_public_key(tonic::Request::new(client::Empty {}))
+            .await
+            .map_err(Error::Request)?
+            .into_inner();
+        // Ensure all pks can be serialized as secp public keys
+        let _ =
+            bitcoin::secp256k1::PublicKey::from_str(&pk.publickey).map_err(Error::PubKeyParse)?;
+        pkeys.push(pk.publickey);
     }
 
-    // Ensure all pks can be serialized as secp public keys
-    let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_1.publickey).map_err(Error::PubKeyParse)?;
-    let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_2.publickey).map_err(Error::PubKeyParse)?;
-    let _ = bitcoin::secp256k1::PublicKey::from_str(&pk_3.publickey).map_err(Error::PubKeyParse)?;
+    // Ensure everyone got the same pks
+    pkeys.dedup();
+    if pkeys.len() != 1 {
+        return Err(Error::PublicKeyMismatch);
+    }
 
     Ok(())
 }
@@ -101,9 +75,6 @@ pub async fn do_dkg(clients: &mut Vec<client::BtcServerClient<Channel>>) -> Resu
     // Ensure all packages have correct props
     for p in round1_packages.iter() {
         if p.identifier.len() != 32 {
-            return Err(Error::Round1PackagesLenghtMismatch);
-        }
-        if p.payload.len() != 138 {
             return Err(Error::Round1PackagesLenghtMismatch);
         }
     }

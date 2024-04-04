@@ -370,13 +370,11 @@ impl rpc::BtcServer for App {
                 error!("Failed to parse frost peer id: {}", e);
                 badarg!("Failed to parse frost peer id: {}", e)
             })?;
-
         let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(req.payload.as_slice())
             .map_err(|e| {
                 error!("Failed to deserialize round1 dkg package: {}", e);
                 badarg!("Failed to deserialize round1 dkg package: {}", e)
             })?;
-
         self.add_round1_dkg(frost_id, dkg_round1)
             .map_err(|_e| internal!("Failed to add round1 dkg"))?;
         Ok(tonic::Response::new(rpc::Empty {}))

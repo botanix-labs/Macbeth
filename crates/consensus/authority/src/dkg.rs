@@ -267,7 +267,7 @@ where
     }
 
     pub(crate) async fn get_public_key(&mut self) -> Result<GetPublicKeyResponse, Error> {
-        let round3_payload = self.btc_client.get_public_key(Empty {}).await; // TODO: fix me
+        let round3_payload = self.btc_client.get_public_key(Empty {}).await;
         let round3_payload = match round3_payload {
             Ok(round3_payload) => round3_payload,
             Err(e) => {
@@ -419,7 +419,7 @@ where
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
         // get round 1 package from db, if missing, create it
         let dkg1_package = self.get_round1_dkg_package().await?;
-        println!("dkg1_package: {:?}", dkg1_package);
+        info!("dkg1_package: {:?}", dkg1_package);
 
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
@@ -488,7 +488,7 @@ where
         // get round 1 package from db and send it to all peers
         if let Err(e) = self.gossip_round1_to_peers().await {
             error!("Error gossiping round 1 to peers {:?}", e);
-            self.state = DKGState::DkgFailed;
+            self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
             return Err(e);
         }
 
@@ -496,8 +496,8 @@ where
         let dkg2_package = match self.get_round2_dkg_package().await {
             Ok(dkg2_package) => dkg2_package,
             Err(e) => {
+                // its ok to error here if we don't have enough packages
                 error!("Error getting round 2 dkg package {:?}", e);
-                self.state = DKGState::DkgFailed;
                 return Err(e);
             }
         };
@@ -515,7 +515,7 @@ where
             info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
             if let Err(e) = self.gossip_round2_to_peers(dkg2_package).await {
                 error!("Error gossiping round 2 to peers {:?}", e);
-                self.state = DKGState::DkgFailed;
+                self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
                 return Err(e);
             }
 
@@ -569,8 +569,8 @@ where
         let round2_payload = match self.get_round2_dkg_package().await {
             Ok(round2_payload) => round2_payload,
             Err(e) => {
+                // its ok to error here if we don't have enough packages
                 error!("Error getting round2 dkg package {:?}", e);
-                self.state = DKGState::DkgFailed;
                 return Err(e);
             }
         };
@@ -579,7 +579,7 @@ where
         // get round 2 package from db and send it to all peers
         if let Err(e) = self.gossip_round2_to_peers(round2_payload).await {
             error!("Error gossiping round 2 to peers {:?}", e);
-            self.state = DKGState::DkgFailed;
+            self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
             return Err(e);
         }
 

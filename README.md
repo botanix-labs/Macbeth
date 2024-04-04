@@ -73,10 +73,10 @@ These instructions set up federation nodes running poa consensus on your local s
 Please note that the federation on feature/poA-consensus consists of at least two federation members
 
 
-1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIN_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask adminstrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
+1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask adminstrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
 
 ```bash
-BITCOIN_NETWORK=[BTC NETWORK e.g. regtest]
+BITCOIND_NETWORK=[BTC NETWORK e.g. regtest]
 BITCOIND_URL=[BITCOIND PROTOCOL URL WITH PORT e.g. http://localhost:18443 for regtest]
 BITCOIND_USER=[USERNAME]
 BITCOIND_PWD=[PASSWORD]
@@ -101,18 +101,25 @@ When starting the btc servers please adjust the argument `--jwt` in the argument
 To start the 2 btc servers run the following commands:
 
 ```bash
-NODE_1_DIR=[PATH_TO_NODE1] make start-btc-server-1
-NODE_2_DIR=[PATH_TO_NODE2] make start-btc-server-2
+make start-btc-server-1
+make start-btc-server-2
 ```
 
 4. Start the 2 botanix nodes as follows:
 
 ```bash
-NODE_1_DIR=[PATH_TO_NODE1] make start-poa-server-1
-NODE_2_DIR=[PATH_TO_NODE2] make start-poa-server-2
+make start-poa-server-1
+make start-poa-server-2
 ```
 
 where `[PATH_TO_NODE1]` and `[PATH_TO_NODE2]` are the absolute paths to the locations where the node configurations are stored. Wait for the nodes to start and connect to the bitcoind server. Usually takes around ~10secs.
+
+Please note that the `NODE_1_DIR` and `NODE_2_DIR` are to be read from the `.env` file where you should configure these paths:
+
+```bash
+NODE_1_DIR=[your node 1 directory path]
+NODE_2_DIR=[your node 2 directory path]
+```
 
 5. Connect the two federation nodes via the admin rpc endpoint:
 
@@ -142,13 +149,17 @@ To run the integration tests suite:
 make start-test-suite
 ```
 
-However, integration tests can ONLY be run using the local bitcoind instance with `regtest`. Running them on the `signet` is not feasible as block times are quite long there and the test will not finish in time. You are advised, prior to running the integration tests suite to update the tests suite config file located under `root/bin/test-suite` with the following configuration block:
+However, integration tests can ONLY be run using the local bitcoind instance with `regtest`. Running them on the `signet` is not feasible as block times are quite long there and the test will not finish in time. You are advised, prior to running the integration tests suite to update the `.env` file with your paths:
 
-```sh
-[bitcoind]
-url = "http://localhost:[your local bitcoind port]"
-username = "[your local bitcoind username]"
-password = "[your local bitcoind password]"
+```bash
+NODE_1_DIR=[your node 1 directory path]
+NODE_2_DIR=[your node 2 directory path]
+JWT_DIR=[your jwt directory path]
+
+BITCOIND_NETWORK=[BTC NETWORK e.g. regtest]
+BITCOIND_URL=[BITCOIND PROTOCOL URL WITH PORT e.g. http://localhost:18443 for regtest]
+BITCOIND_USER=[USERNAME]
+BITCOIND_PWD=[PASSWORD]
 ```
 
 ## Building and pushing the Botanix images (TODO)

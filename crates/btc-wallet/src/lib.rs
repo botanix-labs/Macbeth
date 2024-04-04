@@ -1,5 +1,5 @@
-
-#[macro_use] extern crate thiserror;
+#[macro_use]
+extern crate thiserror;
 
 pub mod address;
 pub mod bitcoind;

@@ -30,8 +30,8 @@ impl Default for BotanixConfig {
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
-                "usr".to_string(),
-                "pwd".to_string(),
+                "foo".to_string(),
+                "bar".to_string(),
             ),
         }
     }

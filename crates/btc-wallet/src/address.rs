@@ -207,7 +207,7 @@ mod tests {
 
     use super::*;
     use crate::key::generate_bip340_keypair;
-    
+
     use secp256k1::KeyPair;
 
     #[test]

@@ -391,7 +391,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             blockchain_db.clone(),
             Arc::clone(&self.config.chain),
             secp256k1::Secp256k1::new(),
-            network_sk.clone(),
+            network_sk,
         )
         .expect("Failed to get authority index");
 

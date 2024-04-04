@@ -52,8 +52,7 @@ macro_rules! generate_method {
 
             // Insert JWT auth token if available
             if let Some(jwt_auth_token) = self.generate_jwt_token() {
-                let computed = hex_encode(jwt_auth_token.as_bytes());
-                let jwt_auth_token = MetadataValue::from_bytes(computed.as_bytes());
+                let jwt_auth_token = MetadataValue::from_bytes(jwt_auth_token.as_bytes());
                 let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
                 req.metadata_mut().insert_bin(key, jwt_auth_token);
             }
@@ -93,7 +92,7 @@ impl BtcServerExtendedClient {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();
-            let _ = jwt_secret.validate(jwt_token.clone());
+            let _ = jwt_secret.validate(jwt_token.clone()).unwrap();
             jwt_token
         })
     }
@@ -129,17 +128,24 @@ mod tests {
         let jwt_token = jwt_secret.encode(&claims).unwrap();
 
         // encode and set the token as a metadata value
-        let computed = hex_encode(jwt_token.as_bytes());
-        let metadata_value = MetadataValue::from_bytes(computed.as_bytes());
+        let metadata_value = MetadataValue::from_bytes(jwt_token.as_bytes());
 
-        // try to verify the received token
-        let jwt_request_token_received = metadata_value.as_encoded_bytes();
-        let jwt_token_base64_decoded = base64_decode(jwt_request_token_received).unwrap();
-        let jwt_token_hex_decoded = hex_decode(jwt_token_base64_decoded).unwrap();
+        // simualte sending a grpc request
+        let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+        let mut request = tonic::Request::new(Empty {});
+        request.metadata_mut().insert_bin(key, metadata_value);
 
-        let jwt_stringified = String::from_utf8(jwt_token_hex_decoded).unwrap();
+        // simulate reading the grpc request metadata
+        let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+        if let Some(metadata_value) = request.metadata().get_bin(key) {
+            // try to verify the received token
+            let jwt_request_token_received = metadata_value.as_encoded_bytes();
+            let jwt_token_base64_decoded = base64_decode(jwt_request_token_received).unwrap();
 
-        // validate the request token
-        assert!(jwt_secret.validate(jwt_stringified).is_ok());
+            let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
+
+            // validate the request token
+            assert!(jwt_secret.validate(jwt_stringified).is_ok());
+        }
     }
 }

@@ -8,7 +8,7 @@ use bitcoin::{
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
-const EXTRA_HEADER_VERSION: u32 = 0;
+pub const EXTRA_HEADER_VERSION: u32 = 0;
 const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;

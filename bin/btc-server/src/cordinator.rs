@@ -1,31 +1,26 @@
-use crate::database::Utxo;
-
-use crate::database::Error as DbError;
-use crate::util::validate_psbt;
-use crate::util::ValidatePSBTError;
-use crate::util::VerifyingKeyExtError;
-use crate::util::NO_FLAGS;
-use crate::util::ROUND1;
-use crate::util::ROUND1_TRANSITION;
-use crate::util::ROUND2;
-use crate::SECP;
-use std::collections::HashMap;
-
+use crate::{
+    database::Utxo,
+    merkle,
+    util::{
+        self, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError, NO_FLAGS,
+        ROUND1, ROUND1_TRANSITION, ROUND2,
+    },
+    App, Error, SECP,
+};
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
+use crate::database::Error as DbError;
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
+use reth_btc_wallet::{
+    psbt::{PsbtExt, PsbtInputExt},
+    transaction::CalculateSighashError,
+    TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+};
 use secp256k1::PublicKey;
-
-use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
-use reth_btc_wallet::transaction::CalculateSighashError;
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
-
-use crate::util::{self, OutPointExt, VerifyingKeyExt};
-use crate::{merkle, App, Error};
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -132,7 +127,7 @@ impl App {
     pub(crate) fn add_round2_signing(
         &self,
         signing_session_id: &[u8; 32],
-        frost_id: frost::Identifier,
+        _frost_id: frost::Identifier,
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;

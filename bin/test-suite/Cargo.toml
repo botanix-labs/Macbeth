@@ -35,11 +35,13 @@ reth-btc-wallet = { path = "../../crates/btc-wallet" }
 tempfile.workspace = true
 tracing.workspace = true
 reth-tracing.workspace = true
+reth-ecies.workspace = true
 
 ## Bitcoin rpc
 bitcoincore-rpc = "0.17.0"
 
 # crates.io dependencies
+askama = "0.12.1"
 port-killer = "0.1.0"
 anyhow = "1.0.71"
 argh = "0.1.10"

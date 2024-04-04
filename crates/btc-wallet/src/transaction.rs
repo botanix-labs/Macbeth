@@ -1,4 +1,3 @@
-
 use bitcoin::{
     psbt::{self, PartiallySignedTransaction, Psbt},
     sighash::{TapSighash, TapSighashType},

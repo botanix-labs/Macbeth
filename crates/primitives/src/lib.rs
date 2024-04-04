@@ -54,9 +54,9 @@ pub use block::{
     ForkBlock, RpcBlockHash, SealedBlock, SealedBlockWithSenders,
 };
 pub use chain::{
-    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain, ChainInfo, ChainSpec,
-    ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition, ForkTimestamps,
-    NamedChain, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain,
+    ChainInfo, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition,
+    ForkTimestamps, NamedChain, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 pub use compression::*;
 pub use constants::{
