@@ -1,8 +1,7 @@
 use self::frost::btc_server::SpawnedBtcServer;
 use super::{Outcome, Suite};
 use crate::{
-    config::Config,
-    context::Context,
+    context::GlobalContext,
     run_test,
     suite::consensus::frost::btc_server::{clean_db, spawn_n_btc_servers},
 };
@@ -14,14 +13,12 @@ use tracing::{info, warn};
 
 // scopes
 mod frost;
-mod poa;
 
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
-    pub global_context: Arc<Context>,
+    pub global_context: Arc<GlobalContext>,
     pub outcome: Outcome,
     pub local_context: LocalContext,
-    pub config: Config,
 }
 
 pub struct LocalContext {
@@ -30,18 +27,22 @@ pub struct LocalContext {
 
 #[async_trait]
 impl Suite for ConsensusIntegrationTestSuite {
+    fn name(&self) -> &str {
+        "ConsensusIntegrationTestSuite"
+    }
+
     async fn run(&mut self) -> Outcome {
         self.set_panic_hook();
 
         // dkg tests
-        //run_test!(self, frost::dkg::dkg_flow);
+        run_test!(self, frost::test_dkg::dkg_flow);
         // signing tests
-        //run_test!(self, frost::signing::test_many_inputs_signing);
+        run_test!(self, frost::test_signing::test_many_inputs_signing);
         // eoa tests
-        //run_test!(self, poa::block_builder::poa_eoa);
-        // frost dkg tests
+        run_test!(self, frost::test_block_builder::block_builder);
+        // frost e2e tests
+        run_test!(self, frost::test_frost_e2e::frost_e2e);
 
-        run_test!(self, poa::frost_dkg::poa_frost_dkg);
         self.outcome
     }
 
@@ -91,8 +92,7 @@ impl Suite for ConsensusIntegrationTestSuite {
     async fn create_context(&mut self) {
         // kill all processes at designated ports
         let start_port: u16 = 8000;
-        let btc_servers: u16 = 3;
-        (0..btc_servers).for_each(|i| {
+        (0..self.global_context.instances).for_each(|i| {
             let port = start_port + i;
             match kill(port) {
                 Ok(pid) => {
@@ -110,7 +110,7 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // create new context
         self.local_context.btc_servers =
-            Some(spawn_n_btc_servers(btc_servers, start_port, self.config.clone()));
+            Some(spawn_n_btc_servers(self.global_context.clone(), start_port));
 
         // let servers come up
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
@@ -128,13 +128,12 @@ impl Suite for ConsensusIntegrationTestSuite {
 }
 
 impl ConsensusIntegrationTestSuite {
-    pub fn new(timeout: Duration, global_context: Arc<Context>, config: Config) -> Self {
+    pub fn new(timeout: Duration, global_context: Arc<GlobalContext>) -> Self {
         Self {
             timeout,
             global_context,
             outcome: Default::default(),
             local_context: LocalContext { btc_servers: None },
-            config,
         }
     }
 }

@@ -237,8 +237,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height
-                    > recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height >
+                    recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -285,13 +285,13 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -452,7 +452,8 @@ pub(crate) enum GenerateSigningSesssionIdError {
 }
 
 // Generates a signing session id by hashing the best hash and authority public key
-// This id is not needed for consensus but is used to identify the signing session for the cordinator
+// This id is not needed for consensus but is used to identify the signing session for the
+// cordinator
 pub(crate) fn generate_signing_session_id(
     best_hash: &[u8],
     authority_pk: &secp256k1::PublicKey,

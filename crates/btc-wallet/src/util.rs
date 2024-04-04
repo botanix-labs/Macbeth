@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, Error)]
 pub enum ParsingError {
     #[error("invalid frost id")]

@@ -3,7 +3,8 @@ use async_trait::async_trait;
 use strum_macros::{AsRefStr, EnumString};
 
 #[async_trait]
-pub trait Suite {
+pub trait Suite: Send + Sync + 'static {
+    fn name(&self) -> &str;
     async fn run(&mut self) -> Outcome;
     async fn create_context(&mut self);
     async fn destroy_context(&mut self);

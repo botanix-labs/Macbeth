@@ -349,7 +349,6 @@ pub fn validate_psbt(
 
 #[cfg(test)]
 mod util_tests {
-    use super::*;
     use crate::{
         database,
         test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup},

@@ -1,15 +1,12 @@
-use crate::{it_info_print, mint_contract_abi::MintContract};
+use crate::{it_info_print, minting::Minting as MintContract};
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,
     core::{k256::ecdsa::SigningKey, types::Address as EtherAddress},
-    etherscan::account,
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{
-        Eip1559TransactionRequest, NameOrAddress, TransactionReceipt, TransactionRequest, U256,
-    },
+    types::{NameOrAddress, TransactionReceipt, TransactionRequest, U256},
     utils,
 };
 use reth_primitives::BOTANIX_TESTNET;
@@ -28,12 +25,12 @@ pub enum Error {
 }
 
 #[derive(Clone, Debug)]
-pub struct MintContractInstance {
+pub struct BotanixEthClient {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
     client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
 }
 
-impl MintContractInstance {
+impl BotanixEthClient {
     pub async fn new(
         rpc_port: u16,
         sender_secret_key: &str,
@@ -103,6 +100,13 @@ impl MintContractInstance {
             .await
             .map_err(Error::Provider)?;
         Ok(tx_receipt)
+    }
+
+    pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
+        let sender_account = NameOrAddress::from_str(address).unwrap();
+        let sender_cur_balance =
+            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+        Ok(sender_cur_balance)
     }
 
     pub async fn send_eoa(

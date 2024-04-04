@@ -35,6 +35,7 @@ thiserror = "1.0.43"
 displaydoc = "0.2"
 toml = "0.8.4"
 base64 = "0.22.0"
+url = "2.5.0"
 
 # for tonic
 tokio = { version = "1.29.1", features = ["full"] }

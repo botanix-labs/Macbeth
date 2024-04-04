@@ -118,7 +118,6 @@ impl App {
         if frost_id == self.identifier {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
-
         if self.frost_round1_dkg.as_ref().take().expect("valid dkg round1").1 == dkg_round1 {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
@@ -126,7 +125,6 @@ impl App {
         if self.db.get_round1_dkg_packages()?.len() as u16 == self.max_signers - 1 {
             return Err(DKGError::DkgMaxSignersReached);
         }
-
         if self.db.add_round1_dkg(frost_id, dkg_round1)? {
             self.db.flush()?;
             debug!("Stored round1 dkg from peer: {:?}", frost_id);

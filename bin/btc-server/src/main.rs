@@ -37,6 +37,7 @@ use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, transport::Server};
+use url::Url;
 
 use crate::{
     config::{GrpcConfig, TomlConfig},
@@ -134,9 +135,12 @@ impl App {
         }
         let bitcoind_user = config.bitcoind_user.clone();
         let bitcoind_pass = config.bitcoind_pass.clone();
+        let host = config.bitcoind_url.host_str().unwrap_or_default().to_owned();
+        let port = config.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
+        let bitcoind_url = format!("{}:{}", host, port);
 
         let bitcoind_client = bitcoincore_rpc::Client::new(
-            config.bitcoind_url.as_str(),
+            &bitcoind_url,
             Auth::UserPass(bitcoind_user, bitcoind_pass),
         )
         .expect("bitcoind client");
@@ -278,7 +282,7 @@ struct Config {
     jwt_secret: Option<PathBuf>,
     #[arg(long)]
     /// bitcoind url
-    bitcoind_url: String,
+    bitcoind_url: Url,
     #[arg(long)]
     /// bitcoind user
     bitcoind_user: String,
@@ -329,25 +333,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::str::FromStr;
+    use std::{collections::BTreeMap, str::FromStr};
 
-    use bitcoin::blockdata::{script::Script, transaction::TxOut};
-    use bitcoin::psbt::Psbt;
     use bitcoin::{
-        absolute::LockTime, hashes::Hash, Address, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+        absolute::LockTime,
+        blockdata::{script::Script, transaction::TxOut},
+        hashes::Hash,
+        psbt::Psbt,
+        Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
-    use bitcoin::{Amount, FeeRate, OutPoint};
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
-    use rand::RngCore;
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng, Rng, RngCore};
     use tonic::Request;
 
     use reth_btc_wallet::psbt::PsbtInputExt;
 
-    use crate::database::Utxo;
-    use crate::rpc::{self, BtcServer};
+    use crate::{
+        database::Utxo,
+        rpc::{self, BtcServer},
+    };
 
     const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
 
@@ -422,7 +427,8 @@ mod test {
                 min_signers: 3,
                 toml: None,
                 jwt_secret: None,
-                bitcoind_url: "http://localhost:18443".to_string(),
+                bitcoind_url: Url::parse("http://localhost:18443")
+                    .expect("Bitcoind url to be valid"),
                 bitcoind_user: "foo".to_string(),
                 bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,

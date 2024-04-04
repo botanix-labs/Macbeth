@@ -1,6 +1,5 @@
 use crate::{
-    config::Config,
-    context::Context,
+    context::GlobalContext,
     suite::{consensus::ConsensusIntegrationTestSuite, Outcome, RunSuite, Suite},
 };
 use displaydoc::Display as DisplayDoc;
@@ -17,15 +16,12 @@ pub enum Error {
 }
 
 pub struct TestServer {
-    suite: RunSuite,
-    timeout: Duration,
-    context: Arc<Context>,
-    config: Config,
+    context: Arc<GlobalContext>,
 }
 
 impl TestServer {
-    pub fn new(suite: RunSuite, timeout: Duration, context: Arc<Context>, config: Config) -> Self {
-        Self { suite, timeout, context, config }
+    pub fn new(context: Arc<GlobalContext>) -> Self {
+        Self { context }
     }
 
     pub async fn start(
@@ -41,34 +37,42 @@ impl TestServer {
         &mut self,
         mut stop_tx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<(), Error> {
+        let mut suits_to_run: Vec<Box<dyn Suite>> = vec![];
+        match self.context.run_suite {
+            RunSuite::All => {
+                suits_to_run.push(self.create_consensus_test_suite());
+            }
+            RunSuite::Consensus => {
+                suits_to_run.push(self.create_consensus_test_suite());
+            }
+        }
+
         tokio::select! {
             _ = stop_tx.recv() => {
+                info!(">>>> Term Sig received.");
+                for suite in suits_to_run.iter_mut() {
+                    suite.destroy_context().await;
+                    info!(">>>> Destroyed test context for {:?}", suite.name());
+                }
                 return Err(Error::TestRunStopped);
             },
             res = async {
-                match self.suite {
-                    RunSuite::All => {
-                        self.run_consensus_integration_test_suite().await
-                    }
-                    RunSuite::Consensus => {
-                        self.run_consensus_integration_test_suite().await
-                    }
+                for suite in suits_to_run.iter_mut() {
+                    let _ = match suite.run().await {
+                        Outcome::Passed => Ok(()),
+                        Outcome::Failed => Err(Error::TestRunFailed),
+                    };
                 }
             } => { res },
         }
+
+        Ok(())
     }
 
-    async fn run_consensus_integration_test_suite(&mut self) -> Result<(), Error> {
+    fn create_consensus_test_suite(&self) -> Box<dyn Suite> {
         info!(">>>> Starting censensus integration test suite...");
-        let mut test_suite = ConsensusIntegrationTestSuite::new(
-            self.timeout,
-            self.context.clone(),
-            self.config.clone(),
-        );
-
-        match test_suite.run().await {
-            Outcome::Passed => Ok(()),
-            Outcome::Failed => Err(Error::TestRunFailed),
-        }
+        let tests_timeout = Duration::from_millis(self.context.timeout);
+        let test_suite = ConsensusIntegrationTestSuite::new(tests_timeout, self.context.clone());
+        Box::new(test_suite)
     }
 }

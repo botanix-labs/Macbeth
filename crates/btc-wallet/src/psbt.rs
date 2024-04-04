@@ -1,11 +1,9 @@
+use std::{borrow::BorrowMut, collections::BTreeMap};
 
-
-use std::borrow::BorrowMut;
-use std::collections::BTreeMap;
-
-use bitcoin::hashes::Hash;
-use bitcoin::psbt::{Input, Psbt};
-use bitcoin::psbt::raw::ProprietaryKey;
+use bitcoin::{
+    hashes::Hash,
+    psbt::{raw::ProprietaryKey, Input, Psbt},
+};
 use frost_secp256k1_tr as frost;
 
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
@@ -37,10 +35,7 @@ impl ProprietaryKeyExt for ProprietaryKey {}
 pub trait PsbtInputExt: BorrowMut<Input> {
     fn set_eth_address(&mut self, eth_address: [u8; 20]) {
         // Key stores no keydata, only the type value
-        self.borrow_mut().proprietary.insert(
-            ETH_ADDRESS_KEY.clone(),
-            eth_address.to_vec(),
-        );
+        self.borrow_mut().proprietary.insert(ETH_ADDRESS_KEY.clone(), eth_address.to_vec());
     }
 
     fn eth_address(&self) -> Option<[u8; 20]> {
@@ -141,9 +136,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
     }
 
     /// Get all the partial signatures from this inputs for all frost ids.
-    fn all_partial_signatures(
-        &self,
-    ) -> BTreeMap<frost::Identifier, frost::round2::SignatureShare> {
+    fn all_partial_signatures(&self) -> BTreeMap<frost::Identifier, frost::round2::SignatureShare> {
         let mut ret = BTreeMap::new();
         for (key, value) in self.borrow().proprietary.iter() {
             if let Some(key) = key.cast(PARTIAL_SIGNATURE_KEY_TYPE) {
@@ -166,17 +159,18 @@ impl PsbtInputExt for Input {}
 pub trait PsbtExt: BorrowMut<Psbt> {
     /// Converts this PSBT into a vector of Frost signing packages.
     ///
-    /// This function takes a PSBT as input and processes each input to generate the necessary signing
-    /// packages for Frost signature generation. It returns a vector of `frost::SigningPackage`
-    /// instances, each containing the signing commitments and other relevant information for the
-    /// corresponding PSBT input.
+    /// This function takes a PSBT as input and processes each input to generate the necessary
+    /// signing packages for Frost signature generation. It returns a vector of
+    /// `frost::SigningPackage` instances, each containing the signing commitments and other
+    /// relevant information for the corresponding PSBT input.
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a vector of `frost::SigningPackage` instances if the conversion is
-    /// successful, or an error of type `PsbtToSigningPackageConversionError` otherwise.
+    /// Returns a `Result` containing a vector of `frost::SigningPackage` instances if the
+    /// conversion is successful, or an error of type `PsbtToSigningPackageConversionError`
+    /// otherwise.
     fn signing_packages(
-        &self
+        &self,
     ) -> Result<Vec<frost::SigningPackage>, PsbtToSigningPackageConversionError> {
         let mut ret = Vec::new();
         for (idx, input) in self.borrow().inputs.iter().enumerate() {

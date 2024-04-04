@@ -1,3 +1,10 @@
+use super::botanix_client::BotanixEthClient;
+use crate::{
+    context::GlobalContext, it_info_print, it_warn_print,
+    suite::consensus::frost::btc_server::SpawnedBtcServer,
+};
+use askama::Template;
+use bitcoin::hashes::Hash;
 use clap::Parser;
 use client::Empty;
 use ethers::core::types::Address as EtherAddress;
@@ -12,34 +19,36 @@ use reth::{
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
-use reth_primitives::{ChainSpec, BOTANIX_TESTNET};
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+use reth_ecies::util::pk2id;
+use reth_primitives::{
+    create_botanix_config_with_genesis, hex::encode as hex_encode, ChainSpec, BOTANIX_TESTNET,
+};
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
+use secp256k1::PublicKey;
 use std::{
     collections::HashMap,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
-    str::FromStr,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use crate::{
-    config::Config, it_info_print, it_warn_print,
-    suite::consensus::frost::btc_server::SpawnedBtcServer,
-};
-
-use super::mint_contract::MintContractInstance;
+use url::Url;
 
 const RPC_PORT_BASE: u16 = 8545;
 const AUTHRPC_PORT_BASE: u16 = 8551;
 const DISCOVERY_PORT_BASE: u16 = 30303;
-const FED_MEMBER1_SECRET_KEY: &'static str =
-    "0a35afe1386497890e1dce7286a5b378b978ede20db900e6ce5b4eb1a0449ad6";
-const FED_MEMBER2_SECRET_KEY: &'static str =
-    "0cc8f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe057f094135f2c9b019";
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
+const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
+    "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
+
+#[derive(Template, Clone, Debug)]
+#[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
+struct BotanixTestnetGenesisConfig<'a> {
+    edh: &'a str,
+}
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
     // use minutes as time unit to determine in turn
@@ -78,7 +87,7 @@ pub struct FederationMemberTestConfig {
     pub rpc_port: u16,
     pub authrpc_port: u16,
     pub discovery_port: u16,
-    pub bitcoind_url: String,
+    pub bitcoind_url: Url,
     pub bitcoind_username: String,
     pub bitcoind_password: String,
     pub bitcoin_server_url: String,
@@ -89,6 +98,7 @@ pub struct FederationMemberTestConfig {
     pub frost_max_signers: u16,
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
+    pub edh: Option<ExtraDataHeader>,
 }
 
 impl FederationMemberTestConfig {
@@ -96,7 +106,7 @@ impl FederationMemberTestConfig {
         index: u16,
         secret_key: String,
         sender: tokio::sync::mpsc::Sender<Notifications>,
-        bitcoind_url: String,
+        bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
         bitcoin_server_url: String,
@@ -127,22 +137,23 @@ impl FederationMemberTestConfig {
             frost_max_signers,
             peer_id,
             is_dkg_ready: false,
+            edh: None,
         }
     }
 
-    pub async fn create_mint_contract_instance(&self) -> MintContractInstance {
+    pub async fn create_botanix_eth_client(&self) -> BotanixEthClient {
         let mint_contract_address: EtherAddress =
             MINT_CONTRACT_ADDRESS.parse().expect("Must be a valid ethereum address");
-        MintContractInstance::new(
-            self.rpc_port,
-            "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29",
-            mint_contract_address,
-        )
-        .await
+        BotanixEthClient::new(self.rpc_port, PREFUNDED_ACCOUNT_SECRET_KEY, mint_contract_address)
+            .await
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
         self.peers_list = peers;
+    }
+
+    pub fn insert_edh(&mut self, edh: ExtraDataHeader) {
+        self.edh = Some(edh);
     }
 
     pub fn is_dkg_ready(&self) -> bool {
@@ -162,6 +173,16 @@ impl FederationMemberTestConfig {
         file.write_all(&self.secret_key.as_bytes()).unwrap();
 
         let jwt_secret_path = self.jwt_secret_path.display().to_string();
+
+        // update genesis config with edh and render file
+        let botanix_testnet_config_genesis = if let Some(edh) = self.edh.as_ref() {
+            let edh = hex::encode(edh.serialize());
+            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+            let rendered_json = botanix_testnet_config_genesis.render().unwrap();
+            rendered_json
+        } else {
+            panic!("Edh data missing. Cannot create botanix testnet config genesis file");
+        };
 
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgsCliExt<FederationMemberTestConfig>>::parse_from([
@@ -207,8 +228,11 @@ impl FederationMemberTestConfig {
         ])
         .with_ext::<NoArgsCliExt<FederationMemberTestConfig>>(no_args);
 
-        // use custom chain spec
-        command.chain = testnet_custom_chain();
+        // use botanix chain spec
+        let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
+            .expect("Can't deserialize Botanix Testnet genesis json");
+        let botanix_testnet = create_botanix_config_with_genesis(genesis);
+        command.chain = Arc::new(botanix_testnet);
 
         command
     }
@@ -217,13 +241,6 @@ impl FederationMemberTestConfig {
 impl RethNodeCommandConfig for FederationMemberTestConfig {
     fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
         it_info_print!("Engine started task with index: ", self.index);
-        // add the peers
-        for peer in self.peers_list.iter() {
-            let peer_socket =
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), peer.discovery_port);
-            components.network().add_peer(self.peer_id, peer_socket);
-        }
-        it_info_print!("Engine added peers: ", self.index);
 
         let _pool = components.pool();
         let mut canon_events = components.events().subscribe_to_canonical_state();
@@ -232,8 +249,30 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
 
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let jwt_secret_path = self.jwt_secret_path.clone();
+        let peers_list = self.peers_list.clone();
+        let comp = components.clone();
 
         components.task_executor().spawn(Box::pin(async move {
+            // add the peers
+            'inner: loop {
+                for peer in peers_list.iter() {
+                    let peer_socket = SocketAddr::new(
+                        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                        peer.discovery_port,
+                    );
+                    comp.network().add_peer(peer.peer_id, peer_socket);
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let all_peers = comp.network().get_all_peers().await.unwrap();
+                it_info_print!(
+                    "Engine connected with peers",
+                    format!("index={}: peers_count={}", engine_index, all_peers.len())
+                );
+                if all_peers.len() == peers_list.len() {
+                    break 'inner;
+                }
+            }
+
             // create a btc client
             let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
             let mut btc_server_client = BtcServerExtendedClient::new(
@@ -247,11 +286,11 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
             loop {
                 match btc_server_client.get_public_key(Empty {}).await {
                     Ok(_) => {
-                        it_info_print!("Dkg Finished !");
+                        it_info_print!("Dkg Finished for index {:?}!", engine_index);
                         break;
                     }
                     Err(_) => {
-                        it_warn_print!("Dkg Pending...");
+                        it_warn_print!("Dkg Pending for engine index {:?}...", engine_index);
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
@@ -284,66 +323,118 @@ pub fn testnet_custom_chain() -> Arc<ChainSpec> {
     BOTANIX_TESTNET.clone()
 }
 
-pub fn is_dkg_ready(federation_memebers: &HashMap<usize, FederationMemberTestConfig>) -> bool {
+pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
 
 pub async fn create_poa_federation_members(
-    config: &Config,
+    global_context: Arc<GlobalContext>,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
-) -> (HashMap<usize, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<Notifications>) {
-    let peer_id_1 = PeerId::from_str("bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826").unwrap();
-    let peer_id_2 = PeerId::from_str("9bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d50a117189201f0ad9096d36cd690ae34e79a42d9e71c972e55048dabdc8f9651").unwrap();
-
-    // create the member configs
+) -> (HashMap<u16, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<Notifications>) {
     let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
 
-    // create federation members
-    let index: u16 = 0;
-    let port = btc_servers
-        .and_then(|servers| servers.iter().nth(index as usize).map(|val| val.port))
-        .unwrap();
-    let mut fed_member_config1 = FederationMemberTestConfig::new(
-        index,
-        FED_MEMBER1_SECRET_KEY.to_string(),
-        tx.clone(),
-        config.bitcoind.url.clone(),
-        config.bitcoind.username.clone(),
-        config.bitcoind.password.clone(),
-        format!("localhost:{}", port),
-        config.jwt_secrets_dir.clone(),
-        config.frost_min_signers.clone(),
-        config.frost_max_signers.clone(),
-        peer_id_1,
-    )
-    .await;
+    let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
 
-    let index: u16 = 1;
-    let port = btc_servers
-        .and_then(|servers| servers.iter().nth(index as usize).map(|val| val.port))
-        .unwrap();
-    let mut fed_member_config2 = FederationMemberTestConfig::new(
-        index,
-        FED_MEMBER2_SECRET_KEY.to_string(),
-        tx,
-        config.bitcoind.url.clone(),
-        config.bitcoind.username.clone(),
-        config.bitcoind.password.clone(),
-        format!("localhost:{}", port),
-        config.jwt_secrets_dir.clone(),
-        config.frost_min_signers.clone(),
-        config.frost_max_signers.clone(),
-        peer_id_2,
-    )
-    .await;
+    let mut members_public_keys: Vec<PublicKey> = vec![];
+    let secp = secp256k1::Secp256k1::new();
+    for member_index in 0..global_context.instances {
+        let port = btc_servers
+            .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
+            .unwrap();
 
-    // insert peers
-    fed_member_config1.insert_peers_list(vec![fed_member_config2.clone()]);
-    fed_member_config2.insert_peers_list(vec![fed_member_config1.clone()]);
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let member_secret_key = hex_encode(secret_key.as_ref());
+        let member_peer_id = pk2id(&pk);
+        members_public_keys.push(pk);
 
-    // persist all in a hashmap
-    let mut fed_members: HashMap<usize, FederationMemberTestConfig> = HashMap::new();
-    fed_members.insert(0, fed_member_config1);
-    fed_members.insert(1, fed_member_config2);
+        let fed_member_config = FederationMemberTestConfig::new(
+            member_index,
+            member_secret_key,
+            tx.clone(),
+            global_context.bitcoind_url.clone(),
+            global_context.bitcoind_user.clone(),
+            global_context.bitcoind_pass.clone(),
+            format!("localhost:{}", port),
+            global_context.jwt_dir.clone(),
+            global_context.min_signers,
+            global_context.max_signers,
+            member_peer_id,
+        )
+        .await;
+        fed_members.insert(member_index, fed_member_config);
+    }
+
+    // now create the edh
+    let extra_data_header = ExtraDataHeader::new(
+        EXTRA_HEADER_VERSION,
+        None,
+        Some(members_public_keys),
+        None,
+        None,
+        bitcoin::hash_types::BlockHash::all_zeros(),
+    );
+
+    // now insert peers and edh into each federation member
+    for member_index in 0..global_context.instances {
+        let peer_members = fed_members
+            .iter()
+            .filter_map(
+                |(index, &ref fed_mem)| {
+                    if *index != member_index {
+                        Some(fed_mem.clone())
+                    } else {
+                        None
+                    }
+                },
+            )
+            .collect::<Vec<_>>();
+
+        if let Some(fed_member) = fed_members.get_mut(&member_index) {
+            fed_member.insert_peers_list(peer_members);
+            fed_member.insert_edh(extra_data_header.clone());
+        };
+    }
+
     (fed_members, rx)
+}
+
+mod tests {
+    use std::{io::Write, path::Path};
+
+    use super::BotanixTestnetGenesisConfig;
+    use askama::Template;
+    use bitcoin::hashes::Hash;
+    use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+
+    #[test]
+    fn test_edh_tempate() {
+        let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
+        let secret_key1 = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk1 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key1);
+        let secret_key2 = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
+
+        let extra_data_header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            None,
+            Some(vec![pk1, pk2]),
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+        );
+        let edh = hex::encode(extra_data_header.serialize());
+        let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+        let rendered_json = botanix_testnet_config_genesis.render().unwrap();
+        let json = serde_json::to_string_pretty(&rendered_json).unwrap();
+        println!("Rendered botanix testnet configuration {:?}", json);
+
+        let botanix_genesis_filepath = Path::new("./").join("botanix_testnet.json");
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(botanix_genesis_filepath)
+            .unwrap();
+        file.write_all(rendered_json.as_bytes()).unwrap();
+    }
 }
