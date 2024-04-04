@@ -11,7 +11,7 @@ exclude = [".github/"]
 [dependencies]
 anyhow = "1.0.71"
 bitcoin = {version = "0.30.2", features = ["serde", "rand", "rand-std"]}
-secp256k1 = { workspace = true, features = [
+secp256k1 = { version = "0.27.0", features = [
     "global-context",
     "rand",
     "rand-std",
