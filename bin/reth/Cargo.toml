@@ -192,9 +192,6 @@ optimism = [
     "reth-node-core/optimism",
 ]
 
-[[bin]]
-name = "btc-server"
-path = "src/main.rs"
 
 [[bin]]
 name = "reth"
