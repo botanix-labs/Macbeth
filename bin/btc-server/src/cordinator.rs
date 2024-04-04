@@ -23,7 +23,6 @@ use secp256k1::PublicKey;
 use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 use reth_btc_wallet::transaction::CalculateSighashError;
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
-use sled::Db;
 
 use crate::util::{self, OutPointExt, VerifyingKeyExt};
 use crate::{merkle, App, Error};
@@ -105,7 +104,6 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-
         validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
 
         // TODO Need to check if this frost id actually provided a nonce
@@ -118,6 +116,7 @@ impl App {
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
         // The more the better in the case one is unresponsive
         // the frost lib will check if we have enough when we create the signing package
+        self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
         debug!("Stored round1 signing from peer: {:?}", frost_id);
 
@@ -131,10 +130,6 @@ impl App {
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        // Can't add our selves
-        if frost_id == self.identifier {
-            return Err(CoordinatorError::InvalidFrostPeerId);
-        }
         // validate PSBT
         validate_psbt(psbt, ROUND2, self.min_signers, &self.db)?;
 
@@ -285,6 +280,7 @@ impl App {
         if let Some(psbt) = self.db.get_psbt(&signing_session_id)? {
             for input in &psbt.inputs {
                 let sc = input.all_signing_commitments();
+                info!("sc.len() = {}", sc.len());
                 if sc.len() < self.min_signers as usize {
                     return Err(CoordinatorError::NotEnoughSigners);
                 }

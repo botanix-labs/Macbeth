@@ -111,6 +111,7 @@ impl App {
         _signing_session_id: &[u8; 32],
         bitcoind_client: &impl bitcoincore_rpc::RpcApi,
     ) -> Result<(), SigningRound1Error> {
+        self.db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
         // Check if have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
         if nonces_lock.is_some() {
