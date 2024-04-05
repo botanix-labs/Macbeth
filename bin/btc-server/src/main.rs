@@ -869,6 +869,52 @@ mod test {
         assert_ne!(sc1, sc2);
     }
 
+    #[tokio::test]
+    async fn should_add_signing_package_round1() {
+        let mut app_signer = setup();
+        let mut app_coordinator = setup();
+        let signing_session_id = [0u8; 32];
+        let (shares, pk_package) =
+            trusted_dealer_setup(app_signer.min_signers, app_signer.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app_signer.identifier].clone())
+            .expect("valid key package");
+        let mock_bitcoind = MockBitcoind::new();
+
+        // Add the key packages
+        app_signer.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app_signer.db.set_key_package(key_package.clone()).expect("set key package");
+
+        app_coordinator.db.set_pubkey_package(pk_package).expect("set public key package");
+        app_coordinator.db.set_key_package(key_package).expect("set key package");
+
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        // Add the utxo
+        let utxo = Utxo::new(
+            tx.input[0].previous_output,
+            psbt.inputs[0].witness_utxo.clone().expect("some"),
+            None,
+        );
+        app_signer.add_pegin(&utxo).expect("valid pegin utxo");
+        app_coordinator.add_pegin(&utxo).expect("valid pegin utxo");
+
+        // Should fail if there are no signing commits in the psbt
+        let res =
+            app_coordinator.add_round1_signing(&signing_session_id, app_signer.identifier, &psbt);
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "Could not find participant information");
+
+        app_signer
+            .get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+            .await
+            .expect("valid nonce commits request");
+        psbt.inputs[0].signing_commitments(app_signer.identifier).expect("valid sc1");
+
+        app_coordinator
+            .add_round1_signing(&signing_session_id, app_signer.identifier, &psbt)
+            .expect("should add signing round 1");
+    }
+
     // TODO (armins) fix these tests!!
     // #[test]
     // fn should_not_sign_without_dkg() {
