@@ -490,7 +490,7 @@ where
         self.new_round1_signing_package(
             self.personal_frost_identifier.serialize().to_vec(),
             signing_session_id,
-            psbt,
+            signing_round1_package.clone().psbt,
         )
         .await?;
 
