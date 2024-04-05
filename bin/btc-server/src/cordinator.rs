@@ -106,11 +106,17 @@ impl App {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
 
-        // TODO Need to check if this frost id actually provided a nonce
-        // let scs = psbt.
-        // if !scs.iter().any(|sc| sc.contains_key(&frost_id)) {
-        //     return Err(CoordinatorError::CouldNotFindParticipantInformation());
-        // }
+        info!("psbt() = {}", psbt);
+
+        for input in &psbt.inputs {
+            let sc = input.signing_commitments(frost_id);
+            info!("sc.keys() = {:?}", sc);
+            info!("frost id: {:?}", frost_id);
+
+            if sc.is_none() {
+                return Err(CoordinatorError::CouldNotFindParticipantInformation());
+            }
+        }
 
         // TODO Need to check this psbt affect the other inputs and outputs
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
