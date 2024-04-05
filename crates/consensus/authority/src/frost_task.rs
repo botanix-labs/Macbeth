@@ -72,7 +72,7 @@ where
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     ) -> Self {
-        info!("Frost authority index: {}/{}", config.authority_index, config.total_authorities);
+        info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
         let dkg_state_machine = DKGStateMachine::new(
             btc_server.clone(),

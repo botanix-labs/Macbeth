@@ -25,7 +25,7 @@ impl From<FrostArgs> for FrostConfig {
     fn from(args: FrostArgs) -> Self {
         FrostConfig {
             authority_index: 0,
-            total_authorities: 0,
+            authorities: vec![],
             max_signers: args.max_signers,
             min_signers: args.min_signers,
         }

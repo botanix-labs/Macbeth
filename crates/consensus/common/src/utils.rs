@@ -143,7 +143,7 @@ pub fn get_authority_signer_index<Client>(
     chain_spec: Arc<ChainSpec>,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
-) -> Result<(usize, usize), GetAuthoritiesError>
+) -> Result<(usize, Vec<secp256k1::PublicKey>), GetAuthoritiesError>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -176,7 +176,7 @@ where
 
     Ok((
         signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
-        authorities.len(),
+        authorities,
     ))
 }
 
