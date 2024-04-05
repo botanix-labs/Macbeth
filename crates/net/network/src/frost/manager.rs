@@ -10,7 +10,7 @@ use std::{
 };
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::error;
+use tracing::{error, info};
 
 /// Frost Handle for communication with the protocol
 #[derive(Clone, Debug)]
@@ -50,7 +50,7 @@ pub struct FrostManager {
     /// All the connected frost peers.
     frost_peers_connections: HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
     /// total authorities to connect to
-    total_authorities: usize,
+    authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
     frost_task_forwarder_tx: Option<mpsc::UnboundedSender<PeerMessageResponse>>,
 }
@@ -62,9 +62,13 @@ impl FrostManager {
         network: NetworkHandle,
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
-        let FrostConfig { authority_index, total_authorities, min_signers: _, max_signers: _ } =
-            config;
+        let FrostConfig { authority_index, authorities, min_signers: _, max_signers: _ } = config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
+        //let id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
+        let authority_peerid = authorities
+            .iter()
+            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .collect();
 
         Self {
             authority_index: authority_index as u16,
@@ -75,19 +79,23 @@ impl FrostManager {
             peers_directions: HashMap::default(),
             peers_connections: HashMap::default(),
             frost_peers_connections: HashMap::default(),
-            total_authorities,
+            authority_peerid,
             frost_task_forwarder_tx: None,
         }
     }
 
     fn all_peers_connected(&self) -> bool {
         let peers_count = self.frost_peers_connections.keys().cloned().count();
-        peers_count == self.total_authorities - 1
+        peers_count == self.authority_peerid.len() - 1
     }
 
     /// Returns a new [`FrostHandle`] that can send commands to this type.
     pub fn handle(&self) -> FrostHandle {
         FrostHandle { manager_tx: self.command_tx.clone() }
+    }
+
+    fn is_authority_peer(&self, peer_id: &PeerId) -> bool {
+        self.authority_peerid.contains(peer_id)
     }
 
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
@@ -101,6 +109,9 @@ impl FrostManager {
                      self.network.peer_id().to_string()
                  );
                  */
+                if !self.is_authority_peer(&peer_id) {
+                    return;
+                }
 
                 // make sure we ignore our own connection
                 let my_peer_id = self.network.peer_id();
@@ -110,7 +121,11 @@ impl FrostManager {
                 }
             }
             NetworkFrostEvent::PeerMessage(response) => {
-                //info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
+                // TODO(armins)
+                // if !self.is_authority_peer(peer_id) {
+                //     return;
+                // }
+                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
                 if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
                     let _send_res = frost_task_forwarder_tx.send(response); // TODO:  handle error
                 }
@@ -118,6 +133,9 @@ impl FrostManager {
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
                 //info!(">>>>>>>>>>> FROST PEER CONFIRMATION RECEIVED (PEER_ID = {:?}, AUTH_INDEX =
                 // {:?})", peer_id, authority_index);
+                if !self.is_authority_peer(&peer_id) {
+                    return;
+                }
 
                 if self.peers_connections.contains_key(&peer_id) {
                     // only if we have an already connection established
@@ -172,7 +190,7 @@ impl Future for FrostManager {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_network_event(event),
             };
@@ -185,7 +203,7 @@ impl Future for FrostManager {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(cmd)) => this.on_command(cmd),
             };
@@ -213,7 +231,7 @@ pub struct FrostConfig {
     /// Authority index of the current peer participating in frost
     pub authority_index: usize,
     /// Total number of authorities participating in frost
-    pub total_authorities: usize,
+    pub authorities: Vec<secp256k1::PublicKey>,
     /// Minimum number of signers required to participate in frost
     pub min_signers: u16,
     /// Maximum number of signers required to participate in frost
@@ -224,11 +242,11 @@ impl FrostConfig {
     /// Create a new [`FrostConfig`] with default values
     pub fn new(
         authority_index: usize,
-        total_authorities: usize,
+        authorities: Vec<secp256k1::PublicKey>,
         min_signers: u16,
         max_signers: u16,
     ) -> Self {
-        Self { authority_index, total_authorities, min_signers, max_signers }
+        Self { authority_index, authorities, min_signers, max_signers }
     }
 
     /// Sets the authority index
@@ -237,8 +255,8 @@ impl FrostConfig {
     }
 
     /// Sets total authorities
-    pub fn set_total_authorities(&mut self, total_authorities: usize) {
-        self.total_authorities = total_authorities;
+    pub fn set_authorities(&mut self, authorities: Vec<secp256k1::PublicKey>) {
+        self.authorities = authorities;
     }
 
     /// Sets minimum signers
@@ -252,7 +270,8 @@ impl FrostConfig {
     }
 }
 
-/// Maps an identifier to a frost specific identifier
-pub fn peer_id_to_identifier(identifier: u16) -> frost::Identifier {
-    frost::Identifier::derive(identifier.to_le_bytes().as_slice()).expect("can derive identifier")
+/// Maps an authority index to a frost specific identifier
+pub fn peer_id_to_identifier(authority_index: u16) -> frost::Identifier {
+    frost::Identifier::derive(authority_index.to_le_bytes().as_slice())
+        .expect("can derive identifier")
 }

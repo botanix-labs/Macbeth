@@ -387,7 +387,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
 
         // create authority config
-        let (authority_index, total_authorities) = get_authority_signer_index(
+        let (authority_index, authorities) = get_authority_signer_index(
             blockchain_db.clone(),
             Arc::clone(&self.config.chain),
             secp256k1::Secp256k1::new(),
@@ -398,7 +398,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // create frost config
         let mut frost_config: FrostConfig = self.config.rpc.frost.clone().into();
         frost_config.set_authority_index(authority_index);
-        frost_config.set_total_authorities(total_authorities);
+        frost_config.set_authorities(authorities);
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();

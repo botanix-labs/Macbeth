@@ -442,7 +442,7 @@ where
     ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>)>, Error> {
         // check if we are in turn
         let is_inturn = is_inturn(
-            self.frost_config.total_authorities as u64,
+            self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
         );
         match is_inturn {
@@ -454,7 +454,7 @@ where
                 // if we are not inturn, find the coordinator in the list of peers
                 let all_connected_frost_peers = self.get_all_peers_handle().await?;
                 let current_inturn_authority_index =
-                    current_inturn_index(self.frost_config.total_authorities as u64);
+                    current_inturn_index(self.frost_config.authorities.len() as u64);
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
                 let sender_channel = all_connected_frost_peers
@@ -467,7 +467,7 @@ where
 
     pub(crate) fn is_coordinator(&self) -> bool {
         is_inturn(
-            self.frost_config.total_authorities as u64,
+            self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
         )
     }
