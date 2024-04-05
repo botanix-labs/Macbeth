@@ -608,7 +608,9 @@ impl rpc::BtcServer for App {
         match self.db.get_utxo_merkle_root() {
             Ok(Some(merkle_root)) => {
                 // Successfully found the merkle root, return it
-                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root.to_vec() };
+                let response = rpc::GetUtxoMerkleRootResponse {
+                    merkle_root: merkle_root[..].to_vec(),
+                };
                 Ok(tonic::Response::new(response))
             }
             Ok(None) => {
