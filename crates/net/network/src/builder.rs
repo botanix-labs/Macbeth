@@ -56,12 +56,12 @@ impl<C, Tx, Eth> NetworkBuilder<C, Tx, Eth> {
     }
 
     /// Creates a new [`FrostManager`] and wires it to the network.
-    pub fn frost(self, frost_conig: FrostConfig) -> NetworkBuilder<C, Tx, Eth> {
+    pub fn frost(self, frost_config: FrostConfig) -> NetworkBuilder<C, Tx, Eth> {
         let NetworkBuilder { mut network, request_handler, transactions, .. } = self;
         let (tx, rx) = mpsc::unbounded_channel();
         network.set_frost_manager(tx);
         let handle = network.handle().clone();
-        let frost_manager = FrostManager::new(frost_conig, handle, rx);
+        let frost_manager = FrostManager::new(frost_config, handle, rx);
         NetworkBuilder {
             network,
             request_handler,
