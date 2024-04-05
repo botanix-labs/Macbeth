@@ -1,9 +1,12 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use bitcoin::{
+    consensus::encode::Encodable,
+    hashes::{sha256, Hash},
     psbt::{self, Psbt},
     OutPoint, TxOut,
 };
+use ciborium;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
@@ -411,17 +414,30 @@ impl Db {
     }
 
     /// Stores the consensus Merkle root of all spendable UTXOs.
-    pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
-        self.db.insert(KEY_UTXO_MERKLE_ROOT, merkle_root)?;
+    pub fn update_utxo_merkle_root(&self) -> Result<(), Error> {
+        let mut utxos = self.iter_utxos()
+            .map(|u| {
+                let mut engine = sha256::Hash::engine();
+                u?.outpoint.consensus_encode(&mut engine).expect("engine don't error");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        utxos.sort();
+        if utxos.is_empty() {
+            return Ok(());
+        }
+
+        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
+            .expect("not empty");
+        self.db.insert(KEY_UTXO_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }
 
     /// Retrieves the consensus Merkle root of all spendable UTXOs.
-    pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
-        Ok(self
-            .db
-            .get(KEY_UTXO_MERKLE_ROOT)?
-            .map(|b| b.as_ref().try_into().expect("corrupt db: Merkle root should be 32 bytes")))
+    pub fn get_utxo_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_UTXO_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 }
 

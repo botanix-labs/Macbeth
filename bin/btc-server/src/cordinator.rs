@@ -1,12 +1,3 @@
-use crate::{
-    database::{Error as DbError, Utxo},
-    merkle,
-    util::{
-        self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
-        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
-    },
-    App, Error,
-};
 use std::collections::HashMap;
 
 use bdk::{
@@ -25,6 +16,15 @@ use reth_btc_wallet::{
     psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+};
+
+use crate::{
+    database::{Error as DbError, Utxo},
+    util::{
+        self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
+        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
+    },
+    App, Error,
 };
 
 #[derive(Debug, Error)]
@@ -72,27 +72,9 @@ pub enum CoordinatorError {
 impl App {
     pub(crate) fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
         if self.db.store_utxo(utxo)? {
+            self.db.update_utxo_merkle_root()?;
             self.db.flush()?;
             debug!("Stored utxo {}", utxo.outpoint);
-
-            // Hash the new UTXO
-            let utxo_hash = merkle::hash_utxo(utxo);
-
-            // Retrieve all UTXOs, hash them
-            let utxos = self.db.get_all_utxos()?;
-            let mut utxo_hashes: Vec<[u8; 32]> = utxos.iter().map(merkle::hash_utxo).collect();
-            utxo_hashes.push(utxo_hash); // Include the new UTXO hash
-
-            // Construct the Merkle tree from hashes
-            let utxo_hashes_vec_u8: Vec<Vec<u8>> =
-                utxo_hashes.iter().map(|hash| hash.to_vec()).collect();
-            let merkle_tree = merkle::construct_merkle_tree(&utxo_hashes_vec_u8);
-
-            // Store the new Merkle root in the database
-            let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
-            self.db
-                .store_utxo_merkle_root(&merkle_root)
-                .map_err(|e| CoordinatorError::Db(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
@@ -273,7 +255,7 @@ impl App {
 
     /// If no Err is return the orignial psbt served to this function is good to go out to the
     /// signers nothing needs to be added to it as the signers all provided their signing
-    /// commitments already and the coordinator just need to verify them  
+    /// commitments already and the coordinator just need to verify them
     pub(crate) fn get_to_sign(
         &self,
         signing_session_id: &[u8; 32],

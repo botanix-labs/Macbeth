@@ -6,7 +6,6 @@ mod cordinator;
 mod database;
 mod dkg;
 mod jwt;
-mod merkle;
 mod server;
 mod shutdown;
 mod signer;
