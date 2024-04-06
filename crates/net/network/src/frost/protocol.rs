@@ -42,6 +42,10 @@ impl ProtocolHandler for FrostProtoHandler {
     /// If protocols for this outgoing should be announced to the remote, return a connection
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
+        // TODO (armin) constant time?
+        if !self.state.authorities.contains(&self.state.peer_id) {
+            return None;
+        }
         // once the other side establishes conn with us, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -55,6 +59,10 @@ impl ProtocolHandler for FrostProtoHandler {
         _socket_addr: SocketAddr,
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
+        // TODO (armin) constant time?
+        if !self.state.authorities.contains(&self.state.peer_id) {
+            return None;
+        }
         // once I establish conn with the other peer, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -122,6 +130,7 @@ impl ConnectionHandler for FrostConnectionHandler {
             pending_pong: None, // when the conn. is just esablished, there is no pending pong
             my_authority_index: self.state.authority_index,
             my_peer_id: self.state.peer_id,
+            peer_id,
         }
     }
 }
@@ -136,6 +145,7 @@ pub struct FrostProtoConnection {
     pending_pong: Option<oneshot::Sender<String>>,
     my_authority_index: u16,
     my_peer_id: PeerId,
+    peer_id: PeerId,
 }
 
 impl Stream for FrostProtoConnection {
@@ -252,7 +262,7 @@ impl Stream for FrostProtoConnection {
                             }
                         }
                     }
-                }
+                };
             }
 
             // poll the actual conn to peers for events from other peers
@@ -260,14 +270,14 @@ impl Stream for FrostProtoConnection {
 
             // if deserialization fails, skipp
             let Some(msg) = FrostProtoMessage::decode_message(&mut &msg[..]) else {
-                return Poll::Ready(None)
+                return Poll::Ready(None);
             };
 
             // react on message type
             match msg.message {
                 FrostProtoMessageKind::Ping => {
                     //info!(">>>>>>>>> RECEIVED PING FROM PEER. SENDING PONG...");
-                    return Poll::Ready(Some(FrostProtoMessage::pong().encoded()))
+                    return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
                 }
                 FrostProtoMessageKind::Pong => {
                     //info!(">>>>>>>>> RECEIVED PONG FROM PEER. --.");
@@ -285,7 +295,7 @@ impl Stream for FrostProtoConnection {
                     return Poll::Ready(Some(
                         FrostProtoMessage::pong_message(this.my_peer_id, this.my_authority_index)
                             .encoded(),
-                    ))
+                    ));
                 }
                 // other peers answers with pong message with a peer id and authority index
                 FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
@@ -304,77 +314,83 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostProtoMessageKind::Round1Dkg(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 1 PACKAGE FROM PEER. {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Dkg(DkgResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                        response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound1,
                             identifier: data.identifier,
                             data: data.data,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
                 FrostProtoMessageKind::Round2Dkg(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 2 PACKAGE FROM PEER. {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Dkg(DkgResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage{
+                        response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound2,
                             identifier: data.identifier,
                             data: data.data,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
                 FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 1 PACKAGE FROM PEER.
                     // {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Signing(SigningResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                        response: PeerMessageResponse::Signing(SigningResponse {
                             response_type: SigningEventResponseType::SignerRound1SigningPackage,
                             identifier: data.identifier,
                             signing_session_id: data.signing_session_id,
                             psbt: data.psbt,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
                 FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 1 PACKAGE FROM PEER.
                     // {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Signing(SigningResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                        response: PeerMessageResponse::Signing(SigningResponse {
                             response_type:
                                 SigningEventResponseType::CoordinatorRound1SigningPackage,
                             identifier: data.identifier,
                             signing_session_id: data.signing_session_id,
                             psbt: data.psbt,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
                 FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 2 PACKAGE FROM PEER.
                     // {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Signing(SigningResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                        response: PeerMessageResponse::Signing(SigningResponse {
                             response_type: SigningEventResponseType::SignerRound2SigningPackage,
                             identifier: data.identifier,
                             signing_session_id: data.signing_session_id,
                             psbt: data.psbt,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
                 FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
                     //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 2 PACKAGE FROM PEER.
                     // {:?}", data);
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage(
-                        PeerMessageResponse::Signing(SigningResponse {
+                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                        response: PeerMessageResponse::Signing(SigningResponse {
                             response_type:
                                 SigningEventResponseType::CoordinatorRound2SigningPackage,
                             identifier: data.identifier,
                             signing_session_id: data.signing_session_id,
                             psbt: data.psbt,
                         }),
-                    ));
+                        peer_id: this.peer_id,
+                    });
                 }
             }
 
-            return Poll::Pending
+            return Poll::Pending;
         }
     }
 }

@@ -19,6 +19,7 @@ pub struct ProtocolState {
     peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
     authority_index: u16,
     peer_id: PeerId,
+    authorities: Vec<PeerId>
 }
 
 impl ProtocolState {
@@ -28,8 +29,9 @@ impl ProtocolState {
         peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
         authority_index: u16,
         peer_id: PeerId,
+        authorities: Vec<PeerId>,
     ) -> Self {
-        Self { events, peer_message_forwarder, authority_index, peer_id }
+        Self { events, peer_message_forwarder, authority_index, peer_id, authorities }
     }
 }
 
@@ -102,7 +104,12 @@ pub enum FrostProtocolEvent {
         to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
-    PeerMessage(PeerMessageResponse),
+    PeerMessage {
+        /// The other peer id
+        peer_id: PeerId,
+        /// The message response
+        response: PeerMessageResponse,
+    },
     /// Peer confirmation
     PeerConfirmed(PeerId, u16),
 }
@@ -123,7 +130,12 @@ pub enum NetworkFrostEvent {
         to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
-    PeerMessage(PeerMessageResponse),
+    PeerMessage {
+        /// The other peer id
+        peer_id: PeerId,
+        /// The message response
+        response: PeerMessageResponse,
+    },
     /// Peer Confirmation
     PeerConfirmed(PeerId, u16),
 }
