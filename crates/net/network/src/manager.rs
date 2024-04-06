@@ -330,12 +330,20 @@ where
             mpsc::unbounded_channel::<FrostProtocolEvent>();
         let authority_index =
             frost_config.as_ref().map(|f| f.authority_index as u16).unwrap_or_default();
+        let authorities = frost_config
+            .as_ref()
+            .map(|f| f.authorities.clone())
+            .unwrap_or_default()
+            .iter()
+            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .collect::<Vec<_>>();
 
         let protocol_state = ProtocolState::new(
             protocol_events_tx,
             frost_peer_messages_forwarder_tx,
             authority_index,
             *handle.peer_id(),
+            authorities,
         );
         let protocol_handler = FrostProtoHandler { state: protocol_state };
         handle.add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
@@ -573,8 +581,8 @@ where
                     to_connection,
                 });
             }
-            FrostProtocolEvent::PeerMessage(msg) => {
-                self.notify_frost_manager(NetworkFrostEvent::PeerMessage(msg));
+            FrostProtocolEvent::PeerMessage { peer_id, response } => {
+                self.notify_frost_manager(NetworkFrostEvent::PeerMessage { peer_id, response });
             }
             FrostProtocolEvent::PeerConfirmed(peer_id, authority_index) => {
                 self.notify_frost_manager(NetworkFrostEvent::PeerConfirmed(
@@ -598,7 +606,7 @@ where
                 if self.handle.mode().is_stake() {
                     // See [EIP-3675](https://eips.ethereum.org/EIPS/eip-3675#devp2p)
                     warn!(target: "net", "Peer performed block propagation, but it is not supported in proof of stake (EIP-3675)");
-                    return
+                    return;
                 }
                 let msg = NewBlockMessage { hash, block: Arc::new(block) };
                 self.swarm.state_mut().announce_new_block(msg);
@@ -729,7 +737,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(msg)) => this.on_handle_message(msg),
             };
@@ -743,7 +751,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     tracing::error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
             };
@@ -757,7 +765,7 @@ where
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     tracing::error!("Network message channel closed.");
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
             };
@@ -1034,7 +1042,7 @@ where
                 trace!(target: "net", budget=10, "exhausted network manager budget");
                 // make sure we're woken up again
                 cx.waker().wake_by_ref();
-                break
+                break;
             }
         }
 

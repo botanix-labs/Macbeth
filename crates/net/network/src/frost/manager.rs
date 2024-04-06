@@ -10,7 +10,7 @@ use std::{
 };
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Frost Handle for communication with the protocol
 #[derive(Clone, Debug)]
@@ -101,15 +101,15 @@ impl FrostManager {
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                /*
-                 info!(
-                     ">>>>>>>>>>> FROST PEER CONNECTION ESTABLISHED.
-                COUNTER PEER ID: {:?}, MY_PEERID: {:?}",
-                     peer_id.to_string(),
-                     self.network.peer_id().to_string()
-                 );
-                 */
+                // info!(
+                //     ">>>>>>>>>>> FROST PEER CONNECTION ESTABLISHED.
+                // COUNTER PEER ID: {:?}, MY_PEERID: {:?}",
+                //     peer_id.to_string(),
+                //     self.network.peer_id().to_string()
+                // );
+
                 if !self.is_authority_peer(&peer_id) {
+                    warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
@@ -120,11 +120,11 @@ impl FrostManager {
                     self.peers_connections.insert(peer_id, to_connection);
                 }
             }
-            NetworkFrostEvent::PeerMessage(response) => {
-                // TODO(armins)
-                // if !self.is_authority_peer(peer_id) {
-                //     return;
-                // }
+            NetworkFrostEvent::PeerMessage { peer_id, response } => {
+                if !self.is_authority_peer(&peer_id) {
+                    warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    return;
+                }
                 info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
                 if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
                     let _send_res = frost_task_forwarder_tx.send(response); // TODO:  handle error
