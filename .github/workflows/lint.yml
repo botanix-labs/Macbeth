@@ -28,7 +28,7 @@ jobs:
         with:
           cache-on-failure: true
       - run:
-          cargo +nightly clippy --bin "${{ matrix.binary }}" --workspace --features "${{ matrix.network }} asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
+          cargo +nightly clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
         env:
           RUSTFLAGS: -D warnings
 
@@ -59,16 +59,9 @@ jobs:
       - run: cargo hack check
 
   msrv:
-    name: MSRV / ${{ matrix.network }}
+    name: MSRV
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        include:
-          - binary: reth
-            network: ethereum
-          - binary: op-reth
-            network: optimism
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -77,7 +70,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo build --bin "${{ matrix.binary }}" --workspace --features "${{ matrix.network }}"
+      - run: cargo build --bin reth--workspace --features ethereum
         env:
           RUSTFLAGS: -D warnings
 
