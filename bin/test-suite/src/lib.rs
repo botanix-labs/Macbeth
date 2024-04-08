@@ -45,6 +45,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod macros;
-pub mod mint_contract_abi;
+// pub mod mint_contract_abi;
+pub mod minting;
 pub mod server;
 pub mod suite;

@@ -1,4 +1,4 @@
--include .env
+# -include .env
 
 # Heavily inspired by Lighthouse: https://github.com/sigp/lighthouse/blob/693886b94176faa4cb450f024696cb69cda2fe58/Makefile
 .DEFAULT_GOAL := help

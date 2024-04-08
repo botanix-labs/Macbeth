@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(len, 5);
 
         let mut buf = vec![];
-        bytecode.0.bytecode = Bytes::from(hex!("ffff").as_ref());
+        bytecode.0.bytecode = Bytes::from(hex!("ffff").as_ref() as &[u8]);
         let len = bytecode.clone().to_compact(&mut buf);
         assert_eq!(len, 7);
 

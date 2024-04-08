@@ -62,3 +62,6 @@ contracts/.env
 
 # Rust bug report
 rustc-ice-*
+
+# .vscode
+.vscode
