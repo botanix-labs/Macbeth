@@ -33,6 +33,19 @@ jobs:
         with:
           cache-on-failure: true
       - uses: taiki-e/install-action@nextest
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Start BTC Server
+        run: |
+          cd bin/btc-server
+          cargo run --bin btc-server -- --btc-network regtest \
+          --identifier 0 --address 0.0.0.0:8080 \
+          --db "./db1" --min-signers 2 --max-signers 2 \
+          --toml ./config.toml  --fee-rate-diff-percentage 30 \
+          --bitcoind-url http://localhost:18443 --bitcoind-user \
+          foo --bitcoind-pass bar \
+          --jwt-secret "bin/btc-server/jwt.hex" \
+          --fall-back-fee-rate-sat-per-vbyte 5
       - name: Run tests
         run: |
           cargo nextest run \
@@ -63,6 +76,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Start BTC Server
+        run: |
+          cd bin/btc-server
+          cargo run --bin btc-server -- --btc-network regtest \
+          --identifier 0 --address 0.0.0.0:8080 \
+          --db "./db1" --min-signers 2 --max-signers 2 \
+          --toml ./config.toml  --fee-rate-diff-percentage 30 \
+          --bitcoind-url http://localhost:18443 --bitcoind-user \
+          foo --bitcoind-pass bar \
+          --jwt-secret "bin/btc-server/jwt.hex" \
+          --fall-back-fee-rate-sat-per-vbyte 5
       - run: cargo nextest run --release -p ef-tests --features ef-tests
 
   doc:
