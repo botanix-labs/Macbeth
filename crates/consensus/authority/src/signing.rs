@@ -511,7 +511,7 @@ where
     ) -> Result<(), Error> {
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
-        info!(">>>>>>>>>>> [GOSSIP_ROUND1] {:?}", connected_peers.len());
+        info!(">>>>>>>>>>> [GOSSIP_ROUND1] number of peers connected: {:?}", connected_peers.len());
 
         let Round1SigningPackage { signing_session_id, psbt, identifier } = round1_signing_package;
 
@@ -573,7 +573,6 @@ where
 
         // get coordinator
         let coordinator = self.get_coordinator().await?;
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] coordinator {:?}", coordinator);
         // if none, we are coordinator ?
         if coordinator.is_none() {
             return Ok(());
@@ -606,15 +605,15 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let _is_round1 =
+        let is_round1 =
             self.signing_states.get(&session_id).map(|state| state.is_round1()).unwrap_or_default();
 
         // return if we are not in round 1 or not a coordinator
-        if !self.is_coordinator() {
+        if !is_round1 || !self.is_coordinator() {
             return Ok(());
         }
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND1] identifiers {:?} {:?}",
+            ">>>>>>>>>>> [PROCESS_ROUND1] identifiers my peer id: {:?}, other peerid {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -630,8 +629,9 @@ where
             .await
         {
             error!("Error adding round 1 signing package {:?}", e);
-            let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
-            return Err(e);
+            return Ok(());
+            // let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+            // return Err(e);
         }
 
         // try to generate signing package
@@ -704,7 +704,7 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not peer and not in round 2
-        if self.is_coordinator() {
+        if !is_round2 || self.is_coordinator() {
             return Ok(());
         }
         info!(
@@ -714,9 +714,9 @@ where
         );
 
         // return if the sending identifier is us
-        // if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-        //     return Ok(());
-        // }
+        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+            return Ok(());
+        }
 
         // add the transmitted round 2 package data
         let signing_package_round2 =
@@ -768,7 +768,7 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not in round 2 or not a coordinator
-        if !self.is_coordinator() {
+        if !is_round2 || !self.is_coordinator() {
             return Ok(());
         }
         info!(
