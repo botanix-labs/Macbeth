@@ -41,6 +41,7 @@ use crate::{
 };
 use futures::{pin_mut, Future, StreamExt};
 use parking_lot::Mutex;
+use reth_ecies::util::pk2id;
 use reth_eth_wire::{
     capability::{Capabilities, CapabilityMessage},
     DisconnectReason, EthVersion, Status,
@@ -335,7 +336,7 @@ where
             .map(|f| f.authorities.clone())
             .unwrap_or_default()
             .iter()
-            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .map(|pk| pk2id(&pk))
             .collect::<Vec<_>>();
 
         let protocol_state = ProtocolState::new(
