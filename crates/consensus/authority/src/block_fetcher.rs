@@ -99,8 +99,14 @@ where
             };
 
             let block = new_block.block.block.clone();
+            let storage = self.storage.read().await;
             info!(target: "consensus::authority", ?block, "Recieved new block from peer");
-
+            let best_hash = storage.get_best_block_and_hash().expect("best block exists").1;
+            if block.header.hash_slow() == best_hash {
+                warn!(target: "consensus::authority", "Recieved block is already in the chain");
+                continue;
+            }
+            drop(storage);
             // Seal the block
             let sealed_block = block.clone().seal_slow();
             // Notify the engine of the new block
