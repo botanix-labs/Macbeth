@@ -128,7 +128,7 @@ impl App {
     pub(crate) fn add_round2_signing(
         &self,
         signing_session_id: &[u8; 32],
-        _frost_id: frost::Identifier,
+        frost_id: frost::Identifier,
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
@@ -137,6 +137,7 @@ impl App {
 
         self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
+        debug!("Stored round2 signing from peer: {:?}", frost_id);
 
         Ok(())
     }
