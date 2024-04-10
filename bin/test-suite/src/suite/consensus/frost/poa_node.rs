@@ -39,7 +39,7 @@ use url::Url;
 
 const RPC_PORT_BASE: u16 = 8545;
 const AUTHRPC_PORT_BASE: u16 = 8551;
-const DISCOVERY_PORT_BASE: u16 = 30303;
+const DISCOVERY_PORT_BASE: u16 = 30321;
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
@@ -368,6 +368,7 @@ pub async fn create_poa_federation_members(
         None,
         None,
         bitcoin::hash_types::BlockHash::all_zeros(),
+        [0u8; 32],
     );
 
     // now insert peers and edh into each federation member
@@ -417,6 +418,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
