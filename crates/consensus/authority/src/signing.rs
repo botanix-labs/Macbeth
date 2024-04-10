@@ -19,7 +19,7 @@ use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("Unknwon internal error")]
+    #[error("Unknown internal error")]
     InternalGrpc,
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
@@ -47,7 +47,7 @@ pub(crate) enum Error {
     FailedToParseFrostPeerId,
     #[error("Failed to get to sign")]
     FailedToGetToSign,
-    #[error("invalid signing session id")]
+    #[error("Invalid signing session id")]
     InvalidSigningSessionId,
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
