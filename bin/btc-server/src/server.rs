@@ -576,6 +576,7 @@ impl rpc::BtcServer for App {
             Err(e) => Err(internal!("Failed to remove UTXO: {}", e)),
         }
     }
+
     // Gets the merkle root of the utxo set
     async fn get_utxo_merkle_root(
         &self,
@@ -588,7 +589,10 @@ impl rpc::BtcServer for App {
                 let response = rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root.to_vec() };
                 Ok(tonic::Response::new(response))
             }
-            Ok(None) => Err(tonic::Status::not_found("UTXO Merkle root not found.")),
+            Ok(None) => {
+                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: [0u8; 32].to_vec() };
+                Ok(tonic::Response::new(response))
+            }
             // An error occurred while accessing the database
             Err(e) => Err(internal!("Failed to retrieve UTXO Merkle root: {}", e)),
         }
