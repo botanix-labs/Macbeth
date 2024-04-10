@@ -121,7 +121,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             continue;
         }
         let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest{
+            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
                 psbt: original_psbt.clone(),
                 signing_session_id: signing_session_id.to_vec(),
             }))
