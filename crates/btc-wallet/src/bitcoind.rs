@@ -1,9 +1,11 @@
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult},
     Auth, Client, RpcApi,
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use thiserror::Error;
 use url::Url;
 
@@ -34,13 +36,12 @@ pub enum BitcoindError {
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoindConfig {
     url: Url,
-    username: String,
-    password: String,
+    cookie: PathBuf,
 }
 
 impl BitcoindConfig {
-    pub fn new(url: Url, username: String, password: String) -> Self {
-        Self { url, username, password }
+    pub fn new(url: Url, cookie: impl AsRef<Path>) -> Self {
+        Self { url, cookie: cookie.as_ref().into() }
     }
 }
 #[derive(Debug)]
@@ -50,8 +51,8 @@ pub struct BitcoindClient {
 
 impl BitcoindClient {
     pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
-        let BitcoindConfig { url, username, password } = config;
-        let creds = Auth::UserPass(username, password);
+        let BitcoindConfig { url, cookie } = config;
+        let creds = Auth::CookieFile(cookie);
         let rpc = Client::new(url.to_string().as_str(), creds)
             .map_err(BitcoindError::ClientInitFailed)?;
         Ok(BitcoindClient { rpc })

@@ -1,10 +1,12 @@
 //! Defines structure for botanix RPC configurables and business logic
 
+use std::{fmt, str::FromStr};
+use std::path::Path;
+
 use alloy_primitives::hex;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
 use reth_primitives::U256;
 use serde::{Deserialize, Serialize};
-use std::{fmt, str::FromStr};
 use tracing::error;
 use url::Url;
 
@@ -30,8 +32,7 @@ impl Default for BotanixConfig {
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
-                "foo".to_string(),
-                "bar".to_string(),
+                ".cookie",
             ),
         }
     }
@@ -43,8 +44,7 @@ impl BotanixConfig {
     fn new(
         bitcoin_network: bitcoin::Network,
         btc_server: String,
-        bitcoind_username: String,
-        bitcoind_password: String,
+        bitcoind_cookie: String,
     ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
@@ -61,8 +61,7 @@ impl BotanixConfig {
             btc_server,
             bitcoind_config: BitcoindConfig::new(
                 bitcoind_url.parse::<Url>().expect("must be valid ip address"),
-                bitcoind_username,
-                bitcoind_password,
+                bitcoind_cookie,
             ),
         }
     }
@@ -80,8 +79,8 @@ impl BotanixConfig {
     }
 
     /// Set mempool space block source url
-    pub fn bitcoind(mut self, url: Url, username: String, password: String) -> Self {
-        self.bitcoind_config = BitcoindConfig::new(url, username, password);
+    pub fn bitcoind(mut self, url: Url, cookie: impl AsRef<Path>) -> Self {
+        self.bitcoind_config = BitcoindConfig::new(url, cookie);
         self
     }
 }

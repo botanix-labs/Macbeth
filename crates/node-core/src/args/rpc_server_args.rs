@@ -451,8 +451,7 @@ impl RpcServerArgs {
         let mut botanix_config = BotanixConfig::default();
         botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoind(
             self.bitcoind.url.clone(),
-            self.bitcoind.username.clone(),
-            self.bitcoind.password.clone(),
+            self.bitcoind.cookie.clone(),
         );
 
         reth_rpc_builder::auth::launch(
@@ -487,8 +486,7 @@ impl RethRpcConfig for RpcServerArgs {
             .bitcoin_network(self.btc_network)
             .bitcoind(
                 self.bitcoind.url.clone(),
-                self.bitcoind.username.clone(),
-                self.bitcoind.password.clone(),
+                self.bitcoind.cookie.clone(),
             );
 
         EthConfig::default()
@@ -645,8 +643,7 @@ impl Default for RpcServerArgs {
                 url: "https://bitcoind.botanixlabs.dev"
                     .parse::<Url>()
                     .expect("valid bitcoind address"),
-                password: "usr".to_string(),
-                username: "pwd".to_string(),
+                cookie: ".cookie".to_string(),
             },
             btc_network: bitcoin::Network::Regtest,
             frost: FrostArgs { min_signers: 2, max_signers: 2 },
