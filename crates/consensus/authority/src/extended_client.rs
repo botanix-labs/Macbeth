@@ -1,4 +1,3 @@
-use base64::decode as base64_decode;
 ///! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
 use reth_rpc::{Claims, JwtSecret};
@@ -9,8 +8,8 @@ use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, MakeTxRequest, NotifyPeginRequest, SigningPackageRequest,
-    SigningPackage, ToSignRequest,
+    GetPublicKeyResponse, MakeTxRequest, NotifyPeginRequest, SigningPackage, SigningPackageRequest,
+    ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
