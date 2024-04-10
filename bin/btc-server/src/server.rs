@@ -59,11 +59,7 @@ impl App {
                         error!("Failed to base64 decode request metadata: {}", e);
                         badarg!("Failed to base64 decode request metadata: {}", e)
                     })?;
-                let jwt_token_hex_decoded = hex::decode(jwt_token_base64_decoded).map_err(|e| {
-                    error!("Failed to hex decode jwt value: {}", e);
-                    badarg!("Failed to hex decode jwt value: {}", e)
-                })?;
-                let jwt_stringified = String::from_utf8(jwt_token_hex_decoded).map_err(|e| {
+                let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).map_err(|e| {
                     error!("Failed to utf8 decode jwt value: {}", e);
                     badarg!("Failed to utf8 decode jwt value: {}", e)
                 })?;
@@ -110,7 +106,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received finalize: {:?}", req);
+        info!("Received finalize signing request");
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -204,13 +200,13 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::ToSignRequest>,
     ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received to sign package request: {:?}", req);
         let req = req.into_inner();
+        info!("Received to sign package request, signing session id: {:?}", req.signing_session_id);
         let signing_session_id =
-            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
-                badarg!("Failed to parse signing session id: {}", e)
-            })?;
+        util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+            error!("Failed to parse signing session id: {}", e);
+            badarg!("Failed to parse signing session id: {}", e)
+        })?;
         let psbt = self
             .get_to_sign(&signing_session_id)
             .map_err(|e| internal!("Failed to get to sign: {}", e))?;
@@ -230,7 +226,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round1 signing package: {:?}", req);
+        info!("Received round1 signing package");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
@@ -258,7 +254,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round2 signing package: {:?}", req);
+        info!("Received round2 signing package");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
@@ -433,7 +429,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round1 signing package request: {:?}", req);
+        info!("Received round1 signing package request");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
@@ -466,7 +462,7 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round2 signing package request: {:?}", req);
+        info!("Received round2 signing package request");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
@@ -494,7 +490,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::FinalizeSignerRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         let req = req.into_inner();
-        info!("Received finalize signer request: {:?}", req);
+        info!("Received finalize signer request");
         let fee_res = self
             .bitcoind_client
             .as_ref()

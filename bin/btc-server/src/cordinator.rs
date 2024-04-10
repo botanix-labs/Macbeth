@@ -1,3 +1,5 @@
+use crate::database::Error as DbError;
+use crate::util::validate_psbt;
 use crate::{
     database::Utxo,
     merkle,
@@ -7,11 +9,12 @@ use crate::{
     },
     App, Error, SECP,
 };
+use std::collections::HashMap;
+
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
-use crate::database::Error as DbError;
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
