@@ -333,6 +333,7 @@ where
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
+        utxo_commitment: &[u8; 32],
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -369,6 +370,7 @@ where
             vote_for,
             witness_data.clone(),
             recent_block_hash,
+            *utxo_commitment,
         );
         let sig_hash = reth_consensus_common::utils::create_authority_sighash(
             &mut header.clone(),
@@ -454,7 +456,8 @@ where
         sk: &secp256k1::SecretKey,
         secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>, // used in current poa branch
+        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
+        utxo_commitment: &[u8; 32],
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
@@ -471,6 +474,7 @@ where
             &witness_data,
             // This is checked to be Some above
             botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
+            utxo_commitment,
         )?;
 
         // Redundant check. Lets make sure the header is valid

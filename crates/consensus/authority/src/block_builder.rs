@@ -258,6 +258,19 @@ where
         }
         drop(storage);
 
+        // Retrieve the current UTXO commitment
+        let utxo_commitment: [u8; 32] =
+            match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
+                Ok(utxo_commitment) => utxo_commitment,
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
+                    return;
+                }
+            }
+            .merkle_root
+            .try_into()
+            .expect("valid UTXO commitment");
+
         let mut storage = self.storage.write().await;
         let new_header = match storage.build_and_validate_header(
             &bundle_state,
@@ -270,6 +283,7 @@ where
             &self.secp,
             &authority_signers,
             &epoch_witness,
+            &utxo_commitment,
         ) {
             Ok(ret) => ret,
             Err(err) => {
