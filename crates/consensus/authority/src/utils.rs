@@ -6,7 +6,7 @@ use bitcoin::{
     psbt::PartiallySignedTransaction,
     witness::Witness,
 };
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SignPayload};
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -210,7 +210,7 @@ pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &Vec<PegoutData>,
     signing_session_id: &SigningSessionId,
-) -> Result<SignPayload, ProcessBotanixLogError> {
+) -> Result<SigningPackage, ProcessBotanixLogError> {
     let req = MakeTxRequest {
         outputs: pegouts
             .iter()

@@ -78,7 +78,7 @@ pub enum DkgEventResponseType {
 }
 
 /// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum SigningEventResponseType {
     /// Signers will add their signing commitments to the psbt
     SignerRound1SigningPackage,

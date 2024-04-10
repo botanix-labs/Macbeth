@@ -4,15 +4,10 @@ use crate::{
     database::{Db, Utxo},
     Error, SECP,
 };
-use bitcoin::{
-    consensus::encode as btcencode,
-    hashes::Hash,
-    psbt::{self, PartiallySignedTransaction, Psbt},
-    Amount, OutPoint,
-};
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, Amount, OutPoint};
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
-use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
+use reth_btc_wallet::psbt::PsbtInputExt;
 
 lazy_static! {
     // TODO get a fee max amount
