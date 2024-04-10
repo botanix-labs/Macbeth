@@ -22,23 +22,23 @@ service BtcServer {
 
     // Signing Endpoints
 
-    rpc GetRound1SigningPackage(Round1SigningPackageRequest) returns (Round1SigningPackage) {}
+    rpc GetRound1SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
 
-    rpc GetRound2SigningPackage(SignPayload) returns (Round2SigningPackage) {}
+    rpc GetRound2SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
 
     rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
 
     // only meant to be used by the cordinator
-    rpc NewRound1SigningPackage(Round1SigningPackage) returns (Empty) {}
+    rpc NewRound1SigningPackage(SigningPackage) returns (Empty) {}
+
+    rpc NewRound2SigningPackage(SigningPackage) returns (Empty) {}
 
     // Meant to be used at anytime to perform utxo selection and create a tx
-    rpc GetPsbt(MakeTxRequest) returns (SignPayload) {}
+    rpc GetPsbt(MakeTxRequest) returns (SigningPackage) {}
 
     // Meant to be used to transition the signing round to round 2 after round 1
     // signing commitments have been collected
-    rpc GetToSignPackage(ToSignRequest) returns (SignPayload) {}
-
-    rpc NewRound2SigningPackage(Round2SigningPackage) returns (Empty) {}
+    rpc GetToSignPackage(ToSignRequest) returns (SigningPackage) {}
 
     rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
 
@@ -136,25 +136,14 @@ message DkgPayload {
     bytes payload = 2;
 }
 
-message Round1SigningPackageRequest {
+message SigningPackageRequest {
     bytes psbt = 1;
     bytes signing_session_id = 2;
 }
 
-message Round1SigningPackage {
-    bytes identifier = 1;
-    bytes psbt = 2;
-    bytes signing_session_id = 3;
-}
-
-message Round2SigningPackage {
+message SigningPackage {
     bytes psbt = 1;
     bytes identifier = 2;
-    bytes signing_session_id = 3;
-}
-
-message SignPayload {
-    bytes psbt = 1;
     bytes signing_session_id = 3;
 }
 

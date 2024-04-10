@@ -1,7 +1,6 @@
 use base64::decode as base64_decode;
 ///! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
-use reth_primitives::hex::{decode as hex_decode, encode as hex_encode};
 use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -10,8 +9,8 @@ use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, MakeTxRequest, NotifyPeginRequest, Round1SigningPackage,
-    Round1SigningPackageRequest, Round2SigningPackage, SignPayload, ToSignRequest,
+    GetPublicKeyResponse, MakeTxRequest, NotifyPeginRequest, SigningPackageRequest,
+    SigningPackage, ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
@@ -105,12 +104,12 @@ impl BtcServerExtendedClient {
     generate_method!(new_round1_dkg_package, DkgPayload, Empty);
     generate_method!(get_round2_dkg_package, Empty, DkgPayload);
     generate_method!(new_round2_dkg_package, DkgPayload, Empty);
-    generate_method!(get_round1_signing_package, Round1SigningPackageRequest, Round1SigningPackage);
-    generate_method!(get_round2_signing_package, SignPayload, Round2SigningPackage);
-    generate_method!(new_round1_signing_package, Round1SigningPackage, Empty);
-    generate_method!(get_psbt, MakeTxRequest, SignPayload);
-    generate_method!(get_to_sign_package, ToSignRequest, SignPayload);
-    generate_method!(new_round2_signing_package, Round2SigningPackage, Empty);
+    generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
+    generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
+    generate_method!(new_round1_signing_package, SigningPackage, Empty);
+    generate_method!(get_psbt, MakeTxRequest, SigningPackage);
+    generate_method!(get_to_sign_package, ToSignRequest, SigningPackage);
+    generate_method!(new_round2_signing_package, SigningPackage, Empty);
     generate_method!(finalize_signing, FinalizeSigningRequest, FinalizeSigningResponse);
     generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
 }

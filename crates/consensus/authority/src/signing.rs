@@ -4,7 +4,7 @@ use crate::{
     utils::{deserialize_frost_peer_id, parse_signing_session_id, retry_exec, FrostParseError},
     Storage,
 };
-use client::{FinalizeSigningResponse, Round1SigningPackage, Round2SigningPackage, SignPayload};
+use client::{FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 use reth_consensus_common::utils::{current_inturn_index, is_inturn};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
@@ -196,13 +196,10 @@ where
         &mut self,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
-    ) -> Result<Round1SigningPackage, Error> {
+    ) -> Result<SigningPackage, Error> {
         let round1_payload = self
             .btc_client
-            .get_round1_signing_package(client::Round1SigningPackageRequest {
-                psbt,
-                signing_session_id,
-            })
+            .get_round1_signing_package(SigningPackageRequest { psbt, signing_session_id })
             .await;
 
         let round1_payload = match round1_payload {
@@ -241,10 +238,10 @@ where
         &mut self,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
-    ) -> Result<Round2SigningPackage, Error> {
+    ) -> Result<SigningPackage, Error> {
         let round2_payload = self
             .btc_client
-            .get_round2_signing_package(client::SignPayload { psbt, signing_session_id })
+            .get_round2_signing_package(SigningPackageRequest { psbt, signing_session_id })
             .await;
 
         let round2_payload = match round2_payload {
@@ -283,11 +280,7 @@ where
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round1_signing_package(client::Round1SigningPackage {
-                identifier,
-                psbt,
-                signing_session_id,
-            })
+            .new_round1_signing_package(SigningPackage { identifier, psbt, signing_session_id })
             .await;
 
         match new_round1_signing_package {
@@ -328,11 +321,7 @@ where
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round2_signing_package(client::Round2SigningPackage {
-                identifier,
-                psbt,
-                signing_session_id,
-            })
+            .new_round2_signing_package(SigningPackage { identifier, psbt, signing_session_id })
             .await;
 
         match new_round1_signing_package {
@@ -368,7 +357,7 @@ where
     async fn get_to_sign_package(
         &mut self,
         signing_session_id: Vec<u8>,
-    ) -> Result<SignPayload, Error> {
+    ) -> Result<SigningPackage, Error> {
         let package = match self
             .btc_client
             .get_to_sign_package(client::ToSignRequest { signing_session_id })
@@ -480,6 +469,32 @@ where
         )
     }
 
+    pub(crate) async fn gossip_to_peers(
+        &mut self,
+        signing_package: SigningPackage,
+        frost_identifier: Vec<u8>,
+        response_type: SigningEventResponseType,
+    ) -> Result<(), Error> {
+        // get all connected peers
+        let connected_peers = self.get_all_peers_handle().await?;
+        let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
+
+        // Broadcast signing round 2 package to all peers (excluding ourselves)
+        connected_peers.iter().for_each(|(frost_id, sender)| {
+            if *frost_id != self.personal_frost_identifier {
+                let resp = PeerMessageResponse::Signing(SigningResponse {
+                    response_type,
+                    identifier: frost_identifier.clone(),
+                    signing_session_id: signing_session_id.clone(),
+                    psbt: psbt.clone(),
+                });
+                // TODO: map to error ?
+                let _ = sender.send(FrostPeerCommand::PeerMessage(resp));
+            }
+        });
+        Ok(())
+    }
+
     // ====================================== 1 =========================================
     // Coordinator initiates a new signing session
     pub(crate) async fn initate_signing_session(
@@ -504,43 +519,19 @@ where
 
         // send to all other peers
         let _ = self.insert_signing_state(session_id, SigningState::Round1);
-        if let Err(e) = self.gossip_round1_to_peers(signing_round1_package).await {
+        if let Err(e) = self
+            .gossip_to_peers(
+                signing_round1_package,
+                self.personal_frost_identifier.serialize().to_vec(),
+                SigningEventResponseType::SignerRound1SigningPackage,
+            )
+            .await
+        {
             error!("Error gossiping round 1 to peers {:?}", e);
             let _ = self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         Ok(())
-    }
-
-    pub(crate) async fn gossip_round1_to_peers(
-        &mut self,
-        round1_signing_package: Round1SigningPackage,
-    ) -> Result<(), Error> {
-        let Round1SigningPackage { signing_session_id, psbt, identifier } = round1_signing_package;
-        let fut = || async {
-            // get all connected peers
-            let connected_peers = self.get_all_peers_handle().await?;
-            info!(
-                ">>>>>>>>>>> [GOSSIP_ROUND1] number of peers connected: {:?}",
-                connected_peers.len()
-            );
-
-            // Broadcast signing round 1 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
-                    let resp = PeerMessageResponse::Signing(SigningResponse {
-                        response_type: SigningEventResponseType::SignerRound1SigningPackage,
-                        identifier: identifier.clone(),
-                        signing_session_id: signing_session_id.clone(),
-                        psbt: psbt.clone(),
-                    });
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
-                }
-            }
-            Ok(())
-        };
-
-        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     /// A signer processes round 1 signing packages
@@ -647,10 +638,13 @@ where
         }
 
         // try to generate signing package
-        if let Ok(sign_payload) = self.get_to_sign_package(signing_session_id.clone()).await {
+        if let Ok(to_sign_payload) = self.get_to_sign_package(signing_session_id.clone()).await {
             // we should add the cord partial sig
             let cord_round2 = self
-                .get_round2_signing_package(signing_session_id.clone(), sign_payload.psbt.clone())
+                .get_round2_signing_package(
+                    signing_session_id.clone(),
+                    to_sign_payload.psbt.clone(),
+                )
                 .await?;
             self.new_round2_signing_package(
                 self.personal_frost_identifier.serialize().to_vec(),
@@ -662,14 +656,21 @@ where
             // if we can, we go to round 2
             let _ = self.insert_signing_state(session_id, SigningState::Round2);
             // if ok, send to all peers
-            if let Err(e) = self.gossip_round2_to_peers(sign_payload.clone(), identifier).await {
+            if let Err(e) = self
+                .gossip_to_peers(
+                    to_sign_payload.clone(),
+                    identifier,
+                    SigningEventResponseType::SignerRound2SigningPackage,
+                )
+                .await
+            {
                 error!("[COORDINATOR PROCESS_ROUND1] Error gossiping round 2 to peers {:?}", e);
                 let _ = self.insert_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
             info!(
                 ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers {:?}",
-                sign_payload
+                to_sign_payload
             );
         }
 
@@ -677,34 +678,6 @@ where
     }
 
     // ====================================== 2 =========================================
-
-    pub(crate) async fn gossip_round2_to_peers(
-        &mut self,
-        sign_payload: SignPayload,
-        frost_identifier: Vec<u8>,
-    ) -> Result<(), Error> {
-        let SignPayload { signing_session_id, psbt } = sign_payload;
-
-        let fut = || async {
-            // get all connected peers
-            let connected_peers = self.get_all_peers_handle().await?;
-            // Broadcast signing round 2 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
-                    let resp = PeerMessageResponse::Signing(SigningResponse {
-                        response_type: SigningEventResponseType::SignerRound2SigningPackage,
-                        identifier: frost_identifier.clone(),
-                        signing_session_id: signing_session_id.clone(),
-                        psbt: psbt.clone(),
-                    });
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
-                }
-            }
-            Ok(())
-        };
-
-        retry_exec(fut, 3, Duration::from_secs(1)).await
-    }
 
     /// A signer processes round 2 signing request
     /// Note that since this is a request idenfitier has no use
@@ -790,7 +763,6 @@ where
             warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] is_round2 {:?}", is_round2);
             return Ok(());
         }
-
         if !self.is_coordinator() {
             warn!(
                 ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] we are not the coordinator {:?}",
