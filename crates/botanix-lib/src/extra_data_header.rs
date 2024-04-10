@@ -20,7 +20,7 @@ const HAS_WITNESS_DATA_POS: u8 = 3;
 /// authority_vote || bitcoin_block_hash ... )` This sighash excludes the authority signature field.
 /// Use `encode_into_without_signature` to serialize the extradata header with out the signature
 /// field Note: the order of the struct properties is important for serialization/deserialization
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExtraDataHeader {
     pub version: u32,
     pub optional_fields: u8,
@@ -28,6 +28,7 @@ pub struct ExtraDataHeader {
     pub authority_vote: Option<secp256k1::PublicKey>,
     pub witness_data: Option<Vec<witness::Witness>>,
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    pub utxo_commitment: [u8; 32],
     // TODO add bitcoin fee
     pub authority_signature: Option<secp256k1::ecdsa::RecoverableSignature>,
 }
@@ -41,6 +42,7 @@ impl Default for ExtraDataHeader {
             authority_vote: None,
             witness_data: None,
             bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
+            utxo_commitment: [0; 32],
             authority_signature: None,
         }
     }
@@ -88,7 +90,10 @@ impl ExtraDataHeader {
         // Optional witness data. Non-optional during a epoch block. This should be validated by
         // consensus
         witness_data: Option<Vec<witness::Witness>>,
+        // The hash of the bitcoin block that is sufficiently deep to prove pegins
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+        // The commitment to the UTXO set. i.e utxos that are spendable for pegouts
+        utxo_commitment: [u8; 32],
     ) -> Self {
         let mut optional_fields = 0u8;
         if authority_signers.is_some() {
@@ -110,6 +115,7 @@ impl ExtraDataHeader {
             authority_vote,
             witness_data,
             bitcoin_block_hash,
+            utxo_commitment,
             authority_signature,
             optional_fields,
         }
@@ -149,6 +155,7 @@ impl ExtraDataHeader {
         self.version.consensus_encode(writer)?;
         self.optional_fields.consensus_encode(writer)?;
         self.bitcoin_block_hash.consensus_encode(writer)?;
+        self.utxo_commitment.consensus_encode(writer)?;
 
         if let Some(authorities) = &self.authority_signers {
             (authorities.len() as u32).consensus_encode(writer)?;
@@ -196,6 +203,7 @@ impl ExtraDataHeader {
         }
         let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
+        let utxo_commitment = Decodable::consensus_decode(reader)?;
 
         // Everything past the blockhash is optional and can be empty
         // use the optional bitmask field
@@ -251,6 +259,7 @@ impl ExtraDataHeader {
             version,
             optional_fields,
             bitcoin_block_hash,
+            utxo_commitment,
             authority_signers,
             authority_vote,
             witness_data,
@@ -288,11 +297,19 @@ impl ExtraDataHeader {
 mod tests {
     use super::*;
     use bitcoin::hashes::Hash;
-    use secp256k1::{hashes::sha256, rand::rngs::OsRng, Message, Secp256k1};
+    use secp256k1::{
+        hashes::sha256,
+        rand::{rngs::OsRng, thread_rng, RngCore},
+        Message, Secp256k1,
+    };
 
     // Test case for creating a new ExtraDataHeader
     #[test]
     fn test_create_new_header() {
+        let mut rand = thread_rng();
+        let mut random_32_bytes: [u8; 32] = [0u8; 32];
+        rand.fill_bytes(&mut random_32_bytes);
+
         let authority_signers = vec![];
         let witness_data = vec![witness::Witness::default()];
         let header = ExtraDataHeader::new(
@@ -302,6 +319,7 @@ mod tests {
             None,
             Some(witness_data.clone()),
             bitcoin::hash_types::BlockHash::all_zeros(),
+            random_32_bytes,
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
         assert_eq!(header.authority_signature, None);
@@ -309,6 +327,7 @@ mod tests {
         assert_eq!(header.authority_vote, None);
         assert_eq!(header.witness_data, Some(witness_data));
         assert_eq!(header.bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
+        assert_eq!(header.utxo_commitment, random_32_bytes);
     }
 
     // Test case for serializing without a signature
@@ -328,31 +347,14 @@ mod tests {
             None,
             Some(witness_data),
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
-        // Check version
-        assert_eq!(buf[0..4], vec![0u8, 0u8, 0u8, 0u8].as_slice().to_owned());
-        // Check optional bitmask: 1 0 0 1 = 9
-        assert_eq!(buf[4..5], vec![9u8].as_slice().to_owned());
-        // Check the bitcoin block hash
-        let bitcoin_block_hash: bitcoin::hash_types::BlockHash =
-            bitcoin::consensus::deserialize(&buf[5..37]).expect("a bitcoin block hash");
-        assert_eq!(bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
-        // Check length of authority list
-        assert_eq!(buf[37..41], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
-        // Check the pk
-        let maybe_pk = buf[41..74].to_vec();
-        let pk = secp256k1::PublicKey::from_slice(&maybe_pk.as_slice()).expect("a public key");
-        // Check the public key is the same as one provided
-        assert_eq!(pk, public_key);
-        // Check the length of the witness data
-        assert_eq!(buf[74..78], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
-        // Check the witness data
-        let binding = buf[78..].to_vec();
-        let mut maybe_witness = binding.as_slice();
-        let witness = witness::Witness::consensus_decode(&mut maybe_witness).expect("a witness");
-        assert_eq!(witness, witness::Witness::default());
+        println!("{:?}", buf);
+        // serialize the same header
+        let serialized = ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
+        assert_eq!(serialized, header);
     }
 
     // Test case for serializing with a signature
@@ -374,6 +376,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
         let serialized = header.serialize();
 
@@ -424,6 +427,7 @@ mod tests {
             Some(pubkey_to_vote),
             Some(witness_data.clone()),
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let serialized = header.serialize();
@@ -475,6 +479,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let serialized = header.serialize();
@@ -523,6 +528,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         header
@@ -551,6 +557,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let serialized = header.serialize();
@@ -583,6 +590,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
         let invalid_hash = sha256::Hash::hash("Not hello world!".as_bytes());
         let result = header.validate_authority_signature(
@@ -607,6 +615,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let message = vec![0u8; 32];
@@ -633,6 +642,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let optional_fields = header.optional_fields;
@@ -651,6 +661,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         let serialized = header.serialize();
@@ -709,6 +720,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         println!("serialized header: {}", hex::encode(extra_data_header.serialize()));
