@@ -173,6 +173,16 @@ where
     ) -> SigningState {
         *self.signing_states.entry(session_id).or_insert(signing_state)
     }
+
+    /// Inserts a signing state into the state machine
+    pub(crate) fn insert_signing_state(
+        &mut self,
+        session_id: [u8; 32],
+        signing_state: SigningState,
+    ) {
+        self.signing_states.insert(session_id, signing_state);
+    }
+
 }
 
 impl<Client> SigningStateMachine<Client>
@@ -480,7 +490,7 @@ where
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
-        let _ = self.get_or_insert_signing_state(session_id, SigningState::Initial);
+        let _ = self.insert_signing_state(session_id, SigningState::Initial);
         info!(">>>>>>>>>>> [START NEW SIGNING SESSION]");
 
         // As the cord we generate round 1 nonces and save them
@@ -495,13 +505,12 @@ where
         .await?;
 
         // send to all other peers
+        let _ = self.insert_signing_state(session_id, SigningState::Round1);
         if let Err(e) = self.gossip_round1_to_peers(signing_round1_package).await {
             error!("Error gossiping round 1 to peers {:?}", e);
-            let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+            let _ = self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
-        let _ = self.get_or_insert_signing_state(session_id, SigningState::Round1);
-
         Ok(())
     }
 
@@ -546,7 +555,7 @@ where
         if is_round2 {
             return Ok(());
         } else {
-            self.get_or_insert_signing_state(session_id, SigningState::Round1);
+            self.insert_signing_state(session_id, SigningState::Round1);
         }
 
         info!(
@@ -566,7 +575,7 @@ where
                 Ok(signing_package_round1) => signing_package_round1,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+                    let _ = self.insert_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
@@ -604,16 +613,22 @@ where
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
-
+        info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] session id {:?}", session_id);
+        info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] signing states {:?}", self.signing_states);
         let is_round1 =
             self.signing_states.get(&session_id).map(|state| state.is_round1()).unwrap_or_default();
-
         // return if we are not in round 1 or not a coordinator
-        if !is_round1 || !self.is_coordinator() {
+        if !is_round1 {
+            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] is_round1 {:?}", is_round1);
             return Ok(());
         }
+        if !self.is_coordinator() {
+            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] we are not the coordinator {:?}", self.is_coordinator());
+            return Ok(());
+        }
+
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND1] identifiers my peer id: {:?}, other peerid {:?}",
+            ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] identifiers my peer id: {:?}, other peerid {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -628,7 +643,7 @@ where
             .new_round1_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
             .await
         {
-            error!("Error adding round 1 signing package {:?}", e);
+            error!("[COORDINATOR PROCESS_ROUND1] Error adding round 1 signing package {:?}", e);
             return Ok(());
             // let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
             // return Err(e);
@@ -648,15 +663,15 @@ where
             .await?;
 
             // if we can, we go to round 2
-            let _ = self.get_or_insert_signing_state(session_id, SigningState::Round2);
+            let _ = self.insert_signing_state(session_id, SigningState::Round2);
             // if ok, send to all peers
             if let Err(e) = self.gossip_round2_to_peers(sign_payload.clone(), identifier).await {
-                error!("Error gossiping round 2 to peers {:?}", e);
-                let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+                error!("[COORDINATOR PROCESS_ROUND1] Error gossiping round 2 to peers {:?}", e);
+                let _ = self.insert_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
             info!(
-                ">>>>>>>>>>> [PROCESS_ROUND1] to sign payload send to signers {:?}",
+                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers {:?}",
                 sign_payload
             );
         }
@@ -724,7 +739,7 @@ where
                 Ok(signing_package_round2) => signing_package_round2,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+                    let _ = self.insert_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
@@ -789,7 +804,7 @@ where
             .await
         {
             error!("Error adding round 2 signing package {:?}", e);
-            let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
+            let _ = self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] round 2 added");
@@ -801,7 +816,7 @@ where
             )) {
                 error!("Error sending finalized signature {:?}", e);
             }
-            let _ = self.get_or_insert_signing_state(session_id, SigningState::Finalized);
+            let _ = self.insert_signing_state(session_id, SigningState::Finalized);
         }
 
         Ok(())
