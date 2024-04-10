@@ -6,7 +6,7 @@ use super::{
 };
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
 use bitcoin::Address;
-use client::{BtcServerClient, Round1SigningPackage, Round2SigningPackage};
+use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
 
@@ -114,14 +114,14 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
 
     // Round 1 signing
     // Signers will add their signing commitments to the psbt (including the coordinator)
-    let mut round1_signing_commitments: Vec<Round1SigningPackage> = vec![];
+    let mut round1_signing_commitments: Vec<SigningPackage> = vec![];
     for (index, client) in clients.iter_mut().enumerate() {
         // skip the coordinator here
         if coordinator_index == index {
             continue;
         }
         let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest{
                 psbt: original_psbt.clone(),
                 signing_session_id: signing_session_id.to_vec(),
             }))
@@ -150,14 +150,14 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         .into_inner();
 
     // Signers should add their partial sigs to the psbt for each input
-    let mut round2_signing_commitments: Vec<Round2SigningPackage> = vec![];
+    let mut round2_signing_commitments: Vec<SigningPackage> = vec![];
     for (index, client) in clients.iter_mut().enumerate() {
         // skip the coordinator here
         if coordinator_index == index {
             continue;
         }
         let c_signing2 = client
-            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
+            .get_round2_signing_package(tonic::Request::new(SigningPackageRequest {
                 psbt: signing_package.clone().psbt,
                 signing_session_id: signing_session_id.to_vec(),
             }))
@@ -211,10 +211,10 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
 
     // Round 1 signing
     // Signers will add their signing commitments to the psbt
-    let mut round1_signing_commitments: Vec<Round1SigningPackage> = vec![];
+    let mut round1_signing_commitments: Vec<SigningPackage> = vec![];
     for (_, client) in clients.iter_mut().enumerate() {
         let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::Round1SigningPackageRequest {
+            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
                 psbt: original_psbt.clone(),
                 signing_session_id: signing_session_id.to_vec(),
             }))
@@ -242,7 +242,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         .into_inner();
 
     // Signers should add their partial sigs to the psbt for each input
-    let mut round2_signing_commitments: Vec<Round2SigningPackage> = vec![];
+    let mut round2_signing_commitments: Vec<SigningPackage> = vec![];
     for (_, client) in clients.iter_mut().enumerate() {
         let c_signing2 = client
             .get_round2_signing_package(tonic::Request::new(client::SignPayload {

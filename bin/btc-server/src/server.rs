@@ -130,7 +130,7 @@ impl rpc::BtcServer for App {
     async fn get_psbt(
         &self,
         req: tonic::Request<rpc::MakeTxRequest>,
-    ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         info!("Received make tx request: {:?}", req);
         let req = req.into_inner();
@@ -187,7 +187,9 @@ impl rpc::BtcServer for App {
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
-        let res = tonic::Response::new(rpc::SignPayload {
+        let res = tonic::Response::new(rpc::SigningPackage {
+            // identifier really doent matter here.
+            identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
         });
@@ -197,7 +199,7 @@ impl rpc::BtcServer for App {
     async fn get_to_sign_package(
         &self,
         req: tonic::Request<rpc::ToSignRequest>,
-    ) -> Result<tonic::Response<rpc::SignPayload>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
         info!("Received to sign package request, signing session id: {:?}", req.signing_session_id);
@@ -212,7 +214,9 @@ impl rpc::BtcServer for App {
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
-        let res = tonic::Response::new(rpc::SignPayload {
+        let res = tonic::Response::new(rpc::SigningPackage {
+            // indentifier really doent matter here.
+            identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
         });
@@ -221,7 +225,7 @@ impl rpc::BtcServer for App {
 
     async fn new_round1_signing_package(
         &self,
-        req: tonic::Request<rpc::Round1SigningPackage>,
+        req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
@@ -249,7 +253,7 @@ impl rpc::BtcServer for App {
 
     async fn new_round2_signing_package(
         &self,
-        req: tonic::Request<rpc::Round2SigningPackage>,
+        req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
@@ -427,8 +431,8 @@ impl rpc::BtcServer for App {
     /// Endpoint responds with a nonce commitments for a ONE particular signings session
     async fn get_round1_signing_package(
         &self,
-        req: tonic::Request<rpc::Round1SigningPackageRequest>,
-    ) -> Result<tonic::Response<rpc::Round1SigningPackage>, tonic::Status> {
+        req: tonic::Request<rpc::SigningPackageRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
         info!("Received round1 signing package request");
@@ -449,7 +453,7 @@ impl rpc::BtcServer for App {
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
-        let res = rpc::Round1SigningPackage {
+        let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
@@ -460,8 +464,8 @@ impl rpc::BtcServer for App {
 
     async fn get_round2_signing_package(
         &self,
-        req: tonic::Request<rpc::SignPayload>,
-    ) -> Result<tonic::Response<rpc::Round2SigningPackage>, tonic::Status> {
+        req: tonic::Request<rpc::SigningPackageRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
         info!("Received round2 signing package request");
@@ -478,7 +482,7 @@ impl rpc::BtcServer for App {
             .map_err(|e| internal!("Failed to get round2 signing package: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
-        let res = rpc::Round2SigningPackage {
+        let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
