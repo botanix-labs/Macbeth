@@ -117,7 +117,8 @@ impl Consensus for BeaconConsensus {
 /// This must be 32 bytes or fewer; formally Hx.
 fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError> {
     // Botanix consensus rules allows for large extra data returning ok here till we have an upper
-    // bound for v1 if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
+    // bound for v1
+    // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     // } else {
     //     Ok(())
