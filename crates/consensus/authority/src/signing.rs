@@ -182,7 +182,6 @@ where
     ) {
         self.signing_states.insert(session_id, signing_state);
     }
-
 }
 
 impl<Client> SigningStateMachine<Client>
@@ -579,6 +578,8 @@ where
                     return Err(e);
                 }
             };
+        // Update signing state
+        self.insert_signing_state(session_id, SigningState::Round2);
 
         // get coordinator
         let coordinator = self.get_coordinator().await?;
@@ -623,7 +624,10 @@ where
             return Ok(());
         }
         if !self.is_coordinator() {
-            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] we are not the coordinator {:?}", self.is_coordinator());
+            warn!(
+                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] we are not the coordinator {:?}",
+                self.is_coordinator()
+            );
             return Ok(());
         }
 
@@ -719,11 +723,21 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not peer and not in round 2
-        if !is_round2 || self.is_coordinator() {
+        if !is_round2 {
+            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] is_round2 {:?}", is_round2);
             return Ok(());
         }
+
+        if self.is_coordinator() {
+            warn!(
+                ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] we are the coordinator {:?}",
+                self.is_coordinator()
+            );
+            return Ok(());
+        }
+
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND2] identifiers {:?} {:?}",
+            ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] identifiers {:?} {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -743,12 +757,15 @@ where
                     return Err(e);
                 }
             };
-        info!(">>>>>>>>>>> [PROCESS_ROUND2] signing_package_round2 {:?}", signing_package_round2);
+        info!(
+            ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2 {:?}",
+            signing_package_round2
+        );
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator ?
         if coordinator.is_none() {
-            warn!("No coordinator found");
+            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] No coordinator found");
             return Ok(());
         }
 
@@ -783,9 +800,19 @@ where
             self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
 
         // return if we are not in round 2 or not a coordinator
-        if !is_round2 || !self.is_coordinator() {
+        if !is_round2 {
+            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] is_round2 {:?}", is_round2);
             return Ok(());
         }
+
+        if !self.is_coordinator() {
+            warn!(
+                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] we are not the coordinator {:?}",
+                self.is_coordinator()
+            );
+            return Ok(());
+        }
+
         info!(
             ">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] identifier {:?} {:?}",
             self.personal_frost_identifier,
@@ -803,7 +830,7 @@ where
             .new_round2_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
             .await
         {
-            error!("Error adding round 2 signing package {:?}", e);
+            error!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] Error adding round 2 signing package {:?}", e);
             let _ = self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
