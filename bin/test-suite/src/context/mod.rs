@@ -1,10 +1,12 @@
+use std::path::PathBuf;
+
+use anyhow::{Context as AnyhowContext, Result};
+use url::Url;
+
 use crate::{
     config::{CliArgs, Config},
     suite::RunSuite,
 };
-use anyhow::{Context as AnyhowContext, Result};
-use std::path::PathBuf;
-use url::Url;
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
@@ -17,8 +19,7 @@ pub struct GlobalContext {
     pub max_signers: u16,
     pub btc_network: String,
     pub bitcoind_url: Url,
-    pub bitcoind_user: String,
-    pub bitcoind_pass: String,
+    pub bitcoind_cookie: PathBuf,
 }
 
 impl GlobalContext {
@@ -45,8 +46,7 @@ impl GlobalContext {
             max_signers: frost_max_signers,
             btc_network: args.btc_network,
             bitcoind_url: args.bitcoind_url,
-            bitcoind_user: args.bitcoind_user,
-            bitcoind_pass: args.bitcoind_pass,
+            bitcoind_cookie: args.bitcoind_cookie,
         })
     }
 }

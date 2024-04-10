@@ -362,8 +362,7 @@ start-test-suite:
 	--jwt-dir "${JWT_DIR}" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-user "${BITCOIND_USER}" \
-	--bitcoind-pass "${BITCOIND_PWD}" \
+	--bitcoind-cookie "${BITCOIND_COOKIE}" \
 	--min-signers 3 \
 	--max-signers 4
 
@@ -380,8 +379,7 @@ start-btc-server-1:
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-user "${BITCOIND_USER}" \
-	--bitcoind-pass "${BITCOIND_PWD}" \
+	--bitcoind-cookie "${BITCOIND_COOKIE}" \
 	--jwt-secret "${NODE_1_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 
@@ -419,8 +417,7 @@ start-poa-server-1:
 	--btc-server "localhost:8080" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
-	--bitcoind.username "${BITCOIND_USER}" \
-	--bitcoind.password "${BITCOIND_PWD}" \
+	--bitcoind.cookie "${BITCOIND_COOKIE}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
@@ -443,8 +440,7 @@ start-poa-server-2:
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
-	--bitcoind.username "${BITCOIND_USER}" \
-	--bitcoind.password "${BITCOIND_PWD}" \
+	--bitcoind.cookie "${BITCOIND_COOKIE}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \

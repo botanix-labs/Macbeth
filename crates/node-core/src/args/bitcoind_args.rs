@@ -7,35 +7,25 @@ use url::Url;
 #[clap(next_help_heading = "Bitcoind")]
 
 pub struct BitcoindArgs {
-    /// Btcd url
+    /// bitcoind RPC url
     ///
     /// The url of the bitcoind server.
     #[arg(long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL")]
     pub url: Url,
 
-    /// Btcd username
+    /// bitcoind RPC cookie file path
     ///
-    /// The username of the bitcoind server.
+    /// The path of the cookie of the bitcoind server.
     #[arg(
-        long = "bitcoind.username",
-        name = "bitcoind.username",
-        value_name = "BITCOIND_USERNAME"
+        long = "bitcoind.cookie",
+        name = "bitcoind.cookie",
+        value_name = "BITCOIND_COOKIE"
     )]
-    pub username: String,
-
-    /// Btcd password
-    ///
-    /// The password of the bitcoind server.
-    #[arg(
-        long = "bitcoind.password",
-        name = "bitcoind.password",
-        value_name = "BITCOIND_PASSWORD"
-    )]
-    pub password: String,
+    pub cookie: String,
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {
     fn from(args: BitcoindArgs) -> Self {
-        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password.clone())
+        BitcoindConfig::new(args.url, args.cookie)
     }
 }

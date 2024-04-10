@@ -37,6 +37,7 @@ fn spawn_btc_server(
     let frost_min_signers = global_context.min_signers.to_string();
 
     let command = "cargo";
+    let rpccookie = global_context.bitcoind_cookie.display().to_string();
     let args = vec![
         "run",
         "--",
@@ -58,10 +59,8 @@ fn spawn_btc_server(
         jwt_secret_file.as_str(),
         "--bitcoind-url",
         global_context.bitcoind_url.as_str(),
-        "--bitcoind-user",
-        global_context.bitcoind_user.as_str(),
-        "--bitcoind-pass",
-        global_context.bitcoind_pass.as_str(),
+        "--bitcoind-cookie",
+        rpccookie.as_str(),
         "--fee-rate-diff-percentage",
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",

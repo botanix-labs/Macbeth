@@ -133,15 +133,14 @@ impl App {
             );
             info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
         }
-        let bitcoind_user = config.bitcoind_user.clone();
-        let bitcoind_pass = config.bitcoind_pass.clone();
+        let bitcoind_cookie = config.bitcoind_cookie.clone();
         let host = config.bitcoind_url.host_str().unwrap_or_default().to_owned();
         let port = config.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
         let bitcoind_url = format!("{}:{}", host, port);
 
         let bitcoind_client = bitcoincore_rpc::Client::new(
             &bitcoind_url,
-            Auth::UserPass(bitcoind_user, bitcoind_pass),
+            Auth::CookieFile(bitcoind_cookie),
         )
         .expect("bitcoind client");
 
@@ -285,10 +284,7 @@ struct Config {
     bitcoind_url: Url,
     #[arg(long)]
     /// bitcoind user
-    bitcoind_user: String,
-    #[arg(long)]
-    /// bitcoind pass
-    bitcoind_pass: String,
+    bitcoind_cookie: PathBuf,
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     pub fee_rate_diff_percentage: u32,
@@ -429,8 +425,7 @@ mod test {
                 jwt_secret: None,
                 bitcoind_url: Url::parse("http://localhost:18443")
                     .expect("Bitcoind url to be valid"),
-                bitcoind_user: "foo".to_string(),
-                bitcoind_pass: "bar".to_string(),
+                bitcoind_cookie: ".cookie".into(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
             },
