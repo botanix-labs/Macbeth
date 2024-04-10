@@ -544,9 +544,10 @@ where
     }
 
     /// A signer processes round 1 signing packages
+    /// Note: since this is a request idenfitier has no use
     pub(crate) async fn signer_process_round1(
         &mut self,
-        identifier: Vec<u8>,
+        _identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -560,17 +561,6 @@ where
             return Ok(());
         } else {
             self.insert_signing_state(session_id, SigningState::Round1);
-        }
-
-        info!(
-            ">>>>>>>>>>> [PROCESS_ROUND1] identifiers {:?} {:?}",
-            self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
-        );
-
-        // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            return Ok(());
         }
 
         // add the transmitted round 1 package data
@@ -654,8 +644,6 @@ where
         {
             error!("[COORDINATOR PROCESS_ROUND1] Error adding round 1 signing package {:?}", e);
             return Ok(());
-            // let _ = self.get_or_insert_signing_state(session_id, SigningState::Failed);
-            // return Err(e);
         }
 
         // try to generate signing package
@@ -719,9 +707,10 @@ where
     }
 
     /// A signer processes round 2 signing request
+    /// Note that since this is a request idenfitier has no use
     pub(crate) async fn signer_process_round2(
         &mut self,
-        identifier: Vec<u8>,
+        _identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -741,17 +730,6 @@ where
                 ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] we are the coordinator {:?}",
                 self.is_coordinator()
             );
-            return Ok(());
-        }
-
-        info!(
-            ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] identifiers {:?} {:?}",
-            self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
-        );
-
-        // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
             return Ok(());
         }
 
