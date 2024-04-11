@@ -5,7 +5,7 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader};
+use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader, HeaderExt};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
@@ -184,8 +184,26 @@ where
                             continue;
                         }
                     };
-
+                    // Validate utxo commitment
+                    let utxo_commitment: [u8; 32] =
+                        match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
+                            Ok(utxo_commitment) => utxo_commitment,
+                            Err(e) => {
+                                error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
+                                continue;
+                            }
+                        }
+                        .merkle_root
+                        .try_into()
+                        .expect("valid UTXO commitment");
+                    info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
                     let header = sealed_block.header.clone();
+                    let edh = header.deserialize_extra_data_header().expect("valid extra data");
+                    if edh.utxo_commitment != utxo_commitment {
+                        error!(target: "consensus::authority", "UTXO commitment mismatch");
+                        continue;
+                    }
+
                     let (best_block, _best_hash) =
                         storage.get_best_block_and_hash().expect("best block exists");
                     if header.is_poa_epoch() {

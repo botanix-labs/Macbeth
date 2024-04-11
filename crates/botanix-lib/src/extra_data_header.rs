@@ -15,7 +15,7 @@ const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
 
-trait HeaderExt {
+pub trait HeaderExt {
     fn deserialize_extra_data_header(
         &self,
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;

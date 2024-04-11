@@ -271,6 +271,8 @@ where
             .try_into()
             .expect("valid UTXO commitment");
 
+        info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
+
         let mut storage = self.storage.write().await;
         let new_header = match storage.build_and_validate_header(
             &bundle_state,
