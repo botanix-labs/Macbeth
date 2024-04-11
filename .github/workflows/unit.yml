@@ -20,6 +20,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  e2e:
+    name: test / e2e
+    runs-on: botanix-actions-runner
+    env:
+      RUST_BACKTRACE: 1
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Run e2e tests
+        run: |
+          make start-test-suite
+
+  integration:
+    name: Start Docker container for bitcoind
+    runs-on: botanix-actions-runner
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4 
+      - name: Create bitcoin data directory
+        run: mkdir $HOME/bitcoin_data
+
+      - name: Copy bitcoin.conf to bitcoin data directory
+        run: cp ./bitcoin.conf $HOME/bitcoin_data
+
+      - name: Start bitcoind Docker container
+        run: |
+          docker run --rm --name bitcoind -d \
+            --volume $HOME/bitcoin_data:/root/.bitcoin \
+            -p 127.0.0.1:18443:18443 \
+            farukter/bitcoind:regtest
+
+      - name: Wait for bitcoind to be ready
+        run: |
+          until docker exec bitcoind bitcoin-cli getblockchaininfo &> /dev/null; do
+            echo "Waiting for bitcoind to start..."
+            sleep 5
+          done
+
   test:
     name: test / ethereum
     runs-on: botanix-actions-runner-vm-1

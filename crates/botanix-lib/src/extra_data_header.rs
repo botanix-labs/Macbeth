@@ -368,11 +368,28 @@ mod tests {
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
-        println!("{:?}", buf);
-        // serialize the same header
-        let serialized =
-            ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
-        assert_eq!(serialized, header);
+        // Check version
+        assert_eq!(buf[0..4], vec![0u8, 0u8, 0u8, 0u8].as_slice().to_owned());
+        // Check optional bitmask: 1 0 0 1 = 9
+        assert_eq!(buf[4..5], vec![9u8].as_slice().to_owned());
+        // Check the bitcoin block hash
+        let bitcoin_block_hash: bitcoin::hash_types::BlockHash =
+            bitcoin::consensus::deserialize(&buf[5..37]).expect("a bitcoin block hash");
+        assert_eq!(bitcoin_block_hash, bitcoin::hash_types::BlockHash::all_zeros());
+        // Check length of authority list
+        assert_eq!(buf[37..41], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
+        // Check the pk
+        let maybe_pk = buf[41..74].to_vec();
+        let pk = secp256k1::PublicKey::from_slice(maybe_pk.as_slice()).expect("a public key");
+        // Check the public key is the same as one provided
+        assert_eq!(pk, public_key);
+        // Check the length of the witness data
+        assert_eq!(buf[74..78], vec![1u8, 0u8, 0u8, 0u8].as_slice().to_owned());
+        // Check the witness data
+        let binding = buf[78..].to_vec();
+        let mut maybe_witness = binding.as_slice();
+        let witness = witness::Witness::consensus_decode(&mut maybe_witness).expect("a witness");
+        assert_eq!(witness, witness::Witness::default());
     }
 
     // Test case for serializing with a signature
