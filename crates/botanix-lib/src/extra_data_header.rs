@@ -5,6 +5,7 @@ use bitcoin::{
     hashes::Hash,
     secp256k1, witness,
 };
+use reth_primitives::Header;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
@@ -13,6 +14,22 @@ const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
+
+trait HeaderExt {
+    fn deserialize_extra_data_header(
+        &self,
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;
+}
+
+impl HeaderExt for Header {
+    fn deserialize_extra_data_header(
+        &self,
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError> {
+        let binding = self.extra_data.to_vec();
+        let mut extra_data = binding.as_slice();
+        Ok(ExtraDataHeader::deserialize(&mut extra_data)?)
+    }
+}
 
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
@@ -353,7 +370,8 @@ mod tests {
         header.encode_into_without_signature(&mut buf).unwrap();
         println!("{:?}", buf);
         // serialize the same header
-        let serialized = ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
+        let serialized =
+            ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
         assert_eq!(serialized, header);
     }
 
@@ -696,6 +714,17 @@ mod tests {
         edh.set_signature(signature);
         assert_eq!(edh.authority_signature.is_some(), true);
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
+    }
+
+    #[test]
+    fn deserialize_extension_trait(){
+        let mut header = Header::default();
+        let edh = ExtraDataHeader::default();
+        let serialized = edh.serialize();
+        header.extra_data = serialized.into();
+        let deserialized_edh = header.deserialize_extra_data_header().expect("Deserialization passed");
+
+        assert_eq!(deserialized_edh, edh);        
     }
 
     #[test]
