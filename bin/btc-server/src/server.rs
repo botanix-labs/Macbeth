@@ -100,6 +100,14 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    async fn abort_signing(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.abort_signing().await.map_err(|e| internal!("Failed to abort signing: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn finalize_signing(
         &self,
         req: tonic::Request<rpc::FinalizeSigningRequest>,

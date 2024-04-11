@@ -20,6 +20,7 @@ pub enum SigningError {
     Round1(SigningRound1Error),
     Round2(SigningRound2Error),
     Finalize(SigningFinalizeError),
+    Abort(SigningAbortError),
 }
 
 impl From<SigningError> for Error {
@@ -28,6 +29,7 @@ impl From<SigningError> for Error {
             SigningError::Round1(e) => Error::Signing(SigningError::Round1(e)),
             SigningError::Round2(e) => Error::Signing(SigningError::Round2(e)),
             SigningError::Finalize(e) => Error::Signing(SigningError::Finalize(e)),
+            SigningError::Abort(e) => Error::Signing(SigningError::Abort(e)),
         }
     }
 }
@@ -105,7 +107,26 @@ pub enum SigningFinalizeError {
     DbError(#[from] DbError),
 }
 
+#[derive(Debug, Error)]
+pub enum SigningAbortError {
+    #[error("missing key package")]
+    MissingKeyPackage,
+    #[error("internal DB error")]
+    DbError(#[from] DbError),
+}
+
 impl App {
+    pub(crate) async fn abort_signing(&self) -> Result<(), SigningAbortError> {
+        self.db.get_key_package()?.ok_or(SigningAbortError::MissingKeyPackage)?;
+
+        // Clear the signing nonces
+        let mut nonces_lock = self.frost_round1_nonces.lock().await;
+        nonces_lock.take();
+        assert!(nonces_lock.is_none());
+
+        Ok(())
+    }
+
     pub(crate) async fn get_round1_signing_package(
         &self,
         psbt: &mut Psbt,
