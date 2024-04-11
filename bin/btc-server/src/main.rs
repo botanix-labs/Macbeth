@@ -877,8 +877,8 @@ mod test {
 
     #[tokio::test]
     async fn should_add_signing_package_round1() {
-        let mut app_signer = setup();
-        let mut app_coordinator = setup();
+        let app_signer = setup();
+        let app_coordinator = setup();
         let signing_session_id = [0u8; 32];
         let (shares, pk_package) =
             trusted_dealer_setup(app_signer.min_signers, app_signer.max_signers);
@@ -954,6 +954,42 @@ mod test {
     //     //     Transaction { version: 2, lock_time: LockTime::ZERO, input: vec![], output: vec![]
     // };     // let psbt = Psbt::from_unsigned_tx(tx).expect("valid tx");
     // }
+    #[tokio::test]
+    async fn test_should_abort_signing() {
+        let app = setup();
+        let signing_session_id = [0u8; 32];
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        let mock_bitcoind = MockBitcoind::new();
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Add pegin utxo
+        let mut psbt = create_psbt(1);
+        let tx = psbt.clone().extract_tx();
+        // Add the utxo
+        let utxo = Utxo::new(
+            tx.input[0].previous_output,
+            psbt.inputs[0].witness_utxo.clone().expect("some"),
+            None,
+        );
+        app.add_pegin(&utxo).expect("valid pegin utxo");
+
+        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+            .await
+            .expect("valid nonce commits request");
+
+        let signing_nonces = app.frost_round1_nonces.lock().await.clone().unwrap();
+        assert_eq!(signing_nonces.len(), 1);
+        app.abort_signing().await.expect("valid abort request");
+
+        let signing_nonces = app.frost_round1_nonces.lock().await.clone();
+        assert!(signing_nonces.is_none());
+    }
+
     #[tokio::test]
     async fn test_get_all_utxos_empty() {
         let app = setup();

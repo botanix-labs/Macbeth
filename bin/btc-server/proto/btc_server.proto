@@ -28,6 +28,8 @@ service BtcServer {
 
     rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
 
+    rpc AbortSigning(Empty) returns (Empty) {}
+
     // only meant to be used by the cordinator
     rpc NewRound1SigningPackage(SigningPackage) returns (Empty) {}
 
