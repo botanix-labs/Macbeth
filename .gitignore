@@ -57,6 +57,9 @@ contracts/broadcast/**/dry-run/
 # Contracts Docs
 contracts/docs/
 
+# Root Dotenv file
+.env
+
 # Contracts Dotenv file
 contracts/.env
 
