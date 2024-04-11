@@ -92,7 +92,7 @@ mod tests {
         let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);
 
         // spawn start_task
-        let handle = tokio::spawn(async move {
+        let _handle = tokio::spawn(async move {
             sync_controller.start_task().await;
         });
 

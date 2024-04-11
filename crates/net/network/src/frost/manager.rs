@@ -29,7 +29,6 @@ impl FrostHandle {
 /// Frost Manager implementation
 #[derive(Debug)]
 pub struct FrostManager {
-    authority_index: u16,
     /// Network access.
     network: NetworkHandle,
     /// Subscriptions to all network related events.
@@ -62,7 +61,8 @@ impl FrostManager {
         network: NetworkHandle,
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
-        let FrostConfig { authority_index, authorities, min_signers: _, max_signers: _ } = config;
+        let FrostConfig { authority_index: _, authorities, min_signers: _, max_signers: _ } =
+            config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         //let id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
         let authority_peerid = authorities
@@ -71,7 +71,6 @@ impl FrostManager {
             .collect();
 
         Self {
-            authority_index: authority_index as u16,
             command_tx,
             command_rx: UnboundedReceiverStream::new(command_rx),
             network,

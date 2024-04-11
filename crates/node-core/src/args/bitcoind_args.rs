@@ -16,11 +16,7 @@ pub struct BitcoindArgs {
     /// bitcoind RPC cookie file path
     ///
     /// The path of the cookie of the bitcoind server.
-    #[arg(
-        long = "bitcoind.cookie",
-        name = "bitcoind.cookie",
-        value_name = "BITCOIND_COOKIE"
-    )]
+    #[arg(long = "bitcoind.cookie", name = "bitcoind.cookie", value_name = "BITCOIND_COOKIE")]
     pub cookie: String,
 }
 

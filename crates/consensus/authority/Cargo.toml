@@ -45,9 +45,6 @@ reth-btc-wallet.workspace = true
 btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
 
-## Ethereum
-ethers = "2.0.11"
-
 base64 = "0.22.0"
 
 # hex
@@ -70,9 +67,6 @@ secp256k1 = { workspace = true, features = [
 
 ### Grpc
 tonic = "0.11.0"
-
-## url
-url = "2.2"
 
 displaydoc = "0.2"
 

@@ -513,7 +513,7 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
-        assert_eq!(deserialized_header.authority_signature.is_some(), true);
+        assert!(deserialized_header.authority_signature.is_some());
         assert_eq!(
             deserialized_header.authority_signature.unwrap().to_standard(),
             signature.to_standard()
@@ -712,7 +712,7 @@ mod tests {
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         edh.set_signature(signature);
-        assert_eq!(edh.authority_signature.is_some(), true);
+        assert!(edh.authority_signature.is_some());
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 

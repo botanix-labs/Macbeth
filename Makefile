@@ -247,22 +247,6 @@ maxperf: ## Builds `reth` with the most aggressive optimisations.
 maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
 
-start-reth-server:
-	cd ./bin/reth && \
-	cargo run --bin reth node \
-	--chain botanix_testnet \
-	--disable-discovery \
-	--http \
-	--http.corsdomain "*" \
-	-vvv \
-	--metrics 127.0.0.1:9001 \
-	--authrpc.addr 127.0.0.1 \
-	--authrpc.port 8551 \
-	--datadir ${DB_DIR} \
-	--auto-mine \
-	--btc-server localhost:8080 \
-	--btc-block-source "https://mempool.space/signet/api"
-
 fmt:
 	cargo +nightly fmt
 
@@ -366,7 +350,6 @@ start-test-suite:
 	--min-signers 3 \
 	--max-signers 4
 
-
 start-btc-server-1:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
@@ -395,8 +378,7 @@ start-btc-server-2:
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-user "${BITCOIND_USER}" \
-	--bitcoind-pass "${BITCOIND_PWD}" \
+	--bitcoind-cookie "${BITCOIND_COOKIE}" \
 	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 

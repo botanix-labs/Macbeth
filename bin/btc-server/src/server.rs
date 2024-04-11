@@ -9,7 +9,7 @@ use util::{parse_eth_address, VerifyingKeyExt};
 
 use crate::{database::Utxo, rpc, util, App, SECP};
 
-const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
+const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
 macro_rules! badarg {
     ($($arg:tt)*) => {{

@@ -2564,14 +2564,14 @@ dependencies = [
 
 [[package]]
 name = "discv5"
-version = "0.3.1"
-source = "git+https://github.com/sigp/discv5?rev=f289bbd4c57d499bb1bdb393af3c249600a1c662#f289bbd4c57d499bb1bdb393af3c249600a1c662"
+version = "0.4.1"
+source = "git+https://github.com/sigp/discv5?rev=04ac004#04ac0042a345a9edf93b090007e5d31c008261ed"
 dependencies = [
  "aes 0.7.5",
  "aes-gcm",
  "arrayvec",
  "delay_map",
- "enr 0.9.1",
+ "enr",
  "fnv",
  "futures 0.3.30",
  "hashlink",
@@ -2587,7 +2587,6 @@ dependencies = [
  "socket2 0.4.10",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uint",
  "zeroize",
 ]
@@ -2787,9 +2786,9 @@ checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
 name = "enr"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe81b5c06ecfdbc71dd845216f225f53b62a10cb8a16c946836a3467f701d05b"
+checksum = "2a3d8dc56e02f954cac8eb489772c552c473346fc34f67412bb6244fd647f7e4"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -2800,24 +2799,6 @@ dependencies = [
  "rand 0.8.5",
  "rlp",
  "secp256k1 0.27.0",
- "serde",
- "sha3",
- "zeroize",
-]
-
-[[package]]
-name = "enr"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a3d8dc56e02f954cac8eb489772c552c473346fc34f67412bb6244fd647f7e4"
-dependencies = [
- "base64 0.21.7",
- "bytes",
- "hex",
- "k256",
- "log",
- "rand 0.8.5",
- "rlp",
  "serde",
  "sha3",
  "zeroize",
@@ -3174,7 +3155,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "const-hex",
- "enr 0.10.0",
+ "enr",
  "ethers-core",
  "futures-channel",
  "futures-core",
@@ -7014,7 +6995,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -7266,7 +7246,7 @@ version = "0.1.0-alpha.20"
 dependencies = [
  "alloy-rlp",
  "discv5",
- "enr 0.9.1",
+ "enr",
  "generic-array",
  "parking_lot 0.12.1",
  "rand 0.8.5",
@@ -7291,7 +7271,7 @@ dependencies = [
  "alloy-rlp",
  "async-trait",
  "data-encoding",
- "enr 0.9.1",
+ "enr",
  "linked_hash_set",
  "parking_lot 0.12.1",
  "reth-net-common",
@@ -7561,7 +7541,7 @@ dependencies = [
  "client",
  "criterion",
  "derive_more",
- "enr 0.9.1",
+ "enr",
  "ethers-core",
  "ethers-middleware",
  "ethers-providers",

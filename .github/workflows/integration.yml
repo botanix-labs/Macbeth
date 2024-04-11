@@ -11,15 +11,19 @@ on:
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
+  BITCOIN_NETWORK: regtest
+  BITCOIND_URL: http://localhost:18443
+  BITCOIND_COOKIE: foo
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+
   test:
     name: test / ethereum
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -29,8 +33,22 @@ jobs:
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Geth
-        run: .github/scripts/install_geth.sh
+      - name: Start BTC Server
+        run: |
+          cd ./bin/btc-server && \
+          cargo run --bin btc-server -- \
+          --identifier 0 \
+          --address 0.0.0.0:8080 \
+          --db "./db1" \
+          --min-signers 2 \
+          --max-signers 2 \
+          --toml ./config.toml \
+          --fee-rate-diff-percentage 30 \
+          --btc-network regtest \
+          --bitcoind-url http://localhost:18443 \
+          --bitcoind-cookie foo \
+          --jwt-secret "bin/btc-server/jwt.hex" \
+          --fall-back-fee-rate-sat-per-vbyte 5
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
@@ -47,7 +65,7 @@ jobs:
     # Only run sync tests in merge groups
     # if: github.event_name == 'merge_group'
     # runs-on:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
       # group: Reth
     env:
       RUST_LOG: info,sync=error
@@ -59,6 +77,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Start BTC Server
+        run: |
+          cd ./bin/btc-server && \
+          cargo run --bin btc-server -- \
+          --identifier 0 \
+          --address 0.0.0.0:8080 \
+          --db "./db1" \
+          --min-signers 2 \
+          --max-signers 2 \
+          --toml ./config.toml \
+          --fee-rate-diff-percentage 30 \
+          --btc-network regtest \
+          --bitcoind-url http://localhost:18443 \
+          --bitcoind-cookie foo \
+          --jwt-secret "bin/btc-server/jwt.hex" \
+          --fall-back-fee-rate-sat-per-vbyte 5
       - name: Run sync
         run: |
           cargo run --release --features jemalloc,min-error-logs --bin reth \
@@ -75,7 +111,7 @@ jobs:
 
   integration-success:
     name: integration success
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     if: always()
     needs: [test]
     timeout-minutes: 30

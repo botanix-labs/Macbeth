@@ -95,11 +95,8 @@ macro_rules! set_value {
             MockTransaction::Deposit(ref mut tx) => {
                 op_set_value!(tx, $this, new_value);
             }
-            MockTransaction::Eip2930 { ref mut $field, .. } => {
-                *$field = new_value;
-            }
             #[cfg(feature = "optimism")]
-            MockTransaction::Deposit(ref mut tx) => {
+            MockTransaction::Deposit(ref mut _tx) => {
                 op_set_value!(tx, $this, new_value);
             }
         }

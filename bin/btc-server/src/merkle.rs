@@ -1,12 +1,11 @@
 use rs_merkle::{algorithms::Sha256 as MerkleSha256, MerkleTree};
-use serde_cbor;
 use sha2::{Digest, Sha256};
 
 use crate::database::Utxo;
 
 pub fn hash_utxo(utxo: &Utxo) -> [u8; 32] {
     let utxo_bytes = serde_cbor::to_vec(utxo).expect("Failed to serialize UTXO");
-    Sha256::digest(&utxo_bytes).into()
+    Sha256::digest(utxo_bytes).into()
 }
 
 pub fn construct_merkle_tree(hashes: &[Vec<u8>]) -> MerkleTree<MerkleSha256> {

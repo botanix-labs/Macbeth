@@ -1,4 +1,4 @@
-///! Extended bitcoin server client with authentication
+//! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
 use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,7 +12,7 @@ use client::{
     SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
-const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
+const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
 fn to_u64(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH).unwrap().as_secs()
@@ -90,7 +90,7 @@ impl BtcServerExtendedClient {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();
-            let _ = jwt_secret.validate(jwt_token.clone()).unwrap();
+            jwt_secret.validate(jwt_token.clone()).unwrap();
             jwt_token
         })
     }
@@ -116,6 +116,7 @@ impl BtcServerExtendedClient {
 
 mod tests {
     use super::*;
+    use base64::decode as base64_decode;
 
     #[test]
     fn test_metadata_jwt_decode_encode() {

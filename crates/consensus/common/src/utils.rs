@@ -304,7 +304,7 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
 /// Validates that the authority was in turn when producing the block
 pub fn validate_inturn(
     header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
+    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     let singer_pk = recovery_authority(header)?;
     let signer_index = authority_signers
@@ -513,7 +513,7 @@ mod tests {
         header.number = 1;
 
         let sighash = create_authority_sighash(&mut header, &edh);
-        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let message = secp256k1::Message::from_slice(sighash.as_slice()).unwrap();
         let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &non_fed);
 
         edh.set_signature(signature);
@@ -588,9 +588,9 @@ mod tests {
         let mut current = Header::default();
 
         parent.number = 1;
-        parent.timestamp = 1704834442 as u64;
+        parent.timestamp = 1704834442_u64;
         current.number = 2;
-        current.timestamp = 1704834442 as u64 + 60;
+        current.timestamp = 1704834442_u64 + 60;
 
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
@@ -635,14 +635,14 @@ mod tests {
 
         assert!(validate_inturn(
             &header,
-            &vec![
+            &[
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
                 ),
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
                 ),
             ]
         )
@@ -654,14 +654,14 @@ mod tests {
 
         assert!(validate_inturn(
             &header,
-            &vec![
+            &[
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
                 ),
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
                 ),
             ]
         )

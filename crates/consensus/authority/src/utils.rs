@@ -1,3 +1,4 @@
+//! Botanix consensus utility functions
 use std::{io::Write, time::Duration};
 
 use bitcoin::{
@@ -208,7 +209,7 @@ fn get_pegout_data(log: Log, btc_network: bitcoin::Network) -> Option<PegoutData
 // TODO better name for this function
 pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
-    pegouts: &Vec<PegoutData>,
+    pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
 ) -> Result<SigningPackage, ProcessBotanixLogError> {
     let req = MakeTxRequest {
@@ -225,11 +226,11 @@ pub(crate) async fn get_psbt(
     match btc_server.get_psbt(req).await {
         Ok(response) => {
             // start the frost signing session
-            return Ok(response);
+            Ok(response)
         }
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-            return Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()));
+            Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()))
         }
     }
 }
@@ -257,7 +258,7 @@ async fn process_botanix_log(
     log: &Log,
     recent_bitcoin_block_height: u32,
     is_testnet: bool,
-    receipt_logs: &Vec<Log>,
+    receipt_logs: &[Log],
     btc_network: bitcoin::Network,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
@@ -265,7 +266,7 @@ async fn process_botanix_log(
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(&log, &receipt_logs)
+                let pegin_data = parse_pegin_reth_log_topic(log, receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
@@ -293,7 +294,7 @@ async fn process_botanix_log(
             Ok(GenesisContractEvents::BurnEvent) => {
                 // validate pegout
                 info!(target: "consensus::authority", "Validating pegout");
-                match parse_pegout_reth_log_topic(&log, btc_network) {
+                match parse_pegout_reth_log_topic(log, btc_network) {
                     Ok(parsed_pegout) => {
                         pegout = Some(parsed_pegout);
                     }
@@ -362,6 +363,7 @@ pub(crate) fn get_recent_block_height_or_zero(
     })
 }
 
+/// Returns the confirmation depth
 pub fn get_confirmation_depth(is_testnet: bool) -> u32 {
     match is_testnet {
         true => SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -369,6 +371,7 @@ pub fn get_confirmation_depth(is_testnet: bool) -> u32 {
     }
 }
 
+/// Returns in we are using testnet or not
 pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
@@ -397,18 +400,18 @@ pub(crate) fn deserialize_frost_peer_id(
     let peer_id_bytes: &[u8; 32] =
         id.as_slice().try_into().map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
 
-    let frost_id = frost_secp256k1_tr::Identifier::deserialize(&peer_id_bytes)
+    let frost_id = frost_secp256k1_tr::Identifier::deserialize(peer_id_bytes)
         .map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
 
     Ok(frost_id)
 }
 
-pub(crate) fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], FrostParseError> {
+pub(crate) fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], FrostParseError> {
     if session_id.len() != 32 {
         return Err(FrostParseError::InvalidSigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
-    session_id_array.copy_from_slice(&session_id);
+    session_id_array.copy_from_slice(session_id);
     Ok(session_id_array)
 }
 

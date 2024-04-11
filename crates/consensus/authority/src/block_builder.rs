@@ -65,9 +65,7 @@ where
         let payload_attr = EthPayloadBuilderAttributes::new(best_hash, payload_attributes);
 
         // start new payload
-        let payload_id =
-            engine_util::start_new_payload::<EthEngineTypes>(&self.payload_builder, payload_attr)
-                .await;
+        let payload_id = engine_util::start_new_payload(&self.payload_builder, payload_attr).await;
 
         if payload_id.is_err() {
             warn!(target: "consensus::authority", "Failed to start new payload");
@@ -77,10 +75,7 @@ where
         let payload_id = payload_id.expect("payload id exists");
         let best_transactions = match tokio::time::timeout(
             Duration::from_secs(5),
-            engine_util::best_transactions_from_payload::<EthEngineTypes>(
-                &self.payload_builder,
-                payload_id,
-            ),
+            engine_util::best_transactions_from_payload(&self.payload_builder, payload_id),
         )
         .await
         {
@@ -90,12 +85,11 @@ where
                 } else {
                     // retry once since payload might not be ready yet
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    let transactions =
-                        engine_util::best_transactions_from_payload::<EthEngineTypes>(
-                            &self.payload_builder,
-                            payload_id,
-                        )
-                        .await;
+                    let transactions = engine_util::best_transactions_from_payload(
+                        &self.payload_builder,
+                        payload_id,
+                    )
+                    .await;
 
                     if transactions.is_ok() {
                         transactions
@@ -210,7 +204,7 @@ where
 
                 let signing_session_id = crate::utils::generate_signing_session_id(&best_hash.0, &storage.authority).map_err(|e| {
                     error!(target: "consensus::authority", ?e, "Failed to generate signing session id");
-                    return;
+                    e
                 }).expect("valid signing session id");
 
                 match crate::utils::get_psbt(&mut self.btc_server, &pegouts, &signing_session_id)
@@ -240,8 +234,7 @@ where
                     Ok(Some(FrostNotificationMessage::FinalizedSignature(message))) => {
                         let psbt_result =
                             Psbt::deserialize(message.psbt.as_slice()).expect("valid psbt");
-                        let witness_data = get_witness_data_from_psbt(psbt_result);
-                        witness_data
+                        get_witness_data_from_psbt(psbt_result)
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
