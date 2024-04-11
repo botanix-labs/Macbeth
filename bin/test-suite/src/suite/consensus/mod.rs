@@ -36,10 +36,12 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // dkg tests
         run_test!(self, frost::test_dkg::dkg_flow);
-        // signing tests
+        // // signing tests
         run_test!(self, frost::test_signing::test_many_inputs_signing);
-        // eoa tests
+        // // eoa tests
         run_test!(self, frost::test_block_builder::block_builder);
+        // utxo commitment test
+        run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
         // frost e2e tests
         run_test!(self, frost::test_frost_e2e::frost_e2e);
 
