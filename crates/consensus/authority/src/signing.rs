@@ -1,7 +1,7 @@
 use crate::{
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotification, FrostNotificationMessage},
-    utils::{deserialize_frost_peer_id, parse_signing_session_id, retry_exec, FrostParseError},
+    utils::{deserialize_frost_peer_id, parse_signing_session_id, FrostParseError},
     Storage,
 };
 use client::{FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
@@ -13,7 +13,7 @@ use reth_network::frost::{
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{error, info, warn};
 
@@ -80,10 +80,7 @@ pub(crate) enum SigningState {
 impl SigningState {
     /// Returns true if the signing state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
-        match self {
-            SigningState::Initial | SigningState::Finalized | SigningState::Failed => false,
-            _ => true,
-        }
+        !matches!(self, SigningState::Initial | SigningState::Finalized | SigningState::Failed)
     }
     /// Returns true if we are in round 1 of the signing
     pub(crate) fn is_round1(&self) -> bool {
@@ -429,7 +426,7 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!("Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                Err(Error::FailedToGetConnectedPeersHandles)
             }
         }
     }
@@ -445,7 +442,7 @@ where
         match is_inturn {
             true => {
                 // if we are inturn, return None to avoid sending messages to ourselves.
-                return Ok(None);
+                Ok(None)
             }
             false => {
                 // if we are not inturn, find the coordinator in the list of peers
@@ -457,7 +454,7 @@ where
                 let sender_channel = all_connected_frost_peers
                     .get(&current_inturn_authority_frost_identifier)
                     .cloned();
-                return Ok(Some(current_inturn_authority_frost_identifier).zip(sender_channel));
+                Ok(Some(current_inturn_authority_frost_identifier).zip(sender_channel))
             }
         }
     }
@@ -503,7 +500,7 @@ where
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
-        let _ = self.insert_signing_state(session_id, SigningState::Initial);
+        self.insert_signing_state(session_id, SigningState::Initial);
         info!(">>>>>>>>>>> [START NEW SIGNING SESSION]");
 
         // As the cord we generate round 1 nonces and save them
@@ -518,7 +515,7 @@ where
         .await?;
 
         // send to all other peers
-        let _ = self.insert_signing_state(session_id, SigningState::Round1);
+        self.insert_signing_state(session_id, SigningState::Round1);
         if let Err(e) = self
             .gossip_to_peers(
                 signing_round1_package,
@@ -528,7 +525,7 @@ where
             .await
         {
             error!("Error gossiping round 1 to peers {:?}", e);
-            let _ = self.insert_signing_state(session_id, SigningState::Failed);
+            self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         Ok(())
@@ -560,7 +557,7 @@ where
                 Ok(signing_package_round1) => signing_package_round1,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    let _ = self.insert_signing_state(session_id, SigningState::Failed);
+                    self.insert_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
@@ -654,7 +651,7 @@ where
             .await?;
 
             // if we can, we go to round 2
-            let _ = self.insert_signing_state(session_id, SigningState::Round2);
+            self.insert_signing_state(session_id, SigningState::Round2);
             // if ok, send to all peers
             if let Err(e) = self
                 .gossip_to_peers(
@@ -665,7 +662,7 @@ where
                 .await
             {
                 error!("[COORDINATOR PROCESS_ROUND1] Error gossiping round 2 to peers {:?}", e);
-                let _ = self.insert_signing_state(session_id, SigningState::Failed);
+                self.insert_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
             info!(
@@ -712,7 +709,7 @@ where
                 Ok(signing_package_round2) => signing_package_round2,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    let _ = self.insert_signing_state(session_id, SigningState::Failed);
+                    self.insert_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
@@ -789,7 +786,7 @@ where
             .await
         {
             error!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] Error adding round 2 signing package {:?}", e);
-            let _ = self.insert_signing_state(session_id, SigningState::Failed);
+            self.insert_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] round 2 added");
@@ -801,7 +798,7 @@ where
             )) {
                 error!("Error sending finalized signature {:?}", e);
             }
-            let _ = self.insert_signing_state(session_id, SigningState::Finalized);
+            self.insert_signing_state(session_id, SigningState::Finalized)
         }
 
         Ok(())

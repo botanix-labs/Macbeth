@@ -5,7 +5,7 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader, HeaderExt};
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
@@ -148,10 +148,7 @@ where
 
             let botanix_consensus_pkg = BotanixConsensusPackage {
                 recent_header: recent_bitcoin_block_header.expect("recent header is some"),
-                aggregate_public_key: storage
-                    .aggregate_public_key
-                    .clone()
-                    .expect("aggregate pk is some"),
+                aggregate_public_key: storage.aggregate_public_key.expect("aggregate pk is some"),
                 btc_network: self.btc_network,
             };
 
@@ -210,7 +207,7 @@ where
                         // get the pegouts from during the epoch
                         let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
                             error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
-                            return;
+                            e
                         }).unwrap();
                         pegouts.extend(past_pegouts);
                         // TODO (armins) deserialize extra data can be implenented on header

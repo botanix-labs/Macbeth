@@ -91,7 +91,7 @@ where
     C: BlockReader + HeaderProvider + 'static,
 {
     let client = config.client.clone();
-    let (handle, network, _txpool, eth) =
+    let (handle, network, _txpool, eth, frost) =
         NetworkManager::builder(config).await?.request_handler(client).split_with_handle();
 
     tokio::task::spawn(network);

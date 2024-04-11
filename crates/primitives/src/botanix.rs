@@ -1,4 +1,4 @@
-/// For Botanix specific Primitives
+//! Botanix Specific primitives
 
 /// Helper type for the recent header
 /// Second field is the height of the header

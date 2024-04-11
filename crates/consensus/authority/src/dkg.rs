@@ -102,24 +102,15 @@ pub(crate) enum DKGState {
 impl DKGState {
     /// Returns true if the DKG state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
-        match self {
-            DKGState::Initial => false,
-            _ => true,
-        }
+        !matches!(self, DKGState::Initial)
     }
     /// Returns true if we are in round 1 of dkg
     pub(crate) fn is_round1(&self) -> bool {
-        match self {
-            DKGState::Initial | DKGState::Round1Start | DKGState::Round1Waiting => true,
-            _ => false,
-        }
+        matches!(self, DKGState::Initial | DKGState::Round1Start | DKGState::Round1Waiting)
     }
     /// Returns true if we are in round 2 of dkg
     pub(crate) fn is_round2(&self) -> bool {
-        match self {
-            DKGState::Round2Start | DKGState::Round2Waiting => true,
-            _ => false,
-        }
+        matches!(self, DKGState::Round2Start | DKGState::Round2Waiting)
     }
 }
 
@@ -185,7 +176,7 @@ where
     /// Returns the public key package
     #[allow(dead_code)]
     pub(crate) fn get_public_key_package(&self) -> Option<secp256k1::PublicKey> {
-        self.public_key_package.clone()
+        self.public_key_package
     }
 
     /// Returns the state machine state
@@ -393,7 +384,7 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!("Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                Err(Error::FailedToGetConnectedPeersHandles)
             }
         }
     }

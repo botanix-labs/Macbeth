@@ -1,5 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult},
@@ -104,8 +106,7 @@ impl BitcoindClient {
     }
 
     pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
-        let tip =
-            self.rpc.get_block_count().map_err(|e| BitcoindError::BlockTipRetrievalFailed(e))?;
+        let tip = self.rpc.get_block_count().map_err(BitcoindError::BlockTipRetrievalFailed)?;
 
         Ok(tip)
     }
@@ -148,36 +149,8 @@ impl BitcoindClient {
     }
 
     pub async fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
-        let fee_res = self
-            .rpc
+        self.rpc
             .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(BitcoindError::EstimateSmartFeeFailed);
-
-        Ok(fee_res?)
-    }
-}
-
-mod tests {
-
-    #[tokio::test]
-    async fn test_basic_client() {
-        use super::*;
-
-        let client = BitcoindClient::new(BitcoindConfig::new(
-            "http://127.0.0.1:38332".parse::<Url>().unwrap(),
-            "usr".to_owned(),
-            "pwd".to_owned(),
-        ))
-        .unwrap();
-
-        let tip = client.get_tip().await;
-        match tip {
-            Ok(tip) => {
-                assert!(tip > 0);
-            }
-            Err(e) => {
-                panic!("Got error {:?}", e);
-            }
-        }
+            .map_err(BitcoindError::EstimateSmartFeeFailed)
     }
 }

@@ -125,5 +125,5 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
     let meta = file.metadata().await.map_err(Error::ReadMeta)?;
     let mut contents = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
     file.read_to_end(&mut contents).await.map_err(Error::ReadConfig)?;
-    Ok(String::from_utf8(contents).map_err(Error::ParseUtf8)?)
+    String::from_utf8(contents).map_err(Error::ParseUtf8)
 }

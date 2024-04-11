@@ -92,7 +92,7 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
     }
     // all the btc_servers should have the same merkel commitment to the utxo set
     assert_eq!(hashset.len(), 1);
-    
+
     // Lets get some new utxos
     let mut pegins = Pegins::new();
 

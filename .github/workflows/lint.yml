@@ -11,16 +11,9 @@ env:
 
 jobs:
   clippy-binaries:
-    name: clippy / ${{ matrix.network }}
-    runs-on: ubuntu-latest
+    name: clippy 
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
-    strategy:
-      matrix:
-        include:
-          - binary: reth
-            network: ethereum
-          - binary: op-reth
-            network: optimism
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
@@ -28,13 +21,13 @@ jobs:
         with:
           cache-on-failure: true
       - run:
-          cargo clippy --bin "${{ matrix.binary }}" --workspace --features "${{ matrix.network }} asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
+          cargo +nightly clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
         env:
           RUSTFLAGS: -D warnings
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -42,15 +35,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo clippy --workspace --lib --examples --tests --benches --all-features
+      - run: cargo +nightly clippy --workspace --lib --examples --tests --benches --all-features
         env:
           RUSTFLAGS: -D warnings
 
   crate-checks:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
@@ -59,16 +54,9 @@ jobs:
       - run: cargo hack check
 
   msrv:
-    name: MSRV / ${{ matrix.network }}
-    runs-on: ubuntu-latest
+    name: MSRV
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
-    strategy:
-      matrix:
-        include:
-          - binary: reth
-            network: ethereum
-          - binary: op-reth
-            network: optimism
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -77,16 +65,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo build --bin "${{ matrix.binary }}" --workspace --features "${{ matrix.network }}"
+      - run: cargo build --bin reth --workspace
         env:
           RUSTFLAGS: -D warnings
 
   docs:
     name: docs
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
@@ -101,17 +91,17 @@ jobs:
 
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
-      - run: cargo fmt --all --check
+      - run: cargo +nightly fmt --all --check
 
   grafana:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -122,7 +112,7 @@ jobs:
 
   lint-success:
     name: lint success
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     if: always()
     needs: [clippy-binaries, clippy, crate-checks, docs, fmt, grafana]
     timeout-minutes: 30

@@ -11,7 +11,6 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 pub mod cl_events;
 pub mod events;
 pub mod notifications;
-
 use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
@@ -24,6 +23,9 @@ use crate::{
     dirs::{DataDirPath, MaybePlatformPath},
     poa_builder::launch_poa_from_config,
 };
+
+#[cfg(feature = "optimism")]
+use crate::args::RollupArgs;
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -114,6 +116,11 @@ pub struct PoaNodeCommand<Ext: RethCliExt = ()> {
     #[clap(flatten)]
     #[clap(next_help_heading = "Extension")]
     pub ext: Ext::Node,
+
+    /// Rollup args
+    #[cfg(feature = "optimism")]
+    #[clap(flatten)]
+    pub rollup: RollupArgs,
 }
 
 impl<Ext: RethCliExt> PoaNodeCommand<Ext> {

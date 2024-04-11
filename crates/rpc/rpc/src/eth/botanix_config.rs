@@ -1,7 +1,6 @@
 //! Defines structure for botanix RPC configurables and business logic
 
-use std::{fmt, str::FromStr};
-use std::path::Path;
+use std::{fmt, path::Path, str::FromStr};
 
 use alloy_primitives::hex;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
@@ -41,11 +40,7 @@ impl Default for BotanixConfig {
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     #[allow(dead_code)]
-    fn new(
-        bitcoin_network: bitcoin::Network,
-        btc_server: String,
-        bitcoind_cookie: String,
-    ) -> Self {
+    fn new(bitcoin_network: bitcoin::Network, btc_server: String, bitcoind_cookie: String) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://bitcoind.botanixlabs.dev", // TODO: update this
@@ -220,7 +215,7 @@ impl Botanix {
         let response = client
             .get_gateway_address(request)
             .await
-            .map_err(|e| GatewayAddressRPCError::InvalidParam(e))?
+            .map_err(GatewayAddressRPCError::InvalidParam)?
             .into_inner();
 
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
@@ -232,7 +227,7 @@ impl Botanix {
             &hex::decode(response.publickey.as_str())
                 .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
         )
-        .map_err(|e| GatewayAddressRPCError::FailedToConvertPublicKey(e))?;
+        .map_err(GatewayAddressRPCError::FailedToConvertPublicKey)?;
 
         Ok((address, pk))
     }
@@ -270,33 +265,33 @@ impl Botanix {
     /// Converts fee rate to sat/vB and returns it.
     pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
         let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
-            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
         let fee_result = bitcoind_client
             .get_estimate_smart_fee()
             .await
-            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {
             let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
             // this really doesnt need to be a U256 can be U64
-            return Ok(U256::from(sats_kb.to_sat_per_vb_ceil()));
+            Ok(U256::from(sats_kb.to_sat_per_vb_ceil()))
         } else {
             // Use errors if available
             if let Some(errors) = fee_result.errors {
                 let concatenated_errors = errors.join(", ");
                 error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
-                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
                     BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
                         concatenated_errors,
                     )),
-                ));
+                ))
             } else {
                 // else use default generic error
-                return Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
+                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
                     BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
                         "Failed to get estimate smart fee rate".to_string(),
                     )),
-                ));
+                ))
             }
         }
     }
