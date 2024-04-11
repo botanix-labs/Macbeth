@@ -75,41 +75,41 @@ where
         }
 
         let payload_id = payload_id.expect("payload id exists");
-
-        // retry if best_transactions is empty bc it could be a race condition
-        let mut retries = 0;
-        let mut delay = tokio::time::Duration::from_secs(1);
-        let max_retries = 5;
-        let mut best_transactions: Result<EthBuiltPayload, BestTransactionsError> =
-            Err(BestTransactionsError::PayloadEmpty);
-        loop {
-            // get payload by id
-            // TODO replate this with async/await
-            let transactions = engine_util::best_transactions_from_payload::<EthEngineTypes>(
+        let best_transactions = match tokio::time::timeout(
+            Duration::from_secs(5),
+            engine_util::best_transactions_from_payload::<EthEngineTypes>(
                 &self.payload_builder,
                 payload_id,
-            )
-            .await;
+            ),
+        )
+        .await
+        {
+            Ok(transactions) => {
+                if transactions.is_ok() {
+                    transactions
+                } else {
+                    // retry once since payload might not be ready yet
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    let transactions =
+                        engine_util::best_transactions_from_payload::<EthEngineTypes>(
+                            &self.payload_builder,
+                            payload_id,
+                        )
+                        .await;
 
-            if transactions.is_ok() {
-                best_transactions = transactions;
-                break;
+                    if transactions.is_ok() {
+                        transactions
+                    } else {
+                        warn!(target: "consensus::authority", "Retry failed to get best transactions from payload");
+                        return;
+                    }
+                }
             }
-
-            retries += 1;
-            if retries >= max_retries {
-                break;
+            Err(e) => {
+                warn!(target: "consensus::authority", ?e, "Timeout: Failed to get best transactions from payload");
+                return;
             }
-
-            // Exponential backoff
-            delay *= 2;
-            tokio::time::sleep(delay).await;
-        }
-
-        if best_transactions.is_err() {
-            warn!(target: "consensus::authority", "Failed to get best transactions from payload");
-            return;
-        }
+        };
 
         let (transactions, senders): (Vec<_>, Vec<_>) = best_transactions
             .expect("best transactions exists")
