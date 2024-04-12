@@ -5,7 +5,7 @@ use reth_eth_wire::{capability::Capability, protocol::Protocol};
 use reth_primitives::{Buf, BufMut, BytesMut};
 use reth_rpc_types::PeerId;
 
-const MESSAGE_VERSION: usize = 1;
+const MESSAGE_VERSION: usize = 0;
 
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
