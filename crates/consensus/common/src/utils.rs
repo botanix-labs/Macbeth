@@ -323,6 +323,14 @@ pub fn validate_inturn(
     Ok(())
 }
 
+/// Calculate the block reward split between botanix and the beneficiary
+pub fn block_reward_split(base_block_reward: u128) -> (u128, u128) {
+    // 20% of the block reward
+    let botanix_reward = base_block_reward / 5;
+    let beneficiary_reward = base_block_reward - botanix_reward;
+    (botanix_reward, beneficiary_reward)
+}
+
 mod tests {
     use std::str::FromStr;
 
@@ -672,5 +680,13 @@ mod tests {
             ]
         )
         .is_err());
+    }
+
+    #[test]
+    fn should_split_rewards() {
+        let base_block_reward = 100;
+        let (botanix_reward, beneficiary_reward) = block_reward_split(base_block_reward);
+        assert_eq!(botanix_reward, 20);
+        assert_eq!(beneficiary_reward, 80);
     }
 }

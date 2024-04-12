@@ -1,7 +1,7 @@
-use reth_consensus_common::calc;
+use reth_consensus_common::{calc, utils};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
-    constants::SYSTEM_ADDRESS, revm::env::fill_tx_env_with_beacon_root_contract_call, Address,
+    Block, constants::SYSTEM_ADDRESS, revm::env::fill_tx_env_with_beacon_root_contract_call, Address,
     ChainSpec, Header, Withdrawal, B256, U256,
 };
 use revm::{interpreter::Host, Database, DatabaseCommit, Evm};
@@ -36,8 +36,12 @@ pub fn post_block_balance_increments(
         }
 
         // Full block reward
-        *balance_increments.entry(beneficiary).or_default() +=
-            calc::block_reward(base_block_reward, ommers.len());
+        let base_block_reward = calc::block_reward(base_block_reward, ommers.len());
+        let (botanix_reward, beneficiary_reward) = utils::block_reward_split(base_block_reward);
+        // TODO: remove placeholder botanix address with actual address
+        let botanix_address_placeholder = Address::random();
+        *balance_increments.entry(botanix_address_placeholder).or_default() += botanix_reward;
+        *balance_increments.entry(beneficiary).or_default() += beneficiary_reward;
     }
 
     // process withdrawals
