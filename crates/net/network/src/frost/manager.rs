@@ -64,7 +64,6 @@ impl FrostManager {
         let FrostConfig { authority_index: _, authorities, min_signers: _, max_signers: _ } =
             config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
-        //let id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
         let authority_peerid = authorities
             .iter()
             .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
