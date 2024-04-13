@@ -121,13 +121,13 @@ impl ConnectionHandler for FrostConnectionHandler {
             peer_message_forwarder,
             conn,
             // incoming - another peer is connecting with me (set the ping message to Some),
-            // outgoing - i am connecting with a peer
+            // outgoing - I am connecting with a peer
             initial_ping: direction.is_outgoing().then(|| {
                 FrostProtoMessage::ping_message(self.state.peer_id, self.state.authority_index)
             }),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
-            pending_pong: None, // when the conn. is just esablished, there is no pending pong
+            pending_pong: None, // when the conn. is just established, there is no pending pong
             my_authority_index: self.state.authority_index,
             my_peer_id: self.state.peer_id,
             peer_id,

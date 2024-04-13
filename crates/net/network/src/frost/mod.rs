@@ -115,6 +115,8 @@ pub enum FrostProtocolEvent {
 }
 
 /// All events related to frost events emitted by the network.
+/// These are events that are emitted by the network to the frost manager.
+/// And most likely will be used to update the frost task state.
 #[derive(Debug)]
 pub enum NetworkFrostEvent {
     /// Represents the event of receiving a list of transactions from a peer.
@@ -140,7 +142,8 @@ pub enum NetworkFrostEvent {
     PeerConfirmed(PeerId, u16),
 }
 
-/// Commands sent by the peer to the network
+/// Commands sent by us to a peer.
+/// These are commands that are sent by the frost manager to the network via most likely the frost task
 #[derive(Debug)]
 pub enum FrostPeerCommand {
     /// Send a ping message to the peer.
