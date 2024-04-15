@@ -1,9 +1,11 @@
 #![allow(unreachable_pub)]
 use std::str::FromStr;
 
+use alloy_rlp::{Decodable, Encodable};
 use reth_eth_wire::{capability::Capability, protocol::Protocol};
 use reth_primitives::{Buf, BufMut, BytesMut};
 use reth_rpc_types::PeerId;
+use tracing::warn;
 
 const MESSAGE_VERSION: usize = 0;
 const PBFT_MESSAGE_VERSION: usize = 0;
@@ -14,12 +16,13 @@ pub struct PbftRequest {
     /// The version of the request message
     pub version: u16,
     /// PBFT data
-    pub data: Vec<u8>,
+    pub block: reth_primitives::SealedBlock,
 }
 
 impl PbftRequest {
-    pub fn new(data: Vec<u8>) -> Self {
-        PbftRequest { version: PBFT_MESSAGE_VERSION as u16, data }
+    /// Constructs a new PBFT Request using a data payload.
+    pub fn new(block: reth_primitives::SealedBlock) -> Self {
+        PbftRequest { version: PBFT_MESSAGE_VERSION as u16, block }
     }
 }
 
@@ -327,20 +330,14 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
             }
-            FrostProtoMessageKind::CoordinatorBlockProposal(resource) => {
-                // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
-            }
-            FrostProtoMessageKind::PeerPreCommitment(resource) => {
-                // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
-            }
-            FrostProtoMessageKind::PeerCommit(resource) => {
-                // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
+            FrostProtoMessageKind::CoordinatorBlockProposal(resource)
+            | FrostProtoMessageKind::PeerPreCommitment(resource)
+            | FrostProtoMessageKind::PeerCommit(resource) => {
+                // Use u32 to support larger data sizes
+                let mut buffer = vec![];
+                resource.block.encode(&mut buffer);
+                buf.put_u32_le(buffer.len() as u32);
+                buf.put_slice(&buffer);
             }
         }
         buf
@@ -526,26 +523,41 @@ impl FrostProtoMessage {
             FrostProtoMessageId::CoordinatorBlockProposal => {
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
                 buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(data))
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    return None;
+                }
             }
             FrostProtoMessageId::PeerPreCommitment => {
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
                 buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::PeerPreCommitment(PbftRequest::new(data))
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    return None;
+                }
             }
             FrostProtoMessageId::PeerCommit => {
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
                 buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::PeerCommit(PbftRequest::new(data))
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    return None;
+                }
             }
         };
         Some(Self { message_type, message })
@@ -559,13 +571,16 @@ mod tests {
         SignRequest,
     };
     #[allow(unused_imports)]
+    use reth_primitives::SealedBlock;
+    #[allow(unused_imports)]
     use reth_rpc_types::PeerId;
     #[allow(unused_imports)]
     use std::str::FromStr;
 
     #[test]
     fn test_pbft_encoding_decoding() {
-        let pbft_request = PbftRequest::new(vec![1, 2, 3, 4]);
+        let block = SealedBlock::default();
+        let pbft_request = PbftRequest::new(block);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::CoordinatorBlockProposal,
