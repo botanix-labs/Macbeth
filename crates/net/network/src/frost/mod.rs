@@ -1,6 +1,7 @@
 #![allow(unreachable_pub)]
 //! Testing gossiping of transactions.
 use reth_network_api::Direction;
+use reth_primitives::SealedBlock;
 use reth_rpc_types::PeerId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
@@ -69,12 +70,12 @@ pub enum PbftEventResponseType {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct PbftResponse {
     /// The Response Type
     pub response_type: PbftEventResponseType,
     /// PBFT data
-    pub data: Vec<u8>,
+    pub data: SealedBlock,
 }
 
 /// Response structure for internal communication

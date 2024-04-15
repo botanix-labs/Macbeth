@@ -56,6 +56,7 @@ mod block_builder;
 mod block_fetcher;
 mod builder;
 mod dkg;
+mod pbft;
 mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
