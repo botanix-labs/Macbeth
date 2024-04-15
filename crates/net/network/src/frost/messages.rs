@@ -349,7 +349,7 @@ impl FrostProtoMessage {
     /// Decodes a `TestProtoMessage` from the given message buffer.
     pub fn decode_message(buf: &mut &[u8]) -> Option<Self> {
         if buf.is_empty() {
-            return None
+            return None;
         }
         let id = buf[0];
         buf.advance(1);
@@ -554,7 +554,10 @@ impl FrostProtoMessage {
 
 mod tests {
     #[allow(unused_imports)]
-    use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind};
+    use super::{
+        DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PBFTRequest,
+        SignRequest,
+    };
     #[allow(unused_imports)]
     use reth_rpc_types::PeerId;
     #[allow(unused_imports)]
@@ -562,8 +565,6 @@ mod tests {
 
     #[test]
     fn test_pbft_encoding_decoding() {
-        use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PBFTRequest};
-
         let pbft_request = PBFTRequest::new(vec![1, 2, 3, 4]);
 
         let message = FrostProtoMessage {
@@ -583,11 +584,8 @@ mod tests {
         assert_eq!(decoded_message, message);
     }
 
-
     #[test]
     fn test_dkg_encoding_decoding() {
-        use super::{DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind};
-
         let dkg_request = DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
 
         let message = FrostProtoMessage {
@@ -609,8 +607,6 @@ mod tests {
 
     #[test]
     fn test_signing_encoding_decoding() {
-        use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest};
-
         let signing_request =
             SignRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
 
