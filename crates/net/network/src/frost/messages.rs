@@ -10,16 +10,16 @@ const PBFT_MESSAGE_VERSION: usize = 0;
 
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PBFTRequest {
+pub struct PbftRequest {
     /// The version of the request message
     pub version: u16,
     /// PBFT data
     pub data: Vec<u8>,
 }
 
-impl PBFTRequest {
+impl PbftRequest {
     pub fn new(data: Vec<u8>) -> Self {
-        PBFTRequest { version: PBFT_MESSAGE_VERSION as u16, data }
+        PbftRequest { version: PBFT_MESSAGE_VERSION as u16, data }
     }
 }
 
@@ -118,11 +118,11 @@ pub enum FrostProtoMessageKind {
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage(SignRequest),
     /// PBFT message block proposal
-    CoordinatorBlockProposal(PBFTRequest),
+    CoordinatorBlockProposal(PbftRequest),
     /// PBFT message peer pre-commitment
-    PeerPreCommitment(PBFTRequest),
+    PeerPreCommitment(PbftRequest),
     /// PBFT message peer commit
-    PeerCommit(PBFTRequest),
+    PeerCommit(PbftRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -219,7 +219,7 @@ impl FrostProtoMessage {
     }
 
     /// In turn block producer will propose a block
-    pub fn coordinator_block_proposal_message(resource: PBFTRequest) -> Self {
+    pub fn coordinator_block_proposal_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::CoordinatorBlockProposal,
             message: FrostProtoMessageKind::CoordinatorBlockProposal(resource),
@@ -227,7 +227,7 @@ impl FrostProtoMessage {
     }
 
     /// Peer pre-commitment -- peer commits to signing a block
-    pub fn peer_pre_commitment_message(resource: PBFTRequest) -> Self {
+    pub fn peer_pre_commitment_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::PeerPreCommitment,
             message: FrostProtoMessageKind::PeerPreCommitment(resource),
@@ -235,7 +235,7 @@ impl FrostProtoMessage {
     }
 
     /// Peer commitment -- peer signs a block
-    pub fn peer_commit_message(resource: PBFTRequest) -> Self {
+    pub fn peer_commit_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::PeerCommit,
             message: FrostProtoMessageKind::PeerCommit(resource),
@@ -529,7 +529,7 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::CoordinatorBlockProposal(PBFTRequest::new(data))
+                FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(data))
             }
             FrostProtoMessageId::PeerPreCommitment => {
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
@@ -537,7 +537,7 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::PeerPreCommitment(PBFTRequest::new(data))
+                FrostProtoMessageKind::PeerPreCommitment(PbftRequest::new(data))
             }
             FrostProtoMessageId::PeerCommit => {
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
@@ -545,7 +545,7 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::PeerCommit(PBFTRequest::new(data))
+                FrostProtoMessageKind::PeerCommit(PbftRequest::new(data))
             }
         };
         Some(Self { message_type, message })
@@ -555,7 +555,7 @@ impl FrostProtoMessage {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PBFTRequest,
+        DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
         SignRequest,
     };
     #[allow(unused_imports)]
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_pbft_encoding_decoding() {
-        let pbft_request = PBFTRequest::new(vec![1, 2, 3, 4]);
+        let pbft_request = PbftRequest::new(vec![1, 2, 3, 4]);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::CoordinatorBlockProposal,
