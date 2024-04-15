@@ -160,7 +160,7 @@ impl Stream for FrostProtoConnection {
             //    ">>>>>>>>> SENDING GREETINGS PING TO PEER I AM CONNECTING WITH {:?}",
             //    initial_ping
             //);
-            return Poll::Ready(Some(initial_ping.encoded()))
+            return Poll::Ready(Some(initial_ping.encoded()));
         }
         let peer_message_forwarder = this.peer_message_forwarder.clone();
         // poll the commands send by us to another peer
@@ -306,6 +306,15 @@ impl Stream for FrostProtoConnection {
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
+                }
+                FrostProtoMessageKind::CoordinatorBlockProposal(data) => {
+                    todo!();
+                }
+                FrostProtoMessageKind::PeerPreCommitment(data) => {
+                    todo!();
+                }
+                FrostProtoMessageKind::PeerCommit(data) => {
+                    todo!();
                 }
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
