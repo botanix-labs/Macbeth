@@ -42,6 +42,8 @@ pub enum PeerMessageResponse {
     Dkg(DkgResponse),
     /// Signing response
     Signing(SigningResponse),
+    /// PBFT related responses
+    Pbft(PbftResponse),
 }
 
 /// Response structure for internal communication
@@ -52,6 +54,26 @@ pub struct DkgResponse {
     /// Frost Identifier
     pub identifier: Vec<u8>,
     /// Frost Data
+    pub data: Vec<u8>,
+}
+
+/// Response structure for PBFT internal communication
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PbftEventResponseType {
+    /// in turn block producer proposes a block to sign    
+    CoordinatorBlockProposal,
+    /// peer precommitment
+    PeerPreCommitment,
+    /// peer commitment
+    PeerCommitment,
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PbftResponse {
+    /// The Response Type
+    pub response_type: PbftEventResponseType,
+    /// PBFT data
     pub data: Vec<u8>,
 }
 
