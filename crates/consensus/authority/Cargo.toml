@@ -31,6 +31,7 @@ reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 serde_json = { workspace = true }
+reth-ecies.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
