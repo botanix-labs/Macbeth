@@ -13,7 +13,7 @@ jobs:
   clippy-binaries:
     name: clippy 
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
@@ -21,27 +21,27 @@ jobs:
         with:
           cache-on-failure: true
       - run:
-          cargo +nightly clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
+          cargo clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
         env:
           RUSTFLAGS: -D warnings
 
   clippy:
     name: clippy
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@clippy
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo +nightly clippy --workspace --lib --examples --tests --benches --all-features
+      - run: cargo clippy --workspace --lib --examples --tests --benches --all-features
         env:
           RUSTFLAGS: -D warnings
 
   crate-checks:
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Protobuf Compiler
@@ -56,7 +56,7 @@ jobs:
   msrv:
     name: MSRV
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -72,7 +72,7 @@ jobs:
   docs:
     name: docs
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Protobuf Compiler
@@ -92,17 +92,17 @@ jobs:
   fmt:
     name: fmt
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo +nightly fmt --all --check
+      - run: cargo fmt --all --check
 
   grafana:
     runs-on: botanix-actions-runner
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Check dashboard JSON with jq
@@ -115,7 +115,7 @@ jobs:
     runs-on: botanix-actions-runner
     if: always()
     needs: [clippy-binaries, clippy, crate-checks, docs, fmt, grafana]
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1

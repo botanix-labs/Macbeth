@@ -45,7 +45,7 @@ jobs:
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
           --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
-          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
+          --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
 
@@ -92,7 +92,7 @@ jobs:
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
           --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
-          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
+          --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
       - name: Run sync
