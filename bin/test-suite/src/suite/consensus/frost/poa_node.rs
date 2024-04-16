@@ -14,7 +14,7 @@ use reth::{
         ext::{NoArgs, NoArgsCliExt, RethNodeCommandConfig},
     },
     commands::poa::PoaNodeCommand,
-    network::Peers,
+    network::{PeerKind, Peers},
     tasks::TaskSpawner,
     utils::get_or_create_jwt_secret_from_path,
 };
@@ -35,6 +35,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::broadcast::{channel, Receiver, Sender};
 use url::Url;
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
@@ -71,6 +72,12 @@ pub enum Notifications {
 }
 
 #[derive(Clone, Debug)]
+pub enum TestSignal {
+    DisconnectAll(),
+    ReconnectAll(),
+}
+
+#[derive(Clone, Debug)]
 pub struct DkgPayload {
     pub engine_index: u16,
     pub ts: tokio::time::Instant,
@@ -104,6 +111,7 @@ pub struct FederationMemberTestConfig {
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
     pub edh: Option<ExtraDataHeader>,
+    pub test_signal_tx: Sender<TestSignal>,
 }
 
 impl FederationMemberTestConfig {
@@ -122,6 +130,7 @@ impl FederationMemberTestConfig {
         rpc_port_base: u16,
         authrpc_port_base: u16,
         discovery_port_base: u16,
+        test_signal_tx: Sender<TestSignal>,
     ) -> Self {
         let rpc_port = rpc_port_base + index;
         let authrpc_port = authrpc_port_base + index;
@@ -146,6 +155,7 @@ impl FederationMemberTestConfig {
             peer_id,
             is_dkg_ready: false,
             edh: None,
+            test_signal_tx,
         }
     }
 
@@ -166,6 +176,10 @@ impl FederationMemberTestConfig {
 
     pub fn is_dkg_ready(&self) -> bool {
         self.is_dkg_ready
+    }
+
+    pub fn send_test_signal(&self, signal: TestSignal) {
+        let _ = self.test_signal_tx.send(signal);
     }
 
     pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
@@ -324,6 +338,54 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
             }
         }));
 
+        let mut receiver = self.test_signal_tx.subscribe();
+        let peers_list = self.peers_list.clone();
+        let comp = components.clone();
+        components.task_executor().spawn(Box::pin(async move {
+            while let Ok(test_signal) = receiver.recv().await {
+                match test_signal {
+                    TestSignal::DisconnectAll() => {
+                        // disconnect all peers
+                        'inner: loop {
+                            for peer in peers_list.iter() {
+                                comp.network().remove_peer(peer.peer_id, PeerKind::Basic);
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            let all_peers = comp.network().get_all_peers().await.unwrap();
+                            it_info_print!(
+                                "Engine disconnected from peers",
+                                format!("index={}: peers_count={}", engine_index, all_peers.len())
+                            );
+                            if all_peers.len() == 0 {
+                                break 'inner;
+                            }
+                        }
+                    }
+                    TestSignal::ReconnectAll() => {
+                        // re-add the peers
+                        'inner: loop {
+                            for peer in peers_list.iter() {
+                                let peer_socket = SocketAddr::new(
+                                    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                                    peer.discovery_port,
+                                );
+                                comp.network().add_peer(peer.peer_id, peer_socket);
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                            let all_peers = comp.network().get_all_peers().await.unwrap();
+                            it_info_print!(
+                                "Engine (re)connected with peers",
+                                format!("index={}: peers_count={}", engine_index, all_peers.len())
+                            );
+                            if all_peers.len() == peers_list.len() {
+                                break 'inner;
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+
         Ok(())
     }
 }
@@ -372,6 +434,7 @@ pub async fn create_poa_federation_members(
         let member_peer_id = pk2id(&pk);
         members_public_keys.push(pk);
 
+        let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
             member_secret_key,
@@ -387,6 +450,7 @@ pub async fn create_poa_federation_members(
             rpc_port_base,
             authrpc_port_base,
             discovery_port_base,
+            test_signal_tx,
         )
         .await;
         fed_members.insert(member_index, fed_member_config);

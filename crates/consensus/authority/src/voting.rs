@@ -81,10 +81,13 @@ impl AuthorityVoteCollection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum GetVotesError {
-    FailedToDeserializeBlockHeaderExtraData,
-    FailedToRecoverAuthority,
+    #[error("Failed to deserialize block header extra data {0}")]
+    FailedToDeserializeBlockHeaderExtraData(ExtraDataHeaderDeserialzeError),
+    #[error("Failed to recover authority {0}")]
+    FailedToRecoverAuthority(secp256k1::Error),
+    #[error("Failed to parse nonce vote")]
     FailedToParseNonceVote,
 }
 

@@ -1,12 +1,5 @@
 //! Botanix consensus utility functions
-use std::{io::Write, time::Duration};
-
-use bitcoin::{
-    block::Header,
-    hashes::{sha256, Hash},
-    psbt::PartiallySignedTransaction,
-    witness::Witness,
-};
+use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use futures_util::Future;
 use reth_botanix_lib::{
@@ -16,6 +9,7 @@ use reth_botanix_lib::{
     },
     peg_contract::PegoutData,
 };
+use reth_consensus_common::utils::unix_timestamp;
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -25,9 +19,10 @@ use reth_primitives::{
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
+use std::time::Duration;
+use uuid::Uuid;
 
 use reth_rpc_types::BlockHashOrNumber;
-use secp256k1::ThirtyTwoByteHash;
 use tracing::{debug, error, info, warn};
 
 use crate::extended_client::BtcServerExtendedClient;
@@ -57,6 +52,30 @@ where
     }
 }
 
+/// Function for retrying an async closure with retries and delays
+pub async fn retry_future<F, Fut, T, E>(
+    mut future_factory: F,
+    max_retries: usize,
+    retry_delay: Duration,
+) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let mut attempts = 0;
+    loop {
+        let fut = future_factory();
+        match fut.await {
+            Ok(value) => return Ok(value),
+            Err(_) if attempts < max_retries => {
+                attempts += 1;
+                tokio::time::sleep(retry_delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// 32 byte signing session id used by the frost coordinator to identify a signing session
 /// not consensus critical
 pub type SigningSessionId = [u8; 32];
@@ -67,8 +86,6 @@ pub(crate) enum ProcessBotanixLogError {
     /// Failed to notify btc server about pegin
     #[error("Failed to notify btc server about pegin")]
     FailedToNotifyPegin(tonic::Status),
-    #[error("Failed to broadcast pegout tx")]
-    FailedToBroadcastPegout,
     #[error("Failed to make pegout tx: {0}")]
     FailedToMakePegoutTx(tonic::Status),
     #[error("Failed to parse pegout data")]
@@ -490,19 +507,14 @@ pub(crate) enum GenerateSigningSesssionIdError {
     HashError(#[from] std::io::Error),
 }
 
-// Generates a signing session id by hashing the best hash and authority public key
-// This id is not needed for consensus but is used to identify the signing session for the
-// cordinator
+// Generates a signing session id using a uuid v4 generator
 pub(crate) fn generate_signing_session_id(
-    best_hash: &[u8],
-    authority_pk: &secp256k1::PublicKey,
 ) -> Result<SigningSessionId, GenerateSigningSesssionIdError> {
-    let mut engine = sha256::HashEngine::default();
-    engine.write_all(best_hash)?;
-    engine.write_all(authority_pk.serialize().as_ref())?;
-    let hash = sha256::Hash::from_engine(engine);
-
-    Ok(hash.into_32())
+    let id = Uuid::new_v4();
+    let hex_string = id.simple().to_string(); // Removing dashes, results in 32 hex digits
+    let bytes: Vec<u8> = hex_string.bytes().collect();
+    let bytes_array: [u8; 32] = bytes.try_into().expect("Expected a Vec<u8> of length 32");
+    Ok(bytes_array)
 }
 
 #[cfg(test)]
@@ -521,22 +533,8 @@ mod test {
     use super::*;
 
     #[test]
-    fn should_generate_signing_session_id() {
-        let best_hash = [0u8; 32];
-        let my_pk = secp256k1::PublicKey::from_str(
-            "02b4632d08485ff1df2db55b9dafd23347d1c47a457072a1e87be26896549a8737",
-        )
-        .expect("valid pk");
-
-        let id = generate_signing_session_id(&best_hash, &my_pk).expect("id");
-        // assert the id is always the same
-        assert_eq!(
-            [
-                251, 119, 193, 213, 198, 77, 183, 205, 141, 55, 4, 1, 19, 183, 230, 108, 197, 65,
-                114, 41, 112, 157, 10, 228, 224, 67, 81, 39, 238, 67, 248, 208
-            ],
-            id
-        );
+    fn test_uuid() {
+        assert!(generate_signing_session_id().unwrap().len() == 32);
     }
 
     #[test]
