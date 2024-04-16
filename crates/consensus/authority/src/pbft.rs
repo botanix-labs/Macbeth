@@ -13,6 +13,9 @@ use reth_network::{
     PeerInfo,
 };
 // use reth_ecies::id2;
+use reth_botanix_lib::extra_data_header::{
+    self, ExtraDataHeader, ExtraDataHeaderSerializeError, HeaderExt,
+};
 use reth_primitives::{BlockHash, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
@@ -25,6 +28,8 @@ use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
+    #[error("Failed to deserialize extra data header: {0}")]
+    ExtraDataHeaderSerializeError(#[from] ExtraDataHeaderSerializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
     #[error("Failed to send peer command {0}")]
@@ -80,6 +85,7 @@ pub(crate) struct PbftStateMachine<Client> {
     config: FrostConfig,
     pre_commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
     commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
+    secret_key: secp256k1::SecretKey,
 }
 
 impl<Client> PbftStateMachine<Client>
@@ -97,6 +103,7 @@ where
         frost_handle: FrostHandle,
         frost_config: FrostConfig,
         peer_id: PeerId,
+        secret_key: secp256k1::SecretKey,
     ) -> Self {
         Self {
             storage,
@@ -106,6 +113,7 @@ where
             peer_id,
             pre_commitments: BTreeMap::new(),
             commitments: BTreeMap::new(),
+            secret_key,
         }
     }
 
@@ -120,6 +128,7 @@ where
             peer_id: self.peer_id,
             pre_commitments: BTreeMap::new(),
             commitments: BTreeMap::new(),
+            secret_key: self.secret_key,
         }
     }
 
@@ -218,25 +227,38 @@ where
         // Add our own precommitment
         pre_commits.insert(self.peer_id);
         self.pre_commitments.insert(block_hash, pre_commits.clone());
-        // TODO we should only be gossiping this once to reduce network traffic
-        self.gossip_to_peers(precommit).await?;
 
         // if we have enough precommitments, we can move to the next state
         if pre_commits.len() >= self.config.min_signers as usize {
-            // sign the block and gossip out our commitment
-            todo!();
-        }
+            info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
+            block.header().sign_block(&self.secret_key)?;
+            let commitment =
+                PbftResponse { response_type: PbftEventResponseType::PeerCommitment, data: block };
+            self.commitments.insert(block_hash, HashSet::new());
+            self.commitments.get_mut(&block_hash).unwrap().insert(self.peer_id);
 
+            self.gossip_to_peers(commitment).await?;
+        } else {
+            self.gossip_to_peers(precommit).await?;
+        }
         Ok(())
     }
 
     pub(crate) async fn process_commitment(
         &mut self,
-        block_hash: Vec<u8>,
-        payload: Vec<u8>,
+        block: SealedBlock,
+        peer_id: PeerId,
     ) -> Result<(), Error> {
         let block_hash = block.hash_slow();
-        todo!();
+        let mut commits = self.commitments.get(&block_hash).unwrap_or(&HashSet::new());
+        commits.insert(peer_id);
+
+        // if we have enough commitments, we can move to the next state
+        if commits.len() >= self.config.min_signers as usize {
+            info!(target: "pbft" ,"We have enough commitments moving to next state");
+            self.commitments.remove(&block_hash);
+            // TODO: we should be able to move to the next state
+        }
         Ok(())
     }
 }
