@@ -11,8 +11,8 @@ use crate::{
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_consensus_common::utils::get_authority_list;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_botanix_lib::header_ext::HeaderExt;
 use reth_network::{
     frost::manager::{FrostConfig, FrostHandle},
     message::NewBlockMessage,
@@ -130,7 +130,7 @@ where
 
         // Latest epoch header is the last header in the vector
         // This header should include the authority list which is validated by consensus
-        let authorities = get_authority_list(&latest_header)
+        let authorities = latest_header.get_authority_list()
             .map_err(|e| {
                 error!("Failed to retrieve authority list: {:?}", e);
                 AuthorityConsensusBuilderError::FailedToRecoverAuthorityList

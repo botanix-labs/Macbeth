@@ -5,7 +5,7 @@ use bitcoin::{
     hashes::Hash,
     secp256k1, witness,
 };
-use reth_primitives::{Bytes, Header, B256};
+
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
@@ -14,62 +14,6 @@ const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
-
-pub trait HeaderExt {
-    fn deserialize_extra_data_header(
-        &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;
-
-    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
-
-    /// Sign a block and update edh
-    fn sign_block(
-        &mut self,
-        sk: &secp256k1::SecretKey,
-    ) -> Result<(), ExtraDataHeaderDeserialzeError>;
-}
-
-impl HeaderExt for Header {
-    fn deserialize_extra_data_header(
-        &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError> {
-        let binding = self.extra_data.to_vec();
-        let mut extra_data = binding.as_slice();
-        ExtraDataHeader::deserialize(&mut extra_data)
-    }
-
-    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
-        let mut this = self.clone();
-        let mut edh = this.deserialize_extra_data_header()?;
-        edh.authority_signatures = None;
-        edh.set_optional_fields_bitmask();
-
-        let mut writer: Vec<u8> = vec![];
-        edh.encode_into_without_signature(&mut writer).expect("Valid extra data header");
-        // Take ownership of the data in writer and leave an empty Vec<u8>
-        let bytes_data = Bytes::from(writer.clone());
-        this.extra_data = bytes_data;
-        let hash = this.hash_slow();
-
-        Ok(hash)
-    }
-
-    fn sign_block(
-        &mut self,
-        sk: &secp256k1::SecretKey,
-    ) -> Result<(), ExtraDataHeaderDeserialzeError> {
-        let sighash = self.create_sighash()?;
-        let message =
-            secp256k1::Message::from_slice(sighash.as_slice()).expect("Valid message to sign");
-        let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, &sk);
-
-        let mut edh = self.deserialize_extra_data_header()?;
-        edh.add_signature(signature);
-
-        self.extra_data = Bytes::from(edh.serialize());
-        Ok(())
-    }
-}
 
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
@@ -177,7 +121,6 @@ impl ExtraDataHeader {
             utxo_commitment,
             authority_signatures,
             optional_fields,
-            bitcoin_block_hash,
         }
     }
 
@@ -363,6 +306,7 @@ impl ExtraDataHeader {
                 sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::InvalidSignature)?;
             for signer in authority_signers {
                 if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
+                    println!("valid signature");
                     signer_count += 1;
                 }
             }
@@ -575,11 +519,7 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
-<<<<<<< HEAD
-        assert!(deserialized_header.authority_signature.is_some());
-=======
         assert_eq!(deserialized_header.authority_signatures.is_some(), true);
->>>>>>> 82f8efcb0 (feature(edh): authority signatures should be a list of sigs)
         assert_eq!(
             deserialized_header.authority_signatures.clone().unwrap()[0].to_standard(),
             signature.to_standard()
@@ -842,18 +782,6 @@ mod tests {
         );
 
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
-    }
-
-    #[test]
-    fn deserialize_extension_trait() {
-        let mut header = Header::default();
-        let edh = ExtraDataHeader::default();
-        let serialized = edh.serialize();
-        header.extra_data = serialized.into();
-        let deserialized_edh =
-            header.deserialize_extra_data_header().expect("Deserialization passed");
-
-        assert_eq!(deserialized_edh, edh);
     }
 
     #[test]
