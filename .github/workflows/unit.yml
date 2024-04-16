@@ -35,6 +35,7 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -50,7 +51,8 @@ jobs:
           --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443  \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5
+          --fall-back-fee-rate-sat-per-vbyte 5 &
+
       - name: Run tests
         run: |
           cargo nextest run \
@@ -97,7 +99,8 @@ jobs:
           --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5
+          --fall-back-fee-rate-sat-per-vbyte 5 &
+
       - run: cargo nextest run --release -p ef-tests --features ef-tests
 
   doc:
