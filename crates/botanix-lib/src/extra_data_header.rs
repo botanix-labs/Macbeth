@@ -5,7 +5,7 @@ use bitcoin::{
     hashes::Hash,
     secp256k1, witness,
 };
-use reth_primitives::Header;
+use reth_primitives::{Bytes, Header, B256};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
@@ -137,11 +137,20 @@ impl ExtraDataHeader {
             utxo_commitment,
             authority_signatures,
             optional_fields,
+            bitcoin_block_hash,
         }
     }
 
     pub fn set_signature(&mut self, signature: Vec<RecoverableSignature>) {
         self.authority_signatures = Some(signature);
+        self.set_optional_fields_bitmask();
+    }
+
+    pub fn add_signature(&mut self, signature: RecoverableSignature) {
+        if self.authority_signatures.is_none() {
+            self.authority_signatures = Some(vec![]);
+        }
+        self.authority_signatures.as_mut().unwrap().push(signature);
         self.set_optional_fields_bitmask();
     }
 
@@ -269,7 +278,7 @@ impl ExtraDataHeader {
         let signatures = if optional_fields & (1u8 << HAS_SIGNATURE_POS) != 0 {
             let mut sigs = vec![];
             let signature_len = u32::consensus_decode(reader)?;
-            for i in 0..signature_len {
+            for _ in 0..signature_len {
                 let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
                 let mut buf = [0; 64];
                 reader.read_exact(&mut buf)?;
@@ -581,6 +590,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         assert!(header
@@ -600,6 +610,7 @@ mod tests {
             None,
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
+            [0u8; 32],
         );
 
         assert!(header
@@ -766,6 +777,29 @@ mod tests {
 
         edh.set_signature(vec![signature]);
         assert_eq!(edh.authority_signatures.is_some(), true);
+        assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
+    }
+
+    #[test]
+    fn can_add_individual_signature() {
+        let mut edh = ExtraDataHeader::default();
+        let secp = Secp256k1::new();
+        let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
+
+        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes());
+        let message = Message::from(hello_world_hash);
+        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+
+        edh.add_signature(signature);
+        assert_eq!(edh.authority_signatures.is_some(), true);
+        let edh_signature = edh.authority_signatures.unwrap();
+        assert_eq!(edh_signature.clone().len(), 1);
+        // make sure its the same signature
+        assert_eq!(
+            edh_signature.get(0).expect("valid sig").serialize_compact().1,
+            signature.serialize_compact().1
+        );
+
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 
