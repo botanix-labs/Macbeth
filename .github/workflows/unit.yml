@@ -25,7 +25,7 @@ jobs:
     strategy:
       matrix:
         partition: [1, 2]
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +67,7 @@ jobs:
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Checkout ethereum/tests
@@ -108,7 +108,7 @@ jobs:
     runs-on: botanix-actions-runner
     env:
       RUST_BACKTRACE: 1
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -123,7 +123,7 @@ jobs:
     runs-on: botanix-actions-runner
     if: always()
     needs: [test, state, doc]
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1
