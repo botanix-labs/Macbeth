@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
-use reth_consensus_common::utils::create_authority_sighash;
+use reth_botanix_lib::{extra_data_header::ExtraDataHeaderDeserialzeError, header_ext::HeaderExt};
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
     Header,
@@ -92,6 +91,7 @@ pub(crate) enum GetVotesError {
 }
 
 /// Given a range of block headers we want a utility function that will return a list of votes
+/// This code is currently not used
 #[allow(dead_code)]
 pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote>, GetVotesError> {
     // Structure to keep track of all votes that occured in this block range
@@ -102,9 +102,9 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
             continue;
         }
         // Check if there is a authority being voted on in the extra data
-        let extra_data_header =
-            ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-                .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
+        let extra_data_header = header
+            .deserialize_extra_data_header()
+            .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
 
         if extra_data_header.authority_vote.is_none() {
             continue;
@@ -112,7 +112,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
 
         // If there is no signature, we can't verify who casted the vote
         // This would be a invalid block anyways
-        if extra_data_header.authority_signature.is_none() {
+        if extra_data_header.authority_signatures.is_none() {
             continue;
         }
 
@@ -124,13 +124,13 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         let authority_to_vote_on = extra_data_header.authority_vote.expect("valid authority vote");
         // Need to recover the authority that signed the block from the signature
         // TODO(armins) remove unwrap
-        let sig_hash = secp256k1::Message::from_slice(
-            create_authority_sighash(&mut header.clone(), &extra_data_header).as_slice(),
-        )
-        .unwrap();
+        let sig_hash =
+            secp256k1::Message::from_slice(header.create_sighash().unwrap().as_slice()).unwrap();
 
         let authority_that_votes = extra_data_header
-            .authority_signature
+            .authority_signatures
+            .expect("valid signatures")
+            .get(0)
             .expect("valid signature")
             .recover(&sig_hash)
             .map_err(GetVotesError::FailedToRecoverAuthority)?;

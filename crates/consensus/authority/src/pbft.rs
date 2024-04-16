@@ -13,9 +13,8 @@ use reth_network::{
     PeerInfo,
 };
 // use reth_ecies::id2;
-use reth_botanix_lib::extra_data_header::{
-    self, ExtraDataHeader, ExtraDataHeaderSerializeError, HeaderExt,
-};
+use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader, ExtraDataHeaderSerializeError};
+use reth_botanix_lib::header_ext::HeaderExt;
 use reth_primitives::{BlockHash, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
