@@ -1,5 +1,6 @@
 //! Collection of methods for block validation.
 
+use reth_botanix_lib::header_ext::HeaderExt;
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
@@ -22,14 +23,14 @@ pub fn validate_header_standalone(
         return Err(ConsensusError::HeaderGasUsedExceedsGasLimit {
             gas_used: header.gas_used,
             gas_limit: header.gas_limit,
-        })
+        });
     }
 
     // Check if base fee is set.
-    if chain_spec.fork(Hardfork::London).active_at_block(header.number) &&
-        header.base_fee_per_gas.is_none()
+    if chain_spec.fork(Hardfork::London).active_at_block(header.number)
+        && header.base_fee_per_gas.is_none()
     {
-        return Err(ConsensusError::BaseFeeMissing)
+        return Err(ConsensusError::BaseFeeMissing);
     }
 
     let wd_root_missing = header.withdrawals_root.is_none() && !chain_spec.is_optimism();
@@ -37,27 +38,27 @@ pub fn validate_header_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_none() &&
-        chain_spec.chain.id() != 3636 &&
-        wd_root_missing
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_none()
+        && chain_spec.chain.id() != 3636
+        && wd_root_missing
     {
-        return Err(ConsensusError::WithdrawalsRootMissing)
-    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_some()
+        return Err(ConsensusError::WithdrawalsRootMissing);
+    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_some()
     {
-        return Err(ConsensusError::WithdrawalsRootUnexpected)
+        return Err(ConsensusError::WithdrawalsRootUnexpected);
     }
 
     // Ensures that EIP-4844 fields are valid once cancun is active.
     if chain_spec.fork(Hardfork::Cancun).active_at_timestamp(header.timestamp) {
         validate_4844_header_standalone(header)?;
     } else if header.blob_gas_used.is_some() {
-        return Err(ConsensusError::BlobGasUsedUnexpected)
+        return Err(ConsensusError::BlobGasUsedUnexpected);
     } else if header.excess_blob_gas.is_some() {
-        return Err(ConsensusError::ExcessBlobGasUnexpected)
+        return Err(ConsensusError::ExcessBlobGasUnexpected);
     } else if header.parent_beacon_block_root.is_some() {
-        return Err(ConsensusError::ParentBeaconBlockRootUnexpected)
+        return Err(ConsensusError::ParentBeaconBlockRootUnexpected);
     }
 
     Ok(())
@@ -76,17 +77,17 @@ pub fn validate_transaction_regarding_header(
     let chain_id = match transaction {
         Transaction::Legacy(TxLegacy { chain_id, .. }) => {
             // EIP-155: Simple replay attack protection: https://eips.ethereum.org/EIPS/eip-155
-            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number) &&
-                chain_id.is_some()
+            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number)
+                && chain_id.is_some()
             {
-                return Err(InvalidTransactionError::OldLegacyChainId.into())
+                return Err(InvalidTransactionError::OldLegacyChainId.into());
             }
             *chain_id
         }
         Transaction::Eip2930(TxEip2930 { chain_id, .. }) => {
             // EIP-2930: Optional access lists: https://eips.ethereum.org/EIPS/eip-2930 (New transaction type)
             if !chain_spec.fork(Hardfork::Berlin).active_at_block(at_block_number) {
-                return Err(InvalidTransactionError::Eip2930Disabled.into())
+                return Err(InvalidTransactionError::Eip2930Disabled.into());
             }
             Some(*chain_id)
         }
@@ -98,13 +99,13 @@ pub fn validate_transaction_regarding_header(
         }) => {
             // EIP-1559: Fee market change for ETH 1.0 chain https://eips.ethereum.org/EIPS/eip-1559
             if !chain_spec.fork(Hardfork::London).active_at_block(at_block_number) {
-                return Err(InvalidTransactionError::Eip1559Disabled.into())
+                return Err(InvalidTransactionError::Eip1559Disabled.into());
             }
 
             // EIP-1559: add more constraints to the tx validation
             // https://github.com/ethereum/EIPs/pull/3594
             if max_priority_fee_per_gas > max_fee_per_gas {
-                return Err(InvalidTransactionError::TipAboveFeeCap.into())
+                return Err(InvalidTransactionError::TipAboveFeeCap.into());
             }
 
             Some(*chain_id)
@@ -117,13 +118,13 @@ pub fn validate_transaction_regarding_header(
         }) => {
             // EIP-4844: Shard Blob Transactions https://eips.ethereum.org/EIPS/eip-4844
             if !chain_spec.fork(Hardfork::Cancun).active_at_timestamp(at_timestamp) {
-                return Err(InvalidTransactionError::Eip4844Disabled.into())
+                return Err(InvalidTransactionError::Eip4844Disabled.into());
             }
 
             // EIP-1559: add more constraints to the tx validation
             // https://github.com/ethereum/EIPs/pull/3594
             if max_priority_fee_per_gas > max_fee_per_gas {
-                return Err(InvalidTransactionError::TipAboveFeeCap.into())
+                return Err(InvalidTransactionError::TipAboveFeeCap.into());
             }
 
             Some(*chain_id)
@@ -133,14 +134,14 @@ pub fn validate_transaction_regarding_header(
     };
     if let Some(chain_id) = chain_id {
         if chain_id != chain_spec.chain().id() {
-            return Err(InvalidTransactionError::ChainIdMismatch.into())
+            return Err(InvalidTransactionError::ChainIdMismatch.into());
         }
     }
     // Check basefee and few checks that are related to that.
     // https://github.com/ethereum/EIPs/pull/3594
     if let Some(base_fee_per_gas) = base_fee {
         if transaction.max_fee_per_gas() < base_fee_per_gas as u128 {
-            return Err(InvalidTransactionError::FeeCapTooLow.into())
+            return Err(InvalidTransactionError::FeeCapTooLow.into());
         }
     }
 
@@ -185,7 +186,7 @@ pub fn validate_all_transaction_regarding_block_and_nonces<
                     return Err(ConsensusError::from(
                         InvalidTransactionError::SignerAccountHasBytecode,
                     )
-                    .into())
+                    .into());
                 }
                 let nonce = account.nonce;
                 entry.insert(account.nonce + 1);
@@ -195,7 +196,7 @@ pub fn validate_all_transaction_regarding_block_and_nonces<
 
         // check nonce
         if transaction.nonce() != nonce {
-            return Err(ConsensusError::from(InvalidTransactionError::NonceNotConsistent).into())
+            return Err(ConsensusError::from(InvalidTransactionError::NonceNotConsistent).into());
         }
     }
 
@@ -217,19 +218,19 @@ pub fn validate_block_standalone(
     if block.header.ommers_hash != ommers_hash {
         return Err(ConsensusError::BodyOmmersHashDiff(
             GotExpected { got: ommers_hash, expected: block.header.ommers_hash }.into(),
-        ))
+        ));
     }
 
     // Check transaction root
     if let Err(error) = block.ensure_transaction_root_valid() {
-        return Err(ConsensusError::BodyTransactionRootDiff(error.into()))
+        return Err(ConsensusError::BodyTransactionRootDiff(error.into()));
     }
 
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != 3636
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp)
+        && chain_spec.chain.id() != 3636
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;
@@ -239,7 +240,7 @@ pub fn validate_block_standalone(
         if withdrawals_root != *header_withdrawals_root {
             return Err(ConsensusError::BodyWithdrawalsRootDiff(
                 GotExpected { got: withdrawals_root, expected: *header_withdrawals_root }.into(),
-            ))
+            ));
         }
     }
 
@@ -253,7 +254,7 @@ pub fn validate_block_standalone(
             return Err(ConsensusError::BlobGasUsedDiff(GotExpected {
                 got: header_blob_gas_used,
                 expected: total_blob_gas,
-            }))
+            }));
         }
     }
 
@@ -275,7 +276,7 @@ pub fn validate_block_regarding_chain<PROV: HeaderProvider + WithdrawalsProvider
 
     // Check if block is known.
     if provider.is_known(&hash)? {
-        return Err(ConsensusError::BlockKnown { hash, number: block.header.number }.into())
+        return Err(ConsensusError::BlockKnown { hash, number: block.header.number }.into());
     }
 
     // Check if parent is known.
@@ -298,25 +299,25 @@ pub fn validate_4844_header_standalone(header: &SealedHeader) -> Result<(), Cons
     let blob_gas_used = header.blob_gas_used.ok_or(ConsensusError::BlobGasUsedMissing)?;
 
     if header.excess_blob_gas.is_none() {
-        return Err(ConsensusError::ExcessBlobGasMissing)
+        return Err(ConsensusError::ExcessBlobGasMissing);
     }
 
     if header.parent_beacon_block_root.is_none() {
-        return Err(ConsensusError::ParentBeaconBlockRootMissing)
+        return Err(ConsensusError::ParentBeaconBlockRootMissing);
     }
 
     if blob_gas_used > MAX_DATA_GAS_PER_BLOCK {
         return Err(ConsensusError::BlobGasUsedExceedsMaxBlobGasPerBlock {
             blob_gas_used,
             max_blob_gas_per_block: MAX_DATA_GAS_PER_BLOCK,
-        })
+        });
     }
 
     if blob_gas_used % DATA_GAS_PER_BLOB != 0 {
         return Err(ConsensusError::BlobGasUsedNotMultipleOfBlobGasPerBlob {
             blob_gas_used,
             blob_gas_per_blob: DATA_GAS_PER_BLOB,
-        })
+        });
     }
 
     Ok(())
@@ -347,7 +348,7 @@ pub fn validate_poa_header_standalone(
     utils::validate_poa_block_beneficiary(header)?;
 
     // Validate signer is in turn
-    utils::validate_inturn(header, authority_signers)?;
+    header.validate_inturn(authority_signers)?;
 
     Ok(())
 }
@@ -364,7 +365,7 @@ pub fn validate_header_with_total_difficulty(
     _total_difficulty: U256,
 ) -> Result<(), ConsensusError> {
     if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
-        return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
+        return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty);
     }
     // validate header extradata
     validate_header_extradata(header)?;

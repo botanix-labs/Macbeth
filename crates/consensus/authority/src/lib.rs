@@ -19,7 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+use reth_botanix_lib::header_ext::HeaderExt;
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp},
     validation::{self, validate_poa_header_standalone},
@@ -34,9 +34,9 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
-    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
-    EMPTY_OMMER_ROOT_HASH, U256,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, ChainSpec,
+    Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH,
+    U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -56,11 +56,11 @@ mod block_builder;
 mod block_fetcher;
 mod builder;
 mod dkg;
-mod pbft;
 mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
+mod pbft;
 mod signing;
 mod sync;
 mod task;
@@ -366,28 +366,31 @@ where
         // consensus validation
 
         // Serialize the header without signature
-        let mut extra_header_content_no_signature = ExtraDataHeader::new(
-            0u32,
-            None,
-            if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
-            vote_for,
-            witness_data.clone(),
-            recent_block_hash,
-            *utxo_commitment,
-        );
-        let sig_hash = reth_consensus_common::utils::create_authority_sighash(
-            &mut header.clone(),
-            &extra_header_content_no_signature,
-        );
+        // let mut extra_header_content_no_signature = ExtraDataHeader::new(
+        //     0u32,
+        //     None,
+        //     if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
+        //     vote_for,
+        //     witness_data.clone(),
+        //     recent_block_hash,
+        //     *utxo_commitment,
+        // );
+        // let sig_hash = reth_consensus_common::utils::create_authority_sighash(
+        //     &mut header.clone(),
+        //     &extra_header_content_no_signature,
+        // );
 
-        // Sign the header and append to extra data header
-        let message =
-            secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
-        let signature = secp.sign_ecdsa_recoverable(&message, sk);
+        // // Sign the header and append to extra data header
+        // let message =
+        //     secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
+        // let signature = secp.sign_ecdsa_recoverable(&message, sk);
 
-        extra_header_content_no_signature.set_signature(signature);
+        // extra_header_content_no_signature.set_signature(signature);
 
-        header.extra_data = Bytes::from(extra_header_content_no_signature.serialize());
+        header.sign_block(&sk).map_err(|e| {
+            warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
         Ok(header)
     }
 

@@ -59,7 +59,7 @@ pub struct DkgResponse {
 }
 
 /// Response structure for PBFT internal communication
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PbftEventResponseType {
     /// in turn block producer proposes a block to sign    
     CoordinatorBlockProposal,
@@ -70,7 +70,7 @@ pub enum PbftEventResponseType {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PbftResponse {
     /// The Response Type
     pub response_type: PbftEventResponseType,
