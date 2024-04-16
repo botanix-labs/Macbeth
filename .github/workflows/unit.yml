@@ -6,7 +6,7 @@ on:
   pull_request:
   merge_group:
   push:
-    branches: [main]
+    branches: [main, feature/mark/ci/quick-fix]
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,37 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
-  integration:
-    name: Start Docker container for bitcoind
-    runs-on: botanix-actions-runner
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4 
-      - name: Create bitcoin data directory
-        run: mkdir $HOME/bitcoin_data
-
-      - name: Copy bitcoin.conf to bitcoin data directory
-        run: cp ./bitcoin.conf $HOME/bitcoin_data
-
-      - name: Start bitcoind Docker container
-        run: |
-          docker run --rm --name bitcoind -d \
-            --volume $HOME/bitcoin_data:/root/.bitcoin \
-            -p 127.0.0.1:18443:18443 \
-            farukter/bitcoind:regtest
-
-      - name: Wait for bitcoind to be ready
-        run: |
-          until docker exec bitcoind bitcoin-cli getblockchaininfo &> /dev/null; do
-            echo "Waiting for bitcoind to start..."
-            sleep 5
-          done
-
   test:
     name: test / ethereum (${{ matrix.partition }}/2)
     runs-on: botanix-actions-runner
-    needs: [integration]
     env:
       RUST_BACKTRACE: 1
     strategy:
@@ -75,8 +47,8 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie foo \
+          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443  \
+          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
       - name: Run tests
@@ -90,7 +62,6 @@ jobs:
   state:
     name: Ethereum state tests
     runs-on: botanix-actions-runner
-    needs: [integration]
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
@@ -123,8 +94,8 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie foo \
+          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
+          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
       - run: cargo nextest run --release -p ef-tests --features ef-tests
@@ -151,8 +122,6 @@ jobs:
     needs: [test, state, doc]
     timeout-minutes: 30
     steps:
-      - name: Stop bitcoind Docker container
-        run: docker stop bitcoind
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1
         with:

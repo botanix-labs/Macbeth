@@ -1,18 +1,18 @@
 # Runs integration tests.
 
-name: integration
+name: Botanix Integration Tests
 
 on:
   pull_request:
   merge_group:
   push:
-    branches: [main]
+    branches: [main, feature/mark/ci/quick-fix]
 
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
   BITCOIN_NETWORK: regtest
-  BITCOIND_URL: http://localhost:18443
+  BITCOIND_URL: http://botanix-bitcoind-ci.sre.svc.cluster.local:18443
   BITCOIND_COOKIE: foo
 
 concurrency:
@@ -20,7 +20,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   test:
     name: test / ethereum
     runs-on: botanix-actions-runner
@@ -45,10 +44,11 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie foo \
+          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
+          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
+
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
@@ -91,8 +91,8 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie foo \
+          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
+          --bitcoind-cookie myuser:8594d179cf22645aacf9189bdc59f7cb$1f8e28a0379455afd9906ddde2f42f2a59760e8395088e8d2fdb0a3dd9c8a832 \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5
       - name: Run sync
