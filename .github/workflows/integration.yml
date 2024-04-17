@@ -28,6 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - uses: dtolnay/rust-toolchain@stable
       - name: Start BTC Server
         run: |
@@ -68,6 +71,9 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Start BTC Server
         run: |
