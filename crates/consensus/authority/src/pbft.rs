@@ -1,21 +1,14 @@
-use crate::{
-    utils::{deserialize_frost_peer_id, retry_exec},
-    Storage,
-};
+use crate::{utils::retry_exec, Storage};
 use frost_secp256k1_tr as frost;
-use reth_consensus_common::utils::{current_inturn_index, is_inturn};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::{
-    frost::{
-        manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
-        FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
-    },
-    PeerInfo,
-};
-// use reth_ecies::id2;
-use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader, ExtraDataHeaderSerializeError};
+use reth_botanix_lib::extra_data_header::ExtraDataHeaderSerializeError;
 use reth_botanix_lib::header_ext::HeaderExt;
-use reth_primitives::{BlockHash, SealedBlock};
+use reth_consensus_common::utils::current_inturn_index;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::frost::{
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
+};
+use reth_primitives::{BlockBody, BlockHash, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use std::{
@@ -85,6 +78,7 @@ pub(crate) struct PbftStateMachine<Client> {
     pre_commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
     commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
     secret_key: secp256k1::SecretKey,
+    personal_frost_identifier: frost::Identifier,
 }
 
 impl<Client> PbftStateMachine<Client>
@@ -104,7 +98,14 @@ where
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
     ) -> Self {
+        let personal_frost_identifier: frost::Identifier =
+            peer_id_to_identifier(config.authority_index as u16);
+        info!(
+            "Frost identifier used: {:?} - {:?}",
+            config.authority_index, personal_frost_identifier
+        );
         Self {
+            personal_frost_identifier,
             storage,
             frost_handle,
             state: PbftState::Initial,
@@ -120,6 +121,7 @@ where
     #[allow(dead_code)]
     pub(crate) fn reset(self) -> Self {
         Self {
+            personal_frost_identifier: self.personal_frost_identifier,
             storage: self.storage,
             frost_handle: self.frost_handle,
             state: PbftState::Initial,
@@ -181,7 +183,9 @@ where
             for (frost_id, sender) in connected_peers.iter() {
                 if *frost_id != self.personal_frost_identifier {
                     sender
-                        .send(FrostPeerCommand::PeerMessage(pbft_response))
+                        .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Pbft(
+                            pbft_response.clone(),
+                        )))
                         .map_err(Error::Send)?;
                 }
             }
@@ -203,10 +207,10 @@ where
             .get(current_inturn_index(self.config.authorities.len() as u64) as usize)
             .expect("should be valid index");
 
-        // if pk2id(peer_id) !=
-        // TODO should only be calling if we know this request comes from in turn
+        // TODO Check if the inturn block producer has a signature on the block
         let block_hash = block.hash_slow();
         self.pre_commitments.insert(block_hash, HashSet::new());
+        self.process_precommitment(block, peer_id).await?;
         Ok(())
     }
 
@@ -218,26 +222,38 @@ where
         info!(target: "pbft" ,"Processing pre-commitment from peer {:?}", peer_id);
         let block_hash = block.hash_slow();
         // This shouldnt be the first time we are seeing this block
-        let mut pre_commits = self.pre_commitments.get(&block_hash).unwrap_or(&HashSet::new());
-        pre_commits.insert(peer_id);
-        // Generate our pre commitment gossip it out
-        let precommit =
-            PbftResponse { response_type: PbftEventResponseType::PeerPreCommitment, data: block };
+        let pre_commits = self.pre_commitments.get(&block_hash).unwrap_or(&HashSet::new()).clone();
+        let mut pre_commits_mut = pre_commits.clone();
+        // Add Peers precommitment
+        pre_commits_mut.insert(peer_id);
         // Add our own precommitment
-        pre_commits.insert(self.peer_id);
-        self.pre_commitments.insert(block_hash, pre_commits.clone());
+        pre_commits_mut.insert(self.peer_id);
+        self.pre_commitments.insert(block_hash, pre_commits_mut);
 
         // if we have enough precommitments, we can move to the next state
         if pre_commits.len() >= self.config.min_signers as usize {
             info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
-            block.header().sign_block(&self.secret_key)?;
-            let commitment =
-                PbftResponse { response_type: PbftEventResponseType::PeerCommitment, data: block };
+            let mut mutable_header = block.header().clone();
+            mutable_header.sign_block(&self.secret_key).unwrap();
+            let signed_block = SealedBlock::new(
+                mutable_header.seal_slow(),
+                BlockBody { transactions: block.body, ommers: vec![], withdrawals: None },
+            );
+
+            let commitment = PbftResponse {
+                response_type: PbftEventResponseType::PeerCommitment,
+                data: signed_block,
+            };
             self.commitments.insert(block_hash, HashSet::new());
             self.commitments.get_mut(&block_hash).unwrap().insert(self.peer_id);
 
             self.gossip_to_peers(commitment).await?;
         } else {
+            // Generate our pre commitment gossip it out
+            let precommit = PbftResponse {
+                response_type: PbftEventResponseType::PeerPreCommitment,
+                data: block,
+            };
             self.gossip_to_peers(precommit).await?;
         }
         Ok(())
@@ -249,7 +265,7 @@ where
         peer_id: PeerId,
     ) -> Result<(), Error> {
         let block_hash = block.hash_slow();
-        let mut commits = self.commitments.get(&block_hash).unwrap_or(&HashSet::new());
+        let mut commits = self.commitments.get(&block_hash).unwrap_or(&HashSet::new()).clone();
         commits.insert(peer_id);
 
         // if we have enough commitments, we can move to the next state

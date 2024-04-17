@@ -51,7 +51,7 @@ pub struct FrostManager {
     /// total authorities to connect to
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
-    task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageResponse>>,
+    task_forwarder_txs: Vec<mpsc::UnboundedSender<(PeerId, PeerMessageResponse)>>,
 }
 
 impl FrostManager {
@@ -61,8 +61,13 @@ impl FrostManager {
         network: NetworkHandle,
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
-        let FrostConfig { authority_index: _, authorities, min_signers: _, max_signers: _ } =
-            config;
+        let FrostConfig {
+            authority_index,
+            authorities,
+            min_signers: _,
+            max_signers: _,
+            authority_pk: _,
+        } = config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let authority_peerid = authorities
             .iter()
@@ -126,7 +131,7 @@ impl FrostManager {
                 info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
                 for task_forwarder in self.task_forwarder_txs.iter() {
                     // TODO:  handle error?
-                    let _send_res = task_forwarder.send(response.clone());
+                    let _send_res = task_forwarder.send((peer_id, response.clone()));
                 }
             }
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
@@ -164,7 +169,7 @@ impl FrostManager {
                 // create channel whereby keeping the sender half and sending to the caller the
                 // receiver
                 let (task_forwarder_txs, frost_task_forwarder_rx) =
-                    mpsc::unbounded_channel::<PeerMessageResponse>();
+                    mpsc::unbounded_channel::<(PeerId, PeerMessageResponse)>();
                 self.task_forwarder_txs.push(task_forwarder_txs);
                 // reply to caller
                 let _ = tx.send(frost_task_forwarder_rx);
@@ -221,12 +226,13 @@ pub enum FrostCommand {
         oneshot::Sender<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>>,
     ),
     /// Get a receiver for streaming peer messages
-    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageResponse>>),
+    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
 }
 
 /// Config type for initiating a [`FrostManager`] instance.
 #[derive(Clone, Debug)]
 pub struct FrostConfig {
+    pub authority_pk: secp256k1::PublicKey,
     /// Authority index of the current peer participating in frost
     pub authority_index: usize,
     /// Total number of authorities participating in frost
@@ -240,12 +246,18 @@ pub struct FrostConfig {
 impl FrostConfig {
     /// Create a new [`FrostConfig`] with default values
     pub fn new(
+        authority_pk: secp256k1::PublicKey,
         authority_index: usize,
         authorities: Vec<secp256k1::PublicKey>,
         min_signers: u16,
         max_signers: u16,
     ) -> Self {
-        Self { authority_index, authorities, min_signers, max_signers }
+        Self { authority_pk, authority_index, authorities, min_signers, max_signers }
+    }
+
+    /// Sets the authority public key
+    pub fn set_authority_pk(&mut self, authority_pk: secp256k1::PublicKey) {
+        self.authority_pk = authority_pk;
     }
 
     /// Sets the authority index

@@ -36,7 +36,7 @@ impl ProtocolState {
     }
 }
 
-/// Enum for peer message responses for dkg and signing
+/// Enum for peer message responses for dkg, signing and pbft
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PeerMessageResponse {
     /// Dkg response
