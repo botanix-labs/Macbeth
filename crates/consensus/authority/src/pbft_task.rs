@@ -1,0 +1,164 @@
+use crate::{pbft::PbftStateMachine, signing::SigningStateMachine, Storage};
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::frost::{
+    manager::{FrostCommand, FrostConfig, FrostHandle},
+    DkgEventResponseType, DkgResponse, PbftEventResponseType, PbftResponse, PeerMessageResponse,
+    SigningEventResponseType, SigningResponse,
+};
+use reth_primitives::SealedBlock;
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::{debug, error, info, warn};
+
+/// Enum defining possible frost message notifications
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PbftNotificationMessage {
+    ProposeBlock(PbftNotification),
+}
+
+/// Finalised frost signature message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PbftNotification {
+    /// The signing session id
+    pub(crate) block: SealedBlock,
+}
+
+pub struct PbftTask<Client> {
+    /// Frost Handler
+    pub(crate) frost_handle: FrostHandle,
+    /// pbft state machine
+    pub(crate) pbft_state_machine: PbftStateMachine<Client>,
+    /// Shared storage to insert aggregate public key
+    pub(crate) storage: Storage<Client>,
+    /// Channel to receive pbft notifications (from the block production task)
+    pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+    /// authority / network secret key
+    secret_key: secp256k1::SecretKey,
+}
+
+impl<Client> PbftTask<Client>
+where
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+{
+    /// Creates a new instance of the task
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        frost_handle: FrostHandle,
+        config: FrostConfig,
+        storage: Storage<Client>,
+        secret_key: secp256k1::SecretKey,
+        pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+        pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
+    ) -> Self {
+        let pbft_state_machine =
+            PbftStateMachine::new(storage, frost_handle, config, peer_id, secret_key);
+        Self { frost_handle, pbft_state_machine, storage, secret_key, pbft_task_rx }
+    }
+
+    pub async fn start_task(&mut self) -> () {
+        info!(target: "PBFT Task", "Starting PBFT Task");
+        // before we start get a proper event receiver
+        let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
+        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        let mut peer_messages_rx = match peer_messages_rx.await {
+            Ok(peer_messages_rx) => peer_messages_rx,
+            Err(e) => {
+                error!(target: "PBFT Task", "Error getting receiver handle = {:?}", e);
+                panic!("Error getting receiver handle");
+            }
+        };
+
+        loop {
+            // First handle any pbft notifications from the block builder task
+            while let Ok(message) = self.pbft_task_rx.try_recv() {
+                if let PbftNotificationMessage::ProposeBlock(pbft_notification) = message {
+                    todo!();
+                } else {
+                    warn!(
+                        target: "PBFT Task",
+                        "pbft notification message {:?}",
+                        message
+                    );
+                }
+            }
+            // receive over a channel message from other peers and update our state machine
+            if let Ok(msg) = peer_messages_rx.try_recv() {
+                info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
+                match msg {
+                    PeerMessageResponse::Pbft(pbft_response) => {
+                        let PbftResponse { response_type, data } = pbft_response;
+                        match response_type {
+                            PbftEventResponseType::CoordinatorBlockProposal => {
+                                match self
+                                    .pbft_state_machine
+                                    .process_block_proposal(data, peer_id)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        info!(target: "PBFT Task", "Block proposal processed successfully");
+                                    }
+                                    Err(e) => {
+                                        error!(target: "PBFT Task", "Error processing block proposal {:?}", e);
+                                    }
+                                }
+                            }
+                            PbftEventResponseType::PeerPreCommitment => {
+                                match self
+                                    .pbft_state_machine
+                                    .process_precommitment(data, peer_id)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        info!(target: "PBFT Task", "Peer pre-commitment processed successfully");
+                                    }
+                                    Err(e) => {
+                                        error!(target: "PBFT Task", "Error processing peer pre-commitment {:?}", e);
+                                    }
+                                }
+                            }
+                            PbftEventResponseType::PeerCommitment => {
+                                match self
+                                    .pbft_state_machine
+                                    .process_commitment(data, peer_id)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        info!(target: "PBFT Task", "Peer commitment processed successfully");
+                                    }
+                                    Err(e) => {
+                                        error!(target: "PBFT Task", "Error processing peer commitment {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    PeerMessageResponse::Dkg(_) => {
+                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        continue;
+                    }
+                    PeerMessageResponse::Signing(_) => {
+                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        continue;
+                    }
+                }
+            }
+
+            // short sleep
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+}
+
+impl<Client> std::fmt::Debug for PbftTask<Client>
+where
+    Client: Clone + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PbftTask").finish_non_exhaustive()
+    }
+}

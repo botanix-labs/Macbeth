@@ -68,6 +68,7 @@ mod sync;
 mod task;
 pub mod utils;
 mod voting;
+mod pbft_task;
 
 pub use builder::AuthorityConsensusBuilder;
 

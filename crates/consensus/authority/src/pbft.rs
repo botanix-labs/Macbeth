@@ -100,7 +100,7 @@ where
     pub(crate) fn new(
         storage: Storage<Client>,
         frost_handle: FrostHandle,
-        frost_config: FrostConfig,
+        config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
     ) -> Self {
@@ -108,7 +108,7 @@ where
             storage,
             frost_handle,
             state: PbftState::Initial,
-            config: frost_config,
+            config,
             peer_id,
             pre_commitments: BTreeMap::new(),
             commitments: BTreeMap::new(),
