@@ -102,6 +102,9 @@ pub enum ConsensusError {
     /// PoA specific: block beneficiary is not an authority
     #[error("block beneficiary is not an authority")]
     BlockBeneficiaryIsNotAuthority,
+    /// PoA specific: block beneficiary is not the burn address
+    #[error("block beneficiary is not the burn address")]
+    BlockBeneficiaryIsNotBurnAddress,
     /// Error when the hash of block ommer is different from the expected hash.
     #[error("mismatched block ommer hash: {0}")]
     BodyOmmersHashDiff(GotExpectedBoxed<B256>),

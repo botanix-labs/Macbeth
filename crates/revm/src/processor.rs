@@ -7,6 +7,7 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
+use reth_consensus_common::utils::get_authority_address_from_header;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_node_api::ConfigureEvm;
 use reth_primitives::{
@@ -212,6 +213,8 @@ where
         &mut self,
         block: &Block,
         total_difficulty: U256,
+        total_block_fees: Option<u128>,
+        block_builder_address: Option<Address>,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments = post_block_balance_increments(
             &self.chain_spec,
@@ -222,6 +225,8 @@ where
             total_difficulty,
             &block.ommers,
             block.withdrawals.as_ref().map(Withdrawals::as_ref),
+            total_block_fees,
+            block_builder_address,
         );
 
         // Irregular state change at Ethereum DAO hardfork
@@ -380,7 +385,7 @@ where
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
-        let (receipts, cumulative_gas_used) =
+        let (receipts, cumulative_gas_used, total_block_fees) =
             self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
 
         // Check if gas used matches the value set in header.
@@ -393,7 +398,13 @@ where
             .into());
         }
         let time = Instant::now();
-        self.apply_post_execution_state_change(block, total_difficulty)?;
+        let block_builder_address = get_authority_address_from_header(&block.header.clone());
+        self.apply_post_execution_state_change(
+            block,
+            total_difficulty,
+            Some(total_block_fees),
+            Some(block_builder_address),
+        )?;
         self.stats.apply_post_execution_state_changes_duration += time.elapsed();
 
         let time = Instant::now();
@@ -401,8 +412,8 @@ where
             !self
                 .prune_modes
                 .account_history
-                .map_or(false, |mode| mode.should_prune(block.number, tip)) &&
-                !self
+                .map_or(false, |mode| mode.should_prune(block.number, tip))
+                && !self
                     .prune_modes
                     .storage_history
                     .map_or(false, |mode| mode.should_prune(block.number, tip))
@@ -535,16 +546,18 @@ where
         block: &BlockWithSenders,
         total_difficulty: U256,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0));
+            return Ok((Vec::new(), 0, 0));
         }
 
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
+        let base_fee = block.base_fee_per_gas;
+        let mut total_block_fees = 0_u128;
         for (sender, transaction) in block.transactions_with_sender() {
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
@@ -568,6 +581,13 @@ where
             self.stats.execution_duration += time.elapsed();
             let time = Instant::now();
 
+            // calclaute the total block fees
+            let recovered_transaction =
+                transaction.clone().try_into_ecrecovered().expect("transaction is signed");
+            let transaction_fee =
+                recovered_transaction.effective_tip_per_gas(base_fee).expect("base fee is valid");
+            total_block_fees += transaction_fee * u128::from(result.gas_used());
+
             self.db_mut().commit(state);
 
             self.stats.apply_state_duration += time.elapsed();
@@ -587,7 +607,7 @@ where
             });
         }
 
-        Ok((receipts, cumulative_gas_used))
+        Ok((receipts, cumulative_gas_used, total_block_fees))
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {

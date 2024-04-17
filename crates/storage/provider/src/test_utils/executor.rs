@@ -44,7 +44,7 @@ impl BlockExecutor for TestExecutor {
         _block: &BlockWithSenders,
         _total_difficulty: U256,
         _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         Err(BlockExecutionError::UnavailableForTest)
     }
 

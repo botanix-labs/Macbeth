@@ -344,7 +344,7 @@ pub fn validate_poa_header_standalone(
     utils::validate_poa_extra_data_header(header, authority_signers)?;
 
     // Validate fee benificiary
-    utils::validate_poa_block_beneficiary(header, authority_signers)?;
+    utils::validate_poa_block_beneficiary(header)?;
 
     // Validate signer is in turn
     utils::validate_inturn(header, authority_signers)?;

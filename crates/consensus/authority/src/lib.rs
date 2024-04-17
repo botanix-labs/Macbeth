@@ -21,7 +21,7 @@
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
-    utils::unix_timestamp,
+    utils::{get_authority_address_from_header, recovery_authority, unix_timestamp},
     validation::{self, validate_poa_header_standalone},
 };
 use reth_interfaces::{
@@ -246,14 +246,10 @@ where
             .expect("header to exist")
             .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
 
-        // derive beneficary address being the producuing block federation member address
-        let beneficiary_pub_key = secp256k1::PublicKey::from_secret_key(secp, sk);
-        let beneficiary_address = public_key_to_address(beneficiary_pub_key);
-
         let mut header = Header {
             parent_hash: best_hash,
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: beneficiary_address,
+            beneficiary: Address::ZERO, // burn the block reward so not to increase ether supply
             state_root: Default::default(),
             transactions_root: Default::default(),
             receipts_root: Default::default(),
@@ -296,6 +292,7 @@ where
         executor: &mut EVMProcessor<'_, EvmConfig>,
         _senders: Vec<Address>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        block_builder_address: Option<Address>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -303,7 +300,7 @@ where
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
-        let (receipts, gas_used) =
+        let (receipts, gas_used, total_block_fees) =
             executor.execute_transactions(block, U256::ZERO, botanix_consensus_pkg)?;
 
         // Save receipts.
@@ -311,7 +308,12 @@ where
 
         // add post execution state change
         // Withdrawals, rewards etc.
-        executor.apply_post_execution_state_change(block, U256::ZERO)?;
+        executor.apply_post_execution_state_change(
+            block,
+            U256::ZERO,
+            Some(total_block_fees),
+            block_builder_address,
+        )?;
 
         // merge transitions
         executor.db_mut().merge_transitions(BundleRetention::Reverts);
@@ -433,11 +435,15 @@ where
 
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
+        // derive block builder address to receive block fees
+        let block_builder_pub_key = secp256k1::PublicKey::from_secret_key(secp, sk);
+        let block_builder_address = public_key_to_address(block_builder_pub_key);
         let (bundle_state, gas_used) = self.execute(
             &block_with_senders,
             &mut executor,
             senders,
             botanix_consensus_pkg.clone(),
+            Some(block_builder_address),
         )?;
         Ok((bundle_state, block, gas_used))
     }
@@ -538,9 +544,7 @@ where
             BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
                 .expect("senders are valid");
 
-        let (bundle_state, _gas_used) =
-            self.execute(&block_with_senders, &mut executor, senders, botanix_consensus_pkg)?;
-
+        // validate before executing block
         let authority_signers = self.authorities.clone();
         validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(
             |e| {
@@ -548,6 +552,15 @@ where
                 // TODO(armins) return more expressive error
                 BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
             },
+        )?;
+
+        let block_builder_address = get_authority_address_from_header(&sealed_block.header.clone());
+        let (bundle_state, _gas_used) = self.execute(
+            &block_with_senders,
+            &mut executor,
+            senders,
+            botanix_consensus_pkg,
+            Some(block_builder_address),
         )?;
 
         Ok(bundle_state)

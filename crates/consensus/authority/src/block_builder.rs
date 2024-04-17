@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    engine_util::{self, BestTransactionsError},
+    engine_util,
     frost_task::{FrostNotification, FrostNotificationMessage},
     task::BlockProductionTask,
     utils::{get_witness_data_from_psbt, is_testnet},
@@ -15,7 +15,7 @@ use reth_interfaces::blockchain_tree::{
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
-use reth_payload_builder::{EthBuiltPayload, EthPayloadBuilderAttributes};
+use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
 };

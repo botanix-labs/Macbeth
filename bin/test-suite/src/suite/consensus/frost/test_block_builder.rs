@@ -1,4 +1,6 @@
 use reth::core::cli::runner::CliRunner;
+use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address};
+use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use std::{collections::HashSet, time::Duration};
 
 use crate::{
@@ -50,6 +52,25 @@ pub async fn block_builder(
     // create a minting contract instance
     let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
 
+    // get fed member and botanix address balances
+    let edh = targeted_fed_member.edh.unwrap();
+    let targeted_fed_member_pub_key = *edh.authority_signers.unwrap().first().unwrap();
+    let targeted_fed_member_ethereum_address =
+        public_key_to_address(targeted_fed_member_pub_key).to_checksum(Some(3636));
+
+    let target_fed_member_balance_before = botanix_eth_client
+        .get_botanix_balance(targeted_fed_member_ethereum_address.as_str())
+        .await
+        .unwrap();
+    it_info_print!("Targeted fed member balance before: {}", target_fed_member_balance_before);
+
+    let botanix_block_reward_address_balance_before =
+        botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+    it_info_print!(
+        "Botanix block fee recipient balance before: {}",
+        botanix_block_reward_address_balance_before
+    );
+
     // create a hashmap to store tx hashes
     let mut tx_hashes_set = HashSet::new();
 
@@ -94,6 +115,39 @@ pub async fn block_builder(
                     assert!(!block_payload.1);
                     assert_eq!(block_payload.0.tx_receipts.len(), 1);
                     assert!(block_payload.0.block.number > 0);
+
+                    // get fed member and botanix block reward address balances
+                    let target_fed_member_balance_after = botanix_eth_client
+                        .get_botanix_balance(targeted_fed_member_ethereum_address.as_str())
+                        .await
+                        .unwrap();
+                    it_info_print!(
+                        "Targeted fed member balance after: {}",
+                        target_fed_member_balance_after
+                    );
+
+                    it_info_print!("Botanix block fee recipient: {}", BOTANIX_FEES_RECIPIENT);
+
+                    let botanix_block_reward_address_balance_before_after = botanix_eth_client
+                        .get_botanix_balance(BOTANIX_FEES_RECIPIENT)
+                        .await
+                        .unwrap();
+                    it_info_print!(
+                        "Botanix block reward address balance after: {}",
+                        botanix_block_reward_address_balance_before_after
+                    );
+
+                    // verfigy 80/20 block reward split is correct
+                    let target_fed_member_reward =
+                        target_fed_member_balance_after - target_fed_member_balance_before;
+                    let botanix_block_reward = botanix_block_reward_address_balance_before_after
+                        - botanix_block_reward_address_balance_before;
+
+                    let total_block_reward = target_fed_member_reward + botanix_block_reward;
+
+                    assert_eq!(target_fed_member_reward, (total_block_reward * 4) / 5); // 80%
+                    assert_eq!(botanix_block_reward, total_block_reward / 5); // 20%
+
                     return Ok(());
                 }
             }
