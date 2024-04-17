@@ -200,7 +200,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine>,
         FrostTask<Client>,
         SyncController<Engine>,
-        PbftTask<Client>
+        PbftTask<Client>,
     ) {
         let Self {
             btc_server,
@@ -257,16 +257,16 @@ where
         let frost_task = FrostTask::new(
             btc_server.clone(),
             network_handle.clone(),
-            frost_handle.expect("Requires frost handle"),
+            frost_handle.clone().expect("Requires frost handle"),
             epoch_manager.clone(),
-            frost_config,
+            frost_config.clone(),
             storage.clone(),
             frost_task_notifications1_rx,
             frost_task_notifications2_tx,
         );
 
         // Set up pbft notification message queue
-        // these are two mpsc channels that are used to communicate between the frost task and the block production task
+        // these are two mpsc channels that are used to communicate between the pbft task and the block production task
         let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
             tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
         let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
@@ -302,6 +302,8 @@ where
             payload_builder,
             frost_task_notifications2_rx,
             frost_task_notifications1_tx,
+            pbft_task_notifications2_rx,
+            pbft_task_notifications1_tx,
             btc_network,
         );
 

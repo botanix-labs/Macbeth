@@ -1,6 +1,5 @@
 use crate::{
-    epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, Storage,
+    epoch_manager::EpochManager, extended_client::BtcServerExtendedClient, frost_task::FrostNotificationMessage, pbft_task::PbftNotificationMessage, Storage
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
@@ -64,6 +63,10 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
     /// Frost Task Sender
     pub(crate) frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    /// Frost Task Receiver
+    pub(crate) pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+    /// Frost Task Sender
+    pub(crate) pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     /// Bitcoin Network
     pub(crate) btc_network: bitcoin::Network,
 }
@@ -101,6 +104,8 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+        pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         btc_network: bitcoin::Network,
     ) -> Self {
         Self {
@@ -122,6 +127,8 @@ where
             payload_builder,
             frost_task_rx,
             frost_task_tx,
+            pbft_task_rx,
+            pbft_task_tx,
             btc_network,
         }
     }

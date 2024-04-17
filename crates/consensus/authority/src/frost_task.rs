@@ -191,7 +191,7 @@ where
                 }
             }
             // receive over a channel message from other peers and update our state machine
-            if let Ok(msg) = peer_messages_rx.try_recv() {
+            if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
                 match msg {
                     PeerMessageResponse::Pbft(_) => {

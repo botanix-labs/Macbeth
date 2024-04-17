@@ -51,7 +51,7 @@ pub fn get_authority_signer_index<Client>(
     chain_spec: Arc<ChainSpec>,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
-) -> Result<(usize, Vec<secp256k1::PublicKey>), GetAuthoritiesError>
+) -> Result<(usize, Vec<secp256k1::PublicKey>, secp256k1::PublicKey), GetAuthoritiesError>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -80,9 +80,14 @@ where
     let authorities =
         latest_header.get_authority_list()?.expect("authority signer list in epoch block");
 
+    let authority_pk = sk.public_key(&secp);
     let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
-    Ok((signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?, authorities))
+    Ok((
+        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
+        authorities,
+        authority_pk,
+    ))
 }
 
 /// Returns the unix timestamp in seconds

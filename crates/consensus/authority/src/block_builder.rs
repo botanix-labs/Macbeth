@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use crate::{
-    engine_util,
+    engine_util::{self},
     frost_task::{FrostNotification, FrostNotificationMessage},
+    pbft_task::{PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
     utils::{get_witness_data_from_psbt, is_testnet},
 };
@@ -294,10 +295,36 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        let sealed_block = block.clone().seal_slow();
+        let mut sealed_block = block.clone().seal_slow();
         let sealed_block_with_senders =
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
+        // Propose block to network for commitments
+        self.pbft_task_tx
+            .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
+                block: sealed_block.clone(),
+            }))
+            .expect("send pbft task message");
+        // Wait for commitments before we can commit to this block
+        let _ = match tokio::time::timeout(
+            Duration::from_secs(60),
+            self.pbft_task_rx.recv(),
+        )
+        .await
+        {
+            Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
+                let PbftNotification { block: commited_block } = notif;
+                sealed_block = commited_block;
+            }
+            Err(e) => {
+                error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
+                return;
+            }
+            _ => {
+                warn!(target: "consensus::authority", "Recieved unknown message from pbft task");
+                return;
+            }
+        };
 
         // update canon chain for rpc
         match storage
