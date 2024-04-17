@@ -3,6 +3,7 @@ use crate::{
     epoch_manager::EpochManager,
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
+    pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
     voting::AuthorityVote,
     AuthorityConsensus, Storage,
@@ -10,9 +11,9 @@ use crate::{
 
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_botanix_lib::header_ext::HeaderExt;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_botanix_lib::header_ext::HeaderExt;
 use reth_network::{
     frost::manager::{FrostConfig, FrostHandle},
     message::NewBlockMessage,
@@ -130,7 +131,8 @@ where
 
         // Latest epoch header is the last header in the vector
         // This header should include the authority list which is validated by consensus
-        let authorities = latest_header.get_authority_list()
+        let authorities = latest_header
+            .get_authority_list()
             .map_err(|e| {
                 error!("Failed to retrieve authority list: {:?}", e);
                 AuthorityConsensusBuilderError::FailedToRecoverAuthorityList
@@ -205,6 +207,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine>,
         Option<FrostTask<Client>>,
         SyncController<Engine>,
+        PbftTask<Client>,
     ) {
         let Self {
             btc_server,
@@ -251,6 +254,8 @@ where
             btc_network,
         );
 
+        // Set up frost notification message queue
+        // these are two mpsc channels that are used to communicate between the frost task and the block production task
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
         let (frost_task_notifications2_tx, frost_task_notifications2_rx) =
@@ -274,6 +279,22 @@ where
             );
 
             frost_task = Some(task);
+
+             // Set up pbft notification message queue
+            // these are two mpsc channels that are used to communicate between the frost task and the block production task
+            let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
+            let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
+
+            let pbft_task = PbftTask::new(
+                frost_handle.expect("Requires frost handle"),
+                frost_config,
+                storage.clone(),
+                sk,
+                pbft_task_notifications1_rx,
+                pbft_task_notifications2_tx,
+            );
 
             // block production task
             let task = BlockProductionTask::new(
