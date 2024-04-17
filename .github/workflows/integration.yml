@@ -1,5 +1,4 @@
 # Runs integration tests.
-
 name: Botanix Integration Tests
 
 on:
@@ -28,9 +27,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # Needed for BTC server
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - uses: dtolnay/rust-toolchain@stable
       - name: Start BTC Server
         run: |
@@ -50,9 +47,11 @@ jobs:
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
       - uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          cache-on-failure: false
+
       - name: Run tests
         run: |
           cargo nextest run \
@@ -76,9 +75,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          cache-on-failure: false
+
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -95,6 +93,7 @@ jobs:
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
+
       - name: Run sync
         run: |
           cargo run --release --features jemalloc,min-error-logs --bin reth \
@@ -102,6 +101,7 @@ jobs:
             --debug.tip 0x91c90676cab257a59cd956d7cb0bceb9b1a71d79755c23c7277a0697ccfaf8c4 \
             --debug.max-block 100000 \
             --debug.terminate
+            
       - name: Verify the target block hash
         run: |
           cargo run --release --bin reth \
