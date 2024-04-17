@@ -424,12 +424,12 @@ mod tests {
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();
         let json = serde_json::to_string_pretty(&rendered_json).unwrap();
-        println!("Rendered botanix testnet configuration {:?}", json);
+        println!("Rendered botanix testnet configuration {json:?}");
 
         let botanix_genesis_filepath = Path::new("./").join("botanix_testnet.json");
         let mut file = std::fs::OpenOptions::new()
             .write(true)
-            .create(true)
+            .truncate(true)
             .open(botanix_genesis_filepath)
             .unwrap();
         file.write_all(rendered_json.as_bytes()).unwrap();

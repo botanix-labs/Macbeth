@@ -47,14 +47,14 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             .as_ref()
             .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
             .ok_or_else(|| Error::InvalidBtcServerPort)?;
-        let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
+        let c = client::BtcServerClient::connect(format!("http://localhost:{port}"))
             .await
             .map_err(Error::ServerConnect)?;
         clients.push(c);
     }
 
     // Getting public key should fail for all clients
-    for client in clients.iter_mut() {
+    for client in &mut clients {
         let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
@@ -63,7 +63,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
 
     // run the dkg
-    let _ = do_dkg(&mut clients).await?;
+    do_dkg(&mut clients).await?;
 
     // let say coordinator is account 0
     let coordinator_index: usize = clients.len() - 1;
@@ -72,7 +72,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // get the aggregate pk from any of the clients
     // Here we are signing for a INPUTS_TO_SPEND inputs that are tweaked differently
     for input in 0..INPUTS_TO_SPEND {
-        let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
+        let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
         let pk = coordinator
             .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
@@ -89,11 +89,10 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // signers will not sign if they cannot locate the UTXOs they are being requested to sign
     for c in clients.iter_mut() {
         for input in 0..INPUTS_TO_SPEND {
-            let txid = pegins.txids.get(input).cloned().unwrap();
-            let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
+            let txid = pegins.txids.get(input).copied().unwrap();
+            let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
             let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-            let _ = send_pegin_notification(c, btc_address.clone(), hex_encode(eth_address), txid)
-                .await?;
+            send_pegin_notification(c, btc_address.clone(), hex_encode(eth_address), txid).await?;
         }
     }
 
@@ -132,7 +131,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
 
     // Coordinating node will collect the PSBTs with the signing commitments
-    for signing_package in round1_signing_commitments.into_iter() {
+    for signing_package in round1_signing_commitments {
         coordinator
             .new_round1_signing_package(tonic::Request::new(signing_package))
             .await
@@ -168,7 +167,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
 
     // Coordinating node will collect the PSBTs with the partial sigs
-    for signing_package in round2_signing_commitments.into_iter() {
+    for signing_package in round2_signing_commitments {
         coordinator
             .new_round2_signing_package(tonic::Request::new(signing_package))
             .await

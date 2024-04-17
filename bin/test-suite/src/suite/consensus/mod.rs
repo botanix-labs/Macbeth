@@ -77,15 +77,15 @@ impl Suite for ConsensusIntegrationTestSuite {
         // set the panic hook so it kills them whenever activated
         std::panic::set_hook(Box::new(move |panic_info| {
             error!("Test suite panicked {:?}", panic_info);
-            for process_id in child_processes_to_kill.iter() {
+            for process_id in &child_processes_to_kill {
                 // Send a termination signal to the child process
                 let _ = Command::new("kill")
                     .arg("-9") // Use SIGKILL for immediate termination
-                    .arg(format!("{}", process_id))
+                    .arg(format!("{process_id}"))
                     .output();
             }
             // delete db leftovers
-            for db_to_delete in dbs_to_delete.iter() {
+            for db_to_delete in &dbs_to_delete {
                 let _ = std::fs::remove_dir_all(db_to_delete.clone());
             }
         }));
@@ -124,7 +124,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 let _ = btc_server.child_process.kill().await;
             }
             // Remove db dirs
-            clean_db(&btc_servers);
+            clean_db(btc_servers);
         }
     }
 }

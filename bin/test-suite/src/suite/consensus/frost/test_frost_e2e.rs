@@ -100,7 +100,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
     let port =
         suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let bitcoind_url = format!("{}:{}", host, port);
+    let bitcoind_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &bitcoind_url,
         Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),
@@ -233,7 +233,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
+    let mint_contract = mint_contract_instances.first().cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -286,7 +286,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
     let port =
         suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let btcd_url = format!("{}:{}", host, port);
+    let btcd_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &btcd_url,
         Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),

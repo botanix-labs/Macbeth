@@ -109,9 +109,11 @@ where
 
 /// Generates test-vectors for DUPSORT tables. Each key has multiple (subkey, value). Keys and
 /// subkeys are sorted.
-fn generate_dupsort_vector<T: Table>(runner: &mut TestRunner, per_table: usize) -> Result<()>
+fn generate_dupsort_vector<T: Table + DupSort>(
+    runner: &mut TestRunner,
+    per_table: usize,
+) -> Result<()>
 where
-    T: DupSort,
     T::Key: Arbitrary + serde::Serialize + Ord + std::hash::Hash,
     T::Value: Arbitrary + serde::Serialize + Ord,
 {

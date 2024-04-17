@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -32,12 +34,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@clippy
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - run: cargo +nightly clippy --workspace --lib --examples --tests --benches --all-features
+      - run: cargo +nightly clippy --workspace --lib --examples --tests --benches --features "serde common test-utils arbitrary c-kzg js-tracer client jsonrpsee-types ssz compact scale postcard no_codec mdbx return-borrowed read-tx-timeouts"
         env:
           RUSTFLAGS: -D warnings
 
@@ -54,7 +58,6 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-
       - run: cargo hack check
 
   msrv:
@@ -63,6 +66,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.77.2" # MSRV
@@ -78,7 +83,7 @@ jobs:
   docs:
     name: docs
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install Protobuf Compiler
@@ -123,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs: [clippy-binaries, clippy, crate-checks, docs, fmt, grafana]
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1

@@ -10,15 +10,48 @@ on:
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
-  BITCOIN_NETWORK: regtest
+  BITCOIND_NETWORK: regtest
   BITCOIND_URL: http://botanix-bitcoind-ci.sre.svc.cluster.local:18443
   BITCOIND_COOKIE: /etc/bitcoin/.cookie
+  JWT_DIR: ./jwt
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+
+  e2e:
+    name: test / e2e
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+      - name: Run e2e tests
+        run: |
+          cd ./bin/test-suite && \
+          cargo run --bin test-suite -- \
+          --config "./config.toml" \
+          --run-suite all \
+          --timeout 400000 \
+          --dry-run false \
+          --jwt-dir "./jwt" \
+          --btc-network regtest \
+          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
+          --bitcoind-cookie /etc/bitcoin/.cookie \
+          --min-signers 3 \
+          --max-signers 4
+
   test:
     name: test / ethereum
     runs-on: ubuntu-latest
@@ -27,10 +60,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
       - uses: dtolnay/rust-toolchain@stable
       - name: Start BTC Server
         run: |
@@ -92,13 +123,12 @@ jobs:
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
-
   integration-success:
     name: integration success
     runs-on: ubuntu-latest
     if: always()
-    needs: [test]
-    timeout-minutes: 30
+    needs: [e2e, test, sync]
+    timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1

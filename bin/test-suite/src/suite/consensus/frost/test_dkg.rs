@@ -35,11 +35,11 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
     }
 
     // now do the dkg
-    let _ = do_dkg(&mut clients).await?;
+    do_dkg(&mut clients).await?;
 
     // Get the pubkey should succeed for all clients
     let mut pkeys: Vec<String> = vec![];
-    for client in clients.iter_mut() {
+    for client in &mut clients {
         let pk = client
             .get_public_key(tonic::Request::new(client::Empty {}))
             .await
@@ -60,7 +60,7 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
     Ok(())
 }
 
-pub async fn do_dkg(clients: &mut Vec<client::BtcServerClient<Channel>>) -> Result<(), Error> {
+pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<(), Error> {
     // Round 1 dkg
     let mut round1_packages = vec![];
     for c in clients.iter_mut() {
