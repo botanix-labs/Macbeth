@@ -7,7 +7,7 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
-use reth_consensus_common::utils::get_authority_address_from_header;
+use reth_consensus_common::utils::get_block_producer_address;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_node_api::ConfigureEvm;
 use reth_primitives::{
@@ -398,7 +398,7 @@ where
             .into());
         }
         let time = Instant::now();
-        let block_builder_address = get_authority_address_from_header(&block.header.clone());
+        let block_builder_address = get_block_producer_address(&block.header.clone());
         self.apply_post_execution_state_change(
             block,
             total_difficulty,

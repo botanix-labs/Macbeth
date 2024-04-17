@@ -21,7 +21,7 @@
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::{
-    utils::{get_authority_address_from_header, recovery_authority, unix_timestamp},
+    utils::{get_block_producer_address, unix_timestamp},
     validation::{self, validate_poa_header_standalone},
 };
 use reth_interfaces::{
@@ -436,7 +436,7 @@ where
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
 
         // derive block builder address to receive block fees
-        let block_builder_pub_key = secp256k1::PublicKey::from_secret_key(secp, sk);
+        let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
         let block_builder_address = public_key_to_address(block_builder_pub_key);
         let (bundle_state, gas_used) = self.execute(
             &block_with_senders,
@@ -554,7 +554,7 @@ where
             },
         )?;
 
-        let block_builder_address = get_authority_address_from_header(&sealed_block.header.clone());
+        let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let (bundle_state, _gas_used) = self.execute(
             &block_with_senders,
             &mut executor,

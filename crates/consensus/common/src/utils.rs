@@ -324,7 +324,7 @@ pub fn validate_inturn(
 
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
-pub fn get_authority_address_from_header(header: &Header) -> Address {
+pub fn get_block_producer_address(header: &Header) -> Address {
     let block_builder_public_key = recovery_authority(header).expect("recovered authority");
     public_key_to_address(block_builder_public_key)
 }
@@ -706,11 +706,11 @@ mod tests {
     }
 
     #[test]
-    fn should_get_authority_address_from_header() {
+    fn should_get_block_producer_address_from_header() {
         let mut header = Header::default();
         sign_block_helper(&mut header, None);
         let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
-        let authority_address = get_authority_address_from_header(&header);
-        assert_eq!(authority_address, public_key_to_address(edh.authority_signers.unwrap()[0]));
+        let block_producer_address = get_block_producer_address(&header);
+        assert_eq!(block_producer_address, public_key_to_address(edh.authority_signers.unwrap()[0]));
     }
 }
