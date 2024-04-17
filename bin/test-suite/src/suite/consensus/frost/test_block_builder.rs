@@ -137,7 +137,7 @@ pub async fn block_builder(
                         botanix_block_reward_address_balance_before_after
                     );
 
-                    // verfigy 80/20 block reward split is correct
+                    // verify 80/20 block reward split is correct
                     let target_fed_member_reward =
                         target_fed_member_balance_after - target_fed_member_balance_before;
                     let botanix_block_reward = botanix_block_reward_address_balance_before_after
