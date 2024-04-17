@@ -21,7 +21,7 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on: botanix-actions-runner
+    runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -59,7 +59,7 @@ jobs:
   sync:
     name: sync / 100k blocks
     # Only run sync tests in merge groups
-    runs-on: botanix-actions-runner
+    runs-on: ubuntu-latest
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
@@ -95,7 +95,7 @@ jobs:
 
   integration-success:
     name: integration success
-    runs-on: botanix-actions-runner
+    runs-on: ubuntu-latest
     if: always()
     needs: [test]
     timeout-minutes: 30
