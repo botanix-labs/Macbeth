@@ -51,7 +51,7 @@ pub struct FrostManager {
     /// total authorities to connect to
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
-    frost_task_forwarder_tx: Option<mpsc::UnboundedSender<PeerMessageResponse>>,
+    task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageResponse>>,
 }
 
 impl FrostManager {
@@ -78,7 +78,7 @@ impl FrostManager {
             peers_connections: HashMap::default(),
             frost_peers_connections: HashMap::default(),
             authority_peerid,
-            frost_task_forwarder_tx: None,
+            task_forwarder_txs: Vec::new(),
         }
     }
 
@@ -124,8 +124,9 @@ impl FrostManager {
                     return;
                 }
                 info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
-                if let Some(frost_task_forwarder_tx) = self.frost_task_forwarder_tx.as_ref() {
-                    let _send_res = frost_task_forwarder_tx.send(response); // TODO:  handle error
+                for task_forwarder in self.task_forwarder_txs.iter() {
+                    // TODO:  handle error?
+                    let _send_res = task_forwarder.send(response.clone());
                 }
             }
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
@@ -162,9 +163,9 @@ impl FrostManager {
             FrostCommand::GetPeerMessagesStream(tx) => {
                 // create channel whereby keeping the sender half and sending to the caller the
                 // receiver
-                let (frost_task_forwarder_tx, frost_task_forwarder_rx) =
+                let (task_forwarder_txs, frost_task_forwarder_rx) =
                     mpsc::unbounded_channel::<PeerMessageResponse>();
-                self.frost_task_forwarder_tx = Some(frost_task_forwarder_tx);
+                self.task_forwarder_txs.push(task_forwarder_txs);
                 // reply to caller
                 let _ = tx.send(frost_task_forwarder_rx);
             }
