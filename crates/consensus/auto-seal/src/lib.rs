@@ -329,14 +329,14 @@ impl StorageInner {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
-        let (receipts, gas_used) = executor.execute_transactions(block, U256::ZERO, None)?;
+        let (receipts, gas_used, _total_block_fees) = executor.execute_transactions(block, U256::ZERO, None)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
 
         // add post execution state change
         // Withdrawals, rewards etc.
-        executor.apply_post_execution_state_change(block, U256::ZERO)?;
+        executor.apply_post_execution_state_change(block, U256::ZERO, None, None)?;
 
         // merge transitions
         executor.db_mut().merge_transitions(BundleRetention::Reverts);

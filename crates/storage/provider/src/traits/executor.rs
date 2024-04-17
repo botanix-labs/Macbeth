@@ -59,7 +59,7 @@ pub trait BlockExecutor {
         block: &BlockWithSenders,
         total_difficulty: U256,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError>;
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError>;
 
     /// Return bundle state. This is output of executed blocks.
     fn take_output_state(&mut self) -> BundleStateWithReceipts;

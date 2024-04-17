@@ -1,11 +1,12 @@
 use reth_consensus_common::{calc, utils};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
-    Block, constants::SYSTEM_ADDRESS, revm::env::fill_tx_env_with_beacon_root_contract_call, Address,
-    ChainSpec, Header, Withdrawal, B256, U256,
+    constants::{BOTANIX_FEES_RECIPIENT, SYSTEM_ADDRESS},
+    revm::env::fill_tx_env_with_beacon_root_contract_call,
+    Address, ChainSpec, Header, Withdrawal, B256, U256,
 };
 use revm::{interpreter::Host, Database, DatabaseCommit, Evm};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 /// Collect all balance changes at the end of the block.
 ///
@@ -22,6 +23,8 @@ pub fn post_block_balance_increments(
     total_difficulty: U256,
     ommers: &[Header],
     withdrawals: Option<&[Withdrawal]>,
+    total_block_fees: Option<u128>,
+    block_builder_address: Option<Address>,
 ) -> HashMap<Address, u128> {
     let mut balance_increments = HashMap::new();
 
@@ -36,13 +39,20 @@ pub fn post_block_balance_increments(
         }
 
         // Full block reward
-        let base_block_reward = calc::block_reward(base_block_reward, ommers.len());
-        let (botanix_reward, beneficiary_reward) = utils::block_reward_split(base_block_reward);
-        // TODO: remove placeholder botanix address with actual address
-        let botanix_address_placeholder = Address::random();
-        *balance_increments.entry(botanix_address_placeholder).or_default() += botanix_reward;
-        *balance_increments.entry(beneficiary).or_default() += beneficiary_reward;
+        *balance_increments.entry(beneficiary).or_default() +=
+            calc::block_reward(base_block_reward, ommers.len());
     }
+
+    // split block fees between builder and botanix
+    let (botanix_fees, builder_fees) =
+        utils::block_fees_split(total_block_fees.expect("Total block fees to exist"));
+
+    *balance_increments
+        .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
+        .or_default() += botanix_fees;
+    *balance_increments
+        .entry(block_builder_address.expect("Block builder address to exist"))
+        .or_default() += builder_fees;
 
     // process withdrawals
     insert_post_block_withdrawals_balance_increments(
@@ -72,7 +82,7 @@ where
     DB::Error: std::fmt::Display,
 {
     if !chain_spec.is_cancun_active_at_timestamp(block_timestamp) {
-        return Ok(())
+        return Ok(());
     }
 
     let parent_beacon_block_root =
@@ -85,9 +95,9 @@ where
             return Err(BlockValidationError::CancunGenesisParentBeaconBlockRootNotZero {
                 parent_beacon_block_root,
             }
-            .into())
+            .into());
         }
-        return Ok(())
+        return Ok(());
     }
 
     // get previous env
@@ -104,7 +114,7 @@ where
                 parent_beacon_block_root: Box::new(parent_beacon_block_root),
                 message: e.to_string(),
             }
-            .into())
+            .into());
         }
     };
 

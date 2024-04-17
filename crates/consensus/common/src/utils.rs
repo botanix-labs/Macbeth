@@ -185,12 +185,11 @@ pub fn unix_timestamp() -> u64 {
 /// Validate poa block beneficiary
 pub fn validate_poa_block_beneficiary(
     header: &Header,
-    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
-    authority_signers
-        .iter()
-        .find(|pk| public_key_to_address(**pk) == header.beneficiary)
-        .ok_or(ConsensusError::BlockBeneficiaryIsNotAuthority)?;
+    if header.beneficiary != Address::ZERO {
+        return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
+    }
+
     Ok(())
 }
 
@@ -323,11 +322,18 @@ pub fn validate_inturn(
     Ok(())
 }
 
+// not in authority utils because of circular dependency
+/// Get the authority address from the header
+pub fn get_authority_address_from_header(header: &Header) -> Address {
+    let block_builder_public_key = recovery_authority(header).expect("recovered authority");
+    public_key_to_address(block_builder_public_key)
+}
+// not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
-pub fn block_reward_split(base_block_reward: u128) -> (u128, u128) {
+pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     // 20% of the block reward
-    let botanix_reward = base_block_reward / 5;
-    let beneficiary_reward = base_block_reward - botanix_reward;
+    let botanix_reward = total_block_fees / 5;
+    let beneficiary_reward = total_block_fees - botanix_reward;
     (botanix_reward, beneficiary_reward)
 }
 
@@ -536,6 +542,15 @@ mod tests {
     }
 
     #[test]
+    fn should_validate_poa_block_beneficiary() {
+        // default beneficiary is the burn address
+        let header = Header::default();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "deprecated"]
     fn should_fail_on_unlisted_poa_beneficiary() {
         let auth_signer1 = secp256k1::PublicKey::from_secret_key(
             &secp256k1::Secp256k1::new(),
@@ -563,13 +578,13 @@ mod tests {
             secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret_key);
         let beneficiary_address = public_key_to_address(beneficiary_pub_key);
         header.beneficiary = beneficiary_address;
-        assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_err());
+        // assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_err());
 
         // test good signer
         let mut header = Header::default();
         let beneficiary_address = public_key_to_address(auth_signer2);
         header.beneficiary = beneficiary_address;
-        assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_ok());
+        // assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_ok());
     }
 
     #[test]
@@ -685,8 +700,17 @@ mod tests {
     #[test]
     fn should_split_rewards() {
         let base_block_reward = 100;
-        let (botanix_reward, beneficiary_reward) = block_reward_split(base_block_reward);
+        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
         assert_eq!(botanix_reward, 20);
         assert_eq!(beneficiary_reward, 80);
+    }
+
+    #[test]
+    fn should_get_authority_address_from_header() {
+        let mut header = Header::default();
+        sign_block_helper(&mut header, None);
+        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
+        let authority_address = get_authority_address_from_header(&header);
+        assert_eq!(authority_address, public_key_to_address(edh.authority_signers.unwrap()[0]));
     }
 }
