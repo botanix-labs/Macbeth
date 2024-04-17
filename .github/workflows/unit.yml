@@ -31,7 +31,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: false
+          cache-on-failure: true
+          cache-all-crates: true
 
       - uses: taiki-e/install-action@nextest
 
@@ -60,6 +61,7 @@ jobs:
             --partition hash:${{ matrix.partition }}/2 \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
 
+
   state:
     name: Ethereum state tests
     runs-on: botanix-actions-runner
@@ -80,7 +82,8 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: false
+          cache-on-failure: true
+          cache-all-crates: true
 
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -114,7 +117,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: false
+          cache-on-failure: true
+          cache-all-crates: true
+
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
 

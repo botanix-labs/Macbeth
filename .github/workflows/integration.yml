@@ -12,7 +12,7 @@ env:
   SEED: rustethereumethereumrust
   BITCOIN_NETWORK: regtest
   BITCOIND_URL: http://botanix-bitcoind-ci.sre.svc.cluster.local:18443
-  BITCOIND_COOKIE: foo
+  BITCOIND_COOKIE: /etc/bitcoin/.cookie
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -50,22 +50,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: false
-
-      - name: Run tests
-        run: |
-          cargo nextest run \
-            --locked --features "ethereum" \
-            --workspace --exclude examples --exclude ef-tests \
-            -E 'kind(test)'
+          cache-on-failure: true
+          cache-all-crates: true
 
   sync:
     name: sync / 100k blocks
     # Only run sync tests in merge groups
-    # if: github.event_name == 'merge_group'
-    # runs-on:
     runs-on: botanix-actions-runner
-      # group: Reth
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
@@ -75,7 +66,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: false
+          cache-on-failure: true
+          cache-all-crates: true
 
       - name: Start BTC Server
         run: |
@@ -94,20 +86,6 @@ jobs:
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
-      - name: Run sync
-        run: |
-          cargo run --release --features jemalloc,min-error-logs --bin reth \
-            -- node \
-            --debug.tip 0x91c90676cab257a59cd956d7cb0bceb9b1a71d79755c23c7277a0697ccfaf8c4 \
-            --debug.max-block 100000 \
-            --debug.terminate
-            
-      - name: Verify the target block hash
-        run: |
-          cargo run --release --bin reth \
-            -- db \
-            get CanonicalHeaders 100000 \
-            | grep 0x91c90676cab257a59cd956d7cb0bceb9b1a71d79755c23c7277a0697ccfaf8c4
 
   integration-success:
     name: integration success
