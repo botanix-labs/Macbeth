@@ -1,19 +1,22 @@
-use crate::{pbft::PbftStateMachine, signing::SigningStateMachine, Storage};
+use crate::{pbft::PbftStateMachine, Storage};
+use reth_ecies::util::pk2id;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, FrostHandle},
-    DkgEventResponseType, DkgResponse, PbftEventResponseType, PbftResponse, PeerMessageResponse,
-    SigningEventResponseType, SigningResponse,
+    PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PbftNotificationMessage {
+    /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
+    /// A notification to the block builder task that we have received a with a quorum of commitments
+    CommitmentsReceived(PbftNotification),
 }
 
 /// Finalised frost signature message
@@ -34,6 +37,8 @@ pub struct PbftTask<Client> {
     pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
     /// authority / network secret key
     secret_key: secp256k1::SecretKey,
+    /// config
+    config: FrostConfig,
 }
 
 impl<Client> PbftTask<Client>
@@ -55,9 +60,15 @@ where
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     ) -> Self {
-        let pbft_state_machine =
-            PbftStateMachine::new(storage, frost_handle, config, peer_id, secret_key);
-        Self { frost_handle, pbft_state_machine, storage, secret_key, pbft_task_rx }
+        let my_peerid = pk2id(&config.authority_pk);
+        let pbft_state_machine = PbftStateMachine::new(
+            storage.clone(),
+            frost_handle.clone(),
+            config.clone(),
+            my_peerid,
+            secret_key,
+        );
+        Self { frost_handle, pbft_state_machine, storage, secret_key, pbft_task_rx, config }
     }
 
     pub async fn start_task(&mut self) -> () {
@@ -77,7 +88,22 @@ where
             // First handle any pbft notifications from the block builder task
             while let Ok(message) = self.pbft_task_rx.try_recv() {
                 if let PbftNotificationMessage::ProposeBlock(pbft_notification) = message {
-                    todo!();
+                    // we are the in turn block producer proposing a block
+                    match self
+                        .pbft_state_machine
+                        .process_block_proposal(
+                            pbft_notification.block,
+                            pk2id(&self.config.authority_pk),
+                        )
+                        .await
+                    {
+                        Ok(()) => {
+                            info!(target: "PBFT Task", "Block proposal processed successfully");
+                        }
+                        Err(e) => {
+                            error!(target: "PBFT Task", "Error processing block proposal {:?}", e);
+                        }
+                    }
                 } else {
                     warn!(
                         target: "PBFT Task",
@@ -87,7 +113,7 @@ where
                 }
             }
             // receive over a channel message from other peers and update our state machine
-            if let Ok(msg) = peer_messages_rx.try_recv() {
+            if let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
                 info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
                 match msg {
                     PeerMessageResponse::Pbft(pbft_response) => {

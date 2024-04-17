@@ -207,7 +207,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine>,
         Option<FrostTask<Client>>,
         SyncController<Engine>,
-        PbftTask<Client>
+        PbftTask<Client>,
     ) {
         let Self {
             btc_server,
@@ -264,6 +264,7 @@ where
         // only federation nodes will have btc_server
         let mut frost_task = None;
         let mut block_production_task = None;
+        let mut pbft_task = None;
         if is_fed_node {
             // frost task
             let frost_handle_clone = frost_handle.clone().expect("Frost handle exists");
@@ -287,7 +288,7 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
-            let pbft_task = PbftTask::new(
+            let task = PbftTask::new(
                 frost_handle.expect("Requires frost handle"),
                 frost_config,
                 storage.clone(),
@@ -295,30 +296,36 @@ where
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
             );
+            let pbft_task = Some(task);
 
-            // block production task
+            let bitcoind_client =
+                BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let task = BlockProductionTask::new(
                 Arc::clone(&consensus.chain_spec),
                 to_engine,
                 canon_state_notification,
                 storage,
-                btc_server.clone().expect("btc_server is available"),
+                btc_server,
                 bitcoin_block_header,
+                bitcoin_block_tx_ids,
+                bitcoind_client,
                 secp,
                 sk,
                 epoch_manager,
                 network_handle,
-                frost_handle_clone,
+                frost_task.frost_handle.clone(),
                 task_executor,
                 evm_config.clone(),
                 payload_builder,
                 frost_task_notifications2_rx,
                 frost_task_notifications1_tx,
+                pbft_task_notifications2_rx,
+                pbft_task_notifications1_tx,
                 btc_network,
             );
 
-            block_production_task = Some(task);
-        }
+        block_production_task = Some(task);
+    }
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
     }
