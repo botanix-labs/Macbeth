@@ -478,6 +478,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             mut block_fetcher_task,
             mut frost_task,
             mut sync_controller,
+            mut pbf_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.config.chain),
             blockchain_db.clone(),
@@ -548,6 +549,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             "Frost Task",
             Box::pin(async move {
                 frost_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "Pbft Task",
+            Box::pin(async move {
+                pbft_task.start_task().await;
             }),
         );
         executor.spawn_critical(
