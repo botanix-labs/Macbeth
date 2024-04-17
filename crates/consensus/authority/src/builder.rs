@@ -207,7 +207,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine>,
         Option<FrostTask<Client>>,
         SyncController<Engine>,
-        PbftTask<Client>,
+        PbftTask<Client>
     ) {
         let Self {
             btc_server,
@@ -320,6 +320,6 @@ where
             block_production_task = Some(task);
         }
 
-        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task)
+        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
     }
 }
