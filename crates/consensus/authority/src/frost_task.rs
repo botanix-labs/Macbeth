@@ -15,7 +15,7 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
-/// Enum defining posisble frost message notifications
+/// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FrostNotificationMessage {
     /// Finalized frost signing signature
@@ -36,7 +36,7 @@ pub(crate) struct FrostNotification {
 pub struct FrostTask<Client> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
-    /// Frost Handler
+    /// Frost network Handler
     pub(crate) frost_handle: FrostHandle,
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
