@@ -23,7 +23,7 @@ jobs:
 
   e2e:
     name: test / e2e
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -50,11 +50,11 @@ jobs:
           --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --min-signers 3 \
-          --max-signers 4
+          --max-signers 4 &
 
   test:
     name: test / ethereum
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -90,7 +90,7 @@ jobs:
   sync:
     name: sync / 100k blocks
     # Only run sync tests in merge groups
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
@@ -125,7 +125,7 @@ jobs:
 
   integration-success:
     name: integration success
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     if: always()
     needs: [e2e, test, sync]
     timeout-minutes: 60

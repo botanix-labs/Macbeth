@@ -12,7 +12,7 @@ env:
 jobs:
   clippy-binaries:
     name: clippy 
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
           RUSTFLAGS: -D warnings
 
   crate-checks:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +62,7 @@ jobs:
 
   msrv:
     name: MSRV
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +82,7 @@ jobs:
 
   docs:
     name: docs
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +104,7 @@ jobs:
 
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -114,7 +114,7 @@ jobs:
       - run: cargo +nightly fmt --all --check
 
   grafana:
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
 
   lint-success:
     name: lint success
-    runs-on: ubuntu-latest
+    runs-on: botanix-actions-runner-vm
     if: always()
     needs: [clippy-binaries, clippy, crate-checks, docs, fmt, grafana]
     timeout-minutes: 60
