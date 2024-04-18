@@ -29,18 +29,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # - name: Install Protobuf Compiler
-      #   run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      # - uses: dtolnay/rust-toolchain@stable
 
       # - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           cache-all-crates: true
-
-      - name: source environment
-        run: source ~/.bashrc
 
       - name: Run e2e tests
         run: |
@@ -55,7 +49,8 @@ jobs:
           --bitcoind-url http://localhost:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --min-signers 3 \
-          --max-signers 4 & 
+          --max-signers 4 && \
+          sleep 360
 
   test:
     name: test / ethereum
@@ -65,12 +60,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # - name: Install Protobuf Compiler
-      #   run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      # - uses: dtolnay/rust-toolchain@stable
-
-      - name: source environment
-        run: source ~/.bashrc
 
       - name: Start BTC Server
         run: |
@@ -87,7 +76,8 @@ jobs:
           --bitcoind-url http://localhost:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5 & 
+          --fall-back-fee-rate-sat-per-vbyte 5 && \
+          sleep 360
 
       # - uses: taiki-e/install-action@nextest
 
@@ -112,12 +102,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - name: source environment
-        run: source ~/.bashrc
-
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -133,7 +117,8 @@ jobs:
           --bitcoind-url http://localhost:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5 &
+          --fall-back-fee-rate-sat-per-vbyte 5 && \
+          sleep 360
 
   integration-success:
     name: integration success
