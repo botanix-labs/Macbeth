@@ -133,7 +133,7 @@ jobs:
           --bitcoind-url http://localhost:18443 \
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5 
+          --fall-back-fee-rate-sat-per-vbyte 5 & echo $! > ./pid.txt && wait $! && kill $(cat ./pid.txt)
 
   integration-success:
     name: integration success
