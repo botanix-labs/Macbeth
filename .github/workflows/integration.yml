@@ -38,6 +38,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+
+      - name: source environment
+        run: source ~/.bashrc
+
       - name: Run e2e tests
         run: |
           cd ./bin/test-suite && \
@@ -64,6 +68,10 @@ jobs:
       # - name: Install Protobuf Compiler
       #   run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       # - uses: dtolnay/rust-toolchain@stable
+
+      - name: source environment
+        run: source ~/.bashrc
+
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -106,6 +114,9 @@ jobs:
 
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: source environment
+        run: source ~/.bashrc
 
       - name: Start BTC Server
         run: |
