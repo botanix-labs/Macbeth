@@ -71,6 +71,8 @@ pub enum ValidateAuthoritySignatureError {
     MissingSignature,
     #[error("quorum of signatures missing")]
     QuorumMissing,
+    #[error("cannot find signer at index: {0}")]
+    InvalidSignerIndex(usize),
 }
 
 /// Errors that can occur when serializing the extra data header
@@ -288,7 +290,34 @@ impl ExtraDataHeader {
         })
     }
 
-    pub fn validate_authority_signature(
+    pub fn validate_single_authority_signature(
+        &self,
+        message: &Vec<u8>,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ValidateAuthoritySignatureError> {
+        if self.authority_signatures.is_none() {
+            return Err(ValidateAuthoritySignatureError::MissingSignature);
+        }
+        let msg = secp256k1::Message::from_slice(message.as_slice())
+            .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
+
+        // Just validating the first signature
+        let sig = self.authority_signatures.as_ref().expect("is some")[0];
+        let recovered_pk =
+            sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::InvalidSignature)?;
+
+        // find pk in authority signers
+        for signer in authority_signers {
+            if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
+                return Ok(());
+            }
+        }
+
+        Err(ValidateAuthoritySignatureError::InvalidSignature)
+    }
+
+    /// Validates all signatures present on the edh
+    pub fn validate_authorities_signatures(
         self,
         message: &Vec<u8>,
         authority_signers: &[secp256k1::PublicKey],
@@ -306,7 +335,6 @@ impl ExtraDataHeader {
                 sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::InvalidSignature)?;
             for signer in authority_signers {
                 if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
-                    println!("valid signature");
                     signer_count += 1;
                 }
             }
@@ -532,7 +560,7 @@ mod tests {
 
     // Test case for validating with a signature
     #[test]
-    fn test_validate_authority_signature() {
+    fn test_validate_authorities_signatures() {
         let mut authority_signers = vec![];
         let secp = Secp256k1::new();
         let (secret_key1, public_key1) = secp.generate_keypair(&mut OsRng);
@@ -556,7 +584,7 @@ mod tests {
         );
 
         header
-            .validate_authority_signature(
+            .validate_authorities_signatures(
                 &hello_world_hash.as_byte_array().to_vec(),
                 &authority_signers,
             )
@@ -574,7 +602,7 @@ mod tests {
         );
 
         assert!(header
-            .validate_authority_signature(
+            .validate_authorities_signatures(
                 &hello_world_hash.as_byte_array().to_vec(),
                 &authority_signers,
             )
@@ -594,7 +622,7 @@ mod tests {
         );
 
         assert!(header
-            .validate_authority_signature(
+            .validate_authorities_signatures(
                 &hello_world_hash.as_byte_array().to_vec(),
                 &authority_signers,
             )
@@ -635,7 +663,7 @@ mod tests {
 
     // Test case for validating with an invalid signature
     #[test]
-    fn test_validate_authority_signature_with_invalid_signature() {
+    fn test_validate_authorities_signature_with_invalid_signatures() {
         let mut authority_signers = vec![];
         let secp = Secp256k1::new();
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
@@ -655,7 +683,7 @@ mod tests {
             [0u8; 32],
         );
         let invalid_hash = sha256::Hash::hash("Not hello world!".as_bytes());
-        let result = header.validate_authority_signature(
+        let result = header.validate_authorities_signatures(
             &invalid_hash.as_byte_array().to_vec(),
             &authority_signers,
         );
@@ -664,7 +692,7 @@ mod tests {
 
     // Test case for validating without a signature
     #[test]
-    fn test_validate_authority_signature_without_signature() {
+    fn test_validate_authorities_signature_without_signatures() {
         let mut authority_signers = vec![];
         let secp = Secp256k1::new();
         let (_, public_key) = secp.generate_keypair(&mut OsRng);
@@ -683,7 +711,7 @@ mod tests {
         let message = vec![0u8; 32];
 
         let result =
-            header_without_signature.validate_authority_signature(&message, &authority_signers);
+            header_without_signature.validate_authorities_signatures(&message, &authority_signers);
         assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
     }
 
