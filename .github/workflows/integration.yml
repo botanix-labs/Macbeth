@@ -50,7 +50,7 @@ jobs:
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --min-signers 3 \
           --max-signers 4 && \
-          sleep 360
+          sleep 5
 
   test:
     name: test / ethereum
@@ -77,7 +77,7 @@ jobs:
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 && \
-          sleep 360
+          sleep 5
 
       # - uses: taiki-e/install-action@nextest
 
@@ -118,7 +118,7 @@ jobs:
           --bitcoind-cookie /etc/bitcoin/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 && \
-          sleep 360
+          sleep 5
 
   integration-success:
     name: integration success
