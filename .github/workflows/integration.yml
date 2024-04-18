@@ -12,7 +12,7 @@ env:
   SEED: rustethereumethereumrust
   BITCOIND_NETWORK: regtest
   BITCOIND_URL: http:/localhost:18443
-  BITCOIND_COOKIE: /etc/bitcoin/.cookie
+  BITCOIND_COOKIE: /root/.bitcoin/regtest/.cookie
   JWT_DIR: ./jwt
 
 concurrency:
@@ -47,10 +47,10 @@ jobs:
           --jwt-dir "./jwt" \
           --btc-network regtest \
           --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie /etc/bitcoin/.cookie \
+          --bitcoind-cookie /root/.bitcoin/regtest/.cookie \
           --min-signers 3 \
           --max-signers 4 && \
-          sleep 5
+          sleep 1
 
   test:
     name: test / ethereum
@@ -74,10 +74,10 @@ jobs:
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
           --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie /etc/bitcoin/.cookie \
+          --bitcoind-cookie /root/.bitcoin/regtest/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 && \
-          sleep 5
+          sleep 1
 
       # - uses: taiki-e/install-action@nextest
 
@@ -115,10 +115,10 @@ jobs:
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
           --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie /etc/bitcoin/.cookie \
+          --bitcoind-cookie /root/.bitcoin/regtest/.cookie \
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 && \
-          sleep 5
+          sleep 1
 
   integration-success:
     name: integration success
