@@ -81,7 +81,7 @@ jobs:
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
-      - uses: taiki-e/install-action@nextest
+      # - uses: taiki-e/install-action@nextest
 
       - uses: Swatinem/rust-cache@v2
         with:
