@@ -45,7 +45,7 @@ jobs:
       - name: Run e2e tests
         run: |
           cd ./bin/test-suite && \
-          cargo run --bin test-suite -- \
+          /home/runner/.cargo/bin/cargo run --bin test-suite -- \
           --config "./config.toml" \
           --run-suite all \
           --timeout 400000 \
@@ -75,7 +75,7 @@ jobs:
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
-          cargo run --bin btc-server -- \
+          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
           --identifier 0 \
           --address 0.0.0.0:8080 \
           --db "./db1" \
@@ -121,7 +121,7 @@ jobs:
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
-          cargo run --bin btc-server -- \
+          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
           --identifier 0 \
           --address 0.0.0.0:8080 \
           --db "./db1" \
