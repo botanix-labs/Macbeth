@@ -19,9 +19,7 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use reth_botanix_lib::header_ext::HeaderExt;
-use reth_consensus::{Consensus, ConsensusError};
-
+use reth_botanix_lib::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp},
     validation::{self, validate_poa_header_standalone},
@@ -36,9 +34,9 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
-    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, ChainSpec,
-    Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH,
-    U256,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -63,12 +61,12 @@ mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
 mod pbft;
+mod pbft_task;
 mod signing;
 mod sync;
 mod task;
 pub mod utils;
 mod voting;
-mod pbft_task;
 
 pub use builder::AuthorityConsensusBuilder;
 
@@ -341,7 +339,7 @@ where
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
+        _secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &[secp256k1::PublicKey],
         authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
@@ -362,7 +360,7 @@ where
         };
         header.gas_used = gas_used;
 
-        let vote_for = authority_to_vote_on.as_ref().map(|vote| vote.0);
+        let _vote_for = authority_to_vote_on.as_ref().map(|vote| vote.0);
         // calculate the state root
         let state_root = self
             .client
@@ -386,28 +384,7 @@ where
             }
         };
 
-        // Serialize the header without signature
-        // let mut extra_header_content_no_signature = ExtraDataHeader::new(
-        //     0u32,
-        //     None,
-        //     if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
-        //     vote_for,
-        //     witness_data.clone(),
-        //     recent_block_hash,
-        //     *utxo_commitment,
-        // );
-        // let sig_hash = reth_consensus_common::utils::create_authority_sighash(
-        //     &mut header.clone(),
-        //     &extra_header_content_no_signature,
-        // );
-
-        // // Sign the header and append to extra data header
-        // let message =
-        //     secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
-        // let signature = secp.sign_ecdsa_recoverable(&message, sk);
-
-        // extra_header_content_no_signature.set_signature(signature);
-
+        header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk).map_err(|e| {
             warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
