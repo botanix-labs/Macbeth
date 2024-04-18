@@ -200,9 +200,8 @@ pub const SIGNET_PEGIN_CONFIRMATION_DEPTH: u32 = 1;
 /// Mainnet required confirmation depth for pegins
 pub const MAINNET_PEGIN_CONFIRMATION_DEPTH: u32 = 100;
 
-// TODO: replace with actual botanix address: using placeholder address for testing purposes
-/// The address that receives the botanix block fees.
-pub const BOTANIX_FEES_RECIPIENT: &str = "0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394";
+/// The address that receives the botanix block fees which is a federation member.
+pub const BOTANIX_FEES_RECIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
 
 #[cfg(test)]
 mod tests {

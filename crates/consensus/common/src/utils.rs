@@ -550,44 +550,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "deprecated"]
-    fn should_fail_on_unlisted_poa_beneficiary() {
-        let auth_signer1 = secp256k1::PublicKey::from_secret_key(
-            &secp256k1::Secp256k1::new(),
-            &secp256k1::SecretKey::from_str(
-                "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-            )
-            .unwrap(),
-        );
-        let auth_signer2 = secp256k1::PublicKey::from_secret_key(
-            &secp256k1::Secp256k1::new(),
-            &secp256k1::SecretKey::from_str(
-                "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-            )
-            .unwrap(),
-        );
-        let authority_signers = vec![auth_signer1, auth_signer2];
-
-        // test bad signer
-        let mut header = Header::default();
-        let secret_key = secp256k1::SecretKey::from_str(
-            "4646464646464646464646464646464646464646464646464646464646464646",
-        )
-        .unwrap();
-        let beneficiary_pub_key =
-            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret_key);
-        let beneficiary_address = public_key_to_address(beneficiary_pub_key);
-        header.beneficiary = beneficiary_address;
-        // assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_err());
-
-        // test good signer
-        let mut header = Header::default();
-        let beneficiary_address = public_key_to_address(auth_signer2);
-        header.beneficiary = beneficiary_address;
-        // assert!(validate_poa_block_beneficiary(&header, &authority_signers).is_ok());
-    }
-
-    #[test]
     fn validate_against_parent_skip_gensis() {
         let mut parent = Header::default();
         parent.number = 0;
