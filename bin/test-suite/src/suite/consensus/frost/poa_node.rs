@@ -185,7 +185,6 @@ impl FederationMemberTestConfig {
         };
 
         let no_args = NoArgs::with(self.clone());
-        let rpccookie = self.bitcoind_cookie.display().to_string();
         let mut command = PoaNodeCommand::<NoArgsCliExt<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--chain",
@@ -214,8 +213,10 @@ impl FederationMemberTestConfig {
             self.bitcoin_server_url.as_str(),
             "--bitcoind.url",
             self.bitcoind_url.as_str(),
-            "--bitcoind.cookie",
-            rpccookie.as_str(),
+            "--bitcoind.username",
+            self.bitcoind_username.as_str(),
+            "--bitcoind.password",
+            self.bitcoind_password.as_str(),
             "--frost.min_signers",
             self.frost_min_signers.to_string().as_str(),
             "--frost.max_signers",
