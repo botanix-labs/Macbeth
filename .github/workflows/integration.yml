@@ -21,36 +21,36 @@ concurrency:
 
 jobs:
 
-  # e2e:
-  #   name: test / e2e
-  #   runs-on: botanix-actions-runner-vm
-  #   env:
-  #     RUST_BACKTRACE: 1
-  #   timeout-minutes: 60
-  #   steps:
-  #     - uses: actions/checkout@v4
+  e2e:
+    name: test / e2e
+    runs-on: botanix-actions-runner-vm
+    env:
+      RUST_BACKTRACE: 1
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
 
-  #     # - uses: taiki-e/install-action@nextest
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-on-failure: true
-  #         cache-all-crates: true
+      # - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
 
-  #     - name: Run e2e tests
-  #       run: |
-  #         cd ./bin/test-suite && \
-  #         /home/runner/.cargo/bin/cargo run --bin test-suite -- \
-  #         --config "./config.toml" \
-  #         --run-suite all \
-  #         --timeout 400000 \
-  #         --dry-run false \
-  #         --jwt-dir "./jwt" \
-  #         --btc-network regtest \
-  #         --bitcoind-url http://localhost:18443 \
-  #         --bitcoind-cookie /home/ubuntu/bitcoin_data/regtest/.cookie \
-  #         --min-signers 3 \
-  #         --max-signers 4 && \
-  #         sleep 1
+      - name: Run e2e tests
+        run: |
+          cd ./bin/test-suite && \
+          /home/runner/.cargo/bin/cargo run --bin test-suite -- \
+          --config "./config.toml" \
+          --run-suite all \
+          --timeout 400000 \
+          --dry-run false \
+          --jwt-dir "./jwt" \
+          --btc-network regtest \
+          --bitcoind-url http://localhost:18443 \
+          --bitcoind-cookie /home/ubuntu/bitcoin_data/regtest/.cookie \
+          --min-signers 3 \
+          --max-signers 4 && \
+          sleep 1
 
   test:
     name: test / ethereum
