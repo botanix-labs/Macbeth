@@ -12,7 +12,8 @@ env:
   SEED: rustethereumethereumrust
   BITCOIND_NETWORK: regtest
   BITCOIND_URL: http:/localhost:18443
-  BITCOIND_COOKIE: /home/ubuntu/bitcoin_data/regtest/.cookie
+  BITCOIND_USER: botanix-ci-user
+  BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
   JWT_DIR: ./jwt
 
 concurrency:
@@ -47,10 +48,15 @@ jobs:
           --jwt-dir "./jwt" \
           --btc-network regtest \
           --bitcoind-url http://localhost:18443 \
-          --bitcoind-cookie /home/ubuntu/bitcoin_data/regtest/.cookie \
+          --bitcoind-user botanix-ci-user \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 && \
-          sleep 1
+          --max-signers 4 &
+          pid=$!
+          sleep 30
+          # kill the process after 30 seconds
+          echo "Killing process $pid"
+          kill -9 $pid
 
   # test:
   #   name: test / ethereum
