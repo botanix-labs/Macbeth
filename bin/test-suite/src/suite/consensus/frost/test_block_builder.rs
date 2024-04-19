@@ -78,9 +78,6 @@ pub async fn block_builder(
     // wait for the dkg to finish for each of them
     await_dkg(&mut test_fed_members, &mut rx).await;
 
-    // create a hashmap to store tx hashes
-    let mut tx_hashes_set = HashSet::new();
-
     // find out who is in turn
     let inturn_member_index = current_inturn_index(total_authorities as u64);
 

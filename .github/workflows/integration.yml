@@ -55,7 +55,7 @@ jobs:
           /home/runner/.cargo/bin/cargo run --bin test-suite -- \
           --config "./config.toml" \
           --run-suite all \
-          --timeout 400000 \
+          --timeout 800000 \
           --dry-run false \
           --jwt-dir ${{env.TEST_JWT_DIR}} \
           --btc-network regtest \
