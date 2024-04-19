@@ -27,6 +27,8 @@ pub enum BitcoindError {
     TransactionBroadcastFailed(bitcoincore_rpc::Error),
     #[error("Block index failed")]
     BlockIndexStatusFailed(bitcoincore_rpc::Error),
+    #[error("Blockchain index failed")]
+    BlockchainInfoFailed(bitcoincore_rpc::Error),
     #[error("Best block hash retrieval failed")]
     BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
     #[error("Block info retrieval failed")]
@@ -82,11 +84,20 @@ impl BitcoindClient {
     }
 
     pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        let index_data =
-            self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed)?;
-        match index_data.txindex {
-            Some(txindex) => Ok(txindex.synced),
-            _ => Ok(false),
+        match self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed) {
+            Ok(index_data) => match index_data.txindex {
+                Some(txindex) => Ok(txindex.synced),
+                _ => Ok(false),
+            },
+            Err(_) => {
+                // call the info method in case the get index info is unavailable
+                match self.rpc.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
+                    Ok(blockchain_info_result) => {
+                        Ok(blockchain_info_result.blocks == blockchain_info_result.headers)
+                    }
+                    Err(_) => Ok(false),
+                }
+            }
         }
     }
 
