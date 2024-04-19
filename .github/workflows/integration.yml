@@ -52,8 +52,11 @@ jobs:
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 && \
-          sleep 1
+          --max-signers 4 &
+          pid=$! 
+          sleep 300
+          echo "Killing BTC Server"
+          kill -9 $pid
 
   test:
     name: test / ethereum
@@ -89,7 +92,7 @@ jobs:
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
           pid=$! 
-          sleep 60
+          sleep 300
           echo "Killing BTC Server"
           kill -9 $pid
 
