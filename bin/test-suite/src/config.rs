@@ -83,9 +83,12 @@ pub struct CliArgs {
     /// btc rpc url
     #[argh(option, from_str_fn(parse_url))]
     pub bitcoind_url: Url,
-    /// btc rpc cookie file
-    #[argh(option, default = "PathBuf::from(\".cookie\")")]
-    pub bitcoind_cookie: PathBuf,
+    /// btc user
+    #[argh(option, default = "String::from(\"foo\")")]
+    pub bitcoind_user: String,
+    #[argh(option, default = "String::from(\"bar\")")]
+    /// btc password
+    pub bitcoind_pass: String,
 }
 
 pub fn parse_suite(value: &str) -> Result<RunSuite, String> {

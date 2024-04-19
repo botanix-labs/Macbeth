@@ -13,15 +13,29 @@ pub struct BitcoindArgs {
     #[arg(long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL")]
     pub url: Url,
 
-    /// bitcoind RPC cookie file path
+    /// Btcd username
     ///
-    /// The path of the cookie of the bitcoind server.
-    #[arg(long = "bitcoind.cookie", name = "bitcoind.cookie", value_name = "BITCOIND_COOKIE")]
-    pub cookie: String,
+    /// The username of the bitcoind server.
+    #[arg(
+        long = "bitcoind.username",
+        name = "bitcoind.username",
+        value_name = "BITCOIND_USERNAME"
+    )]
+    pub username: String,
+
+    /// Btcd password
+    ///
+    /// The password of the bitcoind server.
+    #[arg(
+        long = "bitcoind.password",
+        name = "bitcoind.password",
+        value_name = "BITCOIND_PASSWORD"
+    )]
+    pub password: String,
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {
     fn from(args: BitcoindArgs) -> Self {
-        BitcoindConfig::new(args.url, args.cookie)
+        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password.clone())
     }
 }

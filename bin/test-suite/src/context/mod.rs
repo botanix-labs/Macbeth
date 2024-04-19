@@ -19,7 +19,8 @@ pub struct GlobalContext {
     pub max_signers: u16,
     pub btc_network: String,
     pub bitcoind_url: Url,
-    pub bitcoind_cookie: PathBuf,
+    pub bitcoind_user: String,
+    pub bitcoind_pass: String,
 }
 
 impl GlobalContext {
@@ -46,7 +47,8 @@ impl GlobalContext {
             max_signers: frost_max_signers,
             btc_network: args.btc_network,
             bitcoind_url: args.bitcoind_url,
-            bitcoind_cookie: args.bitcoind_cookie,
+            bitcoind_user: args.bitcoind_user,
+            bitcoind_pass: args.bitcoind_pass,
         })
     }
 }

@@ -1,6 +1,6 @@
 //! Defines structure for botanix RPC configurables and business logic
 
-use std::{fmt, path::Path, str::FromStr};
+use std::{fmt, str::FromStr};
 
 use alloy_primitives::hex;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
@@ -31,7 +31,8 @@ impl Default for BotanixConfig {
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
-                ".cookie",
+                "foo".to_string(),
+                "bar".to_string(),
             ),
         }
     }
@@ -40,7 +41,12 @@ impl Default for BotanixConfig {
 impl BotanixConfig {
     //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
     #[allow(dead_code)]
-    fn new(bitcoin_network: bitcoin::Network, btc_server: String, bitcoind_cookie: String) -> Self {
+    fn new(
+        bitcoin_network: bitcoin::Network,
+        btc_server: String,
+        bitcoind_username: String,
+        bitcoind_password: String,
+    ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
             bitcoin::Network::Bitcoin => "https://bitcoind.botanixlabs.dev", // TODO: update this
@@ -56,7 +62,8 @@ impl BotanixConfig {
             btc_server,
             bitcoind_config: BitcoindConfig::new(
                 bitcoind_url.parse::<Url>().expect("must be valid ip address"),
-                bitcoind_cookie,
+                bitcoind_username,
+                bitcoind_password,
             ),
         }
     }
@@ -74,8 +81,8 @@ impl BotanixConfig {
     }
 
     /// Set mempool space block source url
-    pub fn bitcoind(mut self, url: Url, cookie: impl AsRef<Path>) -> Self {
-        self.bitcoind_config = BitcoindConfig::new(url, cookie);
+    pub fn bitcoind(mut self, url: Url, username: String, password: String) -> Self {
+        self.bitcoind_config = BitcoindConfig::new(url, username, password);
         self
     }
 }

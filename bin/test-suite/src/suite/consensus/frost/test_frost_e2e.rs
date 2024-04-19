@@ -103,7 +103,10 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let bitcoind_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &bitcoind_url,
-        Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),
+        Auth::UserPass(
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
+        ),
     )
     .expect("bitcoind client");
 
@@ -289,7 +292,10 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let btcd_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &btcd_url,
-        Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),
+        Auth::UserPass(
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
+        ),
     )
     .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)
