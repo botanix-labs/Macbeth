@@ -51,12 +51,8 @@ jobs:
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 &
-          # pid=$!
-          # sleep 30
-          # # kill the process after 30 seconds
-          # echo "Killing process $pid"
-          # kill -9 $pid
+          --max-signers 4 && \
+          sleep 1
 
   # test:
   #   name: test / ethereum
