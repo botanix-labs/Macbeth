@@ -550,6 +550,15 @@ mod tests {
     }
 
     #[test]
+    fn should_fail_validate_poa_block_beneficiary() {
+        let mut header = Header::default();
+        header.beneficiary = Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_err());
+    }
+
+
+    #[test]
     fn validate_against_parent_skip_gensis() {
         let mut parent = Header::default();
         parent.number = 0;
