@@ -7,6 +7,8 @@ use std::{
 };
 use tokio::process::{Child, Command};
 
+pub const BTC_SERVER_START_PORT: u16 = 8000;
+
 #[derive(Debug)]
 pub struct SpawnedBtcServer {
     pub port: u16,
@@ -85,15 +87,12 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(
-    global_context: Arc<GlobalContext>,
-    start_port: u16,
-) -> Vec<SpawnedBtcServer> {
+pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..global_context.instances {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-        let port = start_port + i;
+        let port = BTC_SERVER_START_PORT + i;
         let child_process = spawn_btc_server(
             global_context.clone(),
             i,

@@ -14,7 +14,7 @@ env:
   BITCOIND_URL: http:/localhost:18443
   BITCOIND_USER: botanix-ci-user
   BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
-  JWT_DIR: ./jwt
+  TEST_JWT_DIR: "/home/ubuntu/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -38,6 +38,17 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
+      - name: Compile btc-server
+        run: |
+          cd ./bin/btc-server && \
+          /home/runner/.cargo/bin/cargo build --bin btc-server && \
+          echo "Bitcoin server compiled successfully!"
+
+      - name: Compile poa-node
+        run: |
+            /home/runner/.cargo/bin/cargo build --bin reth && \
+            echo "Poa node compiled successfully!"
+
       - name: Run e2e tests
         run: |
           cd ./bin/test-suite && \
@@ -46,14 +57,14 @@ jobs:
           --run-suite all \
           --timeout 400000 \
           --dry-run false \
-          --jwt-dir "./jwt" \
+          --jwt-dir ${{env.TEST_JWT_DIR}} \
           --btc-network regtest \
           --bitcoind-url http://localhost:18443 \
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
           --max-signers 4 && \
-          echo "e2e tests completed successfully"
+          echo "e2e tests completed successfully!"
 
   test:
     name: test / ethereum

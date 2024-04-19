@@ -187,7 +187,10 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // These inputs don't actually exist on the regtest chain so there is nothing to be spent.
     // In the future we can generate some addresses send funds and use those outpoints for this
     // test.
-    assert!(err.message().contains("bad-txns-inputs-missingorspent"));
+    assert!(
+        err.message().contains("bad-txns-inputs-missingorspent") ||
+            err.message().contains("Missing inputs")
+    );
 
     /*
     // Lets try spending again, this time should be spending non tweaked inputs (change)

@@ -1,13 +1,15 @@
+use bitcoincore_rpc::{Auth, RpcApi};
 use reth::core::cli::runner::CliRunner;
 use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address};
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use std::{collections::HashSet, time::Duration};
 
+use crate::suite::consensus::frost::poa_node::is_inturn;
 use crate::{
     it_info_print,
     suite::consensus::{
         frost::{
-            poa_node::{create_poa_federation_members, is_inturn, Notifications},
+            poa_node::{create_poa_federation_members, current_inturn_index, Notifications},
             test_frost_e2e::await_dkg,
         },
         ConsensusIntegrationTestSuite,
@@ -15,11 +17,42 @@ use crate::{
 };
 
 const SEND_AMOUNT: u64 = 1; // = 1 Botanix BTC
-const SELECTED_FED_MEMBER_INDEX: usize = 0;
+const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
+    // Set up regtest connection
+    // config is hardcoded to only work with regtest
+    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
+    let port =
+        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
+    let bitcoind_url = format!("{host}:{port}");
+    let bitcoind_rpc = bitcoincore_rpc::Client::new(
+        &bitcoind_url,
+        Auth::UserPass(
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
+        ),
+    )
+    .expect("bitcoind client");
+
+    // Load up the bitcoin wallet and generate some blocks
+    for wallet in bitcoind_rpc.list_wallets().unwrap() {
+        it_info_print!("#UNLOADING WALLET?", &wallet);
+        let _ = bitcoind_rpc.unload_wallet(Some(&wallet));
+    }
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
+
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
         suite.global_context.clone(),
@@ -45,9 +78,14 @@ pub async fn block_builder(
     // wait for the dkg to finish for each of them
     await_dkg(&mut test_fed_members, &mut rx).await;
 
+    // create a hashmap to store tx hashes
+    let mut tx_hashes_set = HashSet::new();
+
+    // find out who is in turn
+    let inturn_member_index = current_inturn_index(total_authorities as u64);
+
     // assign targeted fed memeber
-    let targeted_fed_member =
-        test_fed_members.get(&(SELECTED_FED_MEMBER_INDEX as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
     let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
@@ -104,7 +142,7 @@ pub async fn block_builder(
                     "Received payload from engine index",
                     canon_state_notification.engine_index
                 );
-                assert_eq!(canon_state_notification.engine_index, SELECTED_FED_MEMBER_INDEX as u16);
+                assert_eq!(canon_state_notification.engine_index, inturn_member_index as u16);
 
                 // block verfication
                 if canon_state_notification.engine_index == targeted_fed_member.index {

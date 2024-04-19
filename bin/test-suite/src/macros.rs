@@ -41,7 +41,7 @@ macro_rules! run_test {
             }
         }
 
-        $self.destroy_context().await;
+        //$self.destroy_context().await;
     };
 }
 

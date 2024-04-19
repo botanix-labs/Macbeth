@@ -37,9 +37,9 @@ use std::{
 };
 use url::Url;
 
-const RPC_PORT_BASE: u16 = 8545;
-const AUTHRPC_PORT_BASE: u16 = 8551;
-const DISCOVERY_PORT_BASE: u16 = 30321;
+pub const RPC_PORT_BASE: u16 = 8545;
+pub const AUTHRPC_PORT_BASE: u16 = 8551;
+pub const DISCOVERY_PORT_BASE: u16 = 30303;
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
@@ -48,6 +48,13 @@ const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
 struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
+}
+
+/// Returns the index of the authority which is currently in turn
+pub fn current_inturn_index(authorities_len: u64) -> u64 {
+    // use minutes as time unit to determine in turn
+    let timestamp = unix_timestamp() / 60;
+    (timestamp / authorities_len) % authorities_len
 }
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {

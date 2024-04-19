@@ -110,6 +110,22 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     )
     .expect("bitcoind client");
 
+    // Load up the bitcoin wallet and generate some blocks
+    for wallet in bitcoind_rpc.list_wallets().unwrap() {
+        it_info_print!("#UNLOADING WALLET?", &wallet);
+        let _ = bitcoind_rpc.unload_wallet(Some(&wallet));
+    }
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
+
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
         suite.global_context.clone(),
@@ -139,18 +155,6 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
             test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
         mint_contract_instances.push(botanix_eth_client);
     }
-
-    // Load up the bitcoin wallet and generate some blocks
-    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
-    if create_res.is_err() {
-        // wallet already exists
-        // load wallet
-        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
-    }
-    let address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();

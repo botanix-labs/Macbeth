@@ -1,4 +1,7 @@
-use self::frost::btc_server::SpawnedBtcServer;
+use self::frost::{
+    btc_server::{SpawnedBtcServer, BTC_SERVER_START_PORT},
+    poa_node::{AUTHRPC_PORT_BASE, DISCOVERY_PORT_BASE, RPC_PORT_BASE},
+};
 use super::{Outcome, Suite};
 use crate::{
     context::GlobalContext,
@@ -10,9 +13,85 @@ use port_killer::kill;
 use reth_tracing::tracing::error;
 use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tracing::{info, warn};
-
 // scopes
 mod frost;
+
+fn kill_child_processes_at_port(index: u16) {
+    // kill btc server processes
+    let btc_server_port = BTC_SERVER_START_PORT + index;
+    match kill(btc_server_port) {
+        Ok(pid) => {
+            if pid {
+                info!(
+                    "Sucessfully killed btc-server process on port process on port {:?}",
+                    btc_server_port
+                );
+            } else {
+                warn!("Unable to kill btc-server process on port {:?}", btc_server_port);
+            }
+        }
+        Err(err) => {
+            error!(
+                "Error attempting to kill btc-server process on port {:?} -> {:?}",
+                btc_server_port, err
+            );
+        }
+    }
+    // kill poa rpc node processes
+    let rpc_port = RPC_PORT_BASE + index;
+    match kill(rpc_port) {
+        Ok(pid) => {
+            if pid {
+                info!("Sucessfully killed rpc-port process on port process on port {:?}", rpc_port);
+            } else {
+                warn!("Unable to kill rpc-port process on port {:?}", rpc_port);
+            }
+        }
+        Err(err) => {
+            error!("Error attempting to kill rpc-port process on port {:?} -> {:?}", rpc_port, err);
+        }
+    }
+    // kill poa auth rpc node processes
+    let auth_rpc_port = AUTHRPC_PORT_BASE + index;
+    match kill(auth_rpc_port) {
+        Ok(pid) => {
+            if pid {
+                info!(
+                    "Sucessfully killed auth-rpc-port process on port process on port {:?}",
+                    auth_rpc_port
+                );
+            } else {
+                warn!("Unable to kill auth-rpc-port process on port {:?}", auth_rpc_port);
+            }
+        }
+        Err(err) => {
+            error!(
+                "Error attempting to kill auth-rpc-port process on port {:?} -> {:?}",
+                auth_rpc_port, err
+            );
+        }
+    }
+    // kill poa discovery processes
+    let discovery_port = DISCOVERY_PORT_BASE + index;
+    match kill(discovery_port) {
+        Ok(pid) => {
+            if pid {
+                info!(
+                    "Sucessfully killed discovery-port process on port process on port {:?}",
+                    discovery_port
+                );
+            } else {
+                warn!("Unable to kill discovery-port process on port {:?}", discovery_port);
+            }
+        }
+        Err(err) => {
+            error!(
+                "Error attempting to kill discovery-port process on port {:?} -> {:?}",
+                discovery_port, err
+            );
+        }
+    }
+}
 
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
@@ -20,7 +99,6 @@ pub struct ConsensusIntegrationTestSuite {
     pub outcome: Outcome,
     pub local_context: LocalContext,
 }
-
 pub struct LocalContext {
     pub btc_servers: Option<Vec<SpawnedBtcServer>>,
 }
@@ -92,9 +170,24 @@ impl Suite for ConsensusIntegrationTestSuite {
     }
 
     async fn create_context(&mut self) {
-        // kill all processes at designated ports
-        let start_port: u16 = 8000;
+        if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
+            // kill all btc server processes
+            for (_, btc_server) in btc_servers.iter_mut().enumerate() {
+                let _ = btc_server.child_process.kill().await;
+            }
+            // Remove db dirs
+            clean_db(btc_servers);
+        }
+
+        // kill processes at designated ports
         (0..self.global_context.instances).for_each(|i| {
+            kill_child_processes_at_port(i);
+        });
+
+        /*
+        let start_port: u16 = BTC_SERVER_START_PORT;
+        (0..self.global_context.instances).for_each(|i| {
+            // kill btc server processes
             let port = start_port + i;
             match kill(port) {
                 Ok(pid) => {
@@ -109,19 +202,23 @@ impl Suite for ConsensusIntegrationTestSuite {
                 }
             }
         });
-
-        // create new context
-        self.local_context.btc_servers =
-            Some(spawn_n_btc_servers(self.global_context.clone(), start_port));
+        */
 
         // let servers come up
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+
+        // create new context
+        self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));
+
+        // let servers come up
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
     }
 
     async fn destroy_context(&mut self) {
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
-            for btc_server in btc_servers.iter_mut() {
+            for (index, btc_server) in btc_servers.iter_mut().enumerate() {
                 let _ = btc_server.child_process.kill().await;
+                kill_child_processes_at_port(index as u16);
             }
             // Remove db dirs
             clean_db(btc_servers);
