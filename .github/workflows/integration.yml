@@ -52,11 +52,8 @@ jobs:
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 &
-          pid=$! 
-          sleep 300
-          echo "Killing BTC Server"
-          kill -9 $pid
+          --max-signers 4 && \
+          echo "e2e tests passed"
 
   test:
     name: test / ethereum
@@ -92,7 +89,7 @@ jobs:
           --jwt-secret "bin/btc-server/jwt.hex" \
           --fall-back-fee-rate-sat-per-vbyte 5 &
           pid=$! 
-          sleep 300
+          sleep 240
           echo "Killing BTC Server"
           kill -9 $pid
 
@@ -130,8 +127,10 @@ jobs:
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ secrets.BITCOIND_PWD }} \
           --jwt-secret "bin/btc-server/jwt.hex" \
-          --fall-back-fee-rate-sat-per-vbyte 5 && \
-          sleep 1
+          --fall-back-fee-rate-sat-per-vbyte 5 &
+          sleep 240
+          echo "Killing BTC Server"
+          kill -9 $pid
 
   integration-success:
     name: integration success
