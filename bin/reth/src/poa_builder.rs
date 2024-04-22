@@ -409,7 +409,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let block_import =
             ProofOfAuthorityBlockImport::new(self.config.chain.clone(), block_import_tx);
         // build network
-        // TODO(armins) need to config for block import
         let mut network_builder = self
             .config
             .build_network(
