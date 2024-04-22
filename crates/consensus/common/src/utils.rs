@@ -95,6 +95,27 @@ pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
+// TODO move this into header ext
+// not in authority utils because of circular dependency
+/// Get the authority address from the header
+pub fn get_block_producer_address(header: &Header) -> Address {
+    let binding = header
+        .recovered_signed_authorities()
+        .expect("recovered authority");
+    let block_builder_public_key = binding
+        .get(0)
+        .expect("block producer authority to be present");
+    public_key_to_address(*block_builder_public_key)
+}
+// not in authority utils because of circular dependency
+/// Calculate the block reward split between botanix and the beneficiary
+pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
+    // 20% of the block reward
+    let botanix_reward = total_block_fees / 5;
+    let beneficiary_reward = total_block_fees - botanix_reward;
+    (botanix_reward, beneficiary_reward)
+}
+
 /// Validate poa block beneficiary
 pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
     if header.beneficiary != Address::ZERO {
@@ -126,10 +147,12 @@ pub fn validate_poa_extra_data_header(
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
-    edh.validate_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(|e| {
-        error!("Failed to validate authority signature: {:?}", e);
-        ConsensusError::InvalidAuthoritySignature
-    })?;
+    edh.validate_single_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
+        |e| {
+            error!("Failed to validate authority signature: {:?}", e);
+            ConsensusError::InvalidAuthoritySignature
+        },
+    )?;
     // TODO (armins) in the future this is where we would validate federation votes
 
     Ok(())
