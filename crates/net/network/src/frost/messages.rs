@@ -540,9 +540,9 @@ impl FrostProtoMessage {
                     reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
                 {
                     buf.advance(data_len);
-                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                    FrostProtoMessageKind::PeerPreCommitment(PbftRequest::new(block))
                 } else {
-                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    warn!("[Botanix Protocol] Failed to decode PeerPreCommitment");
                     return None;
                 }
             }
@@ -553,9 +553,9 @@ impl FrostProtoMessage {
                     reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
                 {
                     buf.advance(data_len);
-                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                    FrostProtoMessageKind::PeerCommit(PbftRequest::new(block))
                 } else {
-                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    warn!("[Botanix Protocol] Failed to decode PeerCommit");
                     return None;
                 }
             }
@@ -582,9 +582,10 @@ mod tests {
         let block = SealedBlock::default();
         let pbft_request = PbftRequest::new(block);
 
+        // Testing block proposal messages
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::CoordinatorBlockProposal,
-            message: FrostProtoMessageKind::CoordinatorBlockProposal(pbft_request),
+            message: FrostProtoMessageKind::CoordinatorBlockProposal(pbft_request.clone()),
         };
 
         // Encode the message
@@ -597,6 +598,38 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
+        // Testing pre-commit messages
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::PeerPreCommitment,
+            message: FrostProtoMessageKind::PeerPreCommitment(pbft_request.clone()),
+        };
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+
+        // Testing commit messages
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::PeerCommit,
+            message: FrostProtoMessageKind::PeerCommit(pbft_request.clone()),
+        };
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+
     }
 
     #[test]
