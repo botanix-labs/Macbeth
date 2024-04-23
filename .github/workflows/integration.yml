@@ -64,7 +64,7 @@ jobs:
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
           --max-signers 4 & 
-          sleep 360
+          sleep 480
           echo "e2e tests completed successfully!"
 
   test:
