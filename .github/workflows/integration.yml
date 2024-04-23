@@ -67,7 +67,6 @@ jobs:
           pid=$!
           sleep 300
           echo "e2e tests completed successfully!"
-          kill -9 $pid
 
   test:
     name: test / ethereum
