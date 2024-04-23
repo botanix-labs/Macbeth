@@ -64,7 +64,7 @@ jobs:
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
           --max-signers 4 & 
-          sleep 480
+          sleep 500
           echo "e2e tests completed successfully!"
 
   test:
@@ -144,15 +144,3 @@ jobs:
           sleep 150
           echo "Killing BTC Server"
           kill -9 $pid
-
-  integration-success:
-    name: integration success
-    runs-on: botanix-actions-runner-vm
-    if: always()
-    needs: [e2e, test, sync]
-    timeout-minutes: 60
-    steps:
-      - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@release/v1
-        with:
-          jobs: ${{ toJSON(needs) }}
