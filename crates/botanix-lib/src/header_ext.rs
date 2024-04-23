@@ -24,6 +24,8 @@ pub trait HeaderExt {
     ) -> Result<Vec<secp256k1::PublicKey>, RecoverAuthorityError>;
 
     fn validate_inturn(&self, authorities: &[secp256k1::PublicKey]) -> Result<(), ConsensusError>;
+
+    fn block_hash_segregated_signature(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +75,23 @@ pub enum GetAuthoritiesError {
 }
 
 impl HeaderExt for Header {
+    /// Provides block hash without extra data header bytes
+    fn block_hash_segregated_signature(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
+        let mut this = self.clone();
+        let mut edh = this.deserialize_extra_data_header()?;
+        edh.authority_signatures = None;
+        edh.set_optional_fields_bitmask();
+
+        let mut writer: Vec<u8> = vec![];
+        edh.encode_into_without_signature(&mut writer).expect("Valid extra data header");
+        // Take ownership of the data in writer and leave an empty Vec<u8>
+        let bytes_data = Bytes::from(writer.clone());
+        this.extra_data = bytes_data;
+        let hash = this.hash_slow();
+
+        Ok(hash)
+    }
+
     /// Validates that the authority in the first signature position was in turn when producing the block
     fn validate_inturn(&self, authorities: &[secp256k1::PublicKey]) -> Result<(), ConsensusError> {
         let signers = self.recovered_signed_authorities()?;
@@ -200,6 +219,33 @@ mod tests {
             header.sign_block(&sk1).unwrap();
         }
     }
+
+    #[test]
+    fn block_hash_shouldnt_change_after_adding_signatures() {
+        let mut header = Header::default();
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = generate_secret_key(SK1);
+
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str(SK1).unwrap(),
+            ),
+            secp256k1::PublicKey::from_secret_key(
+                &secp256k1::Secp256k1::new(),
+                &secp256k1::SecretKey::from_str(SK2).unwrap(),
+            ),
+        ]);
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let hash_before = header.block_hash_segregated_signature().expect("valid hash");
+
+        header.sign_block(&sk1).unwrap();
+        let hash_after = header.block_hash_segregated_signature().expect("valid hash");
+
+        assert_eq!(hash_before, hash_after);
+    }
+
     #[test]
     fn create_default_edh_sighhash() {
         let edh = ExtraDataHeader::default();
