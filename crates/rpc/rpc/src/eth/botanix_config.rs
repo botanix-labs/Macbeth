@@ -1,5 +1,6 @@
 //! Defines structure for botanix RPC configurables and business logic
 
+use std::path::Path;
 use std::{fmt, str::FromStr};
 
 use alloy_primitives::hex;
@@ -17,7 +18,7 @@ pub struct BotanixConfig {
 
     // TODO set up stronger url types
     /// The gRPC url for the bitcoin signer
-    pub btc_server: String,
+    pub btc_server: Option<String>,
 
     /// bitcoind configuration
     pub bitcoind_config: BitcoindConfig,
@@ -27,7 +28,7 @@ impl Default for BotanixConfig {
     fn default() -> Self {
         BotanixConfig {
             bitcoin_network: bitcoin::Network::Regtest,
-            btc_server: "http://localhost:8080".to_string(),
+            btc_server: Some("http://localhost:8080".to_string()),
             // Use a public signet endpoint by default
             bitcoind_config: BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
@@ -43,7 +44,7 @@ impl BotanixConfig {
     #[allow(dead_code)]
     fn new(
         bitcoin_network: bitcoin::Network,
-        btc_server: String,
+        btc_server: Option<String>,
         bitcoind_username: String,
         bitcoind_password: String,
     ) -> Self {
@@ -69,7 +70,7 @@ impl BotanixConfig {
     }
 
     /// Set btc server Grpc Url
-    pub fn btc_server(mut self, btc_server: String) -> Self {
+    pub fn btc_server(mut self, btc_server: Option<String>) -> Self {
         self.btc_server = btc_server;
         self
     }
@@ -211,10 +212,18 @@ impl Botanix {
         &self,
         eth_address: reth_primitives::Address,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
-        let mut client =
-            client::BtcServerClient::connect(self.botanix_rpc_config.btc_server.clone())
-                .await
-                .unwrap();
+        // Non-federation nodes will not have btc_server set
+        if self.botanix_rpc_config.btc_server.clone().is_none() {
+            return Err(GatewayAddressRPCError::InvalidParam(tonic::Status::invalid_argument(
+                "btc_server is not set",
+            )));
+        }
+
+        let mut client = client::BtcServerClient::connect(
+            self.botanix_rpc_config.btc_server.clone().expect("Valid URL").clone(),
+        )
+        .await
+        .unwrap();
         let request = tonic::Request::new(client::GetGatewayAddressRequest {
             eth_address: eth_address.to_string(),
         });

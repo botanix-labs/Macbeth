@@ -195,7 +195,7 @@ pub struct RpcServerArgs {
     ///
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
-    pub btc_server: String,
+    pub btc_server: Option<String>,
 
     /// Btc signing service
     ///
@@ -207,11 +207,13 @@ pub struct RpcServerArgs {
     #[arg(long, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network", required = true)]
     pub btc_network: bitcoin::Network,
 
-    /// Frost
-    ///
-    /// Frost Arguments
-    #[clap(flatten)]
-    pub frost: FrostArgs,
+    /// The minimum number required for frost signing.
+    #[arg(long = "frost.min_signers", name = "frost.min_signers", value_name = "MIN_SIGNERS")]
+    pub min_signers: Option<u16>,
+
+    /// The maximum number required for frost signing.
+    #[arg(long = "frost.max_signers", name = "frost.max_signers", value_name = "MAX_SIGNERS")]
+    pub max_signers: Option<u16>,
 
     /// Notifications Webhook Url
     ///
@@ -640,7 +642,7 @@ impl Default for RpcServerArgs {
             rpc_gas_cap: RPC_DEFAULT_GAS_CAP.into(),
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
-            btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
+            btc_server: Some("127.0.0.1:8080".to_owned()),
             bitcoind: BitcoindArgs {
                 url: "https://bitcoind.botanixlabs.dev"
                     .parse::<Url>()
@@ -649,7 +651,8 @@ impl Default for RpcServerArgs {
                 username: "pwd".to_string(),
             },
             btc_network: bitcoin::Network::Regtest,
-            frost: FrostArgs { min_signers: 2, max_signers: 2 },
+            min_signers: Some(2),
+            max_signers: Some(2),
             slack_notifications_webhook_url: None,
         }
     }
