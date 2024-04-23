@@ -63,8 +63,11 @@ jobs:
           --bitcoind-user botanix-ci-user \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 && \
+          --max-signers 4 & 
+          pid=$!
+          sleep 300
           echo "e2e tests completed successfully!"
+          kill -9 $pid
 
   test:
     name: test / ethereum
