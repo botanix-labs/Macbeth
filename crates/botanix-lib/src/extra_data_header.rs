@@ -132,10 +132,14 @@ impl ExtraDataHeader {
     }
 
     pub fn add_signature(&mut self, signature: RecoverableSignature) {
-        if self.authority_signatures.is_none() {
-            self.authority_signatures = Some(vec![]);
+        let mut current_signatures = self.authority_signatures.clone().unwrap_or(vec![]);
+
+        // Check if this signature already exists in the list
+        if current_signatures.contains(&signature) {
+            return;
         }
-        self.authority_signatures.as_mut().unwrap().push(signature);
+        current_signatures.push(signature);
+        self.authority_signatures = Some(current_signatures);
         self.set_optional_fields_bitmask();
     }
 
@@ -801,7 +805,7 @@ mod tests {
 
         edh.add_signature(signature);
         assert_eq!(edh.authority_signatures.is_some(), true);
-        let edh_signature = edh.authority_signatures.unwrap();
+        let edh_signature = edh.authority_signatures.clone().unwrap();
         assert_eq!(edh_signature.clone().len(), 1);
         // make sure its the same signature
         assert_eq!(
@@ -810,6 +814,13 @@ mod tests {
         );
 
         assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
+
+        // can't add the same signature twice
+        let mut edh2 = edh.clone();
+        edh2.add_signature(signature);
+        let edh_signature = edh2.authority_signatures.unwrap();
+        assert_eq!(edh_signature.len(), 1);
+
     }
 
     #[test]
