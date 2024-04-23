@@ -380,8 +380,7 @@ start-btc-server-2:
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-user "${BITCOIND_USER}" \
-	--bitcoind-pass "${BITCOIND_PWD}" \
+	--bitcoind-cookie "${BITCOIND_COOKIE}" \
 	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 
@@ -389,6 +388,7 @@ start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--chain botanix_testnet \
+	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
 	--http.corsdomain "*" \
@@ -413,6 +413,7 @@ start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--chain botanix_testnet \
+	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
 	--http.corsdomain "*" \
@@ -432,3 +433,23 @@ start-poa-server-2:
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304
+
+start-non-fed-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NON_FED_1_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8547 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NON_FED_1_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8553 \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.cookie "${BITCOIND_COOKIE}" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
+	--port 30305
