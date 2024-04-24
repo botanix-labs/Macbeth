@@ -183,9 +183,7 @@ pub fn unix_timestamp() -> u64 {
 }
 
 /// Validate poa block beneficiary
-pub fn validate_poa_block_beneficiary(
-    header: &Header,
-) -> Result<(), ConsensusError> {
+pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
     if header.beneficiary != Address::ZERO {
         return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
     }
@@ -552,11 +550,11 @@ mod tests {
     #[test]
     fn should_fail_validate_poa_block_beneficiary() {
         let mut header = Header::default();
-        header.beneficiary = Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        header.beneficiary =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
         let result = validate_poa_block_beneficiary(&header);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn validate_against_parent_skip_gensis() {
@@ -682,6 +680,9 @@ mod tests {
         sign_block_helper(&mut header, None);
         let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
         let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(block_producer_address, public_key_to_address(edh.authority_signers.unwrap()[0]));
+        assert_eq!(
+            block_producer_address,
+            public_key_to_address(edh.authority_signers.unwrap()[0])
+        );
     }
 }

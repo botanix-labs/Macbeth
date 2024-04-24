@@ -329,7 +329,8 @@ impl StorageInner {
         // set the first block to find the correct index in bundle state
         executor.set_first_block(block.number);
 
-        let (receipts, gas_used, _total_block_fees) = executor.execute_transactions(block, U256::ZERO, None)?;
+        let (receipts, gas_used, _total_block_fees) =
+            executor.execute_transactions(block, U256::ZERO, None)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;

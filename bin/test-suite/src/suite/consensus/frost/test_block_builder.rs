@@ -1,15 +1,18 @@
 use bitcoincore_rpc::{Auth, RpcApi};
-use reth::core::cli::runner::CliRunner;
-use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address};
+use reth::{
+    core::cli::runner::CliRunner,
+    primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
+};
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use std::{collections::HashSet, time::Duration};
 
-use crate::suite::consensus::frost::poa_node::is_inturn;
 use crate::{
     it_info_print,
     suite::consensus::{
         frost::{
-            poa_node::{create_poa_federation_members, current_inturn_index, Notifications},
+            poa_node::{
+                create_poa_federation_members, current_inturn_index, is_inturn, Notifications,
+            },
             test_frost_e2e::await_dkg,
         },
         ConsensusIntegrationTestSuite,
@@ -175,8 +178,8 @@ pub async fn block_builder(
                     // verify 80/20 block reward split is correct
                     let target_fed_member_reward =
                         target_fed_member_balance_after - target_fed_member_balance_before;
-                    let botanix_block_reward = botanix_block_reward_address_balance_before_after
-                        - botanix_block_reward_address_balance_before;
+                    let botanix_block_reward = botanix_block_reward_address_balance_before_after -
+                        botanix_block_reward_address_balance_before;
 
                     let total_block_reward = target_fed_member_reward + botanix_block_reward;
 

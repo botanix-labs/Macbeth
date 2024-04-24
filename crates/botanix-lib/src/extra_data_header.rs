@@ -717,14 +717,15 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_extension_trait(){
+    fn deserialize_extension_trait() {
         let mut header = Header::default();
         let edh = ExtraDataHeader::default();
         let serialized = edh.serialize();
         header.extra_data = serialized.into();
-        let deserialized_edh = header.deserialize_extra_data_header().expect("Deserialization passed");
+        let deserialized_edh =
+            header.deserialize_extra_data_header().expect("Deserialization passed");
 
-        assert_eq!(deserialized_edh, edh);        
+        assert_eq!(deserialized_edh, edh);
     }
 
     #[test]
