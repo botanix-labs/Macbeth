@@ -74,6 +74,7 @@ pub enum Notifications {
 pub struct DkgPayload {
     pub engine_index: u16,
     pub ts: tokio::time::Instant,
+    pub public_key: String,
 }
 
 #[derive(Clone, Debug)]
@@ -290,11 +291,11 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
             .unwrap();
 
             // wait for the dkg to finish
-            loop {
+            let pub_key = loop {
                 match btc_server_client.get_public_key(Empty {}).await {
-                    Ok(_) => {
+                    Ok(pub_key) => {
                         it_info_print!("Dkg Finished for index {:?}!", engine_index);
-                        break;
+                        break pub_key;
                     }
                     Err(_) => {
                         it_warn_print!("Dkg Pending for engine index {:?}...", engine_index);
@@ -302,11 +303,12 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
                         continue;
                     }
                 }
-            }
+            };
             let _ = rx_sender
                 .send(Notifications::DkgFinished(DkgPayload {
                     engine_index,
                     ts: tokio::time::Instant::now(),
+                    public_key: pub_key.publickey,
                 }))
                 .await;
 

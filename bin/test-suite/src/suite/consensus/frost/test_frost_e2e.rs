@@ -32,13 +32,19 @@ pub async fn await_dkg(
     fed_members: &mut HashMap<u16, FederationMemberTestConfig>,
     rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
 ) {
+    let mut pub_keys = vec![];
     while let Some(notification) = rx.recv().await {
         match notification {
             Notifications::DkgFinished(dkg_notification) => {
                 if let Some(fed_member) = fed_members.get_mut(&dkg_notification.engine_index) {
                     fed_member.is_dkg_ready = true;
+                    pub_keys.push(dkg_notification.public_key)
                 }
                 if is_dkg_ready(&fed_members) {
+                    it_info_print!("FED MEMBERS DKG KEYS ------->", &pub_keys);
+                    assert!(pub_keys.len() == fed_members.len());
+                    pub_keys.dedup();
+                    assert!(pub_keys.len() == 1);
                     break;
                 }
             }
