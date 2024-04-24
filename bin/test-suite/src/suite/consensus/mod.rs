@@ -1,7 +1,4 @@
-use self::frost::{
-    btc_server::{SpawnedBtcServer, BTC_SERVER_START_PORT},
-    poa_node::{AUTHRPC_PORT_BASE, DISCOVERY_PORT_BASE, RPC_PORT_BASE},
-};
+use self::frost::btc_server::{SpawnedBtcServer, BTC_SERVER_START_PORT};
 use super::{Outcome, Suite};
 use crate::{
     context::GlobalContext,
@@ -37,6 +34,7 @@ fn kill_child_processes_at_port(index: u16) {
             );
         }
     }
+    /*
     // kill poa rpc node processes
     let rpc_port = RPC_PORT_BASE + index;
     match kill(rpc_port) {
@@ -91,6 +89,7 @@ fn kill_child_processes_at_port(index: u16) {
             );
         }
     }
+    */
 }
 
 pub struct ConsensusIntegrationTestSuite {
@@ -184,28 +183,8 @@ impl Suite for ConsensusIntegrationTestSuite {
             kill_child_processes_at_port(i);
         });
 
-        /*
-        let start_port: u16 = BTC_SERVER_START_PORT;
-        (0..self.global_context.instances).for_each(|i| {
-            // kill btc server processes
-            let port = start_port + i;
-            match kill(port) {
-                Ok(pid) => {
-                    if pid {
-                        info!("Sucessfully killed process on port process on port {:?}", port);
-                    } else {
-                        warn!("Unable to successfully kill process on port {:?}", port);
-                    }
-                }
-                Err(err) => {
-                    error!("Error attempting to kill process on port {:?} -> {:?}", port, err);
-                }
-            }
-        });
-        */
-
-        // let servers come up
-        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        // let old context be fully destroyed
+        tokio::time::sleep(Duration::from_secs(15)).await;
 
         // create new context
         self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));

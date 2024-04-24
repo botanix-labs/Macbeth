@@ -37,9 +37,6 @@ use std::{
 };
 use url::Url;
 
-pub const RPC_PORT_BASE: u16 = 8545;
-pub const AUTHRPC_PORT_BASE: u16 = 8551;
-pub const DISCOVERY_PORT_BASE: u16 = 30303;
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
@@ -121,10 +118,13 @@ impl FederationMemberTestConfig {
         frost_min_signers: u16,
         frost_max_signers: u16,
         peer_id: PeerId,
+        rpc_port_base: u16,
+        authrpc_port_base: u16,
+        discovery_port_base: u16,
     ) -> Self {
-        let rpc_port = RPC_PORT_BASE + index;
-        let authrpc_port = AUTHRPC_PORT_BASE + index;
-        let discovery_port = DISCOVERY_PORT_BASE + index;
+        let rpc_port = rpc_port_base + index;
+        let authrpc_port = authrpc_port_base + index;
+        let discovery_port = discovery_port_base + index;
         let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
@@ -344,6 +344,25 @@ pub async fn create_poa_federation_members(
 
     let mut members_public_keys: Vec<PublicKey> = vec![];
     let secp = secp256k1::Secp256k1::new();
+
+    let mut last_rpc_port = global_context.last_poa_node_rpc_port.lock().await;
+    let p = last_rpc_port.clone();
+    let rpc_port_base: u16 = p + 1;
+    *last_rpc_port = p + 10 + global_context.instances;
+    drop(last_rpc_port);
+
+    let mut last_authrpc_port = global_context.last_poa_node_authrpc_port.lock().await;
+    let p = last_authrpc_port.clone();
+    let authrpc_port_base: u16 = p + 1;
+    *last_authrpc_port = p + 10 + global_context.instances;
+    drop(last_authrpc_port);
+
+    let mut last_discovery_port = global_context.last_poa_node_discovery_port.lock().await;
+    let p = last_discovery_port.clone();
+    let discovery_port_base: u16 = p + 1;
+    *last_discovery_port = p + 10 + global_context.instances;
+    drop(last_discovery_port);
+
     for member_index in 0..global_context.instances {
         let port = btc_servers
             .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
@@ -367,6 +386,9 @@ pub async fn create_poa_federation_members(
             global_context.min_signers,
             global_context.max_signers,
             member_peer_id,
+            rpc_port_base,
+            authrpc_port_base,
+            discovery_port_base,
         )
         .await;
         fed_members.insert(member_index, fed_member_config);
