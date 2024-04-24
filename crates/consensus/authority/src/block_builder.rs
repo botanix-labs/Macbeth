@@ -305,11 +305,8 @@ where
             }))
             .expect("send pbft task message");
         // Wait for commitments before we can commit to this block
-        let _ = match tokio::time::timeout(
-            Duration::from_secs(60),
-            self.pbft_task_rx.recv(),
-        )
-        .await
+        info!(target: "consensus::authority", "Waiting for commitments...");
+        let _ = match tokio::time::timeout(Duration::from_secs(60), self.pbft_task_rx.recv()).await
         {
             Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
                 let PbftNotification { block: commited_block } = notif;
@@ -319,8 +316,8 @@ where
                 error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
                 return;
             }
-            _ => {
-                warn!(target: "consensus::authority", "Recieved unknown message from pbft task");
+            msg => {
+                warn!(target: "consensus::authority", "Recieved unknown message from pbft task: {:?}", msg);
                 return;
             }
         };
