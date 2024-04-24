@@ -344,25 +344,28 @@ where
         Ok(())
     }
 
+    /// Process a commitment from a peer
+    /// If we have enough commitments, returns true
+    /// Otherwise returns false
     pub(crate) async fn process_commitment(
         &mut self,
         block: SealedBlock,
         peer_id: PeerId,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<SealedBlock>, Error> {
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
-            return Ok(());
+            return Ok(None);
         }
 
         if peer_id == self.peer_id {
-            return Ok(());
+            return Ok(None);
         }
 
         let block_hash = block.header.block_hash_segregated_signature().unwrap();
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
             warn!(target: "pbft" ,"State machine is not awaiting commitments for block {:?}", block_hash);
-            return Ok(());
+            return Ok(None);
         }
 
         let mut commits = self.commitments.entry(block_hash).or_insert_with(HashSet::new);
@@ -374,12 +377,13 @@ where
 
         // if we have enough commitments, we can move to the next state
         if self.commitments.len() >= self.config.min_signers as usize {
-            info!(target: "pbft" ,"We have enough commitments moving to next state");
+            info!(target: "pbft" ,"We have enough commitments, time to produce a block");
             self.commitments.remove(&block_hash);
-            // TODO: we should be able to move to the next state
             let sigs = block.header().deserialize_extra_data_header().unwrap().authority_signatures;
             info!(target: "pbft" ,"signatures: {:?}", sigs);
+
+            return Ok(Some(block));
         }
-        Ok(())
+        Ok(None)
     }
 }
