@@ -17,6 +17,8 @@ pub(crate) enum PbftNotificationMessage {
     ProposeBlock(PbftNotification),
     /// A notification to the block builder task that we have received a with a quorum of commitments
     CommitmentsReceived(PbftNotification),
+    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
+    Reset,
 }
 
 /// Finalised frost signature message
@@ -97,24 +99,34 @@ where
         loop {
             // First handle any pbft notifications from the block builder task
             while let Ok(message) = self.pbft_task_rx.try_recv() {
-                if let PbftNotificationMessage::ProposeBlock(pbft_notification) = message {
-                    info!(target: "PBFT Task", "Received block proposal notification");
-                    // we are the in turn block producer proposing a block
-                    match self.pbft_state_machine.init_block_proposal(pbft_notification.block).await
-                    {
-                        Ok(()) => {
-                            info!(target: "PBFT Task", "Block proposal Init processed successfully");
-                        }
-                        Err(e) => {
-                            error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);
+                match message {
+                    PbftNotificationMessage::Reset => {
+                        info!(target: "PBFT Task", "Resetting PBFT State Machine");
+                        self.pbft_state_machine = self.pbft_state_machine.clone().reset();
+                    }
+                    PbftNotificationMessage::ProposeBlock(pbft_notification) => {
+                        info!(target: "PBFT Task", "Received block proposal notification");
+                        // we are the in turn block producer proposing a block
+                        match self
+                            .pbft_state_machine
+                            .init_block_proposal(pbft_notification.block)
+                            .await
+                        {
+                            Ok(()) => {
+                                info!(target: "PBFT Task", "Block proposal Init processed successfully");
+                            }
+                            Err(e) => {
+                                error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);
+                            }
                         }
                     }
-                } else {
-                    warn!(
-                        target: "PBFT Task",
-                        "pbft notification message {:?}",
-                        message
-                    );
+                    (msg) => {
+                        warn!(
+                            target: "PBFT Task",
+                            "uncovered pbft notification message {:?}",
+                            msg
+                        );
+                    }
                 }
             }
             // receive over a channel message from other peers and update our state machine
@@ -158,8 +170,17 @@ where
                                     .process_commitment(data, peer_id)
                                     .await
                                 {
-                                    Ok(()) => {
-                                        info!(target: "PBFT Task", "Peer commitment processed successfully");
+                                    Ok(None) => {
+                                        info!(target: "PBFT Task", "Peer commitment processed successfully, still waiting for other commits");
+                                    }
+                                    Ok(Some(signed_block)) => {
+                                        info!(target: "PBFT Task", "Peer commitment processed successfully, quorum reached");
+                                        self.pbft_task_tx
+                                            .send(PbftNotificationMessage::CommitmentsReceived(
+                                                PbftNotification { block: signed_block },
+                                            ))
+                                            // TODO remove unwrap()
+                                            .unwrap();
                                     }
                                     Err(e) => {
                                         error!(target: "PBFT Task", "Error processing peer commitment {:?}", e);
