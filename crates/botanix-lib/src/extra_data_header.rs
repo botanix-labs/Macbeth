@@ -1,4 +1,4 @@
-use std::io;
+use std::{collections::HashSet, io};
 
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
@@ -292,6 +292,22 @@ impl ExtraDataHeader {
             witness_data,
             authority_signatures: signatures,
         })
+    }
+
+    /// Merge the signatures from another ExtraDataHeader into this one
+    pub fn merge_signature(&mut self, other: &ExtraDataHeader) -> Result<(), ()> {
+        if let Some(other_sigs) = &other.authority_signatures {
+            let mut set: HashSet<RecoverableSignature> =
+                self.authority_signatures.clone().unwrap_or_default().into_iter().collect();
+
+            for sig in other_sigs {
+                set.insert(*sig);
+            }
+
+            self.authority_signatures = Some(set.into_iter().collect());
+        }
+
+        Ok(())
     }
 
     pub fn validate_single_authority_signature(
@@ -819,7 +835,46 @@ mod tests {
         edh2.add_signature(signature);
         let edh_signature = edh2.authority_signatures.unwrap();
         assert_eq!(edh_signature.len(), 1);
+    }
 
+    #[test]
+    fn can_merge_signatures_without_duplicates() {
+        let mut edh1 = ExtraDataHeader::default();
+        let mut edh2 = ExtraDataHeader::default();
+
+        let secp = Secp256k1::new();
+        let (secret_key1, _public_key1) = secp.generate_keypair(&mut OsRng);
+        let (secret_key2, _public_key2) = secp.generate_keypair(&mut OsRng);
+
+        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes());
+        let message = Message::from(hello_world_hash);
+        let signature1 = secp.sign_ecdsa_recoverable(&message, &secret_key1);
+        let signature2 = secp.sign_ecdsa_recoverable(&message, &secret_key2);
+
+        edh1.add_signature(signature1);
+        edh2.add_signature(signature2);
+
+        let mut edh1_clone = edh1.clone();
+        edh1_clone.merge_signature(&edh2).expect("merge sigs");
+
+        let edh_signature = edh1_clone.authority_signatures.unwrap(); // Use the authority_signatures of the clone
+        assert_eq!(edh_signature.len(), 2);
+
+        // should not be able to add duplicated
+        edh1.merge_signature(&edh1.clone()).expect("merge sigs");
+        let edh_signature = edh1.authority_signatures.unwrap(); // Use the authority_signatures of the original edh1
+        // Should just have original signature
+        assert_eq!(edh_signature.len(), 1);
+
+        let mut edh4 = ExtraDataHeader::default();
+        edh4.add_signature(signature1);
+        edh4.add_signature(signature2);
+
+        // A edh with no signatures should have no affect
+        let mut edh3 = ExtraDataHeader::default();
+        edh4.merge_signature(&edh3).expect("merge sigs");
+        let edh_signature = edh4.clone().authority_signatures.unwrap();
+        assert_eq!(edh_signature.len(), 2);
     }
 
     #[test]
