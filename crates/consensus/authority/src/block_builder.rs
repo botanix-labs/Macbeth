@@ -315,7 +315,7 @@ where
             Err(e) => {
                 error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
                 self.pbft_task_tx
-                    .send(PbftNotificationMessage::Reset())
+                    .send(PbftNotificationMessage::Reset)
                     .expect("send pbft task message");
                 return;
             }
