@@ -15,7 +15,6 @@ env:
   BITCOIND_USER: botanix-ci-user
   BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
   TEST_JWT_DIR: "/home/ubuntu/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
-  CARGO_HOME: "/home/runner/.cargo"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -38,6 +37,8 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          env-vars: |
+            CARGO_HOME="/home/runner/.cargo"
 
       - name: Compile btc-server
         run: |
