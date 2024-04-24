@@ -35,6 +35,8 @@ pub struct PbftTask<Client> {
     pub(crate) storage: Storage<Client>,
     /// Channel to receive pbft notifications (from the block production task)
     pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+    /// Channel to send pbft notifications (to the block production task)
+    pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     /// authority / network secret key
     secret_key: secp256k1::SecretKey,
     /// config
@@ -68,7 +70,15 @@ where
             my_peerid,
             secret_key,
         );
-        Self { frost_handle, pbft_state_machine, storage, secret_key, pbft_task_rx, config }
+        Self {
+            frost_handle,
+            pbft_state_machine,
+            storage,
+            secret_key,
+            pbft_task_rx,
+            pbft_task_tx,
+            config,
+        }
     }
 
     pub async fn start_task(&mut self) -> () {
@@ -88,20 +98,15 @@ where
             // First handle any pbft notifications from the block builder task
             while let Ok(message) = self.pbft_task_rx.try_recv() {
                 if let PbftNotificationMessage::ProposeBlock(pbft_notification) = message {
+                    info!(target: "PBFT Task", "Received block proposal notification");
                     // we are the in turn block producer proposing a block
-                    match self
-                        .pbft_state_machine
-                        .process_block_proposal(
-                            pbft_notification.block,
-                            pk2id(&self.config.authority_pk),
-                        )
-                        .await
+                    match self.pbft_state_machine.init_block_proposal(pbft_notification.block).await
                     {
                         Ok(()) => {
-                            info!(target: "PBFT Task", "Block proposal processed successfully");
+                            info!(target: "PBFT Task", "Block proposal Init processed successfully");
                         }
                         Err(e) => {
-                            error!(target: "PBFT Task", "Error processing block proposal {:?}", e);
+                            error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);
                         }
                     }
                 } else {
@@ -114,7 +119,7 @@ where
             }
             // receive over a channel message from other peers and update our state machine
             if let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
-                info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
+                info!(target: "PBFT Task", "Peer messaged received {:?}", msg);
                 match msg {
                     PeerMessageResponse::Pbft(pbft_response) => {
                         let PbftResponse { response_type, data } = pbft_response;

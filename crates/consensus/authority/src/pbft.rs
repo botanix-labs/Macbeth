@@ -1,4 +1,6 @@
 use crate::{utils::retry_exec, Storage};
+use reth_consensus_common::utils::is_inturn;
+
 use frost_secp256k1_tr as frost;
 use reth_botanix_lib::extra_data_header::ExtraDataHeaderSerializeError;
 use reth_botanix_lib::header_ext::HeaderExt;
@@ -16,7 +18,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -71,7 +73,7 @@ impl PbftState {
 pub(crate) struct PbftStateMachine<Client> {
     storage: Storage<Client>,
     frost_handle: FrostHandle,
-    state: PbftState,
+    state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
     peer_id: PeerId,
     config: FrostConfig,
@@ -108,7 +110,7 @@ where
             personal_frost_identifier,
             storage,
             frost_handle,
-            state: PbftState::Initial,
+            state: BTreeMap::new(),
             config,
             peer_id,
             pre_commitments: BTreeMap::new(),
@@ -124,7 +126,7 @@ where
             personal_frost_identifier: self.personal_frost_identifier,
             storage: self.storage,
             frost_handle: self.frost_handle,
-            state: PbftState::Initial,
+            state: BTreeMap::new(),
             config: self.config,
             peer_id: self.peer_id,
             pre_commitments: BTreeMap::new(),
@@ -134,13 +136,14 @@ where
     }
 
     /// Returns the state machine state
-    pub(crate) fn get_state(&self) -> PbftState {
-        self.state
+    pub(crate) fn get_state(&self, block_hash: BlockHash) -> PbftState {
+        self.state.get(&block_hash).unwrap_or(&PbftState::Initial).clone()
     }
 
     /// Sets state machine state
-    pub(crate) fn set_state(&mut self, state: PbftState) {
-        self.state = state;
+    pub(crate) fn set_state(&mut self, state: PbftState, block_hash: BlockHash) {
+        // if the state doesnt exist for a block hash create it and set the state
+        self.state.insert(block_hash, state);
     }
 }
 
@@ -171,6 +174,10 @@ where
         }
     }
 
+    pub(crate) fn is_coordinator(&self) -> bool {
+        is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64)
+    }
+
     pub(crate) async fn gossip_to_peers(
         &mut self,
         pbft_response: PbftResponse,
@@ -178,6 +185,8 @@ where
         let fut = || async {
             // get all connected peers
             let connected_peers = self.get_all_peers_handle().await?;
+            info!(target: "pbft" ,"Broadcasting pbft response to all peers");
+            info!(target: "pbft" ,"Connected peers: {:?}", connected_peers.keys().collect::<Vec<_>>() );
 
             // Broadcast dkg round 1 package to all peers (excluding ourselves)
             for (frost_id, sender) in connected_peers.iter() {
@@ -195,12 +204,56 @@ where
         retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
+    /// Intended to be called by the in turn block producer when a block is ready to be
+    /// proposed to the network
+    pub(crate) async fn init_block_proposal(&mut self, block: SealedBlock) -> Result<(), Error> {
+        // Check if there is already a running state machine for this block
+        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let current_state = self.get_state(block_hash);
+
+        if current_state.is_running() {
+            warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
+            return Ok(());
+        }
+
+        if !self.is_coordinator() {
+            warn!(target: "pbft" ,"Not the coordinator -- ignoring init block proposal request");
+            return Ok(());
+        }
+
+        // Set the state to awaiting pre-commitments
+        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
+        self.gossip_to_peers(PbftResponse {
+            response_type: PbftEventResponseType::CoordinatorBlockProposal,
+            data: block.clone(),
+        })
+        .await?;
+
+        // As the coordinator we can add our own pre-commitment
+        self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new).insert(self.peer_id);
+
+        Ok(())
+    }
+
+    /// Block proposal from the in turn block producer
+    /// We should only be getting this request from the in turn block producer
     pub(crate) async fn process_block_proposal(
         &mut self,
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft" ,"Processing block proposal from peer {:?}", peer_id);
+        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let current_state = self.get_state(block_hash);
+        if current_state.is_running() {
+            warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
+            return Ok(());
+        }
+
+        if peer_id == self.peer_id {
+            return Ok(());
+        }
+
         let coordinator = self
             .config
             .authorities
@@ -208,9 +261,58 @@ where
             .expect("should be valid index");
 
         // TODO Check if the inturn block producer has a signature on the block
-        let block_hash = block.hash_slow();
-        self.pre_commitments.insert(block_hash, HashSet::new());
-        self.process_precommitment(block, peer_id).await?;
+
+        // Add our own pre-commitment
+        let mut pre_commits = HashSet::new();
+        pre_commits.insert(self.peer_id);
+        // And implicitly add the coordinator's pre-commitment
+        pre_commits.insert(peer_id);
+        self.pre_commitments.insert(block_hash, pre_commits);
+        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
+
+        // Broadcast our pre-commitment
+        self.gossip_to_peers(PbftResponse {
+            response_type: PbftEventResponseType::PeerPreCommitment,
+            data: block.clone(),
+        })
+        .await?;
+
+        // Edge case: In a two person federation we can move to the next state
+        self.check_and_send_commitment(&block).await?;
+
+        Ok(())
+    }
+
+    /// Check if we have enough pre-commits to move onto the next state
+    /// If we do, we can send our commitment
+    async fn check_and_send_commitment(&mut self, block: &SealedBlock) -> Result<(), Error> {
+        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+
+        let pre_commits =
+            self.pre_commitments.get(&block_hash).cloned().unwrap_or_else(HashSet::new);
+        // if we have enough precommitments, we can move to the next state
+        if pre_commits.len() >= self.config.min_signers as usize {
+            info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
+            let mut mutable_header = block.header().clone();
+            mutable_header.sign_block(&self.secret_key).unwrap();
+            let signed_block = SealedBlock::new(
+                mutable_header.seal_slow(),
+                BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
+            );
+
+            // Add our own commitments
+            let commits = self.commitments.entry(block_hash).or_insert_with(HashSet::new);
+            commits.insert(self.peer_id);
+            // Update state
+            self.set_state(PbftState::AwaitingCommitments, block_hash);
+            // Gossip our commitment
+            self.gossip_to_peers(PbftResponse {
+                response_type: PbftEventResponseType::PeerCommitment,
+                data: signed_block.clone(),
+            })
+            .await?;
+        }
+
         Ok(())
     }
 
@@ -219,43 +321,26 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<(), Error> {
-        info!(target: "pbft" ,"Processing pre-commitment from peer {:?}", peer_id);
-        let block_hash = block.hash_slow();
-        // This shouldnt be the first time we are seeing this block
-        let pre_commits = self.pre_commitments.get(&block_hash).unwrap_or(&HashSet::new()).clone();
-        let mut pre_commits_mut = pre_commits.clone();
-        // Add Peers precommitment
-        pre_commits_mut.insert(peer_id);
-        // Add our own precommitment
-        pre_commits_mut.insert(self.peer_id);
-        self.pre_commitments.insert(block_hash, pre_commits_mut);
-
-        // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() >= self.config.min_signers as usize {
-            info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
-            let mut mutable_header = block.header().clone();
-            mutable_header.sign_block(&self.secret_key).unwrap();
-            let signed_block = SealedBlock::new(
-                mutable_header.seal_slow(),
-                BlockBody { transactions: block.body, ommers: vec![], withdrawals: None },
-            );
-
-            let commitment = PbftResponse {
-                response_type: PbftEventResponseType::PeerCommitment,
-                data: signed_block,
-            };
-            self.commitments.insert(block_hash, HashSet::new());
-            self.commitments.get_mut(&block_hash).unwrap().insert(self.peer_id);
-
-            self.gossip_to_peers(commitment).await?;
-        } else {
-            // Generate our pre commitment gossip it out
-            let precommit = PbftResponse {
-                response_type: PbftEventResponseType::PeerPreCommitment,
-                data: block,
-            };
-            self.gossip_to_peers(precommit).await?;
+        info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
+        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let current_state = self.get_state(block_hash);
+        if !current_state.is_awaiting_precommitments() {
+            warn!(target: "pbft", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
+            return Ok(());
         }
+
+        // Do not process our own response
+        if peer_id == self.peer_id {
+            return Ok(());
+        }
+
+        // Add the peer's precommitment
+        let pre_commits = self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new);
+        pre_commits.insert(peer_id);
+        info!(target: "pbft" ,"pre-commitments: {:?}", pre_commits.len());
+
+        self.check_and_send_commitment(&block).await?;
+
         Ok(())
     }
 
@@ -264,15 +349,36 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<(), Error> {
-        let block_hash = block.hash_slow();
-        let mut commits = self.commitments.get(&block_hash).unwrap_or(&HashSet::new()).clone();
+        if !self.is_coordinator() {
+            warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
+            return Ok(());
+        }
+
+        if peer_id == self.peer_id {
+            return Ok(());
+        }
+
+        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let current_state = self.get_state(block_hash);
+        if !current_state.is_awaiting_commitments() {
+            warn!(target: "pbft" ,"State machine is not awaiting commitments for block {:?}", block_hash);
+            return Ok(());
+        }
+
+        let mut commits = self.commitments.entry(block_hash).or_insert_with(HashSet::new);
+        // add peer commitment
         commits.insert(peer_id);
+        // TODO Merge signatures
+        // TODO validate signature
+        info!(target: "pbft" ,"commitments.len(): {:?}", self.commitments.len());
 
         // if we have enough commitments, we can move to the next state
-        if commits.len() >= self.config.min_signers as usize {
+        if self.commitments.len() >= self.config.min_signers as usize {
             info!(target: "pbft" ,"We have enough commitments moving to next state");
             self.commitments.remove(&block_hash);
             // TODO: we should be able to move to the next state
+            let sigs = block.header().deserialize_extra_data_header().unwrap().authority_signatures;
+            info!(target: "pbft" ,"signatures: {:?}", sigs);
         }
         Ok(())
     }
