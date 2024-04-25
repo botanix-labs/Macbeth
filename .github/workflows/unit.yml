@@ -50,7 +50,6 @@ jobs:
           --max-signers 2 \
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
-          --btc-network regtest \
           --btc-network ${{env.BITCOIND_NETWORK}} \
           --bitcoind-url ${{env.BITCOIND_URL}} \
           --bitcoind-user ${{env.BITCOIND_USER}} \
@@ -102,7 +101,6 @@ jobs:
           --max-signers 2 \
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
-          --btc-network regtest \
           --btc-network ${{env.BITCOIND_NETWORK}} \
           --bitcoind-url ${{env.BITCOIND_URL}} \
           --bitcoind-user ${{env.BITCOIND_USER}} \
