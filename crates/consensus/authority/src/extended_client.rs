@@ -115,8 +115,6 @@ impl BtcServerExtendedClient {
 }
 
 mod tests {
-    
-    
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
