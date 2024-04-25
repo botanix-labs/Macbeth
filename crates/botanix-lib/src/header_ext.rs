@@ -5,6 +5,8 @@ use secp256k1::PublicKey;
 use thiserror::Error;
 
 pub trait HeaderExt {
+    fn add_extra_data_header(&mut self, edh: &ExtraDataHeader);
+
     fn deserialize_extra_data_header(
         &self,
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;
@@ -75,6 +77,11 @@ pub enum GetAuthoritiesError {
 }
 
 impl HeaderExt for Header {
+    /// Adds extra data header to the header
+    fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
+        self.extra_data = Bytes::from(edh.serialize());
+    }
+
     /// Provides block hash without extra data header bytes
     fn block_hash_segregated_signature(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
         let mut this = self.clone();
