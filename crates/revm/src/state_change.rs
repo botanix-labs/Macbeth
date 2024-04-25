@@ -43,16 +43,16 @@ pub fn post_block_balance_increments(
             calc::block_reward(base_block_reward, ommers.len());
     }
 
-    // split block fees between builder and botanix
-    let (botanix_fees, builder_fees) =
-        utils::block_fees_split(total_block_fees.expect("Total block fees to exist"));
+    if let Some(block_producer) = block_builder_address {
+        // split block fees between builder and botanix
+        let (botanix_fees, builder_fees) =
+            utils::block_fees_split(total_block_fees.expect("Total block fees to exist"));
 
-    *balance_increments
-        .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
-        .or_default() += botanix_fees;
-    *balance_increments
-        .entry(block_builder_address.expect("Block builder address to exist"))
-        .or_default() += builder_fees;
+        *balance_increments
+            .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
+            .or_default() += botanix_fees;
+        *balance_increments.entry(block_producer).or_default() += builder_fees;
+    }
 
     // process withdrawals
     insert_post_block_withdrawals_balance_increments(

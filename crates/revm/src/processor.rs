@@ -386,7 +386,7 @@ where
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used, total_block_fees) =
-            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
+            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg.clone())?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -398,12 +398,16 @@ where
             .into());
         }
         let time = Instant::now();
-        let block_builder_address = get_block_producer_address(&block.header.clone());
+        let block_builder_address = if botanix_consensus_pkg.is_some() {
+            Some(get_block_producer_address(&block.header.clone()))
+        } else {
+            None
+        };
         self.apply_post_execution_state_change(
             block,
             total_difficulty,
             Some(total_block_fees),
-            Some(block_builder_address),
+            block_builder_address,
         )?;
         self.stats.apply_post_execution_state_changes_duration += time.elapsed();
 
