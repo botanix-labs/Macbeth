@@ -1,3 +1,4 @@
+# Run unit tests
 name: Botanix Unit Tests
 
 on:
@@ -8,6 +9,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
+  BITCOIND_NETWORK: regtest
+  BITCOIND_URL: http:/localhost:18443
+  BITCOIND_USER: botanix-ci-user
+  BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
+  TEST_JWT_DIR: "/home/ubuntu/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -36,7 +42,7 @@ jobs:
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
-          cargo run --bin btc-server -- \
+          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
           --identifier 0 \
           --address 0.0.0.0:8080 \
           --db "./db1" \
@@ -45,10 +51,10 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443  \
-          --bitcoind-user botanix-ci-user \
-          --bitcoind-pass ${{ secrets.BITCOIND_PWD }} \
-          --jwt-secret "bin/btc-server/jwt.hex" \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
       - name: Run tests
@@ -84,10 +90,11 @@ jobs:
 
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
-          cargo run --bin btc-server -- \
+          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
           --identifier 0 \
           --address 0.0.0.0:8080 \
           --db "./db1" \
@@ -96,10 +103,10 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://botanix-bitcoind-ci.sre.svc.cluster.local:18443 \
-          --bitcoind-user botanix-ci-user \
-          --bitcoind-pass ${{ secrets.BITCOIND_PWD }} \
-          --jwt-secret "bin/btc-server/jwt.hex" \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --fall-back-fee-rate-sat-per-vbyte 5 &
 
       - run: cargo nextest run --release -p ef-tests --features ef-tests
