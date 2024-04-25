@@ -197,6 +197,7 @@ impl FederationMemberTestConfig {
             "poa",
             "--chain",
             "botanix_testnet",
+            "--federation-mode",
             "--datadir",
             datadir,
             "--debug.terminate",

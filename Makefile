@@ -380,7 +380,8 @@ start-btc-server-2:
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-cookie "${BITCOIND_COOKIE}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
 	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 
@@ -450,6 +451,7 @@ start-non-fed-server-1:
 	--authrpc.port 8553 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
-	--bitcoind.cookie "${BITCOIND_COOKIE}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30305

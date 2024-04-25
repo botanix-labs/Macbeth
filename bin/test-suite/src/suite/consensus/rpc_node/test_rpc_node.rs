@@ -1,7 +1,5 @@
-use rand::seq::index;
 use reth::core::cli::runner::CliRunner;
-use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address, B256};
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+use reth::primitives::B256;
 use std::{collections::HashSet, time::Duration};
 
 use crate::suite::consensus::frost::botanix_client::BotanixEthClient;
@@ -19,8 +17,6 @@ use crate::{
     },
 };
 
-use super::rpc_node::NonFederationMemberTestConfig;
-
 const SEND_AMOUNT: u64 = 1; // = 1 Botanix BTC
 
 pub async fn test_rpc_node(
@@ -36,7 +32,7 @@ pub async fn test_rpc_node(
     .await;
 
     // run all poa nodes in the background
-    for (index, fed_member_config) in test_fed_members.iter() {
+    for (_index, fed_member_config) in test_fed_members.iter() {
         let fed_member_config = fed_member_config.clone();
         let _ = std::thread::spawn(move || {
             let fed_member_command = fed_member_config.build_command();
@@ -59,7 +55,6 @@ pub async fn test_rpc_node(
 
     // send eoa messages to poa nodes when inturn
     let total_authorities = test_fed_members.len();
-    let mut tx_hashes_set = HashSet::new();
     for (index, botanix_eth_client) in botanix_clients.iter().enumerate() {
         'inner: loop {
             let is_test_fed_member_inturn = is_inturn(total_authorities as u64, index as u64);
@@ -70,11 +65,9 @@ pub async fn test_rpc_node(
                 let last_tx_hash =
                     botanix_eth_client.send_eoa(eoa_receiver, SEND_AMOUNT).await.unwrap().unwrap();
                 it_info_print!("Eoa tx: {:?}", last_tx_hash);
-                tx_hashes_set.insert(last_tx_hash.transaction_hash);
                 break 'inner;
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
         }
     }
 
