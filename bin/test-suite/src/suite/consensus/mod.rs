@@ -34,62 +34,6 @@ fn kill_child_processes_at_port(index: u16) {
             );
         }
     }
-    /*
-    // kill poa rpc node processes
-    let rpc_port = RPC_PORT_BASE + index;
-    match kill(rpc_port) {
-        Ok(pid) => {
-            if pid {
-                info!("Sucessfully killed rpc-port process on port process on port {:?}", rpc_port);
-            } else {
-                warn!("Unable to kill rpc-port process on port {:?}", rpc_port);
-            }
-        }
-        Err(err) => {
-            error!("Error attempting to kill rpc-port process on port {:?} -> {:?}", rpc_port, err);
-        }
-    }
-    // kill poa auth rpc node processes
-    let auth_rpc_port = AUTHRPC_PORT_BASE + index;
-    match kill(auth_rpc_port) {
-        Ok(pid) => {
-            if pid {
-                info!(
-                    "Sucessfully killed auth-rpc-port process on port process on port {:?}",
-                    auth_rpc_port
-                );
-            } else {
-                warn!("Unable to kill auth-rpc-port process on port {:?}", auth_rpc_port);
-            }
-        }
-        Err(err) => {
-            error!(
-                "Error attempting to kill auth-rpc-port process on port {:?} -> {:?}",
-                auth_rpc_port, err
-            );
-        }
-    }
-    // kill poa discovery processes
-    let discovery_port = DISCOVERY_PORT_BASE + index;
-    match kill(discovery_port) {
-        Ok(pid) => {
-            if pid {
-                info!(
-                    "Sucessfully killed discovery-port process on port process on port {:?}",
-                    discovery_port
-                );
-            } else {
-                warn!("Unable to kill discovery-port process on port {:?}", discovery_port);
-            }
-        }
-        Err(err) => {
-            error!(
-                "Error attempting to kill discovery-port process on port {:?} -> {:?}",
-                discovery_port, err
-            );
-        }
-    }
-    */
 }
 
 pub struct ConsensusIntegrationTestSuite {
