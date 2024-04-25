@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+# Commenting out for now, will re-enable in the future
 #   clippy-binaries:
 #     name: clippy 
 #     runs-on: botanix-actions-runner
@@ -57,7 +58,7 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
       - run: cargo hack check
-
+# Commenting out for now, will re-enable in once we have a MSRV
 #   msrv:
 #     name: MSRV
 #     runs-on: botanix-actions-runner
@@ -77,6 +78,7 @@ jobs:
 #         env:
 #           RUSTFLAGS: -D warnings
 
+# Commenting out for now, will re-enable in the future
 #   docs:
 #     name: docs
 #     runs-on: botanix-actions-runner
