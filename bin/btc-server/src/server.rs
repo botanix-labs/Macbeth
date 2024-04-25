@@ -556,27 +556,6 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(res))
     }
 
-    async fn remove_utxo(
-        &self,
-        request: tonic::Request<rpc::RemoveUtxoRequest>,
-    ) -> Result<tonic::Response<rpc::RemoveUtxoResponse>, tonic::Status> {
-        self.validate_jwt(&request)?;
-        let req = request.into_inner();
-
-        let txid = bitcoin::Txid::from_str(&req.txid)
-            .map_err(|e| tonic::Status::invalid_argument(format!("Invalid txid: {}", e)))?;
-
-        let outpoint = bitcoin::OutPoint::new(txid, req.vout);
-
-        match self.db.remove_utxo(outpoint) {
-            Ok(_) => Ok(tonic::Response::new(rpc::RemoveUtxoResponse {
-                success: true,
-                message: "UTXO removed successfully".to_string(),
-            })),
-            Err(e) => Err(internal!("Failed to remove UTXO: {}", e)),
-        }
-    }
-
     // Gets the merkle root of the utxo set
     async fn get_utxo_merkle_root(
         &self,
