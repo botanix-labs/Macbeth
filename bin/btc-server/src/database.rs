@@ -375,12 +375,6 @@ impl Db {
         Ok(utxos)
     }
 
-    /// Removes an utxo from the database.
-    pub fn remove_utxo(&self, outpoint: OutPoint) -> Result<(), Error> {
-        self.utxos.remove(&outpoint.to_bytes()[..])?;
-        Ok(())
-    }
-
     /// Stores the consensus Merkle root of all spendable UTXOs.
     pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
         self.db.insert(KEY_UTXO_MERKLE_ROOT, merkle_root)?;
