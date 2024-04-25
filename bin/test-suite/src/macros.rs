@@ -40,8 +40,6 @@ macro_rules! run_test {
                 $self.outcome = crate::suite::Outcome::Failed;
             }
         }
-
-        //$self.destroy_context().await;
     };
 }
 
