@@ -92,7 +92,8 @@ pub async fn block_builder(
 
     // get fed member and botanix address balances
     let edh = targeted_fed_member.edh.unwrap();
-    let targeted_fed_member_pub_key = *edh.authority_signers.unwrap().first().unwrap();
+    let targeted_fed_member_pub_key =
+        *edh.authority_signers.unwrap().get(targeted_fed_member.index as usize).unwrap();
     let targeted_fed_member_ethereum_address =
         public_key_to_address(targeted_fed_member_pub_key).to_checksum(Some(3636));
 
@@ -100,12 +101,12 @@ pub async fn block_builder(
         .get_botanix_balance(targeted_fed_member_ethereum_address.as_str())
         .await
         .unwrap();
-    it_info_print!("Targeted fed member balance before: {}", target_fed_member_balance_before);
+    it_info_print!("Targeted fed member balance before", target_fed_member_balance_before);
 
     let botanix_block_reward_address_balance_before =
         botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
     it_info_print!(
-        "Botanix block fee recipient balance before: {}",
+        "Botanix block fee recipient balance before",
         botanix_block_reward_address_balance_before
     );
 
@@ -160,26 +161,26 @@ pub async fn block_builder(
                         .await
                         .unwrap();
                     it_info_print!(
-                        "Targeted fed member balance after: {}",
+                        "Targeted fed member balance after",
                         target_fed_member_balance_after
                     );
 
-                    it_info_print!("Botanix block fee recipient: {}", BOTANIX_FEES_RECIPIENT);
+                    it_info_print!("Botanix block fee recipient", BOTANIX_FEES_RECIPIENT);
 
                     let botanix_block_reward_address_balance_before_after = botanix_eth_client
                         .get_botanix_balance(BOTANIX_FEES_RECIPIENT)
                         .await
                         .unwrap();
                     it_info_print!(
-                        "Botanix block reward address balance after: {}",
+                        "Botanix block reward address balance after",
                         botanix_block_reward_address_balance_before_after
                     );
 
                     // verify 80/20 block reward split is correct
                     let target_fed_member_reward =
                         target_fed_member_balance_after - target_fed_member_balance_before;
-                    let botanix_block_reward = botanix_block_reward_address_balance_before_after -
-                        botanix_block_reward_address_balance_before;
+                    let botanix_block_reward = botanix_block_reward_address_balance_before_after
+                        - botanix_block_reward_address_balance_before;
 
                     let total_block_reward = target_fed_member_reward + botanix_block_reward;
 
