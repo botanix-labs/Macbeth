@@ -35,18 +35,7 @@ pub async fn frost_e2e_stable(
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
     // config is hardcoded to only work with regtest
-    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
-    let port =
-        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let bitcoind_url = format!("{host}:{port}");
-    let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        &bitcoind_url,
-        Auth::UserPass(
-            suite.global_context.bitcoind_user.clone(),
-            suite.global_context.bitcoind_pass.clone(),
-        ),
-    )
-    .expect("bitcoind client");
+    let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind_rpc.list_wallets().unwrap() {
@@ -233,18 +222,7 @@ pub async fn frost_e2e_stable(
 
     // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
     // processes connecting
-    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
-    let port =
-        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let btcd_url = format!("{host}:{port}");
-    let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        &btcd_url,
-        Auth::UserPass(
-            suite.global_context.bitcoind_user.clone(),
-            suite.global_context.bitcoind_pass.clone(),
-        ),
-    )
-    .expect("bitcoind client");
+    let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     // mine some btc blocks (needed for confirmed pegout)
     bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
