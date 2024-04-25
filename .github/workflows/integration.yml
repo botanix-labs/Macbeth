@@ -20,7 +20,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   e2e:
     name: test / e2e
     runs-on: botanix-actions-runner-vm
@@ -47,8 +46,8 @@ jobs:
 
       - name: Compile poa-node
         run: |
-            /home/runner/.cargo/bin/cargo build --bin reth && \
-            echo "Poa node compiled successfully!"
+          /home/runner/.cargo/bin/cargo build --bin reth && \
+          echo "Poa node compiled successfully!"
 
       - name: Run e2e tests
         run: |
@@ -59,9 +58,9 @@ jobs:
           --timeout 800000 \
           --dry-run false \
           --jwt-dir ${{env.TEST_JWT_DIR}} \
-          --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-user botanix-ci-user \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
           --max-signers 4 & 
@@ -83,7 +82,6 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-          
 
       - name: Start BTC Server
         run: |
@@ -97,16 +95,15 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-user botanix-ci-user \
-          --bitcoind-pass ${{ secrets.BITCOIND_PWD }} \
-          --jwt-secret "bin/btc-server/jwt.hex" \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --fall-back-fee-rate-sat-per-vbyte 5 &
           pid=$! 
           sleep 150
           echo "Killing BTC Server"
           kill -9 $pid
-
 
   sync:
     name: sync / 100k blocks
@@ -137,10 +134,10 @@ jobs:
           --toml ./config.toml \
           --fee-rate-diff-percentage 30 \
           --btc-network regtest \
-          --bitcoind-url http://localhost:18443 \
-          --bitcoind-user botanix-ci-user \
-          --bitcoind-pass ${{ secrets.BITCOIND_PWD }} \
-          --jwt-secret "bin/btc-server/jwt.hex" \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --fall-back-fee-rate-sat-per-vbyte 5 &
           pid=$! 
           sleep 150
