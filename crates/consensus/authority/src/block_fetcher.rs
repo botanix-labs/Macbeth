@@ -5,7 +5,7 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{self, ExtraDataHeader, HeaderExt};
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,

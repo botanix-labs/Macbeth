@@ -115,8 +115,8 @@ impl BtcServerExtendedClient {
 }
 
 mod tests {
-    use super::*;
-    use base64::decode as base64_decode;
+    
+    
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
