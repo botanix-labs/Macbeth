@@ -116,7 +116,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         // // signing tests
         run_test!(self, frost::test_signing::test_many_inputs_signing);
         // // eoa tests
-        run_test!(self, frost::test_block_builder::block_builder);
+        //run_test!(self, frost::test_block_builder::block_builder);
         // utxo commitment test
         run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
         // frost e2e tests

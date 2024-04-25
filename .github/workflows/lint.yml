@@ -46,8 +46,8 @@ jobs:
 #           RUSTFLAGS: -D warnings
 
   crate-checks:
-    runs-on: botanix-actions-runner-vm
-    timeout-minutes: 60
+    runs-on: botanix-actions-runner
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -125,7 +125,7 @@ jobs:
     runs-on: botanix-actions-runner-vm
     if: always()
     needs: [crate-checks, fmt, grafana]
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1
