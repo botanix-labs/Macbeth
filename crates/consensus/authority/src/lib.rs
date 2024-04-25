@@ -233,8 +233,8 @@ where
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
-        sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
+        _sk: &secp256k1::SecretKey,
+        _secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let timestamp = unix_timestamp();
