@@ -3,7 +3,6 @@ name: lint
 on:
   pull_request:
   merge_group:
-  push:
     branches: [main, feature/poA-consensus]
 
 env:
