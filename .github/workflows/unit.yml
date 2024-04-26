@@ -37,8 +37,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
-      - uses: taiki-e/install-action@nextest
-
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
