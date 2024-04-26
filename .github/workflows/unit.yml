@@ -37,6 +37,8 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
+      - run: /home/runner/.cargo/bin/rustup toolchain install stable --profile minimal
+
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -56,7 +58,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo nextest run \
+          /home/runner/.cargo/bin/cargo nextest run \
             --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
             --partition hash:${{ matrix.partition }}/2 \
