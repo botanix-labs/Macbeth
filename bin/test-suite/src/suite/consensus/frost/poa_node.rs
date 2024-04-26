@@ -168,7 +168,9 @@ impl FederationMemberTestConfig {
         self.is_dkg_ready
     }
 
-    pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
+    pub fn build_command(
+        &self,
+    ) -> (PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>>, ChainSpec) {
         it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
@@ -241,9 +243,9 @@ impl FederationMemberTestConfig {
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
         let botanix_testnet = create_botanix_config_with_genesis(genesis);
-        command.chain = Arc::new(botanix_testnet);
+        command.chain = Arc::new(botanix_testnet.clone());
 
-        command
+        (command, botanix_testnet)
     }
 }
 

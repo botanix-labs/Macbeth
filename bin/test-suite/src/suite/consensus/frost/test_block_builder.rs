@@ -22,6 +22,7 @@ use crate::{
 const SEND_AMOUNT: u64 = 1; // = 1 Botanix BTC
 const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 
+#[allow(clippy::too_many_lines)]
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
@@ -70,7 +71,7 @@ pub async fn block_builder(
     for (_index, fed_member_config) in test_fed_members.iter() {
         let fed_member_config = fed_member_config.clone();
         let _ = std::thread::spawn(move || {
-            let fed_member_command = fed_member_config.build_command();
+            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
             let runner = CliRunner::default();
             runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
         });
@@ -179,8 +180,8 @@ pub async fn block_builder(
                     // verify 80/20 block reward split is correct
                     let target_fed_member_reward =
                         target_fed_member_balance_after - target_fed_member_balance_before;
-                    let botanix_block_reward = botanix_block_reward_address_balance_before_after -
-                        botanix_block_reward_address_balance_before;
+                    let botanix_block_reward = botanix_block_reward_address_balance_before_after
+                        - botanix_block_reward_address_balance_before;
 
                     let total_block_reward = target_fed_member_reward + botanix_block_reward;
 
