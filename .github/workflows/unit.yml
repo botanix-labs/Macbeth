@@ -22,7 +22,7 @@ concurrency:
 jobs:
   test:
     name: test / ethereum (${{ matrix.partition }}/2)
-    runs-on: botanix-actions-runner
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     strategy:
@@ -111,7 +111,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on: botanix-actions-runner
+    runs-on: botanix-actions-runner-vm
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
@@ -126,14 +126,14 @@ jobs:
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
 
-  unit-success:
-    name: unit success
-    runs-on: botanix-actions-runner
-    if: always()
-    needs: [test, doc]
-    timeout-minutes: 90
-    steps:
-      - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@release/v1
-        with:
-          jobs: ${{ toJSON(needs) }}
+  # unit-success:
+  #   name: unit success
+  #   runs-on: botanix-actions-runner
+  #   if: always()
+  #   needs: [test, doc]
+  #   timeout-minutes: 90
+  #   steps:
+  #     - name: Decide whether the needed jobs succeeded or failed
+  #       uses: re-actors/alls-green@release/v1
+  #       with:
+  #         jobs: ${{ toJSON(needs) }}
