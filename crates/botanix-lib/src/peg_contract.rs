@@ -66,7 +66,7 @@ impl PeginData {
                 return Err(PeginError::Invalid("invalid tx or outpoint: output idx"));
             }
 
-            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.0 .0)
+            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.into())
                 .map_err(|_e| PeginError::InvalidTweak())?;
             let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
@@ -368,7 +368,9 @@ mod tests {
             witness: Default::default(),
         };
 
-        let gateway_script = address::generate_taproot_scriptpubkey(&pk);
+        let account = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
+        let tpk = key::tweak_frost_verifying_key(pk, &account.into()).unwrap();
+        let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
         let tx_out = TxOut { value: 100_u64, script_pubkey: gateway_script };
         let tx: Transaction = Transaction {
