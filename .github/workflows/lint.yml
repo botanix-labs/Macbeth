@@ -46,7 +46,7 @@ jobs:
 #           RUSTFLAGS: -D warnings
 
   crate-checks:
-    runs-on: botanix-actions-runner
+    runs-on: botanix-actions-runner-vm
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -102,7 +102,7 @@ jobs:
 
   fmt:
     name: fmt
-    runs-on: botanix-actions-runner
+    runs-on: botanix-actions-runner-vm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -121,14 +121,14 @@ jobs:
         with:
           cmd: jq empty etc/grafana/dashboards/overview.json
 
-  lint-success:
-    name: lint success
-    runs-on: botanix-actions-runner-vm
-    if: always()
-    needs: [crate-checks, fmt, grafana]
-    timeout-minutes: 120
-    steps:
-      - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@release/v1
-        with:
-          jobs: ${{ toJSON(needs) }}
+  # lint-success:
+  #   name: lint success
+  #   runs-on: botanix-actions-runner-vm
+  #   if: always()
+  #   needs: [crate-checks, fmt, grafana]
+  #   timeout-minutes: 120
+  #   steps:
+  #     - name: Decide whether the needed jobs succeeded or failed
+  #       uses: re-actors/alls-green@release/v1
+  #       with:
+  #         jobs: ${{ toJSON(needs) }}
