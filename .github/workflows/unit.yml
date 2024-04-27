@@ -21,13 +21,10 @@ concurrency:
 
 jobs:
   test:
-    name: test / ethereum (${{ matrix.partition }}/2)
+    name: test / ethereum
     runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
-    strategy:
-      matrix:
-        partition: [1, 2]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +41,6 @@ jobs:
           /home/runner/.cargo/bin/cargo nextest run \
             --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
-            --partition hash:${{ matrix.partition }}/2 \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
  # Commenting this out until we have the latest Reth updates
   # state:
