@@ -12,7 +12,7 @@ pub mod util;
 use bitcoin::Weight;
 
 /// The weight needed to satisfy a taproot output using keyspend.
-pub const TAPROOT_KEYSPEND_SATISFACTION_WEIGHT: Weight = Weight::from_wu(71);
+pub const TAPROOT_KEYSPEND_SATISFACTION_WEIGHT: Weight = Weight::from_wu(66);
 
 #[cfg(test)]
 mod test {
