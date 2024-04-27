@@ -115,9 +115,16 @@ impl BtcServerExtendedClient {
 }
 
 mod tests {
-
     #[test]
     fn test_metadata_jwt_decode_encode() {
+        use super::JWT_HEADER_KEY;
+        use crate::extended_client::to_u64;
+        use client::Empty;
+        use reth_rpc::Claims;
+        use reth_rpc::JwtSecret;
+        use std::time::SystemTime;
+        use tonic::metadata::BinaryMetadataKey;
+        use tonic::metadata::MetadataValue;
         // create a random jwt secret
         let jwt_secret = JwtSecret::random();
 
@@ -128,7 +135,7 @@ mod tests {
         // encode and set the token as a metadata value
         let metadata_value = MetadataValue::from_bytes(jwt_token.as_bytes());
 
-        // simualte sending a grpc request
+        // simulate sending a grpc request
         let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
         let mut request = tonic::Request::new(Empty {});
         request.metadata_mut().insert_bin(key, metadata_value);
@@ -138,7 +145,7 @@ mod tests {
         if let Some(metadata_value) = request.metadata().get_bin(key) {
             // try to verify the received token
             let jwt_request_token_received = metadata_value.as_encoded_bytes();
-            let jwt_token_base64_decoded = base64_decode(jwt_request_token_received).unwrap();
+            let jwt_token_base64_decoded = base64::decode(jwt_request_token_received).unwrap();
 
             let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
 
