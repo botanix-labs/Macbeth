@@ -120,11 +120,9 @@ mod tests {
         use super::JWT_HEADER_KEY;
         use crate::extended_client::to_u64;
         use client::Empty;
-        use reth_rpc::Claims;
-        use reth_rpc::JwtSecret;
+        use reth_rpc::{Claims, JwtSecret};
         use std::time::SystemTime;
-        use tonic::metadata::BinaryMetadataKey;
-        use tonic::metadata::MetadataValue;
+        use tonic::metadata::{BinaryMetadataKey, MetadataValue};
         // create a random jwt secret
         let jwt_secret = JwtSecret::random();
 

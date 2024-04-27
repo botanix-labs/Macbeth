@@ -50,7 +50,9 @@ use tracing::{debug, info};
 use url::Url;
 
 use super::{
-    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, utils::{parse_grpc_address, parse_url}, BitcoindArgs, FrostArgs
+    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
+    utils::{parse_grpc_address, parse_url},
+    BitcoindArgs, FrostArgs,
 };
 
 /// Default max number of subscriptions per connection.
