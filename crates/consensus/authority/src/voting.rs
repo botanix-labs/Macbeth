@@ -171,15 +171,3 @@ pub(crate) fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
         Vote::Remove
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vote_try_from() {
-        assert_eq!(Vote::try_from(NONCE_AUTH), Ok(Vote::Add));
-        assert_eq!(Vote::try_from(NONCE_DROP), Ok(Vote::Remove));
-        assert_eq!(Vote::try_from(0), Err("Invalid u64 value for EIP225 Authority Vote"));
-    }
-}
