@@ -322,6 +322,7 @@ pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
         bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
+#[warn(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
     bloom_contains_minting_contract_address(bloom) &&
         bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
