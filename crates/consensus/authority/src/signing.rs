@@ -78,6 +78,7 @@ pub(crate) enum SigningState {
 }
 
 impl SigningState {
+    #[warn(dead_code)]
     /// Returns true if the signing state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
         !matches!(self, SigningState::Initial | SigningState::Finalized | SigningState::Failed)
@@ -90,11 +91,14 @@ impl SigningState {
     pub(crate) fn is_round2(&self) -> bool {
         matches!(self, SigningState::Round2)
     }
+
+    #[warn(dead_code)]
     /// Returns true if we are in a finalized signing state
     pub(crate) fn is_finalized(&self) -> bool {
         matches!(self, SigningState::Finalized)
     }
-
+    
+    #[warn(dead_code)]
     /// Returns true if the signing has failed
     pub(crate) fn has_failed(&self) -> bool {
         matches!(self, SigningState::Failed)
