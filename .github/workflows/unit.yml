@@ -39,23 +39,6 @@ jobs:
 
       - run: /home/runner/.cargo/bin/rustup toolchain install stable --profile minimal
 
-      - name: Start BTC Server
-        run: |
-          cd ./bin/btc-server && \
-          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
-          --identifier 0 \
-          --address 0.0.0.0:8080 \
-          --db "./db1" \
-          --min-signers 2 \
-          --max-signers 2 \
-          --toml ./config.toml \
-          --fee-rate-diff-percentage 30 \
-          --btc-network ${{env.BITCOIND_NETWORK}} \
-          --bitcoind-url ${{env.BITCOIND_URL}} \
-          --bitcoind-user ${{env.BITCOIND_USER}} \
-          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-          --fall-back-fee-rate-sat-per-vbyte 5 &
-
       - name: Run tests
         run: |
           /home/runner/.cargo/bin/cargo nextest run \
