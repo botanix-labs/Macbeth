@@ -416,8 +416,8 @@ where
             !self
                 .prune_modes
                 .account_history
-                .map_or(false, |mode| mode.should_prune(block.number, tip)) &&
-                !self
+                .map_or(false, |mode| mode.should_prune(block.number, tip))
+                && !self
                     .prune_modes
                     .storage_history
                     .map_or(false, |mode| mode.should_prune(block.number, tip))
@@ -586,10 +586,8 @@ where
             let time = Instant::now();
 
             // calclaute the total block fees
-            let recovered_transaction =
-                transaction.clone().try_into_ecrecovered().expect("transaction is signed");
             let transaction_fee =
-                recovered_transaction.effective_tip_per_gas(base_fee).expect("base fee is valid");
+                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
             total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             self.db_mut().commit(state);
