@@ -91,12 +91,12 @@ where
         block: &BlockWithSenders,
         total_difficulty: U256,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0))
+            return Ok((Vec::new(), 0, 0))
         }
 
         let is_regolith =
@@ -192,7 +192,8 @@ where
             });
         }
 
-        Ok((receipts, cumulative_gas_used))
+        // TODO total fees are not calculated
+        Ok((receipts, cumulative_gas_used, 0))
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
