@@ -3,7 +3,7 @@ use reth::{
     core::cli::runner::CliRunner,
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
 };
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+
 use std::{collections::HashSet, time::Duration};
 
 use crate::{
