@@ -50,8 +50,7 @@ use tracing::{debug, info};
 use url::Url;
 
 use super::{
-    utils::{parse_grpc_address, parse_url},
-    BitcoindArgs, FrostArgs,
+    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, utils::{parse_grpc_address, parse_url}, BitcoindArgs, FrostArgs
 };
 
 /// Default max number of subscriptions per connection.
@@ -67,6 +66,12 @@ pub(crate) const RPC_DEFAULT_MAX_RESPONSE_SIZE_MB: u32 = 160;
 
 /// Default number of incoming connections.
 pub(crate) const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 500;
+
+/// Default btc server url
+pub(crate) const DEFAULT_BTC_SERVER: &str = "127.0.0.1:8080";
+
+/// Default bitcoin network
+pub(crate) const DEFAULT_BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 
 /// Parameters for configuring the rpc more granularity via CLI
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
@@ -194,7 +199,7 @@ pub struct RpcServerArgs {
     /// Btc signing service
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
+    #[arg(long, default_value_t = DEFAULT_BTC_SERVER.into(), value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
     pub btc_server: String,
 
     /// Btc signing service
@@ -204,7 +209,7 @@ pub struct RpcServerArgs {
     pub bitcoind: BitcoindArgs,
 
     /// The bitcoin network to operate on.
-    #[arg(long, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network", required = true)]
+    #[arg(long, default_value_t = DEFAULT_BITCOIN_NETWORK, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network")]
     pub btc_network: bitcoin::Network,
 
     /// Frost
@@ -640,13 +645,11 @@ impl Default for RpcServerArgs {
             rpc_gas_cap: RPC_DEFAULT_GAS_CAP.into(),
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
-            btc_server: "127.0.0.1:8080".parse().expect("valid grpc address"),
+            btc_server: parse_grpc_address(DEFAULT_BTC_SERVER).expect("valid grpc address"),
             bitcoind: BitcoindArgs {
-                url: "https://bitcoind.botanixlabs.dev"
-                    .parse::<Url>()
-                    .expect("valid bitcoind address"),
-                password: "usr".to_string(),
-                username: "pwd".to_string(),
+                url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
+                username: DEFAULT_BITCOIND_USERNAME.to_string(),
+                password: DEFAULT_BITCOIND_PASSWORD.to_string(),
             },
             btc_network: bitcoin::Network::Regtest,
             frost: FrostArgs { min_signers: 2, max_signers: 2 },
