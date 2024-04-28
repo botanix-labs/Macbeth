@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::utils::create_authority_sighash;
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
@@ -130,7 +130,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
             .authority_signature
             .expect("valid signature")
             .recover(&sig_hash)
-            .map_err(|e| GetVotesError::FailedToRecoverAuthority)?;
+            .map_err(|_e| GetVotesError::FailedToRecoverAuthority)?;
         // Already keeping track of this authority
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)
