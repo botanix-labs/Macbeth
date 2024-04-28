@@ -432,12 +432,6 @@ pub async fn create_poa_federation_members(
 }
 
 mod tests {
-    
-
-    
-    
-    
-    
 
     #[test]
     fn test_edh_tempate() {

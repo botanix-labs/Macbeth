@@ -97,7 +97,7 @@ impl SigningState {
     pub(crate) fn is_finalized(&self) -> bool {
         matches!(self, SigningState::Finalized)
     }
-    
+
     #[warn(dead_code)]
     /// Returns true if the signing has failed
     pub(crate) fn has_failed(&self) -> bool {
