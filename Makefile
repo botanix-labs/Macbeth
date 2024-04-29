@@ -440,6 +440,7 @@ start-non-fed-server-1:
 	cargo run --bin reth -- poa \
 	--chain botanix_testnet \
 	--datadir ${NON_FED_1_DIR} \
+	--trusted-peers ${TRUSTED_PEER_1},${TRUSTED_PEER_2} \
 	--http \
 	--http.corsdomain "*" \
 	--http.port 8547 \
