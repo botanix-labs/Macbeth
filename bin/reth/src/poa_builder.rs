@@ -2,7 +2,7 @@
 //! a [NodeConfig].
 
 use crate::{
-    args::get_secret_key,
+    args::{get_secret_key, FrostArgs},
     commands::debug_cmd::engine_api_store::EngineApiStore,
     core::{
         events::{cl::ConsensusLayerHealthEvents, node::handle_events},
@@ -161,14 +161,19 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let default_jwt_path = self.data_dir.jwt_path();
         let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // Connect to btc signining server
-        let btc_server_client = BtcServerExtendedClient::new(
-            self.config.rpc.btc_server.clone(),
-            Some(jwt_secret.clone()),
-        )
-        .await
-        .expect("cannot create btc_server");
-        info!(target: "reth::cli", "Btc server connected");
+        // Connect to btc signining server if in federation mode
+        let mut btc_server_client = None;
+        if self.config.federation_mode {
+            let client = BtcServerExtendedClient::new(
+                self.config.rpc.btc_server.clone().expect("btc_server exists"),
+                Some(jwt_secret.clone()),
+            )
+            .await
+            .expect("can create btc_server");
+            info!(target: "reth::cli", "Btc server connected");
+
+            btc_server_client = Some(client)
+        }
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -386,19 +391,29 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // get node secret key
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
 
-        // create authority config
-        let (authority_index, authorities) = get_authority_signer_index(
-            blockchain_db.clone(),
-            Arc::clone(&self.config.chain),
-            secp256k1::Secp256k1::new(),
-            network_sk,
-        )
-        .expect("Failed to get authority index");
+        // create frost config if in federation mode
+        let mut frost_config = None;
+        if self.config.federation_mode {
+            // create authority config
+            let (authority_index, authorities) = get_authority_signer_index(
+                blockchain_db.clone(),
+                Arc::clone(&self.config.chain),
+                secp256k1::Secp256k1::new(),
+                network_sk,
+            )
+            .expect("Failed to get authority index");
 
-        // create frost config
-        let mut frost_config: FrostConfig = self.config.rpc.frost.clone().into();
-        frost_config.set_authority_index(authority_index);
-        frost_config.set_authorities(authorities);
+            let mut config: FrostConfig = FrostArgs {
+                min_signers: self.config.rpc.min_signers.expect("min signers to exist"),
+                max_signers: self.config.rpc.max_signers.expect("max signer to exist"),
+            }
+            .into();
+            config.set_authority_index(authority_index);
+            config.set_authorities(authorities);
+            info!(target: "reth::cli", "Frost config initialized");
+
+            frost_config = Some(config);
+        }
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
@@ -415,7 +430,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 head,
                 &self.data_dir,
                 Some(Box::new(block_import)),
-                Some(frost_config.clone()),
+                frost_config.clone(),
             )
             .await?;
 
@@ -438,7 +453,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             transaction_pool.clone(),
             provider_factory.clone(),
             &self.data_dir,
-            Some(frost_config.clone()),
+            frost_config.clone(),
         );
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
@@ -532,22 +547,27 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // TODO(armins) do we need this?
         // block_production_task.set_pipeline_events(pipeline_events.clone());
 
-        executor.spawn_critical(
-            "PoA Block Production Task",
-            Box::pin(async move {
-                block_production_task.start_task().await;
-            }),
-        );
+        // federation mode tasks
+        if self.config.federation_mode {
+            executor.spawn_critical(
+                "PoA Block Production Task",
+                Box::pin(async move {
+                    block_production_task.expect("block production task exists").start_task().await;
+                }),
+            );
+
+            executor.spawn_critical(
+                "Frost Task",
+                Box::pin(async move {
+                    frost_task.expect("frost task exists").start_task().await;
+                }),
+            );
+        }
+
         executor.spawn_critical(
             "PoA Block Fetcher Task",
             Box::pin(async move {
                 block_fetcher_task.start_task().await;
-            }),
-        );
-        executor.spawn_critical(
-            "Frost Task",
-            Box::pin(async move {
-                frost_task.start_task().await;
             }),
         );
         executor.spawn_critical(

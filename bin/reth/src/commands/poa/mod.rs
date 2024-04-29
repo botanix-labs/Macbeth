@@ -58,6 +58,10 @@ pub struct PoaNodeCommand<Ext: RethCliExt = ()> {
     )]
     pub chain: Arc<ChainSpec>,
 
+    /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
+    #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
+    pub federation_mode: bool,
+
     /// Enable Prometheus metrics.
     ///
     /// The metrics will be served at the given interface and port.
@@ -130,6 +134,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             datadir,
             config,
             chain,
+            federation_mode,
             metrics,
             trusted_setup_file,
             instance,
@@ -148,6 +153,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             datadir,
             config,
             chain,
+            federation_mode,
             metrics,
             instance,
             trusted_setup_file,
@@ -170,6 +176,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             datadir,
             config,
             chain,
+            federation_mode,
             metrics,
             trusted_setup_file,
             instance,
@@ -193,6 +200,7 @@ impl<Ext: RethCliExt> PoaNodeCommand<Ext> {
             database,
             config,
             chain,
+            federation_mode,
             metrics,
             instance,
             trusted_setup_file,
@@ -241,9 +249,9 @@ mod tests {
     // #[test]
     // fn parse_common_node_command_chain_args() {
     //     for chain in SUPPORTED_CHAINS {
-    //         let args: PoaNodeCommand = PoaNodeCommand::<()>::parse_from(["reth", "--chain",
-    // chain]);         assert_eq!(args.chain.chain,
-    // chain.parse::<reth_primitives::Chain>().unwrap());     }
+    //         let args: PoaNodeCommand = PoaNodeCommand::<()>::parse_from(["reth", "--chain", chain]);
+    //         assert_eq!(args.chain.chain, chain.parse::<reth_primitives::Chain>().unwrap());
+    //     }
     // }
 
     #[test]

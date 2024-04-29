@@ -155,6 +155,9 @@ pub struct NodeConfig {
     /// Possible values are either a built-in chain or the path to a chain specification file.
     pub chain: Arc<ChainSpec>,
 
+    /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
+    pub federation_mode: bool,
+
     /// Enable Prometheus metrics.
     ///
     /// The metrics will be served at the given interface and port.
@@ -214,6 +217,7 @@ impl NodeConfig {
             database: DatabaseBuilder::test(),
             config: None,
             chain: MAINNET.clone(),
+            federation_mode: false,
             metrics: None,
             instance: 1,
             trusted_setup_file: None,
@@ -947,6 +951,7 @@ impl Default for NodeConfig {
             database: DatabaseBuilder::default(),
             config: None,
             chain: MAINNET.clone(),
+            federation_mode: false,
             metrics: None,
             instance: 1,
             trusted_setup_file: None,
