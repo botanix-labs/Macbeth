@@ -312,7 +312,7 @@ impl ExtraDataHeader {
         }
     }
 
-    pub fn validate_single_authority_signature(
+    pub fn validate_first_authority_signature(
         &self,
         message: &Vec<u8>,
         authority_signers: &[secp256k1::PublicKey],
