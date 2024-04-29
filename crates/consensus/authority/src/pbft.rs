@@ -2,9 +2,12 @@ use crate::{utils::retry_exec, Storage};
 use reth_consensus_common::utils::is_inturn;
 
 use frost_secp256k1_tr as frost;
-use reth_botanix_lib::extra_data_header::ExtraDataHeaderSerializeError;
+use reth_botanix_lib::extra_data_header::{
+    ExtraDataHeaderDeserialzeError, ExtraDataHeaderSerializeError, ValidateAuthoritySignatureError,
+};
 use reth_botanix_lib::header_ext::HeaderExt;
 use reth_consensus_common::utils::current_inturn_index;
+use reth_ecies::util::pk2id;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
@@ -22,7 +25,11 @@ use tracing::{debug, error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
+    #[error("Failed to validate signatures on block: {0}")]
+    InvalidSignature(#[from] ValidateAuthoritySignatureError),
     #[error("Failed to deserialize extra data header: {0}")]
+    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserialzeError),
+    #[error("Failed to serialize extra data header: {0}")]
     ExtraDataHeaderSerializeError(#[from] ExtraDataHeaderSerializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
@@ -79,6 +86,7 @@ pub(crate) struct PbftStateMachine<Client> {
     config: FrostConfig,
     pre_commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
     commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
+    sealed_blocks: BTreeMap<BlockHash, SealedBlock>,
     secret_key: secp256k1::SecretKey,
     personal_frost_identifier: frost::Identifier,
 }
@@ -115,6 +123,7 @@ where
             peer_id,
             pre_commitments: BTreeMap::new(),
             commitments: BTreeMap::new(),
+            sealed_blocks: BTreeMap::new(),
             secret_key,
         }
     }
@@ -131,6 +140,7 @@ where
             peer_id: self.peer_id,
             pre_commitments: BTreeMap::new(),
             commitments: BTreeMap::new(),
+            sealed_blocks: BTreeMap::new(),
             secret_key: self.secret_key,
         }
     }
@@ -208,7 +218,7 @@ where
     /// proposed to the network
     pub(crate) async fn init_block_proposal(&mut self, block: SealedBlock) -> Result<(), Error> {
         // Check if there is already a running state machine for this block
-        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let block_hash = block.header.block_hash_segregated_signature()?;
         let current_state = self.get_state(block_hash);
 
         if current_state.is_running() {
@@ -220,6 +230,9 @@ where
             warn!(target: "pbft" ,"Not the coordinator -- ignoring init block proposal request");
             return Ok(());
         }
+
+        // Save block locally
+        self.sealed_blocks.insert(block_hash, block.clone());
 
         // Set the state to awaiting pre-commitments
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
@@ -243,7 +256,7 @@ where
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft" ,"Processing block proposal from peer {:?}", peer_id);
-        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let block_hash = block.header.block_hash_segregated_signature()?;
         let current_state = self.get_state(block_hash);
         if current_state.is_running() {
             warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
@@ -286,15 +299,15 @@ where
     /// Check if we have enough pre-commits to move onto the next state
     /// If we do, we can send our commitment
     async fn check_and_send_commitment(&mut self, block: &SealedBlock) -> Result<(), Error> {
-        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let block_hash = block.header.block_hash_segregated_signature()?;
 
         let pre_commits =
             self.pre_commitments.get(&block_hash).cloned().unwrap_or_else(HashSet::new);
         // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() >= self.config.min_signers as usize {
+        if pre_commits.len() >= self.config.max_signers as usize {
             info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
             let mut mutable_header = block.header().clone();
-            mutable_header.sign_block(&self.secret_key).unwrap();
+            mutable_header.sign_block(&self.secret_key)?;
             let signed_block = SealedBlock::new(
                 mutable_header.seal_slow(),
                 BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
@@ -322,7 +335,7 @@ where
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
-        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let block_hash = block.header.block_hash_segregated_signature()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
             warn!(target: "pbft", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
@@ -352,37 +365,73 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<Option<SealedBlock>, Error> {
+        // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
             return Ok(None);
         }
-
         if peer_id == self.peer_id {
             return Ok(None);
         }
-
-        let block_hash = block.header.block_hash_segregated_signature().unwrap();
+        let block_hash = block.header.block_hash_segregated_signature()?;
+        // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
             warn!(target: "pbft" ,"State machine is not awaiting commitments for block {:?}", block_hash);
             return Ok(None);
         }
 
-        let mut commits = self.commitments.entry(block_hash).or_insert_with(HashSet::new);
-        // add peer commitment
-        commits.insert(peer_id);
-        // TODO Merge signatures
-        // TODO validate signature
-        info!(target: "pbft" ,"commitments.len(): {:?}", self.commitments.len());
+        // This block is originally added during init block proposal
+        let mut current_header =
+            self.sealed_blocks.get(&block_hash).expect("block should exist").header().clone();
+        let mut edh = current_header.deserialize_extra_data_header()?;
+        let peer_edh = block.header().deserialize_extra_data_header()?;
 
+        if peer_edh.authority_signatures.is_none() {
+            debug!(target: "pbft" ,"Peer did not provide a signature");
+            return Ok(None);
+        }
+
+        // Check that the commited block is the same as the block we are tracking
+        if current_header.block_hash_segregated_signature()?
+            != block.header.block_hash_segregated_signature()?
+        {
+            warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
+            return Ok(None);
+        }
+        // Check all the signatures on the commited block from the peer
+        peer_edh.check_authority_sig_add(
+            &current_header.create_sighash()?.to_vec(),
+            &self.config.authorities,
+        )?;
+
+        // Should merge this peers siganture into the main block where we are tracking all signatures
+        // If that signature provided is not valid fail
+        // If they did not provide a sig fail
+        // merge signature from peer
+        edh.merge_signature(&peer_edh);
+        // update header
+        current_header.add_extra_data_header(&edh);
+        let new_block = SealedBlock::new(
+            current_header.clone().seal_slow(),
+            BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
+        );
+        // Update local state
+        self.sealed_blocks.insert(block_hash, new_block.clone());
+        let number_of_valid_sigs = edh.check_authority_sig_add(
+            &current_header.create_sighash()?.to_vec(),
+            &self.config.authorities,
+        )?;
+        println!("number of valid sigs: {}", number_of_valid_sigs);
+        println!("max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
-        if self.commitments.len() >= self.config.min_signers as usize {
+        if number_of_valid_sigs >= self.config.max_signers {
             info!(target: "pbft" ,"We have enough commitments, time to produce a block");
             self.commitments.remove(&block_hash);
-            let sigs = block.header().deserialize_extra_data_header().unwrap().authority_signatures;
+            // TODO remove debug
+            let sigs = edh.authority_signatures.unwrap();
             info!(target: "pbft" ,"signatures: {:?}", sigs);
-
-            return Ok(Some(block));
+            return Ok(Some(new_block));
         }
         Ok(None)
     }
