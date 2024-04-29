@@ -48,6 +48,10 @@ pub struct NodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     )]
     pub chain: Arc<ChainSpec>,
 
+    /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
+    #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
+    pub federation_mode: bool,
+
     /// Enable Prometheus metrics.
     ///
     /// The metrics will be served at the given interface and port.
@@ -146,6 +150,7 @@ impl<Ext: clap::Args + fmt::Debug> NodeCommand<Ext> {
             datadir,
             config,
             chain,
+            federation_mode,
             metrics,
             instance,
             with_unused_ports,
@@ -164,6 +169,7 @@ impl<Ext: clap::Args + fmt::Debug> NodeCommand<Ext> {
         let mut node_config = NodeConfig {
             config,
             chain,
+            federation_mode,
             metrics,
             instance,
             network,
