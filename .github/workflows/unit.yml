@@ -22,13 +22,13 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on: botanix-actions-runner-vm
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
