@@ -99,12 +99,8 @@ pub fn unix_timestamp() -> u64 {
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
 pub fn get_block_producer_address(header: &Header) -> Address {
-    let binding = header
-        .recovered_signed_authorities()
-        .expect("recovered authority");
-    let block_builder_public_key = binding
-        .get(0)
-        .expect("block producer authority to be present");
+    let binding = header.recovered_signed_authorities().expect("recovered authority");
+    let block_builder_public_key = binding.get(0).expect("block producer authority to be present");
     public_key_to_address(*block_builder_public_key)
 }
 // not in authority utils because of circular dependency
@@ -126,6 +122,9 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
 }
 
 /// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
 pub fn validate_poa_extra_data_header(
     header: &Header,
     authority_signers: &[secp256k1::PublicKey],
@@ -147,13 +146,52 @@ pub fn validate_poa_extra_data_header(
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
-    edh.validate_single_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
-        |e| {
+    let valid_sigs =
+        edh.check_authority_sig_add(&sig_hash.to_vec(), authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
             ConsensusError::InvalidAuthoritySignature
-        },
-    )?;
+        })?;
+
+    if valid_sigs != authority_signers.len() as u16 {
+        return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
+            authority_signers.len() as u16,
+            valid_sigs,
+        ));
+    }
     // TODO (armins) in the future this is where we would validate federation votes
+
+    Ok(())
+}
+
+/// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
+pub fn validate_poa_extra_data_header_single_signer(
+    header: &Header,
+    authority_signers: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(());
+    }
+    // First run the basic validation
+    validation::validate_header_extradata(header)?;
+
+    // Attempt to deserialize the extra data header
+    let edh = header.deserialize_extra_data_header().map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+    // Validate the authority signature and signature came from one of the authorities
+    let sig_hash = header.create_sighash().map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+    edh.validate_first_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
 
     Ok(())
 }
