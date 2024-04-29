@@ -139,9 +139,11 @@ impl App {
         let port = config.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
         let bitcoind_url = format!("{}:{}", host, port);
 
-        let bitcoind_client =
-            bitcoincore_rpc::Client::new(&bitcoind_url, Auth::CookieFile(bitcoind_cookie))
-                .expect("bitcoind client");
+        let bitcoind_client = bitcoincore_rpc::Client::new(
+            &bitcoind_url,
+            Auth::UserPass(bitcoind_user, bitcoind_pass),
+        )
+        .expect("bitcoind client");
 
         let fall_back_fee_rate =
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
