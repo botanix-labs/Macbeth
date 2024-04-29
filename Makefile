@@ -389,6 +389,7 @@ start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--chain botanix_testnet \
+	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
 	--http.corsdomain "*" \
@@ -413,6 +414,7 @@ start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--chain botanix_testnet \
+	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
 	--http.corsdomain "*" \
@@ -432,3 +434,25 @@ start-poa-server-2:
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304
+
+start-non-fed-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--chain botanix_testnet \
+	--datadir ${NON_FED_1_DIR} \
+	--trusted-peers ${TRUSTED_PEER_1},${TRUSTED_PEER_2} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8547 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--authrpc.jwtsecret "${NON_FED_1_DIR}/jwt.hex" \
+	--authrpc.addr "127.0.0.1" \
+	--authrpc.port 8553 \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
+	--port 30305
