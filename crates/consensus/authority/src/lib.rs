@@ -22,7 +22,7 @@
 use reth_botanix_lib::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp},
-    validation::{self, validate_poa_header_standalone},
+    validation::{self, validate_poa_header_standalone, validate_poa_header_template_standalone},
 };
 use reth_interfaces::{
     executor::{BlockExecutionError, BlockValidationError},
@@ -488,7 +488,7 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        validate_poa_header_standalone(&header, authority_signers).map_err(|e| {
+        validate_poa_header_template_standalone(&header, authority_signers).map_err(|e| {
             warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
             // TODO(armins) return more expressive error
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
