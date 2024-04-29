@@ -6954,19 +6954,13 @@ dependencies = [
 name = "reth-authority-consensus"
 version = "0.1.0-alpha.20"
 dependencies = [
- "base64 0.22.0",
  "bitcoin",
- "bitcoincore-rpc",
  "btc-server",
- "clap",
  "client",
  "displaydoc",
- "ethers",
- "eyre",
  "frost-secp256k1-tr",
  "futures-util",
  "hex",
- "jsonrpsee",
  "rand 0.8.5",
  "reth",
  "reth-beacon-consensus",
@@ -6989,7 +6983,6 @@ dependencies = [
  "ruint",
  "secp256k1 0.27.0",
  "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

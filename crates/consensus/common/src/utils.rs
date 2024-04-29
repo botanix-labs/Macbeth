@@ -335,6 +335,7 @@ pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     (botanix_reward, beneficiary_reward)
 }
 
+#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
