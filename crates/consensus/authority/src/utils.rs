@@ -513,7 +513,7 @@ mod test {
         hash_types::TxMerkleNode,
         hashes::Hash,
         psbt::{Input, PartiallySignedTransaction},
-        BlockHash, CompactTarget, TxIn,
+        BlockHash, CompactTarget,
     };
     use rand::Rng;
     use reth_primitives::{address, b256, bytes, Header, B256, U256};

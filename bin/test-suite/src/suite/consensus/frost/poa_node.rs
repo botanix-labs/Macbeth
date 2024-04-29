@@ -328,10 +328,6 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
     }
 }
 
-pub fn testnet_custom_chain() -> Arc<ChainSpec> {
-    BOTANIX_TESTNET.clone()
-}
-
 pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
@@ -431,7 +427,13 @@ pub async fn create_poa_federation_members(
     (fed_members, rx)
 }
 
+#[cfg(test)]
 mod tests {
+    use crate::suite::consensus::frost::poa_node::BotanixTestnetGenesisConfig;
+    use askama::Template;
+    use bitcoin::hashes::Hash;
+    use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use std::{io::Write, path::Path};
 
     #[test]
     fn test_edh_tempate() {

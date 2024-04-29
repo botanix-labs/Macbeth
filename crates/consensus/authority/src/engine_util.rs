@@ -191,7 +191,7 @@ pub(crate) async fn best_transactions_from_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_payload_builder::test_utils::{spawn_test_payload_service, test_payload_service};
+    use reth_payload_builder::test_utils::spawn_test_payload_service;
     use reth_primitives::{
         address, b256, bloom, bytes, revm_primitives::FixedBytes, Address, BlockBody, Header,
         SealedHeader, U256,

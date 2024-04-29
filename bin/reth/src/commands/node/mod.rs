@@ -246,7 +246,6 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_chains::NamedChain;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
         net::{IpAddr, Ipv4Addr},
