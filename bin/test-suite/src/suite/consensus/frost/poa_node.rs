@@ -180,7 +180,9 @@ impl FederationMemberTestConfig {
         let _ = self.test_signal_tx.send(signal);
     }
 
-    pub fn build_command(&self) -> PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>> {
+    pub fn build_command(
+        &self,
+    ) -> (PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>>, ChainSpec) {
         it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
@@ -209,6 +211,7 @@ impl FederationMemberTestConfig {
             "poa",
             "--chain",
             "botanix_testnet",
+            "--federation-mode",
             "--datadir",
             datadir,
             "--debug.terminate",
@@ -252,9 +255,9 @@ impl FederationMemberTestConfig {
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
         let botanix_testnet = create_botanix_config_with_genesis(genesis);
-        command.chain = Arc::new(botanix_testnet);
+        command.chain = Arc::new(botanix_testnet.clone());
 
-        command
+        (command, botanix_testnet)
     }
 }
 
@@ -388,6 +391,10 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
     }
 }
 
+pub fn testnet_custom_chain() -> Arc<ChainSpec> {
+    BOTANIX_TESTNET.clone()
+}
+
 pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
@@ -489,13 +496,13 @@ pub async fn create_poa_federation_members(
     (fed_members, rx)
 }
 
-#[cfg(test)]
 mod tests {
-    use crate::suite::consensus::frost::poa_node::BotanixTestnetGenesisConfig;
+    use std::{io::Write, path::Path};
+
+    use super::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
     use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
-    use std::{io::Write, path::Path};
 
     #[test]
     fn test_edh_tempate() {
