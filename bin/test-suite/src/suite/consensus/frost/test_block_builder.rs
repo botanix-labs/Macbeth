@@ -66,7 +66,7 @@ pub async fn block_builder(
     for (_index, fed_member_config) in test_fed_members.iter() {
         let fed_member_config = fed_member_config.clone();
         let _ = std::thread::spawn(move || {
-            let fed_member_command = fed_member_config.build_command();
+            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
             let runner = CliRunner::default();
             runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
 
