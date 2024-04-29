@@ -12,7 +12,7 @@ use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
-    BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
+    BlockValidationKind::{self, SkipStateRootValidation}, BlockchainTreeEngine,
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
@@ -289,20 +289,17 @@ where
         };
 
         // Seal the block
-        let block = Block {
+        let mut block_to_commit = Block {
             header: new_header.clone().unseal(),
             body: transactions,
             ommers: vec![],
             withdrawals: None,
         };
-        let mut sealed_block = block.clone().seal_slow();
-        let sealed_block_with_senders =
-            SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
-                .expect("senders are valid");
+        
         // Propose block to network for commitments
         self.pbft_task_tx
             .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
-                block: sealed_block.clone(),
+                block: block_to_commit.seal_slow(),
             }))
             .expect("send pbft task message");
         // Wait for commitments before we can commit to this block
@@ -311,7 +308,7 @@ where
         {
             Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
                 let PbftNotification { block: commited_block } = notif;
-                sealed_block = commited_block;
+                block_to_commit = commited_block.into();
             }
             Err(e) => {
                 error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
@@ -326,10 +323,16 @@ where
             }
         };
 
+        let sealed_block = block_to_commit.clone().seal_slow();
+        let commited_header = sealed_block.header();
+        let sealed_block_with_senders =
+            SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
+                .expect("senders are valid");
+
         // update canon chain for rpc
         match storage
             .client
-            .insert_block(sealed_block_with_senders.clone(), SkipStateRootValidation)
+            .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
         {
             Ok(_) => {}
             Err(e) => {
@@ -342,7 +345,7 @@ where
         storage.client.set_finalized(sealed_block.header.clone());
 
         match engine_util::send_fork_choice_update_payload(
-            new_header.hash(),
+            commited_header.hash_slow(),
             self.to_engine.clone(),
         )
         .await
@@ -357,7 +360,7 @@ where
         drop(storage);
 
         // Notify peers
-        let new_block = NewBlock { block, td: Uint::ZERO };
+        let new_block = NewBlock { block: block_to_commit.clone() , td: Uint::ZERO };
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
     }
