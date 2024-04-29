@@ -32,13 +32,19 @@ pub async fn await_dkg(
     fed_members: &mut HashMap<u16, FederationMemberTestConfig>,
     rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
 ) {
+    let mut pub_keys = vec![];
     while let Some(notification) = rx.recv().await {
         match notification {
             Notifications::DkgFinished(dkg_notification) => {
                 if let Some(fed_member) = fed_members.get_mut(&dkg_notification.engine_index) {
                     fed_member.is_dkg_ready = true;
+                    pub_keys.push(dkg_notification.public_key)
                 }
                 if is_dkg_ready(&fed_members) {
+                    it_info_print!("FED MEMBERS DKG KEYS ------->", &pub_keys);
+                    assert!(pub_keys.len() == fed_members.len());
+                    pub_keys.dedup();
+                    assert!(pub_keys.len() == 1);
                     break;
                 }
             }
@@ -100,12 +106,31 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
     let port =
         suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let bitcoind_url = format!("{}:{}", host, port);
+    let bitcoind_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &bitcoind_url,
-        Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),
+        Auth::UserPass(
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
+        ),
     )
     .expect("bitcoind client");
+
+    // Load up the bitcoin wallet and generate some blocks
+    for wallet in bitcoind_rpc.list_wallets().unwrap() {
+        it_info_print!("#UNLOADING WALLET?", &wallet);
+        let _ = bitcoind_rpc.unload_wallet(Some(&wallet));
+    }
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
@@ -136,18 +161,6 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
             test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
         mint_contract_instances.push(botanix_eth_client);
     }
-
-    // Load up the bitcoin wallet and generate some blocks
-    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
-    if create_res.is_err() {
-        // wallet already exists
-        // load wallet
-        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
-    }
-    let address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
@@ -233,7 +246,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
+    let mint_contract = mint_contract_instances.first().cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -286,10 +299,13 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
     let port =
         suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let btcd_url = format!("{}:{}", host, port);
+    let btcd_url = format!("{host}:{port}");
     let bitcoind_rpc = bitcoincore_rpc::Client::new(
         &btcd_url,
-        Auth::CookieFile(suite.global_context.bitcoind_cookie.clone()),
+        Auth::UserPass(
+            suite.global_context.bitcoind_user.clone(),
+            suite.global_context.bitcoind_pass.clone(),
+        ),
     )
     .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)

@@ -128,19 +128,20 @@ impl App {
         if db.get_public_key_package().expect("failed to get public key package").is_none() {
             let rng = thread_rng();
             round1_dkg = Some(
-                frost::keys::dkg::part1(frost_identifier.clone(), max_signers, min_signers, rng)
+                frost::keys::dkg::part1(frost_identifier, max_signers, min_signers, rng)
                     .map_err(Error::Frost)?,
             );
             info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
         }
-        let bitcoind_cookie = config.bitcoind_cookie.clone();
+        let bitcoind_user = config.bitcoind_user.clone();
+        let bitcoind_pass = config.bitcoind_pass.clone();
         let host = config.bitcoind_url.host_str().unwrap_or_default().to_owned();
         let port = config.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
         let bitcoind_url = format!("{}:{}", host, port);
 
         let bitcoind_client = bitcoincore_rpc::Client::new(
             &bitcoind_url,
-            Auth::CookieFile(bitcoind_cookie),
+            Auth::UserPass(bitcoind_user, bitcoind_pass),
         )
         .expect("bitcoind client");
 
@@ -249,7 +250,7 @@ impl From<database::Utxo> for rpc::Utxo {
                 vout: item.outpoint.vout,
             }),
             output: item.output.value as u32,
-            eth_address: item.eth_address.map_or(String::new(), |addr| hex::encode(addr)),
+            eth_address: item.eth_address.map_or(String::new(), hex::encode),
         }
     }
 }
@@ -284,7 +285,10 @@ struct Config {
     bitcoind_url: Url,
     #[arg(long)]
     /// bitcoind user
-    bitcoind_cookie: PathBuf,
+    bitcoind_user: String,
+    #[arg(long)]
+    /// bitcoind pass
+    bitcoind_pass: String,
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     pub fee_rate_diff_percentage: u32,
@@ -425,7 +429,8 @@ mod test {
                 jwt_secret: None,
                 bitcoind_url: Url::parse("http://localhost:18443")
                     .expect("Bitcoind url to be valid"),
-                bitcoind_cookie: ".cookie".into(),
+                bitcoind_user: "foo".to_string(),
+                bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
             },
@@ -440,16 +445,14 @@ mod test {
         max_signers: u16,
     ) -> (BTreeMap<frost::Identifier, frost::keys::SecretShare>, frost::keys::PublicKeyPackage)
     {
-        let mut rng: rand::prelude::ThreadRng = thread_rng();
-        let keys = frost::keys::generate_with_dealer(
+        let rng: rand::prelude::ThreadRng = thread_rng();
+        frost::keys::generate_with_dealer(
             max_signers,
             min_signers,
             frost::keys::IdentifierList::Default,
-            &mut rng,
+            rng,
         )
-        .expect("valid key package");
-
-        keys
+        .expect("valid key package")
     }
 
     // Util function to create a btc tx with random inputs and outputs as defined by fn params
@@ -473,14 +476,13 @@ mod test {
         }
 
         // Hardcoded one output
-        let mut outputs = vec![];
-        outputs.push(TxOut {
+        let outputs = vec![TxOut {
             value: 1000,
             script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
                 .expect("valid address")
                 .assume_checked()
                 .script_pubkey(),
-        });
+        }];
         Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
     }
 
@@ -547,13 +549,8 @@ mod test {
         let rng = thread_rng();
 
         app.frost_round1_dkg = Some(
-            frost::keys::dkg::part1(
-                app.identifier.clone(),
-                app.max_signers,
-                app.min_signers,
-                rng.clone(),
-            )
-            .unwrap(),
+            frost::keys::dkg::part1(app.identifier, app.max_signers, app.min_signers, rng.clone())
+                .unwrap(),
         );
         let round1_dkg = app.get_round1_dkg();
         assert!(round1_dkg.is_ok());
@@ -566,13 +563,8 @@ mod test {
         // However if we modify the round1_dkg we should get a different result
         // we dont' have to modify the whole package, the rng should create new coefficients
         app.frost_round1_dkg = Some(
-            frost::keys::dkg::part1(
-                app.identifier.clone(),
-                app.max_signers,
-                app.min_signers,
-                rng.clone(),
-            )
-            .unwrap(),
+            frost::keys::dkg::part1(app.identifier, app.max_signers, app.min_signers, rng.clone())
+                .unwrap(),
         );
     }
 

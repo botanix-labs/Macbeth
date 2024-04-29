@@ -143,7 +143,7 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
-pub(crate) async fn start_new_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn start_new_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_attributes: EthPayloadBuilderAttributes,
 ) -> Result<PayloadId, StartNewPayloadError> {
@@ -172,7 +172,7 @@ pub(crate) enum BestTransactionsError {
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn best_transactions_from_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_id: PayloadId,
 ) -> Result<EthBuiltPayload, BestTransactionsError> {
@@ -191,7 +191,7 @@ pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::Engine
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_payload_builder::test_utils::{spawn_test_payload_service, test_payload_service};
+    use reth_payload_builder::test_utils::spawn_test_payload_service;
     use reth_primitives::{
         address, b256, bloom, bytes, revm_primitives::FixedBytes, Address, BlockBody, Header,
         SealedHeader, U256,
@@ -231,7 +231,7 @@ mod tests {
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
         match msg {
-            BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs, tx } => {
+            BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs, tx: _ } => {
                 assert_eq!(state.head_block_hash, header.hash_slow());
                 assert_eq!(state.finalized_block_hash, header.hash_slow());
                 assert_eq!(state.safe_block_hash, header.hash_slow());
@@ -275,7 +275,7 @@ mod tests {
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
         match msg {
-            BeaconEngineMessage::NewPayload { payload, cancun_fields, tx } => {
+            BeaconEngineMessage::NewPayload { payload, cancun_fields, tx: _ } => {
                 assert_eq!(payload.block_hash(), sealed_block.hash());
                 assert_eq!(cancun_fields, None);
             }

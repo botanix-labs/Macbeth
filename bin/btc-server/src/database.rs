@@ -4,10 +4,8 @@ use bitcoin::{
     psbt::{self, Psbt},
     OutPoint, TxOut,
 };
-use ciborium;
 use frost_secp256k1_tr as frost;
 use serde::{Deserialize, Serialize};
-use sled;
 use thiserror::Error;
 
 use crate::util::OutPointExt;
@@ -70,7 +68,7 @@ impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
         let db = sled::open(path)?;
         Ok(Db {
-            utxos: db.open_tree(&TREE_UTXOS)?,
+            utxos: db.open_tree(TREE_UTXOS)?,
             round1_dkg_packages: db.open_tree(TREE_ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
@@ -265,10 +263,10 @@ impl Db {
         for res in self.round2_dkg_packages.iter() {
             let (k, v) = res?;
             let peer_id_bytes: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+                k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
 
             let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
-                .map_err(|e| Error::FrostSerialization(e))?;
+                .map_err(Error::FrostSerialization)?;
 
             let dkg_round2 =
                 ciborium::from_reader::<frost::keys::dkg::round2::Package, _>(v.as_ref())?;
@@ -296,10 +294,10 @@ impl Db {
         for res in self.round1_dkg_packages.iter() {
             let (k, v) = res?;
             let peer_id_bytes: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(|e| Error::Serialization(e))?;
+                k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
 
             let peer_id = frost::Identifier::deserialize(&peer_id_bytes)
-                .map_err(|e| Error::FrostSerialization(e))?;
+                .map_err(Error::FrostSerialization)?;
 
             let dkg_round1 =
                 ciborium::from_reader::<frost::keys::dkg::round1::Package, _>(v.as_ref())?;
@@ -310,7 +308,7 @@ impl Db {
 
     /* UTXO specific DB functions */
     pub fn get_utxo(&self, op: OutPoint) -> Result<Option<Utxo>, Error> {
-        if let Some(b) = self.utxos.get(&op.to_bytes())? {
+        if let Some(b) = self.utxos.get(op.to_bytes())? {
             let mut ret = ciborium::from_reader::<Utxo, _>(b.as_ref())?;
             ret.outpoint = op;
             Ok(Some(ret))
@@ -330,10 +328,10 @@ impl Db {
 
     pub fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
         let op = utxo.outpoint;
-        if !self.utxos.contains_key(&op.to_bytes())? {
+        if !self.utxos.contains_key(op.to_bytes())? {
             let mut bytes = Vec::new();
             ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
-            self.utxos.insert(&op.to_bytes(), &bytes[..])?;
+            self.utxos.insert(op.to_bytes(), &bytes[..])?;
             Ok(true)
         } else {
             Ok(false)
@@ -341,7 +339,7 @@ impl Db {
     }
 
     /// Add new utxos and remove some utxos in one atomic transaction.
-    pub fn add_remove_utxos<'a>(
+    pub fn add_remove_utxos(
         &self,
         remove: impl Iterator<Item = OutPoint> + Clone,
         new: impl Iterator<Item = Utxo> + Clone,

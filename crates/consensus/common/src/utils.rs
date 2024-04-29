@@ -183,9 +183,7 @@ pub fn unix_timestamp() -> u64 {
 }
 
 /// Validate poa block beneficiary
-pub fn validate_poa_block_beneficiary(
-    header: &Header,
-) -> Result<(), ConsensusError> {
+pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
     if header.beneficiary != Address::ZERO {
         return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
     }
@@ -304,7 +302,7 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
 /// Validates that the authority was in turn when producing the block
 pub fn validate_inturn(
     header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
+    authority_signers: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     let singer_pk = recovery_authority(header)?;
     let signer_index = authority_signers
@@ -337,6 +335,7 @@ pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     (botanix_reward, beneficiary_reward)
 }
 
+#[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
@@ -344,7 +343,7 @@ mod tests {
 
     #[allow(dead_code)]
     const EDH_DEFAULT_SIGHASH: &str =
-        "0x0a088807360d347e57b95b64d765266f9551acc33ecfcdb2d49003a66acbf192";
+        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
 
     #[allow(dead_code)]
     const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
@@ -513,7 +512,7 @@ mod tests {
         header.number = 1;
 
         let sighash = create_authority_sighash(&mut header, &edh);
-        let message = secp256k1::Message::from_slice(&sighash.as_slice()).unwrap();
+        let message = secp256k1::Message::from_slice(sighash.as_slice()).unwrap();
         let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &non_fed);
 
         edh.set_signature(signature);
@@ -552,11 +551,11 @@ mod tests {
     #[test]
     fn should_fail_validate_poa_block_beneficiary() {
         let mut header = Header::default();
-        header.beneficiary = Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        header.beneficiary =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
         let result = validate_poa_block_beneficiary(&header);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn validate_against_parent_skip_gensis() {
@@ -588,9 +587,9 @@ mod tests {
         let mut current = Header::default();
 
         parent.number = 1;
-        parent.timestamp = 1704834442 as u64;
+        parent.timestamp = 1704834442_u64;
         current.number = 2;
-        current.timestamp = 1704834442 as u64 + 60;
+        current.timestamp = 1704834442_u64 + 60;
 
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
@@ -635,14 +634,14 @@ mod tests {
 
         assert!(validate_inturn(
             &header,
-            &vec![
+            &[
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
                 ),
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
                 ),
             ]
         )
@@ -654,14 +653,14 @@ mod tests {
 
         assert!(validate_inturn(
             &header,
-            &vec![
+            &[
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK1).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
                 ),
                 secp256k1::PublicKey::from_secret_key(
                     &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(&SK2).unwrap(),
+                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
                 ),
             ]
         )
@@ -682,6 +681,9 @@ mod tests {
         sign_block_helper(&mut header, None);
         let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
         let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(block_producer_address, public_key_to_address(edh.authority_signers.unwrap()[0]));
+        assert_eq!(
+            block_producer_address,
+            public_key_to_address(edh.authority_signers.unwrap()[0])
+        );
     }
 }

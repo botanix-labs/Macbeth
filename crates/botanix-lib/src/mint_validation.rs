@@ -289,22 +289,22 @@ mod test {
 
         let decoded_params: Vec<ethers::abi::Token> = decode(
             &[
-                ethers::abi::param_type::ParamType::Uint(256 as usize),
-                ethers::abi::param_type::ParamType::Uint(64 as usize),
+                ethers::abi::param_type::ParamType::Uint(256_usize),
+                ethers::abi::param_type::ParamType::Uint(64_usize),
                 ethers::abi::param_type::ParamType::Bytes,
             ],
-            &bytes.as_slice(),
+            bytes.as_slice(),
         )
         .unwrap();
 
-        let amount = decoded_params.get(0).unwrap().clone().into_uint().unwrap();
+        let amount = decoded_params.first().unwrap().clone().into_uint().unwrap();
         assert_eq!(amount, ethers::types::U256::from_str_radix("100", 10).unwrap());
 
         let nonce = decoded_params.get(1).unwrap().clone().into_uint().unwrap().as_u64();
         assert_eq!(nonce, 1000u64);
 
         let meta_bytes = decoded_params.get(2).unwrap().clone().into_bytes().unwrap();
-        let meta = PeginMeta::deserialize(&meta_bytes.as_slice());
+        let meta = PeginMeta::deserialize(meta_bytes.as_slice());
         assert!(meta.is_ok());
     }
 

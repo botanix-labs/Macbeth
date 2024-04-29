@@ -37,7 +37,7 @@ pub trait OutPointExt: Into<OutPoint> {
     }
 
     fn from_slice(b: &[u8]) -> Result<OutPoint, btcencode::Error> {
-        btcencode::deserialize(&b)
+        btcencode::deserialize(b)
     }
 
     // stopgap for dealing with BDK with other rust-bitcoin version
@@ -113,7 +113,7 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Parsi
     let peer_id_bytes: &[u8; 32] =
         id.as_slice().try_into().map_err(|_e| ParsingError::InvalidFrostPeerId)?;
 
-    let frost_id = frost::Identifier::deserialize(&peer_id_bytes)
+    let frost_id = frost::Identifier::deserialize(peer_id_bytes)
         .map_err(|_e| ParsingError::InvalidFrostPeerId)?;
 
     Ok(frost_id)
@@ -144,12 +144,12 @@ pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> 
     Ok(eth_addr)
 }
 
-pub fn parse_signing_session_id(session_id: &Vec<u8>) -> Result<[u8; 32], ParsingError> {
+pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingError> {
     if session_id.len() != 32 {
         return Err(ParsingError::InvalidSigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
-    session_id_array.copy_from_slice(&session_id);
+    session_id_array.copy_from_slice(session_id);
     Ok(session_id_array)
 }
 
@@ -241,18 +241,18 @@ pub fn validate_psbt(
     db: &Db,
 ) -> Result<(), ValidatePSBTError> {
     // Sanity check for # of inputs and outputs
-    if psbt.inputs.len() == 0 {
+    if psbt.inputs.is_empty() {
         return Err(ValidatePSBTError::NoInputs);
     }
-    if psbt.outputs.len() == 0 {
+    if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
     }
     // Sanity fee checks
-    let fee = psbt.fee().map_err(|e| ValidatePSBTError::FeeCalculationError(e))?;
+    let fee = psbt.fee().map_err(ValidatePSBTError::FeeCalculationError)?;
     if fee < Amount::ZERO {
         return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
     }
-    if fee > MAX_AMOUNT.clone() {
+    if fee > *MAX_AMOUNT {
         return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be greater than max amount"));
     }
 
@@ -357,8 +357,7 @@ mod util_tests {
         let tmpdir = tempfile::tempdir().unwrap();
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
-        let db = database::Db::open(&dbdir).unwrap();
-        db
+        database::Db::open(dbdir).unwrap()
     }
 
     #[test]
@@ -723,20 +722,20 @@ mod util_tests {
             signing_packages[0]
                 .signing_commitments()
                 .values()
-                .map(|sc| sc.clone())
+                .copied()
                 .collect::<Vec<frost::round1::SigningCommitments>>()
                 .clone(),
-            vec![signing_commits1_0.clone(), signing_commits2_0.clone()]
+            vec![signing_commits1_0, signing_commits2_0]
         );
         // check the frost ids as well
         assert_eq!(
             signing_packages[0]
                 .signing_commitments()
                 .keys()
-                .map(|f| f.clone())
+                .copied()
                 .collect::<Vec<frost::Identifier>>()
                 .clone(),
-            vec![frost_id1.clone(), frost_id2.clone()]
+            vec![frost_id1, frost_id2]
         );
         assert!(signing_packages[0].additional_tweak().as_ref().unwrap() == &eth_tweak.to_vec());
 
@@ -744,20 +743,20 @@ mod util_tests {
             signing_packages[1]
                 .signing_commitments()
                 .values()
-                .map(|sc| sc.clone())
+                .copied()
                 .collect::<Vec<frost::round1::SigningCommitments>>()
                 .clone(),
-            vec![signing_commits1_1.clone(), signing_commits2_1.clone()]
+            vec![signing_commits1_1, signing_commits2_1]
         );
         // check the frost ids as well
         assert_eq!(
             signing_packages[1]
                 .signing_commitments()
                 .keys()
-                .map(|f| f.clone())
+                .copied()
                 .collect::<Vec<frost::Identifier>>()
                 .clone(),
-            vec![frost_id1.clone(), frost_id2.clone()]
+            vec![frost_id1, frost_id2]
         );
         assert!(signing_packages[1].additional_tweak().is_none());
     }
@@ -781,7 +780,7 @@ mod util_tests {
 
         // encode and decode the id 0
         let peer_id0 = 0u16;
-        let f = frost::Identifier::derive(&peer_id0.to_be_bytes().to_vec()).unwrap();
+        let f = frost::Identifier::derive(peer_id0.to_be_bytes().as_ref()).unwrap();
         let f_bytes = f.serialize().to_vec();
         let peer_id_decoded = deserialize_frost_peer_id(f_bytes.to_vec()).unwrap();
 

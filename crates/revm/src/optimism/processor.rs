@@ -4,8 +4,9 @@ use reth_interfaces::executor::{
 };
 use reth_node_api::ConfigureEvm;
 use reth_primitives::{
-    proofs::calculate_receipt_root_optimism, revm_primitives::ResultAndState, BlockWithSenders,
-    Bloom, ChainSpec, Hardfork, Receipt, ReceiptWithBloom, TxType, B256, U256,
+    botanix::BotanixConsensusPackage, proofs::calculate_receipt_root_optimism,
+    revm_primitives::ResultAndState, BlockWithSenders, Bloom, ChainSpec, Hardfork, Receipt,
+    ReceiptWithBloom, TxType, B256, U256,
 };
 use reth_provider::{BlockExecutor, BundleStateWithReceipts};
 use revm::DatabaseCommit;
@@ -48,8 +49,9 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty)?;
+        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
         self.save_receipts(receipts)
     }
 
@@ -57,9 +59,10 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty)?;
+        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -87,12 +90,13 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0))
+            return Ok((Vec::new(), 0, 0))
         }
 
         let is_regolith =
@@ -112,6 +116,7 @@ where
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
         for (sender, transaction) in block.transactions_with_sender() {
+            let botanix_consensus_pkg = botanix_consensus_pkg.clone();
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -148,7 +153,8 @@ where
                 .map_err(|_| BlockExecutionError::ProviderError)?;
 
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, *sender)?;
+            let ResultAndState { result, state } =
+                self.transact(transaction, *sender, botanix_consensus_pkg)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -186,7 +192,8 @@ where
             });
         }
 
-        Ok((receipts, cumulative_gas_used))
+        // TODO total fees are not calculated
+        Ok((receipts, cumulative_gas_used, 0))
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {

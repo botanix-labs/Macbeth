@@ -7,6 +7,8 @@ use std::{
 };
 use tokio::process::{Child, Command};
 
+pub const BTC_SERVER_START_PORT: u16 = 8000;
+
 #[derive(Debug)]
 pub struct SpawnedBtcServer {
     pub port: u16,
@@ -37,7 +39,6 @@ fn spawn_btc_server(
     let frost_min_signers = global_context.min_signers.to_string();
 
     let command = "cargo";
-    let rpccookie = global_context.bitcoind_cookie.display().to_string();
     let args = vec![
         "run",
         "--",
@@ -59,8 +60,10 @@ fn spawn_btc_server(
         jwt_secret_file.as_str(),
         "--bitcoind-url",
         global_context.bitcoind_url.as_str(),
-        "--bitcoind-cookie",
-        rpccookie.as_str(),
+        "--bitcoind-user",
+        global_context.bitcoind_user.as_str(),
+        "--bitcoind-pass",
+        global_context.bitcoind_pass.as_str(),
         "--fee-rate-diff-percentage",
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
@@ -84,15 +87,12 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(
-    global_context: Arc<GlobalContext>,
-    start_port: u16,
-) -> Vec<SpawnedBtcServer> {
+pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..global_context.instances {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-        let port = start_port + i;
+        let port = BTC_SERVER_START_PORT + i;
         let child_process = spawn_btc_server(
             global_context.clone(),
             i,

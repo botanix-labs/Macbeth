@@ -138,7 +138,7 @@ where
 {
     fn try_new(
         client: Client,
-        headers: &mut Vec<SealedHeader>,
+        headers: &mut [SealedHeader],
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
@@ -230,11 +230,11 @@ where
     /// transactions.
     pub(crate) fn build_header_template(
         &self,
-        transactions: &Vec<TransactionSigned>,
+        transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
         vote: &Option<(secp256k1::PublicKey, Vote)>,
-        sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
+        _sk: &secp256k1::SecretKey,
+        _secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let timestamp = unix_timestamp();
@@ -471,13 +471,13 @@ where
         // fill in the rest of the fields
         let header = self.complete_header(
             header,
-            &bundle_state,
+            bundle_state,
             gas_used,
             sk,
             secp,
             authority_signers,
             vote,
-            &witness_data,
+            witness_data,
             // This is checked to be Some above
             botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
             utxo_commitment,

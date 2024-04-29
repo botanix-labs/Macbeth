@@ -45,7 +45,7 @@ impl App {
 
             Ok(round2_packages)
         } else {
-            return Err(DKGError::MissingRound1DkgPackage);
+            Err(DKGError::MissingRound1DkgPackage)
         }
     }
 
@@ -58,7 +58,7 @@ impl App {
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
             Ok(round1_dkg.1)
         } else {
-            return Err(DKGError::MissingRound1DkgPackage);
+            Err(DKGError::MissingRound1DkgPackage)
         }
     }
 
@@ -103,7 +103,7 @@ impl App {
                 return Ok(());
             }
         }
-        return Err(DKGError::InvalidRound2DkgPayloadMissingPackage);
+        Err(DKGError::InvalidRound2DkgPayloadMissingPackage)
     }
 
     pub(crate) fn add_round1_dkg(
@@ -118,7 +118,7 @@ impl App {
         if frost_id == self.identifier {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
-        if self.frost_round1_dkg.as_ref().take().expect("valid dkg round1").1 == dkg_round1 {
+        if self.frost_round1_dkg.as_ref().expect("valid dkg round1").1 == dkg_round1 {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
         // Should not add if we have max signers

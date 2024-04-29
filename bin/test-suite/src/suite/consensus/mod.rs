@@ -1,4 +1,4 @@
-use self::frost::btc_server::SpawnedBtcServer;
+use self::frost::btc_server::{SpawnedBtcServer, BTC_SERVER_START_PORT};
 use super::{Outcome, Suite};
 use crate::{
     context::GlobalContext,
@@ -10,9 +10,31 @@ use port_killer::kill;
 use reth_tracing::tracing::error;
 use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tracing::{info, warn};
-
 // scopes
 mod frost;
+
+fn kill_child_processes_at_port(index: u16) {
+    // kill btc server processes
+    let btc_server_port = BTC_SERVER_START_PORT + index;
+    match kill(btc_server_port) {
+        Ok(pid) => {
+            if pid {
+                info!(
+                    "Sucessfully killed btc-server process on port process on port {:?}",
+                    btc_server_port
+                );
+            } else {
+                warn!("Unable to kill btc-server process on port {:?}", btc_server_port);
+            }
+        }
+        Err(err) => {
+            error!(
+                "Error attempting to kill btc-server process on port {:?} -> {:?}",
+                btc_server_port, err
+            );
+        }
+    }
+}
 
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
@@ -20,7 +42,6 @@ pub struct ConsensusIntegrationTestSuite {
     pub outcome: Outcome,
     pub local_context: LocalContext,
 }
-
 pub struct LocalContext {
     pub btc_servers: Option<Vec<SpawnedBtcServer>>,
 }
@@ -77,54 +98,53 @@ impl Suite for ConsensusIntegrationTestSuite {
         // set the panic hook so it kills them whenever activated
         std::panic::set_hook(Box::new(move |panic_info| {
             error!("Test suite panicked {:?}", panic_info);
-            for process_id in child_processes_to_kill.iter() {
+            for process_id in &child_processes_to_kill {
                 // Send a termination signal to the child process
                 let _ = Command::new("kill")
                     .arg("-9") // Use SIGKILL for immediate termination
-                    .arg(format!("{}", process_id))
+                    .arg(format!("{process_id}"))
                     .output();
             }
             // delete db leftovers
-            for db_to_delete in dbs_to_delete.iter() {
+            for db_to_delete in &dbs_to_delete {
                 let _ = std::fs::remove_dir_all(db_to_delete.clone());
             }
         }));
     }
 
     async fn create_context(&mut self) {
-        // kill all processes at designated ports
-        let start_port: u16 = 8000;
-        (0..self.global_context.instances).for_each(|i| {
-            let port = start_port + i;
-            match kill(port) {
-                Ok(pid) => {
-                    if pid {
-                        info!("Sucessfully killed process on port process on port {:?}", port);
-                    } else {
-                        warn!("Unable to successfully kill process on port {:?}", port);
-                    }
-                }
-                Err(err) => {
-                    error!("Error attempting to kill process on port {:?} -> {:?}", port, err);
-                }
+        if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
+            // kill all btc server processes
+            for (_, btc_server) in btc_servers.iter_mut().enumerate() {
+                let _ = btc_server.child_process.kill().await;
             }
+            // Remove db dirs
+            clean_db(btc_servers);
+        }
+
+        // kill processes at designated ports
+        (0..self.global_context.instances).for_each(|i| {
+            kill_child_processes_at_port(i);
         });
 
+        // let old context be fully destroyed
+        tokio::time::sleep(Duration::from_secs(15)).await;
+
         // create new context
-        self.local_context.btc_servers =
-            Some(spawn_n_btc_servers(self.global_context.clone(), start_port));
+        self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));
 
         // let servers come up
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
     }
 
     async fn destroy_context(&mut self) {
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
-            for btc_server in btc_servers.iter_mut() {
+            for (index, btc_server) in btc_servers.iter_mut().enumerate() {
                 let _ = btc_server.child_process.kill().await;
+                kill_child_processes_at_port(index as u16);
             }
             // Remove db dirs
-            clean_db(&btc_servers);
+            clean_db(btc_servers);
         }
     }
 }

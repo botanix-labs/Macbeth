@@ -121,7 +121,7 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) -> () {
+    pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
         self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));

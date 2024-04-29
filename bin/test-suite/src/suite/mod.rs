@@ -11,7 +11,7 @@ pub trait Suite: Send + Sync + 'static {
     fn set_panic_hook(&self);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, AsRefStr, EnumString)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, AsRefStr, EnumString)]
 #[strum(serialize_all = "kebab-case")]
 pub enum RunSuite {
     All,

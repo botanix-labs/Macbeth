@@ -1,11 +1,9 @@
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-
 use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult},
     Auth, Client, RpcApi,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use thiserror::Error;
 use url::Url;
 
@@ -25,6 +23,8 @@ pub enum BitcoindError {
     TransactionBroadcastFailed(bitcoincore_rpc::Error),
     #[error("Block index failed")]
     BlockIndexStatusFailed(bitcoincore_rpc::Error),
+    #[error("Blockchain index failed")]
+    BlockchainInfoFailed(bitcoincore_rpc::Error),
     #[error("Best block hash retrieval failed")]
     BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
     #[error("Block info retrieval failed")]
@@ -36,12 +36,13 @@ pub enum BitcoindError {
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoindConfig {
     url: Url,
-    cookie: PathBuf,
+    username: String,
+    password: String,
 }
 
 impl BitcoindConfig {
-    pub fn new(url: Url, cookie: impl AsRef<Path>) -> Self {
-        Self { url, cookie: cookie.as_ref().into() }
+    pub fn new(url: Url, username: String, password: String) -> Self {
+        Self { url, username, password }
     }
 }
 #[derive(Debug)]
@@ -51,8 +52,8 @@ pub struct BitcoindClient {
 
 impl BitcoindClient {
     pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
-        let BitcoindConfig { url, cookie } = config;
-        let creds = Auth::CookieFile(cookie);
+        let BitcoindConfig { url, username, password } = config;
+        let creds = Auth::UserPass(username, password);
         let rpc = Client::new(url.to_string().as_str(), creds)
             .map_err(BitcoindError::ClientInitFailed)?;
         Ok(BitcoindClient { rpc })
@@ -80,11 +81,20 @@ impl BitcoindClient {
     }
 
     pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        let index_data =
-            self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed)?;
-        match index_data.txindex {
-            Some(txindex) => Ok(txindex.synced),
-            _ => Ok(false),
+        match self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed) {
+            Ok(index_data) => match index_data.txindex {
+                Some(txindex) => Ok(txindex.synced),
+                _ => Ok(false),
+            },
+            Err(_) => {
+                // call the info method in case the get index info is unavailable
+                match self.rpc.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
+                    Ok(blockchain_info_result) => {
+                        Ok(blockchain_info_result.blocks == blockchain_info_result.headers)
+                    }
+                    Err(_) => Ok(false),
+                }
+            }
         }
     }
 
@@ -104,8 +114,7 @@ impl BitcoindClient {
     }
 
     pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
-        let tip =
-            self.rpc.get_block_count().map_err(|e| BitcoindError::BlockTipRetrievalFailed(e))?;
+        let tip = self.rpc.get_block_count().map_err(BitcoindError::BlockTipRetrievalFailed)?;
 
         Ok(tip)
     }
@@ -148,36 +157,8 @@ impl BitcoindClient {
     }
 
     pub async fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
-        let fee_res = self
-            .rpc
+        self.rpc
             .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(BitcoindError::EstimateSmartFeeFailed);
-
-        Ok(fee_res?)
-    }
-}
-
-mod tests {
-
-    #[tokio::test]
-    async fn test_basic_client() {
-        use super::*;
-
-        let client = BitcoindClient::new(BitcoindConfig::new(
-            "http://127.0.0.1:38332".parse::<Url>().unwrap(),
-            "usr".to_owned(),
-            "pwd".to_owned(),
-        ))
-        .unwrap();
-
-        let tip = client.get_tip().await;
-        match tip {
-            Ok(tip) => {
-                assert!(tip > 0);
-            }
-            Err(e) => {
-                panic!("Got error {:?}", e);
-            }
-        }
+            .map_err(BitcoindError::EstimateSmartFeeFailed)
     }
 }

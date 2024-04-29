@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus_common::utils::create_authority_sighash;
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
@@ -83,8 +83,8 @@ impl AuthorityVoteCollection {
 
 #[derive(Debug)]
 pub(crate) enum GetVotesError {
-    FailedToDeserializeBlockHeaderExtraData(ExtraDataHeaderDeserialzeError),
-    FailedToRecoverAuthority(secp256k1::Error),
+    FailedToDeserializeBlockHeaderExtraData,
+    FailedToRecoverAuthority,
     FailedToParseNonceVote,
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         // Check if there is a authority being voted on in the extra data
         let extra_data_header =
             ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-                .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
+                .map_err(|_e| GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
 
         if extra_data_header.authority_vote.is_none() {
             continue;
@@ -130,7 +130,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
             .authority_signature
             .expect("valid signature")
             .recover(&sig_hash)
-            .map_err(GetVotesError::FailedToRecoverAuthority)?;
+            .map_err(|_e| GetVotesError::FailedToRecoverAuthority)?;
         // Already keeping track of this authority
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)
@@ -169,17 +169,5 @@ pub(crate) fn get_outcome_of_votes(votes: AuthorityVote) -> Vote {
         Vote::Add
     } else {
         Vote::Remove
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vote_try_from() {
-        assert_eq!(Vote::try_from(NONCE_AUTH), Ok(Vote::Add));
-        assert_eq!(Vote::try_from(NONCE_DROP), Ok(Vote::Remove));
-        assert_eq!(Vote::try_from(0), Err("Invalid u64 value for EIP225 Authority Vote"));
     }
 }

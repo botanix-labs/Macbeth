@@ -76,7 +76,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
             key: frost_id.serialize().to_vec(),
         };
         if let Some(b) = self.borrow().proprietary.get(&key) {
-            Some(frost::round1::SigningCommitments::deserialize(&b).ok()?)
+            Some(frost::round1::SigningCommitments::deserialize(b).ok()?)
         } else {
             None
         }
@@ -93,7 +93,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
                     Some(v) => v,
                     None => continue,
                 };
-                let sc = match frost::round1::SigningCommitments::deserialize(&value) {
+                let sc = match frost::round1::SigningCommitments::deserialize(value) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
@@ -129,7 +129,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
             key: frost_id.serialize().to_vec(),
         };
         if let Some(b) = self.borrow().proprietary.get(&key) {
-            Some(signature_share_from_bytes(&b)?)
+            Some(signature_share_from_bytes(b)?)
         } else {
             None
         }
@@ -144,7 +144,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
                     Some(v) => v,
                     None => continue,
                 };
-                let sc = match signature_share_from_bytes(&value) {
+                let sc = match signature_share_from_bytes(value) {
                     Some(v) => v,
                     None => continue,
                 };

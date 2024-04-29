@@ -386,7 +386,7 @@ where
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used, total_block_fees) =
-            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
+            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg.clone())?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -398,12 +398,16 @@ where
             .into());
         }
         let time = Instant::now();
-        let block_builder_address = get_block_producer_address(&block.header.clone());
+        let block_builder_address = if botanix_consensus_pkg.is_some() {
+            Some(get_block_producer_address(&block.header.clone()))
+        } else {
+            None
+        };
         self.apply_post_execution_state_change(
             block,
             total_difficulty,
             Some(total_block_fees),
-            Some(block_builder_address),
+            block_builder_address,
         )?;
         self.stats.apply_post_execution_state_changes_duration += time.elapsed();
 
@@ -412,8 +416,8 @@ where
             !self
                 .prune_modes
                 .account_history
-                .map_or(false, |mode| mode.should_prune(block.number, tip))
-                && !self
+                .map_or(false, |mode| mode.should_prune(block.number, tip)) &&
+                !self
                     .prune_modes
                     .storage_history
                     .map_or(false, |mode| mode.should_prune(block.number, tip))
@@ -582,10 +586,8 @@ where
             let time = Instant::now();
 
             // calclaute the total block fees
-            let recovered_transaction =
-                transaction.clone().try_into_ecrecovered().expect("transaction is signed");
             let transaction_fee =
-                recovered_transaction.effective_tip_per_gas(base_fee).expect("base fee is valid");
+                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
             total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             self.db_mut().commit(state);

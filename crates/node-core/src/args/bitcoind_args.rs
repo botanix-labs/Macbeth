@@ -2,6 +2,17 @@ use clap::Args;
 use reth_btc_wallet::bitcoind::BitcoindConfig;
 use url::Url;
 
+use super::utils::parse_url;
+
+/// Default bitcoind url
+pub(crate) const DEFAULT_BITCOIND_URL: &str = "localhost:18443";
+
+/// Default bitcoind username
+pub(crate) const DEFAULT_BITCOIND_USERNAME: &str = "foo";
+
+/// Default bitcoind password
+pub(crate) const DEFAULT_BITCOIND_PASSWORD: &str = "bar";
+
 /// Parameters to configure Bitcoind.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 #[clap(next_help_heading = "Bitcoind")]
@@ -10,22 +21,34 @@ pub struct BitcoindArgs {
     /// bitcoind RPC url
     ///
     /// The url of the bitcoind server.
-    #[arg(long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL")]
+    #[arg(default_value_t=Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"), value_parser = parse_url, long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL")]
     pub url: Url,
 
-    /// bitcoind RPC cookie file path
+    /// Btcd username
     ///
-    /// The path of the cookie of the bitcoind server.
+    /// The username of the bitcoind server.
     #[arg(
-        long = "bitcoind.cookie",
-        name = "bitcoind.cookie",
-        value_name = "BITCOIND_COOKIE"
+        default_value_t = DEFAULT_BITCOIND_USERNAME.into(),
+        long = "bitcoind.username",
+        name = "bitcoind.username",
+        value_name = "BITCOIND_USERNAME"
     )]
-    pub cookie: String,
+    pub username: String,
+
+    /// Btcd password
+    ///
+    /// The password of the bitcoind server.
+    #[arg(
+        default_value_t = DEFAULT_BITCOIND_PASSWORD.into(),
+        long = "bitcoind.password",
+        name = "bitcoind.password",
+        value_name = "BITCOIND_PASSWORD"
+    )]
+    pub password: String,
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {
     fn from(args: BitcoindArgs) -> Self {
-        BitcoindConfig::new(args.url, args.cookie)
+        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password.clone())
     }
 }

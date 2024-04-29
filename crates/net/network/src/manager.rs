@@ -300,12 +300,13 @@ where
     ///     let transactions_manager_config = config.transactions_manager_config.clone();
     ///
     ///     // create the network instance
-    ///     let (handle, network, transactions, request_handler) = NetworkManager::builder(config)
-    ///         .await
-    ///         .unwrap()
-    ///         .transactions(pool, transactions_manager_config)
-    ///         .request_handler(client)
-    ///         .split_with_handle();
+    ///     let (handle, network, transactions, request_handler, frost) =
+    ///         NetworkManager::builder(config)
+    ///             .await
+    ///             .unwrap()
+    ///             .transactions(pool, transactions_manager_config)
+    ///             .request_handler(client)
+    ///             .split_with_handle();
     /// }
     /// ```
     pub async fn builder(
@@ -336,7 +337,7 @@ where
             .map(|f| f.authorities.clone())
             .unwrap_or_default()
             .iter()
-            .map(|pk| pk2id(&pk))
+            .map(pk2id)
             .collect::<Vec<_>>();
 
         let protocol_state = ProtocolState::new(

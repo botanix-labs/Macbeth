@@ -148,18 +148,15 @@ impl App {
     ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
         // try to get pk package from db incase we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
-            let agg_key = pk_package.verifying_key().to_secp_pk().map_err(|e| {
-                CoordinatorError::FailedToConvertVerifyingKeyToSecpPk(VerifyingKeyExtError::from(e))
-            })?;
+            let agg_key = pk_package
+                .verifying_key()
+                .to_secp_pk()
+                .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
             let tweaked_key = pk_package
                 .verifying_key()
                 .get_tweaked(Some(eth_tweak.as_slice()))
                 .to_secp_pk()
-                .map_err(|e| {
-                    CoordinatorError::FailedToConvertVerifyingKeyToSecpPk(
-                        VerifyingKeyExtError::from(e),
-                    )
-                })?;
+                .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
             let gateway_address =
                 reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.btc_network);
 
@@ -280,7 +277,7 @@ impl App {
         // before signing Instead we can add it to the psbt as a proprietary field for each
         // input Lastly save this to sign package to the db
 
-        if let Some(psbt) = self.db.get_psbt(&signing_session_id)? {
+        if let Some(psbt) = self.db.get_psbt(signing_session_id)? {
             for input in &psbt.inputs {
                 let sc = input.all_signing_commitments();
                 info!("sc.len() = {}", sc.len());
@@ -310,11 +307,9 @@ impl App {
         let pk_package =
             self.db.get_public_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         // Get signing packages for this signing session
-        let signing_packages = psbt.signing_packages().map_err(|e| {
-            CoordinatorError::PsbtToSigningPackageConversionError(
-                reth_btc_wallet::psbt::PsbtToSigningPackageConversionError::from(e),
-            )
-        })?;
+        let signing_packages = psbt
+            .signing_packages()
+            .map_err(CoordinatorError::PsbtToSigningPackageConversionError)?;
 
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
             let signing_package = signing_packages.get(index).expect("valid index").clone();
@@ -333,7 +328,7 @@ impl App {
                 pk_package.verifying_key().verify(
                     signing_package.message(),
                     &agg_sig,
-                    Some(&e.clone().as_slice()),
+                    Some(e.clone().as_slice()),
                 )?;
             } else {
                 pk_package.verifying_key().verify(signing_package.message(), &agg_sig, None)?;

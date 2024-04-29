@@ -899,7 +899,8 @@ unsafe fn handle_slow_readers_callback(callback: HandleSlowReadersCallback) -> f
     std::mem::forget(closure);
 
     // Cast the closure to FFI `extern fn` type.
-    Some(std::mem::transmute(closure_ptr))
+    #[allow(clippy::missing_transmute_annotations)]
+    Some(std::mem::transmute::<_, _>(closure_ptr))
 }
 
 #[cfg(test)]

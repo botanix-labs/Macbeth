@@ -37,9 +37,6 @@ use std::{
 };
 use url::Url;
 
-const RPC_PORT_BASE: u16 = 8545;
-const AUTHRPC_PORT_BASE: u16 = 8551;
-const DISCOVERY_PORT_BASE: u16 = 30321;
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
@@ -48,6 +45,13 @@ const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
 struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
+}
+
+/// Returns the index of the authority which is currently in turn
+pub fn current_inturn_index(authorities_len: u64) -> u64 {
+    // use minutes as time unit to determine in turn
+    let timestamp = unix_timestamp() / 60;
+    (timestamp / authorities_len) % authorities_len
 }
 
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
@@ -70,6 +74,7 @@ pub enum Notifications {
 pub struct DkgPayload {
     pub engine_index: u16,
     pub ts: tokio::time::Instant,
+    pub public_key: String,
 }
 
 #[derive(Clone, Debug)]
@@ -88,7 +93,8 @@ pub struct FederationMemberTestConfig {
     pub authrpc_port: u16,
     pub discovery_port: u16,
     pub bitcoind_url: Url,
-    pub bitcoind_cookie: PathBuf,
+    pub bitcoind_username: String,
+    pub bitcoind_password: String,
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::mpsc::Sender<Notifications>,
@@ -106,16 +112,20 @@ impl FederationMemberTestConfig {
         secret_key: String,
         sender: tokio::sync::mpsc::Sender<Notifications>,
         bitcoind_url: Url,
-        bitcoind_cookie: PathBuf,
+        bitcoind_username: String,
+        bitcoind_password: String,
         bitcoin_server_url: String,
         jwt_secrets_dir: PathBuf,
         frost_min_signers: u16,
         frost_max_signers: u16,
         peer_id: PeerId,
+        rpc_port_base: u16,
+        authrpc_port_base: u16,
+        discovery_port_base: u16,
     ) -> Self {
-        let rpc_port = RPC_PORT_BASE + index;
-        let authrpc_port = AUTHRPC_PORT_BASE + index;
-        let discovery_port = DISCOVERY_PORT_BASE + index;
+        let rpc_port = rpc_port_base + index;
+        let authrpc_port = authrpc_port_base + index;
+        let discovery_port = discovery_port_base + index;
         let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
@@ -125,7 +135,8 @@ impl FederationMemberTestConfig {
             authrpc_port,
             discovery_port,
             bitcoind_url,
-            bitcoind_cookie,
+            bitcoind_username,
+            bitcoind_password,
             bitcoin_server_url,
             peers_list: vec![],
             sender,
@@ -182,7 +193,6 @@ impl FederationMemberTestConfig {
         };
 
         let no_args = NoArgs::with(self.clone());
-        let rpccookie = self.bitcoind_cookie.display().to_string();
         let mut command = PoaNodeCommand::<NoArgsCliExt<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--chain",
@@ -211,8 +221,10 @@ impl FederationMemberTestConfig {
             self.bitcoin_server_url.as_str(),
             "--bitcoind.url",
             self.bitcoind_url.as_str(),
-            "--bitcoind.cookie",
-            rpccookie.as_str(),
+            "--bitcoind.username",
+            self.bitcoind_username.as_str(),
+            "--bitcoind.password",
+            self.bitcoind_password.as_str(),
             "--frost.min_signers",
             self.frost_min_signers.to_string().as_str(),
             "--frost.max_signers",
@@ -279,11 +291,11 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
             .unwrap();
 
             // wait for the dkg to finish
-            loop {
+            let pub_key = loop {
                 match btc_server_client.get_public_key(Empty {}).await {
-                    Ok(_) => {
+                    Ok(pub_key) => {
                         it_info_print!("Dkg Finished for index {:?}!", engine_index);
-                        break;
+                        break pub_key;
                     }
                     Err(_) => {
                         it_warn_print!("Dkg Pending for engine index {:?}...", engine_index);
@@ -291,11 +303,12 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
                         continue;
                     }
                 }
-            }
+            };
             let _ = rx_sender
                 .send(Notifications::DkgFinished(DkgPayload {
                     engine_index,
                     ts: tokio::time::Instant::now(),
+                    public_key: pub_key.publickey,
                 }))
                 .await;
 
@@ -315,10 +328,6 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
     }
 }
 
-pub fn testnet_custom_chain() -> Arc<ChainSpec> {
-    BOTANIX_TESTNET.clone()
-}
-
 pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
@@ -333,6 +342,25 @@ pub async fn create_poa_federation_members(
 
     let mut members_public_keys: Vec<PublicKey> = vec![];
     let secp = secp256k1::Secp256k1::new();
+
+    let mut last_rpc_port = global_context.last_poa_node_rpc_port.lock().await;
+    let p = last_rpc_port.clone();
+    let rpc_port_base: u16 = p + 1;
+    *last_rpc_port = p + 10 + global_context.instances;
+    drop(last_rpc_port);
+
+    let mut last_authrpc_port = global_context.last_poa_node_authrpc_port.lock().await;
+    let p = last_authrpc_port.clone();
+    let authrpc_port_base: u16 = p + 1;
+    *last_authrpc_port = p + 10 + global_context.instances;
+    drop(last_authrpc_port);
+
+    let mut last_discovery_port = global_context.last_poa_node_discovery_port.lock().await;
+    let p = last_discovery_port.clone();
+    let discovery_port_base: u16 = p + 1;
+    *last_discovery_port = p + 10 + global_context.instances;
+    drop(last_discovery_port);
+
     for member_index in 0..global_context.instances {
         let port = btc_servers
             .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
@@ -349,12 +377,16 @@ pub async fn create_poa_federation_members(
             member_secret_key,
             tx.clone(),
             global_context.bitcoind_url.clone(),
-            global_context.bitcoind_cookie.clone(),
+            global_context.bitcoind_user.clone(),
+            global_context.bitcoind_pass.clone(),
             format!("localhost:{}", port),
             global_context.jwt_dir.clone(),
             global_context.min_signers,
             global_context.max_signers,
             member_peer_id,
+            rpc_port_base,
+            authrpc_port_base,
+            discovery_port_base,
         )
         .await;
         fed_members.insert(member_index, fed_member_config);
@@ -395,13 +427,13 @@ pub async fn create_poa_federation_members(
     (fed_members, rx)
 }
 
+#[cfg(test)]
 mod tests {
-    use std::{io::Write, path::Path};
-
-    use super::BotanixTestnetGenesisConfig;
+    use crate::suite::consensus::frost::poa_node::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
     use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use std::{io::Write, path::Path};
 
     #[test]
     fn test_edh_tempate() {
@@ -424,12 +456,12 @@ mod tests {
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();
         let json = serde_json::to_string_pretty(&rendered_json).unwrap();
-        println!("Rendered botanix testnet configuration {:?}", json);
+        println!("Rendered botanix testnet configuration {json:?}");
 
         let botanix_genesis_filepath = Path::new("./").join("botanix_testnet.json");
         let mut file = std::fs::OpenOptions::new()
             .write(true)
-            .create(true)
+            .truncate(true)
             .open(botanix_genesis_filepath)
             .unwrap();
         file.write_all(rendered_json.as_bytes()).unwrap();

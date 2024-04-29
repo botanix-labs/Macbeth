@@ -1,4 +1,4 @@
-///! Extended bitcoin server client with authentication
+//! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
 use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,7 +12,7 @@ use client::{
     SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
-const JWT_HEADER_KEY: &'static str = "trace-proto-bin";
+const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
 fn to_u64(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH).unwrap().as_secs()
@@ -90,7 +90,7 @@ impl BtcServerExtendedClient {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();
-            let _ = jwt_secret.validate(jwt_token.clone()).unwrap();
+            jwt_secret.validate(jwt_token.clone()).unwrap();
             jwt_token
         })
     }
@@ -114,11 +114,18 @@ impl BtcServerExtendedClient {
     generate_method!(get_utxo_merkle_root, Empty, GetUtxoMerkleRootResponse);
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use bitcoin::base64::decode;
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
+        use super::JWT_HEADER_KEY;
+        use crate::extended_client::to_u64;
+        use client::Empty;
+        use reth_rpc::{Claims, JwtSecret};
+        use std::time::SystemTime;
+        use tonic::metadata::{BinaryMetadataKey, MetadataValue};
         // create a random jwt secret
         let jwt_secret = JwtSecret::random();
 
@@ -129,7 +136,7 @@ mod tests {
         // encode and set the token as a metadata value
         let metadata_value = MetadataValue::from_bytes(jwt_token.as_bytes());
 
-        // simualte sending a grpc request
+        // simulate sending a grpc request
         let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
         let mut request = tonic::Request::new(Empty {});
         request.metadata_mut().insert_bin(key, metadata_value);
@@ -139,7 +146,7 @@ mod tests {
         if let Some(metadata_value) = request.metadata().get_bin(key) {
             // try to verify the received token
             let jwt_request_token_received = metadata_value.as_encoded_bytes();
-            let jwt_token_base64_decoded = base64_decode(jwt_request_token_received).unwrap();
+            let jwt_token_base64_decoded = decode(jwt_request_token_received).unwrap();
 
             let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
 

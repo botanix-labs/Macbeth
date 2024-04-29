@@ -197,7 +197,7 @@ impl App {
 
         // Save signing nonces in memory
         let signing_nonces =
-            nonces.iter().map(|nonce| (nonce.0.clone(), nonce.1.clone())).collect::<Vec<_>>();
+            nonces.iter().map(|nonce| (nonce.0.clone(), nonce.1)).collect::<Vec<_>>();
         nonces_lock.replace(signing_nonces);
         Ok(())
     }
@@ -252,7 +252,7 @@ impl App {
             signing_packages.iter_mut().zip(psbt.inputs.iter_mut()).enumerate()
         {
             let sigs = frost::round2::sign(
-                &signing_package,
+                signing_package,
                 &signing_nonces.get(index).expect("valid index").0,
                 &key_package,
             )?;

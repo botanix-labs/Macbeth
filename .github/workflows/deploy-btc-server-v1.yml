@@ -1,0 +1,85 @@
+name: Build, Tag, and Deploy Docker BTC Server v1 Image to GCP
+
+on:
+  pull_request:
+    branches:
+      - feature/poA-consensus
+    types: [closed]
+  push:
+    branches:
+      - feature/mark/ci/quick-fix
+
+jobs:
+  build_and_deploy:
+    runs-on: botanix-actions-runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      # NOTE: this operation should be replaced by a cloud or someother form of HSM once software is mainnet ready
+      # key.template.hex does not exist in the repo, it is a placeholder for the actual key
+    #   - name: Copy key hex
+    #     run: cp bin/btc-server/key.template.hex bin/btc-server/key.hex
+
+      - name: Build Docker image
+        run: |
+          docker build -t botanix_testnet_btc_server_v1 -f Dockerfile.btc_server .
+        working-directory: ./
+
+      - name: Tag Docker image
+        run: |
+          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
+          docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:latest
+
+      - name: Push Docker image to Google Container Registry
+        run: |
+          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:latest
+
+
+# Uncomment this block to deploy to GKE
+# Will Uncomment this block once we have the GKE cluster manifests setup          
+#   push_to_gke:
+#     runs-on: botanix-actions-runner
+#     needs: build_and_deploy
+#     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/poA-consensus'  || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true) }}
+#     env:
+#       PROJECT_ID: botanix-391913
+#       CLUSTER_NAME: botanixlabs-cluster-dev
+#       ZONE: us-central1
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up gcloud cli
+#         uses: google-github-actions/setup-gcloud@1bee7de035d65ec5da40a31f8589e240eba8fde5
+#         with:
+#           project_id: ${{ env.PROJECT_ID }}
+
+#       - name: Configure docker
+#         run: gcloud --quiet auth configure-docker
+      
+#       - id: 'auth'
+#         uses: 'google-github-actions/auth@v2'
+#         with:
+#           credentials_json: '${{ secrets.GKE_WORKLOAD_KEY }}'
+  
+#       - id: 'get-credentials'
+#         uses: 'google-github-actions/get-gke-credentials@v2'
+#         with:
+#           cluster_name: ${{ env.CLUSTER_NAME }}
+#           location: ${{ env.ZONE }}
+#           project_id: ${{ env.PROJECT_ID }}
+
+#       - name: Set up Kustomize
+#         run: |-
+#           curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
+#           chmod u+x ./kustomize
+#           sudo mv ./kustomize /usr/local/bin/kustomize
+
+#       - name: Deploy to GKE
+#         working-directory: ./k8s/btc-server
+#         run: make deploy

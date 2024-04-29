@@ -44,7 +44,7 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         "holesky" => HOLESKY.clone(),
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
-        "botanix_testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
@@ -79,7 +79,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
         #[cfg(not(feature = "optimism"))]
-        "botanix_testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_testnet" | "botanix-testnet"  => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
         "base_goerli" | "base-goerli" => BASE_GOERLI.clone(),
         #[cfg(feature = "optimism")]
