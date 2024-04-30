@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
 use reth_consensus_common::utils::create_authority_sighash;
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
@@ -104,7 +104,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         // Check if there is a authority being voted on in the extra data
         let extra_data_header =
             ExtraDataHeader::deserialize(&mut header.extra_data.0.to_vec().as_slice())
-                .map_err(|_e| GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
+                .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
 
         if extra_data_header.authority_vote.is_none() {
             continue;
@@ -133,7 +133,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
             .authority_signature
             .expect("valid signature")
             .recover(&sig_hash)
-            .map_err(|_e| GetVotesError::FailedToRecoverAuthority)?;
+            .map_err(GetVotesError::FailedToRecoverAuthority)?;
         // Already keeping track of this authority
         if let Some(current_votes) =
             auth_vote.iter_mut().find(|k| k.authority == authority_to_vote_on)

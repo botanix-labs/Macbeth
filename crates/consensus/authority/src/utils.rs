@@ -9,7 +9,6 @@ use reth_botanix_lib::{
     },
     peg_contract::PegoutData,
 };
-use reth_consensus_common::utils::unix_timestamp;
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
