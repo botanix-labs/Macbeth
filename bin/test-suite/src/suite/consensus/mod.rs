@@ -64,7 +64,8 @@ impl Suite for ConsensusIntegrationTestSuite {
         // utxo commitment test
         run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
         // frost e2e tests
-        run_test!(self, frost::test_frost_e2e::frost_e2e);
+        run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
+        run_test!(self, frost::test_frost_e2e_edge_cases::frost_e2e_failed_signing_round);
 
         self.outcome
     }

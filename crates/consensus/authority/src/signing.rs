@@ -1,19 +1,24 @@
 use crate::{
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotification, FrostNotificationMessage},
-    utils::{deserialize_frost_peer_id, parse_signing_session_id, FrostParseError},
+    utils::{
+        deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
+        FrostParseError,
+    },
     Storage,
 };
-use client::{FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
+use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
-use reth_consensus_common::utils::{current_inturn_index, is_inturn};
+use reth_consensus_common::utils::{
+    current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
+};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{error, info, warn};
 
@@ -25,8 +30,6 @@ pub(crate) enum Error {
     FailedToGetConnectedPeersHandles,
     #[error("Invalid frost peer id")]
     InvalidFrostPeerId,
-    #[error("Failed to get frost coordinator")]
-    FailedToGetFrostCoordinator,
     #[error("Failed to parse signing session id")]
     FailedToParseSigningSessionId,
     #[error("Failed to deserialize psbt")]
@@ -51,6 +54,8 @@ pub(crate) enum Error {
     InvalidSigningSessionId,
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
+    #[error("Missing key package")]
+    MissingKeyPackage,
 }
 
 impl From<FrostParseError> for Error {
@@ -105,13 +110,29 @@ impl SigningState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SigningSession {
+    /// The id of the signing session
+    session_id: [u8; 32],
+    /// The state of the session
+    state: SigningState,
+    /// The index of the session coordinator
+    coordinator_index: u64,
+    /// The original session payload
+    original_psbt: Option<Vec<u8>>,
+    /// Validity from
+    validity_from: u64,
+    /// Validity to
+    validity_to: u64,
+}
+
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
 pub(crate) struct SigningStateMachine<Client> {
     btc_client: BtcServerExtendedClient,
     storage: Storage<Client>,
     frost_handle: FrostHandle,
-    signing_states: HashMap<[u8; 32], SigningState>,
+    signing_sessions: HashMap<[u8; 32], SigningSession>,
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
     frost_task_tx: UnboundedSender<FrostNotificationMessage>,
@@ -144,43 +165,93 @@ where
             btc_client,
             storage,
             frost_handle,
-            signing_states: HashMap::default(),
+            signing_sessions: HashMap::default(),
             personal_frost_identifier,
             frost_config,
             frost_task_tx,
         }
     }
 
-    /// Resets the state machine to its initial state
-    #[allow(dead_code)]
-    pub(crate) fn reset(self) -> Self {
-        Self {
-            btc_client: self.btc_client,
-            storage: self.storage,
-            frost_handle: self.frost_handle,
-            signing_states: self.signing_states,
-            personal_frost_identifier: self.personal_frost_identifier,
-            frost_config: self.frost_config,
-            frost_task_tx: self.frost_task_tx,
-        }
-    }
-
-    /// Returns the state machine state
-    pub(crate) fn get_or_insert_signing_state(
-        &mut self,
-        session_id: [u8; 32],
-        signing_state: SigningState,
-    ) -> SigningState {
-        *self.signing_states.entry(session_id).or_insert(signing_state)
-    }
-
     /// Inserts a signing state into the state machine
-    pub(crate) fn insert_signing_state(
+    pub(crate) fn update_signing_state(
         &mut self,
         session_id: [u8; 32],
         signing_state: SigningState,
     ) {
-        self.signing_states.insert(session_id, signing_state);
+        if !self.signing_sessions.contains_key(&session_id) {
+            return;
+        }
+        if let Some(signing_session) = self.signing_sessions.get_mut(&session_id) {
+            signing_session.state = signing_state;
+        }
+    }
+
+    /// Checks if a signing session exists or not yet
+    pub(crate) fn signing_session_exists(&mut self, session_id: [u8; 32]) -> bool {
+        self.signing_sessions.contains_key(&session_id)
+    }
+
+    /// Inserts a new signing session
+    pub(crate) fn insert_new_signing_session(
+        &mut self,
+        session_id: [u8; 32],
+        coordinator_index: u64,
+        original_psbt: Option<Vec<u8>>,
+        signing_state: SigningState,
+        validity_from: u64,
+        validity_to: u64,
+    ) {
+        if self.signing_sessions.contains_key(&session_id) {
+            return;
+        }
+        self.signing_sessions.insert(
+            session_id,
+            SigningSession {
+                session_id,
+                state: signing_state,
+                coordinator_index,
+                original_psbt,
+                validity_from,
+                validity_to,
+            },
+        );
+    }
+
+    /// Returns the original psbt into the state machine
+    pub(crate) fn get_signing_session(&self, session_id: [u8; 32]) -> Option<&SigningSession> {
+        self.signing_sessions.get(&session_id)
+    }
+
+    /// Removes a signing session
+    pub(crate) fn remove_signing_session(
+        &mut self,
+        session_id: [u8; 32],
+    ) -> Option<SigningSession> {
+        self.signing_sessions.remove(&session_id)
+    }
+
+    /// Check if the session id is in a failed state
+    pub(crate) fn is_failed_state(&self, session_id: &[u8; 32]) -> bool {
+        self.signing_sessions
+            .get(session_id)
+            .map(|signing_session| signing_session.state.has_failed())
+            .unwrap_or_default()
+    }
+
+    /// Check if the session id is in a round1 state
+    pub(crate) fn is_round1_state(&self, session_id: &[u8; 32]) -> bool {
+        self.signing_sessions
+            .get(session_id)
+            .map(|signing_session| signing_session.state.is_round1())
+            .unwrap_or_default()
+    }
+
+    /// Check if the session id is in a round2 state
+    pub(crate) fn is_round2_state(&self, session_id: &[u8; 32]) -> bool {
+        self.signing_sessions
+            .get(session_id)
+            .map(|signing_session| signing_session.state.is_round2())
+            .unwrap_or_default()
     }
 }
 
@@ -417,6 +488,22 @@ where
         Ok(finalized_signing)
     }
 
+    async fn abort_signing(&mut self) -> Result<(), Error> {
+        match self.btc_client.abort_signing(Empty {}).await {
+            Ok(_) => {}
+            Err(e) => {
+                let e = e.to_tonic_status();
+                match e.code() {
+                    tonic::Code::Internal if e.message().contains("missing key package") => {
+                        return Err(Error::MissingKeyPackage)
+                    }
+                    _ => return Err(Error::InternalGrpc),
+                }
+            }
+        };
+        Ok(())
+    }
+
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
@@ -435,9 +522,11 @@ where
         }
     }
 
+    /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
+    /// else is
     pub(crate) async fn get_coordinator(
         &self,
-    ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>)>, Error> {
+    ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>, u64)>, Error> {
         // check if we are in turn
         let is_inturn = is_inturn(
             self.frost_config.authorities.len() as u64,
@@ -458,15 +547,32 @@ where
                 let sender_channel = all_connected_frost_peers
                     .get(&current_inturn_authority_frost_identifier)
                     .cloned();
-                Ok(Some(current_inturn_authority_frost_identifier).zip(sender_channel))
+
+                Ok(Some(current_inturn_authority_frost_identifier)
+                    .zip(sender_channel)
+                    .zip(Some(current_inturn_authority_index))
+                    .map(|((a, b), c)| (a, b, c)))
             }
         }
     }
 
+    /// Returns if we are a coordinator or not
     pub(crate) fn is_coordinator(&self) -> bool {
         is_inturn(
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
+        )
+    }
+
+    /// Returns the inturn time data or a given coordinator index. If None, our authority index is
+    /// being used
+    pub(crate) fn get_inturn_interval_for_coordinator(
+        &self,
+        coordinator_index: Option<u64>,
+    ) -> CoordinatorInterval {
+        get_in_turn_interval(
+            self.frost_config.authorities.len() as u64,
+            coordinator_index.unwrap_or_else(|| self.frost_config.authority_index as u64),
         )
     }
 
@@ -476,24 +582,28 @@ where
         frost_identifier: Vec<u8>,
         response_type: SigningEventResponseType,
     ) -> Result<(), Error> {
-        // get all connected peers
-        let connected_peers = self.get_all_peers_handle().await?;
         let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
 
-        // Broadcast signing round 2 package to all peers (excluding ourselves)
-        connected_peers.iter().for_each(|(frost_id, sender)| {
-            if *frost_id != self.personal_frost_identifier {
-                let resp = PeerMessageResponse::Signing(SigningResponse {
-                    response_type,
-                    identifier: frost_identifier.clone(),
-                    signing_session_id: signing_session_id.clone(),
-                    psbt: psbt.clone(),
-                });
-                // TODO: map to error ?
-                let _ = sender.send(FrostPeerCommand::PeerMessage(resp));
+        let fut = || async {
+            // get all connected peers
+            let connected_peers = self.get_all_peers_handle().await?;
+
+            // Broadcast signing round 2 package to all peers (excluding ourselves)
+            for (frost_id, sender) in connected_peers.iter() {
+                if *frost_id != self.personal_frost_identifier {
+                    let resp = PeerMessageResponse::Signing(SigningResponse {
+                        response_type,
+                        identifier: frost_identifier.clone(),
+                        signing_session_id: signing_session_id.clone(),
+                        psbt: psbt.clone(),
+                    });
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
-        });
-        Ok(())
+            Ok(())
+        };
+
+        retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
     // ====================================== 1 =========================================
@@ -504,13 +614,53 @@ where
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
-        self.insert_signing_state(session_id, SigningState::Initial);
-        info!(">>>>>>>>>>> [START NEW SIGNING SESSION]");
+
+        // the coordinator is always expected to be us in this case, i.e. None
+        let coordinator = self.get_coordinator().await?;
+        if coordinator.is_some() {
+            error!(">>>>>>>>>>> A non-coordinator is trying to (re)initiate a signing process!");
+            return Ok(());
+        }
+        let (start, end, time_passed, time_remaining) =
+            self.get_inturn_interval_for_coordinator(None);
+
+        // try to find the signing session in cache in case it was re-triggered by the same
+        // coordinator
+        match self.get_signing_session(session_id) {
+            Some(signing_session) => {
+                // session was previously already registered, maybe it got retriggered
+                // check if it was the same coordinator
+                // check if it is still valid time-wise
+                if (signing_session.coordinator_index != self.frost_config.authority_index as u64) ||
+                    time_remaining < time_passed
+                {
+                    // session is no longer valid, remove it from cache and return
+                    self.remove_signing_session(session_id);
+                    return Ok(());
+                } else {
+                    // still valid session, reinitiate it and continue
+                    self.update_signing_state(session_id, SigningState::Initial);
+                }
+            }
+            None => {
+                // no previous session, insert a new one and continue
+                self.insert_new_signing_session(
+                    session_id,
+                    self.frost_config.authority_index as u64,
+                    Some(psbt.clone()),
+                    SigningState::Initial,
+                    start,
+                    end,
+                );
+            }
+        }
+
+        info!(">>>>>>>>>>> [(RE)START SIGNING SESSION] WITH ID {:?}", session_id);
 
         // As the cord we generate round 1 nonces and save them
         // then we send the psbt to other peers
         let signing_round1_package =
-            self.get_round1_signing_package(signing_session_id.clone(), psbt.clone()).await?;
+            self.get_round1_signing_package(signing_session_id.clone(), psbt).await?;
         self.new_round1_signing_package(
             self.personal_frost_identifier.serialize().to_vec(),
             signing_session_id,
@@ -519,7 +669,7 @@ where
         .await?;
 
         // send to all other peers
-        self.insert_signing_state(session_id, SigningState::Round1);
+        self.update_signing_state(session_id, SigningState::Round1);
         if let Err(e) = self
             .gossip_to_peers(
                 signing_round1_package,
@@ -529,7 +679,7 @@ where
             .await
         {
             error!("Error gossiping round 1 to peers {:?}", e);
-            self.insert_signing_state(session_id, SigningState::Failed);
+            self.update_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         Ok(())
@@ -545,49 +695,99 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let is_round2 =
-            self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
-
-        // return if we are not peer and not in round 1
-        if is_round2 {
+        // return if we are a coordinator
+        if self.is_coordinator() {
             return Ok(());
-        } else {
-            self.insert_signing_state(session_id, SigningState::Round1);
         }
 
-        // add the transmitted round 1 package data
+        // get coordinator
+        let coordinator = self.get_coordinator().await?;
+
+        // get coordinator id
+        let coordinator_id = coordinator
+            .as_ref()
+            .map(|(_, _, authority_index)| *authority_index)
+            .unwrap_or_default();
+
+        // get coordinator time interval validity
+        let (start, end, _time_passed, _time_remaining) =
+            self.get_inturn_interval_for_coordinator(Some(coordinator_id));
+
+        // no already existing signing session found
+        if !self.signing_session_exists(session_id) {
+            // abort any previous session
+            self.abort_signing().await?;
+
+            // insert a new signing session
+            self.insert_new_signing_session(
+                session_id,
+                coordinator_id,
+                None,
+                SigningState::Round1,
+                start,
+                end,
+            );
+        } else {
+            // check session is still valid
+            let (_prev_validity_from, prev_validity_to) = self
+                .get_signing_session(session_id)
+                .as_ref()
+                .map(|&s| (s.validity_from, s.validity_to))
+                .unwrap_or_default();
+
+            // abort this previous session as it is outdated
+            if unix_timestamp() >= prev_validity_to {
+                self.abort_signing().await?;
+                self.update_signing_state(session_id, SigningState::Failed);
+                return Ok(());
+            }
+
+            // session exists and is valid, return if we are not in round 2
+            if self.is_round2_state(&session_id) {
+                return Ok(());
+            } else {
+                // current session is being re-triggered, so set to round1
+                self.update_signing_state(session_id, SigningState::Round1);
+            }
+        }
+
+        // add the transmitted round 1 package data (the original psbt package - there is only 1x of
+        // them)
         let signing_package_round1 =
             match self.get_round1_signing_package(signing_session_id, psbt).await {
                 Ok(signing_package_round1) => signing_package_round1,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    self.insert_signing_state(session_id, SigningState::Failed);
+                    self.update_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
         // Update signing state
-        self.insert_signing_state(session_id, SigningState::Round2);
+        self.update_signing_state(session_id, SigningState::Round2);
 
-        // get coordinator
-        let coordinator = self.get_coordinator().await?;
-        // if none, we are coordinator ?
-        if coordinator.is_none() {
-            return Ok(());
-        }
-
-        let (coordinator_frost_id, coordinator_sender) = coordinator.unwrap();
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] coordinator {:?}", coordinator_frost_id);
+        let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
+        info!(">>>>>>>>>>> [SIGNER PROCESS_ROUND1] coordinator {:?}", coordinator_frost_id);
         // Broadcast signing round 1 to the coordinator
         if coordinator_frost_id != self.personal_frost_identifier {
-            // TODO fix unwrap
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 identifier: signing_package_round1.identifier.clone(),
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
             });
-            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp));
-            // TODO: map error
+
+            retry_future(
+                || {
+                    let sender = coordinator_sender.clone();
+                    let message = resp.clone();
+                    async move {
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
+                    }
+                },
+                3,
+                Duration::from_secs(1),
+            )
+            .await?
         }
 
         Ok(())
@@ -601,13 +801,11 @@ where
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
+
         info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] session id {:?}", session_id);
-        info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] signing states {:?}", self.signing_states);
-        let is_round1 =
-            self.signing_states.get(&session_id).map(|state| state.is_round1()).unwrap_or_default();
         // return if we are not in round 1 or not a coordinator
-        if !is_round1 {
-            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] is_round1 {:?}", is_round1);
+        if !self.is_round1_state(&session_id) {
+            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] is not in round1");
             return Ok(());
         }
         if !self.is_coordinator() {
@@ -655,7 +853,7 @@ where
             .await?;
 
             // if we can, we go to round 2
-            self.insert_signing_state(session_id, SigningState::Round2);
+            self.update_signing_state(session_id, SigningState::Round2);
             // if ok, send to all peers
             if let Err(e) = self
                 .gossip_to_peers(
@@ -666,7 +864,7 @@ where
                 .await
             {
                 error!("[COORDINATOR PROCESS_ROUND1] Error gossiping round 2 to peers {:?}", e);
-                self.insert_signing_state(session_id, SigningState::Failed);
+                self.update_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
             info!(
@@ -690,20 +888,18 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let is_round2 =
-            self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
-
-        // return if we are not peer and not in round 2
-        if !is_round2 {
-            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] is_round2 {:?}", is_round2);
-            return Ok(());
-        }
-
+        // return if we are a coordinator
         if self.is_coordinator() {
             warn!(
                 ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] we are the coordinator {:?}",
                 self.is_coordinator()
             );
+            return Ok(());
+        }
+
+        // return if we are not in round 2
+        if !self.is_round2_state(&session_id) {
+            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] is not in round2");
             return Ok(());
         }
 
@@ -713,7 +909,7 @@ where
                 Ok(signing_package_round2) => signing_package_round2,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
-                    self.insert_signing_state(session_id, SigningState::Failed);
+                    self.update_signing_state(session_id, SigningState::Failed);
                     return Err(e);
                 }
             };
@@ -723,25 +919,35 @@ where
         );
         // get coordinator
         let coordinator = self.get_coordinator().await?;
-        // if none, we are coordinator ?
+        // if none, we are coordinator, if some, someone else is
         if coordinator.is_none() {
             warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] No coordinator found");
             return Ok(());
         }
 
-        let (coordinator_frost_id, coordinator_sender) = coordinator.unwrap();
+        let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
 
         // Broadcast signing round 2 to the coordinator
         if coordinator_frost_id != self.personal_frost_identifier {
-            // fix unwrap
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                 identifier: signing_package_round2.identifier.clone(),
                 signing_session_id: signing_package_round2.signing_session_id.clone(),
                 psbt: signing_package_round2.psbt.clone(),
             });
-            let _ = coordinator_sender.send(FrostPeerCommand::PeerMessage(resp));
-            // TODO: map error
+
+            retry_future(
+                || {
+                    let sender = coordinator_sender.clone();
+                    let message = resp.clone();
+                    async move {
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
+                    }
+                },
+                3,
+                Duration::from_secs(1),
+            )
+            .await?
         }
 
         Ok(())
@@ -756,14 +962,13 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        let is_round2 =
-            self.signing_states.get(&session_id).map(|state| state.is_round2()).unwrap_or_default();
-
         // return if we are not in round 2 or not a coordinator
-        if !is_round2 {
-            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] is_round2 {:?}", is_round2);
+        if !self.is_round2_state(&session_id) {
+            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] is not in round2");
             return Ok(());
         }
+
+        // return if we are not a coordinator
         if !self.is_coordinator() {
             warn!(
                 ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] we are not the coordinator {:?}",
@@ -790,7 +995,7 @@ where
             .await
         {
             error!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] Error adding round 2 signing package {:?}", e);
-            self.insert_signing_state(session_id, SigningState::Failed);
+            self.update_signing_state(session_id, SigningState::Failed);
             return Err(e);
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] round 2 added");
@@ -802,7 +1007,63 @@ where
             )) {
                 error!("Error sending finalized signature {:?}", e);
             }
-            self.insert_signing_state(session_id, SigningState::Finalized)
+            self.update_signing_state(session_id, SigningState::Finalized)
+        }
+
+        Ok(())
+    }
+
+    /// Handles an errored singing process
+    pub(crate) async fn handle_errored_signing_process(
+        &mut self,
+        signing_session_id: Vec<u8>,
+    ) -> Result<(), Error> {
+        // parse the session id
+        let session_id = parse_signing_session_id(&signing_session_id)?;
+
+        // make sure we are in a failed state
+        if !self.is_failed_state(&session_id) {
+            warn!(
+                ">>>>>>>>>>> [RESTART_SIGNING_PROCESS] Session id {:?} has not failed",
+                &session_id
+            );
+            return Ok(());
+        }
+
+        // only if we are coordinator AND we are in a failed state, then we can restart the signing
+        // process provided there is enough time left
+        if self.is_coordinator() {
+            // check there is sufficient time remaining to retry the signing request
+            let (_start, _end, time_passed, time_remaining) =
+                self.get_inturn_interval_for_coordinator(None);
+
+            // check if we can repeat the session, if not abort and return
+            if time_remaining < time_passed {
+                self.abort_signing().await?;
+                warn!("Insuficient time remaining to retry the signing request");
+                return Ok(());
+            }
+
+            // get the signing session, if not found abort and return
+            let signing_session = self.get_signing_session(session_id).cloned();
+            if signing_session.is_none() {
+                self.abort_signing().await?;
+                error!("Could not find the the signing session for session id = {:?}", session_id);
+                return Ok(());
+            }
+
+            // if all good, re-initiate the signing rounds
+            if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::InitiateSigning(
+                FrostNotification {
+                    signing_session_id,
+                    psbt: signing_session
+                        .unwrap()
+                        .original_psbt
+                        .expect("Original psbt to be valid and present"),
+                },
+            )) {
+                error!("Error trying to re-initialize failed signing session with session id {:?}. Error = {:?}", &session_id, e);
+            }
         }
 
         Ok(())

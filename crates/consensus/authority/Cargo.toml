@@ -48,6 +48,9 @@ client = {path = "../../../bin/btc-server/client"}
 # hex
 hex = "0.4.3"
 
+# uuid
+uuid = { version = "1.8.0", features = ["v4"] }
+
 # frost
 # TODO update this to the zcash frost library when tr is merged in
 frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }

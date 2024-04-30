@@ -368,6 +368,7 @@ mod tests {
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
+        // Check version
         println!("{:?}", buf);
         // serialize the same header
         let serialized =

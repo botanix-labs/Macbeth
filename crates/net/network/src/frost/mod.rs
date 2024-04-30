@@ -36,7 +36,7 @@ impl ProtocolState {
 }
 
 /// Enum for peer message responses for dkg and signing
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PeerMessageResponse {
     /// Dkg response
     Dkg(DkgResponse),
@@ -45,7 +45,7 @@ pub enum PeerMessageResponse {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DkgResponse {
     /// The Response Type
     pub response_type: DkgEventResponseType,
@@ -56,7 +56,7 @@ pub struct DkgResponse {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SigningResponse {
     /// The Response Type
     pub response_type: SigningEventResponseType,
@@ -69,7 +69,7 @@ pub struct SigningResponse {
 }
 
 /// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DkgEventResponseType {
     /// DKG round 1
     DkgRound1,
