@@ -380,7 +380,8 @@ start-btc-server-2:
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
-	--bitcoind-cookie "${BITCOIND_COOKIE}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
 	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 

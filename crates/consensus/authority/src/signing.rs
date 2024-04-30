@@ -117,7 +117,7 @@ pub(crate) struct SigningSession {
     /// The state of the session
     state: SigningState,
     /// The index of the session coordinator
-    coordinator_id: u64,
+    coordinator_index: u64,
     /// The original session payload
     original_psbt: Option<Vec<u8>>,
     /// Validity from
@@ -195,7 +195,7 @@ where
     pub(crate) fn insert_new_signing_session(
         &mut self,
         session_id: [u8; 32],
-        coordinator_id: u64,
+        coordinator_index: u64,
         original_psbt: Option<Vec<u8>>,
         signing_state: SigningState,
         validity_from: u64,
@@ -209,7 +209,7 @@ where
             SigningSession {
                 session_id,
                 state: signing_state,
-                coordinator_id,
+                coordinator_index,
                 original_psbt,
                 validity_from,
                 validity_to,
@@ -631,7 +631,7 @@ where
                 // session was previously already registered, maybe it got retriggered
                 // check if it was the same coordinator
                 // check if it is still valid time-wise
-                if (signing_session.coordinator_id != self.frost_config.authority_index as u64) ||
+                if (signing_session.coordinator_index != self.frost_config.authority_index as u64) ||
                     time_remaining < time_passed
                 {
                     // session is no longer valid, remove it from cache and return

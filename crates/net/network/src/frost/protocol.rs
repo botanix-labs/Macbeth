@@ -163,7 +163,6 @@ impl Stream for FrostProtoConnection {
             return Poll::Ready(Some(initial_ping.encoded()))
         }
         let peer_message_forwarder = this.peer_message_forwarder.clone();
-        //loop {
         // poll the commands send by us to another peer
         if let Poll::Ready(Some(cmd)) = this.commands.poll_next_unpin(cx) {
             return match cmd {
@@ -386,6 +385,5 @@ impl Stream for FrostProtoConnection {
         }
 
         Poll::Pending
-        //}
     }
 }

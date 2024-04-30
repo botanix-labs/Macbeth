@@ -21,9 +21,7 @@ use reth::{
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
 use reth_ecies::util::pk2id;
-use reth_primitives::{
-    create_botanix_config_with_genesis, hex::encode as hex_encode, ChainSpec, BOTANIX_TESTNET,
-};
+use reth_primitives::{create_botanix_config_with_genesis, hex::encode as hex_encode};
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
 use secp256k1::PublicKey;
@@ -35,7 +33,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::broadcast::{channel, Receiver, Sender};
+use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
