@@ -108,6 +108,9 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
+        // only a federation node has a btc_server
+        let is_fed_node = btc_server.is_some();
+
         let mut latest_header = client
             .latest_header()
             .ok()
@@ -137,8 +140,10 @@ where
             .expect("authority signer list in epoch block");
 
         // authority length represents a non federation node since it would be out of bounds
+        // this prevents the node from signing blocks although there are other checks to stop this as well
         let mut signer_index = Some(authorities.len() + 1);
-        if btc_server.is_some() {
+        // only a federation node has a btc_server
+        if is_fed_node {
             signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
             if signer_index.is_none() {
@@ -226,6 +231,7 @@ where
             payload_builder,
             btc_network,
         } = self;
+        let is_fed_node = btc_server.is_some();
 
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
@@ -256,7 +262,7 @@ where
         // only federation nodes will have btc_server
         let mut frost_task = None;
         let mut block_production_task = None;
-        if btc_server.is_some() {
+        if is_fed_node {
             // frost task
             let frost_handle_clone = frost_handle.clone().expect("Frost handle exists");
             let task = FrostTask::new(

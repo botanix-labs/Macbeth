@@ -87,6 +87,9 @@ where
     }
 
     pub async fn start_task(&mut self) {
+        // only a federation node has a btc_server
+        let is_fed_node = self.btc_server.is_some();
+
         loop {
             let new_block = match self.block_import_rx.try_recv() {
                 Ok(b) => b,
@@ -142,7 +145,7 @@ where
             }
 
             let mut botanix_consensus_pkg = None;
-            if self.btc_server.is_some() {
+            if is_fed_node {
                 if storage.aggregate_public_key.is_none() {
                     warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
                     continue;
@@ -198,9 +201,8 @@ where
                     };
 
                     // Validate utxo commitment
-                    // Only federation nodes have btc_server
                     let header = sealed_block.header.clone();
-                    if self.btc_server.is_some() {
+                    if is_fed_node {
                         let utxo_commitment: [u8; 32] =
                         match self.btc_server.clone().expect("btc_server exists").get_utxo_merkle_root(client::Empty {}).await {
                             Ok(utxo_commitment) => utxo_commitment,
@@ -222,8 +224,7 @@ where
 
                     let (best_block, _best_hash) =
                         storage.get_best_block_and_hash().expect("best block exists");
-                    // indirect check if federation node because btc_server is available
-                    if header.is_poa_epoch() && self.btc_server.is_some() {
+                    if header.is_poa_epoch() && is_fed_node {
                         // get the pegouts from during the epoch
                         let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
                             error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
