@@ -340,7 +340,7 @@ impl Stream for FrostProtoConnection {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
                         response_type: PbftEventResponseType::CoordinatorBlockProposal,
-                        data: data.data,
+                        data: data.block,
                     }),
                 });
             }
@@ -349,7 +349,7 @@ impl Stream for FrostProtoConnection {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
                         response_type: PbftEventResponseType::PeerPreCommitment,
-                        data: data.data,
+                        data: data.block,
                     }),
                 });
             }
@@ -357,8 +357,8 @@ impl Stream for FrostProtoConnection {
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
-                        response_type: PbftEventResponseType::PeerPreCommitment,
-                        data: data.data,
+                        response_type: PbftEventResponseType::PeerCommitment,
+                        data: data.block,
                     }),
                 });
             }
