@@ -140,7 +140,8 @@ where
             .expect("authority signer list in epoch block");
 
         // authority length represents a non federation node since it would be out of bounds
-        // this prevents the node from signing blocks although there are other checks to stop this as well
+        // this prevents the node from signing blocks although there are other checks to stop this
+        // as well
         let mut signer_index = Some(authorities.len() + 1);
         // only a federation node has a btc_server
         if is_fed_node {
