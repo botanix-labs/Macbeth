@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests
         run: |
-          /home/runner/.cargo/bin/cargo nextest run \
+          /home/runner/.cargo/bin/cargo test run \
             --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
