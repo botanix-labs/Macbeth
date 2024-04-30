@@ -386,7 +386,7 @@ where
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used, total_block_fees) =
-            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg.clone())?;
+            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -398,16 +398,12 @@ where
             .into());
         }
         let time = Instant::now();
-        let block_builder_address = if botanix_consensus_pkg.is_some() {
-            Some(get_block_producer_address(&block.header.clone()))
-        } else {
-            None
-        };
+        let block_builder_address = get_block_producer_address(&block.header.clone());
         self.apply_post_execution_state_change(
             block,
             total_difficulty,
             Some(total_block_fees),
-            block_builder_address,
+            Some(block_builder_address),
         )?;
         self.stats.apply_post_execution_state_changes_duration += time.elapsed();
 
@@ -586,8 +582,10 @@ where
             let time = Instant::now();
 
             // calclaute the total block fees
+            let recovered_transaction =
+                transaction.clone().try_into_ecrecovered().expect("transaction is signed");
             let transaction_fee =
-                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
+                recovered_transaction.effective_tip_per_gas(base_fee).expect("base fee is valid");
             total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             self.db_mut().commit(state);
