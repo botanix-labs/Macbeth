@@ -104,7 +104,7 @@ pub(crate) fn get_vote_results(headers: Vec<Header>) -> Result<Vec<AuthorityVote
         // Check if there is a authority being voted on in the extra data
         let extra_data_header = header
             .deserialize_extra_data_header()
-            .map_err(GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
+            .map_err(|_e| GetVotesError::FailedToDeserializeBlockHeaderExtraData)?;
 
         if extra_data_header.authority_vote.is_none() {
             continue;
