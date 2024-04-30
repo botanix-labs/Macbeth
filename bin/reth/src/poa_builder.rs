@@ -161,9 +161,13 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let default_jwt_path = self.data_dir.jwt_path();
         let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
 
+        // This determines which tasks are spawned. For example, the block production and
+        // frost tasks are only spawned for a federation node.
+        let is_fed_node = self.config.federation_mode;
+
         // Connect to btc signining server if in federation mode
         let mut btc_server_client = None;
-        if self.config.federation_mode {
+        if is_fed_node {
             let client = BtcServerExtendedClient::new(
                 self.config.rpc.btc_server.clone().expect("btc_server exists"),
                 Some(jwt_secret.clone()),
@@ -393,7 +397,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         // create frost config if in federation mode
         let mut frost_config = None;
-        if self.config.federation_mode {
+        if is_fed_node {
             // create authority config
             let (authority_index, authorities) = get_authority_signer_index(
                 blockchain_db.clone(),
@@ -548,7 +552,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // block_production_task.set_pipeline_events(pipeline_events.clone());
 
         // federation mode tasks
-        if self.config.federation_mode {
+        if is_fed_node {
             executor.spawn_critical(
                 "PoA Block Production Task",
                 Box::pin(async move {
