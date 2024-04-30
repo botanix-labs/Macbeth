@@ -46,8 +46,6 @@ service BtcServer {
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
-    rpc RemoveUtxo(RemoveUtxoRequest) returns (RemoveUtxoResponse) {}
-
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
 
 }
@@ -81,20 +79,6 @@ message Utxo {
 
 message GetAllUtxosResponse {
     repeated Utxo utxos = 1;
-}
-
-message RemoveUtxoRequest {
-    // The txid of the UTXO to remove.
-    string txid = 1;
-    // The output index of the UTXO to remove.
-    uint32 vout = 2;
-}
-
-message RemoveUtxoResponse {
-    // Indicates if the UTXO was successfully removed.
-    bool success = 1;
-    // Optional message with details about the operation.
-    string message = 2;
 }
 
 message NotifyPeginRequest {

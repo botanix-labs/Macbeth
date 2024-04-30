@@ -1015,35 +1015,4 @@ mod test {
         let response = response.unwrap().into_inner();
         assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
     }
-
-    #[tokio::test]
-    async fn test_remove_utxo() {
-        let app = setup();
-        let mut rng = thread_rng();
-
-        // Create and store a single UTXO
-        let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
-        let vout = rng.gen_range(0..u32::MAX);
-        let value = rng.gen_range(1..1_000_000);
-        let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
-        let script = Script::from_bytes(script_bytes.as_slice());
-
-        let utxo = Utxo::new(
-            OutPoint::new(txid, vout),
-            TxOut { value, script_pubkey: script.into() },
-            None,
-        );
-        app.db.store_utxo(&utxo).expect("Failed to store UTXO");
-
-        // Ensure the UTXO is stored
-        let all_utxos_before = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
-        assert_eq!(all_utxos_before.len(), 1, "Expected 1 UTXO in the database before removal");
-
-        // Remove the UTXO
-        app.db.remove_utxo(utxo.outpoint).expect("Failed to remove UTXO");
-
-        // Verify the UTXO has been removed
-        let all_utxos_after = app.db.get_all_utxos().expect("Failed to retrieve UTXOs");
-        assert!(all_utxos_after.is_empty(), "Expected no UTXOs in the database after removal");
-    }
 }
