@@ -7934,6 +7934,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
+ "uuid 1.8.0",
 ]
 
 [[package]]

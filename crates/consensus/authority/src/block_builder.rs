@@ -14,7 +14,6 @@ use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
@@ -202,7 +201,7 @@ where
             if !pegouts.is_empty() {
                 info!(target: "consensus::authority", "Sending pegouts: {:?}", pegouts);
 
-                let signing_session_id = crate::utils::generate_signing_session_id(&best_hash.0, &storage.authority).map_err(|e| {
+                let signing_session_id = crate::utils::generate_signing_session_id().map_err(|e| {
                     error!(target: "consensus::authority", ?e, "Failed to generate signing session id");
                     e
                 }).expect("valid signing session id");

@@ -2,32 +2,31 @@ use crate::{
     it_info_print,
     suite::consensus::{
         frost::{
-            await_botanix_event, await_dkg, poa_node::create_poa_federation_members,
+            await_botanix_event, await_dkg,
+            poa_node::{create_poa_federation_members, TestSignal},
             GatewayAddressResponse, BITCOIND_WALLET_NAME, SEND_AMOUNT,
         },
         ConsensusIntegrationTestSuite,
     },
 };
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
+use bitcoincore_rpc::{Auth, RpcApi};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
+use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
-use reth_primitives::{Address, Receipt, B256};
-use reth_provider::chain::BlockReceipts;
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use reth_primitives::Address;
+use std::{str::FromStr, time::Duration};
 
-use bitcoincore_rpc::{Auth, RpcApi};
-
-pub async fn frost_e2e_stable(
+pub async fn frost_e2e_failed_signing_round(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
@@ -59,7 +58,7 @@ pub async fn frost_e2e_stable(
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(500, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
@@ -91,6 +90,18 @@ pub async fn frost_e2e_stable(
         mint_contract_instances.push(botanix_eth_client);
     }
 
+    // Load up the bitcoin wallet and generate some blocks
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
 
@@ -112,25 +123,12 @@ pub async fn frost_e2e_stable(
 
     it_info_print!("Gateway Address Response", gateway_address_response);
 
-    // print balance
-    let balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
-    it_info_print!("Bitcoin balance", balance);
-
     // Send some bitcoin to that gateway address
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
         .assume_checked();
     let pegin_txid = bitcoind_rpc
-        .send_to_address(
-            &btc_address,
-            Amount::from_sat(20_000_000),
-            None,
-            None,
-            Some(true),
-            None,
-            Some(1),
-            None,
-        )
+        .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
@@ -150,7 +148,7 @@ pub async fn frost_e2e_stable(
     };
     it_info_print!("Vout", vout);
     let amount_in_sat = pegin_tx.output[vout].value;
-    let amount = amount_in_sat.to_wei();
+    let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
     it_info_print!("Btc Amount", amount);
 
     // get block headers
@@ -188,7 +186,7 @@ pub async fn frost_e2e_stable(
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.first().cloned().unwrap();
+    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -203,7 +201,6 @@ pub async fn frost_e2e_stable(
     it_info_print!("Mint Tx Receipt ", tx_receipt);
 
     // wait for a few blocks to make sure the tx got included and mined
-    it_info_print!("Waiting for botanix event after mint call");
     await_botanix_event(&mut rx, *MINT_TOPIC).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -218,21 +215,33 @@ pub async fn frost_e2e_stable(
         ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
     // use empty pegout data
     let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_sat(1000);
+    let pegout_amount = Amount::from_btc(0.5).unwrap();
     let tx_receipt =
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
     it_info_print!("Pegout Tx Receipt: ", tx_receipt);
 
-    // wait for the tx to be included in a botanix block
-    await_botanix_event(&mut rx, *BURN_TOPIC).await;
-
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
+    // create a tx to enter a new epoch
     let eoa_tx_receipt =
         mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
     it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
+
+    // ===================== FAILURE =====================
+    // wait for a few seconds to allow the signing to start ???
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // now disconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::DisconnectAll());
+
+    // wait for a new epoch to start
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // now reconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::ReconnectAll());
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    // =====================================================
+
+    // signing should be now fine! Wait for the tx to be included in a botanix block
+    await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
     // sleep for a few more seconds
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -279,7 +288,7 @@ pub async fn frost_e2e_stable(
     }
     assert!(match_found);
     // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > Amount::from_sat(0));
+    assert!(pegout_tx.output[1].value > 0);
 
     Ok(())
 }

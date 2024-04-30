@@ -8,17 +8,15 @@ use crate::{
     it_info_print,
     suite::consensus::{
         frost::{
+            await_dkg,
             poa_node::{
                 create_poa_federation_members, current_inturn_index, is_inturn, Notifications,
             },
-            test_frost_e2e::await_dkg,
+            BITCOIND_WALLET_NAME, SEND_AMOUNT,
         },
         ConsensusIntegrationTestSuite,
     },
 };
-
-const SEND_AMOUNT: u64 = 1; // = 1 Botanix BTC
-const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,

@@ -293,6 +293,26 @@ pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
     (timestamp / authorities_len) % authorities_len == signer_index
 }
 
+/// Typedef for (start of current turn, end of current turn, time taken, time remaining)
+pub type CoordinatorInterval = (u64, u64, u64, u64);
+
+/// Returns the inturn interval for a signer index
+pub fn get_in_turn_interval(authorities_len: u64, signer_index: u64) -> CoordinatorInterval {
+    let timestamp = unix_timestamp();
+    let current_minute = timestamp / 60;
+    let current_interval = current_minute / authorities_len;
+
+    let start_of_current_turn = (current_interval * authorities_len + signer_index) * 60;
+    let end_of_current_turn = (start_of_current_turn + authorities_len * 60) - 1;
+
+    (
+        start_of_current_turn,
+        end_of_current_turn,
+        timestamp - start_of_current_turn,
+        end_of_current_turn - timestamp,
+    )
+}
+
 /// Returns the index of the authority which is currently in turn
 pub fn current_inturn_index(authorities_len: u64) -> u64 {
     // use minutes as time unit to determine in turn
@@ -686,5 +706,25 @@ mod tests {
             block_producer_address,
             public_key_to_address(edh.authority_signers.unwrap()[0])
         );
+    }
+
+    #[test]
+    fn get_inturn_interval() {
+        let authorities_len = 10;
+        let signer_index = 3; // Example signer index
+        let (start, end, time_passed, time_remaining): CoordinatorInterval =
+            get_in_turn_interval(authorities_len, signer_index);
+        let current_ts = super::unix_timestamp();
+        println!(
+            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
+            signer_index,
+            start,
+            end,
+            super::unix_timestamp(),
+            time_passed,
+            time_remaining,
+        );
+        assert!(current_ts > start);
+        assert!(current_ts < end);
     }
 }

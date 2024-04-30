@@ -112,6 +112,7 @@ impl BtcServerExtendedClient {
     generate_method!(finalize_signing, FinalizeSigningRequest, FinalizeSigningResponse);
     generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
     generate_method!(get_utxo_merkle_root, Empty, GetUtxoMerkleRootResponse);
+    generate_method!(abort_signing, Empty, Empty);
 }
 
 #[cfg(test)]
