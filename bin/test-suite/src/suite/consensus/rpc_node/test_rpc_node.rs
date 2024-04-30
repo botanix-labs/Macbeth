@@ -1,16 +1,15 @@
-use reth::core::cli::runner::CliRunner;
-use reth::primitives::ChainSpec;
+use reth::{core::cli::runner::CliRunner, primitives::ChainSpec};
 use std::time::Duration;
 
-use crate::suite::consensus::frost::botanix_client::BotanixEthClient;
-use crate::suite::consensus::frost::poa_node::current_inturn_index;
-use crate::suite::consensus::rpc_node::{
-    error::NonFederationMemberTestConfigError, rpc_node::create_rpc_node,
-};
 use crate::{
     it_info_print,
     suite::consensus::{
-        frost::{poa_node::create_poa_federation_members, test_frost_e2e::await_dkg},
+        frost::{
+            botanix_client::BotanixEthClient,
+            poa_node::{create_poa_federation_members, current_inturn_index},
+            test_frost_e2e::await_dkg,
+        },
+        rpc_node::{error::NonFederationMemberTestConfigError, rpc_node::create_rpc_node},
         ConsensusIntegrationTestSuite,
     },
 };
@@ -97,8 +96,8 @@ pub async fn test_rpc_node(
     tokio::time::sleep(Duration::from_secs(60)).await;
 
     // get latest header hash from rpc node
-    // Note: alternative way is to wait for cannon state notification from rpc node and get hash from notification
-    // but this way also tests that rpc node can handle rpc requests
+    // Note: alternative way is to wait for cannon state notification from rpc node and get hash
+    // from notification but this way also tests that rpc node can handle rpc requests
     let rpc_botanix_client = BotanixEthClient::new(
         rpc_node.rpc_port,
         &rpc_node.secret_key,

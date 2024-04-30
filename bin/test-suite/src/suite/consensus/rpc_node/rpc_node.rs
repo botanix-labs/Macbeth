@@ -1,27 +1,31 @@
-use crate::it_info_print;
-use crate::suite::consensus::{
-    frost::poa_node::{CannonStateNofificationPayload, FederationMemberTestConfig, Notifications},
-    GlobalContext,
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        frost::poa_node::{
+            CannonStateNofificationPayload, FederationMemberTestConfig, Notifications,
+        },
+        GlobalContext,
+    },
 };
 use clap::Parser;
-use reth::cli::ext::{NoArgs, NoArgsCliExt};
-use reth::commands::poa::PoaNodeCommand;
 use reth::{
-    cli::{components::RethNodeComponents, ext::RethNodeCommandConfig},
+    cli::{
+        components::RethNodeComponents,
+        ext::{NoArgs, NoArgsCliExt, RethNodeCommandConfig},
+    },
+    commands::poa::PoaNodeCommand,
     network::Peers,
     tasks::TaskSpawner,
 };
 use reth_ecies::util::pk2id;
-use reth_primitives::hex::encode as hex_encode;
-use reth_primitives::ChainSpec;
+use reth_primitives::{hex::encode as hex_encode, ChainSpec};
 use reth_provider::CanonStateSubscriptions;
 use reth_rpc_types::PeerId;
-use std::path::Path;
 use std::{
     collections::HashMap,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use url::Url;
