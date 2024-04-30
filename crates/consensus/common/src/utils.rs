@@ -292,24 +292,6 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
     (timestamp / authorities_len) % authorities_len
 }
 
-// not in authority utils because of circular dependency
-/// Get the authority address from the header
-/// Return zero address if the authority is not present which is the case for reth tests
-pub fn get_block_producer_address(header: &Header) -> Address {
-    let signers = header.recovered_signed_authorities().expect("recovered authority");
-    // TODO clean up expects
-    let block_builder_public_key = signers.get(0).expect("first authority");
-    public_key_to_address(*block_builder_public_key)
-}
-// not in authority utils because of circular dependency
-/// Calculate the block reward split between botanix and the beneficiary
-pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
-    // 20% of the block reward
-    let botanix_reward = total_block_fees / 5;
-    let beneficiary_reward = total_block_fees - botanix_reward;
-    (botanix_reward, beneficiary_reward)
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
