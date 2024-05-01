@@ -13,20 +13,19 @@ use crate::eth::{
 };
 
 use async_trait::async_trait;
+use reth_evm::ConfigureEvm;
 use reth_interfaces::RethResult;
 use reth_network_api::NetworkInfo;
-use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     revm_primitives::{BlockEnv, CfgEnvWithHandlerCfg},
     Address, BlockId, BlockNumberOrTag, ChainInfo, SealedBlockWithSenders, SealedHeader, B256,
     U256, U64,
 };
-
 use reth_provider::{
     BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderBox, StateProviderFactory,
 };
 use reth_rpc_types::{SyncInfo, SyncStatus};
-use reth_tasks::{TaskSpawner, TokioTaskExecutor};
+use reth_tasks::{pool::BlockingTaskPool, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::TransactionPool;
 use revm_primitives::{CfgEnv, SpecId};
 use std::{
@@ -35,12 +34,12 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-
 use tokio::sync::{oneshot, Mutex};
 
 mod block;
 mod call;
 pub(crate) mod fee_history;
+
 mod fees;
 #[cfg(feature = "optimism")]
 mod optimism;
@@ -50,7 +49,7 @@ mod sign;
 mod state;
 mod transactions;
 
-use crate::BlockingTaskPool;
+use crate::eth::traits::RawTransactionForwarder;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{
@@ -174,7 +173,7 @@ where
             provider,
             pool,
             network,
-            signers: Default::default(),
+            signers: parking_lot::RwLock::new(Default::default()),
             eth_cache,
             gas_oracle,
             gas_cap,
@@ -196,6 +195,8 @@ where
     ///
     /// This accepts a closure that creates a new future using a clone of this type and spawns the
     /// future onto a new task that is allowed to block.
+    ///
+    /// Note: This is expected for futures that are dominated by blocking IO operations.
     pub(crate) async fn on_blocking_task<C, F, R>(&self, c: C) -> EthResult<R>
     where
         C: FnOnce(Self) -> F,
@@ -293,7 +294,7 @@ where
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Pool: TransactionPool + Clone + 'static,
     Network: NetworkInfo + Send + Sync + 'static,
-    EvmConfig: ConfigureEvmEnv + Clone + 'static,
+    EvmConfig: ConfigureEvm + Clone + 'static,
 {
     /// Configures the [CfgEnvWithHandlerCfg] and [BlockEnv] for the pending block
     ///
@@ -317,8 +318,9 @@ where
             // base fee of the child block
             let chain_spec = self.provider().chain_spec();
 
-            latest_header.base_fee_per_gas = latest_header
-                .next_block_base_fee(chain_spec.base_fee_params(latest_header.timestamp));
+            latest_header.base_fee_per_gas = latest_header.next_block_base_fee(
+                chain_spec.base_fee_params_at_timestamp(latest_header.timestamp),
+            );
 
             // update excess blob gas consumed above target
             latest_header.excess_blob_gas = latest_header.next_block_excess_blob_gas();
@@ -359,17 +361,12 @@ where
             // check if the block is still good
             if let Some(pending_block) = lock.as_ref() {
                 // this is guaranteed to be the `latest` header
-                if pending.block_env.number.to::<u64>() == pending_block.block.number &&
-                    pending.origin.header().hash() == pending_block.block.parent_hash &&
-                    now <= pending_block.expires_at
+                if pending.block_env.number.to::<u64>() == pending_block.block.number
+                    && pending.origin.header().hash() == pending_block.block.parent_hash
+                    && now <= pending_block.expires_at
                 {
                     return Ok(Some(pending_block.block.clone()));
                 }
-            }
-
-            // if we're currently syncing, we're unable to build a pending block
-            if this.network().is_syncing() {
-                return Ok(None);
             }
 
             // we rebuild the block
@@ -384,7 +381,7 @@ where
             let now = Instant::now();
             *lock = Some(PendingBlock {
                 block: pending_block.clone(),
-                expires_at: now + Duration::from_secs(3),
+                expires_at: now + Duration::from_secs(1),
             });
 
             Ok(Some(pending_block))
@@ -414,7 +411,7 @@ where
     Provider:
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Network: NetworkInfo + 'static,
-    EvmConfig: ConfigureEvmEnv + 'static,
+    EvmConfig: ConfigureEvm + 'static,
 {
     /// Returns the current ethereum protocol version.
     ///
@@ -457,7 +454,7 @@ where
     }
 
     fn accounts(&self) -> Vec<Address> {
-        self.inner.signers.iter().flat_map(|s| s.accounts()).collect()
+        self.inner.signers.read().iter().flat_map(|s| s.accounts()).collect()
     }
 
     fn is_syncing(&self) -> bool {
@@ -522,7 +519,7 @@ struct EthApiInner<Provider, Pool, Network, EvmConfig> {
     /// An interface to interact with the network
     network: Network,
     /// All configured Signers
-    signers: Vec<Box<dyn EthSigner>>,
+    signers: parking_lot::RwLock<Vec<Box<dyn EthSigner>>>,
     /// The async cache frontend for eth related data
     eth_cache: EthStateCache,
     /// The async gas oracle frontend for gas price suggestions

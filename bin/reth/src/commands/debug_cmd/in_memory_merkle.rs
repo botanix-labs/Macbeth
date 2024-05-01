@@ -6,31 +6,27 @@ use crate::{
         utils::{chain_help, genesis_value_parser, SUPPORTED_CHAINS},
         DatabaseArgs, NetworkArgs,
     },
-    core::cli::runner::CliContext,
     dirs::{DataDirPath, MaybePlatformPath},
     utils::{get_single_body, get_single_header},
 };
 use backon::{ConstantBuilder, Retryable};
 use clap::Parser;
+use reth_cli_runner::CliContext;
 use reth_config::Config;
-use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
+use reth_db::{init_db, DatabaseEnv};
 use reth_interfaces::executor::BlockValidationError;
 use reth_network::NetworkHandle;
 use reth_network_api::NetworkInfo;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{fs, stage::StageId, BlockHashOrNumber, ChainSpec};
 use reth_provider::{
-    AccountExtReader, BlockWriter, ExecutorFactory, HashingWriter, HeaderProvider,
-    LatestStateProviderRef, OriginalValuesKnown, ProviderFactory, StageCheckpointReader,
+    AccountExtReader, ExecutorFactory, HashingWriter, HeaderProvider, LatestStateProviderRef,
+    OriginalValuesKnown, ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
     StorageReader,
 };
 use reth_tasks::TaskExecutor;
 use reth_trie::{updates::TrieKey, StateRoot};
-use std::{
-    net::{SocketAddr, SocketAddrV4},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tracing::*;
 
 /// `reth debug in-memory-merkle` command
@@ -61,10 +57,10 @@ pub struct Command {
     )]
     chain: Arc<ChainSpec>,
 
-    #[clap(flatten)]
+    #[command(flatten)]
     db: DatabaseArgs,
 
-    #[clap(flatten)]
+    #[command(flatten)]
     network: NetworkArgs,
 
     /// The number of retries per request
@@ -90,12 +86,16 @@ impl Command {
             .network
             .network_config(config, self.chain.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(task_executor))
-            .listener_addr(SocketAddr::V4(SocketAddrV4::new(self.network.addr, self.network.port)))
-            .discovery_addr(SocketAddr::V4(SocketAddrV4::new(
+            .listener_addr(SocketAddr::new(self.network.addr, self.network.port))
+            .discovery_addr(SocketAddr::new(
                 self.network.discovery.addr,
                 self.network.discovery.port,
-            )))
-            .build(ProviderFactory::new(db, self.chain.clone()))
+            ))
+            .build(ProviderFactory::new(
+                db,
+                self.chain.clone(),
+                self.datadir.unwrap_or_chain_default(self.chain.chain).static_files_path(),
+            )?)
             .start_network()
             .await?;
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), "Connected to P2P network");
@@ -113,9 +113,8 @@ impl Command {
         fs::create_dir_all(&db_path)?;
 
         // initialize the database
-        let db =
-            Arc::new(init_db(db_path, DatabaseArguments::default().log_level(self.db.log_level))?);
-        let factory = ProviderFactory::new(&db, self.chain.clone());
+        let db = Arc::new(init_db(db_path, self.db.database_args())?);
+        let factory = ProviderFactory::new(&db, self.chain.clone(), data_dir.static_files_path())?;
         let provider = factory.provider()?;
 
         // Look up merkle checkpoint
@@ -165,8 +164,10 @@ impl Command {
 
         let executor_factory =
             reth_revm::EvmProcessorFactory::new(self.chain.clone(), EthEvmConfig::default());
-        let mut executor =
-            executor_factory.with_state(LatestStateProviderRef::new(provider.tx_ref()));
+        let mut executor = executor_factory.with_state(LatestStateProviderRef::new(
+            provider.tx_ref(),
+            factory.static_file_provider(),
+        ));
 
         let merkle_block_td =
             provider.header_td_by_number(merkle_block_number)?.unwrap_or_default();
@@ -193,14 +194,14 @@ impl Command {
         let provider_rw = factory.provider_rw()?;
 
         // Insert block, state and hashes
-        provider_rw.insert_block(
+        provider_rw.insert_historical_block(
             block
                 .clone()
                 .try_seal_with_senders()
                 .map_err(|_| BlockValidationError::SenderRecoveryError)?,
             None,
         )?;
-        block_state.write_to_db(provider_rw.tx_ref(), OriginalValuesKnown::No)?;
+        block_state.write_to_storage(provider_rw.tx_ref(), None, OriginalValuesKnown::No)?;
         let storage_lists = provider_rw.changed_storages_with_range(block.number..=block.number)?;
         let storages = provider_rw.plain_state_storages(storage_lists)?;
         provider_rw.insert_storage_for_hashing(storages)?;
@@ -255,7 +256,7 @@ impl Command {
             "Mismatched trie updates"
         );
 
-        // Drop without comitting.
+        // Drop without committing.
         drop(provider_rw);
 
         Ok(())

@@ -6,6 +6,8 @@ use reth_interfaces::consensus::ConsensusError;
 use reth_primitives::{ChainSpec, PeerId, SealedBlock};
 use tokio::sync::mpsc::UnboundedSender;
 
+use reth_network_types::PeerId;
+use std::task::{Context, Poll};
 use std::{
     collections::VecDeque,
     sync::Arc,
@@ -59,7 +61,7 @@ pub enum BlockValidation {
 pub enum BlockImportError {
     /// Consensus error
     #[error(transparent)]
-    Consensus(#[from] reth_interfaces::consensus::ConsensusError),
+    Consensus(#[from] reth_consensus::ConsensusError),
 }
 
 /// An implementation of `BlockImport` used in Proof-of-Stake consensus that does nothing.
@@ -129,7 +131,7 @@ impl BlockImport for ProofOfAuthorityBlockImport {
                 }
             }
 
-            return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
+            return Poll::Ready(BlockImportOutcome { peer: pair.0, result });
         }
         Poll::Pending
     }

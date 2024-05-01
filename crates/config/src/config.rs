@@ -5,10 +5,13 @@ use reth_network::{NetworkConfigBuilder, PeersConfig, SessionsConfig};
 use reth_primitives::PruneModes;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// Configuration for the reth node.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct Config {
     /// Configuration for each stage in the pipeline.
@@ -47,13 +50,11 @@ impl Config {
 }
 
 /// Configuration for each stage in the pipeline.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct StageConfig {
     /// Header stage configuration.
     pub headers: HeadersConfig,
-    /// Total Difficulty stage configuration
-    pub total_difficulty: TotalDifficultyConfig,
     /// Body stage configuration.
     pub bodies: BodiesConfig,
     /// Sender Recovery stage configuration.
@@ -72,10 +73,12 @@ pub struct StageConfig {
     pub index_account_history: IndexHistoryConfig,
     /// Index Storage History stage configuration.
     pub index_storage_history: IndexHistoryConfig,
+    /// Common ETL related configuration.
+    pub etl: EtlConfig,
 }
 
 /// Header stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct HeadersConfig {
     /// The maximum number of requests to send concurrently.
@@ -107,23 +110,8 @@ impl Default for HeadersConfig {
     }
 }
 
-/// Total difficulty stage configuration
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
-#[serde(default)]
-pub struct TotalDifficultyConfig {
-    /// The maximum number of total difficulty entries to sum up before committing progress to the
-    /// database.
-    pub commit_threshold: u64,
-}
-
-impl Default for TotalDifficultyConfig {
-    fn default() -> Self {
-        Self { commit_threshold: 100_000 }
-    }
-}
-
 /// Body stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct BodiesConfig {
     /// The batch size of non-empty blocks per one request
@@ -176,7 +164,7 @@ impl Default for SenderRecoveryConfig {
 }
 
 /// Execution stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct ExecutionConfig {
     /// The maximum number of blocks to process before the execution stage commits.
@@ -207,7 +195,7 @@ impl Default for ExecutionConfig {
 }
 
 /// Hashing stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct HashingConfig {
     /// The threshold (in number of blocks) for switching between
@@ -224,7 +212,7 @@ impl Default for HashingConfig {
 }
 
 /// Merkle stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct MerkleConfig {
     /// The threshold (in number of blocks) for switching from incremental trie building of changes
@@ -234,26 +222,60 @@ pub struct MerkleConfig {
 
 impl Default for MerkleConfig {
     fn default() -> Self {
-        Self { clean_threshold: 50_000 }
+        Self { clean_threshold: 5_000 }
     }
 }
 
 /// Transaction Lookup stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct TransactionLookupConfig {
-    /// The maximum number of transactions to process before committing progress to the database.
-    pub commit_threshold: u64,
+    /// The maximum number of transactions to process before writing to disk.
+    pub chunk_size: u64,
 }
 
 impl Default for TransactionLookupConfig {
     fn default() -> Self {
-        Self { commit_threshold: 5_000_000 }
+        Self { chunk_size: 5_000_000 }
     }
 }
 
-/// History History stage configuration.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Serialize)]
+/// Common ETL related configuration.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(default)]
+pub struct EtlConfig {
+    /// Data directory where temporary files are created.
+    pub dir: Option<PathBuf>,
+    /// The maximum size in bytes of data held in memory before being flushed to disk as a file.
+    pub file_size: usize,
+}
+
+impl Default for EtlConfig {
+    fn default() -> Self {
+        Self { dir: None, file_size: Self::default_file_size() }
+    }
+}
+
+impl EtlConfig {
+    /// Creates an ETL configuration
+    pub fn new(dir: Option<PathBuf>, file_size: usize) -> Self {
+        Self { dir, file_size }
+    }
+
+    /// Return default ETL directory from datadir path.
+    pub fn from_datadir(path: &Path) -> PathBuf {
+        path.join("etl-tmp")
+    }
+
+    /// Default size in bytes of data held in memory before being flushed to disk as a file.
+    pub const fn default_file_size() -> usize {
+        // 500 MB
+        500 * (1024 * 1024)
+    }
+}
+
+/// History stage configuration.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct IndexHistoryConfig {
     /// The maximum number of blocks to process before committing progress to the database.
@@ -267,7 +289,7 @@ impl Default for IndexHistoryConfig {
 }
 
 /// Pruning configuration.
-#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct PruneConfig {
     /// Minimum pruning interval measured in blocks.
@@ -359,9 +381,6 @@ downloader_max_buffered_responses = 100
 downloader_request_limit = 1000
 commit_threshold = 10000
 
-[stages.total_difficulty]
-commit_threshold = 100000
-
 [stages.bodies]
 downloader_request_limit = 200
 downloader_stream_batch_size = 1000
@@ -388,7 +407,7 @@ commit_threshold = 100000
 clean_threshold = 50000
 
 [stages.transaction_lookup]
-commit_threshold = 5000000
+chunk_size = 5000000
 
 [stages.index_account_history]
 commit_threshold = 100000
@@ -651,5 +670,22 @@ secs = 120
 nanos = 0
 #";
         let _conf: Config = toml::from_str(alpha_0_0_19).unwrap();
+    }
+
+    #[test]
+    fn test_conf_trust_nodes_only() {
+        let trusted_nodes_only = r"#
+[peers]
+trusted_nodes_only = true
+#";
+        let conf: Config = toml::from_str(trusted_nodes_only).unwrap();
+        assert!(conf.peers.trusted_nodes_only);
+
+        let trusted_nodes_only = r"#
+[peers]
+connect_trusted_nodes_only = true
+#";
+        let conf: Config = toml::from_str(trusted_nodes_only).unwrap();
+        assert!(conf.peers.trusted_nodes_only);
     }
 }

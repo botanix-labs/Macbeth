@@ -6,21 +6,19 @@ use futures::{stream::Stream, FutureExt};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use rayon::prelude::*;
 use reth_config::config::HeadersConfig;
-use reth_interfaces::{
-    consensus::Consensus,
-    p2p::{
-        error::{DownloadError, DownloadResult, PeerRequestResult},
-        headers::{
-            client::{HeadersClient, HeadersRequest},
-            downloader::{validate_header_download, HeaderDownloader, SyncTarget},
-            error::{HeadersDownloaderError, HeadersDownloaderResult},
-        },
-        priority::Priority,
+use reth_consensus::Consensus;
+use reth_interfaces::p2p::{
+    error::{DownloadError, DownloadResult, PeerRequestResult},
+    headers::{
+        client::{HeadersClient, HeadersRequest},
+        downloader::{validate_header_download, HeaderDownloader, SyncTarget},
+        error::{HeadersDownloaderError, HeadersDownloaderResult},
     },
+    priority::Priority,
 };
+use reth_network_types::PeerId;
 use reth_primitives::{
-    BlockHashOrNumber, BlockNumber, GotExpected, Header, HeadersDirection, PeerId, SealedHeader,
-    B256,
+    BlockHashOrNumber, BlockNumber, GotExpected, Header, HeadersDirection, SealedHeader, B256,
 };
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use std::{
@@ -284,6 +282,7 @@ where
                     peer_id: Some(peer_id),
                     error: DownloadError::HeaderValidation {
                         hash: head.hash(),
+                        number: head.number,
                         error: Box::new(error),
                     },
                 }
@@ -1201,7 +1200,7 @@ impl ReverseHeadersDownloaderBuilder {
 
 /// Configures and returns the next [HeadersRequest] based on the given parameters
 ///
-/// The request wil start at the given `next_request_block_number` block.
+/// The request will start at the given `next_request_block_number` block.
 /// The `limit` of the request will either be the targeted `request_limit` or the difference of
 /// `next_request_block_number` and the `local_head` in case this is smaller than the targeted
 /// `request_limit`.
@@ -1224,7 +1223,8 @@ mod tests {
 
     use crate::headers::test_utils::child_header;
     use assert_matches::assert_matches;
-    use reth_interfaces::test_utils::{TestConsensus, TestHeadersClient};
+    use reth_consensus::test_utils::TestConsensus;
+    use reth_interfaces::test_utils::TestHeadersClient;
 
     /// Tests that `replace_number` works the same way as Option::replace
     #[test]
