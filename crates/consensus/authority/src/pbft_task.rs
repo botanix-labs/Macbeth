@@ -32,7 +32,7 @@ pub struct PbftTask<Client> {
     /// Frost Handler
     pub(crate) frost_handle: FrostHandle,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine<Client>,
+    pub(crate) pbft_state_machine: PbftStateMachine,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive pbft notifications (from the block production task)
@@ -66,7 +66,6 @@ where
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let pbft_state_machine = PbftStateMachine::new(
-            storage.clone(),
             frost_handle.clone(),
             config.clone(),
             my_peerid,
