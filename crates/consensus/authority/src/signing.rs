@@ -13,6 +13,7 @@ use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
@@ -128,18 +129,19 @@ pub(crate) struct SigningSession {
 
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
-pub(crate) struct SigningStateMachine<Client> {
+pub(crate) struct SigningStateMachine<Client, ToFrostMan> {
     btc_client: BtcServerExtendedClient,
     storage: Storage<Client>,
-    frost_handle: FrostHandle,
+    frost_handle: ToFrostMan,
     signing_sessions: HashMap<[u8; 32], SigningSession>,
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
     frost_task_tx: UnboundedSender<FrostNotificationMessage>,
 }
 
-impl<Client> SigningStateMachine<Client>
+impl<Client, ToFrostMan> SigningStateMachine<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -151,7 +153,7 @@ where
     pub(crate) fn new(
         btc_client: BtcServerExtendedClient,
         storage: Storage<Client>,
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     ) -> Self {
@@ -255,8 +257,9 @@ where
     }
 }
 
-impl<Client> SigningStateMachine<Client>
+impl<Client, ToFrostMan> SigningStateMachine<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker

@@ -12,8 +12,10 @@ use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
-    BlockValidationKind::{self, SkipStateRootValidation}, BlockchainTreeEngine,
+    BlockValidationKind::{self, SkipStateRootValidation},
+    BlockchainTreeEngine,
 };
+use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
@@ -24,9 +26,10 @@ use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
 
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
-    BlockProductionTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
+    BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -294,7 +297,7 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        
+
         // Propose block to network for commitments
         self.pbft_task_tx
             .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
@@ -359,7 +362,7 @@ where
         drop(storage);
 
         // Notify peers
-        let new_block = NewBlock { block: block_to_commit.clone() , td: Uint::ZERO };
+        let new_block = NewBlock { block: block_to_commit.clone(), td: Uint::ZERO };
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
     }
