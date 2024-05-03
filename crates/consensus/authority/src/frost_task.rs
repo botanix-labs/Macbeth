@@ -3,6 +3,7 @@ use crate::{
     signing::SigningStateMachine, Storage,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::frost::manager::ToFrostManager;
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, FrostHandle},
@@ -33,17 +34,17 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<Client> {
+pub struct FrostTask<Client, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
-    pub(crate) frost_handle: FrostHandle,
+    pub(crate) frost_handle: ToFrostMan,
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<Client>,
+    pub(crate) dkg_state_machine: DKGStateMachine<Client, ToFrostMan>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<Client>,
+    pub(crate) signing_state_machine: SigningStateMachine<Client, ToFrostMan>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive frost notifications (from the block production task)
@@ -51,8 +52,9 @@ pub struct FrostTask<Client> {
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
-impl<Client> FrostTask<Client>
+impl<Client, ToFrostMan> FrostTask<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -65,7 +67,7 @@ where
     pub(crate) fn new(
         btc_server: BtcServerExtendedClient,
         network_handle: NetworkHandle,
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
         storage: Storage<Client>,
@@ -292,8 +294,9 @@ where
     }
 }
 
-impl<Client> std::fmt::Debug for FrostTask<Client>
+impl<Client, ToFrostMan> std::fmt::Debug for FrostTask<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: Clone + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
