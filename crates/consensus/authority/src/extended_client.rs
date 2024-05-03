@@ -116,12 +116,12 @@ impl BtcServerExtendedClient {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::base64::decode;
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
         use super::JWT_HEADER_KEY;
         use crate::extended_client::to_u64;
+        use bitcoin::base64;
         use client::Empty;
         use reth_rpc::{Claims, JwtSecret};
         use std::time::SystemTime;
