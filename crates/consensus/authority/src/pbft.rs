@@ -1,4 +1,4 @@
-use crate::{utils::retry_exec, Storage};
+use crate::utils::retry_exec;
 use reth_consensus_common::utils::is_inturn;
 
 use frost_secp256k1_tr as frost;
@@ -8,13 +8,11 @@ use reth_botanix_lib::extra_data_header::{
 use reth_botanix_lib::header_ext::HeaderExt;
 use reth_consensus_common::utils::current_inturn_index;
 use reth_ecies::util::pk2id;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::{BlockBody, BlockHash, SealedBlock};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -77,8 +75,7 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<Client> {
-    storage: Storage<Client>,
+pub(crate) struct PbftStateMachine {
     frost_handle: FrostHandle,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -91,18 +88,9 @@ pub(crate) struct PbftStateMachine<Client> {
     personal_frost_identifier: frost::Identifier,
 }
 
-impl<Client> PbftStateMachine<Client>
-where
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
-{
+impl PbftStateMachine {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        storage: Storage<Client>,
         frost_handle: FrostHandle,
         config: FrostConfig,
         peer_id: PeerId,
@@ -116,7 +104,6 @@ where
         );
         Self {
             personal_frost_identifier,
-            storage,
             frost_handle,
             state: BTreeMap::new(),
             config,
@@ -129,11 +116,9 @@ where
     }
 
     /// Resets the state machine to its initial state
-    #[allow(dead_code)]
     pub(crate) fn reset(self) -> Self {
         Self {
             personal_frost_identifier: self.personal_frost_identifier,
-            storage: self.storage,
             frost_handle: self.frost_handle,
             state: BTreeMap::new(),
             config: self.config,
@@ -157,15 +142,7 @@ where
     }
 }
 
-impl<Client> PbftStateMachine<Client>
-where
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
-{
+impl PbftStateMachine {
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
