@@ -1,5 +1,6 @@
 use crate::utils::retry_exec;
 use reth_consensus_common::utils::is_inturn;
+use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
 use reth_botanix_lib::extra_data_header::{
@@ -75,8 +76,8 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine {
-    frost_handle: FrostHandle,
+pub(crate) struct PbftStateMachine<F: ToFrostManager> {
+    frost_handle: F,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
     peer_id: PeerId,
@@ -88,10 +89,10 @@ pub(crate) struct PbftStateMachine {
     personal_frost_identifier: frost::Identifier,
 }
 
-impl PbftStateMachine {
+impl<F: ToFrostManager> PbftStateMachine<F> {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        frost_handle: FrostHandle,
+        frost_handle: F,
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
@@ -142,7 +143,7 @@ impl PbftStateMachine {
     }
 }
 
-impl PbftStateMachine {
+impl<F: ToFrostManager> PbftStateMachine<F> {
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
@@ -412,4 +413,50 @@ impl PbftStateMachine {
         }
         Ok(None)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand;
+    use reth_network::frost::manager::ToFrostManager;
+
+    // Mock for the FrostPeerCommand enum
+    enum FrostPeerCommandMock {
+        PeerMessage(PeerMessageResponse),
+    }
+
+    // mock frost handle
+    struct FrostHandleMock;
+    impl ToFrostManager for FrostHandleMock {
+        fn send_command(&self, _command: FrostCommand) {}
+    }
+
+    #[test]
+    fn test_pbft_state_machine_new() {
+        // gen new secret key
+        let secp = secp256k1::Secp256k1::new();
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+
+        // Arrange
+        let frost_handle_mock = FrostHandleMock {};
+        let config = FrostConfig {
+            authorities: vec![pk.clone()],
+            authority_index: 2,
+            max_signers: 2,
+            min_signers: 2,
+            authority_pk: pk,
+        };
+        let peer_id = pk2id(&pk);
+
+        // Act
+        let pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
+
+        // Assert
+        // Check that the initial state is empty
+        assert!(pbft_state_machine.state.is_empty());
+    }
+
+    // More tests can be added similarly for other methods
 }

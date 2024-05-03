@@ -1,6 +1,7 @@
 use crate::{pbft::PbftStateMachine, Storage};
 use reth_ecies::util::pk2id;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, FrostHandle},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -28,11 +29,11 @@ pub(crate) struct PbftNotification {
     pub(crate) block: SealedBlock,
 }
 
-pub struct PbftTask<Client> {
+pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
     /// Frost Handler
-    pub(crate) frost_handle: FrostHandle,
+    pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive pbft notifications (from the block production task)
@@ -45,8 +46,9 @@ pub struct PbftTask<Client> {
     config: FrostConfig,
 }
 
-impl<Client> PbftTask<Client>
+impl<Client, ToFrostMan> PbftTask<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -57,7 +59,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<Client>,
         secret_key: secp256k1::SecretKey,
@@ -65,12 +67,8 @@ where
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
-        let pbft_state_machine = PbftStateMachine::new(
-            frost_handle.clone(),
-            config.clone(),
-            my_peerid,
-            secret_key,
-        );
+        let pbft_state_machine =
+            PbftStateMachine::new(frost_handle.clone(), config.clone(), my_peerid, secret_key);
         Self {
             frost_handle,
             pbft_state_machine,
@@ -205,8 +203,9 @@ where
     }
 }
 
-impl<Client> std::fmt::Debug for PbftTask<Client>
+impl<Client, F> std::fmt::Debug for PbftTask<Client, F>
 where
+    F: ToFrostManager + Clone,
     Client: Clone + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

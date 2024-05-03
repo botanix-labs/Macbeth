@@ -15,7 +15,7 @@ use reth_botanix_lib::header_ext::HeaderExt;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
-    frost::manager::{FrostConfig, FrostHandle},
+    frost::manager::{FrostConfig, FrostHandle, ToFrostManager},
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
@@ -36,7 +36,7 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -52,7 +52,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
-    frost_handle: Option<FrostHandle>,
+    frost_handle: Option<ToFrostMan>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
     /// The type that defines how to configure the EVM.
@@ -72,8 +72,10 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine, ToFrostMan>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -99,7 +101,7 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
-        frost_handle: Option<FrostHandle>,
+        frost_handle: Option<ToFrostMan>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
@@ -203,11 +205,11 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockProductionTask<Client, EvmConfig, Engine>>,
+        BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>,
         BlockFetcherTask<Client, EvmConfig, Engine>,
-        Option<FrostTask<Client>>,
+        FrostTask<Client, ToFrostMan>,
         SyncController<Engine>,
-        PbftTask<Client>,
+        PbftTask<Client, ToFrostMan>,
     ) {
         let Self {
             btc_server,
