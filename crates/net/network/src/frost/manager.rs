@@ -12,6 +12,12 @@ use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{error, info, warn};
 
+/// Trait for sending commands to the [`FrostManager`]
+/// Trait was created mainly for the convenience of mocking during testing
+pub trait ToFrostManager {
+    fn send_command(&self, cmd: FrostCommand) -> ();
+}
+
 /// Frost Handle for communication with the protocol
 #[derive(Clone, Debug)]
 pub struct FrostHandle {
@@ -19,9 +25,9 @@ pub struct FrostHandle {
 }
 
 /// Implementations for the [`FrostHandle`]`
-impl FrostHandle {
+impl ToFrostManager for FrostHandle {
     /// Sends a command to the Protocol
-    pub fn send_command(&self, cmd: FrostCommand) {
+    fn send_command(&self, cmd: FrostCommand) {
         let _ = self.manager_tx.send(cmd);
     }
 }
