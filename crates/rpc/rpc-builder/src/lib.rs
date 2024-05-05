@@ -1355,6 +1355,7 @@ where
             blocking_task_pool.clone(),
             fee_history_cache,
             self.evm_config.clone(),
+            self.eth_raw_transaction_forwarder.clone(),
             botanix_provider,
         );
         let filter = EthFilter::new(

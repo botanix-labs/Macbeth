@@ -129,6 +129,7 @@ where
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
         evm_config: EvmConfig,
+        raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
         botanix_provider: Botanix,
     ) -> Self {
         Self::with_spawner(
@@ -142,6 +143,7 @@ where
             blocking_task_pool,
             fee_history_cache,
             evm_config,
+            raw_transaction_forwarder,
             botanix_provider,
         )
     }
@@ -159,6 +161,7 @@ where
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
         evm_config: EvmConfig,
+        raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
         botanix_provider: Botanix,
     ) -> Self {
         // get the block number of the latest block
@@ -183,9 +186,8 @@ where
             blocking_task_pool,
             fee_history_cache,
             evm_config,
+            raw_transaction_forwarder,
             botanix_provider,
-            #[cfg(feature = "optimism")]
-            http_client: reqwest::Client::builder().use_rustls_tls().build().unwrap(),
         };
 
         Self { inner: Arc::new(inner) }
@@ -538,9 +540,8 @@ struct EthApiInner<Provider, Pool, Network, EvmConfig> {
     fee_history_cache: FeeHistoryCache,
     /// The type that defines how to configure the EVM
     evm_config: EvmConfig,
+    /// Allows forwarding received raw transactions
+    raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
     /// Botanix specific configurations
     botanix_provider: Botanix,
-    /// An http client for communicating with sequencers.
-    #[cfg(feature = "optimism")]
-    http_client: reqwest::Client,
 }

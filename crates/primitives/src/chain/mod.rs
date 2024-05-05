@@ -1,9 +1,9 @@
 pub use alloy_chains::{Chain, ChainKind, NamedChain};
 pub use info::ChainInfo;
 pub use spec::{
-    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind,
-    ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition,
-    ForkTimestamps, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
+    DisplayHardforks, ForkBaseFeeParams, ForkCondition, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY,
+    MAINNET, SEPOLIA,
 };
 #[cfg(feature = "optimism")]
 pub use spec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};

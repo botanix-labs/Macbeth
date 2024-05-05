@@ -5,9 +5,6 @@ use reth_interfaces::executor::BlockExecutionError;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256,
 };
-use std::time::Duration;
-use tracing::debug;
-
 /// A factory capable of creating an executor with the given state provider.
 pub trait ExecutorFactory: Send + Sync + 'static {
     /// Executor with [`StateProvider`]
@@ -25,14 +22,6 @@ pub trait ExecutorFactory: Send + Sync + 'static {
 pub trait BlockExecutor {
     /// The error type returned by the executor.
     type Error;
-
-    /// Execute a block.
-    fn execute(
-        &mut self,
-        block: &BlockWithSenders,
-        total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<(), BlockExecutionError>;
 
     /// Executes the block and checks receipts.
     ///

@@ -73,7 +73,7 @@ impl Default for EthConfig {
             cache: EthStateCacheConfig::default(),
             gas_oracle: GasPriceOracleConfig::default(),
             botanix_config: BotanixConfig::default(),
-            max_tracing_requests: DEFAULT_MAX_TRACING_REQUESTS,
+            max_tracing_requests: default_max_tracing_requests(),
             max_blocks_per_filter: DEFAULT_MAX_BLOCKS_PER_FILTER,
             max_logs_per_response: DEFAULT_MAX_LOGS_PER_RESPONSE,
             rpc_gas_cap: RPC_DEFAULT_GAS_CAP.into(),

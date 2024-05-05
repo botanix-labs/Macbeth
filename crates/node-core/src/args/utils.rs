@@ -10,8 +10,6 @@ use std::{
 };
 use url::Url;
 
-use reth_primitives::DEV;
-
 #[cfg(feature = "optimism")]
 use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
 

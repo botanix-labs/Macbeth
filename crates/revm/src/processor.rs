@@ -4,12 +4,12 @@ use revm::{
     db::StateDBBox,
     inspector_handle_register,
     interpreter::Host,
-    primitives::{CfgEnvWithHandlerCfg, ResultAndState},
+    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
     Evm, State,
 };
 use std::{sync::Arc, time::Instant};
 #[cfg(not(feature = "optimism"))]
-use tracing::{debug, trace};
+use tracing::{debug, error, trace, warn};
 
 use reth_evm::ConfigureEvm;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
@@ -17,10 +17,6 @@ use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::revm::env::fill_op_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::revm::env::fill_tx_env;
-use reth_primitives::{
-    Address, Block, BlockNumber, BlockWithSenders, Bloom, ChainSpec, GotExpected, Hardfork, Header,
-    PruneModes, Receipt, ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256, U256,
-};
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
@@ -36,38 +32,11 @@ use reth_botanix_lib::mint_validation::{
     parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
 };
 use reth_consensus_common::utils::get_block_producer_address;
-use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
-use reth_node_api::ConfigureEvm;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes,
-    ChainSpec, GotExpected, Hardfork, Header, PruneMode, PruneModes, PruneSegmentError, Receipt,
-    ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256, MINIMUM_PRUNING_DISTANCE,
-    U256,
+    ChainSpec, GotExpected, Hardfork, Header, PruneModes, Receipt, ReceiptWithBloom, Receipts,
+    TransactionSigned, Withdrawals, B256, U256,
 };
-use reth_provider::{
-    BlockExecutor, BlockExecutorStats, ProviderError, PrunableBlockExecutor, StateProvider,
-};
-use revm::{
-    db::{states::bundle_state::BundleRetention, EmptyDBTyped, StateDBBox},
-    inspector_handle_register,
-    interpreter::Host,
-    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
-    Evm, Handler, State, StateBuilder,
-};
-use std::{sync::Arc, time::Instant};
-use tracing::{error, warn};
-
-#[cfg(feature = "optimism")]
-use reth_primitives::revm::env::fill_op_tx_env;
-#[cfg(not(feature = "optimism"))]
-use reth_primitives::revm::env::fill_tx_env;
-
-#[cfg(not(feature = "optimism"))]
-use reth_provider::BundleStateWithReceipts;
-#[cfg(not(feature = "optimism"))]
-use revm::DatabaseCommit;
-#[cfg(not(feature = "optimism"))]
-use tracing::{debug, trace};
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.
 ///
@@ -256,10 +225,11 @@ where
         let consensus_pkg = binding.as_ref();
         for log in result.logs() {
             if log.topics().first() == Some(&MINT_TOPIC) && botanix_consensus_pkg.is_some() {
-                let pegin_data = parse_pegin_topic(&log, &result.logs()).map_err(|e| {
-                    error!("Failed to parse pegin topic! {:?}", e);
-                    BlockValidationError::MintContractViolation
-                })?;
+                let pegin_data =
+                    parse_pegin_topic(&log, &result.clone().into_logs()).map_err(|e| {
+                        error!("Failed to parse pegin topic! {:?}", e);
+                        BlockValidationError::MintContractViolation
+                    })?;
 
                 let recent_header = consensus_pkg.expect("is some").recent_header;
                 let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;

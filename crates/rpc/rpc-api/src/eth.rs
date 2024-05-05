@@ -3,7 +3,7 @@ use reth_primitives::{
     serde_helper::JsonStorageKey, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
 use reth_rpc_types::{
-    state::StateOverride, AccessListWithGasUsed, BlockOverrides, Bundle,
+    state::StateOverride, AccessListWithGasUsed, AnyTransactionReceipt, BlockOverrides, Bundle,
     EIP1186AccountProofResponse, EthCallResponse, FeeHistory, GatewayAddress, Header, Index,
     RichBlock, StateContext, SyncStatus, Transaction, TransactionReceipt, TransactionRequest, Work,
 };

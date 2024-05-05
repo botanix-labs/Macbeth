@@ -1,6 +1,7 @@
+use reth_primitives::transaction::TxHashOrNumber;
 use reth_primitives::{
-    Address, BlockHash, BlockHashOrNumber, BlockNumber, GotExpected, StaticFileSegment,
-    TxHashOrNumber, TxNumber, B256, U256,
+    Address, BlockHash, BlockHashOrNumber, BlockNumber, GotExpected, StaticFileSegment, TxNumber,
+    B256, U256,
 };
 use std::path::PathBuf;
 use thiserror::Error;

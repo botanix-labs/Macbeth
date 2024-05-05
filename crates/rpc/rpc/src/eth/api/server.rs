@@ -17,8 +17,8 @@ use reth_provider::{
 use reth_rpc_api::EthApiServer;
 use reth_rpc_types::{
     state::StateOverride, AccessListWithGasUsed, AnyTransactionReceipt, BlockOverrides, Bundle,
-    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Header, Index, RichBlock,
-    StateContext, SyncStatus, TransactionRequest, Work,
+    EIP1186AccountProofResponse, EthCallResponse, FeeHistory, GatewayAddress, Header, Index,
+    RichBlock, StateContext, SyncStatus, TransactionRequest, Work,
 };
 use reth_transaction_pool::TransactionPool;
 

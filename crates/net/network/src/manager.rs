@@ -43,7 +43,6 @@ use crate::{
 };
 use futures::{pin_mut, Future, StreamExt};
 use parking_lot::Mutex;
-use reth_ecies::util::pk2id;
 use reth_eth_wire::{
     capability::{Capabilities, CapabilityMessage},
     DisconnectReason, EthVersion, Status,
@@ -51,6 +50,7 @@ use reth_eth_wire::{
 use reth_metrics::common::mpsc::UnboundedMeteredSender;
 use reth_net_common::bandwidth_meter::BandwidthMeter;
 use reth_network_api::ReputationChangeKind;
+use reth_network_types::pk2id;
 use reth_network_types::PeerId;
 use reth_primitives::{ForkId, NodeRecord};
 use reth_provider::{BlockNumReader, BlockReader};

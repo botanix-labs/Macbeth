@@ -16,6 +16,7 @@ use reth_db::{
     DatabaseEnv,
 };
 use reth_exex::ExExContext;
+use reth_network::frost::manager::FrostConfig;
 use reth_network::{NetworkBuilder, NetworkConfig, NetworkHandle};
 use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeTypes};
 use reth_node_core::{
@@ -400,7 +401,7 @@ where
         let Self { builder, task_executor, data_dir } = self;
 
         let launcher = DefaultNodeLauncher::new(task_executor, data_dir);
-        builder.launch_with(launcher).await
+        builder.launch_with_poa(launcher).await
     }
 
     /// Check that the builder can be launched
@@ -497,6 +498,8 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
             self.executor.clone(),
             self.head,
             self.data_dir(),
+            None,
+            None,
         )
     }
 
@@ -509,6 +512,8 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
                 self.executor.clone(),
                 self.head,
                 self.data_dir(),
+                None,
+                None,
             )
             .await
     }
@@ -521,14 +526,17 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         &self,
         builder: NetworkBuilder<Node::Provider, (), ()>,
         pool: Pool,
+        frost_config: Option<FrostConfig>,
     ) -> NetworkHandle
     where
         Pool: TransactionPool + Unpin + 'static,
     {
-        let (handle, network, txpool, eth) = builder
-            .transactions(pool, Default::default())
-            .request_handler(self.provider().clone())
-            .split_with_handle();
+        let mut network_builder =
+            builder.transactions(pool, Default::default()).request_handler(self.provider().clone());
+        if let Some(frost_config) = frost_config {
+            network_builder = network_builder.frost(frost_config);
+        }
+        let (handle, network, txpool, eth, _frost) = network_builder.split_with_handle();
 
         self.executor.spawn_critical("p2p txpool", txpool);
         self.executor.spawn_critical("p2p eth request handler", eth);

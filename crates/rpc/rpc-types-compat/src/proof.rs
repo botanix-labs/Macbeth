@@ -1,6 +1,5 @@
 //! Compatibility functions for rpc proof related types.
 
-use alloy_rpc_types::storage::JsonStorageKey;
 use reth_primitives::{
     trie::{AccountProof, StorageProof},
     U64,

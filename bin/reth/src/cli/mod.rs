@@ -7,7 +7,7 @@ use crate::{
     },
     commands::{
         config_cmd, db, debug_cmd, dump_genesis, import, init_cmd, init_state, node, node::NoArgs,
-        p2p, recover, stage, test_vectors,
+        p2p, poa, recover, stage, test_vectors,
     },
     version::{LONG_VERSION, SHORT_VERSION},
 };
@@ -149,7 +149,9 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
             Commands::Node(command) => {
                 runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
             }
-            Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
+            Commands::Poa(command) => {
+                runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
+            }
             Commands::Init(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::InitState(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::Import(command) => runner.run_blocking_until_ctrl_c(command.execute()),

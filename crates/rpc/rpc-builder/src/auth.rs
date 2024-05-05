@@ -95,6 +95,7 @@ where
         BlockingTaskPool::build().expect("failed to build tracing pool"),
         fee_history_cache,
         evm_config,
+        None,
         botanix_provider,
     );
     let config = EthFilterConfig::default()

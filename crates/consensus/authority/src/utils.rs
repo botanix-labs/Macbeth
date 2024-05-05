@@ -4,7 +4,7 @@ use std::{io::Write, time::Duration};
 use bitcoin::{
     block::Header,
     hashes::{sha256, Hash},
-    psbt::PartiallySignedTransaction,
+    psbt::Psbt,
     witness::Witness,
 };
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
@@ -188,7 +188,7 @@ pub(crate) async fn process_receipts(
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
 fn get_pegout_data(log: Log, btc_network: bitcoin::Network) -> Option<PegoutData> {
-    for topic in &log.topics {
+    for topic in &log.topics().to_vec() {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
@@ -262,7 +262,7 @@ async fn process_botanix_log(
     btc_network: bitcoin::Network,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
-    for topic in &log.topics {
+    for topic in &log.topics().to_vec() {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
@@ -270,8 +270,8 @@ async fn process_botanix_log(
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
                 let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height >
-                    recent_bitcoin_block_height - confirmation_depth
+                if pegin_data.bitcoin_block_height
+                    > recent_bitcoin_block_height - confirmation_depth
                 {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
@@ -318,14 +318,14 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 #[warn(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -377,7 +377,7 @@ pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 
-pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
+pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }
 
@@ -512,7 +512,7 @@ mod test {
     use bitcoin::{
         hash_types::TxMerkleNode,
         hashes::Hash,
-        psbt::{Input, PartiallySignedTransaction},
+        psbt::{Input, Psbt},
         BlockHash, CompactTarget,
     };
     use rand::Rng;
@@ -694,7 +694,7 @@ mod test {
             input: vec![],
             output: vec![],
         };
-        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsigned_tx).unwrap();
+        let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
 
         let mut input_1 = Input::default();
         input_1.final_script_witness = Some(Witness::default());

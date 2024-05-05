@@ -31,7 +31,6 @@
 
 pub mod cli;
 pub mod commands;
-pub mod poa_builder;
 pub mod utils;
 
 /// Re-exported payload related types

@@ -1,8 +1,9 @@
+use miniscript::bitcoin::secp256k1::ffi::KeyPair;
 use secp256k1::{
     hashes::{sha256, Hash},
     rand::rngs::OsRng,
     scalar::OutOfRangeError,
-    KeyPair, PublicKey, Scalar, SecretKey,
+    PublicKey, Scalar, SecretKey,
 };
 
 use frost_secp256k1_tr as frost;
@@ -35,7 +36,7 @@ pub fn generate_new_secret_key() -> SecretKey {
 }
 
 pub fn generate_bip340_keypair() -> KeyPair {
-    KeyPair::new(&SECP, &mut OsRng)
+    unsafe { KeyPair::new() }
 }
 
 fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, KeyError> {

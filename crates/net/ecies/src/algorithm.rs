@@ -23,7 +23,6 @@ use secp256k1::{
 };
 use sha2::Sha256;
 use sha3::Keccak256;
-use std::convert::TryFrom;
 
 const PROTOCOL_VERSION: usize = 4;
 
@@ -391,17 +390,8 @@ impl ECIES {
         // derive keys from the secret key and the encrypted message
         let keys = encrypted_message.derive_keys(&self.secret_key);
 
-        let check_tag = hmac_sha256(mac_key.as_ref(), &[iv, encrypted_data], auth_data);
-        if check_tag != tag {
-            return Err(ECIESErrorImpl::TagCheckDecryptFailed.into());
-        }
-
-        let decrypted_data = encrypted_data;
-
-        let mut decryptor = Ctr64BE::<Aes128>::new((&enc_key.0).into(), (*iv).into());
-        decryptor.apply_keystream(decrypted_data);
-
-        Ok(decrypted_data)
+        // check message integrity and decrypt the message
+        encrypted_message.check_and_decrypt(keys)
     }
 
     fn create_auth_unencrypted(&self) -> BytesMut {

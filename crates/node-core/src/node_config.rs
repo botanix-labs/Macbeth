@@ -14,27 +14,13 @@ use metrics_exporter_prometheus::PrometheusHandle;
 use once_cell::sync::Lazy;
 use reth_config::{config::PruneConfig, Config};
 use reth_db::{database::Database, database_metrics::DatabaseMetrics};
-use reth_downloaders::{
-    bodies::bodies::BodiesDownloaderBuilder,
-    headers::reverse_headers::ReverseHeadersDownloaderBuilder,
-};
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine,
-    consensus::Consensus,
-    p2p::{
-        bodies::{client::BodiesClient, downloader::BodyDownloader},
-        headers::{client::HeadersClient, downloader::HeaderDownloader},
-    },
-    RethResult,
-};
+use reth_interfaces::{p2p::headers::client::HeadersClient, RethResult};
 use reth_network::{
     config::NetworkMode,
     frost::manager::{FrostConfig, FrostHandle},
     import::BlockImport,
-    transactions::{TransactionFetcherConfig, TransactionsManagerConfig},
-    NetworkBuilder, NetworkConfig, NetworkHandle, NetworkManager,
 };
-use reth_node_api::ConfigureEvm;
+use reth_network::{NetworkBuilder, NetworkConfig, NetworkManager};
 use reth_primitives::{
     constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, kzg::KzgSettings, stage::StageId,
     BlockHashOrNumber, BlockNumber, ChainSpec, Head, SealedHeader, B256, MAINNET,
@@ -403,61 +389,6 @@ impl NodeConfig {
         Ok(())
     }
 
-    /// Spawns the configured network and associated tasks and returns the [NetworkHandle] connected
-    /// to that network.
-    pub fn start_network<C, Pool>(
-        &self,
-        builder: NetworkBuilder<C, (), ()>,
-        task_executor: &TaskExecutor,
-        pool: Pool,
-        client: C,
-        data_dir: &ChainPath<DataDirPath>,
-        frost_config: Option<FrostConfig>,
-    ) -> (NetworkHandle, Option<FrostHandle>)
-    where
-        C: BlockReader + HeaderProvider + Clone + Unpin + 'static,
-        Pool: TransactionPool + Unpin + 'static,
-    {
-        let mut network_builder = builder
-            .transactions(
-                pool,
-                TransactionsManagerConfig {
-                    transaction_fetcher_config: TransactionFetcherConfig::new(
-                        self.network.soft_limit_byte_size_pooled_transactions_response,
-                        self.network
-                            .soft_limit_byte_size_pooled_transactions_response_on_pack_request,
-                    ),
-                },
-            )
-            .request_handler(client);
-        if let Some(frost_config) = frost_config {
-            network_builder = network_builder.frost(frost_config);
-        }
-
-        let (handle, network, txpool, eth, frost) = network_builder.split_with_handle();
-
-        task_executor.spawn_critical("p2p txpool", txpool);
-        task_executor.spawn_critical("p2p eth request handler", eth);
-        let frost_handle = frost.map(|frost_manager| {
-            let ret = frost_manager.handle();
-            task_executor.spawn_critical("p2p frost", frost_manager);
-            ret
-        });
-
-        let default_peers_path = data_dir.known_peers_path();
-        let known_peers_file = self.network.persistent_peers_file(default_peers_path);
-        task_executor.spawn_critical_with_graceful_shutdown_signal(
-            "p2p network task",
-            |shutdown| {
-                network.run_until_graceful_shutdown(shutdown, |network| {
-                    write_peers_to_file(network, known_peers_file)
-                })
-            },
-        );
-
-        (handle, frost_handle)
-    }
-
     /// Fetches the head block from the database.
     ///
     /// If the database is empty, returns the genesis block.
@@ -581,14 +512,7 @@ impl NodeConfig {
                 cfg_builder.frost_config(frost_config).network_mode(NetworkMode::Authority);
         }
 
-        // When `sequencer_endpoint` is configured, the node will forward all transactions to a
-        // Sequencer node for execution and inclusion on L1, and disable its own txpool
-        // gossip to prevent other parties in the network from learning about them.
-        #[cfg(feature = "optimism")]
-        let cfg_builder = cfg_builder
-            .sequencer_endpoint(self.rollup.sequencer_http.clone())
-            .disable_tx_gossip(self.rollup.disable_txpool_gossip);
-
+        let config = cfg_builder.build(client);
         if !self.network.discovery.enable_discv5_discovery {
             return config;
         }

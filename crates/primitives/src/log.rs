@@ -1,17 +1,7 @@
-use crate::{Address, Bloom, Bytes, B256};
-use alloy_primitives::{Log as AlloyLog, LogData};
-use alloy_rlp::{RlpDecodable, RlpEncodable};
-use reth_codecs::{main_codec, Compact};
+use crate::Bloom;
 
 /// Re-export `Log` from `alloy_primitives`.
 pub use alloy_primitives::Log;
-
-impl From<&Log> for AlloyLog<LogData> {
-    fn from(log: &Log) -> AlloyLog<LogData> {
-        AlloyLog::<LogData>::new(log.address, log.topics.clone(), log.data.clone())
-            .expect("log data is valid")
-    }
-}
 
 /// Calculate receipt logs bloom.
 pub fn logs_bloom<'a, It>(logs: It) -> Bloom

@@ -1,11 +1,8 @@
-use crate::{constants::GWEI_TO_WEI, Address};
-use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
+//! [EIP-4895](https://eips.ethereum.org/EIPS/eip-4895) Withdrawal types.
+
+use alloy_rlp::{RlpDecodableWrapper, RlpEncodableWrapper};
 use reth_codecs::{main_codec, Compact};
-use reth_rpc_types::serde_helpers::u64_hex;
-use std::{
-    mem,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 /// Re-export from `alloy_eips`.
 #[doc(inline)]

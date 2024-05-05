@@ -17,10 +17,9 @@ mod net;
 mod peer;
 pub mod relay;
 mod rpc;
-pub mod serde_helpers;
 
 // re-export for convenience
-// pub use alloy_rpc_types::serde_helpers;
+pub use alloy_rpc_types::serde_helpers;
 
 // Ethereum specific rpc types coming from alloy.
 pub use alloy_rpc_types::*;
@@ -43,7 +42,6 @@ pub use eth::{
     transaction::{self, TransactionRequest, TypedTransactionRequest},
 };
 
-pub use admin::*;
 pub use botanix::*;
 pub use mev::*;
 pub use net::*;
