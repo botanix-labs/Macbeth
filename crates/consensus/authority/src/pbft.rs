@@ -445,32 +445,6 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
 
 #[cfg(test)]
 mod tests {
-    macro_rules! setup_test {
-        ($sk:ident, $pk:ident, $block_to_propose:ident, $frost_handle_mock:ident, $config:ident, $peer_id:ident) => {
-            let secp = secp256k1::Secp256k1::new();
-            let $sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-            let $pk = secp256k1::PublicKey::from_secret_key(&secp, &$sk);
-
-            // Lets sign a block
-            let edh = ExtraDataHeader::default();
-            let mut header = Header::default();
-            header.add_extra_data_header(&edh);
-            header.sign_block(&$sk).unwrap();
-            let block_body = BlockBody::default();
-            let $block_to_propose = SealedBlock::new(header.seal_slow(), block_body);
-
-            let $frost_handle_mock = FrostHandleMock {};
-            let $config = FrostConfig {
-                authorities: vec![$pk.clone()],
-                authority_index: 0,
-                max_signers: 1,
-                min_signers: 1,
-                authority_pk: $pk,
-            };
-            let $peer_id = pk2id(&$pk);
-        };
-    }
-
     macro_rules! setup_multi_party_test {
         ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident) => {
             let secp = secp256k1::Secp256k1::new();
@@ -553,7 +527,7 @@ mod tests {
                     let peers = HashMap::new();
                     sender.send(peers).unwrap();
                 }
-                FrostCommand::GetPeerMessagesStream(sender) => {
+                FrostCommand::GetPeerMessagesStream(_sender) => {
                     // let (tx, _) = tokio::sync::mpsc::unbounded_channel();
                     // sender.send(tx).unwrap();
                 }
@@ -563,34 +537,36 @@ mod tests {
 
     #[test]
     fn test_pbft_state_machine_new() {
-        // gen new secret key
-        let secp = secp256k1::Secp256k1::new();
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
-
-        // Arrange
-        let frost_handle_mock = FrostHandleMock {};
-        let config = FrostConfig {
-            authorities: vec![pk.clone()],
-            authority_index: 2,
-            max_signers: 2,
-            min_signers: 2,
-            authority_pk: pk,
-        };
-        let peer_id = pk2id(&pk);
-
-        // Act
-        let pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
-
-        // Assert
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+        let pbft_state_machine = coord;
         // Check that the initial state is empty
         assert!(pbft_state_machine.state.is_empty());
     }
 
     #[tokio::test]
     async fn init_block_proposal() {
-        setup_test!(sk, pk, block_to_propose, frost_handle_mock, config, peer_id);
-        let mut pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+        let pbft_state_machine = coord;
         let block_hash = block_to_propose
             .header()
             .block_hash_segregated_signature()
@@ -662,7 +638,7 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            _block_to_propose
         );
 
         // sign the block as the non-coordinator
@@ -783,6 +759,55 @@ mod tests {
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+
+        // Getting anther block proposal from the same peer should not change the state
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+
+        // Test that the other non-coord responds the same way
+        non_coords[1]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        // There should be two commitments
+        assert_eq!(non_coords[1].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
+    }
+
+    #[tokio::test]
+    async fn pre_commitments_flow() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+
+        // Propose valid block and assert correct state transitions
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        // There should be two commitments
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
