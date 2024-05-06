@@ -32,6 +32,14 @@ pub(crate) enum Error {
     ExtraDataHeaderSerializeError(#[from] ExtraDataHeaderSerializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
+    #[error("Missing signatures on block")]
+    MissingSignatures,
+    #[error("Missing in turn signature on block")]
+    MissingInTurnSignature,
+    #[error("Proposed block has too many signatures")]
+    TooManySignaturesOnProposedBlock,
+    #[error("Failed to recover signature: {0}")]
+    RecoverSignatureError(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
 }
@@ -211,6 +219,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
 
         // Save block locally
         self.sealed_blocks.insert(block_hash, block.clone());
+        println!("block hash: {:?}", block_hash);
 
         // Set the state to awaiting pre-commitments
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
@@ -251,7 +260,26 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             .get(current_inturn_index(self.config.authorities.len() as u64) as usize)
             .expect("should be valid index");
 
-        // TODO Check if the inturn block producer has a signature on the block
+        // Check if the inturn block producer has the first signature on the block
+        // this serves as authentication that the block was produced by the in turn block producer
+        match block.header.deserialize_extra_data_header()?.authority_signatures {
+            Some(sigs) => {
+                if sigs.len() > 1 {
+                    return Err(Error::TooManySignaturesOnProposedBlock);
+                }
+                let msg =
+                    secp256k1::Message::from_slice(&block.header.create_sighash()?.0.as_slice())?;
+                let recovered_pk = sigs[0].recover(&msg)?;
+                if recovered_pk != *coordinator {
+                    warn!(target: "pbft" ,"In turn block producer does not have the first signature on the block");
+                    return Err(Error::MissingInTurnSignature);
+                }
+            }
+            None => {
+                warn!(target: "pbft" ,"Block proposal does not contain any signatures");
+                return Err(Error::MissingSignatures);
+            }
+        }
 
         // Add our own pre-commitment
         let mut pre_commits = HashSet::new();
@@ -417,19 +445,120 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rand;
-    use reth_network::frost::manager::ToFrostManager;
+    macro_rules! setup_test {
+        ($sk:ident, $pk:ident, $block_to_propose:ident, $frost_handle_mock:ident, $config:ident, $peer_id:ident) => {
+            let secp = secp256k1::Secp256k1::new();
+            let $sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+            let $pk = secp256k1::PublicKey::from_secret_key(&secp, &$sk);
 
-    // Mock for the FrostPeerCommand enum
-    enum FrostPeerCommandMock {
-        PeerMessage(PeerMessageResponse),
+            // Lets sign a block
+            let edh = ExtraDataHeader::default();
+            let mut header = Header::default();
+            header.add_extra_data_header(&edh);
+            header.sign_block(&$sk).unwrap();
+            let block_body = BlockBody::default();
+            let $block_to_propose = SealedBlock::new(header.seal_slow(), block_body);
+
+            let $frost_handle_mock = FrostHandleMock {};
+            let $config = FrostConfig {
+                authorities: vec![$pk.clone()],
+                authority_index: 0,
+                max_signers: 1,
+                min_signers: 1,
+                authority_pk: $pk,
+            };
+            let $peer_id = pk2id(&$pk);
+        };
     }
 
+    macro_rules! setup_multi_party_test {
+        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident) => {
+            let secp = secp256k1::Secp256k1::new();
+            let mut $sks = vec![];
+            let mut $configs = vec![];
+            let mut $peer_ids = vec![];
+            // redundant to define this again ends up being neater
+            let mut pks = vec![];
+            let mut $signed_blocks = vec![];
+
+            let $frost_handle_mock = FrostHandleMock {};
+            for _ in 0..$n {
+                let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+                let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+                $sks.push(sk);
+                let peer_id = pk2id(&pk);
+                $peer_ids.push(peer_id);
+
+                pks.push(pk);
+            }
+
+            for i in 0..$n {
+                let pk = pks[i];
+                let config = FrostConfig {
+                    authorities: pks.clone(),
+                    authority_index: i,
+                    max_signers: $n,
+                    min_signers: $n,
+                    authority_pk: pk,
+                };
+                $configs.push(config);
+            }
+
+            for i in 0..$n {
+                let edh = ExtraDataHeader::default();
+                let mut header = Header::default();
+                header.add_extra_data_header(&edh);
+                header.sign_block(&$sks[i]).unwrap();
+                let block_body = BlockBody::default();
+                $signed_blocks.push(SealedBlock::new(header.seal_slow(), block_body));
+            }
+
+            let mut $non_coords = vec![];
+            let mut $block_to_propose = None;
+            let mut $coord = None;
+
+            for i in 0..$n {
+                let pbft_state_machine = PbftStateMachine::new(
+                    $frost_handle_mock.clone(),
+                    $configs[i].clone(),
+                    $peer_ids[i],
+                    $sks[i],
+                );
+                if !pbft_state_machine.is_coordinator() {
+                    $non_coords.push(pbft_state_machine.clone());
+                } else {
+                    $coord = Some(pbft_state_machine.clone());
+                    $block_to_propose = Some($signed_blocks[i].clone());
+                }
+            }
+            let $block_to_propose = $block_to_propose.expect("should have a block to propose");
+            let $coord = $coord.expect("should have a coordinator");
+        };
+    }
+
+    use super::*;
+    use rand;
+    use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+    use reth_network::frost::manager::ToFrostManager;
+    use reth_primitives::{Block, Header};
+
     // mock frost handle
+    #[derive(Clone)]
     struct FrostHandleMock;
     impl ToFrostManager for FrostHandleMock {
-        fn send_command(&self, _command: FrostCommand) {}
+        fn send_command(&self, command: FrostCommand) {
+            match command {
+                FrostCommand::CheckConnectedToAll(sender) => sender.send(true).unwrap(),
+                FrostCommand::GetAllConnectedFrostPeers(sender) => {
+                    let peers = HashMap::new();
+                    sender.send(peers).unwrap();
+                }
+                FrostCommand::GetPeerMessagesStream(sender) => {
+                    // let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                    // sender.send(tx).unwrap();
+                }
+            }
+        }
     }
 
     #[test]
@@ -458,5 +587,218 @@ mod tests {
         assert!(pbft_state_machine.state.is_empty());
     }
 
-    // More tests can be added similarly for other methods
+    #[tokio::test]
+    async fn init_block_proposal() {
+        setup_test!(sk, pk, block_to_propose, frost_handle_mock, config, peer_id);
+        let mut pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+        // if the state is not init for this block hash it should fail
+        // pbft_state_machine.set_state(PbftState::AwaitingCommitments, block_hash);
+        // pbft_state_machine.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+
+        // reset and this time the state should be waiting for pre-commitments
+        let mut pbft_state_machine = pbft_state_machine.reset();
+        pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        // there should only be the one pre-commitment
+        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
+
+        // Since we are now waiting for pre commitments it should not change the state
+        pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        // there should only be the one pre-commitment
+        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
+
+        // Re initialing with the same block proposal should not change the state
+        pbft_state_machine.set_state(PbftState::Initial, block_hash);
+        pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        // there should only be the one pre-commitment
+        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
+    }
+
+    #[tokio::test]
+    async fn test_block_proposal_cannot_add_self() {
+        setup_test!(sk, pk, block_to_propose, frost_handle_mock, config, peer_id);
+        let mut pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+        // Should not add a block from ourselves
+        pbft_state_machine
+            .process_block_proposal(block_to_propose.clone(), peer_id)
+            .await
+            .expect("valid block proposal");
+        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash), None);
+        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash), None);
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::Initial);
+    }
+
+    #[tokio::test]
+    async fn test_cannot_propose_non_coord_block() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            2,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+        // sign the block as the non-coordinator
+        let non_coord_sk = non_coords[0].secret_key.clone();
+        let edh = ExtraDataHeader::default();
+        let mut invalid_block_header = Header::default();
+        invalid_block_header.add_extra_data_header(&edh);
+        invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
+        let invalid_block =
+            SealedBlock::new(invalid_block_header.seal_slow(), BlockBody::default());
+        // try to propose an a block singed by a non coord
+        let res = non_coords[0]
+            .process_block_proposal(invalid_block.clone(), coord.peer_id.clone())
+            .await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "Missing in turn signature on block");
+    }
+
+    #[tokio::test]
+    async fn test_cannot_propose_block_with_two_signatures() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            2,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+        // sign the block as the non-coordinator
+        let non_coord_sk = non_coords[0].secret_key.clone();
+        let mut invalid_block_header = block_to_propose.header().clone();
+        invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
+
+        let invalid_block =
+            SealedBlock::new(invalid_block_header.seal_slow(), BlockBody::default());
+        // try to propose an a block singed by a non coord
+        let res =
+            non_coords[0].process_block_proposal(invalid_block.clone(), coord.peer_id.clone()).await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "Proposed block has too many signatures");
+    }
+
+    #[tokio::test]
+    async fn test_two_party_block_propose_flow() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            2,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+        // Propose valid block and assert correct state transitions
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        // There should be two commitments
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        // One for the peer that sent their pre commitment
+        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[1]));
+        // Another implicitly added for the coord that proposed the block
+        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[0]));
+        // at this point we have two commitments from all peers we should be awaiting commitments
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+
+        // Getting anther block proposal from the same peer should not change the state
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[1]));
+        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[0]));
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+    }
+
+    #[tokio::test]
+    async fn test_three_party_block_propose_flow() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+        // Propose valid block and assert correct state transitions
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        // There should be two commitments
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+
+        // Getting anther block proposal from the same peer should not change the state
+        non_coords[0]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+
+        // Test that the other non-coord responds the same way
+        non_coords[1]
+            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+            .await
+            .expect("valid block proposal");
+        // There should be two commitments
+        assert_eq!(non_coords[1].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
+    }
 }
