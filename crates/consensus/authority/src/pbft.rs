@@ -91,7 +91,6 @@ pub(crate) struct PbftStateMachine<F: ToFrostManager> {
     peer_id: PeerId,
     config: FrostConfig,
     pre_commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
-    commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
     sealed_blocks: BTreeMap<BlockHash, SealedBlock>,
     secret_key: secp256k1::SecretKey,
     personal_frost_identifier: frost::Identifier,
@@ -118,7 +117,6 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             config,
             peer_id,
             pre_commitments: BTreeMap::new(),
-            commitments: BTreeMap::new(),
             sealed_blocks: BTreeMap::new(),
             secret_key,
         }
@@ -133,7 +131,6 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             config: self.config,
             peer_id: self.peer_id,
             pre_commitments: BTreeMap::new(),
-            commitments: BTreeMap::new(),
             sealed_blocks: BTreeMap::new(),
             secret_key: self.secret_key,
         }
@@ -319,9 +316,6 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
                 BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
             );
 
-            // Add our own commitments
-            let commits = self.commitments.entry(block_hash).or_insert_with(HashSet::new);
-            commits.insert(self.peer_id);
             // Update state
             self.set_state(PbftState::AwaitingCommitments, block_hash);
             // Gossip our commitment
@@ -433,7 +427,6 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >= self.config.max_signers {
             info!(target: "pbft" ,"We have enough commitments, time to produce a block");
-            self.commitments.remove(&block_hash);
             // TODO remove debug
             let sigs = edh.authority_signatures.unwrap();
             info!(target: "pbft" ,"signatures: {:?}", sigs);
