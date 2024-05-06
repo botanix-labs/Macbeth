@@ -505,8 +505,8 @@ mod tests {
                     $block_to_propose = Some($signed_blocks[i].clone());
                 }
             }
-            let $block_to_propose = $block_to_propose.expect("should have a block to propose");
-            let $coord = $coord.expect("should have a coordinator");
+            let mut $block_to_propose = $block_to_propose.expect("should have a block to propose");
+            let mut $coord = $coord.expect("should have a coordinator");
         };
     }
 
@@ -546,7 +546,7 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            _block_to_propose
         );
         let pbft_state_machine = coord;
         // Check that the initial state is empty
@@ -610,15 +610,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_proposal_cannot_add_self() {
-        setup_test!(sk, pk, block_to_propose, frost_handle_mock, config, peer_id);
-        let mut pbft_state_machine = PbftStateMachine::new(frost_handle_mock, config, peer_id, sk);
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+        let mut pbft_state_machine = coord;
         let block_hash = block_to_propose
             .header()
             .block_hash_segregated_signature()
             .expect("to get the block hash");
         // Should not add a block from ourselves
         pbft_state_machine
-            .process_block_proposal(block_to_propose.clone(), peer_id)
+            .process_block_proposal(block_to_propose.clone(), pbft_state_machine.peer_id.clone())
             .await
             .expect("valid block proposal");
         assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash), None);
@@ -680,8 +690,9 @@ mod tests {
         let invalid_block =
             SealedBlock::new(invalid_block_header.seal_slow(), BlockBody::default());
         // try to propose an a block singed by a non coord
-        let res =
-            non_coords[0].process_block_proposal(invalid_block.clone(), coord.peer_id.clone()).await;
+        let res = non_coords[0]
+            .process_block_proposal(invalid_block.clone(), coord.peer_id.clone())
+            .await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "Proposed block has too many signatures");
     }
@@ -793,7 +804,6 @@ mod tests {
             block_to_propose
         );
 
-
         // Propose valid block and assert correct state transitions
         let block_hash = block_to_propose
             .header()
@@ -807,7 +817,6 @@ mod tests {
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
-        
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
@@ -817,13 +826,199 @@ mod tests {
         assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
 
-        // Test that the other non-coord responds the same way
-        non_coords[1]
-            .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+        let other_peer_id = non_coords[1].peer_id.clone();
+        // Process other peers pre-commitment
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), other_peer_id)
             .await
-            .expect("valid block proposal");
-        // There should be two commitments
-        assert_eq!(non_coords[1].pre_commitments.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
+            .expect("valid precommitment");
+
+        // There should be three pre-commitments, non_coord[0], coord which was added at the block proposal stage
+        // And non_coord[1] which we just added
+        let pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap();
+        assert_eq!(pre_commitments.len(), 3);
+        for i in 0..pre_commitments.len() {
+            assert!(pre_commitments.contains(&peer_ids[i]));
+        }
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+
+        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await for commitments
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), other_peer_id)
+            .await
+            .expect("valid precommitment");
+        let mut pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap().clone();
+        assert_eq!(pre_commitments.len(), 3);
+        for i in 0..pre_commitments.len() {
+            assert!(pre_commitments.contains(&peer_ids[i]));
+        }
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+
+        // Remove the coord's pre-commits
+        pre_commitments.remove(&coord.peer_id);
+        non_coords[0].pre_commitments.insert(block_hash, pre_commitments.clone());
+        non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
+        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await for commitments
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), other_peer_id)
+            .await
+            .expect("valid precommitment");
+
+        let pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap().clone();
+        assert_eq!(pre_commitments.len(), 2);
+        // At this point its us (non_coord[0]) and the other peer (non_coord[1)
+        assert!(pre_commitments.contains(&non_coords[0].peer_id));
+        assert!(pre_commitments.contains(&non_coords[1].peer_id));
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+    }
+
+    #[tokio::test]
+    async fn commitments_flow() {
+        // Note: set up test signs with the first authorities key
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose
+        );
+
+        coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+
+        // Process block proposal
+        let block_hash = block_to_propose
+            .header()
+            .block_hash_segregated_signature()
+            .expect("to get the block hash");
+        for i in 0..non_coords.len() {
+            non_coords[i]
+                .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+                .await
+                .expect("valid block proposal");
+        }
+        // At this point we should have two pre-commitments
+        // The other non-coord peers need to provide their pre-commitments
+
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        let peer_id_1 = non_coords[1].peer_id.clone();
+        // Process other peers pre-commitment
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), peer_id_1)
+            .await
+            .expect("valid precommitment");
+
+        non_coords[1]
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid precommitment");
+
+        // both non-coords should be awaiting commitments
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
+        // Coordinator still havent received enough commitments
+        assert!(coord.get_state(block_hash).is_awaiting_precommitments());
+
+        coord
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid precommitment");
+
+        coord
+            .process_precommitment(block_to_propose.clone(), peer_id_1)
+            .await
+            .expect("valid precommitment");
+
+        // Coordinator should now be awaiting commitments
+        assert!(coord.get_state(block_hash).is_awaiting_commitments());
+
+        // Sign the block as peer 1
+        let mut header_to_sign_0 = block_to_propose.header().clone();
+        header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
+        let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_0.header().block_hash_segregated_signature().unwrap(), block_hash);
+
+        // Sign the block as peer 2
+        let mut header_to_sign_1 = block_to_propose.header().clone();
+        header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
+        let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
+
+        coord
+            .process_commitment(signed_block_0.clone(), peer_id_0)
+            .await
+            .expect("valid commitment");
+        // Coordinator should still be awaiting commitments
+        assert!(coord.get_state(block_hash).is_awaiting_commitments());
+        let sigs_so_far = coord
+            .sealed_blocks
+            .get(&block_hash)
+            .unwrap()
+            .header()
+            .clone()
+            .deserialize_extra_data_header()
+            .unwrap()
+            .authority_signatures
+            .expect("should have signatures");
+
+        assert_eq!(sigs_so_far.len(), 2);
+
+        // adding the same commitment should not change anything
+        coord
+            .process_commitment(signed_block_0.clone(), peer_id_0)
+            .await
+            .expect("valid commitment");
+        let sigs_again = coord
+            .sealed_blocks
+            .get(&block_hash)
+            .unwrap()
+            .header()
+            .clone()
+            .deserialize_extra_data_header()
+            .unwrap()
+            .authority_signatures
+            .expect("should have signatures");
+        assert_eq!(sigs_again.len(), 2);
+        assert!(sigs_again.contains(&sigs_so_far[0]));
+        assert!(sigs_again.contains(&sigs_so_far[1]));
+
+        let finished_block = coord
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+        // Since we added the last signature needed we should get returned `Some(SealedBlock)`
+        assert!(finished_block.is_some());
+
+        let sigs_so_far = coord
+            .sealed_blocks
+            .get(&block_hash)
+            .unwrap()
+            .header()
+            .clone()
+            .deserialize_extra_data_header()
+            .unwrap()
+            .authority_signatures
+            .expect("should have signatures");
+        // There should be a sig from all peers
+        assert_eq!(sigs_so_far.len(), 3);
+        for sk in sks {
+            let pk = sk.public_key(secp256k1::SECP256K1);
+            let mut recovered = false;
+            for sig in sigs_so_far.iter() {
+                let msg = secp256k1::Message::from_slice(
+                    &block_to_propose.header().create_sighash().unwrap().0.as_slice(),
+                )
+                .unwrap();
+                let recovered_pk = sig.recover(&msg).unwrap();
+                if recovered_pk == pk {
+                    recovered = true;
+                    break;
+                }
+            }
+
+            assert!(recovered);
+        }
     }
 }
