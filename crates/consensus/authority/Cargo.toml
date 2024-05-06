@@ -14,6 +14,7 @@ description = "A PoA consensus engine"
 [dependencies]
 # reth
 reth-consensus-common = { path = "../common" }
+reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }
 reth-primitives.workspace = true
 reth-interfaces.workspace = true
@@ -53,7 +54,7 @@ hex = "0.4.3"
 frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
 
 ## Bitcoin
-bitcoin = "0.30.2"
+bitcoin = "0.31.0"
 
 ## Crypto
 secp256k1 = { workspace = true, features = [

@@ -4,7 +4,7 @@ use crate::{
     eth::error::{EthApiError, EthResult, RpcInvalidTransactionError},
     EthApi,
 };
-use reth_node_api::ConfigureEvmEnv;
+use reth_evm::ConfigureEvm;
 use reth_primitives::{
     serde_helper::JsonStorageKey, Address, BlockId, BlockNumberOrTag, Bytes, B256, U256,
 };
@@ -21,7 +21,7 @@ where
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Pool: TransactionPool + Clone + 'static,
     Network: Send + Sync + 'static,
-    EvmConfig: ConfigureEvmEnv + 'static,
+    EvmConfig: ConfigureEvm + 'static,
 {
     pub(crate) fn get_code(&self, address: Address, block_id: Option<BlockId>) -> EthResult<Bytes> {
         Ok(self
@@ -47,7 +47,7 @@ where
         address: Address,
         block_id: Option<BlockId>,
     ) -> EthResult<U256> {
-        if let Some(BlockId::Number(BlockNumberOrTag::Pending)) = block_id {
+        if block_id == Some(BlockId::Number(BlockNumberOrTag::Pending)) {
             let address_txs = self.pool().get_transactions_by_sender(address);
             if let Some(highest_nonce) =
                 address_txs.iter().map(|item| item.transaction.nonce()).max()
@@ -55,7 +55,7 @@ where
                 let tx_count = highest_nonce
                     .checked_add(1)
                     .ok_or(RpcInvalidTransactionError::NonceMaxValue)?;
-                return Ok(U256::from(tx_count))
+                return Ok(U256::from(tx_count));
             }
         }
 
@@ -84,7 +84,7 @@ where
         block_id: Option<BlockId>,
     ) -> EthResult<EIP1186AccountProofResponse> {
         let chain_info = self.provider().chain_info()?;
-        let block_id = block_id.unwrap_or(BlockId::Number(BlockNumberOrTag::Latest));
+        let block_id = block_id.unwrap_or_default();
 
         // if we are trying to create a proof for the latest block, but have a BlockId as input
         // that is not BlockNumberOrTag::Latest, then we need to figure out whether or not the
@@ -98,7 +98,7 @@ where
 
         // TODO: remove when HistoricalStateProviderRef::proof is implemented
         if !is_latest_block {
-            return Err(EthApiError::InvalidBlockRange)
+            return Err(EthApiError::InvalidBlockRange);
         }
 
         let this = self.clone();
@@ -127,9 +127,10 @@ mod tests {
         },
         BlockingTaskPool,
     };
-    use reth_node_ethereum::EthEvmConfig;
+    use reth_evm_ethereum::EthEvmConfig;
     use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, StorageKey, StorageValue};
     use reth_provider::test_utils::{ExtendedAccount, MockEthProvider, NoopProvider};
+    use reth_tasks::pool::BlockingTaskPool;
     use reth_transaction_pool::test_utils::testing_pool;
     use std::collections::HashMap;
 
@@ -148,7 +149,7 @@ mod tests {
             GasPriceOracle::new(NoopProvider::default(), Default::default(), cache.clone()),
             ETHEREUM_BLOCK_GAS_LIMIT,
             BlockingTaskPool::build().expect("failed to build tracing pool"),
-            FeeHistoryCache::new(cache.clone(), FeeHistoryCacheConfig::default()),
+            FeeHistoryCache::new(cache, FeeHistoryCacheConfig::default()),
             evm_config,
             Botanix::new(BotanixConfig::default()),
         );
@@ -170,10 +171,10 @@ mod tests {
             pool,
             (),
             cache.clone(),
-            GasPriceOracle::new(mock_provider.clone(), Default::default(), cache.clone()),
+            GasPriceOracle::new(mock_provider, Default::default(), cache.clone()),
             ETHEREUM_BLOCK_GAS_LIMIT,
             BlockingTaskPool::build().expect("failed to build tracing pool"),
-            FeeHistoryCache::new(cache.clone(), FeeHistoryCacheConfig::default()),
+            FeeHistoryCache::new(cache, FeeHistoryCacheConfig::default()),
             evm_config,
             Botanix::new(BotanixConfig::default()),
         );

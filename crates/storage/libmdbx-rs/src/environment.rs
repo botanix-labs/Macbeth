@@ -20,6 +20,7 @@ use std::{
     thread::sleep,
     time::Duration,
 };
+use tracing::warn;
 
 /// The default maximum duration of a read transaction.
 #[cfg(feature = "read-tx-timeouts")]
@@ -87,6 +88,12 @@ impl Environment {
         &self.inner.txn_manager
     }
 
+    /// Returns the number of timed out transactions that were not aborted by the user yet.
+    #[cfg(feature = "read-tx-timeouts")]
+    pub fn timed_out_not_aborted_transactions(&self) -> usize {
+        self.inner.txn_manager.timed_out_not_aborted_read_transactions().unwrap_or(0)
+    }
+
     /// Create a read-only transaction for use with the environment.
     #[inline]
     pub fn begin_ro_txn(&self) -> Result<Transaction<RO>> {
@@ -96,6 +103,7 @@ impl Environment {
     /// Create a read-write transaction for use with the environment. This method will block while
     /// there are any other read-write transactions open on the environment.
     pub fn begin_rw_txn(&self) -> Result<Transaction<RW>> {
+        let mut warned = false;
         let txn = loop {
             let (tx, rx) = sync_channel(0);
             self.txn_manager().send_message(TxnManagerMessage::Begin {
@@ -104,12 +112,16 @@ impl Environment {
                 sender: tx,
             });
             let res = rx.recv().unwrap();
-            if let Err(Error::Busy) = &res {
+            if matches!(&res, Err(Error::Busy)) {
+                if !warned {
+                    warned = true;
+                    warn!(target: "libmdbx", "Process stalled, awaiting read-write transaction lock.");
+                }
                 sleep(Duration::from_millis(250));
-                continue
+                continue;
             }
 
-            break res
+            break res;
         }?;
         Ok(Transaction::new_from_ptr(self.clone(), txn.0))
     }
@@ -134,7 +146,7 @@ impl Environment {
     where
         F: FnOnce(*mut ffi::MDBX_env) -> T,
     {
-        (f)(self.env_ptr())
+        f(self.env_ptr())
     }
 
     /// Flush the environment data buffers to disk.
@@ -204,7 +216,7 @@ impl Environment {
         for result in cursor.iter_slices() {
             let (_key, value) = result?;
             if value.len() < size_of::<usize>() {
-                return Err(Error::Corrupted)
+                return Err(Error::Corrupted);
             }
 
             let s = &value[..size_of::<usize>()];
@@ -489,7 +501,7 @@ impl<R> Default for Geometry<R> {
 ///
 /// # Arguments
 ///
-/// * `process_id` – A proceess id of the reader process.
+/// * `process_id` – A process id of the reader process.
 /// * `thread_id` – A thread id of the reader thread.
 /// * `read_txn_id` – An oldest read transaction number on which stalled.
 /// * `gap` – A lag from the last committed txn.
@@ -696,7 +708,7 @@ impl EnvironmentBuilder {
             })() {
                 ffi::mdbx_env_close_ex(env, false);
 
-                return Err(e)
+                return Err(e);
             }
         }
 
@@ -938,7 +950,8 @@ mod tests {
             .open(tempdir.path())
             .unwrap();
 
-        // Insert some data in the database, so the read transaction can lock on the snapshot of it
+        // Insert some data in the database, so the read transaction can lock on the static file of
+        // it
         {
             let tx = env.begin_rw_txn().unwrap();
             let db = tx.open_db(None).unwrap();
@@ -951,7 +964,8 @@ mod tests {
         // Create a read transaction
         let _tx_ro = env.begin_ro_txn().unwrap();
 
-        // Change previously inserted data, so the read transaction would use the previous snapshot
+        // Change previously inserted data, so the read transaction would use the previous static
+        // file
         {
             let tx = env.begin_rw_txn().unwrap();
             let db = tx.open_db(None).unwrap();
@@ -962,7 +976,7 @@ mod tests {
         }
 
         // Insert more data in the database, so we hit the DB size limit error, and MDBX tries to
-        // kick long-lived readers and delete their snapshots
+        // kick long-lived readers and delete their static_files
         {
             let tx = env.begin_rw_txn().unwrap();
             let db = tx.open_db(None).unwrap();

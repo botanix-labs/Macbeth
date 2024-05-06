@@ -40,9 +40,9 @@ impl<T: Hash + Eq> LruCache<T> {
         if self.inner.insert(entry) {
             if self.limit.get() < self.inner.len() {
                 // remove the oldest element in the set
-                return (true, self.remove_lru())
+                return (true, self.remove_lru());
             }
-            return (true, None)
+            return (true, None);
         }
         (false, None)
     }
@@ -62,9 +62,10 @@ impl<T: Hash + Eq> LruCache<T> {
     }
 
     /// Returns `true` if the set contains a value.
-    pub fn contains<Q: ?Sized + Hash + Eq>(&self, value: &Q) -> bool
+    pub fn contains<Q>(&self, value: &Q) -> bool
     where
         T: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
     {
         self.inner.contains(value)
     }

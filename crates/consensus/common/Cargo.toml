@@ -29,12 +29,12 @@ secp256k1 = { workspace = true, features = [
 
 # misc
 cfg-if = "1.0.0"
+reth-consensus.workspace=true
 
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
 reth-provider = { workspace = true, features = ["test-utils"] }
-assert_matches.workspace = true
-mockall = "0.11.3"
+mockall = "0.12"
 
 [features]
 optimism = ["reth-primitives/optimism"]

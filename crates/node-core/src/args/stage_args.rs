@@ -1,9 +1,10 @@
 //! Shared arguments related to stages
+use derive_more::Display;
 
 /// Represents a specific stage within the data pipeline.
 ///
 /// Different stages within the pipeline have dedicated functionalities and operations.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, clap::ValueEnum, Display)]
 pub enum StageEnum {
     /// The headers stage within the pipeline.
     ///
@@ -29,11 +30,11 @@ pub enum StageEnum {
     ///
     /// Manages operations related to hashing storage data.
     StorageHashing,
-    /// The hashing stage within the pipeline.
+    /// The account and storage hashing stages within the pipeline.
     ///
     /// Covers general data hashing operations.
     Hashing,
-    /// The Merkle stage within the pipeline.
+    /// The merkle stage within the pipeline.
     ///
     /// Handles Merkle tree-related computations and data processing.
     Merkle,
@@ -49,8 +50,4 @@ pub enum StageEnum {
     ///
     /// Manages historical data related to storage.
     StorageHistory,
-    /// The total difficulty stage within the pipeline.
-    ///
-    /// Handles computations and data related to total difficulty.
-    TotalDifficulty,
 }
