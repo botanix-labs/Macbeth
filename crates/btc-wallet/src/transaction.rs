@@ -1,5 +1,5 @@
 use bitcoin::{
-    psbt::{self, PartiallySignedTransaction, Psbt},
+    psbt::Psbt,
     sighash::{TapSighash, TapSighashType},
     OutPoint, TxOut,
 };
@@ -16,7 +16,7 @@ pub struct Input {
 /// Create psbt with proprietary tweak fields
 pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut>) -> Psbt {
     let tx = bitcoin::Transaction {
-        version: 2i32,
+        version: bitcoin::transaction::Version(2i32),
         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
         input: inputs
             .iter()
@@ -37,7 +37,7 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
     };
 
     // Create PSBT
-    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx).expect("tx is unsigned");
+    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
     for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
         psbt_input.witness_utxo = Some(utxo.output.clone());
         if let Some(eth_addr) = utxo.eth_address {
@@ -66,7 +66,7 @@ pub fn calculate_sighash(
     let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
     let sighash = sighashcache.taproot_key_spend_signature_hash(
         input_index,
-        &psbt::Prevouts::All(&prevouts),
+        &bitcoin::sighash::Prevouts::All(&prevouts),
         TapSighashType::All,
     )?;
 

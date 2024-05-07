@@ -2,19 +2,18 @@ use crate::{metrics::EngineApiMetrics, EngineApiError, EngineApiResult};
 use async_trait::async_trait;
 use jsonrpsee_core::RpcResult;
 use reth_beacon_consensus::BeaconConsensusEngineHandle;
-use reth_interfaces::consensus::ForkchoiceState;
-use reth_node_api::{
-    validate_payload_timestamp, BuiltPayload, EngineApiMessageVersion, EngineTypes,
-    PayloadAttributes, PayloadBuilderAttributes, PayloadOrAttributes,
+use reth_engine_primitives::{
+    validate_payload_timestamp, EngineApiMessageVersion, EngineTypes, PayloadAttributes,
+    PayloadBuilderAttributes, PayloadOrAttributes,
 };
 use reth_payload_builder::PayloadStore;
 use reth_primitives::{BlockHash, BlockHashOrNumber, BlockNumber, ChainSpec, Hardfork, B256, U64};
 use reth_provider::{BlockReader, EvmEnvProvider, HeaderProvider, StateProviderFactory};
 use reth_rpc_api::EngineApiServer;
 use reth_rpc_types::engine::{
-    CancunPayloadFields, ExecutionPayload, ExecutionPayloadBodiesV1, ExecutionPayloadEnvelopeV2,
-    ExecutionPayloadEnvelopeV3, ExecutionPayloadInputV2, ExecutionPayloadV1, ExecutionPayloadV3,
-    ForkchoiceUpdated, PayloadId, PayloadStatus, TransitionConfiguration, CAPABILITIES,
+    CancunPayloadFields, ExecutionPayload, ExecutionPayloadBodiesV1, ExecutionPayloadInputV2,
+    ExecutionPayloadV1, ExecutionPayloadV3, ForkchoiceState, ForkchoiceUpdated, PayloadId,
+    PayloadStatus, TransitionConfiguration, CAPABILITIES,
 };
 use reth_rpc_types_compat::engine::payload::{
     convert_payload_input_v2_to_payload, convert_to_payload_body_v1,
@@ -22,7 +21,7 @@ use reth_rpc_types_compat::engine::payload::{
 use reth_tasks::TaskSpawner;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
-use tracing::trace;
+use tracing::{trace, warn};
 
 /// The Engine API response sender.
 pub type EngineApiSender<Ok> = oneshot::Sender<EngineApiResult<Ok>>;
@@ -47,7 +46,7 @@ struct EngineApiInner<Provider, EngineT: EngineTypes> {
     payload_store: PayloadStore<EngineT>,
     /// For spawning and executing async tasks
     task_spawner: Box<dyn TaskSpawner>,
-    /// The metrics for engine api calls
+    /// The latency and response type metrics for engine api calls
     metrics: EngineApiMetrics,
 }
 
@@ -202,14 +201,18 @@ where
     pub async fn get_payload_v1(
         &self,
         payload_id: PayloadId,
-    ) -> EngineApiResult<ExecutionPayloadV1> {
-        Ok(self
-            .inner
+    ) -> EngineApiResult<EngineT::ExecutionPayloadV1> {
+        self.inner
             .payload_store
             .resolve(payload_id)
             .await
             .ok_or(EngineApiError::UnknownPayload)?
-            .map(|payload| payload.into_v1_payload())?)
+            .map_err(|_| EngineApiError::UnknownPayload)?
+            .try_into()
+            .map_err(|_| {
+                warn!("could not transform built payload into ExecutionPayloadV1");
+                EngineApiError::UnknownPayload
+            })
     }
 
     /// Returns the most recent version of the payload that is available in the corresponding
@@ -222,7 +225,7 @@ where
     pub async fn get_payload_v2(
         &self,
         payload_id: PayloadId,
-    ) -> EngineApiResult<ExecutionPayloadEnvelopeV2> {
+    ) -> EngineApiResult<EngineT::ExecutionPayloadV2> {
         // First we fetch the payload attributes to check the timestamp
         let attributes = self.get_payload_attributes(payload_id).await?;
 
@@ -234,13 +237,17 @@ where
         )?;
 
         // Now resolve the payload
-        Ok(self
-            .inner
+        self.inner
             .payload_store
             .resolve(payload_id)
             .await
             .ok_or(EngineApiError::UnknownPayload)?
-            .map(|payload| payload.into_v2_payload())?)
+            .map_err(|_| EngineApiError::UnknownPayload)?
+            .try_into()
+            .map_err(|_| {
+                warn!("could not transform built payload into ExecutionPayloadV2");
+                EngineApiError::UnknownPayload
+            })
     }
 
     /// Returns the most recent version of the payload that is available in the corresponding
@@ -253,7 +260,7 @@ where
     pub async fn get_payload_v3(
         &self,
         payload_id: PayloadId,
-    ) -> EngineApiResult<ExecutionPayloadEnvelopeV3> {
+    ) -> EngineApiResult<EngineT::ExecutionPayloadV3> {
         // First we fetch the payload attributes to check the timestamp
         let attributes = self.get_payload_attributes(payload_id).await?;
 
@@ -265,25 +272,17 @@ where
         )?;
 
         // Now resolve the payload
-        let mut resolved_payload = self
-            .inner
+        self.inner
             .payload_store
             .resolve(payload_id)
             .await
             .ok_or(EngineApiError::UnknownPayload)?
-            .map(|payload| payload.into_v3_payload())?;
-
-        // After `Cancun` is enabled on optimism, an extra field `parent_beacon_block_root` is
-        // included in the enveloped V3 payload. On ethereum, this field is not included.
-        if self.inner.chain_spec.is_optimism() &&
-            self.inner
-                .chain_spec
-                .is_fork_active_at_timestamp(Hardfork::Cancun, attributes.timestamp())
-        {
-            resolved_payload.parent_beacon_block_root = attributes.parent_beacon_block_root();
-        }
-
-        Ok(resolved_payload)
+            .map_err(|_| EngineApiError::UnknownPayload)?
+            .try_into()
+            .map_err(|_| {
+                warn!("could not transform built payload into ExecutionPayloadV2");
+                EngineApiError::UnknownPayload
+            })
     }
 
     /// Returns the execution payload bodies by the range starting at `start`, containing `count`
@@ -293,7 +292,7 @@ where
     /// layer p2p specification, meaning the input should be treated as untrusted or potentially
     /// adversarial.
     ///
-    /// Implementors should take care when acting on the input to this method, specifically
+    /// Implementers should take care when acting on the input to this method, specifically
     /// ensuring that the range is limited properly, and that the range boundaries are computed
     /// correctly and without panics.
     pub async fn get_payload_bodies_by_range(
@@ -491,7 +490,8 @@ where
         trace!(target: "rpc::engine", "Serving engine_newPayloadV1");
         let start = Instant::now();
         let res = EngineApi::new_payload_v1(self, payload).await;
-        self.inner.metrics.new_payload_v1.record(start.elapsed());
+        self.inner.metrics.latency.new_payload_v1.record(start.elapsed());
+        self.inner.metrics.new_payload_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -501,7 +501,8 @@ where
         trace!(target: "rpc::engine", "Serving engine_newPayloadV2");
         let start = Instant::now();
         let res = EngineApi::new_payload_v2(self, payload).await;
-        self.inner.metrics.new_payload_v2.record(start.elapsed());
+        self.inner.metrics.latency.new_payload_v2.record(start.elapsed());
+        self.inner.metrics.new_payload_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -518,7 +519,8 @@ where
         let res =
             EngineApi::new_payload_v3(self, payload, versioned_hashes, parent_beacon_block_root)
                 .await;
-        self.inner.metrics.new_payload_v3.record(start.elapsed());
+        self.inner.metrics.latency.new_payload_v3.record(start.elapsed());
+        self.inner.metrics.new_payload_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -535,7 +537,8 @@ where
         let start = Instant::now();
         let res =
             EngineApi::fork_choice_updated_v1(self, fork_choice_state, payload_attributes).await;
-        self.inner.metrics.fork_choice_updated_v1.record(start.elapsed());
+        self.inner.metrics.latency.fork_choice_updated_v1.record(start.elapsed());
+        self.inner.metrics.fcu_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -550,7 +553,8 @@ where
         let start = Instant::now();
         let res =
             EngineApi::fork_choice_updated_v2(self, fork_choice_state, payload_attributes).await;
-        self.inner.metrics.fork_choice_updated_v2.record(start.elapsed());
+        self.inner.metrics.latency.fork_choice_updated_v2.record(start.elapsed());
+        self.inner.metrics.fcu_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -566,7 +570,8 @@ where
         let start = Instant::now();
         let res =
             EngineApi::fork_choice_updated_v3(self, fork_choice_state, payload_attributes).await;
-        self.inner.metrics.fork_choice_updated_v3.record(start.elapsed());
+        self.inner.metrics.latency.fork_choice_updated_v3.record(start.elapsed());
+        self.inner.metrics.fcu_response.update_response_metrics(&res);
         Ok(res?)
     }
 
@@ -581,11 +586,14 @@ where
     ///
     /// Note:
     /// > Provider software MAY stop the corresponding build process after serving this call.
-    async fn get_payload_v1(&self, payload_id: PayloadId) -> RpcResult<ExecutionPayloadV1> {
+    async fn get_payload_v1(
+        &self,
+        payload_id: PayloadId,
+    ) -> RpcResult<EngineT::ExecutionPayloadV1> {
         trace!(target: "rpc::engine", "Serving engine_getPayloadV1");
         let start = Instant::now();
         let res = EngineApi::get_payload_v1(self, payload_id).await;
-        self.inner.metrics.get_payload_v1.record(start.elapsed());
+        self.inner.metrics.latency.get_payload_v1.record(start.elapsed());
         Ok(res?)
     }
 
@@ -598,11 +606,14 @@ where
     ///
     /// Note:
     /// > Provider software MAY stop the corresponding build process after serving this call.
-    async fn get_payload_v2(&self, payload_id: PayloadId) -> RpcResult<ExecutionPayloadEnvelopeV2> {
+    async fn get_payload_v2(
+        &self,
+        payload_id: PayloadId,
+    ) -> RpcResult<EngineT::ExecutionPayloadV2> {
         trace!(target: "rpc::engine", "Serving engine_getPayloadV2");
         let start = Instant::now();
         let res = EngineApi::get_payload_v2(self, payload_id).await;
-        self.inner.metrics.get_payload_v2.record(start.elapsed());
+        self.inner.metrics.latency.get_payload_v2.record(start.elapsed());
         Ok(res?)
     }
 
@@ -615,11 +626,14 @@ where
     ///
     /// Note:
     /// > Provider software MAY stop the corresponding build process after serving this call.
-    async fn get_payload_v3(&self, payload_id: PayloadId) -> RpcResult<ExecutionPayloadEnvelopeV3> {
+    async fn get_payload_v3(
+        &self,
+        payload_id: PayloadId,
+    ) -> RpcResult<EngineT::ExecutionPayloadV3> {
         trace!(target: "rpc::engine", "Serving engine_getPayloadV3");
         let start = Instant::now();
         let res = EngineApi::get_payload_v3(self, payload_id).await;
-        self.inner.metrics.get_payload_v3.record(start.elapsed());
+        self.inner.metrics.latency.get_payload_v3.record(start.elapsed());
         Ok(res?)
     }
 
@@ -632,7 +646,7 @@ where
         trace!(target: "rpc::engine", "Serving engine_getPayloadBodiesByHashV1");
         let start = Instant::now();
         let res = EngineApi::get_payload_bodies_by_hash(self, block_hashes);
-        self.inner.metrics.get_payload_bodies_by_hash_v1.record(start.elapsed());
+        self.inner.metrics.latency.get_payload_bodies_by_hash_v1.record(start.elapsed());
         Ok(res?)
     }
 
@@ -647,7 +661,7 @@ where
     /// layer p2p specification, meaning the input should be treated as untrusted or potentially
     /// adversarial.
     ///
-    /// Implementors should take care when acting on the input to this method, specifically
+    /// Implementers should take care when acting on the input to this method, specifically
     /// ensuring that the range is limited properly, and that the range boundaries are computed
     /// correctly and without panics.
     ///
@@ -660,7 +674,7 @@ where
         trace!(target: "rpc::engine", "Serving engine_getPayloadBodiesByRangeV1");
         let start_time = Instant::now();
         let res = EngineApi::get_payload_bodies_by_range(self, start.to(), count.to()).await;
-        self.inner.metrics.get_payload_bodies_by_range_v1.record(start_time.elapsed());
+        self.inner.metrics.latency.get_payload_bodies_by_range_v1.record(start_time.elapsed());
         Ok(res?)
     }
 
@@ -673,7 +687,7 @@ where
         trace!(target: "rpc::engine", "Serving engine_exchangeTransitionConfigurationV1");
         let start = Instant::now();
         let res = EngineApi::exchange_transition_configuration(self, config).await;
-        self.inner.metrics.exchange_transition_configuration.record(start.elapsed());
+        self.inner.metrics.latency.exchange_transition_configuration.record(start.elapsed());
         Ok(res?)
     }
 
@@ -698,8 +712,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use reth_beacon_consensus::BeaconEngineMessage;
+    use reth_ethereum_engine_primitives::EthEngineTypes;
     use reth_interfaces::test_utils::generators::random_block;
-    use reth_node_ethereum::EthEngineTypes;
     use reth_payload_builder::test_utils::spawn_test_payload_service;
     use reth_primitives::{SealedBlock, B256, MAINNET};
     use reth_provider::test_utils::MockEthProvider;

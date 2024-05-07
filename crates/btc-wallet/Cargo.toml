@@ -10,8 +10,8 @@ exclude = [".github/"]
 
 [dependencies]
 anyhow = "1.0.71"
-bitcoin = {version = "0.30.2", features = ["serde", "rand", "rand-std"]}
-secp256k1 = { version = "0.27.0", features = [
+bitcoin = {version = "0.31.0", features = ["serde", "rand", "rand-std"]}
+secp256k1 = { workspace = true, features = [
     "global-context",
     "rand",
     "rand-std",
@@ -24,7 +24,7 @@ lazy_static = "1.4.0"
 reqwest = { version = "0.11.18", features = ["blocking", "json"] }
 async-trait = "0.1.73"
 ethers = "2.0.10"
-bitcoincore-rpc = "0.17.0"
+bitcoincore-rpc = "0.18.0"
 serde = "1.0.171"
 tokio = { version = "1.29.1", features = ["full"] }
 thiserror = "1.0.43"

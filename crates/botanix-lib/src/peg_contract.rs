@@ -51,8 +51,8 @@ impl PeginData {
 
             // pegin block headers list should contain the tip header as the last element in the
             // list
-            if pegin.block_headers.last().expect("header should exist").block_hash() !=
-                bitcoin_block.0.block_hash()
+            if pegin.block_headers.last().expect("header should exist").block_hash()
+                != bitcoin_block.0.block_hash()
             {
                 return Err(PeginError::Invalid("recent block hash mismatch"));
             }
@@ -75,7 +75,7 @@ impl PeginData {
                 return Err(PeginError::Invalid("invalid script pubkey"));
             }
 
-            let output_value = bitcoin::Amount::from_sat(output.value).to_wei();
+            let output_value = bitcoin::Amount::from_sat(output.value.to_sat()).to_wei();
             // if output_value < self.amount {
             //     return Err(PeginError::Invalid("invalid amount"));
             // }
@@ -252,8 +252,8 @@ mod tests {
     use std::str::FromStr;
 
     use bitcoin::{
-        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, BlockHash,
-        CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
+        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
+        BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
     use secp256k1::rand::thread_rng;
 
@@ -282,7 +282,7 @@ mod tests {
                 nonce: 0,
             }],
             tx: Transaction {
-                version: 1,
+                version: bitcoin::transaction::Version(1),
                 lock_time: LockTime::from_str("0").unwrap(),
                 input: vec![TxIn {
                     previous_output: OutPoint { txid, vout: 0 },
@@ -290,7 +290,10 @@ mod tests {
                     script_sig: bitcoin::ScriptBuf::new(),
                     witness: Default::default(),
                 }],
-                output: vec![TxOut { value: 100, script_pubkey: ScriptBuf::new() }],
+                output: vec![TxOut {
+                    value: Amount::from_sat(100),
+                    script_pubkey: ScriptBuf::new(),
+                }],
             },
         };
 
@@ -372,9 +375,9 @@ mod tests {
         let tpk = key::tweak_frost_verifying_key(pk, &account.into()).unwrap();
         let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
-        let tx_out = TxOut { value: 100_u64, script_pubkey: gateway_script };
+        let tx_out = TxOut { value: Amount::from_sat(100), script_pubkey: gateway_script };
         let tx: Transaction = Transaction {
-            version: 1_i32,
+            version: bitcoin::transaction::Version(1_i32),
             lock_time: LockTime::from_str("0").unwrap(),
             input: vec![tx_in],
             output: vec![tx_out],

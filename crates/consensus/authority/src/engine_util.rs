@@ -4,7 +4,7 @@
 // queue
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
-use reth_node_ethereum::EthEngineTypes;
+use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_payload_builder::{
     error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
 };

@@ -1,11 +1,12 @@
 //! Module for block import.
 /// Allows other components to import blocks from the network
 use crate::message::NewBlockMessage;
+use reth_consensus::ConsensusError;
 use reth_consensus_common::validation;
-use reth_interfaces::consensus::ConsensusError;
-use reth_primitives::{ChainSpec, PeerId, SealedBlock};
+use reth_primitives::{ChainSpec, SealedBlock};
 use tokio::sync::mpsc::UnboundedSender;
 
+use reth_network_types::PeerId;
 use std::{
     collections::VecDeque,
     sync::Arc,
@@ -59,7 +60,7 @@ pub enum BlockValidation {
 pub enum BlockImportError {
     /// Consensus error
     #[error(transparent)]
-    Consensus(#[from] reth_interfaces::consensus::ConsensusError),
+    Consensus(#[from] ConsensusError),
 }
 
 /// An implementation of `BlockImport` used in Proof-of-Stake consensus that does nothing.
@@ -129,7 +130,7 @@ impl BlockImport for ProofOfAuthorityBlockImport {
                 }
             }
 
-            return Poll::Ready(BlockImportOutcome { peer: pair.0, result })
+            return Poll::Ready(BlockImportOutcome { peer: pair.0, result });
         }
         Poll::Pending
     }

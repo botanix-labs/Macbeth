@@ -20,13 +20,14 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 use reth_botanix_lib::extra_data_header::ExtraDataHeader;
+use reth_consensus::{Consensus, ConsensusError};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp},
     validation::{self, validate_poa_header_standalone},
 };
 use reth_interfaces::{
-    consensus::{Consensus, ConsensusError},
     executor::{BlockExecutionError, BlockValidationError},
+    provider::ProviderError,
 };
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
@@ -35,7 +36,7 @@ use reth_primitives::{
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
     Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
     EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
@@ -46,7 +47,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 use voting::{AuthorityVoteCollection, Vote};
 
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -212,13 +213,18 @@ where
     pub(crate) fn get_best_block_and_hash(
         &self,
     ) -> Result<(u64, FixedBytes<32>), BlockExecutionError> {
-        let best_block =
-            self.client.best_block_number().map_err(|_| BlockExecutionError::ProviderError)?;
+        let best_block = self
+            .client
+            .best_block_number()
+            .map_err(|_| BlockExecutionError::LatestBlock(ProviderError::BestBlockNotFound))?;
 
         let best_hash = self
             .client
             .block_hash(best_block)
-            .map_err(|_| BlockExecutionError::ProviderError)?
+            .map_err(|_| {
+                // can't pass block number only hash
+                BlockExecutionError::LatestBlock(ProviderError::BlockHashNotFound(B256::ZERO))
+            })?
             .unwrap_or_else(|| {
                 panic!("{}", format!("Missing block hash for best block {:?}", best_block))
             });
@@ -244,7 +250,9 @@ where
             .client
             .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
             .expect("header to exist")
-            .and_then(|parent| parent.next_block_base_fee(chain_spec.base_fee_params(timestamp)));
+            .and_then(|parent| {
+                parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
+            });
 
         let mut header = Header {
             parent_hash: best_hash,
@@ -356,8 +364,12 @@ where
         let state_root = self
             .client
             .latest()
-            .map_err(|_| BlockExecutionError::ProviderError)?
-            .state_root(bundle_state)
+            .map_err(|_| {
+                BlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
+                    header.hash_slow(),
+                ))
+            })?
+            .state_root(bundle_state.state())
             .unwrap();
         header.state_root = state_root;
 

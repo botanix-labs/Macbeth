@@ -74,8 +74,8 @@ mod tests {
         capability::{Capabilities, Capability},
         EthVersion, Status,
     };
+    use reth_ethereum_engine_primitives::EthEngineTypes;
     use reth_network::{message::PeerRequestSender, PeerRequest};
-    use reth_node_ethereum::EthEngineTypes;
     use reth_rpc_types::PeerId;
     use tokio::sync::mpsc;
 

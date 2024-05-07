@@ -12,6 +12,7 @@ use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
+use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::manager::{FrostConfig, FrostHandle},
@@ -19,7 +20,6 @@ use reth_network::{
     NetworkEvents, NetworkHandle,
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
@@ -86,7 +86,7 @@ where
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
-    pub fn try_new(
+    pub fn try_new<T>(
         chain_spec: Arc<ChainSpec>,
         client: Client,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -105,9 +105,12 @@ where
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
         frost_config: FrostConfig,
-        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+        payload_builder: PayloadBuilderHandle<<T as reth_node_api::NodeTypes>::Engine>,
         btc_network: bitcoin::Network,
-    ) -> Result<Self, AuthorityConsensusBuilderError> {
+    ) -> Result<Self, AuthorityConsensusBuilderError>
+    where
+        T: reth_node_api::NodeTypes<Engine = reth_ethereum_engine_primitives::EthEngineTypes>,
+    {
         let mut latest_header = client
             .latest_header()
             .ok()

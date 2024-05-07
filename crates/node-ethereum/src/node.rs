@@ -2,11 +2,17 @@
 
 use crate::{EthEngineTypes, EthEvmConfig};
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_network::NetworkHandle;
+use reth_network::{
+    frost::manager::{FrostConfig, FrostHandle},
+    import::BlockImport,
+    NetworkHandle,
+};
 use reth_node_builder::{
-    components::{ComponentsBuilder, NetworkBuilder, PayloadServiceBuilder, PoolBuilder},
+    components::{
+        ComponentsBuilder, ExecutorBuilder, NetworkBuilder, PayloadServiceBuilder, PoolBuilder,
+    },
     node::{FullNodeTypes, NodeTypes},
-    BuilderContext, PayloadBuilderConfig,
+    BuilderContext, Node, PayloadBuilderConfig,
 };
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
 use reth_provider::CanonStateSubscriptions;
@@ -20,12 +26,16 @@ use reth_transaction_pool::{
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub struct EthereumNode;
-// TODO make this stateful with evm config
 
 impl EthereumNode {
     /// Returns a [ComponentsBuilder] configured for a regular Ethereum node.
-    pub fn components<Node>(
-    ) -> ComponentsBuilder<Node, EthereumPoolBuilder, EthereumPayloadBuilder, EthereumNetwork>
+    pub fn components<Node>() -> ComponentsBuilder<
+        Node,
+        EthereumPoolBuilder,
+        EthereumPayloadBuilder,
+        EthereumNetworkBuilder,
+        EthereumExecutorBuilder,
+    >
     where
         Node: FullNodeTypes<Engine = EthEngineTypes>,
     {
@@ -33,17 +43,46 @@ impl EthereumNode {
             .node_types::<Node>()
             .pool(EthereumPoolBuilder::default())
             .payload(EthereumPayloadBuilder::default())
-            .network(EthereumNetwork::default())
+            .network(EthereumNetworkBuilder::default())
+            .executor(EthereumExecutorBuilder::default())
     }
 }
 
 impl NodeTypes for EthereumNode {
     type Primitives = ();
     type Engine = EthEngineTypes;
-    type Evm = EthEvmConfig;
+}
 
-    fn evm_config(&self) -> Self::Evm {
-        todo!()
+impl<N> Node<N> for EthereumNode
+where
+    N: FullNodeTypes<Engine = EthEngineTypes>,
+{
+    type ComponentsBuilder = ComponentsBuilder<
+        N,
+        EthereumPoolBuilder,
+        EthereumPayloadBuilder,
+        EthereumNetworkBuilder,
+        EthereumExecutorBuilder,
+    >;
+
+    fn components_builder(self) -> Self::ComponentsBuilder {
+        Self::components()
+    }
+}
+
+/// A regular ethereum evm and executor builder.
+#[derive(Debug, Default, Clone, Copy)]
+#[non_exhaustive]
+pub struct EthereumExecutorBuilder;
+
+impl<Node> ExecutorBuilder<Node> for EthereumExecutorBuilder
+where
+    Node: FullNodeTypes,
+{
+    type EVM = EthEvmConfig;
+
+    async fn build_evm(self, _ctx: &BuilderContext<Node>) -> eyre::Result<Self::EVM> {
+        Ok(EthEvmConfig::default())
     }
 }
 
@@ -63,7 +102,7 @@ where
 {
     type Pool = EthTransactionPool<Node::Provider, DiskFileBlobStore>;
 
-    fn build_pool(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::Pool> {
+    async fn build_pool(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::Pool> {
         let data_dir = ctx.data_dir();
         let blob_store = DiskFileBlobStore::open(data_dir.blobstore_path(), Default::default())?;
         let validator = TransactionValidationTaskExecutor::eth_builder(ctx.chain_spec())
@@ -128,7 +167,7 @@ where
     Node: FullNodeTypes<Engine = EthEngineTypes>,
     Pool: TransactionPool + Unpin + 'static,
 {
-    fn spawn_payload_service(
+    async fn spawn_payload_service(
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
@@ -140,7 +179,7 @@ where
             .interval(conf.interval())
             .deadline(conf.deadline())
             .max_payload_tasks(conf.max_payload_tasks())
-            .extradata(conf.extradata_rlp_bytes())
+            .extradata(conf.extradata_bytes())
             .max_gas_limit(conf.max_gas_limit());
 
         let payload_generator = BasicPayloadJobGenerator::with_builder(
@@ -162,19 +201,25 @@ where
 
 /// A basic ethereum payload service.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct EthereumNetwork {
+pub struct EthereumNetworkBuilder {
     // TODO add closure to modify network
 }
 
-impl<Node, Pool> NetworkBuilder<Node, Pool> for EthereumNetwork
+impl<Node, Pool> NetworkBuilder<Node, Pool> for EthereumNetworkBuilder
 where
     Node: FullNodeTypes,
     Pool: TransactionPool + Unpin + 'static,
 {
-    fn build_network(self, ctx: &BuilderContext<Node>, pool: Pool) -> eyre::Result<NetworkHandle> {
-        let network = ctx.network_builder_blocking()?;
-        let handle = ctx.start_network(network, pool);
+    async fn build_network(
+        self,
+        ctx: &BuilderContext<Node>,
+        pool: Pool,
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> eyre::Result<(NetworkHandle, Option<FrostHandle>)> {
+        let network = ctx.network_builder(block_import, frost_config.clone()).await?;
+        let (handle, frost_handle) = ctx.start_network(network, pool, frost_config);
 
-        Ok(handle)
+        Ok((handle, frost_handle))
     }
 }
