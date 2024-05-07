@@ -27,7 +27,7 @@ pub trait HeaderExt {
 
     fn validate_inturn(&self, authorities: &[secp256k1::PublicKey]) -> Result<(), ConsensusError>;
 
-    fn block_hash_segregated_signature(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
+    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
 }
 
 #[derive(Debug, Error)]
@@ -83,7 +83,7 @@ impl HeaderExt for Header {
     }
 
     /// Provides block hash without extra data header bytes
-    fn block_hash_segregated_signature(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
+    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
         edh.authority_signatures = None;
@@ -245,10 +245,10 @@ mod tests {
         ]);
         edh.set_optional_fields_bitmask();
         header.extra_data = Bytes::from(edh.serialize());
-        let hash_before = header.block_hash_segregated_signature().expect("valid hash");
+        let hash_before = header.segregated_signature_block_hash().expect("valid hash");
 
         header.sign_block(&sk1).unwrap();
-        let hash_after = header.block_hash_segregated_signature().expect("valid hash");
+        let hash_after = header.segregated_signature_block_hash().expect("valid hash");
 
         assert_eq!(hash_before, hash_after);
     }

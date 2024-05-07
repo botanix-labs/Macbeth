@@ -201,7 +201,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     /// proposed to the network
     pub(crate) async fn init_block_proposal(&mut self, block: SealedBlock) -> Result<(), Error> {
         // Check if there is already a running state machine for this block
-        let block_hash = block.header.block_hash_segregated_signature()?;
+        let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
 
         if current_state.is_running() {
@@ -240,7 +240,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft" ,"Processing block proposal from peer {:?}", peer_id);
-        let block_hash = block.header.block_hash_segregated_signature()?;
+        let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if current_state.is_running() {
             warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
@@ -302,7 +302,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     /// Check if we have enough pre-commits to move onto the next state
     /// If we do, we can send our commitment
     async fn check_and_send_commitment(&mut self, block: &SealedBlock) -> Result<(), Error> {
-        let block_hash = block.header.block_hash_segregated_signature()?;
+        let block_hash = block.header.segregated_signature_block_hash()?;
 
         let pre_commits =
             self.pre_commitments.get(&block_hash).cloned().unwrap_or_else(HashSet::new);
@@ -335,7 +335,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
-        let block_hash = block.header.block_hash_segregated_signature()?;
+        let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
             warn!(target: "pbft", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
@@ -373,7 +373,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         if peer_id == self.peer_id {
             return Ok(None);
         }
-        let block_hash = block.header.block_hash_segregated_signature()?;
+        let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
@@ -393,8 +393,8 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.block_hash_segregated_signature()?
-            != block.header.block_hash_segregated_signature()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -562,7 +562,7 @@ mod tests {
         let pbft_state_machine = coord;
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
         // if the state is not init for this block hash it should fail
         // pbft_state_machine.set_state(PbftState::AwaitingCommitments, block_hash);
@@ -617,7 +617,7 @@ mod tests {
         let mut pbft_state_machine = coord;
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
         // Should not add a block from ourselves
         pbft_state_machine
@@ -708,7 +708,7 @@ mod tests {
         // Propose valid block and assert correct state transitions
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
 
         non_coords[0]
@@ -753,7 +753,7 @@ mod tests {
         // Propose valid block and assert correct state transitions
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
 
         non_coords[0]
@@ -800,7 +800,7 @@ mod tests {
         // Propose valid block and assert correct state transitions
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
 
         non_coords[0]
@@ -885,7 +885,7 @@ mod tests {
         // Process block proposal
         let block_hash = block_to_propose
             .header()
-            .block_hash_segregated_signature()
+            .segregated_signature_block_hash()
             .expect("to get the block hash");
         for i in 0..non_coords.len() {
             non_coords[i]
@@ -932,7 +932,7 @@ mod tests {
         let mut header_to_sign_0 = block_to_propose.header().clone();
         header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
         let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
-        assert_eq!(signed_block_0.header().block_hash_segregated_signature().unwrap(), block_hash);
+        assert_eq!(signed_block_0.header().segregated_signature_block_hash().unwrap(), block_hash);
 
         // Sign the block as peer 2
         let mut header_to_sign_1 = block_to_propose.header().clone();
