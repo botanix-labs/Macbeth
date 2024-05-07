@@ -13,6 +13,7 @@ description = "A PoA consensus engine"
 
 [dependencies]
 # reth
+reth-engine-primitives.workspace = true
 reth-consensus-common = { path = "../common" }
 reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }

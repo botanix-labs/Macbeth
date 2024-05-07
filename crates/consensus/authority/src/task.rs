@@ -5,10 +5,11 @@ use crate::{
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::bitcoind::BitcoindClient;
+use reth_engine_primitives::EngineTypes;
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::FrostHandle, NetworkHandle};
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::ConfigureEvmEnv;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
@@ -59,7 +60,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     #[allow(dead_code)]
     task_executor: TaskExecutor,
     /// Ethereum Payload Builder
-    pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+    pub(crate) payload_builder: PayloadBuilderHandle<Engine>,
     /// Frost Task Receiver
     pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
     /// Frost Task Sender
@@ -67,7 +68,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Bitcoin Network
     pub(crate) btc_network: bitcoin::Network,
 }
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
+impl<Client, EvmConfig, Engine: EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt
@@ -98,7 +99,7 @@ where
         frost_handle: FrostHandle,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
-        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+        payload_builder: PayloadBuilderHandle<Engine>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         btc_network: bitcoin::Network,

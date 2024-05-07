@@ -1,7 +1,7 @@
 use crate::engine_util;
 use futures_util::StreamExt;
 
-use reth_node_api::EngineTypes;
+use reth_engine_primitives::EngineTypes;
 use reth_primitives::revm_primitives::FixedBytes;
 
 use reth_network::NetworkEvent;

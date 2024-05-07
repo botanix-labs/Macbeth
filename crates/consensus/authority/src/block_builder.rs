@@ -9,11 +9,12 @@ use crate::{
 
 use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
+use reth_engine_primitives::EngineTypes;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
     BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
 };
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::ConfigureEvmEnv;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
@@ -24,7 +25,7 @@ use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
 
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
+impl<Client, EvmConfig, Engine: EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt

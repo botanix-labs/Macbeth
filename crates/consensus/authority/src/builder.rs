@@ -12,14 +12,14 @@ use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
-use reth_ethereum_engine_primitives::EthEngineTypes;
+use reth_engine_primitives::EngineTypes;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::manager::{FrostConfig, FrostHandle},
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::ConfigureEvmEnv;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{
@@ -59,6 +59,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     evm_config: EvmConfig,
     frost_config: FrostConfig,
     btc_network: bitcoin::Network,
+    payload_builder: PayloadBuilderHandle<Engine>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -105,6 +106,7 @@ where
         evm_config: EvmConfig,
         frost_config: FrostConfig,
         btc_network: bitcoin::Network,
+        payload_builder: PayloadBuilderHandle<Engine>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
@@ -180,6 +182,7 @@ where
             evm_config,
             frost_config,
             btc_network,
+            payload_builder,
         })
     }
 
@@ -187,19 +190,15 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub fn build<T>(
+    pub fn build(
         self,
-        payload_builder: PayloadBuilderHandle<<T as reth_node_api::NodeTypes>::Engine>,
     ) -> (
         AuthorityConsensus,
         BlockProductionTask<Client, EvmConfig, Engine>,
         BlockFetcherTask<Client, EvmConfig, Engine>,
         FrostTask<Client>,
         SyncController<Engine>,
-    )
-    where
-        T: reth_node_api::NodeTypes<Engine = reth_ethereum_engine_primitives::EthEngineTypes>,
-    {
+    ) {
         let Self {
             btc_server,
             client: _,
@@ -221,6 +220,7 @@ where
             evm_config,
             frost_config,
             btc_network,
+            payload_builder,
         } = self;
 
         let sync_task = SyncController::new(
@@ -279,7 +279,7 @@ where
             frost_task.frost_handle.clone(),
             task_executor,
             evm_config.clone(),
-            payload_builder.clone(),
+            payload_builder,
             frost_task_notifications2_rx,
             frost_task_notifications1_tx,
             btc_network,

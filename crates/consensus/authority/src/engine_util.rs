@@ -5,6 +5,7 @@
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
 use reth_ethereum_engine_primitives::EthEngineTypes;
+use reth_node_api::BuiltPayload;
 use reth_payload_builder::{
     error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
 };
@@ -30,7 +31,7 @@ pub(crate) enum SendNewPayloadError {
 /// Sends a new payload to the engine.
 /// This function sends a new payload to the engine and waits for the response.
 /// It handles different payload status scenarios and returns an error if the payload is invalid.
-pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn send_beacon_new_payload<Engine: reth_engine_primitives::EngineTypes>(
     sealed_block: SealedBlock,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 ) -> Result<PayloadStatus, SendNewPayloadError> {
@@ -41,7 +42,9 @@ pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
             cancun_fields: None,
             tx,
         };
-        to_engine.send(payload).map_err(|_| SendNewPayloadError::EngineError)?;
+        to_engine
+            .send(payload as BeaconEngineMessage<Engine>)
+            .map_err(|_| SendNewPayloadError::EngineError)?;
         let recv = rx.await.map_err(|_| SendNewPayloadError::RecvError)?;
         match recv {
             Ok(recv) => {
@@ -81,7 +84,7 @@ pub(crate) enum SendForkChoiceUpdateError {
 }
 
 /// Sends a FCU payload to the engine.
-pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::EngineTypes>(
+pub(crate) async fn send_fork_choice_update_payload<Engine: reth_engine_primitives::EngineTypes>(
     new_block_hash: BlockHash,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 ) -> Result<(), SendForkChoiceUpdateError> {
@@ -96,7 +99,8 @@ pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::Engin
         // to download and execute the block we just inserted
         let (tx, rx) = oneshot::channel();
         to_engine
-            .send(BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs: None, tx })
+            .send(BeaconEngineMessage::ForkchoiceUpdated { state, payload_attrs: None, tx }
+                as BeaconEngineMessage<Engine>)
             .map_err(|_| SendForkChoiceUpdateError::EngineError)?;
 
         let recv = rx.await.map_err(|_| SendForkChoiceUpdateError::RecvError)?;
@@ -143,8 +147,8 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
-pub(crate) async fn start_new_payload(
-    payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
+pub(crate) async fn start_new_payload<Engine: reth_engine_primitives::EngineTypes>(
+    payload_builder: &PayloadBuilderHandle<Engine>,
     payload_attributes: EthPayloadBuilderAttributes,
 ) -> Result<PayloadId, StartNewPayloadError> {
     let payload_id = payload_builder
@@ -170,12 +174,12 @@ pub(crate) enum BestTransactionsError {
 /// otherwise a BestTransactionsError is returned.
 ///
 /// # Arguments
-/// * `to_engine` - The sender to send the message to the Beacon Engine.
+/// * `payload_builder` - Payload builder handler.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn best_transactions_from_payload(
-    payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
+pub(crate) async fn best_transactions_from_payload<'a, Engine: reth_engine_primitives::EngineTypes>(
+    payload_builder: PayloadBuilderHandle<Engine>,
     payload_id: PayloadId,
-) -> Result<EthBuiltPayload, BestTransactionsError> {
+) -> Result<Engine::BuiltPayload, BestTransactionsError> {
     let best_txs = payload_builder
         .best_payload(payload_id)
         .await

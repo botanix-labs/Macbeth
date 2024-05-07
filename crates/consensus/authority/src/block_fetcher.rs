@@ -15,8 +15,9 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFac
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindClient;
+use reth_engine_primitives::EngineTypes;
 use reth_network::message::NewBlockMessage;
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 

@@ -27,7 +27,7 @@ use reth_interfaces::p2p::either::EitherDownloader;
 use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents,
 };
-
+use tokio::sync::mpsc::UnboundedSender;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::unix_timestamp;
 use reth_node_api::{FullNodeComponents, FullNodeTypes};
@@ -47,7 +47,7 @@ use reth_tasks::TaskExecutor;
 use reth_tracing::tracing::{debug, error, info};
 use reth_transaction_pool::TransactionPool;
 use std::{collections::HashMap, future::Future, sync::Arc};
-use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock, UnboundedSender};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tokio::time::Duration;
 
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
@@ -593,7 +593,7 @@ address.to_string(), format_ether(alloc.balance));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
         // create bitcoind client and make sure its synced
-        let bitcoind_config: BitcoindConfig = bitcoind.into();
+        let bitcoind_config: BitcoindConfig = bitcoind.clone().into();
         let bitcoind_client =
             BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
 
@@ -804,7 +804,6 @@ address.to_string(), format_ether(alloc.balance));
         let bitcoind_config: BitcoindConfig = bitcoind.clone().into();
         let (
             _,
-            mut block_production_task,
             mut block_fetcher_task,
             mut frost_task,
             mut sync_controller,
@@ -829,7 +828,7 @@ address.to_string(), format_ether(alloc.balance));
             btc_network,
         )
         .expect("Failed to create authority consensus builder")
-        .build(components.payload_builder().clone());
+        .build();
 
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
@@ -938,7 +937,7 @@ address.to_string(), format_ether(alloc.balance));
 
         // create pipeline
         let network_client = node_adapter.network().fetch_client().await?;
-        let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
+        // let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
 
         if let Some(skip_fcu_threshold) = ctx.node_config().debug.skip_fcu {
             debug!(target: "reth::cli", "spawning skip FCU task");
