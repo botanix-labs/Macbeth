@@ -199,6 +199,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
 
     /// Intended to be called by the in turn block producer when a block is ready to be
     /// proposed to the network
+    /// Note: there should already be a signature on the block at this point
     pub(crate) async fn init_block_proposal(&mut self, block: SealedBlock) -> Result<(), Error> {
         // Check if there is already a running state machine for this block
         let block_hash = block.header.segregated_signature_block_hash()?;
@@ -212,6 +213,11 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring init block proposal request");
             return Ok(());
+        }
+
+        if block.header.deserialize_extra_data_header()?.authority_signatures.is_none() {
+            warn!(target: "pbft" ,"Block proposal does not contain any signatures");
+            return Err(Error::MissingSignatures);
         }
 
         // Save block locally
