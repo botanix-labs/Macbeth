@@ -150,7 +150,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
                 runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
             }
             Commands::Poa(command) => {
-                runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
+                runner.run_command_until_exit(|ctx| command.execute(ctx, launcher, true))
             }
             Commands::Init(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::InitState(command) => runner.run_blocking_until_ctrl_c(command.execute()),

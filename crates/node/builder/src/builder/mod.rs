@@ -16,8 +16,8 @@ use reth_db::{
     DatabaseEnv,
 };
 use reth_exex::ExExContext;
-use reth_network::frost::manager::FrostConfig;
-use reth_network::{NetworkBuilder, NetworkConfig, NetworkHandle};
+use reth_network::frost::manager::{FrostConfig, FrostHandle};
+use reth_network::{import::BlockImport, NetworkBuilder, NetworkConfig, NetworkHandle};
 use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeTypes};
 use reth_node_core::{
     cli::config::{PayloadBuilderConfig, RethTransactionPoolConfig},
@@ -398,10 +398,16 @@ where
     pub async fn launch(
         self,
     ) -> eyre::Result<NodeHandle<NodeAdapter<RethFullAdapter<DB, T>, CB::Components>>> {
+        let is_federation_member = self.builder.config.is_federation_member;
         let Self { builder, task_executor, data_dir } = self;
 
         let launcher = DefaultNodeLauncher::new(task_executor, data_dir);
-        builder.launch_with_poa(launcher).await
+
+        if is_federation_member {
+            builder.launch_with_poa(launcher).await
+        } else {
+            builder.launch_with(launcher).await
+        }
     }
 
     /// Check that the builder can be launched
@@ -504,7 +510,11 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     }
 
     /// Creates the [NetworkBuilder] for the node.
-    pub async fn network_builder(&self) -> eyre::Result<NetworkBuilder<Node::Provider, (), ()>> {
+    pub async fn network_builder(
+        &self,
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> eyre::Result<NetworkBuilder<Node::Provider, (), ()>> {
         self.config
             .build_network(
                 &self.reth_config,
@@ -512,8 +522,8 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
                 self.executor.clone(),
                 self.head,
                 self.data_dir(),
-                None,
-                None,
+                block_import,
+                frost_config,
             )
             .await
     }
@@ -527,7 +537,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         builder: NetworkBuilder<Node::Provider, (), ()>,
         pool: Pool,
         frost_config: Option<FrostConfig>,
-    ) -> NetworkHandle
+    ) -> (NetworkHandle, Option<FrostHandle>)
     where
         Pool: TransactionPool + Unpin + 'static,
     {
@@ -536,10 +546,16 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         if let Some(frost_config) = frost_config {
             network_builder = network_builder.frost(frost_config);
         }
-        let (handle, network, txpool, eth, _frost) = network_builder.split_with_handle();
+        let (handle, network, txpool, eth, frost) = network_builder.split_with_handle();
 
         self.executor.spawn_critical("p2p txpool", txpool);
         self.executor.spawn_critical("p2p eth request handler", eth);
+
+        let frost_handle = frost.map(|frost_manager| {
+            let ret = frost_manager.handle();
+            self.executor.spawn_critical("p2p frost", frost_manager);
+            ret
+        });
 
         let default_peers_path = self.data_dir().known_peers_path();
         let known_peers_file = self.config.network.persistent_peers_file(default_peers_path);
@@ -552,7 +568,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
             },
         );
 
-        handle
+        (handle, frost_handle)
     }
 }
 

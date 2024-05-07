@@ -13,9 +13,12 @@ workspace = true
 
 [dependencies]
 ## reth
+reth-authority-consensus.workspace = true
 reth-auto-seal-consensus.workspace = true
 reth-beacon-consensus.workspace = true
 reth-blockchain-tree.workspace = true
+reth-btc-wallet.workspace = true
+reth-consensus-common.workspace = true  
 reth-exex.workspace = true
 reth-provider.workspace = true
 reth-revm.workspace = true
@@ -59,3 +62,6 @@ secp256k1.workspace = true
 
 ## bitcoin
 bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+
+## sntp client
+rsntp = "3.0.2"

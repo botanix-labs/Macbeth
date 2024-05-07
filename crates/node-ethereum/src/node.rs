@@ -2,7 +2,11 @@
 
 use crate::{EthEngineTypes, EthEvmConfig};
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_network::NetworkHandle;
+use reth_network::{
+    frost::manager::{FrostConfig, FrostHandle},
+    import::BlockImport,
+    NetworkHandle,
+};
 use reth_node_builder::{
     components::{
         ComponentsBuilder, ExecutorBuilder, NetworkBuilder, PayloadServiceBuilder, PoolBuilder,
@@ -210,10 +214,12 @@ where
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
-    ) -> eyre::Result<NetworkHandle> {
-        let network = ctx.network_builder().await?;
-        let handle = ctx.start_network(network, pool, None);
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> eyre::Result<(NetworkHandle, Option<FrostHandle>)> {
+        let network = ctx.network_builder(block_import, frost_config.clone()).await?;
+        let (handle, frost_handle) = ctx.start_network(network, pool, frost_config);
 
-        Ok(handle)
+        Ok((handle, frost_handle))
     }
 }

@@ -7,8 +7,14 @@ use crate::{
     },
     BuilderContext, ConfigureEvm, FullNodeTypes,
 };
+use reth_network::{
+    frost::manager::{FrostConfig, FrostHandle},
+    import::BlockImport,
+};
 use reth_transaction_pool::TransactionPool;
 use std::{future::Future, marker::PhantomData};
+
+use super::network;
 
 /// A generic, general purpose and customizable [`NodeComponentsBuilder`] implementation.
 ///
@@ -237,7 +243,9 @@ where
     async fn build_components(
         self,
         context: &BuilderContext<Node>,
-    ) -> eyre::Result<Self::Components> {
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> eyre::Result<(Self::Components, Option<FrostHandle>)> {
         let Self {
             pool_builder,
             payload_builder,
@@ -248,10 +256,22 @@ where
 
         let evm_config = evm_builder.build_evm(context).await?;
         let pool = pool_builder.build_pool(context).await?;
-        let network = network_builder.build_network(context, pool.clone()).await?;
+        let network_handles = match network_builder
+            .build_network(context, pool.clone(), block_import, frost_config)
+            .await
+        {
+            Ok(network_handles) => network_handles,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+        let (network, frost_handle) = network_handles;
         let payload_builder = payload_builder.spawn_payload_service(context, pool.clone()).await?;
 
-        Ok(Components { transaction_pool: pool, evm_config, network, payload_builder })
+        Ok((
+            Components { transaction_pool: pool, evm_config, network, payload_builder },
+            frost_handle,
+        ))
     }
 }
 
@@ -284,14 +304,16 @@ pub trait NodeComponentsBuilder<Node: FullNodeTypes>: Send {
     fn build_components(
         self,
         ctx: &BuilderContext<Node>,
-    ) -> impl Future<Output = eyre::Result<Self::Components>> + Send;
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> impl Future<Output = eyre::Result<(Self::Components, Option<FrostHandle>)>> + Send;
 }
 
 impl<Node, F, Fut, Pool, EVM> NodeComponentsBuilder<Node> for F
 where
     Node: FullNodeTypes,
     F: FnOnce(&BuilderContext<Node>) -> Fut + Send,
-    Fut: Future<Output = eyre::Result<Components<Node, Pool, EVM>>> + Send,
+    Fut: Future<Output = eyre::Result<(Components<Node, Pool, EVM>, Option<FrostHandle>)>> + Send,
     Pool: TransactionPool + Unpin + 'static,
     EVM: ConfigureEvm,
 {
@@ -300,7 +322,9 @@ where
     fn build_components(
         self,
         ctx: &BuilderContext<Node>,
-    ) -> impl Future<Output = eyre::Result<Self::Components>> + Send {
+        _block_import: Option<Box<dyn BlockImport>>,
+        _frost_config: Option<FrostConfig>,
+    ) -> impl Future<Output = eyre::Result<(Self::Components, Option<FrostHandle>)>> + Send {
         self(ctx)
     }
 }

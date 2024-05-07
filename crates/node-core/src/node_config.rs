@@ -148,6 +148,9 @@ pub struct NodeConfig {
 
     /// All pruning related arguments
     pub pruning: PruningArgs,
+
+    /// Indicates if the node is a federation member
+    pub is_federation_member: bool,
 }
 
 impl NodeConfig {
@@ -562,6 +565,7 @@ impl Default for NodeConfig {
             db: DatabaseArgs::default(),
             dev: DevArgs::default(),
             pruning: PruningArgs::default(),
+            is_federation_member: false,
         }
     }
 }

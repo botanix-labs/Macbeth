@@ -171,7 +171,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     }
 
     /// Execute `node` command
-    pub async fn execute<L, Fut>(self, ctx: CliContext, launcher: L) -> eyre::Result<()>
+    pub async fn execute<L, Fut>(
+        self,
+        ctx: CliContext,
+        launcher: L,
+        is_federation_member: bool,
+    ) -> eyre::Result<()>
     where
         L: FnOnce(WithLaunchContext<NodeBuilder<Arc<DatabaseEnv>>>, Ext) -> Fut,
         Fut: Future<Output = eyre::Result<()>>,
@@ -210,6 +215,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             db,
             dev,
             pruning,
+            is_federation_member,
         };
 
         // Register the prometheus recorder before creating the database,

@@ -8,20 +8,31 @@ use crate::{
     BuilderContext, NodeBuilderWithComponents, NodeHandle,
 };
 use futures::{future, future::Either, stream, stream_select, StreamExt};
+use reth_authority_consensus::{
+    extended_client::BtcServerExtendedClient,
+    utils::{get_confirmation_depth, is_testnet},
+    AuthorityConsensusBuilder,
+};
 use reth_auto_seal_consensus::AutoSealConsensus;
 use reth_beacon_consensus::{
     hooks::{EngineHooks, PruneHook, StaticFileHook},
-    BeaconConsensus, BeaconConsensusEngine,
+    BeaconConsensus, BeaconConsensusEngine, BeaconEngineMessage,
 };
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
-use reth_consensus::Consensus;
+use reth_consensus_common::utils::{self, get_authority_signer_index};
 use reth_exex::{ExExContext, ExExHandle, ExExManager, ExExManagerHandle};
 use reth_interfaces::p2p::either::EitherDownloader;
-use reth_network::NetworkEvents;
+use reth_network::{
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents,
+};
+
+use reth_consensus::Consensus;
+use reth_consensus_common::utils::unix_timestamp;
 use reth_node_api::{FullNodeComponents, FullNodeTypes};
 use reth_node_core::{
+    args::get_secret_key,
     dirs::{ChainPath, DataDirPath},
     engine_api_store::EngineApiStore,
     engine_skip_fcu::EngineApiSkipFcu,
@@ -33,12 +44,17 @@ use reth_provider::{providers::BlockchainProvider, CanonStateSubscriptions};
 use reth_revm::EvmProcessorFactory;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::TaskExecutor;
-use reth_tracing::tracing::{debug, info};
+use reth_tracing::tracing::{debug, error, info};
 use reth_transaction_pool::TransactionPool;
-use std::{future::Future, sync::Arc};
-use tokio::sync::{mpsc::unbounded_channel, oneshot};
+use std::{collections::HashMap, future::Future, sync::Arc};
+use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock, UnboundedSender};
+use tokio::time::Duration;
+
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 
 pub mod common;
+pub mod poa;
+use bitcoin::hashes::Hash;
 pub use common::LaunchContext;
 use reth_blockchain_tree::noop::NoopBlockchainTree;
 
@@ -158,7 +174,13 @@ where
         );
 
         debug!(target: "reth::cli", "creating components");
-        let components = components_builder.build_components(&builder_ctx).await?;
+        let components = match components_builder.build_components(&builder_ctx, None, None).await {
+            Ok((components, _)) => components,
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to build components: {}", err);
+                return Err(err);
+            }
+        };
 
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
@@ -489,6 +511,7 @@ address.to_string(), format_ether(alloc.balance));
         Ok(handle)
     }
 
+    /// Launches the PoA node, also adding any RPC extensions passed.
     async fn launch_poa_node(
         self,
         target: NodeBuilderWithComponents<T, CB>,
@@ -500,6 +523,12 @@ address.to_string(), format_ether(alloc.balance));
             add_ons: NodeAddOns { hooks, rpc, exexs: installed_exex },
             config,
         } = target;
+
+        let btc_server = config.rpc.btc_server.clone();
+        let bitcoind = config.rpc.bitcoind.clone();
+        let chain = config.chain.clone();
+        let frost = config.rpc.frost.clone();
+        let btc_network = config.rpc.btc_network.clone();
 
         // setup the launch context
         let ctx = ctx
@@ -523,6 +552,176 @@ address.to_string(), format_ether(alloc.balance));
             .inspect(|this| {
                 info!(target: "reth::cli", "\n{}", this.chain_spec().display_hardforks());
             });
+
+        // async task that checks system clock is in sync with NTP server
+        ctx.task_executor().spawn_critical(
+            "async system clock sync with ntp task",
+            Box::pin(async {
+                let sleep_sec = Duration::from_secs(15);
+                let acceptable_drift_sec = 1;
+                loop {
+                    // TODO (scott) pass in ntp url as arg
+                    match poa::ntp_unix_timestamp("time.cloudflare.com").await {
+                        Ok(ntp_timestamp) => {
+                            let system_timestamp = unix_timestamp();
+                            if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
+                                error!("System clock is not in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            } else {
+                                info!("System clock is in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
+                            }
+                        }
+                        Err(err) => {
+                            error!("NTP sync failed: {}", err);
+                        }
+                    }
+                    tokio::time::sleep(sleep_sec).await;
+                }
+            }),
+        );
+
+        // extract the jwt secret from the args if possible
+        let jwt_secret = ctx.auth_jwt_secret()?;
+
+        // Connect to btc signining server
+        let btc_server_client = BtcServerExtendedClient::new(btc_server, Some(jwt_secret.clone()))
+            .await
+            .expect("cannot create btc_server");
+        info!(target: "reth::cli", "Btc server connected");
+
+        let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
+            Arc::new(RwLock::new(None));
+        let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
+
+        // create bitcoind client and make sure its synced
+        let bitcoind_config: BitcoindConfig = bitcoind.into();
+        let bitcoind_client =
+            BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
+
+        info!(target: "reth::cli", "Waiting for bitcoind client to sync...");
+        match tokio::time::timeout(Duration::from_secs(60), bitcoind_client.wait_until_synced())
+            .await
+        {
+            Ok(_) => {
+                info!(target: "reth::cli", "Bitcoind client synced");
+            }
+            Err(_) => {
+                error!(target: "reth::cli", "Bitcoind client could not achieve synced status within 60 secs. Exiting...");
+                return Err(eyre::eyre!(
+                    "Bitcoind client could not achieve synced status within 60secs. Exiting..."
+                ));
+            }
+        }
+
+        // fetch and store bitcoin block tx ids
+        let is_testnet = is_testnet(chain.chain.id().clone());
+        let confirmation_depth = get_confirmation_depth(is_testnet);
+        let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+        let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
+        let bitcoind_config_clone = bitcoind_config.clone();
+
+        ctx.task_executor().spawn_critical("async bitcoin block tx ids task", Box::pin(async move {
+            let sleep_ms = Duration::from_millis(5000);
+            let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
+
+            let mut current_tx_ids: HashMap<u64, Vec<bitcoin::Txid>> = bitcoin_block_tx_ids.read().await.clone();
+            loop {
+                let tip = match bitcoind_client.get_tip().await {
+                    Ok(tip) => tip,
+                    Err(_) => {
+                        error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
+                        tokio::time::sleep(sleep_ms).await;
+                        continue;
+                    }
+                };
+
+                // prune tx ids older than confirmation_depth
+                let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
+                current_tx_ids.retain(|block_height, _| *block_height >= tip - confirmation_depth_u64);
+
+                let start = tip - confirmation_depth_u64;
+                for height in start..=tip {
+                    // don't fetch tx ids we already have
+                    if !current_tx_ids.is_empty() && current_tx_ids.contains_key(&height) {
+                        continue;
+                    }
+                    let block_hash = match bitcoind_client.get_block_hash(height).await {
+                        Ok(block_hash) => block_hash,
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block hash while fetching tx ids. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    };
+
+                    match bitcoind_client.get_block_info(&block_hash).await {
+                        Ok(block_info) => {
+                            let tx_ids = block_info.tx;
+                            current_tx_ids.insert(height, tx_ids);
+                        }
+                        Err(_) => {
+                            error!(target: "reth::cli", "Failed to fetch block info while fetching tx ids. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            break;
+                        }
+                    }
+                }
+                let mut tx_ids_write = bitcoin_block_tx_ids.write().await;
+                *tx_ids_write = current_tx_ids.clone();
+                drop(tx_ids_write);
+            }
+        }));
+        info!(target: "reth::cli", "Spawned async bitcoin block tx ids task");
+
+        let bitcoind_config = bitcoind_config.clone();
+        ctx.task_executor().spawn_critical(
+            "async bitcoin block header task",
+            Box::pin(async move {
+                let sleep_ms = tokio::time::Duration::from_millis(10);
+                let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
+                let mut current_block_hash = bitcoin::BlockHash::all_zeros();
+                loop {
+                    let mut header_write = bitcoin_block_headers.write().await;
+                    let best_block_hash = match bitcoind_client.get_best_block_hash().await {
+                        Ok(current_block_hash) => current_block_hash,
+                        Err(_) => {
+                            drop(header_write);
+                            error!(target: "reth::cli", "Failed to fetch the best block hash. Retrying...");
+                            tokio::time::sleep(sleep_ms).await;
+                            continue;
+                        }
+                    };
+                    if current_block_hash != best_block_hash {
+                        info!("Async bitcoin worker tip mismatch");
+                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash).await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch a block header. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
+
+                        let tip = match bitcoind_client.get_tip().await {
+                            Ok(block_header) => block_header,
+                            Err(_) => {
+                                drop(header_write);
+                                error!(target: "reth::cli", "Failed to fetch best tip. Retrying...");
+                                tokio::time::sleep(sleep_ms).await;
+                                continue;
+                            }
+                        };
+                        // TODO (armins) in v1 we will need the nth deep block header not tip
+                        *header_write = Some((block_header, tip.try_into().expect("valid conversion")));
+                        drop(header_write);
+                        current_block_hash = best_block_hash;
+                    }
+                    tokio::time::sleep(sleep_ms).await;
+                }
+            }),
+        );
+        info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
         // setup the consensus instance
         let consensus: Arc<dyn Consensus> = if ctx.is_dev() {
@@ -553,6 +752,27 @@ address.to_string(), format_ether(alloc.balance));
             )),
         )?;
 
+        // get node secret key
+        let network_sk = get_secret_key(&ctx.data_dir().clone().p2p_secret_path())?;
+
+        // create authority config
+        let (authority_index, authorities) = get_authority_signer_index(
+            blockchain_db.clone(),
+            Arc::clone(&chain.clone()),
+            secp256k1::Secp256k1::new(),
+            network_sk.clone(),
+        )
+        .expect("Failed to get authority index");
+
+        // create frost config
+        let mut frost_config: FrostConfig = frost.into();
+        frost_config.set_authority_index(authority_index);
+        frost_config.set_authorities(authorities);
+
+        // Set up block import structures
+        let (block_import_tx, block_import_rx) = unbounded_channel();
+        let block_import = ProofOfAuthorityBlockImport::new(chain.clone(), block_import_tx);
+
         let builder_ctx = BuilderContext::new(
             head,
             blockchain_db.clone(),
@@ -563,7 +783,53 @@ address.to_string(), format_ether(alloc.balance));
         );
 
         debug!(target: "reth::cli", "creating components");
-        let components = components_builder.build_components(&builder_ctx).await?;
+        // build network with PoA block import and Frost capabilities
+        let components_with_frost_handle = match components_builder
+            .build_components(
+                &builder_ctx,
+                Some(Box::new(block_import)),
+                Some(frost_config.clone()),
+            )
+            .await
+        {
+            Ok(components_with_frost_handle) => components_with_frost_handle,
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to build components: {}", err);
+                return Err(err);
+            }
+        };
+        let (components, frost_handle) = components_with_frost_handle;
+
+        let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
+        let bitcoind_config: BitcoindConfig = bitcoind.clone().into();
+        let (
+            _,
+            mut block_production_task,
+            mut block_fetcher_task,
+            mut frost_task,
+            mut sync_controller,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&chain.clone()),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoin_block_tx_ids_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            network_sk,
+            None,
+            components.network().clone(),
+            frost_handle.clone(),
+            block_import_rx,
+            ctx.task_executor().clone(),
+            components.evm_config().clone(),
+            frost_config,
+            btc_network,
+        )
+        .expect("Failed to create authority consensus builder")
+        .build(components.payload_builder().clone());
 
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
@@ -844,9 +1110,6 @@ address.to_string(), format_ether(alloc.balance));
             Box::new(ctx.task_executor().clone()),
         );
         info!(target: "reth::cli", "Engine API handler initialized");
-
-        // extract the jwt secret from the args if possible
-        let jwt_secret = ctx.auth_jwt_secret()?;
 
         // Start RPC servers
         let (rpc_server_handles, mut rpc_registry) = crate::rpc::launch_rpc_servers(

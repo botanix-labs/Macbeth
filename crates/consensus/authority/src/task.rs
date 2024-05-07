@@ -5,10 +5,10 @@ use crate::{
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_btc_wallet::bitcoind::BitcoindClient;
+use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::FrostHandle, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
 use reth_provider::{

@@ -173,6 +173,7 @@ impl<Ext: clap::Args + fmt::Debug> NodeCommand<Ext> {
             db,
             dev,
             pruning,
+            is_federation_member: false,
         };
 
         // Register the prometheus recorder before creating the database,

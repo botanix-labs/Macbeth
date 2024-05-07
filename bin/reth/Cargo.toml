@@ -133,7 +133,6 @@ boyer-moore-magiclen = "0.2.16"
 itertools.workspace = true
 rayon.workspace = true
 lazy_static = "1.4.0"
-rsntp = "3.0.2"
 ahash = "0.8"
 
 # p2p

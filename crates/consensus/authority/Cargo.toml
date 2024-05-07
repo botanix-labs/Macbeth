@@ -27,7 +27,8 @@ reth-tasks.workspace = true
 reth-rpc.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }
-reth-node-ethereum.workspace = true
+# not importing with reth-node-ethereum to avoid cyclic dependency
+reth-ethereum-engine-primitives.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 serde_json = { workspace = true }

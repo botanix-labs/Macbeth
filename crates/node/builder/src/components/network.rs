@@ -1,7 +1,11 @@
 //! Network component for the node builder.
 
 use crate::{BuilderContext, FullNodeTypes};
-use reth_network::NetworkHandle;
+use reth_network::{
+    frost::manager::{FrostConfig, FrostHandle},
+    import::BlockImport,
+    NetworkHandle,
+};
 use reth_transaction_pool::TransactionPool;
 use std::future::Future;
 
@@ -12,7 +16,9 @@ pub trait NetworkBuilder<Node: FullNodeTypes, Pool: TransactionPool>: Send {
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
-    ) -> impl Future<Output = eyre::Result<NetworkHandle>> + Send;
+        block_import: Option<Box<dyn BlockImport>>,
+        frost_config: Option<FrostConfig>,
+    ) -> impl Future<Output = eyre::Result<(NetworkHandle, Option<FrostHandle>)>> + Send;
 }
 
 impl<Node, F, Fut, Pool> NetworkBuilder<Node, Pool> for F
@@ -20,13 +26,15 @@ where
     Node: FullNodeTypes,
     Pool: TransactionPool,
     F: Fn(&BuilderContext<Node>, Pool) -> Fut + Send,
-    Fut: Future<Output = eyre::Result<NetworkHandle>> + Send,
+    Fut: Future<Output = eyre::Result<(NetworkHandle, Option<FrostHandle>)>> + Send,
 {
     fn build_network(
         self,
         ctx: &BuilderContext<Node>,
         pool: Pool,
-    ) -> impl Future<Output = eyre::Result<NetworkHandle>> + Send {
+        _block_import: Option<Box<dyn BlockImport>>,
+        _frost_config: Option<FrostConfig>,
+    ) -> impl Future<Output = eyre::Result<(NetworkHandle, Option<FrostHandle>)>> + Send {
         self(ctx, pool)
     }
 }
