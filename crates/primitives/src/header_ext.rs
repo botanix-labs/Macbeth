@@ -1,4 +1,4 @@
-use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
+use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
 use crate::{Bytes, Header, B256};
 use thiserror::Error;
 
@@ -11,16 +11,16 @@ pub trait HeaderExt {
     /// Attempts to deserialize the extra data header from the header
     fn deserialize_extra_data_header(
         &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError>;
 
     /// Create signable sighash from header + edh content
-    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
+    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserializeError>;
 
     /// Sign a block and update edh
     fn sign_block(
         &mut self,
         sk: &secp256k1::SecretKey,
-    ) -> Result<(), ExtraDataHeaderDeserialzeError>;
+    ) -> Result<(), ExtraDataHeaderDeserializeError>;
 
     /// Get the authority list from the extra data header
     fn get_authority_list(&self) -> Result<Option<Vec<secp256k1::PublicKey>>, GetAuthoritiesError>;
@@ -37,7 +37,7 @@ pub trait HeaderExt {
     ) -> Result<(), ValidateInturnError>;
 
     /// Get the block hash excluding the authority signatures
-    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
+    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError>;
 }
 
 #[derive(Debug, Error)]
@@ -51,7 +51,7 @@ pub enum RecoverAuthorityError {
     FailedToRecoverSigner(secp256k1::Error),
     #[error("Failed to deserialize the extra data: {0}")]
     /// Failed to deserialize the extra data
-    FailedToDerserializeExtraData(#[from] ExtraDataHeaderDeserialzeError),
+    FailedToDerserializeExtraData(#[from] ExtraDataHeaderDeserializeError),
 }
 
 #[derive(Debug, Error)]
@@ -59,7 +59,7 @@ pub enum RecoverAuthorityError {
 pub enum GetAuthoritiesError {
     #[error("Failed to deserialize the extra data: {0}")]
     /// Failed to deserialize the extra data
-    FailedToRecoverAuthorityList(#[from] ExtraDataHeaderDeserialzeError),
+    FailedToRecoverAuthorityList(#[from] ExtraDataHeaderDeserializeError),
     /// Failed to retrive authorities, most likely this is not a epoch block
     #[error("Failed to retrieve authority list")]
     FailedToRetrieveAuthorityList,
@@ -89,7 +89,7 @@ impl HeaderExt for Header {
     }
 
     /// Provides block hash without extra data header bytes
-    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
+    fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
         edh.authority_signatures = None;
@@ -126,6 +126,7 @@ impl HeaderExt for Header {
         Ok(())
     }
 
+    /// Recover the signed authorities from the extra data header
     fn recovered_signed_authorities(
         &self,
     ) -> Result<Vec<secp256k1::PublicKey>, RecoverAuthorityError> {
@@ -147,21 +148,24 @@ impl HeaderExt for Header {
         Err(RecoverAuthorityError::NoSignaturePresentInExtraData)
     }
 
+    /// Get the authority list from the extra data header. If one exists
     fn get_authority_list(&self) -> Result<Option<Vec<secp256k1::PublicKey>>, GetAuthoritiesError> {
         let signers = self.deserialize_extra_data_header()?.authority_signers;
 
         Ok(signers)
     }
 
+    /// deserialize the extra data header from the header
     fn deserialize_extra_data_header(
         &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError> {
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError> {
         let binding = self.extra_data.to_vec();
         let mut extra_data = binding.as_slice();
         Ok(ExtraDataHeader::deserialize(&mut extra_data)?)
     }
 
-    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError> {
+    /// Create signable sighash from header + edh content
+    fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserializeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
         edh.authority_signatures = None;
@@ -177,10 +181,11 @@ impl HeaderExt for Header {
         Ok(hash)
     }
 
+    /// Sign a block and update edh
     fn sign_block(
         &mut self,
         sk: &secp256k1::SecretKey,
-    ) -> Result<(), ExtraDataHeaderDeserialzeError> {
+    ) -> Result<(), ExtraDataHeaderDeserializeError> {
         let sighash = self.create_sighash()?;
         let message =
             secp256k1::Message::from_slice(sighash.as_slice()).expect("Valid message to sign");
@@ -197,8 +202,8 @@ impl HeaderExt for Header {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_primitives::Bytes;
-    use reth_primitives::Header;
+    use crate::Bytes;
+    use crate::Header;
     use std::str::FromStr;
 
     #[allow(dead_code)]
