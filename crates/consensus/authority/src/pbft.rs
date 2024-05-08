@@ -6,6 +6,8 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
+use reth_ecies::util::pk2id;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -279,6 +281,40 @@ where
         retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
+    async fn validate_block(&self, block: &SealedBlock) -> bool {
+        let block_hash = block.header.segregated_signature_block_hash().unwrap();
+        // Blocks should only be signed if they are building on the best block
+        // Or building on one of the 1 block deep forks
+        // But never on a block that is not in the canonical chain
+        // Or a block building on a fork that is deeper than 1 block deep
+        let tip = self.client.canonical_tip();
+        let best_block = self.client.block_by_number(tip.number).unwrap().unwrap();
+        let best_block_hash = best_block.hash_slow();
+        // if the suggested block is the canon tip there is no point to signing it again
+        if self.client.is_canonical(block_hash).unwrap() {
+            return false;
+        }
+
+        // Check if we are building on a block that is in the canonical chain
+        // or a fork
+        if block.parent_hash == best_block_hash {
+            return true;
+        } else {
+            // if suggested block is not even registered in the canonical chain, we should not sign it
+            if !self.client.contains(block.parent_hash) {
+                return false;
+            }
+            // We need to be sure that the fork is only 1 block deep
+            let ancestor_block_hash =
+                self.client.find_canonical_ancestor(parent_hash).expect("ancestor should exist");
+            if ancestor_block_hash != best_block.parent_hash {
+                return false;
+            }
+        }
+
+        false
+    }
+
     /// Intended to be called by the in turn block producer when a block is ready to be
     /// proposed to the network
     /// Note: there should already be a signature on the block at this point
@@ -506,9 +542,7 @@ where
             return Ok(None);
         }
         // Check all the signatures on the commited block from the peer
-        block.header().check_authority_sig_add(
-            &self.config.authorities,
-        )?;
+        block.header().check_authority_sig_add(&self.config.authorities)?;
 
         // Should merge this peers siganture into the main block where we are tracking all
         // signatures If that signature provided is not valid fail
