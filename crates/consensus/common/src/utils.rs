@@ -1,9 +1,9 @@
 use crate::validation;
-use reth_botanix_lib::header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError};
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, consensus::ConsensusError};
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS, keccak256, public_key_to_address, Address,
-    ChainSpec, Header, U256,
+    constants::STAKING_CONTRACT_ADDRESS,
+    header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
+    keccak256, public_key_to_address, Address, ChainSpec, Header, U256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProvider, StateProviderFactory};
 use reth_tracing::tracing::error;
@@ -296,7 +296,7 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
 mod tests {
     use std::str::FromStr;
 
-    use reth_botanix_lib::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 
     use super::*;
 

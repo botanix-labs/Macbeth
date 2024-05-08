@@ -5,19 +5,19 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
+    botanix::BotanixConsensusPackage, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
+    SealedBlockWithSenders, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_botanix_lib::header_ext::HeaderExt;
 use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_network::message::NewBlockMessage;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 

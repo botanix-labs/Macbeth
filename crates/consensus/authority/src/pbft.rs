@@ -3,17 +3,21 @@ use reth_consensus_common::utils::is_inturn;
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
-use reth_botanix_lib::extra_data_header::{
-    ExtraDataHeaderDeserialzeError, ExtraDataHeaderSerializeError, ValidateAuthoritySignatureError,
-};
-use reth_botanix_lib::header_ext::HeaderExt;
+
 use reth_consensus_common::utils::current_inturn_index;
 use reth_ecies::util::pk2id;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
-use reth_primitives::{BlockBody, BlockHash, SealedBlock};
+use reth_primitives::{
+    extra_data_header::{
+        ExtraDataHeaderDeserialzeError, ExtraDataHeaderSerializeError,
+        ValidateAuthoritySignatureError,
+    },
+    header_ext::HeaderExt,
+    BlockBody, BlockHash, SealedBlock,
+};
 use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
