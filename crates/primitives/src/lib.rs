@@ -47,6 +47,8 @@ mod withdrawal;
 
 // Botanix specific stuff
 pub mod botanix;
+pub mod extra_data_header;
+pub mod header_ext;
 
 pub use account::{Account, Bytecode};
 pub use block::{

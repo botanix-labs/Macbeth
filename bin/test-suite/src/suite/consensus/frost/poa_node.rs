@@ -19,10 +19,12 @@ use reth::{
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
 use reth_ecies::util::pk2id;
 use reth_primitives::{
-    create_botanix_config_with_genesis, hex::encode as hex_encode, ChainSpec, BOTANIX_TESTNET,
+    create_botanix_config_with_genesis,
+    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    hex::encode as hex_encode,
+    ChainSpec, BOTANIX_TESTNET,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -432,7 +434,7 @@ mod tests {
     use crate::suite::consensus::frost::poa_node::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
-    use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use reth_primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
     use std::{io::Write, path::Path};
 
     #[test]

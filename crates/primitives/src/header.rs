@@ -14,7 +14,6 @@ use bytes::{Buf, BufMut, BytesMut};
 use reth_codecs::{add_arbitrary_tests, derive_arbitrary, main_codec, Compact};
 use serde::{Deserialize, Serialize};
 use std::{mem, ops::Deref};
-
 /// Errors that can occur during header sanity checks.
 #[derive(Debug, PartialEq)]
 pub enum HeaderError {
