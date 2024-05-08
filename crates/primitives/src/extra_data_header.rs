@@ -110,6 +110,9 @@ pub enum ValidateAuthoritySignatureError {
     #[error("signature from non-authority")]
     /// Signature from non-authority
     InvalidAuthority,
+    #[error("Duplicate signature")]
+    /// Duplicate signature
+    DuplicateSignature,
 }
 
 /// Errors that can occur when serializing the extra data header
@@ -381,46 +384,6 @@ impl ExtraDataHeader {
 
         Err(ValidateAuthoritySignatureError::InvalidSignature)
     }
-
-    /// Validates all signatures present on the edh
-    /// its not garunteed that all signers are present in the `authority_signers`, they are only
-    /// provided in epoch blocks If a signature is not valid and Error is returned
-    /// Returns total number of valid signatures
-    pub fn check_authority_sig_add(
-        &self,
-        message: &Vec<u8>,
-        authority_signers: &[secp256k1::PublicKey],
-    ) -> Result<u16, ValidateAuthoritySignatureError> {
-        if self.authority_signatures.is_none() {
-            return Err(ValidateAuthoritySignatureError::MissingSignature);
-        }
-
-        let msg = secp256k1::Message::from_slice(message.as_slice())
-            .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
-
-        let mut signer_count = 0;
-        for sig in self.authority_signatures.as_ref().expect("is some") {
-            let recovered_pk =
-                sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
-            // If this signature is from non-authority pk return error variant
-            if !authority_signers.contains(&recovered_pk) {
-                return Err(ValidateAuthoritySignatureError::InvalidAuthority);
-            }
-            for signer in authority_signers {
-                if signer == &recovered_pk {
-                    if sig.to_standard().verify(&msg, signer).is_ok() {
-                        signer_count += 1;
-                    } else {
-                        // Should really not make it here
-                        // Incase a signature was produced over the wrong message the recovered
-                        // authority shouldnt be on the list
-                        return Err(ValidateAuthoritySignatureError::InvalidSignature);
-                    }
-                }
-            }
-        }
-        Ok(signer_count)
-    }
 }
 
 #[cfg(test)]
@@ -635,96 +598,6 @@ mod tests {
             .expect("signature from same pk");
     }
 
-    // Test case for validating with a signature
-    #[test]
-    fn test_check_authority_sig_add() {
-        let mut authority_signers = vec![];
-        let secp = Secp256k1::new();
-        let (secret_key1, public_key1) = secp.generate_keypair(&mut OsRng);
-        let (secret_key2, public_key2) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key1);
-        authority_signers.push(public_key2);
-
-        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
-        let message = Message::from(hello_world_hash);
-        let signature1 = secp.sign_ecdsa_recoverable(&message, &secret_key1);
-        let signature2 = secp.sign_ecdsa_recoverable(&message, &secret_key2);
-
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature1, signature2]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-
-        let res = header
-            .check_authority_sig_add(&hello_world_hash.as_byte_array().to_vec(), &authority_signers)
-            .unwrap();
-        // two valid sigs should be provided here
-        assert_eq!(res, 2);
-
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature1]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-
-        let res = header
-            .check_authority_sig_add(&hello_world_hash.as_byte_array().to_vec(), &authority_signers)
-            .unwrap();
-
-        assert_eq!(res, 1);
-
-        // Should fail if there is a signature from non-authority
-        let (secret_key3, _public_key3) = secp.generate_keypair(&mut OsRng);
-        let signature3 = secp.sign_ecdsa_recoverable(&message, &secret_key3);
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature1, signature3]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-        let res = header.check_authority_sig_add(
-            &hello_world_hash.as_byte_array().to_vec(),
-            &authority_signers,
-        );
-        // Check error variant
-        assert_eq!(res.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
-
-        // should fail if a valid authority signs a incorrect message
-        let invalid_hash = sha256::Hash::hash("foo bar".as_bytes());
-        let invalid_message = Message::from(invalid_hash);
-        let invalid_signature = secp.sign_ecdsa_recoverable(&invalid_message, &secret_key2);
-
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature1, invalid_signature]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-        let res = header.check_authority_sig_add(
-            &hello_world_hash.as_byte_array().to_vec(),
-            &authority_signers,
-        );
-        // Check error variant
-        // Since the second signature is invalid the authority pk cannot be recovered
-        // Hence the `InvalidAuthority` variant is returned
-        assert_eq!(res.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
-    }
-
     #[test]
     fn can_recover_authority_after_serialize() {
         let mut authority_signers = vec![];
@@ -755,60 +628,6 @@ mod tests {
             deserialized_header.authority_signatures.unwrap()[0].recover(&message).unwrap();
 
         assert_eq!(recovered_pk, public_key);
-    }
-
-    // Test case for validating with an invalid signature
-    #[test]
-    fn test_validate_authorities_signature_with_invalid_signatures() {
-        let mut authority_signers = vec![];
-        let secp = Secp256k1::new();
-        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key);
-
-        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
-        let message = Message::from(hello_world_hash);
-        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
-
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-        let invalid_hash = sha256::Hash::hash("Not hello world!".as_bytes());
-        let result = header
-            .check_authority_sig_add(&invalid_hash.as_byte_array().to_vec(), &authority_signers);
-
-        // Since the message is different from the one signed the signature signers will be
-        // un-recovable
-        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
-    }
-
-    // Test case for validating without a signature
-    #[test]
-    fn test_validate_authorities_signature_without_signatures() {
-        let mut authority_signers = vec![];
-        let secp = Secp256k1::new();
-        let (_, public_key) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key);
-
-        let header_without_signature = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            None,
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-
-        let message = vec![0u8; 32];
-
-        let result = header_without_signature.check_authority_sig_add(&message, &authority_signers);
-        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
     }
 
     #[test]

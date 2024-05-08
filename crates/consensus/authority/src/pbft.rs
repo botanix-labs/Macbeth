@@ -18,7 +18,7 @@ use reth_primitives::{
     header_ext::HeaderExt,
     BlockBody, BlockHash, SealedBlock,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_provider::{BlockReaderIdExt, StateProviderFactory, CanonChainTracker, BlockchainTreeEngine};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -172,7 +172,13 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
 
 impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client>
 where
-    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    Client: BlockReaderIdExt
+            + StateProviderFactory
+            + CanonChainTracker
+            + BlockchainTreeEngine
+            + Clone
+            + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static,
 {
     pub(crate) fn spawn_cleanup_task(&mut self) {
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
@@ -500,8 +506,7 @@ where
             return Ok(None);
         }
         // Check all the signatures on the commited block from the peer
-        peer_edh.check_authority_sig_add(
-            &current_header.create_sighash()?.to_vec(),
+        block.header().check_authority_sig_add(
             &self.config.authorities,
         )?;
 
@@ -520,7 +525,6 @@ where
         self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
         let number_of_valid_sigs = edh.check_authority_sig_add(
             &current_header.create_sighash()?.to_vec(),
-            &self.config.authorities,
         )?;
         info!("number of valid sigs: {}", number_of_valid_sigs);
         info!("max signers: {}", self.config.max_signers);
