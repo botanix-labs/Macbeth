@@ -9,7 +9,7 @@ use ethers::{
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{NameOrAddress, TransactionReceipt, TransactionRequest, U256},
+    types::{NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
 };
 use reth_primitives::BOTANIX_TESTNET;
@@ -154,5 +154,19 @@ impl BotanixEthClient {
             .expect("block hash exists");
 
         Ok(block_hash)
+    }
+
+    pub async fn get_latest_block_by_hash(
+        &self,
+        hash: H256,
+    ) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let block = self
+            .client
+            .get_block(hash)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(block)
     }
 }
