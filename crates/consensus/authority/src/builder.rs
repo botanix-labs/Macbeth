@@ -11,7 +11,6 @@ use crate::{
 
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_botanix_lib::header_ext::HeaderExt;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
@@ -22,7 +21,7 @@ use reth_network::{
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::ChainSpec;
+use reth_primitives::{header_ext::HeaderExt, ChainSpec};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };

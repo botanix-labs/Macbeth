@@ -19,7 +19,6 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use reth_botanix_lib::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp},
     validation::{self, validate_poa_header_standalone, validate_poa_header_template_standalone},
@@ -32,6 +31,8 @@ use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+    extra_data_header::ExtraDataHeader,
+    header_ext::HeaderExt,
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
     Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
