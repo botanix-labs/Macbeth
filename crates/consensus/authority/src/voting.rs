@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use reth_botanix_lib::{extra_data_header::ExtraDataHeaderDeserialzeError, header_ext::HeaderExt};
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
+    extra_data_header::ExtraDataHeaderDeserialzeError,
+    header_ext::HeaderExt,
     Header,
 };
 

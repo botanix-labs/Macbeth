@@ -1,7 +1,6 @@
 use crate::Storage;
-use reth_botanix_lib::header_ext::HeaderExt;
 use reth_consensus_common::utils;
-use reth_primitives::BlockHashOrNumber;
+use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider, StateProviderFactory};
 use tracing::{debug, info, warn};
 
