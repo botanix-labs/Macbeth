@@ -9084,6 +9084,7 @@ dependencies = [
  "criterion",
  "derive_more",
  "hash-db",
+ "hex",
  "itertools 0.12.1",
  "modular-bitfield",
  "nybbles",

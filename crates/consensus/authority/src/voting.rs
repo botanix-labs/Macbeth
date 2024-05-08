@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use reth_primitives::{
     constants::eip225::{NONCE_AUTH, NONCE_DROP},
-    extra_data_header::ExtraDataHeaderDeserialzeError,
+    extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::HeaderExt,
     Header,
 };
