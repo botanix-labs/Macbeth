@@ -39,7 +39,7 @@ use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
-const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
+pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
 
 #[derive(Template, Clone, Debug)]

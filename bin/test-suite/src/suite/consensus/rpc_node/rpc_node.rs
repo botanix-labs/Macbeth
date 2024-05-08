@@ -153,7 +153,6 @@ impl RethNodeCommandConfig for NonFederationMemberTestConfig {
     fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
         it_info_print!("Engine started non federation task with index: ", self.index);
 
-        let _pool = components.pool();
         let mut canon_events = components.events().subscribe_to_canonical_state();
         let rx_sender = self.sender.clone();
         let engine_index = self.index;
