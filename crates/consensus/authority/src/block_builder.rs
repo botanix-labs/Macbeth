@@ -1,5 +1,5 @@
 use crate::{
-    engine_util,
+    engine_util::{self, StartNewPayloadError},
     frost_task::{FrostNotification, FrostNotificationMessage},
     task::BlockProductionTask,
     utils::{get_witness_data_from_psbt, is_testnet},
@@ -16,7 +16,7 @@ use reth_interfaces::blockchain_tree::{
 };
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
-use reth_payload_builder::EthPayloadBuilderAttributes;
+use reth_payload_builder::{EthPayloadBuilderAttributes, PayloadBuilderHandle};
 use reth_primitives::{
     botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
 };
@@ -25,7 +25,7 @@ use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
 
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
+impl<Client, EvmConfig, Engine: EngineTypes>
     BlockProductionTask<Client, EvmConfig, Engine>
 where
     Client: BlockReaderIdExt
@@ -34,7 +34,9 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    Engine: EngineTypes + 'static,
+    Engine: EngineTypes<
+    PayloadBuilderAttributes = EthPayloadBuilderAttributes,
+    > + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
@@ -65,8 +67,9 @@ where
 
         let payload_attr = EthPayloadBuilderAttributes::new(best_hash, payload_attributes);
 
-        // start new payload
-        let payload_id = engine_util::start_new_payload(&self.payload_builder, payload_attr).await;
+        let payload_id = self.payload_builder
+        .new_payload(payload_attr)
+        .await;
 
         if payload_id.is_err() {
             warn!(target: "consensus::authority", "Failed to start new payload");

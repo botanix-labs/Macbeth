@@ -6,6 +6,7 @@
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_node_api::BuiltPayload;
+use reth_node_api::EngineTypes;
 use reth_node_api::PayloadBuilderAttributes;
 use reth_payload_builder::{
     error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
@@ -144,9 +145,9 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
-pub(crate) async fn start_new_payload(
-    payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
-    payload_attributes: EthPayloadBuilderAttributes,
+pub(crate) async fn start_new_payload<Engine: EngineTypes + 'static>(
+    payload_builder: &PayloadBuilderHandle<Engine>,
+    payload_attributes: Engine::PayloadBuilderAttributes,
 ) -> Result<PayloadId, StartNewPayloadError> {
     let payload_id = payload_builder
         .new_payload(payload_attributes)

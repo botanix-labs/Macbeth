@@ -8,7 +8,7 @@ use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::FrostHandle, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_payload_builder::PayloadBuilderHandle;
+use reth_payload_builder::{EthPayloadBuilderAttributes, PayloadBuilderHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
@@ -75,7 +75,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    Engine: EngineTypes + Unpin + 'static,
+    Engine: EngineTypes<PayloadBuilderAttributes = EthPayloadBuilderAttributes> + Unpin + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {

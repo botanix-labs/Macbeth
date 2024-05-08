@@ -20,7 +20,7 @@ use reth_network::{
 };
 use reth_node_api::NodeTypes;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_payload_builder::PayloadBuilderHandle;
+use reth_payload_builder::{EthPayloadBuilderAttributes, PayloadBuilderHandle};
 use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
@@ -35,7 +35,7 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes + Unpin + 'static> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes<PayloadBuilderAttributes = EthPayloadBuilderAttributes> + Unpin + 'static> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -74,7 +74,7 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
 where
-    Engine: EngineTypes + Unpin + 'static,
+    Engine: EngineTypes<PayloadBuilderAttributes = EthPayloadBuilderAttributes> + Unpin + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     Client: BlockReaderIdExt

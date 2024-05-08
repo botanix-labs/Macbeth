@@ -2,6 +2,7 @@ use crate::engine_util;
 use futures_util::StreamExt;
 
 use reth_node_api::EngineTypes;
+use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::revm_primitives::FixedBytes;
 
 use reth_network::NetworkEvent;
@@ -19,7 +20,7 @@ pub struct SyncController<Engine: EngineTypes> {
 
 impl<Engine> SyncController<Engine>
 where
-    Engine: EngineTypes + 'static,
+    Engine: EngineTypes<PayloadBuilderAttributes = EthPayloadBuilderAttributes> + 'static,
 {
     pub fn new(
         network_event_listener: UnboundedReceiverStream<NetworkEvent>,

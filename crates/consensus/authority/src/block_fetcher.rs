@@ -7,6 +7,7 @@ use crate::{
 use client::{FinalizeSignerRequest, Output};
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
 };
@@ -56,7 +57,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    Engine: EngineTypes + 'static,
+    Engine: EngineTypes<PayloadBuilderAttributes = EthPayloadBuilderAttributes> + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
