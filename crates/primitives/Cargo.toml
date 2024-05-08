@@ -33,6 +33,9 @@ secp256k1 = { workspace = true, features = ["global-context", "recovery"] }
 # for eip-4844
 c-kzg = { workspace = true, features = ["serde"], optional = true }
 
+# hex
+hex = "0.4.3"
+
 # tracing
 tracing.workspace = true
 
