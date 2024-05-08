@@ -7949,6 +7949,7 @@ dependencies = [
  "reth-btc-wallet",
  "reth-consensus",
  "reth-consensus-common",
+ "reth-engine-primitives",
  "reth-eth-wire",
  "reth-ethereum-engine-primitives",
  "reth-interfaces",

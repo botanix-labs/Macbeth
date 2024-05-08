@@ -594,7 +594,7 @@ address.to_string(), format_ether(alloc.balance));
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
         // create bitcoind client and make sure its synced
-        let bitcoind_config: BitcoindConfig = bitcoind.into();
+        let bitcoind_config: BitcoindConfig = bitcoind.clone().into();
         let bitcoind_client =
             BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
 
@@ -801,38 +801,8 @@ address.to_string(), format_ether(alloc.balance));
         };
         let (components, frost_handle) = components_with_frost_handle;
 
-        let (consensus_engine_tx, mut consensus_engine_rx) =
-            unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
+        let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
         let bitcoind_config: BitcoindConfig = bitcoind.clone().into();
-        let (
-            _,
-            mut block_production_task,
-            mut block_fetcher_task,
-            mut frost_task,
-            mut sync_controller,
-        ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&chain.clone()),
-            blockchain_db.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
-            btc_server_client.clone(),
-            bitcoin_block_headers_clone,
-            bitcoin_block_tx_ids_clone,
-            bitcoind_config,
-            secp256k1::Secp256k1::new(),
-            network_sk,
-            None,
-            components.network().clone(),
-            frost_handle.clone(),
-            block_import_rx,
-            ctx.task_executor().clone(),
-            components.evm_config().clone(),
-            frost_config,
-            components.payload_builder().clone(),
-            btc_network,
-        )
-        .expect("Failed to create authority consensus builder")
-        .build();
 
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
@@ -938,31 +908,6 @@ address.to_string(), format_ether(alloc.balance));
         } else {
             None
         };
-
-        ctx.task_executor().spawn_critical(
-            "PoA Block Production Task",
-            Box::pin(async move {
-                block_production_task.start_task().await;
-            }),
-        );
-        ctx.task_executor().spawn_critical(
-            "PoA Block Fetcher Task",
-            Box::pin(async move {
-                block_fetcher_task.start_task().await;
-            }),
-        );
-        ctx.task_executor().spawn_critical(
-            "Frost Task",
-            Box::pin(async move {
-                frost_task.start_task().await;
-            }),
-        );
-        ctx.task_executor().spawn_critical(
-            "PoA Block Sync Controller Task",
-            Box::pin(async move {
-                sync_controller.start_task().await;
-            }),
-        );
 
         // create pipeline
         let network_client = node_adapter.network().fetch_client().await?;
@@ -1103,6 +1048,62 @@ address.to_string(), format_ether(alloc.balance));
             hooks,
         )?;
         info!(target: "reth::cli", "Consensus engine initialized");
+
+        // Configure the PoA components
+        let (
+            _,
+            mut block_production_task,
+            mut block_fetcher_task,
+            mut frost_task,
+            mut sync_controller,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&chain.clone()),
+            blockchain_db.clone(),
+            consensus_engine_tx,
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoin_block_tx_ids_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            network_sk,
+            None,
+            components.network().clone(),
+            frost_handle.clone(),
+            block_import_rx,
+            ctx.task_executor().clone(),
+            components.evm_config().clone(),
+            frost_config,
+            components.payload_builder().clone(),
+            btc_network,
+        )
+        .expect("Failed to create authority consensus builder")
+        .build();
+
+        ctx.task_executor().spawn_critical(
+            "PoA Block Production Task",
+            Box::pin(async move {
+                block_production_task.start_task().await;
+            }),
+        );
+        ctx.task_executor().spawn_critical(
+            "PoA Block Fetcher Task",
+            Box::pin(async move {
+                block_fetcher_task.start_task().await;
+            }),
+        );
+        ctx.task_executor().spawn_critical(
+            "Frost Task",
+            Box::pin(async move {
+                frost_task.start_task().await;
+            }),
+        );
+        ctx.task_executor().spawn_critical(
+            "PoA Block Sync Controller Task",
+            Box::pin(async move {
+                sync_controller.start_task().await;
+            }),
+        );
 
         let events = stream_select!(
             node_adapter.components.network().event_listener().map(Into::into),

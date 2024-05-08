@@ -1,3 +1,4 @@
+use crate::sync::SyncController;
 use crate::{
     block_fetcher::BlockFetcherTask,
     epoch_manager::EpochManager,
@@ -7,8 +8,6 @@ use crate::{
     voting::AuthorityVote,
     AuthorityConsensus, Storage,
 };
-
-use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
@@ -19,6 +18,7 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
+use reth_node_api::NodeTypes;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::ChainSpec;
@@ -35,7 +35,7 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes + Unpin + 'static> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -58,7 +58,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
     frost_config: FrostConfig,
-    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+    payload_builder: PayloadBuilderHandle<Engine>,
     btc_network: bitcoin::Network,
 }
 
@@ -74,7 +74,7 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
 where
-    Engine: EngineTypes + 'static,
+    Engine: EngineTypes + Unpin + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     Client: BlockReaderIdExt
@@ -86,7 +86,7 @@ where
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
-    pub fn try_new<T>(
+    pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -105,12 +105,9 @@ where
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
         frost_config: FrostConfig,
-        payload_builder: PayloadBuilderHandle<<T as reth_node_api::NodeTypes>::Engine>,
+        payload_builder: PayloadBuilderHandle<Engine>,
         btc_network: bitcoin::Network,
-    ) -> Result<Self, AuthorityConsensusBuilderError>
-    where
-        T: reth_node_api::NodeTypes<Engine = reth_ethereum_engine_primitives::EthEngineTypes>,
-    {
+    ) -> Result<Self, AuthorityConsensusBuilderError> {
         let mut latest_header = client
             .latest_header()
             .ok()

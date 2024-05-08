@@ -5,13 +5,14 @@
 
 use reth_beacon_consensus::{BeaconEngineMessage, BeaconOnNewPayloadError, ForkchoiceStatus};
 use reth_ethereum_engine_primitives::EthEngineTypes;
+use reth_node_api::BuiltPayload;
+use reth_node_api::PayloadBuilderAttributes;
 use reth_payload_builder::{
     error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
 };
 use reth_primitives::{BlockHash, SealedBlock};
 use reth_rpc_types::engine::{ForkchoiceState, PayloadId, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-
 use tracing::{debug, error, trace};
 
 #[derive(Debug, thiserror::Error)]
@@ -172,10 +173,10 @@ pub(crate) enum BestTransactionsError {
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
-pub(crate) async fn best_transactions_from_payload(
-    payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
+pub(crate) async fn best_transactions_from_payload<Engine: reth_node_api::EngineTypes + 'static>(
+    payload_builder: &PayloadBuilderHandle<Engine>,
     payload_id: PayloadId,
-) -> Result<EthBuiltPayload, BestTransactionsError> {
+) -> Result<Engine::BuiltPayload, BestTransactionsError> {
     let best_txs = payload_builder
         .best_payload(payload_id)
         .await
