@@ -51,7 +51,7 @@ impl Default for ExtraDataHeader {
 
 /// Errors that can occur when deserializing the extra data header
 #[derive(Debug, Error)]
-pub enum ExtraDataHeaderDeserialzeError {
+pub enum ExtraDataHeaderDeserializeError {
     #[error("I/O error")]
     Io(#[from] io::Error),
     #[error("invalid data format")]
@@ -222,10 +222,10 @@ impl ExtraDataHeader {
         buf
     }
 
-    pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtraDataHeaderDeserialzeError> {
+    pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtraDataHeaderDeserializeError> {
         let version = u32::consensus_decode(reader)?;
         if version > EXTRA_HEADER_VERSION {
-            return Err(ExtraDataHeaderDeserialzeError::InvalidVersion);
+            return Err(ExtraDataHeaderDeserializeError::InvalidVersion);
         }
         let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
@@ -737,8 +737,9 @@ mod tests {
         let result = header
             .check_authority_sig_add(&invalid_hash.as_byte_array().to_vec(), &authority_signers);
 
-        // Zero valid signatures we're provided
-        assert_eq!(result.unwrap(), 0)
+        // Since the message is different from the one signed the signature signers will be un-recovable
+        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
+
     }
 
     // Test case for validating without a signature

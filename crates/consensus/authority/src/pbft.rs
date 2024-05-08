@@ -12,7 +12,7 @@ use reth_network::frost::{
 };
 use reth_primitives::{
     extra_data_header::{
-        ExtraDataHeaderDeserialzeError, ExtraDataHeaderSerializeError,
+        ExtraDataHeaderDeserializeError, ExtraDataHeaderSerializeError,
         ValidateAuthoritySignatureError,
     },
     header_ext::HeaderExt,
@@ -31,7 +31,7 @@ pub(crate) enum Error {
     #[error("Failed to validate signatures on block: {0}")]
     InvalidSignature(#[from] ValidateAuthoritySignatureError),
     #[error("Failed to deserialize extra data header: {0}")]
-    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserialzeError),
+    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
     #[error("Failed to serialize extra data header: {0}")]
     ExtraDataHeaderSerializeError(#[from] ExtraDataHeaderSerializeError),
     #[error("Failed to get connected peers handles")]
