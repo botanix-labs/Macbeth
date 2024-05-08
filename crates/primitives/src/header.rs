@@ -5,6 +5,7 @@ use crate::{
         EMPTY_ROOT_HASH, MINIMUM_GAS_LIMIT,
     },
     eip4844::{calc_blob_gasprice, calculate_excess_blob_gas},
+    header_ext::HeaderExt,
     keccak256, Address, BaseFeeParams, BlockHash, BlockNumHash, BlockNumber, Bloom, Bytes,
     ChainSpec, GotExpected, GotExpectedBoxed, Hardfork, B256, B64, U256,
 };
@@ -201,8 +202,22 @@ impl Header {
     /// Heavy function that will calculate hash of data and will *not* save the change to metadata.
     /// Use [`Header::seal`], [`SealedHeader`] and unlock if you need hash to be persistent.
     pub fn hash_slow(&self) -> B256 {
+        let mut this = self.clone();
+        if this.extra_data.len() > 0 {
+            // try to deserialize botanix edh
+            match this.deserialize_extra_data_header() {
+                Ok(mut extra_data) => {
+                    extra_data.authority_signatures = None;
+                    extra_data.set_optional_fields_bitmask();
+
+                    // Update extra data without the signatures present in edh
+                    this.add_extra_data_header(&extra_data);
+                }
+                Err(_) => {}
+            }
+        }
         let mut out = BytesMut::new();
-        self.encode(&mut out);
+        this.encode(&mut out);
         keccak256(&out)
     }
 
