@@ -1,16 +1,19 @@
 use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserialzeError};
-use reth_interfaces::consensus::ConsensusError;
-use reth_primitives::{Bytes, Header, B256};
-use secp256k1::PublicKey;
+use crate::{Bytes, Header, B256};
 use thiserror::Error;
 
+/// Extension trait for the block header
+/// Mainly adding extra data header utility functions
 pub trait HeaderExt {
+    /// serilaizes and adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader);
 
+    /// Attempts to deserialize the extra data header from the header
     fn deserialize_extra_data_header(
         &self,
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError>;
 
+    /// Create signable sighash from header + edh content
     fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
 
     /// Sign a block and update edh
@@ -19,14 +22,21 @@ pub trait HeaderExt {
         sk: &secp256k1::SecretKey,
     ) -> Result<(), ExtraDataHeaderDeserialzeError>;
 
+    /// Get the authority list from the extra data header
     fn get_authority_list(&self) -> Result<Option<Vec<secp256k1::PublicKey>>, GetAuthoritiesError>;
 
+    /// Recover the signed authorities from the extra data header
     fn recovered_signed_authorities(
         &self,
     ) -> Result<Vec<secp256k1::PublicKey>, RecoverAuthorityError>;
 
-    fn validate_inturn(&self, authorities: &[secp256k1::PublicKey]) -> Result<(), ConsensusError>;
+    /// Validate the authority that produced the block was in turn according to the block timestamp
+    fn validate_inturn(
+        &self,
+        authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ValidateInturnError>;
 
+    /// Get the block hash excluding the authority signatures
     fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserialzeError>;
 }
 
@@ -44,21 +54,6 @@ pub enum RecoverAuthorityError {
     FailedToDerserializeExtraData(#[from] ExtraDataHeaderDeserialzeError),
 }
 
-impl From<RecoverAuthorityError> for ConsensusError {
-    fn from(e: RecoverAuthorityError) -> Self {
-        match e {
-            RecoverAuthorityError::FailedToRecoverSigner(_) => {
-                ConsensusError::TransactionSignerRecoveryError
-            }
-
-            RecoverAuthorityError::FailedToDerserializeExtraData(_)
-            | RecoverAuthorityError::NoSignaturePresentInExtraData => {
-                ConsensusError::ExtraDataInvalid
-            }
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 /// Errors that can occur while reading the authority list from the block header
 pub enum GetAuthoritiesError {
@@ -74,6 +69,17 @@ pub enum GetAuthoritiesError {
     #[error("Failed to find epoch block")]
     /// Could not find any epoch blocks
     FailedToRetrieveEpochHeader,
+}
+
+#[derive(Debug, Error)]
+/// Valid in turn error
+pub enum ValidateInturnError {
+    #[error("Authority not in turn")]
+    /// Authority not in turn
+    AuthorityNotInTurn,
+    #[error("Failed to recover signer via ecdsa signature: {0}")]
+    /// ecdsa Signature was not recoverable
+    FailedToRecoverSigner(#[from] RecoverAuthorityError),
 }
 
 impl HeaderExt for Header {
@@ -100,18 +106,21 @@ impl HeaderExt for Header {
     }
 
     /// Validates that the authority in the first signature position was in turn when producing the block
-    fn validate_inturn(&self, authorities: &[secp256k1::PublicKey]) -> Result<(), ConsensusError> {
+    fn validate_inturn(
+        &self,
+        authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ValidateInturnError> {
         let signers = self.recovered_signed_authorities()?;
         let in_turn_signer = signers.get(0).expect("at least one signer");
         let signer_index = authorities
             .iter()
             .position(|pk| pk == in_turn_signer)
-            .ok_or(ConsensusError::AuthorityNotInTurn)?;
+            .ok_or(ValidateInturnError::AuthorityNotInTurn)?;
 
         let authorities_len = authorities.len() as u64;
         let block_timestamp_min = self.timestamp / 60;
         if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
-            return Err(ConsensusError::AuthorityNotInTurn);
+            return Err(ValidateInturnError::AuthorityNotInTurn);
         }
 
         Ok(())

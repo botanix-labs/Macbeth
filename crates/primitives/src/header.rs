@@ -18,7 +18,6 @@ use reth_codecs::{add_arbitrary_tests, derive_arbitrary, main_codec, Compact};
 use reth_rpc_types::ConversionError;
 use serde::{Deserialize, Serialize};
 use std::{mem, ops::Deref};
-
 /// Errors that can occur during header sanity checks.
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeaderError {

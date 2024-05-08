@@ -1,11 +1,12 @@
 //! Collection of methods for block validation.
 
-use reth_botanix_lib::header_ext::HeaderExt;
 use reth_interfaces::{consensus::ConsensusError, RethResult};
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
-    ChainSpec, GotExpected, Hardfork, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH,
-    U256,
+    header_ext::HeaderExt,
+    BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
+    SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
+    TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{HeaderProvider, WithdrawalsProvider};
 
@@ -353,7 +354,7 @@ pub fn validate_poa_header_standalone(
     utils::validate_poa_block_beneficiary(header)?;
 
     // Validate signer is in turn
-    header.validate_inturn(authority_signers)?;
+    header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
 
     Ok(())
 }
@@ -370,7 +371,7 @@ pub fn validate_poa_header_template_standalone(
     utils::validate_poa_block_beneficiary(header)?;
 
     // Validate signer is in turn
-    header.validate_inturn(authority_signers)?;
+    header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
 
     Ok(())
 }
