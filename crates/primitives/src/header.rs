@@ -208,7 +208,11 @@ impl Header {
     pub fn hash_slow(&self) -> B256 {
         let mut this = self.clone();
         if this.extra_data.len() > 0 {
-            // try to deserialize botanix edh
+            // try to deserialize botanix edh. if extra data is a botanix edh
+            // remove the block signature before hashing
+            // This has the following effects:
+            // 1. block signers will all sign the same sighash regardless of who adds new signatures
+            // 2. signatures can be re-ordered without affecting the blockhash
             match this.deserialize_extra_data_header() {
                 Ok(mut extra_data) => {
                     extra_data.authority_signatures = None;

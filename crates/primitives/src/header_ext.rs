@@ -89,6 +89,7 @@ impl HeaderExt for Header {
     }
 
     /// Provides block hash without extra data header bytes
+    /// Use this method instead of `hash_slow` to get an error if the extra data header is invalid
     fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
