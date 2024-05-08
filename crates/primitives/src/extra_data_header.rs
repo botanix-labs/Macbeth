@@ -9,6 +9,7 @@ use bitcoin::{
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
+/// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;
 const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
@@ -23,14 +24,21 @@ const HAS_WITNESS_DATA_POS: u8 = 3;
 /// field Note: the order of the struct properties is important for serialization/deserialization
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraDataHeader {
+    /// The version of the extra data header
     pub version: u32,
+    /// Bitmask of optional fields
     pub optional_fields: u8,
+    /// Optional set of authority signers. Non-optional during a epoch block.
     pub authority_signers: Option<Vec<secp256k1::PublicKey>>,
+    /// Optional authority vote. Non-optional during a epoch block. Also unused
     pub authority_vote: Option<secp256k1::PublicKey>,
+    /// Optional bitcoin tx witness data. Non-optional during a epoch block.
     pub witness_data: Option<Vec<witness::Witness>>,
+    /// The hash of the bitcoin block that is sufficiently deep to prove pegins
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    /// The commitment to the UTXO set. i.e utxos that are spendable for pegouts
     pub utxo_commitment: [u8; 32],
-    // TODO add bitcoin fee
+    /// List of authority signatures
     pub authority_signatures: Option<Vec<secp256k1::ecdsa::RecoverableSignature>>,
 }
 
@@ -53,10 +61,13 @@ impl Default for ExtraDataHeader {
 #[derive(Debug, Error)]
 pub enum ExtraDataHeaderDeserializeError {
     #[error("I/O error")]
+    /// I/O error
     Io(#[from] io::Error),
     #[error("invalid data format")]
+    /// Invalid data format
     Decoding(#[from] encode::Error),
     #[error("invalid version")]
+    /// Invalid EDH version
     InvalidVersion,
 }
 
@@ -64,29 +75,35 @@ pub enum ExtraDataHeaderDeserializeError {
 #[derive(Debug, Error, PartialEq)]
 pub enum ValidateAuthoritySignatureError {
     #[error("invalid signature")]
+    /// Invalid signature
     InvalidSignature,
     #[error("invalid message")]
+    /// Invalid message
     InvalidMessage,
     #[error("missing signature")]
+    /// Missing signature on edh
     MissingSignature,
-    #[error("quorum of signatures missing")]
-    QuorumMissing,
     #[error("cannot find signer at index: {0}")]
+    /// Cannot find signer at index
     InvalidSignerIndex(usize),
     #[error("failed to recover signer")]
+    /// Failed to recover signer
     RecoverFailed,
     #[error("signature from non-authority")]
+    /// Signature from non-authority
     InvalidAuthority,
 }
 
 /// Errors that can occur when serializing the extra data header
 #[derive(Debug, Error)]
 pub enum ExtraDataHeaderSerializeError {
-    #[error("Signature missing")]
+    #[error("Invalid format: {0}")]
+    /// Invalid EDH format
     InvalidFormat(&'static str),
 }
 
 impl ExtraDataHeader {
+    /// Create a new extra data header
     pub fn new(
         version: u32,
         // This field is only optional b/c the block producer will need to sign the extra header
@@ -130,11 +147,13 @@ impl ExtraDataHeader {
         }
     }
 
+    /// Set the authority signatures
     pub fn set_signature(&mut self, signature: Vec<RecoverableSignature>) {
         self.authority_signatures = Some(signature);
         self.set_optional_fields_bitmask();
     }
 
+    /// Add a signature to the extra data header
     pub fn add_signature(&mut self, signature: RecoverableSignature) {
         let mut current_signatures = self.authority_signatures.clone().unwrap_or(vec![]);
 
@@ -147,6 +166,7 @@ impl ExtraDataHeader {
         self.set_optional_fields_bitmask();
     }
 
+    /// Set the optional fields bitmask based on the optional fields
     pub fn set_optional_fields_bitmask(&mut self) {
         let mut optional_fields = 0u8;
         if self.authority_signers.is_some() {
@@ -165,10 +185,12 @@ impl ExtraDataHeader {
         self.optional_fields = optional_fields;
     }
 
+    /// Get the vote
     pub fn authority_vote(&self) -> Option<secp256k1::PublicKey> {
         self.authority_vote
     }
 
+    /// Serialize the extra data header without the signature
     pub fn encode_into_without_signature(
         &self,
         writer: &mut impl io::Write,
@@ -222,7 +244,10 @@ impl ExtraDataHeader {
         buf
     }
 
-    pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtraDataHeaderDeserializeError> {
+    /// Deserialize the extra data header
+    pub fn deserialize(
+        reader: &mut impl io::Read,
+    ) -> Result<Self, ExtraDataHeaderDeserializeError> {
         let version = u32::consensus_decode(reader)?;
         if version > EXTRA_HEADER_VERSION {
             return Err(ExtraDataHeaderDeserializeError::InvalidVersion);
@@ -312,6 +337,7 @@ impl ExtraDataHeader {
         }
     }
 
+    /// Validates the first signature present on the edh
     pub fn validate_first_authority_signature(
         &self,
         message: &Vec<u8>,
@@ -740,7 +766,6 @@ mod tests {
 
         // Since the message is different from the one signed the signature signers will be un-recovable
         assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
-
     }
 
     // Test case for validating without a signature
