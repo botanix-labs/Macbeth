@@ -21,7 +21,9 @@ use reth::{
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
 use reth_ecies::util::pk2id;
-use reth_primitives::{create_botanix_config_with_genesis, hex::encode as hex_encode};
+use reth_primitives::{
+    create_botanix_config_with_genesis, hex::encode as hex_encode, ChainSpec, BOTANIX_TESTNET,
+};
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
 use secp256k1::PublicKey;
@@ -389,10 +391,6 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
 
         Ok(())
     }
-}
-
-pub fn testnet_custom_chain() -> Arc<ChainSpec> {
-    BOTANIX_TESTNET.clone()
 }
 
 pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {

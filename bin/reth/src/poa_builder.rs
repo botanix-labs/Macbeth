@@ -166,8 +166,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let is_fed_node = self.config.federation_mode;
 
         // Connect to btc signining server if in federation mode
-        let mut btc_server_client = None;
-        if is_fed_node {
+        let btc_server_client = if is_fed_node {
             let client = BtcServerExtendedClient::new(
                 self.config.rpc.btc_server.clone().expect("btc_server exists"),
                 Some(jwt_secret.clone()),
@@ -176,8 +175,10 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             .expect("can create btc_server");
             info!(target: "reth::cli", "Btc server connected");
 
-            btc_server_client = Some(client)
-        }
+            Some(client)
+        } else {
+            None
+        };
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -396,8 +397,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
 
         // create frost config if in federation mode
-        let mut frost_config = None;
-        if is_fed_node {
+        let frost_config = if is_fed_node {
             // create authority config
             let (authority_index, authorities) = get_authority_signer_index(
                 blockchain_db.clone(),
@@ -416,8 +416,10 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             config.set_authorities(authorities);
             info!(target: "reth::cli", "Frost config initialized");
 
-            frost_config = Some(config);
-        }
+            Some(config)
+        } else {
+            None
+        };
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
