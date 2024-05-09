@@ -219,7 +219,7 @@ impl Botanix {
         }
 
         let mut client = client::BtcServerClient::connect(
-            self.botanix_rpc_config.btc_server.clone().expect("Valid URL").clone(),
+            self.botanix_rpc_config.btc_server.clone().expect("to be non-empty string").clone(),
         )
         .await
         .unwrap();

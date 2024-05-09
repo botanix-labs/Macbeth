@@ -6,12 +6,11 @@ use crate::{
     it_info_print,
     suite::consensus::{
         frost::{
+            await_dkg,
             botanix_client::BotanixEthClient,
             poa_node::{
-                create_poa_federation_members, current_inturn_index, Notifications,
-                PREFUNDED_ACCOUNT_SECRET_KEY,
+                create_poa_federation_members, current_inturn_index, PREFUNDED_ACCOUNT_SECRET_KEY,
             },
-            test_frost_e2e::await_dkg,
         },
         rpc_node::{error::NonFederationMemberTestConfigError, rpc_node::create_rpc_node},
         ConsensusIntegrationTestSuite,
