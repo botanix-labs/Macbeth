@@ -357,33 +357,6 @@ impl ExtraDataHeader {
             self.authority_signatures = Some(set.into_iter().collect());
         }
     }
-
-    /// Validates the first signature present on the edh
-    pub fn validate_first_authority_signature(
-        &self,
-        message: &Vec<u8>,
-        authority_signers: &[secp256k1::PublicKey],
-    ) -> Result<(), ValidateAuthoritySignatureError> {
-        if self.authority_signatures.is_none() {
-            return Err(ValidateAuthoritySignatureError::MissingSignature);
-        }
-        let msg = secp256k1::Message::from_slice(message.as_slice())
-            .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
-
-        // Just validating the first signature
-        let sig = self.authority_signatures.as_ref().expect("is some")[0];
-        let recovered_pk =
-            sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
-
-        // find pk in authority signers
-        for signer in authority_signers {
-            if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
-                return Ok(());
-            }
-        }
-
-        Err(ValidateAuthoritySignatureError::InvalidSignature)
-    }
 }
 
 #[cfg(test)]

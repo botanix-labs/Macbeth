@@ -49,6 +49,12 @@ pub trait HeaderExt {
         &self,
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<u16, ValidateAuthoritySignatureError>;
+
+    /// Validates the first signature present on the edh
+    fn validate_first_authority_signature(
+        &self,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ValidateAuthoritySignatureError>;
 }
 
 #[derive(Debug, Error)]
@@ -114,11 +120,11 @@ pub enum ValidateAuthoritySignatureError {
     #[error("signature from non-authority")]
     /// Signature from non-authority
     InvalidAuthority,
-    
     #[error("invalid edh format: {0}")]
     /// Invalid edh format
     InvalidEdhFormat(#[from] ExtraDataHeaderDeserializeError),
 }
+
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -284,7 +290,6 @@ impl HeaderExt for Header {
                         }
                         pks_seen.insert(recovered_pk);
                         signer_count += 1;
-                        
                     } else {
                         // Should really not make it here
                         // Incase a signature was produced over the wrong message the recovered authority
@@ -295,6 +300,32 @@ impl HeaderExt for Header {
             }
         }
         Ok(signer_count)
+    }
+    /// Validates the first signature present on the edh
+    fn validate_first_authority_signature(
+        &self,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ValidateAuthoritySignatureError> {
+        let edh = self.deserialize_extra_data_header()?;
+        let sigs = edh.authority_signatures.as_ref().ok_or(ValidateAuthoritySignatureError::MissingSignature)?;
+        let sighash = self.create_sighash()?;
+
+        let msg = secp256k1::Message::from_slice(sighash.as_slice())
+            .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
+
+        // Just validating the first signature
+        let sig = sigs[0];
+        let recovered_pk =
+           sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
+
+        // find pk in authority signers
+        for signer in authority_signers {
+            if signer == &recovered_pk && sig.to_standard().verify(&msg, signer).is_ok() {
+                return Ok(());
+            }
+        }
+
+        Err(ValidateAuthoritySignatureError::InvalidSignature)
     }
 }
 
