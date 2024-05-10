@@ -1,7 +1,7 @@
 use crate::{
     it_info_print,
     suite::consensus::{
-        frost::poa_node::{
+        common::poa_node::{
             CannonStateNofificationPayload, FederationMemberTestConfig, Notifications,
         },
         GlobalContext,

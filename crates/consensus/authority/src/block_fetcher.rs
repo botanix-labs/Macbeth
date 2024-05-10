@@ -231,7 +231,6 @@ where
                             e
                         }).unwrap();
                         pegouts.extend(past_pegouts);
-                        // TODO (armins) deserialize extra data can be implenented on header
                         let extra_data = ExtraDataHeader::deserialize(
                             &mut header.extra_data.clone().to_vec().as_slice(),
                         )

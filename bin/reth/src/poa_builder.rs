@@ -493,35 +493,30 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let bitcoind_config = self.config.rpc.bitcoind.clone().into();
 
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
-        let (
-            _,
-            mut block_production_task,
-            mut block_fetcher_task,
-            mut frost_task,
-            mut sync_controller,
-        ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&self.config.chain),
-            blockchain_db.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
-            btc_server_client.clone(),
-            bitcoin_block_headers_clone,
-            bitcoin_block_tx_ids_clone,
-            bitcoind_config,
-            secp256k1::Secp256k1::new(),
-            network_sk,
-            None,
-            network.clone(),
-            frost_handle.clone(),
-            block_import_rx,
-            executor.clone(),
-            evm_config,
-            frost_config,
-            payload_builder.clone(),
-            self.config.rpc.btc_network,
-        )
-        .expect("Failed to create authority consensus builder")
-        .build();
+        let (_, block_production_task, mut block_fetcher_task, frost_task, mut sync_controller) =
+            AuthorityConsensusBuilder::try_new(
+                Arc::clone(&self.config.chain),
+                blockchain_db.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender.clone(),
+                btc_server_client.clone(),
+                bitcoin_block_headers_clone,
+                bitcoin_block_tx_ids_clone,
+                bitcoind_config,
+                secp256k1::Secp256k1::new(),
+                network_sk,
+                None,
+                network.clone(),
+                frost_handle.clone(),
+                block_import_rx,
+                executor.clone(),
+                evm_config,
+                frost_config,
+                payload_builder.clone(),
+                self.config.rpc.btc_network,
+            )
+            .expect("Failed to create authority consensus builder")
+            .build();
 
         if let Some(store_path) = self.config.debug.engine_api_store.clone() {
             let (engine_intercept_tx, engine_intercept_rx) = unbounded_channel();
