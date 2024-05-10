@@ -268,6 +268,7 @@ impl HeaderExt for Header {
             .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
 
         let mut signer_count = 0;
+        let mut pks_seen = HashSet::new();
         for sig in sigs {
             let recovered_pk =
                 sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
@@ -276,9 +277,12 @@ impl HeaderExt for Header {
                 return Err(ValidateAuthoritySignatureError::InvalidAuthority);
             }
             for signer in authority_signers {
-                
                 if signer == &recovered_pk {
                     if sig.to_standard().verify(&msg, signer).is_ok() {
+                        if pks_seen.contains(&recovered_pk) {
+                            continue;
+                        }
+                        pks_seen.insert(recovered_pk);
                         signer_count += 1;
                         
                     } else {
