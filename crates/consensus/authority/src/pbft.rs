@@ -13,11 +13,8 @@ use reth_network::frost::{
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::{
-    extra_data_header::{
-        ExtraDataHeaderDeserializeError, ExtraDataHeaderSerializeError,
-        ValidateAuthoritySignatureError,
-    },
-    header_ext::HeaderExt,
+    extra_data_header::{ExtraDataHeaderDeserializeError, ExtraDataHeaderSerializeError},
+    header_ext::{HeaderExt, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
 use reth_provider::{BlockReaderIdExt, StateProviderFactory, CanonChainTracker, BlockchainTreeEngine};
@@ -43,8 +40,6 @@ pub(crate) enum Error {
     InvalidSignature(#[from] ValidateAuthoritySignatureError),
     #[error("Failed to deserialize extra data header: {0}")]
     ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
-    #[error("Failed to serialize extra data header: {0}")]
-    ExtraDataHeaderSerializeError(#[from] ExtraDataHeaderSerializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
     #[error("Missing signatures on block")]
@@ -306,7 +301,7 @@ where
             }
             // We need to be sure that the fork is only 1 block deep
             let ancestor_block_hash =
-                self.client.find_canonical_ancestor(parent_hash).expect("ancestor should exist");
+                self.client.find_canonical_ancestor(block.parent_hash).expect("ancestor should exist");
             if ancestor_block_hash != best_block.parent_hash {
                 return false;
             }
