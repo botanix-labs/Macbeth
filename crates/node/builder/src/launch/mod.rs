@@ -17,10 +17,11 @@ use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
 use reth_consensus::Consensus;
+use reth_ethereum_engine_primitives::EthPayloadBuilderAttributes;
 use reth_exex::{ExExContext, ExExHandle, ExExManager, ExExManagerHandle};
 use reth_interfaces::p2p::either::EitherDownloader;
 use reth_network::NetworkEvents;
-use reth_node_api::{FullNodeComponents, FullNodeTypes};
+use reth_node_api::{FullNodeComponents, FullNodeTypes, PayloadBuilderAttributes};
 use reth_node_core::{
     dirs::{ChainPath, DataDirPath},
     engine_api_store::EngineApiStore,
@@ -29,6 +30,9 @@ use reth_node_core::{
 };
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_primitives::format_ether;
+use reth_primitives::{Address, B256};
+use reth_rpc_types::engine::PayloadAttributes;
+
 use reth_provider::{providers::BlockchainProvider, CanonStateSubscriptions};
 use reth_revm::EvmProcessorFactory;
 use reth_rpc_engine_api::EngineApi;
@@ -564,6 +568,16 @@ address.to_string(), format_ether(alloc.balance));
 
         debug!(target: "reth::cli", "creating components");
         let components = components_builder.build_components(&builder_ctx).await?;
+        // let rpc_payload_attributes = PayloadAttributes {
+        //     timestamp: 10000,
+        //     prev_randao: B256::ZERO,
+        //     suggested_fee_recipient: Address::default(),
+        //     withdrawals: None,
+        //     parent_beacon_block_root: None,
+        // };
+        // let attr = EthPayloadBuilderAttributes::try_new(B256::ZERO, rpc_payload_attributes).unwrap();
+        // let payload_builder = components.payload_builder().clone();
+        // payload_builder.new_payload(attr);
 
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
