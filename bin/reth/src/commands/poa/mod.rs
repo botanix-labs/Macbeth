@@ -24,6 +24,7 @@ use reth_node_builder::PayloadBuilderConfig;
 use reth_node_events::node::handle_events;
 use reth_primitives::constants::ETHEREUM_BLOCK_GAS_LIMIT;
 use reth_primitives::{Bytes, PruneModes};
+use reth_provider::providers::StaticFileProvider;
 use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
 use tokio::sync::oneshot;
@@ -248,7 +249,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     }
 
     /// Execute `poa` command
-    pub async fn execute(self, ctx: CliContext) -> eyre::Result<()>
+    pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()>
 where {
         tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth");
 
@@ -272,18 +273,18 @@ where {
 
         // set up node config
         let mut node_config = NodeConfig {
-            config,
-            chain,
-            metrics,
-            instance,
-            network,
-            rpc,
-            txpool,
-            builder,
-            debug,
-            db,
-            dev,
-            pruning,
+            config: config.clone(),
+            chain: chain.clone(),
+            metrics: metrics.clone(),
+            instance:  instance.clone(),
+            network: network.clone(),
+            rpc: rpc.clone(),
+            txpool: txpool.clone(),
+            builder: builder.clone(),
+            debug: debug.clone(),
+            db: db.clone(),
+            dev: dev.clone(),
+            pruning: pruning.clone(),
         };
 
         // Register the prometheus recorder before creating the database,
@@ -297,7 +298,7 @@ where {
         tracing::info!(target: "reth::cli", path = ?db_path, "Opening database");
         let database = Arc::new(init_db(db_path.clone(), self.db.database_args())?.with_metrics());
 
-        if with_unused_ports {
+        if *with_unused_ports {
             node_config = node_config.with_unused_ports();
         }
 
@@ -373,11 +374,10 @@ where {
         let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
             Arc::new(RwLock::new(HashMap::new()));
         let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
-        let bitcoind_config_clone = bitcoind_config.clone();
-
+        let bitcoin_config_clone = bitcoind_config.clone();
         executor.spawn_critical("async bitcoin block tx ids task", Box::pin(async move {
             let sleep_ms = tokio::time::Duration::from_millis(5000);
-            let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
+            let bitcoind_client =  BitcoindClient::new(bitcoin_config_clone.clone()).expect("Unable to create bitcoind client");
 
             let mut current_tx_ids: HashMap<u64, Vec<bitcoin::Txid>> = bitcoin_block_tx_ids.read().await.clone();
             loop {
@@ -428,12 +428,12 @@ where {
         }));
         info!(target: "reth::cli", "Spawned async bitcoin block tx ids task");
 
-        let bitcoind_config = bitcoind_config.clone();
+        let bitcoind_config_clone = bitcoind_config.clone();
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
                 let sleep_ms = tokio::time::Duration::from_millis(10);
-                let bitcoind_client =  BitcoindClient::new(bitcoind_config).expect("Unable to create bitcoind client");
+                let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone.clone()).expect("Unable to create bitcoind client");
                 let mut current_block_hash = bitcoin::BlockHash::all_zeros();
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
@@ -478,17 +478,25 @@ where {
         );
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
-        let mut provider_factory = ProviderFactory::new(
-            Arc::clone(&database),
-            Arc::clone(&node_config.chain),
+        // let mut provider_factory = ProviderFactory::new(
+        //     Arc::clone(&database),
+        //     Arc::clone(&node_config.chain),
+        //     data_dir.static_files_path(),
+        // )
+        // .expect("make provider factory");
+
+        let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
+
+        let mut provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            database.clone(),
+            node_config.chain.clone(),
             data_dir.static_files_path(),
-        )
-        .expect("make provider factory");
+        )?;
 
         // Configure static file producer
         let static_file_producer = StaticFileProducer::new(
             provider_factory.clone(),
-            provider_factory.static_file_provider(),
+            static_file_provider.clone(),
             PruneModes::default(),
         );
 
@@ -506,13 +514,13 @@ where {
             .start_metrics_endpoint(
                 prometheus_handle,
                 Arc::clone(&database),
-                static_file_producer.clone(),
+                static_file_provider.clone(),
                 executor.clone(),
             )
             .await?;
 
         // Load reth config which is a bit different than cli config
-        let reth_config = self.load_config()?;
+        let mut reth_config = self.load_config()?;
         if !node_config.network.trusted_peers.is_empty() {
             info!(target: "reth::cli", "Adding trusted nodes");
             node_config.network.trusted_peers.iter().for_each(|peer| {
@@ -534,34 +542,37 @@ where {
         let consensus = self.consensus();
 
         // configure blockchain tree
-        let tree_config = BlockchainTreeConfig::default();
-        let block_chain_tree_config = BlockchainTreeConfig::default();
-        let tree_externals =
-            TreeExternals::new(provider_factory.clone(), consensus, executor_factory);
-        let pruning_config = node_config.prune_config();
-        let blockchain_tree = BlockchainTree::new(
+        let tree_externals = TreeExternals::new(
+            provider_factory.clone(),
+            consensus.clone(),
+            executor_factory.clone(),
+        );
+
+        let tree = BlockchainTree::new(
             tree_externals,
-            block_chain_tree_config,
+            BlockchainTreeConfig::default(),
             None, /* Prune mode */
         )?;
 
-        let canon_state_notification_sender = blockchain_tree.canon_state_notification_sender();
-        let blockchain_tree = Arc::new(ShareableBlockchainTree::new(blockchain_tree));
+        let canon_state_notification_sender = tree.canon_state_notification_sender();
+        let blockchain_tree = Arc::new(ShareableBlockchainTree::new(tree));
         debug!(target: "reth::cli", "configured blockchain tree");
 
         // fetch the head block from the database
-        let head = self.lookup_head(provider_factory);
+        let head = self.lookup_head(provider_factory.clone());
 
         // setup the blockchain provider
         let blockchain_db =
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
+
         let blob_store = InMemoryBlobStore::default();
         let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&self.chain))
             .with_head_timestamp(head.timestamp)
             .kzg_settings(self.kzg_settings()?)
             .with_additional_tasks(1)
-            .build_with_tasks(blockchain_db.clone(), ctx.task_executor.clone(), blob_store.clone());
+            .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 
+        // Set up Transaction pool (mempool)
         let transaction_pool =
             reth_transaction_pool::Pool::eth_pool(validator, blob_store, self.txpool.pool_config());
         info!(target: "reth::cli", "Transaction pool initialized");
@@ -610,7 +621,7 @@ where {
         frost_config.set_authorities(authorities);
 
         let default_peers_path = data_dir.known_peers_path();
-        let mut cfg_builder = self
+        let cfg_builder = self
             .network
             .network_config(
                 &reth_config,
@@ -618,42 +629,44 @@ where {
                 secret_key.clone(),
                 default_peers_path,
             )
-            .with_task_executor(Box::new(executor))
+            .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
-            .listener_addr(SocketAddr::V4(SocketAddrV4::new(
+            .listener_addr(SocketAddr::new(
                 self.network.addr,
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
-            )))
-            .discovery_addr(SocketAddr::V4(SocketAddrV4::new(
+            ))
+            .discovery_addr(SocketAddr::new(
                 self.network.addr,
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
-            )))
-            .block_import(Box::new(block_import))
-            .frost_config(frost_config)
+            ))
+            .block_import(Box::new(block_import.clone()))
+            .frost_config(frost_config.clone())
             .network_mode(reth_network::config::NetworkMode::Authority);
 
         let network_config = cfg_builder.build(provider_factory.clone());
-        let mut network_builder = NetworkManager::builder(network_config).await?;
-        // let network_handle = network_config.start_network().await?;
+
+        // let network_builder = NetworkManager::builder(network_config).await?;
+
         // Now we need to build the network components including frost p2p, txpool p2p, eth request handling p2p, as well as the general p2p network
         let (network_handle, network_manager, tx_pool_p2p, eth_request_handler_p2p, frost_p2p) =
             NetworkManager::builder(network_config)
                 .await?
-                .frost(frost_config)
+                .frost(frost_config.clone())
                 .request_handler(provider_factory.clone())
                 .transactions(transaction_pool.clone(), Default::default())
                 .split_with_handle();
         // Start all the p2p tasks
-
-        executor.spawn_critical("frost p2p task", frost_p2p.expect("p2p task to be config'd"));
+        let frost_manager = frost_p2p.expect("should be some");
+        let frost_handler = frost_manager.handle();
+        executor.spawn_critical("p2p frost", frost_manager);
         executor.spawn_critical("txpool p2p task", tx_pool_p2p);
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
 
-        info!(target: "reth::cli", peer_id = %network_manager.peer_id(), local_addr = %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to P2P network");
-        debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(), "Full peer ID");
+        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr = %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to P2P network");
+        // debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(), "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
         // TODO: dont' use unwrap
@@ -672,11 +685,11 @@ where {
             .max_gas_limit(conf.max_gas_limit());
 
         let payload_generator = BasicPayloadJobGenerator::with_builder(
-            provider_factory.clone(),
+            blockchain_db.clone(),
             transaction_pool.clone(),
             executor.clone(),
             payload_job_config,
-            self.chain,
+            node_config.chain.clone(),
             payload_builder,
         );
         let (payload_service, payload_builder) =
@@ -684,13 +697,6 @@ where {
 
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
-
-        let components = Components {
-            transaction_pool: transaction_pool.clone(),
-            evm_config: evm_config.clone(),
-            network: network_builder.handle(),
-            payload_builder,
-        };
 
         let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
@@ -710,9 +716,11 @@ where {
             bitcoin_block_tx_ids_clone,
             bitcoind_config,
             secp256k1::Secp256k1::new(),
+            secret_key,
             None,
             network_handle.clone(),
-            frost_handle.clone(),
+            // TODO this doesnt need to be an option
+            Some(frost_handler),
             block_import_rx,
             executor.clone(),
             evm_config,
@@ -747,7 +755,7 @@ where {
             provider_factory.clone(),
             &executor,
             sync_metrics_tx,
-            self.pruning.prune_config(&self.chain),
+            node_config.prune_config(),
             max_block,
             static_file_producer.clone(),
             evm_config,
@@ -761,14 +769,14 @@ where {
         executor.spawn_critical(
             "PoA Block Production Task",
             Box::pin(async move {
-                block_production_task.expect("block production task exists").start_task().await;
+                block_production_task.start_task().await;
             }),
         );
 
         executor.spawn_critical(
             "Frost Task",
             Box::pin(async move {
-                frost_task.expect("frost task exists").start_task().await;
+                frost_task.start_task().await;
             }),
         );
         executor.spawn_critical(
@@ -825,6 +833,7 @@ where {
             network_handle.event_listener().map(Into::into),
             beacon_engine_handle.event_listener().map(Into::into),
             pipeline_events.map(Into::into),
+            // TODO do we need this?
             // if self.config.debug.tip.is_none() {
             //     Either::Left(
             //         ConsensusLayerHealthEvents::new(Box::new(blockchain_db.clone()))
@@ -885,7 +894,7 @@ where {
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        let config_path = self.config.expect("is some");
+        let config_path = <std::option::Option<PathBuf> as Clone>::clone(&self.config).expect("is some");
         let mut config = confy::load_path::<Config>(&config_path)
             .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
 
