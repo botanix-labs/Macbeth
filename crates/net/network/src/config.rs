@@ -2,7 +2,7 @@
 
 use crate::{
     error::NetworkError,
-    frost::manager::FrostConfig,
+    frost::manager::{FrostConfig, FrostHandle},
     import::{BlockImport, ProofOfStakeBlockImport},
     peers::PeersConfig,
     session::SessionsConfig,
@@ -19,6 +19,7 @@ use reth_primitives::{
 };
 use reth_provider::{BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
+use reth_transaction_pool::TransactionPool;
 use secp256k1::SECP256K1;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
@@ -170,12 +171,11 @@ where
     /// Starts the networking stack given a [NetworkConfig] and returns a handle to the network.
     pub async fn start_network(self) -> Result<NetworkHandle, NetworkError> {
         let client = self.client.clone();
-        let (handle, network, _txpool, eth, _frost) =
+        let (handle, network, _txpool, eth, _) =
             NetworkManager::builder(self).await?.request_handler(client).split_with_handle();
 
         tokio::task::spawn(network);
         // TODO: tokio::task::spawn(txpool);
-        // TODO: tokio::task::spawn(frost);
         tokio::task::spawn(eth);
         Ok(handle)
     }

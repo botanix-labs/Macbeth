@@ -61,6 +61,7 @@ reth-consensus.workspace = true
 
 # crypto
 alloy-rlp.workspace = true
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery", "serde"] }
 
 # tracing
 tracing.workspace = true

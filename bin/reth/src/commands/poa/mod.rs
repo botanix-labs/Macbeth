@@ -1,5 +1,7 @@
 //! Main node command
 
+use crate::payload::PayloadBuilderService;
+use crate::transaction_pool::Pool;
 use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
@@ -8,6 +10,26 @@ use crate::{
     },
     dirs::{DataDirPath, MaybePlatformPath},
 };
+use futures::stream::select;
+use futures::{stream_select, StreamExt};
+use reth_authority_consensus::AuthorityConsensusBuilder;
+use reth_basic_payload_builder::BasicPayloadJobGenerator;
+use reth_beacon_consensus::hooks::EngineHooks;
+use reth_beacon_consensus::BeaconConsensusEngine;
+use reth_beacon_consensus::MIN_BLOCKS_FOR_PIPELINE_RUN;
+use reth_config::config::StageConfig;
+use reth_network::NetworkEvents;
+use reth_network_api::PeersInfo;
+use reth_node_builder::PayloadBuilderConfig;
+use reth_node_events::node::handle_events;
+use reth_primitives::constants::ETHEREUM_BLOCK_GAS_LIMIT;
+use reth_primitives::{Bytes, PruneModes};
+use reth_rpc::EngineApi;
+use reth_static_file::StaticFileProducer;
+use tokio::sync::oneshot;
+
+use crate::builder::FullNodeTypesAdapter;
+use crate::transaction_pool::TransactionPool;
 use bitcoin::hashes::Hash;
 use clap::{value_parser, Args, Parser};
 use eyre::Context;
@@ -17,9 +39,12 @@ use reth_authority_consensus::{
     utils::{get_confirmation_depth, is_testnet},
     AuthorityConsensus,
 };
+use reth_basic_payload_builder::BasicPayloadJobGeneratorConfig;
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
+use reth_provider::StaticFileProviderFactory;
+
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
 use reth_config::Config;
@@ -28,12 +53,15 @@ use reth_consensus_common::utils;
 use reth_consensus_common::utils::get_authority_signer_index;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_ethereum_payload_builder::EthereumPayloadBuilder;
+use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkManager,
 };
+
 use reth_node_api::FullNodeTypes;
 use reth_node_builder::{
     components::{Components, ComponentsBuilder},
+    setup::build_networked_pipeline,
     BuilderContext, NodeBuilder, RethRpcConfig, RethTransactionPoolConfig, WithLaunchContext,
 };
 use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
@@ -52,6 +80,7 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
+use std::borrow::Cow;
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -307,7 +336,7 @@ where {
 
         // Connect to btc signining server
         let btc_server_client = BtcServerExtendedClient::new(
-            self.config.rpc.btc_server.clone(),
+            node_config.rpc.btc_server.clone(),
             Some(jwt_secret.clone()),
         )
         .await
@@ -456,6 +485,13 @@ where {
         )
         .expect("make provider factory");
 
+        // Configure static file producer
+        let static_file_producer = StaticFileProducer::new(
+            provider_factory.clone(),
+            provider_factory.static_file_provider(),
+            PruneModes::default(),
+        );
+
         // configure snapshotter
         // let snapshotter = reth_snapshot::Snapshotter::new(
         //     provider_factory.clone(),
@@ -470,8 +506,8 @@ where {
             .start_metrics_endpoint(
                 prometheus_handle,
                 Arc::clone(&database),
-                static_file,
-                data_dir.static_files_path(),
+                static_file_producer.clone(),
+                executor.clone(),
             )
             .await?;
 
@@ -503,11 +539,14 @@ where {
         let tree_externals =
             TreeExternals::new(provider_factory.clone(), consensus, executor_factory);
         let pruning_config = node_config.prune_config();
-        let blockchain_tree =
-            BlockchainTree::new(tree_externals, block_chain_tree_config, pruning_config)?;
+        let blockchain_tree = BlockchainTree::new(
+            tree_externals,
+            block_chain_tree_config,
+            None, /* Prune mode */
+        )?;
 
         let canon_state_notification_sender = blockchain_tree.canon_state_notification_sender();
-        let blockchain_tree = ShareableBlockchainTree::new(blockchain_tree);
+        let blockchain_tree = Arc::new(ShareableBlockchainTree::new(blockchain_tree));
         debug!(target: "reth::cli", "configured blockchain tree");
 
         // fetch the head block from the database
@@ -596,29 +635,56 @@ where {
             .network_mode(reth_network::config::NetworkMode::Authority);
 
         let network_config = cfg_builder.build(provider_factory.clone());
-        let network_client = network_config.client.clone();
         let mut network_builder = NetworkManager::builder(network_config).await?;
+        // let network_handle = network_config.start_network().await?;
+        // Now we need to build the network components including frost p2p, txpool p2p, eth request handling p2p, as well as the general p2p network
+        let (network_handle, network_manager, tx_pool_p2p, eth_request_handler_p2p, frost_p2p) =
+            NetworkManager::builder(network_config)
+                .await?
+                .frost(frost_config)
+                .request_handler(provider_factory.clone())
+                .transactions(transaction_pool.clone(), Default::default())
+                .split_with_handle();
+        // Start all the p2p tasks
 
-        // TODO Configure payload builder
-        // let builder_context = BuilderContext::new(
-        //     head,
-        //     provider_factory.clone(),
-        //     executor.clone(),
-        //     data_dir.clone(),
-        //     node_config.clone(),
-        //     reth_config.clone(),
-        // );
+        executor.spawn_critical("frost p2p task", frost_p2p.expect("p2p task to be config'd"));
+        executor.spawn_critical("txpool p2p task", tx_pool_p2p);
+        executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
+        executor.spawn_critical("network p2p", network_manager);
+
+        info!(target: "reth::cli", peer_id = %network_manager.peer_id(), local_addr = %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to P2P network");
+        debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(), "Full peer ID");
+        let network_client = network_handle.fetch_client().await?;
 
         // TODO: dont' use unwrap
         // all of this will break bc of typing probably...might be another rabbit hole
         // Alternative: move the custom payload builder logic into bin/reth (like the other branch does)
         // then create it
-        let payload_builder =
-            spawn_payload_service::<EthEngineTypes>(&builder_context, transaction_pool.clone())
-                .await
-                .unwrap();
+        debug!(target: "reth::cli", "Spawning payload builder service");
+        let payload_builder = reth_ethereum_payload_builder::EthereumPayloadBuilder::default();
+        let conf = DefaultPoAPayloadBuilderConfig {};
 
-        // TODO config components
+        let payload_job_config = BasicPayloadJobGeneratorConfig::default()
+            .interval(conf.interval())
+            .deadline(conf.deadline())
+            .max_payload_tasks(conf.max_payload_tasks())
+            .extradata(conf.extradata_bytes())
+            .max_gas_limit(conf.max_gas_limit());
+
+        let payload_generator = BasicPayloadJobGenerator::with_builder(
+            provider_factory.clone(),
+            transaction_pool.clone(),
+            executor.clone(),
+            payload_job_config,
+            self.chain,
+            payload_builder,
+        );
+        let (payload_service, payload_builder) =
+            PayloadBuilderService::new(payload_generator, blockchain_db.canonical_state_stream());
+
+        executor.spawn_critical("payload builder service", Box::pin(payload_service));
+        debug!(target: "reth::cli", "Spawned payload builder service");
+
         let components = Components {
             transaction_pool: transaction_pool.clone(),
             evm_config: evm_config.clone(),
@@ -626,15 +692,195 @@ where {
             payload_builder,
         };
 
-        // TODO Start authority specific tasks
-        // TODO spawn events task
-        // TODO start rpc server
+        let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
+        // Build authority Consensus
+        let (
+            _,
+            mut block_production_task,
+            mut block_fetcher_task,
+            mut frost_task,
+            mut sync_controller,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&self.chain),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoin_block_tx_ids_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            None,
+            network_handle.clone(),
+            frost_handle.clone(),
+            block_import_rx,
+            executor.clone(),
+            evm_config,
+            frost_config,
+            payload_builder.clone(),
+            node_config.rpc.btc_network,
+        )
+        .expect("Failed to create authority consensus builder")
+        .build();
 
-        // TODO start beacond engine
-        // TODO return node handle?
+        // TODO do we need this?
+        // if let Some(store_path) = self.config.debug.engine_api_store.clone() {
+        //     let (engine_intercept_tx, engine_intercept_rx) = unbounded_channel();
+        //     let engine_api_store = EngineApiStore::new(store_path);
+        //     executor.spawn_critical(
+        //         "engine api interceptor",
+        //         engine_api_store.intercept(consensus_engine_rx, engine_intercept_tx),
+        //     );
+        //     consensus_engine_rx = engine_intercept_rx;
+        // };
 
-        // do not exit
-        loop {}
+        // configure exxes manager
+        let exex_manager = ExExManagerHandle::empty();
+
+        // Configure pipeline
+        let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
+        let mut pipeline = build_networked_pipeline(
+            &node_config,
+            &StageConfig::default(),
+            network_client.clone(),
+            Arc::clone(&consensus),
+            provider_factory.clone(),
+            &executor,
+            sync_metrics_tx,
+            self.pruning.prune_config(&self.chain),
+            max_block,
+            static_file_producer.clone(),
+            evm_config,
+            exex_manager,
+        )
+        .await?;
+
+        let pipeline_events = pipeline.events();
+
+        // Spawn authority consensus specific tasks
+        executor.spawn_critical(
+            "PoA Block Production Task",
+            Box::pin(async move {
+                block_production_task.expect("block production task exists").start_task().await;
+            }),
+        );
+
+        executor.spawn_critical(
+            "Frost Task",
+            Box::pin(async move {
+                frost_task.expect("frost task exists").start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "PoA Block Fetcher Task",
+            Box::pin(async move {
+                block_fetcher_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "PoA Block Sync Controller Task",
+            Box::pin(async move {
+                sync_controller.start_task().await;
+            }),
+        );
+
+        let initial_target = node_config.initial_pipeline_target(genesis_hash);
+        let mut hooks = EngineHooks::new();
+
+        // TODO do we want pruner
+        //  let pruner_events = if let Some(prune_config) = prune_config {
+        //     let mut pruner = PrunerBuilder::new(prune_config.clone())
+        //         .max_reorg_depth(tree_config.max_reorg_depth() as usize)
+        //         .prune_delete_limit(self.config.chain.prune_delete_limit)
+        //         .build(provider_factory, snapshotter.highest_snapshot_receiver());
+
+        //     let events = pruner.events();
+        //     hooks.add(PruneHook::new(pruner, Box::new(executor.clone())));
+
+        //     info!(target: "reth::cli", ?prune_config, "Pruner initialized");
+        //     Either::Left(events)
+        // } else {
+        //     Either::Right(stream::empty())
+        // };
+
+        // Configure the consensus engine
+        let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
+            network_client,
+            pipeline,
+            blockchain_db.clone(),
+            Box::new(executor.clone()),
+            Box::new(network_handle.clone()),
+            max_block,
+            node_config.debug.continuous,
+            payload_builder.clone(),
+            initial_target,
+            MIN_BLOCKS_FOR_PIPELINE_RUN,
+            consensus_engine_tx,
+            consensus_engine_rx,
+            hooks,
+        )?;
+        info!(target: "reth::cli", "Consensus engine initialized");
+
+        let events = stream_select!(
+            network_handle.event_listener().map(Into::into),
+            beacon_engine_handle.event_listener().map(Into::into),
+            pipeline_events.map(Into::into),
+            // if self.config.debug.tip.is_none() {
+            //     Either::Left(
+            //         ConsensusLayerHealthEvents::new(Box::new(blockchain_db.clone()))
+            //             .map(Into::into),
+            //     )
+            // } else {
+            //     Either::Right(stream::empty())
+            // },
+            // pruner_events.map(Into::into)
+        );
+        executor.spawn_critical(
+            "events task",
+            handle_events(
+                Some(network_handle.clone()),
+                Some(head.number),
+                events,
+                database.clone(),
+            ),
+        );
+
+        let engine_api = EngineApi::new(
+            blockchain_db.clone(),
+            self.chain.clone(),
+            beacon_engine_handle,
+            payload_builder.into(),
+            Box::new(executor.clone()),
+        );
+        info!(target: "reth::cli", "Engine API handler initialized");
+
+        // adjust rpc port numbers based on instance number
+        node_config.adjust_instance_ports();
+
+        // Start RPC servers
+        let rpc_server_handles = node_config
+            .rpc
+            .start_rpc_server(
+                blockchain_db.clone(),
+                transaction_pool.clone(),
+                network_handle.clone(),
+                executor.clone(),
+                blockchain_db.clone(),
+                evm_config.clone(),
+            )
+            .await?;
+
+        // TODO do we need start auth server?
+
+        // Run consensus engine to completion
+        let (tx, rx) = oneshot::channel();
+        info!(target: "reth::cli", "Starting consensus engine");
+        executor.spawn_critical_blocking("consensus engine", async move {
+            let res = beacon_consensus_engine.await;
+            let _ = tx.send(res);
+        });
+
+        Ok(())
     }
 
     /// Loads the reth config with the given datadir root
@@ -705,37 +951,32 @@ where {
     }
 }
 
-async fn spawn_payload_service(
-    ctx: &BuilderContext<FullNodeTypesAdapter>,
-    pool: Pool,
-) -> eyre::Result<PayloadBuilderHandle<EthEngineTypes>>
-where
-    Node: FullNodeTypes<Engine = EthEngineTypes>,
-{
-    let payload_builder = reth_ethereum_payload_builder::EthereumPayloadBuilder::default();
-    let conf = ctx.payload_builder_config();
+/// Default PoA payload builder config
+struct DefaultPoAPayloadBuilderConfig {}
+impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
+    fn interval(&self) -> Duration {
+        Duration::from_secs(1)
+    }
 
-    let payload_job_config = BasicPayloadJobGeneratorConfig::default()
-        .interval(conf.interval())
-        .deadline(conf.deadline())
-        .max_payload_tasks(conf.max_payload_tasks())
-        .extradata(conf.extradata_bytes())
-        .max_gas_limit(conf.max_gas_limit());
+    fn deadline(&self) -> Duration {
+        Duration::from_secs(5)
+    }
 
-    let payload_generator = BasicPayloadJobGenerator::with_builder(
-        ctx.provider().clone(),
-        pool,
-        ctx.task_executor().clone(),
-        payload_job_config,
-        ctx.chain_spec(),
-        payload_builder,
-    );
-    let (payload_service, payload_builder) =
-        PayloadBuilderService::new(payload_generator, ctx.provider().canonical_state_stream());
+    fn max_payload_tasks(&self) -> usize {
+        2
+    }
 
-    ctx.task_executor().spawn_critical("payload builder service", Box::pin(payload_service));
+    fn extradata(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
 
-    Ok(payload_builder)
+    fn extradata_bytes(&self) -> Bytes {
+        Bytes::new()
+    }
+
+    fn max_gas_limit(&self) -> u64 {
+        ETHEREUM_BLOCK_GAS_LIMIT
+    }
 }
 
 // *** Botanix specific

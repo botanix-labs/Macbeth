@@ -7919,6 +7919,7 @@ dependencies = [
  "reth-transaction-pool",
  "reth-trie",
  "rsntp",
+ "secp256k1 0.28.2",
  "serde",
  "serde_json",
  "similar-asserts",

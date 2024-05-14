@@ -401,7 +401,7 @@ where
         let Self { builder, task_executor, data_dir } = self;
 
         let launcher = DefaultNodeLauncher::new(task_executor, data_dir);
-        builder.launch_with_poa(launcher).await
+        builder.launch_with(launcher).await
     }
 
     /// Check that the builder can be launched
