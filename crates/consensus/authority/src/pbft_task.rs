@@ -1,9 +1,8 @@
 use crate::{pbft::PbftStateMachine, Storage};
 use reth_ecies::util::pk2id;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{FrostCommand, FrostConfig, FrostHandle},
+    manager::{FrostCommand, FrostConfig, ToFrostManager},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::SealedBlock;
@@ -16,9 +15,11 @@ use tracing::{error, info, warn};
 pub(crate) enum PbftNotificationMessage {
     /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
-    /// A notification to the block builder task that we have received a with a quorum of commitments
+    /// A notification to the block builder task that we have received a with a quorum of
+    /// commitments
     CommitmentsReceived(PbftNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
+    /// A notification to the block builder task we have timed out or are no longer in turn so we
+    /// can reset
     Reset,
 }
 
@@ -117,7 +118,7 @@ where
                             }
                         }
                     }
-                    (msg) => {
+                    msg => {
                         warn!(
                             target: "PBFT Task",
                             "uncovered pbft notification message {:?}",
@@ -187,11 +188,13 @@ where
                         }
                     }
                     PeerMessageResponse::Dkg(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        // Nothing to do for dkg related messages. Does are handled by the frost
+                        // task
                         continue;
                     }
                     PeerMessageResponse::Signing(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        // Nothing to do for dkg related messages. Does are handled by the frost
+                        // task
                         continue;
                     }
                 }

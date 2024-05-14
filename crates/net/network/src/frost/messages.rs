@@ -330,9 +330,9 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
             }
-            FrostProtoMessageKind::CoordinatorBlockProposal(resource)
-            | FrostProtoMessageKind::PeerPreCommitment(resource)
-            | FrostProtoMessageKind::PeerCommit(resource) => {
+            FrostProtoMessageKind::CoordinatorBlockProposal(resource) |
+            FrostProtoMessageKind::PeerPreCommitment(resource) |
+            FrostProtoMessageKind::PeerCommit(resource) => {
                 // Use u32 to support larger data sizes
                 let mut buffer = vec![];
                 resource.block.encode(&mut buffer);
@@ -629,7 +629,6 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
-
     }
 
     #[test]

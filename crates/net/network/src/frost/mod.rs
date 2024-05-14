@@ -166,7 +166,8 @@ pub enum NetworkFrostEvent {
 }
 
 /// Commands sent by us to a peer.
-/// These are commands that are sent by the frost manager to the network via most likely the frost task
+/// These are commands that are sent by the frost manager to the network via most likely the frost
+/// task
 #[derive(Debug)]
 pub enum FrostPeerCommand {
     /// Send a ping message to the peer.

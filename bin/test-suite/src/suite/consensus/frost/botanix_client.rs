@@ -2,11 +2,14 @@ use crate::{it_info_print, minting::Minting as MintContract};
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,
-    core::{k256::ecdsa::SigningKey, types::Address as EtherAddress},
+    core::{
+        k256::ecdsa::SigningKey,
+        types::{Address as EtherAddress, BlockNumber},
+    },
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{NameOrAddress, TransactionReceipt, TransactionRequest, U256},
+    types::{NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
 };
 use reth_primitives::BOTANIX_TESTNET;
@@ -37,17 +40,19 @@ impl BotanixEthClient {
         mint_contract_address: EtherAddress,
     ) -> Self {
         // Connect to the network
-        let provider =
-            Provider::<Http>::try_from(&format!("http://127.0.0.1:{}", rpc_port)).unwrap();
-        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{}", rpc_port));
+        let provider = Provider::<Http>::try_from(&format!("http://127.0.0.1:{rpc_port}"))
+            .expect("Provider created");
+        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{rpc_port}"));
 
         // get chain id
-        let chain_id = provider.get_chainid().await.unwrap();
+        let chain_id = provider.get_chainid().await.expect("chain id to be returned");
         assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
 
         // create a local wallet
-        let wallet: LocalWallet =
-            sender_secret_key.parse::<LocalWallet>().unwrap().with_chain_id(chain_id.as_u64());
+        let wallet: LocalWallet = sender_secret_key
+            .parse::<LocalWallet>()
+            .expect("sender secret key to be valid")
+            .with_chain_id(chain_id.as_u64());
 
         // connect the wallet to the provider
         let client = SignerMiddleware::new(provider.clone(), wallet);
@@ -103,7 +108,7 @@ impl BotanixEthClient {
     }
 
     pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
-        let sender_account = NameOrAddress::from_str(address).unwrap();
+        let sender_account = NameOrAddress::from_str(address).expect("address to be valid");
         let sender_cur_balance =
             self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
         Ok(sender_cur_balance)
@@ -116,7 +121,7 @@ impl BotanixEthClient {
     ) -> Result<Option<TransactionReceipt>, Error> {
         // Eip1559TransactionRequest
         let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
-        let amount = utils::parse_ether(amount.to_string()).unwrap();
+        let amount = utils::parse_ether(amount.to_string()).expect("amount to be valid");
 
         // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
         let tx = TransactionRequest::new()
@@ -136,5 +141,32 @@ impl BotanixEthClient {
             .map_err(Error::Provider)?;
 
         Ok(tx_receipt)
+    }
+
+    pub async fn get_latest_block_hash(&self) -> Result<ethers::core::types::H256, Error> {
+        let block_hash = self
+            .client
+            .get_block(BlockNumber::Latest)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists")
+            .hash
+            .expect("block hash exists");
+
+        Ok(block_hash)
+    }
+
+    pub async fn get_latest_block_by_hash(
+        &self,
+        hash: H256,
+    ) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let block = self
+            .client
+            .get_block(hash)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(block)
     }
 }

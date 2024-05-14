@@ -36,7 +36,7 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     /// bitcoin block source
     bitcoind_client: BitcoindClient,
     /// Consensus cache
@@ -66,7 +66,7 @@ where
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
@@ -88,6 +88,9 @@ where
     }
 
     pub async fn start_task(&mut self) {
+        // only a federation node has a btc_server
+        let is_fed_node = self.btc_server.is_some();
+
         loop {
             let new_block = match self.block_import_rx.try_recv() {
                 Ok(b) => b,
@@ -142,21 +145,27 @@ where
                 continue;
             }
 
-            if storage.aggregate_public_key.is_none() {
-                warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
-                continue;
+            let mut botanix_consensus_pkg = None;
+            if is_fed_node {
+                if storage.aggregate_public_key.is_none() {
+                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                    continue;
+                } else {
+                    botanix_consensus_pkg = Some(BotanixConsensusPackage {
+                        recent_header: recent_bitcoin_block_header.expect("recent header is some"),
+                        aggregate_public_key: storage
+                            .aggregate_public_key
+                            .clone()
+                            .expect("aggregate pk is some"),
+                        btc_network: self.btc_network,
+                    });
+                }
             }
-
-            let botanix_consensus_pkg = BotanixConsensusPackage {
-                recent_header: recent_bitcoin_block_header.expect("recent header is some"),
-                aggregate_public_key: storage.aggregate_public_key.expect("aggregate pk is some"),
-                btc_network: self.btc_network,
-            };
 
             match storage.execute_imported_block(
                 self.chain_spec.clone(),
                 sealed_block.clone(),
-                Some(botanix_consensus_pkg),
+                botanix_consensus_pkg,
                 self.evm_config.clone(),
             ) {
                 Ok(bundle_state) => {
@@ -167,24 +176,36 @@ where
                             .expect("senders are valid");
                     // Process Botanix specific logs
                     let is_testnet = is_testnet(self.chain_spec.chain().id());
-                    let mut pegouts = match crate::utils::process_receipts(
-                        &mut self.btc_server.clone(),
-                        &bundle_state,
-                        recent_bitcoin_block_height,
-                        is_testnet,
-                        self.btc_network,
-                    )
-                    .await
-                    {
-                        Ok(pegouts) => pegouts,
-                        Err(e) => {
-                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                            continue;
+                    // get pegouts if btc_server is available
+                    // only federation nodes will have btc_server
+                    let mut pegouts = match self.btc_server.as_ref() {
+                        Some(btc_server) => {
+                            let pegouts = match crate::utils::process_receipts(
+                                &mut btc_server.clone(),
+                                &bundle_state,
+                                recent_bitcoin_block_height,
+                                is_testnet,
+                                self.btc_network,
+                            )
+                            .await
+                            {
+                                Ok(pegouts) => pegouts,
+                                Err(e) => {
+                                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                    continue;
+                                }
+                            };
+
+                            pegouts
                         }
+                        None => vec![],
                     };
+
                     // Validate utxo commitment
-                    let utxo_commitment: [u8; 32] =
-                        match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
+                    let header = sealed_block.header.clone();
+                    if is_fed_node {
+                        let utxo_commitment: [u8; 32] =
+                        match self.btc_server.clone().expect("btc_server exists").get_utxo_merkle_root(client::Empty {}).await {
                             Ok(utxo_commitment) => utxo_commitment,
                             Err(e) => {
                                 error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
@@ -194,17 +215,17 @@ where
                         .merkle_root
                         .try_into()
                         .expect("valid UTXO commitment");
-                    info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
-                    let header = sealed_block.header.clone();
-                    let edh = header.deserialize_extra_data_header().expect("valid extra data");
-                    if edh.utxo_commitment != utxo_commitment {
-                        error!(target: "consensus::authority", "UTXO commitment mismatch");
-                        continue;
+                        info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
+                        let edh = header.deserialize_extra_data_header().expect("valid extra data");
+                        if edh.utxo_commitment != utxo_commitment {
+                            error!(target: "consensus::authority", "UTXO commitment mismatch");
+                            continue;
+                        }
                     }
 
                     let (best_block, _best_hash) =
                         storage.get_best_block_and_hash().expect("best block exists");
-                    if header.is_poa_epoch() {
+                    if header.is_poa_epoch() && is_fed_node {
                         // get the pegouts from during the epoch
                         let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
                             error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
@@ -233,6 +254,8 @@ where
                                 .collect();
                             let res = self
                                 .btc_server
+                                .clone()
+                                .expect("btc_server exists")
                                 .signer_finalize(FinalizeSignerRequest { witness: wit, outputs })
                                 .await;
 

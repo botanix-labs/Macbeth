@@ -1,5 +1,7 @@
-use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
-use crate::{Bytes, Header, B256};
+use crate::{
+    extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
+    Bytes, Header, B256,
+};
 use thiserror::Error;
 
 /// Extension trait for the block header
@@ -106,7 +108,8 @@ impl HeaderExt for Header {
         Ok(hash)
     }
 
-    /// Validates that the authority in the first signature position was in turn when producing the block
+    /// Validates that the authority in the first signature position was in turn when producing the
+    /// block
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
@@ -203,8 +206,7 @@ impl HeaderExt for Header {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Bytes;
-    use crate::Header;
+    use crate::{Bytes, Header};
     use std::str::FromStr;
 
     #[allow(dead_code)]

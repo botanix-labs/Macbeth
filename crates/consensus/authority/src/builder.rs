@@ -14,7 +14,7 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
-    frost::manager::{FrostConfig, FrostHandle, ToFrostManager},
+    frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
@@ -42,7 +42,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToF
     storage: Storage<Client>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
     bitcoind_config: BitcoindConfig,
@@ -57,7 +57,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToF
     task_executor: TaskExecutor,
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
-    frost_config: FrostConfig,
+    frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     btc_network: bitcoin::Network,
 }
@@ -93,7 +93,7 @@ where
         client: Client,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
         bitcoind_config: BitcoindConfig,
@@ -106,10 +106,13 @@ where
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
-        frost_config: FrostConfig,
+        frost_config: Option<FrostConfig>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
+        // only a federation node has a btc_server
+        let is_fed_node = btc_server.is_some();
+
         let mut latest_header = client
             .latest_header()
             .ok()
@@ -139,10 +142,17 @@ where
             })?
             .expect("authority signer list in epoch block");
 
-        let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
+        // authority length represents a non federation node since it would be out of bounds
+        // this prevents the node from signing blocks although there are other checks to stop this
+        // as well
+        let mut signer_index = Some(authorities.len() + 1);
+        // only a federation node has a btc_server
+        if is_fed_node {
+            signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
-        if signer_index.is_none() {
-            return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
+            if signer_index.is_none() {
+                return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
+            }
         }
 
         let pk = sk.public_key(&secp);
@@ -197,11 +207,11 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>,
+        Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
         BlockFetcherTask<Client, EvmConfig, Engine>,
-        FrostTask<Client, ToFrostMan>,
+        Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        PbftTask<Client, ToFrostMan>,
+        Option<PbftTask<Client, ToFrostMan>>,
     ) {
         let Self {
             btc_server,
@@ -226,6 +236,7 @@ where
             payload_builder,
             btc_network,
         } = self;
+        let is_fed_node = btc_server.is_some();
 
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
@@ -249,64 +260,89 @@ where
         );
 
         // Set up frost notification message queue
-        // these are two mpsc channels that are used to communicate between the frost task and the block production task
+        // these are two mpsc channels that are used to communicate between the frost task and the
+        // block production task
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
         let (frost_task_notifications2_tx, frost_task_notifications2_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
+        // create frost and block production tasks if btc_server is available:
+        // only federation nodes will have btc_server
+        let mut frost_task = None;
+        let mut block_production_task = None;
+        let mut pbft_task = None;
+        if is_fed_node {
+            // frost task
+            let task = FrostTask::new(
+                btc_server.clone().expect("btc_server is available"),
+                network_handle.clone(),
+                frost_handle.clone().expect("Requires frost handle"),
+                epoch_manager.clone(),
+                frost_config.clone().expect("frost config exists"),
+                storage.clone(),
+                frost_task_notifications1_rx,
+                frost_task_notifications2_tx,
+            );
 
-        let frost_task = FrostTask::new(
-            btc_server.clone(),
-            network_handle.clone(),
-            frost_handle.clone().expect("Requires frost handle"),
-            epoch_manager.clone(),
-            frost_config.clone(),
-            storage.clone(),
-            frost_task_notifications1_rx,
-            frost_task_notifications2_tx,
-        );
+            frost_task = Some(task);
 
-        // Set up pbft notification message queue
-        // these are two mpsc channels that are used to communicate between the pbft task and the block production task
-        let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
-            tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
-        let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
-            tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
+            // let frost_task = FrostTask::new(
+            //     btc_server.clone(),
+            //     network_handle.clone(),
+            //     frost_handle.clone().expect("Requires frost handle"),
+            //     epoch_manager.clone(),
+            //     frost_config.clone(),
+            //     storage.clone(),
+            //     frost_task_notifications1_rx,
+            //     frost_task_notifications2_tx,
+            // );
 
-        let pbft_task = PbftTask::new(
-            frost_handle.expect("Requires frost handle"),
-            frost_config,
-            storage.clone(),
-            sk,
-            pbft_task_notifications1_rx,
-            pbft_task_notifications2_tx,
-        );
+            // Set up pbft notification message queue
+            // these are two mpsc channels that are used to communicate between the pbft task and
+            // the block production task
+            let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
+            let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
-        let bitcoind_client =
-            BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
-        let block_production_task = BlockProductionTask::new(
-            Arc::clone(&consensus.chain_spec),
-            to_engine,
-            canon_state_notification,
-            storage,
-            btc_server,
-            bitcoin_block_header,
-            bitcoin_block_tx_ids,
-            bitcoind_client,
-            secp,
-            sk,
-            epoch_manager,
-            network_handle,
-            frost_task.frost_handle.clone(),
-            task_executor,
-            evm_config.clone(),
-            payload_builder,
-            frost_task_notifications2_rx,
-            frost_task_notifications1_tx,
-            pbft_task_notifications2_rx,
-            pbft_task_notifications1_tx,
-            btc_network,
-        );
+            let pbft = PbftTask::new(
+                frost_handle.clone().expect("Requires frost handle"),
+                frost_config.unwrap(),
+                storage.clone(),
+                sk,
+                pbft_task_notifications1_rx,
+                pbft_task_notifications2_tx,
+            );
+            pbft_task = Some(pbft);
+
+            let bitcoind_client =
+                BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
+            let block_production = BlockProductionTask::new(
+                Arc::clone(&consensus.chain_spec),
+                to_engine,
+                canon_state_notification,
+                storage,
+                btc_server.clone().expect("btc_server is available"),
+                bitcoin_block_header,
+                bitcoin_block_tx_ids,
+                bitcoind_client,
+                secp,
+                sk,
+                epoch_manager,
+                network_handle,
+                frost_handle.expect("Requires frost handle"),
+                task_executor,
+                evm_config.clone(),
+                payload_builder,
+                frost_task_notifications2_rx,
+                frost_task_notifications1_tx,
+                pbft_task_notifications2_rx,
+                pbft_task_notifications1_tx,
+                btc_network,
+            );
+
+            block_production_task = Some(block_production);
+        }
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
     }

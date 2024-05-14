@@ -6,9 +6,8 @@ use crate::{
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -493,7 +492,7 @@ where
         // get round 1 package from db and send it to all peers
         if let Err(e) = self.gossip_round1_to_peers().await {
             error!("Error gossiping round 1 to peers {:?}", e);
-            self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
+            self.state = DKGState::DkgFailed;
             return Err(e);
         }
 
@@ -520,7 +519,7 @@ where
             info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
             if let Err(e) = self.gossip_round2_to_peers(dkg2_package).await {
                 error!("Error gossiping round 2 to peers {:?}", e);
-                self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
+                self.state = DKGState::DkgFailed;
                 return Err(e);
             }
 
@@ -584,7 +583,7 @@ where
         // get round 2 package from db and send it to all peers
         if let Err(e) = self.gossip_round2_to_peers(round2_payload).await {
             error!("Error gossiping round 2 to peers {:?}", e);
-            self.state = DKGState::DkgFailed; // TODO: need retrial before marking state as failed
+            self.state = DKGState::DkgFailed;
             return Err(e);
         }
 

@@ -3,10 +3,9 @@ use crate::{
     signing::SigningStateMachine, Storage,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, FrostHandle},
+        manager::{FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, PeerMessageResponse, SigningEventResponseType,
         SigningResponse,
     },
@@ -162,9 +161,9 @@ where
 
             // start dkg only when we are in turn + initial state + no public key
             // TODO this logic is wrong you only need dkg if there is no public key
-            if is_inturn
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_inturn &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
@@ -197,7 +196,8 @@ where
                 info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
                 match msg {
                     PeerMessageResponse::Pbft(_) => {
-                        // Nothing to do for pbft related messages. Does are handled by the pbft task
+                        // Nothing to do for pbft related messages. Does are handled by the pbft
+                        // task
                         continue;
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
@@ -234,7 +234,11 @@ where
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self
                                     .signing_state_machine
-                                    .signer_process_round1(identifier, signing_session_id, psbt)
+                                    .signer_process_round1(
+                                        identifier,
+                                        signing_session_id.clone(),
+                                        psbt,
+                                    )
                                     .await
                                 {
                                     Ok(_) => {
@@ -242,12 +246,20 @@ where
                                     }
                                     Err(e) => {
                                         error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 1 signing {:?}", e);
+                                        let _ = self
+                                            .signing_state_machine
+                                            .handle_errored_signing_process(signing_session_id)
+                                            .await;
                                     }
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => match self
                                 .signing_state_machine
-                                .coordinator_process_round1(identifier, signing_session_id, psbt)
+                                .coordinator_process_round1(
+                                    identifier,
+                                    signing_session_id.clone(),
+                                    psbt,
+                                )
                                 .await
                             {
                                 Ok(_) => {
@@ -255,12 +267,20 @@ where
                                 }
                                 Err(e) => {
                                     error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 1 signing package {:?}", e);
+                                    let _ = self
+                                        .signing_state_machine
+                                        .handle_errored_signing_process(signing_session_id)
+                                        .await;
                                 }
                             },
                             SigningEventResponseType::SignerRound2SigningPackage => {
                                 match self
                                     .signing_state_machine
-                                    .signer_process_round2(identifier, signing_session_id, psbt)
+                                    .signer_process_round2(
+                                        identifier,
+                                        signing_session_id.clone(),
+                                        psbt,
+                                    )
                                     .await
                                 {
                                     Ok(_) => {
@@ -268,12 +288,20 @@ where
                                     }
                                     Err(e) => {
                                         error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 2 signing package {:?}", e);
+                                        let _ = self
+                                            .signing_state_machine
+                                            .handle_errored_signing_process(signing_session_id)
+                                            .await;
                                     }
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => match self
                                 .signing_state_machine
-                                .coordinator_process_round2(identifier, signing_session_id, psbt)
+                                .coordinator_process_round2(
+                                    identifier,
+                                    signing_session_id.clone(),
+                                    psbt,
+                                )
                                 .await
                             {
                                 Ok(_) => {
@@ -281,6 +309,10 @@ where
                                 }
                                 Err(e) => {
                                     error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 2 signing package {:?}", e);
+                                    let _ = self
+                                        .signing_state_machine
+                                        .handle_errored_signing_process(signing_session_id)
+                                        .await;
                                 }
                             },
                         }

@@ -513,11 +513,6 @@ where
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
-        // Check if we have a recent block header
-        // Can't validate pegin without it
-        if botanix_consensus_pkg.is_none() {
-            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
-        }
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
 
         // Now execute the block

@@ -365,8 +365,8 @@ impl ExtraDataHeader {
     }
 
     /// Validates all signatures present on the edh
-    /// its not garunteed that all signers are present in the `authority_signers`, they are only provided in epoch blocks
-    /// If a signature is not valid and Error is returned
+    /// its not garunteed that all signers are present in the `authority_signers`, they are only
+    /// provided in epoch blocks If a signature is not valid and Error is returned
     /// Returns total number of valid signatures
     pub fn check_authority_sig_add(
         &self,
@@ -394,8 +394,8 @@ impl ExtraDataHeader {
                         signer_count += 1;
                     } else {
                         // Should really not make it here
-                        // Incase a signature was produced over the wrong message the recovered authority
-                        // shouldnt be on the list
+                        // Incase a signature was produced over the wrong message the recovered
+                        // authority shouldnt be on the list
                         return Err(ValidateAuthoritySignatureError::InvalidSignature);
                     }
                 }
@@ -463,6 +463,7 @@ mod tests {
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
+        // Check version
         println!("{:?}", buf);
         // serialize the same header
         let serialized =
@@ -763,7 +764,8 @@ mod tests {
         let result = header
             .check_authority_sig_add(&invalid_hash.as_byte_array().to_vec(), &authority_signers);
 
-        // Since the message is different from the one signed the signature signers will be un-recovable
+        // Since the message is different from the one signed the signature signers will be
+        // un-recovable
         assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
     }
 

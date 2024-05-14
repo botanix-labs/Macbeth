@@ -161,14 +161,24 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let default_jwt_path = self.data_dir.jwt_path();
         let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // Connect to btc signining server
-        let btc_server_client = BtcServerExtendedClient::new(
-            self.config.rpc.btc_server.clone(),
-            Some(jwt_secret.clone()),
-        )
-        .await
-        .expect("cannot create btc_server");
-        info!(target: "reth::cli", "Btc server connected");
+        // This determines which tasks are spawned. For example, the block production and
+        // frost tasks are only spawned for a federation node.
+        let is_fed_node = self.config.federation_mode;
+
+        // Connect to btc signining server if in federation mode
+        let btc_server_client = if is_fed_node {
+            let client = BtcServerExtendedClient::new(
+                self.config.rpc.btc_server.clone().expect("btc_server exists"),
+                Some(jwt_secret.clone()),
+            )
+            .await
+            .expect("can create btc_server");
+            info!(target: "reth::cli", "Btc server connected");
+
+            Some(client)
+        } else {
+            None
+        };
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -386,23 +396,31 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // get node secret key
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
 
-        // create authority config
-        let (authority_index, authorities, authority_pk) = get_authority_signer_index(
-            blockchain_db.clone(),
-            Arc::clone(&self.config.chain),
-            secp256k1::Secp256k1::new(),
-            network_sk,
-        )
-        .expect("Failed to get authority index");
+        // create frost config if in federation mode
+        let frost_config = if is_fed_node {
+            // create authority config
+            let (authority_index, authorities, authority_pk) = get_authority_signer_index(
+                blockchain_db.clone(),
+                Arc::clone(&self.config.chain),
+                secp256k1::Secp256k1::new(),
+                network_sk,
+            )
+            .expect("Failed to get authority index");
 
-        // create frost config
-        let frost_config = FrostConfig::new(
-            authority_pk,
-            authority_index,
-            authorities,
-            self.config.rpc.frost.min_signers,
-            self.config.rpc.frost.max_signers,
-        );
+            // create frost config
+            let frost_config = FrostConfig::new(
+                authority_pk,
+                authority_index,
+                authorities,
+                self.config.rpc.min_signers.expect("required min signerrs"),
+                self.config.rpc.max_signers.expect("required max signerrs"),
+            );
+            info!(target: "reth::cli", "Frost config initialized");
+
+            Some(frost_config)
+        } else {
+            None
+        };
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
@@ -418,7 +436,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 head,
                 &self.data_dir,
                 Some(Box::new(block_import)),
-                Some(frost_config.clone()),
+                frost_config.clone(),
             )
             .await?;
 
@@ -441,7 +459,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             transaction_pool.clone(),
             provider_factory.clone(),
             &self.data_dir,
-            Some(frost_config.clone()),
+            frost_config.clone(),
         );
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
@@ -477,11 +495,11 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let network_sk = get_secret_key(&self.data_dir.p2p_secret_path())?;
         let (
             _,
-            mut block_production_task,
+            block_production_task,
             mut block_fetcher_task,
-            mut frost_task,
+            frost_task,
             mut sync_controller,
-            mut pbft_task,
+            pbft_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.config.chain),
             blockchain_db.clone(),
@@ -536,28 +554,34 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         // TODO(armins) do we need this?
         // block_production_task.set_pipeline_events(pipeline_events.clone());
 
-        executor.spawn_critical(
-            "PoA Block Production Task",
-            Box::pin(async move {
-                block_production_task.start_task().await;
-            }),
-        );
+        // federation mode tasks
+        if is_fed_node {
+            executor.spawn_critical(
+                "PoA Block Production Task",
+                Box::pin(async move {
+                    block_production_task.expect("block production task exists").start_task().await;
+                }),
+            );
+
+            executor.spawn_critical(
+                "Frost Task",
+                Box::pin(async move {
+                    frost_task.expect("frost task exists").start_task().await;
+                }),
+            );
+
+            executor.spawn_critical(
+                "Pbft Task",
+                Box::pin(async move {
+                    pbft_task.expect("pbft task exists").start_task().await;
+                }),
+            );
+        }
+
         executor.spawn_critical(
             "PoA Block Fetcher Task",
             Box::pin(async move {
                 block_fetcher_task.start_task().await;
-            }),
-        );
-        executor.spawn_critical(
-            "Frost Task",
-            Box::pin(async move {
-                frost_task.start_task().await;
-            }),
-        );
-        executor.spawn_critical(
-            "Pbft Task",
-            Box::pin(async move {
-                pbft_task.start_task().await;
             }),
         );
         executor.spawn_critical(

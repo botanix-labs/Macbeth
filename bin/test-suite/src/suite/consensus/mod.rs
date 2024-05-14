@@ -12,6 +12,7 @@ use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tracing::{info, warn};
 // scopes
 mod frost;
+mod rpc_node;
 
 fn kill_child_processes_at_port(index: u16) {
     // kill btc server processes
@@ -64,7 +65,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         // utxo commitment test
         run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
         // frost e2e tests
-        run_test!(self, frost::test_frost_e2e::frost_e2e);
+        run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
+        run_test!(self, frost::test_frost_e2e_edge_cases::frost_e2e_failed_signing_round);
+        // rpc node tests
+        run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
 
         self.outcome
     }

@@ -5,9 +5,8 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_ecies::util::pk2id;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::{
@@ -403,8 +402,8 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()?
-            != block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()? !=
+            block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -415,8 +414,8 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             &self.config.authorities,
         )?;
 
-        // Should merge this peers siganture into the main block where we are tracking all signatures
-        // If that signature provided is not valid fail
+        // Should merge this peers siganture into the main block where we are tracking all
+        // signatures If that signature provided is not valid fail
         // If they did not provide a sig fail
         // merge signature from peer
         edh.merge_signature(&peer_edh);
@@ -576,7 +575,8 @@ mod tests {
             .expect("to get the block hash");
         // if the state is not init for this block hash it should fail
         // pbft_state_machine.set_state(PbftState::AwaitingCommitments, block_hash);
-        // pbft_state_machine.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+        // pbft_state_machine.init_block_proposal(block_to_propose.clone()).await.expect("valid
+        // block proposal");
 
         // reset and this time the state should be waiting for pre-commitments
         let mut pbft_state_machine = pbft_state_machine.reset();
@@ -836,8 +836,8 @@ mod tests {
             .await
             .expect("valid precommitment");
 
-        // There should be three pre-commitments, non_coord[0], coord which was added at the block proposal stage
-        // And non_coord[1] which we just added
+        // There should be three pre-commitments, non_coord[0], coord which was added at the block
+        // proposal stage And non_coord[1] which we just added
         let pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap();
         assert_eq!(pre_commitments.len(), 3);
         for i in 0..pre_commitments.len() {
@@ -845,7 +845,8 @@ mod tests {
         }
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
-        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await for commitments
+        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await
+        // for commitments
         non_coords[0]
             .process_precommitment(block_to_propose.clone(), other_peer_id)
             .await
@@ -861,7 +862,8 @@ mod tests {
         pre_commitments.remove(&coord.peer_id);
         non_coords[0].pre_commitments.insert(block_hash, pre_commitments.clone());
         non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
-        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await for commitments
+        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await
+        // for commitments
         non_coords[0]
             .process_precommitment(block_to_propose.clone(), other_peer_id)
             .await
