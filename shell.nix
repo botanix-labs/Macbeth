@@ -7,15 +7,15 @@ let
   rust = pkgs.rust-bin.stable.${rustVersion}.default.override {
     extensions = [ "rust-analyzer" "rust-src" ];
   };
+  protobuf = pkgs.protobuf3_23;
 in
 pkgs.mkShell {
-  buildInputs = [ rust ] ++ (with pkgs; [
+  buildInputs = [ rust protobuf ] ++ (with pkgs; [
     pkg-config
     openssl
     glibc
     clang
     libclang
-    protobuf
     rustc
     cargo
   ]);
@@ -24,4 +24,5 @@ pkgs.mkShell {
   RUST_BACKTRACE = 1;
   RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
   LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+  PROTOC = "${protobuf}/bin/protoc";
 }
