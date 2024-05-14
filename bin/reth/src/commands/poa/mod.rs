@@ -1,7 +1,7 @@
 //! Main node command
 
 use crate::payload::PayloadBuilderService;
-use crate::transaction_pool::Pool;
+
 use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
@@ -10,7 +10,7 @@ use crate::{
     },
     dirs::{DataDirPath, MaybePlatformPath},
 };
-use futures::stream::select;
+
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::AuthorityConsensusBuilder;
 use reth_basic_payload_builder::BasicPayloadJobGenerator;
@@ -19,7 +19,7 @@ use reth_beacon_consensus::BeaconConsensusEngine;
 use reth_beacon_consensus::MIN_BLOCKS_FOR_PIPELINE_RUN;
 use reth_config::config::StageConfig;
 use reth_network::NetworkEvents;
-use reth_network_api::PeersInfo;
+
 use reth_node_builder::PayloadBuilderConfig;
 use reth_node_events::node::handle_events;
 use reth_primitives::constants::ETHEREUM_BLOCK_GAS_LIMIT;
@@ -29,8 +29,8 @@ use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
 use tokio::sync::oneshot;
 
-use crate::builder::FullNodeTypesAdapter;
-use crate::transaction_pool::TransactionPool;
+
+
 use bitcoin::hashes::Hash;
 use clap::{value_parser, Args, Parser};
 use eyre::Context;
@@ -44,7 +44,7 @@ use reth_basic_payload_builder::BasicPayloadJobGeneratorConfig;
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
-use reth_provider::StaticFileProviderFactory;
+
 
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
@@ -53,23 +53,21 @@ use reth_consensus::Consensus;
 use reth_consensus_common::utils;
 use reth_consensus_common::utils::get_authority_signer_index;
 use reth_db::{database::Database, init_db, DatabaseEnv};
-use reth_ethereum_payload_builder::EthereumPayloadBuilder;
+
 use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkManager,
 };
 
-use reth_node_api::FullNodeTypes;
+
 use reth_node_builder::{
-    components::{Components, ComponentsBuilder},
-    setup::build_networked_pipeline,
-    BuilderContext, NodeBuilder, RethRpcConfig, RethTransactionPoolConfig, WithLaunchContext,
+    setup::build_networked_pipeline, RethRpcConfig, RethTransactionPoolConfig,
 };
 use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
-use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthereumNode};
-use reth_payload_builder::{test_utils::spawn_test_payload_service, PayloadBuilderHandle};
+use reth_node_ethereum::{EthEvmConfig};
+
 use reth_primitives::{
-    constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
+    constants::eip4844::{MAINNET_KZG_TRUSTED_SETUP},
     kzg::KzgSettings,
     stage::StageId,
     ChainSpec, Head,
@@ -86,8 +84,7 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fmt,
-    future::Future,
-    net::{SocketAddr, SocketAddrV4},
+    net::{SocketAddr},
     path::PathBuf,
     sync::Arc,
 };
@@ -268,7 +265,7 @@ where {
             db,
             dev,
             pruning,
-            ext,
+            ext: _,
         } = self;
 
         // set up node config
@@ -487,7 +484,7 @@ where {
 
         let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
 
-        let mut provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
             data_dir.static_files_path(),
@@ -793,7 +790,7 @@ where {
         );
 
         let initial_target = node_config.initial_pipeline_target(genesis_hash);
-        let mut hooks = EngineHooks::new();
+        let hooks = EngineHooks::new();
 
         // TODO do we want pruner
         //  let pruner_events = if let Some(prune_config) = prune_config {
@@ -854,7 +851,7 @@ where {
             ),
         );
 
-        let engine_api = EngineApi::new(
+        let _engine_api = EngineApi::new(
             blockchain_db.clone(),
             self.chain.clone(),
             beacon_engine_handle,
@@ -867,7 +864,7 @@ where {
         node_config.adjust_instance_ports();
 
         // Start RPC servers
-        let rpc_server_handles = node_config
+        let _rpc_server_handles = node_config
             .rpc
             .start_rpc_server(
                 blockchain_db.clone(),
