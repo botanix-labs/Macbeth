@@ -276,7 +276,7 @@ where {
             config: config.clone(),
             chain: chain.clone(),
             metrics: metrics.clone(),
-            instance:  instance.clone(),
+            instance: instance.clone(),
             network: network.clone(),
             rpc: rpc.clone(),
             txpool: txpool.clone(),
@@ -698,7 +698,7 @@ where {
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
 
-        let (consensus_engine_tx, mut consensus_engine_rx) = unbounded_channel();
+        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
         let (
             _,
@@ -889,12 +889,19 @@ where {
             let _ = tx.send(res);
         });
 
+        match rx.await? {
+            Ok(()) => info!("Beacon consensus engine exited successfully"),
+            Err(error) => {
+                error!(target: "reth::cli", %error, "Beacon consensus engine exited with an error")
+            }
+        };
         Ok(())
     }
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        let config_path = <std::option::Option<PathBuf> as Clone>::clone(&self.config).expect("is some");
+        let config_path =
+            <std::option::Option<PathBuf> as Clone>::clone(&self.config).expect("is some");
         let mut config = confy::load_path::<Config>(&config_path)
             .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
 
