@@ -482,7 +482,7 @@ impl NetworkConfigBuilder {
         self
     }
 
-    /// Sets the block import type.
+    /// Sets the frost config.
     pub fn frost_config(mut self, frost_config: FrostConfig) -> Self {
         self.frost_config = Some(frost_config);
         self

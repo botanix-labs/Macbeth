@@ -25,15 +25,20 @@ use reth_cli_runner::CliContext;
 use reth_config::Config;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils;
+use reth_consensus_common::utils::get_authority_signer_index;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_ethereum_payload_builder::EthereumPayloadBuilder;
-use reth_network::{import::ProofOfAuthorityBlockImport, NetworkManager};
+use reth_network::{
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkManager,
+};
+use reth_node_api::FullNodeTypes;
 use reth_node_builder::{
-    components::Components, BuilderContext, NodeBuilder, RethRpcConfig, RethTransactionPoolConfig, WithLaunchContext
+    components::{Components, ComponentsBuilder},
+    BuilderContext, NodeBuilder, RethRpcConfig, RethTransactionPoolConfig, WithLaunchContext,
 };
 use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthereumNode};
-use reth_payload_builder::PayloadBuilderHandle;
+use reth_payload_builder::{test_utils::spawn_test_payload_service, PayloadBuilderHandle};
 use reth_primitives::{
     constants::eip4844::{LoadKzgSettingsError, MAINNET_KZG_TRUSTED_SETUP},
     kzg::KzgSettings,
@@ -300,24 +305,14 @@ where {
         let default_jwt_path = data_dir.jwt_path();
         let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // This determines which tasks are spawned. For example, the block production and
-        // frost tasks are only spawned for a federation node.
-        let is_fed_node = node_config.federation_mode;
-
-        // Connect to btc signining server if in federation mode
-        let btc_server_client = if is_fed_node {
-            let client = BtcServerExtendedClient::new(
-                node_config.rpc.btc_server.clone(),
-                Some(jwt_secret.clone()),
-            )
-            .await
-            .expect("can create btc_server");
-            info!(target: "reth::cli", "Btc server connected");
-
-            Some(client)
-        } else {
-            None
-        };
+        // Connect to btc signining server
+        let btc_server_client = BtcServerExtendedClient::new(
+            self.config.rpc.btc_server.clone(),
+            Some(jwt_secret.clone()),
+        )
+        .await
+        .expect("cannot create btc_server");
+        info!(target: "reth::cli", "Btc server connected");
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -453,12 +448,11 @@ where {
             }),
         );
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
-        let consensus = self.consensus();
 
         let mut provider_factory = ProviderFactory::new(
             Arc::clone(&database),
             Arc::clone(&node_config.chain),
-            static_file,
+            data_dir.static_files_path(),
         )
         .expect("make provider factory");
 
@@ -477,20 +471,19 @@ where {
                 prometheus_handle,
                 Arc::clone(&database),
                 static_file,
-                executor.clone(),
+                data_dir.static_files_path(),
             )
             .await?;
 
-        /// TODO Need to add trusted peers somehow ?
-        // if !node_config.network.trusted_peers.is_empty() {
-        //     info!(target: "reth::cli", "Adding trusted nodes");
-        //     node_config.network.trusted_peers.iter().for_each(|peer| {
-        //         node_config.peers.trusted_nodes.insert(*peer);
-        //     });
-        // }
+        // Load reth config which is a bit different than cli config
+        let reth_config = self.load_config()?;
+        if !node_config.network.trusted_peers.is_empty() {
+            info!(target: "reth::cli", "Adding trusted nodes");
+            node_config.network.trusted_peers.iter().for_each(|peer| {
+                reth_config.peers.trusted_nodes.insert(*peer);
+            });
+        }
         let genesis_hash = init_genesis(provider_factory.clone())?;
-        // Note: this should be PoA consenusus only
-        // let consensus = self.config.consensus();
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
@@ -501,12 +494,17 @@ where {
         let evm_config = EthEvmConfig::default();
         let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config.clone());
 
+        // Authority consensus
+        let consensus = self.consensus();
+
         // configure blockchain tree
         let tree_config = BlockchainTreeConfig::default();
         let block_chain_tree_config = BlockchainTreeConfig::default();
         let tree_externals =
             TreeExternals::new(provider_factory.clone(), consensus, executor_factory);
-        let blockchain_tree = BlockchainTree::new(tree_externals, block_chain_tree_config, None)?;
+        let pruning_config = node_config.prune_config();
+        let blockchain_tree =
+            BlockchainTree::new(tree_externals, block_chain_tree_config, pruning_config)?;
 
         let canon_state_notification_sender = blockchain_tree.canon_state_notification_sender();
         let blockchain_tree = ShareableBlockchainTree::new(blockchain_tree);
@@ -547,9 +545,6 @@ where {
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
 
-        // Load reth config which is a bit different than cli config
-        let reth_config = self.load_config()?;
-
         info!(target: "reth::cli", "Connecting to P2P network");
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
@@ -561,10 +556,29 @@ where {
         let (block_import_tx, block_import_rx) = unbounded_channel();
         let block_import = ProofOfAuthorityBlockImport::new(self.chain.clone(), block_import_tx);
 
+        // create authority config
+        let (authority_index, authorities) = get_authority_signer_index(
+            blockchain_db.clone(),
+            Arc::clone(&self.chain),
+            secp256k1::Secp256k1::new(),
+            secret_key,
+        )
+        .expect("Failed to get authority index");
+
+        // create frost config
+        let mut frost_config: FrostConfig = node_config.rpc.frost.clone().into();
+        frost_config.set_authority_index(authority_index);
+        frost_config.set_authorities(authorities);
+
         let default_peers_path = data_dir.known_peers_path();
-        let cfg_builder = self
+        let mut cfg_builder = self
             .network
-            .network_config(&reth_config, self.chain.clone(), secret_key, default_peers_path)
+            .network_config(
+                &reth_config,
+                self.chain.clone(),
+                secret_key.clone(),
+                default_peers_path,
+            )
             .with_task_executor(Box::new(executor))
             .set_head(head)
             .listener_addr(SocketAddr::V4(SocketAddrV4::new(
@@ -578,6 +592,7 @@ where {
                 self.network.port + self.instance - 1,
             )))
             .block_import(Box::new(block_import))
+            .frost_config(frost_config)
             .network_mode(reth_network::config::NetworkMode::Authority);
 
         let network_config = cfg_builder.build(provider_factory.clone());
@@ -585,33 +600,41 @@ where {
         let mut network_builder = NetworkManager::builder(network_config).await?;
 
         // TODO Configure payload builder
-        let builder_context = BuilderContext::new(head, provider_factory.clone(), executor.clone(), data_dir.clone(), node_config.clone(), reth_config.clone());
+        // let builder_context = BuilderContext::new(
+        //     head,
+        //     provider_factory.clone(),
+        //     executor.clone(),
+        //     data_dir.clone(),
+        //     node_config.clone(),
+        //     reth_config.clone(),
+        // );
 
-        // let eth_payload_builder = PayloadB;
-        let payload_builder: PayloadBuilderHandle<EthEngineTypes> =
-            
+        // TODO: dont' use unwrap
+        // all of this will break bc of typing probably...might be another rabbit hole
+        // Alternative: move the custom payload builder logic into bin/reth (like the other branch does)
+        // then create it
+        let payload_builder =
+            spawn_payload_service::<EthEngineTypes>(&builder_context, transaction_pool.clone())
+                .await
+                .unwrap();
+
         // TODO config components
-        // let components = Components {
-        //     transaction_pool: transaction_pool.clone(),
-        //     evm_config: evm_config.clone(),
-        //     network: network_builder.handle(),
-        //     payload_builder,
-        // };
+        let components = Components {
+            transaction_pool: transaction_pool.clone(),
+            evm_config: evm_config.clone(),
+            network: network_builder.handle(),
+            payload_builder,
+        };
 
-        // TODO build authority consensus
-        // TODO add back in subprotocols?
         // TODO Start authority specific tasks
         // TODO spawn events task
         // TODO start rpc server
-        
+
         // TODO start beacond engine
         // TODO return node handle?
 
-
-
-        
         // do not exit
-        loop {};
+        loop {}
     }
 
     /// Loads the reth config with the given datadir root
@@ -680,6 +703,39 @@ where {
     pub fn consensus(&self) -> Arc<dyn Consensus> {
         Arc::new(AuthorityConsensus::new(self.chain.clone()))
     }
+}
+
+async fn spawn_payload_service(
+    ctx: &BuilderContext<FullNodeTypesAdapter>,
+    pool: Pool,
+) -> eyre::Result<PayloadBuilderHandle<EthEngineTypes>>
+where
+    Node: FullNodeTypes<Engine = EthEngineTypes>,
+{
+    let payload_builder = reth_ethereum_payload_builder::EthereumPayloadBuilder::default();
+    let conf = ctx.payload_builder_config();
+
+    let payload_job_config = BasicPayloadJobGeneratorConfig::default()
+        .interval(conf.interval())
+        .deadline(conf.deadline())
+        .max_payload_tasks(conf.max_payload_tasks())
+        .extradata(conf.extradata_bytes())
+        .max_gas_limit(conf.max_gas_limit());
+
+    let payload_generator = BasicPayloadJobGenerator::with_builder(
+        ctx.provider().clone(),
+        pool,
+        ctx.task_executor().clone(),
+        payload_job_config,
+        ctx.chain_spec(),
+        payload_builder,
+    );
+    let (payload_service, payload_builder) =
+        PayloadBuilderService::new(payload_generator, ctx.provider().canonical_state_stream());
+
+    ctx.task_executor().spawn_critical("payload builder service", Box::pin(payload_service));
+
+    Ok(payload_builder)
 }
 
 // *** Botanix specific

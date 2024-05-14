@@ -215,14 +215,6 @@ impl<T: FullNodeTypes, CB: NodeComponentsBuilder<T>> NodeBuilderWithComponents<T
         launcher.launch_node(self).await
     }
 
-    /// Launches the poa node with the given launcher.
-    pub async fn launch_with_poa<L>(self, launcher: L) -> eyre::Result<L::Node>
-    where
-        L: LaunchNode<Self>,
-    {
-        launcher.launch_poa_node(self).await
-    }
-
     /// Check that the builder can be launched
     ///
     /// This is useful when writing tests to ensure that the builder is configured correctly.
