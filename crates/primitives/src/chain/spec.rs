@@ -291,7 +291,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
 });
 
 /// Creates a new botanix chain spec using a custom genesis block
-pub fn create_botanix_config_with_genesis(genesis: Genesis) -> ChainSpec {
+pub(crate) fn create_botanix_config_with_genesis(genesis: Genesis) -> ChainSpec {
     ChainSpec {
         chain: Chain::from_id(3636),
         genesis,
