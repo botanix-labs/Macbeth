@@ -5,19 +5,18 @@ use std::time::Duration;
 use crate::{
     it_info_print,
     suite::consensus::{
-        frost::{
-            await_dkg,
+        common::{
             botanix_client::BotanixEthClient,
+            events::{await_dkg, SEND_AMOUNT},
             poa_node::{
                 create_poa_federation_members, current_inturn_index, PREFUNDED_ACCOUNT_SECRET_KEY,
             },
+            rpc_node::create_rpc_node,
         },
-        rpc_node::{error::NonFederationMemberTestConfigError, rpc_node::create_rpc_node},
+        rpc_node::error::NonFederationMemberTestConfigError,
         ConsensusIntegrationTestSuite,
     },
 };
-
-const SEND_AMOUNT: u64 = 1; // = 1 Botanix BTC
 
 #[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
 pub async fn test_rpc_node(

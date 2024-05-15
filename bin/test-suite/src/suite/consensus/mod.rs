@@ -1,9 +1,10 @@
-use self::frost::btc_server::{SpawnedBtcServer, BTC_SERVER_START_PORT};
 use super::{Outcome, Suite};
 use crate::{
     context::GlobalContext,
     run_test,
-    suite::consensus::frost::btc_server::{clean_db, spawn_n_btc_servers},
+    suite::consensus::common::btc_server::{
+        clean_db, spawn_n_btc_servers, SpawnedBtcServer, BTC_SERVER_START_PORT,
+    },
 };
 use async_trait::async_trait;
 use port_killer::kill;
@@ -11,7 +12,9 @@ use reth_tracing::tracing::error;
 use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tracing::{info, warn};
 // scopes
+mod common;
 mod frost;
+mod pbft;
 mod rpc_node;
 
 fn kill_child_processes_at_port(index: u16) {
@@ -67,6 +70,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         // frost e2e tests
         run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
         run_test!(self, frost::test_frost_e2e_edge_cases::frost_e2e_failed_signing_round);
+
+        // pbft tests
+        //run_test!(self, pbft::test_pbft::pbft_e2e_stable);
+
         // rpc node tests
         run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
 

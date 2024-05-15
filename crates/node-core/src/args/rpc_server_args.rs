@@ -52,7 +52,7 @@ use url::Url;
 use super::{
     bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
     utils::{parse_grpc_address, parse_url},
-    BitcoindArgs, FrostArgs,
+    BitcoindArgs,
 };
 
 /// Default max number of subscriptions per connection.
