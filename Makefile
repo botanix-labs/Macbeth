@@ -388,7 +388,7 @@ start-btc-server-2:
 start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain botanix_testnet \
+	--chain "${NODE_1_DIR}/chain.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
@@ -413,7 +413,7 @@ start-poa-server-1:
 start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain botanix_testnet \
+	--chain "${NODE_2_DIR}/chain.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
@@ -438,7 +438,7 @@ start-poa-server-2:
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain botanix_testnet \
+	--chain "${NON_FED_1_DIR}/chain.toml" \
 	--datadir ${NON_FED_1_DIR} \
 	--trusted-peers ${TRUSTED_PEER_1},${TRUSTED_PEER_2} \
 	--http \
