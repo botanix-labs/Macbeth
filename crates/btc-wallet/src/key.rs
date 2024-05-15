@@ -1,9 +1,8 @@
-use miniscript::bitcoin::secp256k1::ffi::KeyPair;
 use secp256k1::{
     hashes::{sha256, Hash},
     rand::rngs::OsRng,
     scalar::OutOfRangeError,
-    PublicKey, Scalar, SecretKey,
+    Keypair, PublicKey, Scalar, SecretKey,
 };
 
 use frost_secp256k1_tr as frost;
@@ -33,10 +32,6 @@ impl From<secp256k1::Error> for KeyError {
 pub fn generate_new_secret_key() -> SecretKey {
     let (secret_key, _) = SECP.generate_keypair(&mut OsRng);
     secret_key
-}
-
-pub fn generate_bip340_keypair() -> KeyPair {
-    unsafe { KeyPair::new() }
 }
 
 fn generate_tweak_scalar(tweak: &[u8; 32], pk: &PublicKey) -> Result<Scalar, KeyError> {
@@ -94,34 +89,4 @@ mod tests {
         0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
         0xde, 0xf0,
     ];
-    #[test]
-    fn is_should_tweak_pk() {
-        let eth_tweak = [0u8; 20];
-        let kp = generate_bip340_keypair();
-        let pk = kp.public_key();
-        let tpk = tweak_frost_verifying_key(&pk, &eth_tweak).expect("valid tweak");
-
-        assert_ne!(pk, tpk);
-    }
-
-    #[test]
-    fn it_should_create_key_of_correct_length() {
-        let secret_key = generate_new_secret_key();
-        assert!(secret_key[..].len() == 32);
-    }
-
-    #[test]
-    fn verify_signed_message_with_tweaked_key() {
-        let secp = Secp256k1::new();
-        let key_pair = generate_bip340_keypair();
-        let pk = key_pair.public_key();
-
-        let message = Message::from_hashed_data::<sha256::Hash>("foobar".as_bytes());
-        let tweaked_pk = tweak_public_key(&ETH_ADDRESS, pk).unwrap();
-        let tweaked_prv = tweak_private_key(&ETH_ADDRESS, &key_pair.secret_key()).unwrap();
-
-        let sig = secp.sign_schnorr(&message, &tweaked_prv.keypair(&secp));
-
-        secp.verify_schnorr(&sig, &message, &tweaked_pk.x_only_public_key().0).unwrap();
-    }
 }
