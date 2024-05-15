@@ -8852,6 +8852,9 @@ dependencies = [
 name = "reth-node-core"
 version = "0.2.0-beta.6"
 dependencies = [
+ "alloy-chains",
+ "alloy-rlp",
+ "askama",
  "assert_matches",
  "bitcoin",
  "clap",
@@ -8861,6 +8864,7 @@ dependencies = [
  "discv5",
  "eyre",
  "futures 0.3.30",
+ "hex",
  "humantime",
  "hyper 0.14.28",
  "jsonrpsee",
@@ -8906,6 +8910,7 @@ dependencies = [
  "thiserror",
  "tikv-jemalloc-ctl",
  "tokio",
+ "toml",
  "tonic",
  "tracing",
  "url",
@@ -9075,6 +9080,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-trie",
  "arbitrary",
+ "askama",
  "assert_matches",
  "bitcoin",
  "byteorder",
