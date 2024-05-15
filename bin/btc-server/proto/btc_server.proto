@@ -47,7 +47,6 @@ service BtcServer {
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
-
 }
 
 message FinalizeSignerRequest {

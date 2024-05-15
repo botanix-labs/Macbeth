@@ -27,7 +27,7 @@ impl HeaderExt for Header {
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserialzeError> {
         let binding = self.extra_data.to_vec();
         let mut extra_data = binding.as_slice();
-        Ok(ExtraDataHeader::deserialize(&mut extra_data)?)
+        ExtraDataHeader::deserialize(&mut extra_data)
     }
 }
 

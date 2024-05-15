@@ -1,8 +1,5 @@
-use super::botanix_client::BotanixEthClient;
-use crate::{
-    context::GlobalContext, it_info_print, it_warn_print,
-    suite::consensus::frost::btc_server::SpawnedBtcServer,
-};
+use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
+use crate::{context::GlobalContext, it_info_print, it_warn_print};
 use askama::Template;
 use bitcoin::hashes::Hash;
 use clap::Parser;
@@ -69,6 +66,7 @@ pub fn unix_timestamp() -> u64 {
 pub enum Notifications {
     CanonState(CannonStateNofificationPayload),
     DkgFinished(DkgPayload),
+    SigningReady(String),
 }
 
 #[derive(Clone, Debug)]
@@ -270,7 +268,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         let mut canon_events = db.subscribe_to_canonical_state();
         let rx_sender = self.sender.clone();
         let engine_index = self.index;
-
+        let rx_sender = self.sender.clone();
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let jwt_secret_path = self.jwt_secret_path.clone();
         let peers_list = self.peers_list.clone();
@@ -326,7 +324,13 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                     public_key: pub_key.publickey,
                 }))
                 .await;
+        }));
 
+        // ~~~~~~~~~~~ spawn a task that loops and sends over channel all received canon state
+        // notifications ~~~~~~~~~~~
+        let mut canon_events = components.events().subscribe_to_canonical_state();
+        let rx_sender = self.sender.clone();
+        components.task_executor().spawn(Box::pin(async move {
             // start waiting for canon event notifications
             while let Some(canon_state_notification) = canon_events.recv().await.ok() {
                 let _ = rx_sender
@@ -339,6 +343,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
             }
         }));
 
+        // ~~~~~~~~~~~ spawn a task awaiting test signals from the test suite ~~~~~~~~~~~
         let mut receiver = self.test_signal_tx.subscribe();
         let peers_list = self.peers_list.clone();
         let comp = components.clone();
@@ -384,6 +389,37 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         }
                     }
                 }
+            }
+        }));
+
+        // ~~~~~~~~~~~ spawn signing finished notification task ~~~~~~~~~~~
+        let bitcoin_server_url = self.bitcoin_server_url.clone();
+        let jwt_secret_path = self.jwt_secret_path.clone();
+        let rx_sender = self.sender.clone();
+        components.task_executor().spawn(Box::pin(async move {
+            // create a btc client
+            let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
+            let mut btc_server_client = BtcServerExtendedClient::new(
+                format!("http://{}", bitcoin_server_url),
+                Some(jwt_secret),
+            )
+            .await
+            .unwrap();
+            loop {
+                // TODO: get all session ids
+
+                // TODO: for each session get the signing status. If ready return
+                // match btc_server_client.finalize_signing(Empty {}).await {
+                //     Ok(pub_key) => {
+                //         it_info_print!("Signing Finished for index {:?}!", engine_index);
+                //         let _ = rx_sender.send(Notifications::SigningReady("")).await;
+                //     }
+                //     Err(_) => {
+                //         it_warn_print!("The signing has not finished yet {:?}...", engine_index);
+                //         tokio::time::sleep(Duration::from_secs(1)).await;
+                //         continue;
+                //     }
+                // }
             }
         }));
 
@@ -436,6 +472,7 @@ pub async fn create_poa_federation_members(
         members_public_keys.push(pk);
 
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
+        let (_finished_signing_tx, _finished_signing_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
             member_secret_key,
@@ -492,13 +529,13 @@ pub async fn create_poa_federation_members(
     (fed_members, rx)
 }
 
+#[cfg(test)]
 mod tests {
-    use std::{io::Write, path::Path};
-
     use super::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
     use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use std::{io::Write, path::Path};
 
     #[test]
     fn test_edh_tempate() {

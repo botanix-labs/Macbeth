@@ -7,12 +7,11 @@ use std::{collections::HashSet, time::Duration};
 use crate::{
     it_info_print,
     suite::consensus::{
-        frost::{
-            await_dkg,
+        common::{
+            events::{await_dkg, BITCOIND_WALLET_NAME, SEND_AMOUNT},
             poa_node::{
                 create_poa_federation_members, current_inturn_index, is_inturn, Notifications,
             },
-            BITCOIND_WALLET_NAME, SEND_AMOUNT,
         },
         ConsensusIntegrationTestSuite,
     },
@@ -136,60 +135,55 @@ pub async fn block_builder(
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Some(notification) = rx.recv().await {
-        match notification {
-            Notifications::CanonState(canon_state_notification) => {
+        if let Notifications::CanonState(canon_state_notification) = notification {
+            it_info_print!(
+                "Received payload from engine index",
+                canon_state_notification.engine_index
+            );
+            assert_eq!(canon_state_notification.engine_index, inturn_member_index as u16);
+
+            // block verfication
+            if canon_state_notification.engine_index == targeted_fed_member.index {
+                let block_receipts = canon_state_notification.notification.block_receipts();
+                it_info_print!("Block receipts ?", block_receipts);
+                assert_eq!(block_receipts.len(), 1);
+                let block_payload = block_receipts.first().cloned().unwrap();
+                assert!(!block_payload.1);
+                assert_eq!(block_payload.0.tx_receipts.len(), 1);
+                assert!(block_payload.0.block.number > 0);
+
+                // get fed member and botanix block reward address balances
+                let target_fed_member_balance_after = botanix_eth_client
+                    .get_botanix_balance(targeted_fed_member_ethereum_address.as_str())
+                    .await
+                    .unwrap();
                 it_info_print!(
-                    "Received payload from engine index",
-                    canon_state_notification.engine_index
+                    "Targeted fed member balance after",
+                    target_fed_member_balance_after
                 );
-                assert_eq!(canon_state_notification.engine_index, inturn_member_index as u16);
 
-                // block verfication
-                if canon_state_notification.engine_index == targeted_fed_member.index {
-                    let block_receipts = canon_state_notification.notification.block_receipts();
-                    it_info_print!("Block receipts ?", block_receipts);
-                    assert_eq!(block_receipts.len(), 1);
-                    let block_payload = block_receipts.first().cloned().unwrap();
-                    assert!(!block_payload.1);
-                    assert_eq!(block_payload.0.tx_receipts.len(), 1);
-                    assert!(block_payload.0.block.number > 0);
+                it_info_print!("Botanix block fee recipient", BOTANIX_FEES_RECIPIENT);
 
-                    // get fed member and botanix block reward address balances
-                    let target_fed_member_balance_after = botanix_eth_client
-                        .get_botanix_balance(targeted_fed_member_ethereum_address.as_str())
-                        .await
-                        .unwrap();
-                    it_info_print!(
-                        "Targeted fed member balance after",
-                        target_fed_member_balance_after
-                    );
+                let botanix_block_reward_address_balance_before_after =
+                    botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+                it_info_print!(
+                    "Botanix block reward address balance after",
+                    botanix_block_reward_address_balance_before_after
+                );
 
-                    it_info_print!("Botanix block fee recipient", BOTANIX_FEES_RECIPIENT);
+                // verify 80/20 block reward split is correct
+                let target_fed_member_reward =
+                    target_fed_member_balance_after - target_fed_member_balance_before;
+                let botanix_block_reward = botanix_block_reward_address_balance_before_after -
+                    botanix_block_reward_address_balance_before;
 
-                    let botanix_block_reward_address_balance_before_after = botanix_eth_client
-                        .get_botanix_balance(BOTANIX_FEES_RECIPIENT)
-                        .await
-                        .unwrap();
-                    it_info_print!(
-                        "Botanix block reward address balance after",
-                        botanix_block_reward_address_balance_before_after
-                    );
+                let total_block_reward = target_fed_member_reward + botanix_block_reward;
 
-                    // verify 80/20 block reward split is correct
-                    let target_fed_member_reward =
-                        target_fed_member_balance_after - target_fed_member_balance_before;
-                    let botanix_block_reward = botanix_block_reward_address_balance_before_after -
-                        botanix_block_reward_address_balance_before;
+                assert_eq!(target_fed_member_reward, (total_block_reward * 4) / 5); // 80%
+                assert_eq!(botanix_block_reward, total_block_reward / 5); // 20%
 
-                    let total_block_reward = target_fed_member_reward + botanix_block_reward;
-
-                    assert_eq!(target_fed_member_reward, (total_block_reward * 4) / 5); // 80%
-                    assert_eq!(botanix_block_reward, total_block_reward / 5); // 20%
-
-                    return Ok(());
-                }
+                return Ok(());
             }
-            _ => {}
         }
     }
 
