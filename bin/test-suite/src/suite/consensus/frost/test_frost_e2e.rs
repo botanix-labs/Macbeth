@@ -1,9 +1,12 @@
 use crate::{
     it_info_print,
     suite::consensus::{
-        frost::{
-            await_botanix_event, await_dkg, poa_node::create_poa_federation_members,
-            GatewayAddressResponse, BITCOIND_WALLET_NAME, SEND_AMOUNT,
+        common::{
+            events::{
+                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
+                SEND_AMOUNT,
+            },
+            poa_node::create_poa_federation_members,
         },
         ConsensusIntegrationTestSuite,
     },
@@ -130,13 +133,13 @@ pub async fn frost_e2e_stable(
     it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
     let eth_account = Address::from_slice(eth_destination.as_slice());
-    let vout = match pegin_tx.output.len() {
-        2 => 1,
-        _ => 0,
-    };
-    it_info_print!("Vout", vout);
-    let amount_in_sat = pegin_tx.output[vout].value;
-    let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
+    let (vout, pegin_output) = pegin_tx
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
+        .unwrap();
+    let amount = U256::from(Amount::from_sat(pegin_output.value).to_wei());
     it_info_print!("Btc Amount", amount);
 
     // get block headers

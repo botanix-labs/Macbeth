@@ -1,11 +1,11 @@
 use std::{collections::HashSet, io};
 
+use crate::Header;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::Hash,
     secp256k1, witness,
 };
-
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
@@ -15,6 +15,22 @@ const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
+
+pub trait HeaderExt {
+    fn deserialize_extra_data_header(
+        &self,
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError>;
+}
+
+impl HeaderExt for Header {
+    fn deserialize_extra_data_header(
+        &self,
+    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError> {
+        let binding = self.extra_data.to_vec();
+        let mut extra_data = binding.as_slice();
+        ExtraDataHeader::deserialize(&mut extra_data)
+    }
+}
 
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
