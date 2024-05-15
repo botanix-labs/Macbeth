@@ -2,8 +2,9 @@ use secp256k1::{
     hashes::{sha256, Hash},
     rand::rngs::OsRng,
     scalar::OutOfRangeError,
-    Keypair, PublicKey, Scalar, SecretKey,
 };
+
+use bitcoin::secp256k1::{PublicKey, Scalar, SecretKey};
 
 use frost_secp256k1_tr as frost;
 

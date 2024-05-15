@@ -394,6 +394,7 @@ secp256k1 = { version = "0.28", default-features = false, features = [
 
 # bitcoin libs
 miniscript = "11.0.0"
+bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
 
 # TODO: Remove `k256` feature: https://github.com/sigp/enr/pull/74
 enr = { version = "0.12.0", default-features = false, features = ["k256", "rust-secp256k1"] }

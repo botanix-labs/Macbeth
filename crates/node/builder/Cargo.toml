@@ -59,6 +59,5 @@ confy.workspace = true
 rayon.workspace = true
 
 secp256k1.workspace = true
-
 ## bitcoin
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+bitcoin.workspace = true

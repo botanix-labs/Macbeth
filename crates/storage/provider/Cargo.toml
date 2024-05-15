@@ -50,7 +50,7 @@ alloy-rlp = { workspace = true, optional = true }
 rayon.workspace = true
 
 # Bitcoin
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 
 [dev-dependencies]
 reth-db = { workspace = true, features = ["test-utils"] }

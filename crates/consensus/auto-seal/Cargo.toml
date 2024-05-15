@@ -32,8 +32,6 @@ tokio = { workspace = true, features = ["sync", "time"] }
 tokio-stream.workspace = true
 tracing.workspace = true
 
-bitcoin = "0.31.0"
-
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
 reth.workspace = true

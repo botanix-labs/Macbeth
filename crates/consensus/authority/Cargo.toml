@@ -54,7 +54,7 @@ hex = "0.4.3"
 frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
 
 ## Bitcoin
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 
 ## Crypto
 secp256k1 = { workspace = true, features = [

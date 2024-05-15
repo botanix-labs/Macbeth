@@ -168,9 +168,9 @@ pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingEr
 /// Returns tuple of two vectors containing the UTXOs added and removed from the database.
 pub fn add_remove_utxo_from_psbt(
     psbt: &Psbt,
-    pk: &bitcoin::secp256k1::PublicKey,
+    pk: &secp256k1::PublicKey,
 ) -> (Vec<Utxo>, Vec<OutPoint>) {
-    let tx = psbt.clone().extract_tx();
+    let tx = psbt.clone().extract_tx().expect("valid tx");
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
     // For change outputs there will always be a no eth tweak
     let mut change_outputs: Vec<Utxo> = vec![];

@@ -8,7 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 secp256k1 = { workspace = true, features = [
     "global-context",
     "rand-std",

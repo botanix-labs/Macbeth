@@ -61,7 +61,7 @@ proptest-derive = { workspace = true, optional = true }
 strum = { workspace = true, features = ["derive"] }
 
 # Bitcoin
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 
 [dev-dependencies]
 # eth

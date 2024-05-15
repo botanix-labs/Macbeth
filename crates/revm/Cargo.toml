@@ -37,7 +37,7 @@ tracing.workspace = true
 tokio.workspace = true
 
 # Bitcoin
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 reth-botanix-lib.workspace = true
 
 [dev-dependencies]

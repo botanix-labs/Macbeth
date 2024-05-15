@@ -6,10 +6,10 @@ use bitcoin::{
     key::TweakedPublicKey,
     opcodes,
     script::Builder,
+    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification},
     taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
-use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -204,15 +204,14 @@ mod tests {
     }
 
     use super::*;
-    use secp256k1::Keypair;
     use secp256k1::rand::rngs::OsRng;
+    use secp256k1::Keypair;
     fn generate_key_pair() -> Keypair {
         let (secret_key, _) = SECP.generate_keypair(&mut OsRng);
         let keypair = Keypair::from_secret_key(&SECP, &secret_key);
 
         keypair
     }
-
 
     #[test]
     fn correct_eth_address() {

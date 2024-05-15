@@ -80,7 +80,7 @@ lazy_static = "*"
 reth-btc-wallet.workspace = true
 
 ## Bitcoin
-bitcoin = "0.31.0"
+bitcoin.workspace = true
 bitcoincore-rpc = "0.18.0"
 
 ### Grpc

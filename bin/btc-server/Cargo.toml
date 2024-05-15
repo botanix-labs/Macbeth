@@ -6,13 +6,13 @@ edition = "2021"
 
 [dependencies]
 miniscript.workspace = true
+bitcoin.workspace = true
 
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
 bitcoincore-rpc = "0.18.0"
 
 anyhow = "1.0.71"
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
 # TODO update this to the zcash frost library when tr is merged in
 frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
 
