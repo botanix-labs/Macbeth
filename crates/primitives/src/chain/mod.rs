@@ -1,7 +1,7 @@
 pub use alloy_chains::{Chain, ChainKind, NamedChain};
 pub use info::ChainInfo;
 pub use spec::{
-    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
+    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
     DisplayHardforks, ForkBaseFeeParams, ForkCondition, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY,
     MAINNET, SEPOLIA,
 };
