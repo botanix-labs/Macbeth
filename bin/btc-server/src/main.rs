@@ -249,7 +249,7 @@ impl From<database::Utxo> for rpc::Utxo {
                 txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
                 vout: item.outpoint.vout,
             }),
-            output: item.output.value as u32,
+            output: item.output.value.to_sat() as u32,
             eth_address: item.eth_address.map_or(String::new(), hex::encode),
         }
     }
@@ -477,13 +477,18 @@ mod test {
 
         // Hardcoded one output
         let outputs = vec![TxOut {
-            value: 1000,
+            value: Amount::from_sat(1000),
             script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
                 .expect("valid address")
                 .assume_checked()
                 .script_pubkey(),
         }];
-        Transaction { version: 2, lock_time: LockTime::ZERO, input: inputs, output: outputs }
+        Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: LockTime::ZERO,
+            input: inputs,
+            output: outputs,
+        }
     }
 
     pub fn create_psbt(num_inputs: usize) -> Psbt {
@@ -491,13 +496,15 @@ mod test {
 
         let weight = tx.weight();
         let fee = FEERATE * weight;
-        let input_needed = fee.to_sat() + tx.output.iter().map(|o| o.value).sum::<u64>();
+        let input_needed = fee.to_sat() + tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
         let value_per_input = input_needed / num_inputs as u64 + 1;
 
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
-            psbt.inputs[i].witness_utxo =
-                Some(TxOut { value: value_per_input, script_pubkey: ScriptBuf::new() });
+            psbt.inputs[i].witness_utxo = Some(TxOut {
+                value: Amount::from_sat(value_per_input),
+                script_pubkey: ScriptBuf::new(),
+            });
         }
         psbt
     }
@@ -819,7 +826,7 @@ mod test {
         app.db.set_pubkey_package(pk_package).expect("set public key package");
         app.db.set_key_package(key_package).expect("set key package");
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -844,7 +851,7 @@ mod test {
         let signing_session_id = [1u8; 32];
 
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo::new(
             tx.input[0].previous_output,
             psbt.inputs[0].witness_utxo.clone().expect("some"),
@@ -881,7 +888,7 @@ mod test {
         app_coordinator.db.set_key_package(key_package).expect("set key package");
 
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -956,7 +963,7 @@ mod test {
 
         // Add pegin utxo
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -1002,7 +1009,7 @@ mod test {
 
             let utxo = Utxo::new(
                 OutPoint::new(txid, vout),
-                TxOut { value, script_pubkey: script.into() },
+                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
                 None,
             );
             app.db.store_utxo(&utxo).expect("Failed to store UTXO");

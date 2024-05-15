@@ -13,7 +13,7 @@ use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
-use bitcoin::{psbt::{ExtractTxError, Psbt}, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{psbt::{ExtractTxError, Psbt}, Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
@@ -223,12 +223,12 @@ impl App {
             })
             .collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value).sum();
+        let target_amount = outputs.iter().map(|o| o.value.to_sat()).sum();
         let selection = coin_select
             .coin_select(
                 vec![],
                 bdk_utxos,
-                bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
+                fee_rate,
                 target_amount,
                 change_script.clone().as_script(), // drain_script
             )
@@ -241,7 +241,7 @@ impl App {
             .collect::<Vec<_>>();
         let change = match selection.excess {
             bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
-                Some(TxOut { script_pubkey: change_script.clone(), value: amount })
+                Some(TxOut { script_pubkey: change_script.clone(), value: Amount::from_sat(amount) })
             }
             _ => None,
         };

@@ -4,7 +4,7 @@ use crate::{
     database::{Db, Utxo},
     Error, SECP,
 };
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::Psbt, Amount, OutPoint};
+use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::{ExtractTxError, Psbt}, Amount, OutPoint};
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use reth_btc_wallet::psbt::PsbtInputExt;
@@ -168,7 +168,7 @@ pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingEr
 /// Returns tuple of two vectors containing the UTXOs added and removed from the database.
 pub fn add_remove_utxo_from_psbt(
     psbt: &Psbt,
-    pk: &secp256k1::PublicKey,
+    pk: &bitcoin::secp256k1::PublicKey,
 ) -> (Vec<Utxo>, Vec<OutPoint>) {
     let tx = psbt.clone().extract_tx().expect("valid tx");
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
@@ -187,9 +187,6 @@ pub fn add_remove_utxo_from_psbt(
     (change_outputs, selected_inputs)
 }
 
-pub fn convert_bdk_feerate_to_bitcoin(fee_rate: bdk::FeeRate) -> bitcoin::FeeRate {
-    bitcoin::FeeRate::from_sat_per_kwu((fee_rate.sat_per_kwu()) as u64)
-}
 
 #[derive(Debug, Error)]
 pub enum ValidatePSBTError {
@@ -217,6 +214,8 @@ pub enum ValidatePSBTError {
     EthTweakMismatch,
     #[error("txout mismatch")]
     TxOutMismatch,
+    #[error("extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 
 /// Validates PSBT structure and content at a given state in the signing session
@@ -310,7 +309,7 @@ pub fn validate_psbt(
         // partial sigs That should be done outside the context of this function
     }
 
-    let tx = psbt.clone().extract_tx();
+    let tx = psbt.clone().extract_tx()?;
     for (index, psbt_input) in psbt.inputs.iter().enumerate() {
         if flags & ROUND1 == ROUND1 {
             // validate utxo exists in DB
@@ -390,7 +389,7 @@ mod util_tests {
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
@@ -407,7 +406,7 @@ mod util_tests {
     fn should_fail_if_eth_tweak_missing() {
         let db = db_setup();
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let eth = eth_vector_to_fixed_bytes(vec![0u8; 20]);
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
@@ -430,7 +429,7 @@ mod util_tests {
     fn should_fail_if_tx_out_mismatch() {
         let db = db_setup();
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
@@ -438,7 +437,7 @@ mod util_tests {
         };
 
         psbt.inputs[0].witness_utxo = Some(TxOut {
-            value: 100_000_000,
+            value: Amount::from_sat(100_000_000),
             script_pubkey: ScriptBuf::from_hex("7e").expect("valid script"),
         });
 
@@ -453,7 +452,7 @@ mod util_tests {
     fn round_1_transition_tests() {
         let db = db_setup();
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
@@ -501,7 +500,7 @@ mod util_tests {
     fn round2_psbt_validation_checks() {
         let db = db_setup();
         let mut psbt = create_psbt(1);
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
@@ -575,11 +574,10 @@ mod util_tests {
 
     #[test]
     fn convert_bdk_fee_rate() {
-        let bdk_fee = bdk::FeeRate::from_sat_per_vb(10.0);
+        let bdk_fee = bdk::bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
         let rust_bitcoin_fee = bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
 
-        let converted_fee = convert_bdk_feerate_to_bitcoin(bdk_fee);
-        assert_eq!(converted_fee, rust_bitcoin_fee);
+        assert_eq!(bdk_fee, rust_bitcoin_fee);
     }
 
     #[test]
@@ -668,7 +666,7 @@ mod util_tests {
     fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
         let tx = create_tx(1);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
-        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
 
         let signing_packages = psbt.signing_packages();
         assert!(signing_packages.is_err());
@@ -705,8 +703,8 @@ mod util_tests {
         let tx = create_tx(num_inputs);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments and TxOut to the psbt for each input
-        psbt.inputs[0].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
-        psbt.inputs[1].witness_utxo = Some(TxOut { value: 1000, script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
+        psbt.inputs[1].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
         psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1_0);
         psbt.inputs[1].set_signing_commitment(frost_id1, &signing_commits1_1);
         psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2_0);

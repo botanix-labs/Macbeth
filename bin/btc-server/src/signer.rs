@@ -148,8 +148,9 @@ impl App {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
-        let psbt_fee_rate =
-            util::convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+
+        // TODO(armins) handle error
+        let psbt_fee_rate = psbt.fee_rate().expect("valid fee rate");
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
