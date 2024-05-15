@@ -4,6 +4,9 @@
 mod network_args;
 pub use network_args::{DiscoveryArgs, NetworkArgs};
 
+/// Configuration for the genesis block (toml)
+mod genesis_args;
+
 /// RpcServerArg struct for configuring the RPC
 mod rpc_server_args;
 pub use rpc_server_args::RpcServerArgs;
@@ -58,6 +61,12 @@ pub use bitcoind_args::BitcoindArgs;
 /// BitcoindArgs for configuration settings of the bitcoind instance
 mod frost_args;
 pub use frost_args::FrostArgs;
+
+/// RollupArgs for configuring the op-reth rollup
+#[cfg(feature = "optimism")]
+mod rollup_args;
+#[cfg(feature = "optimism")]
+pub use rollup_args::RollupArgs;
 
 pub mod utils;
 

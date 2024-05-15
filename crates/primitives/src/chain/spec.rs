@@ -10,7 +10,8 @@ use crate::{
     Address, BlockNumber, Chain, ForkFilter, ForkFilterKey, ForkHash, ForkId, Genesis, Hardfork,
     Head, Header, NamedChain, NodeRecord, SealedHeader, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
-use alloy_chains::ChainKind;
+use alloy_chains::{Chain, NamedChain, ChainKind};
+use askama::Template;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -255,6 +256,14 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     }
     .into()
 });
+
+/// Botanix Testnet Genesis Configuration
+#[derive(Template, Clone, Debug)]
+#[template(path = "botanix_testnet_template.json", ext = "json", escape = "none")]
+pub struct BotanixTestnetGenesisConfig<'a> {
+    /// Extra data header field
+    pub edh: &'a str,
+}
 
 /// The Botanix Testnet
 pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {

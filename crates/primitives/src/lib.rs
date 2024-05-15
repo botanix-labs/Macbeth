@@ -62,7 +62,7 @@ pub use block::{
     ForkBlock, RpcBlockHash, SealedBlock, SealedBlockWithSenders,
 };
 pub use chain::{
-    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain, ChainInfo, ChainKind, ChainSpec,
+    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain, ChainInfo, ChainKind, ChainSpec,
     ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition, NamedChain,
     BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
