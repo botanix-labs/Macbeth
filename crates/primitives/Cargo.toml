@@ -36,6 +36,9 @@ c-kzg = { workspace = true, features = ["serde"], optional = true }
 # hex
 hex = "0.4.3"
 
+# askama
+askama = "0.12.1"
+
 # tracing
 tracing.workspace = true
 

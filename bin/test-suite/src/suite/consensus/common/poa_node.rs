@@ -21,7 +21,7 @@ use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
-    ChainSpec, BOTANIX_TESTNET,
+    ChainSpec,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
