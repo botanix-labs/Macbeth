@@ -6,18 +6,17 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_ecies::util::pk2id;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::blockchain_tree::BlockchainTreeViewer;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::{
-    extra_data_header::{ExtraDataHeaderDeserializeError, ExtraDataHeaderSerializeError},
+    extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{HeaderExt, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
-use reth_provider::{BlockReaderIdExt, StateProviderFactory, CanonChainTracker, BlockchainTreeEngine};
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -169,12 +168,7 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
 
 impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client>
 where
-    Client: BlockReaderIdExt
-            + StateProviderFactory
-            + CanonChainTracker
-            + BlockchainTreeEngine
-            + Clone
-            + 'static,
+    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
 {
     pub(crate) fn spawn_cleanup_task(&mut self) {
@@ -300,8 +294,10 @@ where
                 return false;
             }
             // We need to be sure that the fork is only 1 block deep
-            let ancestor_block_hash =
-                self.client.find_canonical_ancestor(block.parent_hash).expect("ancestor should exist");
+            let ancestor_block_hash = self
+                .client
+                .find_canonical_ancestor(block.parent_hash)
+                .expect("ancestor should exist");
             if ancestor_block_hash != best_block.parent_hash {
                 return false;
             }
@@ -530,8 +526,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()? !=
-            block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -575,6 +571,8 @@ mod tests {
     use rand;
     use reth_network::frost::manager::ToFrostManager;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
+    use reth_ecies::util::pk2id;
+
     use reth_provider::test_utils::MockEthProvider;
 
     macro_rules! setup_multi_party_test {
@@ -588,6 +586,8 @@ mod tests {
             // redundant to define this again ends up being neater
             let mut pks = vec![];
             let mut $signed_blocks = vec![];
+
+            let mock_eth_provider = MockEthProvider::default();
 
             let $frost_handle_mock = FrostHandleMock {};
             for _ in 0..$n {

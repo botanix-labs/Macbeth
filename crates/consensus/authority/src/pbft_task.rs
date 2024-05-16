@@ -80,9 +80,9 @@ where
         );
         pbft_state_machine.spawn_cleanup_task();
         Self {
+            client,
             frost_handle,
             pbft_state_machine,
-            client,
             secret_key,
             pbft_task_rx,
             pbft_task_tx,
