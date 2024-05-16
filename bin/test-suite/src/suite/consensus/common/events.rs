@@ -2,6 +2,7 @@ use crate::{
     it_info_print,
     suite::consensus::common::poa_node::{is_dkg_ready, FederationMemberTestConfig, Notifications},
 };
+use client::SigningStatus;
 use reth_primitives::{Receipt, B256};
 use reth_provider::chain::BlockReceipts;
 use std::collections::HashMap;
@@ -25,6 +26,21 @@ pub async fn await_dkg(
                 assert!(pub_keys.len() == fed_members.len());
                 pub_keys.dedup();
                 assert!(pub_keys.len() == 1);
+                break;
+            }
+        }
+    }
+}
+
+pub async fn await_signing_completion(
+    in_turn_member_index: u16,
+    rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
+) {
+    while let Some(notification) = rx.recv().await {
+        if let Notifications::SigningStatusReport((member_index, _session_id, status)) =
+            notification
+        {
+            if in_turn_member_index == member_index && status.eq(&SigningStatus::Finalized) {
                 break;
             }
         }

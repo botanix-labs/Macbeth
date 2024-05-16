@@ -9,6 +9,7 @@ use crate::{
 };
 use std::collections::HashMap;
 
+use crate::rpc;
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
@@ -366,5 +367,37 @@ impl App {
         self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
         self.db.flush()?;
         Ok(psbt)
+    }
+
+    /// Retruns signing status
+    pub(crate) async fn get_signing_status(
+        &self,
+        signing_session_id: &[u8; 32],
+    ) -> Result<rpc::SigningStatus, CoordinatorError> {
+        let psbt =
+            self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
+
+        let mut is_finalized = true;
+        for (_index, psbt_input) in psbt.inputs.iter().enumerate() {
+            if psbt_input.sighash_type.is_none() || psbt_input.tap_key_sig.is_none() {
+                is_finalized = false;
+                break;
+            }
+        }
+
+        if is_finalized {
+            Ok(rpc::SigningStatus::Finalized)
+        } else {
+            Ok(rpc::SigningStatus::Running)
+        }
+    }
+
+    /// Retruns signing status
+    pub(crate) async fn get_session_ids(
+        &self,
+        max_requested_results: u32,
+    ) -> Result<Vec<[u8; 32]>, CoordinatorError> {
+        let signing_sessions = self.db.get_session_ids(max_requested_results)?;
+        Ok(signing_sessions)
     }
 }

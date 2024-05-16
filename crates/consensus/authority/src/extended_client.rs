@@ -8,7 +8,8 @@ use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
+    GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
     SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
@@ -113,6 +114,8 @@ impl BtcServerExtendedClient {
     generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
     generate_method!(get_utxo_merkle_root, Empty, GetUtxoMerkleRootResponse);
     generate_method!(abort_signing, Empty, Empty);
+    generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
+    generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
 }
 
 #[cfg(test)]

@@ -112,6 +112,23 @@ impl Db {
         }
     }
 
+    /// Get signing session ids from db
+    pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<[u8; 32]>, Error> {
+        let mut ret = Vec::new();
+        let mut results = 0;
+        for res in self.psbt.iter() {
+            let (k, _) = res?;
+            let signing_session_id: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
+            results += 1;
+            if max_results == results {
+                break;
+            }
+            ret.push(signing_session_id);
+        }
+        Ok(ret)
+    }
+
     /// Retrieves the public key package stored in the database, if available.
     ///
     /// # Returns

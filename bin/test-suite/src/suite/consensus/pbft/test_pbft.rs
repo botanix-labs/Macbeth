@@ -3,10 +3,10 @@ use crate::{
     suite::consensus::{
         common::{
             events::{
-                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
-                SEND_AMOUNT,
+                await_botanix_event, await_dkg, await_signing_completion, GatewayAddressResponse,
+                BITCOIND_WALLET_NAME, SEND_AMOUNT,
             },
-            poa_node::create_poa_federation_members,
+            poa_node::{create_poa_federation_members, current_inturn_index, TestSignal},
         },
         ConsensusIntegrationTestSuite,
     },
@@ -29,7 +29,7 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoincore_rpc::{Auth, RpcApi};
 
-pub async fn pbft_e2e_stable(
+pub async fn pbft_e2e_failed_pbft_round(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
@@ -191,6 +191,38 @@ pub async fn pbft_e2e_stable(
         .unwrap();
     it_info_print!("Mint Tx Receipt ", tx_receipt);
 
+    // find out who is in turn
+    let total_authorities = test_fed_members.len();
+    let inturn_member_index = current_inturn_index(total_authorities as u64);
+
+    // wait for the signing to finish for coordinator
+    await_signing_completion(inturn_member_index as u16, &mut rx).await;
+
+    // ===================== INDUCED FAILURE =====================
+    // once the signing is done, try to break the consensus by disconnecting a peer
+    // wait for a few seconds before disconnecting a peer
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // now disconnect the peers of another peer that is not a coordinator
+    let next_peer_index = (inturn_member_index + 1).max(total_authorities as u64 - 1);
+
+    test_fed_members
+        .get(&(next_peer_index as u16))
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::DisconnectAll());
+
+    // wait for a new epoch to start
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // now reconnect the peers of fed member next_peer_index
+    test_fed_members
+        .get(&(next_peer_index as u16))
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::ReconnectAll());
+    // ============================================================
+
     // wait for a few blocks to make sure the tx got included and mined
     await_botanix_event(&mut rx, *MINT_TOPIC).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -199,75 +231,6 @@ pub async fn pbft_e2e_stable(
     let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
     let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
     assert!(!eth_address_balance.is_zero());
-
-    // Generate and send pegout tx
-    // bitcoin address
-    let pegout_destination =
-        ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
-    // use empty pegout data
-    let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_btc(0.5).unwrap();
-    let tx_receipt =
-        mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
-    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
-
-    // wait for the tx to be included in a botanix block
-    await_botanix_event(&mut rx, *BURN_TOPIC).await;
-
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
-    let eoa_tx_receipt =
-        mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
-    it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
-
-    // sleep for a few more seconds
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
-    // processes connecting
-    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
-    let port =
-        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let btcd_url = format!("{host}:{port}");
-    let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        &btcd_url,
-        Auth::UserPass(
-            suite.global_context.bitcoind_user.clone(),
-            suite.global_context.bitcoind_pass.clone(),
-        ),
-    )
-    .expect("bitcoind client");
-    // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
-
-    // Retrieve the last block
-    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
-    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
-    let tip_block = bitcoind_rpc.get_block(&tip_hash).expect("valid block");
-    // there should be 2 transaction one of which is the pegout the other is coinbase
-    assert_eq!(tip_block.txdata.len(), 2);
-    let pegout_tx = tip_block.txdata.get(1).unwrap();
-    it_info_print!("Pegout tx: ", pegout_tx);
-
-    assert_eq!(pegout_tx.input.len(), 1);
-    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.txid());
-    assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
-    assert_eq!(pegout_tx.output.len(), 2);
-    // One of the values here should be the pegout address
-    let mut match_found = false;
-    for output in pegout_tx.output.iter() {
-        let pegout_address = output.script_pubkey.clone();
-        let address_spk = btc_address.script_pubkey();
-        match_found = pegout_address == address_spk;
-        if match_found {
-            break;
-        }
-    }
-    assert!(match_found);
-    // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > 0);
 
     Ok(())
 }

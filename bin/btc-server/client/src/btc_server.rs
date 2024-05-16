@@ -168,6 +168,56 @@ pub struct GetUtxoMerkleRootResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSigningStatusRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSigningStatusResponse {
+    #[prost(enumeration = "SigningStatus", tag = "1")]
+    pub status: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSessionIdsRequest {
+    #[prost(uint32, tag = "1")]
+    pub max_results: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetSessionIdsResponse {
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SigningStatus {
+    Running = 0,
+    Finalized = 1,
+}
+impl SigningStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SigningStatus::Running => "RUNNING",
+            SigningStatus::Finalized => "FINALIZED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RUNNING" => Some(Self::Running),
+            "FINALIZED" => Some(Self::Finalized),
+            _ => None,
+        }
+    }
+}
 /// Generated client implementations.
 pub mod btc_server_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -592,6 +642,42 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetUTXOMerkleRoot"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_signing_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetSigningStatusRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetSigningStatusResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetSigningStatus");
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetSigningStatus"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_session_ids(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetSessionIdsRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetSessionIdsResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetSessionIds");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "GetSessionIds"));
             self.inner.unary(req, path, codec).await
         }
     }

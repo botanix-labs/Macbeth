@@ -1,5 +1,5 @@
 use crate::utils::retry_exec;
-use reth_consensus_common::utils::is_inturn;
+use reth_consensus_common::utils::{get_in_turn_interval, is_inturn, CoordinatorInterval};
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
@@ -24,6 +24,8 @@ use std::{
 };
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{debug, error, info, warn};
+
+const VALIDITY_CRITERIA_RELAXATION: u64 = 10;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -170,8 +172,68 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
     }
 
+    async fn validate_block(&self, block: &SealedBlock) -> Result<bool, Error> {
+        // get current coordinator and its validity range
+        let coordinator_index =
+            self.get_coordinator().await?.map(|(_, _, authority_index)| authority_index);
+        let (start, end, _, _) = self.get_inturn_interval_for_coordinator(coordinator_index);
+
+        if block.timestamp >= end + VALIDITY_CRITERIA_RELAXATION {
+            return Ok(false);
+        }
+        if block.timestamp <= start - VALIDITY_CRITERIA_RELAXATION {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
+    /// else is
+    pub(crate) async fn get_coordinator(
+        &self,
+    ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>, u64)>, Error> {
+        // check if we are in turn
+        let is_inturn =
+            is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64);
+        match is_inturn {
+            true => {
+                // if we are inturn, return None to avoid sending messages to ourselves.
+                Ok(None)
+            }
+            false => {
+                // if we are not inturn, find the coordinator in the list of peers
+                let all_connected_frost_peers = self.get_all_peers_handle().await?;
+                let current_inturn_authority_index =
+                    current_inturn_index(self.config.authorities.len() as u64);
+                let current_inturn_authority_frost_identifier =
+                    peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
+                let sender_channel = all_connected_frost_peers
+                    .get(&current_inturn_authority_frost_identifier)
+                    .cloned();
+
+                Ok(Some(current_inturn_authority_frost_identifier)
+                    .zip(sender_channel)
+                    .zip(Some(current_inturn_authority_index))
+                    .map(|((a, b), c)| (a, b, c)))
+            }
+        }
+    }
+
     pub(crate) fn is_coordinator(&self) -> bool {
         is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64)
+    }
+
+    /// Returns the inturn time data or a given coordinator index. If None, our authority index is
+    /// being used
+    pub(crate) fn get_inturn_interval_for_coordinator(
+        &self,
+        coordinator_index: Option<u64>,
+    ) -> CoordinatorInterval {
+        get_in_turn_interval(
+            self.config.authorities.len() as u64,
+            coordinator_index.unwrap_or_else(|| self.config.authority_index as u64),
+        )
     }
 
     pub(crate) async fn gossip_to_peers(
@@ -462,7 +524,7 @@ mod tests {
                 let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
                 let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
                 $sks.push(sk);
-                let peer_id = pk2id(&pk);
+                let peer_id = reth_ecies::util::pk2id(&pk);
                 $peer_ids.push(peer_id);
 
                 pks.push(pk);
@@ -514,9 +576,8 @@ mod tests {
 
     use super::*;
     use rand;
-    use reth_botanix_lib::extra_data_header::ExtraDataHeader;
     use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{Block, Header};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
 
     // mock frost handle
     #[derive(Clone)]
