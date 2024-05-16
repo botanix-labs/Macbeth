@@ -29,8 +29,6 @@ use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
 use tokio::sync::oneshot;
 
-
-
 use bitcoin::hashes::Hash;
 use clap::{value_parser, Args, Parser};
 use eyre::Context;
@@ -45,7 +43,6 @@ use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
 
-
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
 use reth_config::Config;
@@ -59,18 +56,15 @@ use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkManager,
 };
 
-
 use reth_node_builder::{
     setup::build_networked_pipeline, RethRpcConfig, RethTransactionPoolConfig,
 };
 use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
-use reth_node_ethereum::{EthEvmConfig};
+use reth_node_ethereum::EthEvmConfig;
 
 use reth_primitives::{
-    constants::eip4844::{MAINNET_KZG_TRUSTED_SETUP},
-    kzg::KzgSettings,
-    stage::StageId,
-    ChainSpec, Head,
+    constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, kzg::KzgSettings, stage::StageId, ChainSpec,
+    Head,
 };
 use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
@@ -80,14 +74,7 @@ use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
 use std::borrow::Cow;
-use std::{
-    collections::HashMap,
-    ffi::OsString,
-    fmt,
-    net::{SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
     time::Duration,
@@ -897,24 +884,26 @@ where {
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        let config_path =
-            <std::option::Option<PathBuf> as Clone>::clone(&self.config).expect("is some");
-        let mut config = confy::load_path::<Config>(&config_path)
-            .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
+        match <std::option::Option<PathBuf> as Clone>::clone(&self.config) {
+            Some(config_path) => {
+                let mut config = confy::load_path::<Config>(&config_path)
+                    .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
 
-        info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
+                info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
 
-        // Update the config with the command line arguments
-        config.peers.trusted_nodes_only = self.network.trusted_only;
+                // Update the config with the command line arguments
+                config.peers.trusted_nodes_only = self.network.trusted_only;
 
-        if !self.network.trusted_peers.is_empty() {
-            info!(target: "reth::cli", "Adding trusted nodes");
-            self.network.trusted_peers.iter().for_each(|peer| {
-                config.peers.trusted_nodes.insert(*peer);
-            });
+                if !self.network.trusted_peers.is_empty() {
+                    info!(target: "reth::cli", "Adding trusted nodes");
+                    self.network.trusted_peers.iter().for_each(|peer| {
+                        config.peers.trusted_nodes.insert(*peer);
+                    });
+                }
+                return Ok(config);
+            }
+            None => return Ok(Config::default()),
         }
-
-        Ok(config)
     }
 
     /// Loads `MAINNET_KZG_TRUSTED_SETUP`.
