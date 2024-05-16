@@ -296,10 +296,9 @@ where
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
             let pbft = PbftTask::new(
-                client,
+                self.client.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
-                frost_config.unwrap(),
-                storage.clone(),
+                frost_config.expect("valid frost config"),
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,

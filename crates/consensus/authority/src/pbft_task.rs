@@ -37,7 +37,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
     /// pbft state machine
     pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client>,
     /// Shared storage to insert aggregate public key
-    pub(crate) storage: Storage<Client>,
+    pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
     pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
     /// Channel to send pbft notifications (to the block production task)
@@ -64,7 +64,6 @@ where
         client: Client,
         frost_handle: ToFrostMan,
         config: FrostConfig,
-        storage: Storage<Client>,
         secret_key: secp256k1::SecretKey,
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
@@ -83,7 +82,7 @@ where
         Self {
             frost_handle,
             pbft_state_machine,
-            storage,
+            client,
             secret_key,
             pbft_task_rx,
             pbft_task_tx,

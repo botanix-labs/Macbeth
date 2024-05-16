@@ -9,14 +9,11 @@ use crate::{
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_interfaces::{
-<<<<<<< HEAD
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeEngine, BlockchainTreeViewer},
-=======
     blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
->>>>>>> a8614ed55 (test: implement BlockchainTreeViewer for MockEthProvider)
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
+
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
@@ -488,6 +485,14 @@ impl BlockReader for MockEthProvider {
 
         Ok(blocks)
     }
+    
+    #[doc = " retrieves a range of blocks from the database, along with the senders of each"]
+    #[doc = " transaction in the blocks."]
+    #[doc = ""]
+    #[doc = " The `transaction_kind` parameter determines whether to return its hash"]
+    fn block_with_senders_range(&self,range:RangeInclusive<BlockNumber> ,) -> ProviderResult<Vec<BlockWithSenders> >  {
+        todo!()
+    }
 }
 
 impl BlockReaderIdExt for MockEthProvider {
@@ -770,17 +775,14 @@ impl BlockchainTreeViewer for MockEthProvider {
         map
     }
 
-    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
-        None
-    }
-
     fn is_canonical(&self, block_hash: BlockHash) -> RethResult<bool> {
         let blocks = self.blocks.lock();
         if !blocks.contains_key(&block_hash) {
-            return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
-        let tip = blocks.keys().nth(0).expect("at least one block");
-        Ok(*tip == block_hash)
-    }
+            let tip = blocks.keys().nth(0).expect("at least one block");
+            return Ok(*tip == block_hash);
+        }
+
+        return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
     }
 
     fn canonical_tip(&self) -> BlockNumHash {
@@ -808,5 +810,9 @@ impl BlockchainTreeViewer for MockEthProvider {
 
     fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
         None
+    }
+
+    fn lowest_buffered_ancestor(&self, hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        todo!()
     }
 }
