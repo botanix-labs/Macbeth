@@ -51,6 +51,27 @@ pub(crate) enum Error {
     RecoverSignatureError(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
+    #[error("Recieved block is not valid: {0}")]
+    InvalidBlock(#[from] ValidateBlockError),
+}
+
+/// Error when validating a block as a block signer
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ValidateBlockError {
+    #[error("Could not find block in canonical chain: {0}")]
+    ParentBlockNotFound(BlockHash),
+    #[error("Fork is greater that 1 depth: {0}")]
+    ForkDepthGreaterThanOne(BlockHash),
+    #[error("Could not find ancestor block: {0}")]
+    AncestorNotFound(BlockHash),
+    #[error("Failed to deserialize extra data header: {0}")]
+    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
+    #[error("Block is already in canon chain: {0}")]
+    BlockAlreadyInCanonChain(BlockHash),
+    #[error("Provider error: {0}")]
+    ProviderError(#[from] reth_provider::ProviderError),
+    #[error("Failed to find tip")]
+    FailedToFindTip,
 }
 
 /// Defines the states of the state machine
@@ -270,40 +291,48 @@ where
         retry_exec(fut, 3, Duration::from_secs(1)).await
     }
 
-    async fn validate_block(&self, block: &SealedBlock) -> bool {
-        let block_hash = block.header.segregated_signature_block_hash().unwrap();
+    async fn validate_block(&self, block_to_sign: &SealedBlock) -> Result<(), ValidateBlockError> {
+        let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         // Blocks should only be signed if they are building on the best block
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
         // Or a block building on a fork that is deeper than 1 block deep
         let tip = self.client.canonical_tip();
-        let best_block = self.client.block_by_number(tip.number).unwrap().unwrap();
+        let best_block =
+            self.client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
         let best_block_hash = best_block.hash_slow();
+
         // if the suggested block is the canon tip there is no point to signing it again
-        if self.client.is_canonical(block_hash).unwrap() {
-            return false;
+        match self.client.is_canonical(block_hash) {
+            Ok(false) => (), // continue
+            _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
         // Check if we are building on a block that is in the canonical chain
         // or a fork
-        if block.parent_hash == best_block_hash {
-            return true;
+        if block_to_sign.parent_hash == best_block_hash {
+            return Ok(());
         } else {
             // if suggested block is not even registered in the canonical chain, we should not sign it
-            if !self.client.contains(block.parent_hash) {
-                return false;
+            if !self.client.contains(block_to_sign.parent_hash) {
+                return Err(ValidateBlockError::ParentBlockNotFound(block_to_sign.parent_hash));
             }
+            // We are signing a forked block
             // We need to be sure that the fork is only 1 block deep
+            // To do that we retrieve the last canonical ancestor
+            // That ancestor should be the grandfather of the block we are signing
+            //    tip -1      current tip       next tip
+            // [ancestor] -> [best_block] -> [block_to_sign]
             let ancestor_block_hash = self
                 .client
-                .find_canonical_ancestor(block.parent_hash)
+                .find_canonical_ancestor(block_to_sign.parent_hash)
                 .expect("ancestor should exist");
             if ancestor_block_hash != best_block.parent_hash {
-                return false;
+                return Err(ValidateBlockError::ForkDepthGreaterThanOne(block_hash));
             }
-        }
 
-        false
+            return Ok(());
+        }
     }
 
     /// Intended to be called by the in turn block producer when a block is ready to be
@@ -569,9 +598,9 @@ where
 mod tests {
     use super::*;
     use rand;
+    use reth_ecies::util::pk2id;
     use reth_network::frost::manager::ToFrostManager;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
-    use reth_ecies::util::pk2id;
 
     use reth_provider::test_utils::MockEthProvider;
 
