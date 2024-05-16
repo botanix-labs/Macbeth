@@ -106,6 +106,9 @@ pub async fn launch_poa_from_config<E: RethCliExt>(
     }
 }
 
+// PBFT consensus allows for at least block to be reorged
+const POA_MAX_REORG_DEPTH: u64 = 1;
+
 /// A version of the [NodeConfig] that has an installed database. This is used to construct the
 /// [NodeHandle].
 ///
@@ -366,7 +369,8 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let evm_config = EthEvmConfig::default();
 
         // configure blockchain tree
-        let tree_config = BlockchainTreeConfig::default();
+        // Rest of these block chain tree configs are defaults
+        let tree_config = BlockchainTreeConfig::new(POA_MAX_REORG_DEPTH, 65 /* max_blocks_in_chain */, 256/* num_of_additional_canonical_block_hashes*/, 200 /* max_unconnected_blocks */);
         let tree = self.config.build_blockchain_tree(
             provider_factory.clone(),
             consensus.clone(),
