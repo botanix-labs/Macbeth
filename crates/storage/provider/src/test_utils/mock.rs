@@ -485,12 +485,15 @@ impl BlockReader for MockEthProvider {
 
         Ok(blocks)
     }
-    
+
     #[doc = " retrieves a range of blocks from the database, along with the senders of each"]
     #[doc = " transaction in the blocks."]
     #[doc = ""]
     #[doc = " The `transaction_kind` parameter determines whether to return its hash"]
-    fn block_with_senders_range(&self,range:RangeInclusive<BlockNumber> ,) -> ProviderResult<Vec<BlockWithSenders> >  {
+    fn block_with_senders_range(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<BlockWithSenders>> {
         todo!()
     }
 }

@@ -6,7 +6,10 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::blockchain_tree::BlockchainTreeViewer;
+use reth_interfaces::{blockchain_tree::{
+    error::{BlockchainTreeError, CanonicalError},
+    BlockchainTreeViewer,
+}, RethError};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -300,11 +303,14 @@ where
         let tip = self.client.canonical_tip();
         let best_block =
             self.client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
-        let best_block_hash = best_block.hash_slow();
+        let best_block_hash = tip.hash;
 
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
             Ok(false) => (), // continue
+            Err(RethError::Canonical(CanonicalError::BlockchainTree(
+                BlockchainTreeError::BlockHashNotFoundInChain { block_hash: _ },
+            ))) => (), // great block being proposed is no canon
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
@@ -400,6 +406,9 @@ where
             return Ok(());
         }
 
+        // validate block
+        self.validate_block(&block).await?;
+
         let coordinator = self
             .config
             .authorities
@@ -489,6 +498,8 @@ where
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
+        self.validate_block(&block).await?;
+
         let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
@@ -521,6 +532,7 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<Option<SealedBlock>, Error> {
+        self.validate_block(&block).await?;
         // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
@@ -605,7 +617,7 @@ mod tests {
     use reth_provider::test_utils::MockEthProvider;
 
     macro_rules! setup_multi_party_test {
-        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident,) => {
+        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident) => {
             let secp = secp256k1::Secp256k1::new();
             let mut $mock_eth_provider = MockEthProvider::default();
 
@@ -615,8 +627,6 @@ mod tests {
             // redundant to define this again ends up being neater
             let mut pks = vec![];
             let mut $signed_blocks = vec![];
-
-            let mock_eth_provider = MockEthProvider::default();
 
             let $frost_handle_mock = FrostHandleMock {};
             for _ in 0..$n {
@@ -641,9 +651,17 @@ mod tests {
                 $configs.push(config);
             }
 
+            // set up parent block
+            let mut parent_header = Header::default();
+            // Set the nonce to 1 so the block hash is not default block hash
+            parent_header.nonce = 1u64;
+            let parent_block = SealedBlock::new(parent_header.seal_slow(), BlockBody::default());
+            $mock_eth_provider.add_block(parent_block.hash_slow(), parent_block.clone().into());
+
             for i in 0..$n {
                 let edh = ExtraDataHeader::default();
                 let mut header = Header::default();
+                header.parent_hash = parent_block.hash_slow();
                 header.add_extra_data_header(&edh);
                 header.sign_block(&$sks[i]).unwrap();
                 let block_body = BlockBody::default();
@@ -706,7 +724,7 @@ mod tests {
             non_coords,
             coord,
             _block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
         let pbft_state_machine = coord;
         // Check that the initial state is empty
@@ -725,7 +743,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
         let pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -800,7 +818,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
         let mut pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -830,13 +848,15 @@ mod tests {
             non_coords,
             coord,
             _block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
+        let tip = mock_eth_provider.canonical_tip();
         // sign the block as the non-coordinator
         let non_coord_sk = non_coords[0].secret_key.clone();
         let edh = ExtraDataHeader::default();
         let mut invalid_block_header = Header::default();
+        invalid_block_header.parent_hash = tip.hash;
         invalid_block_header.add_extra_data_header(&edh);
         invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
         let invalid_block =
@@ -862,7 +882,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
         // sign the block as the non-coordinator
@@ -893,7 +913,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
         // Propose valid block and assert correct state transitions
@@ -963,7 +983,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
         // Propose valid block and assert correct state transitions
@@ -1011,7 +1031,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
         // Propose valid block and assert correct state transitions
@@ -1100,7 +1120,7 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider,
+            mock_eth_provider
         );
 
         coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
