@@ -281,7 +281,7 @@ impl rpc::BtcServer for App {
 
         self.add_round2_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
             error!("Failed to add round2 signing: {}", e);
-            badarg!("Failed to add round2 signing")
+            badarg!("Failed to add round2 signing: {}", e)
         })?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
@@ -344,7 +344,7 @@ impl rpc::BtcServer for App {
 
         self.add_round2_dkg(frost_id, packages).await.map_err(|e| {
             error!("Failed to add round2 dkg: {}", e);
-            badarg!("Failed to add round2 dkg")
+            badarg!("Failed to add round2 dkg: {}", e)
         })?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -386,7 +386,7 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to deserialize round1 dkg package: {}", e)
             })?;
         self.add_round1_dkg(frost_id, dkg_round1)
-            .map_err(|_e| internal!("Failed to add round1 dkg"))?;
+            .map_err(|e| internal!("Failed to add round1 dkg: {}", e))?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
