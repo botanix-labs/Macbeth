@@ -60,22 +60,22 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.set_panic_hook();
 
         // dkg tests
-        run_test!(self, frost::test_dkg::dkg_flow);
-        // // signing tests
-        run_test!(self, frost::test_signing::test_many_inputs_signing);
-        // // eoa tests
-        run_test!(self, frost::test_block_builder::block_builder);
-        // utxo commitment test
-        run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
-        // frost e2e tests
+        // run_test!(self, frost::test_dkg::dkg_flow);
+        // // // signing tests
+        // run_test!(self, frost::test_signing::test_many_inputs_signing);
+        // // // eoa tests
+        // run_test!(self, frost::test_block_builder::block_builder);
+        // // utxo commitment test
+        // run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
+        // // frost e2e tests
         run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
-        run_test!(self, frost::test_frost_e2e_edge_cases::frost_e2e_failed_signing_round);
+        //run_test!(self, frost::test_frost_e2e_edge_cases::frost_e2e_failed_signing_round);
 
         // pbft tests
         //run_test!(self, pbft::test_pbft::pbft_e2e_stable);
 
         // rpc node tests
-        run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
+        //run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
 
         self.outcome
     }

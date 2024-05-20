@@ -80,7 +80,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::GetSigningStatusRequest>,
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received get signing  status request");
+        //info!("Received get signing  status request");
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -104,7 +104,7 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::GetSessionIdsRequest>,
     ) -> Result<tonic::Response<rpc::GetSessionIdsResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received get signing session ids request");
+        //info!("Received get signing session ids request");
         let req = req.into_inner();
         let signing_session_ids = self
             .get_session_ids(req.max_results)

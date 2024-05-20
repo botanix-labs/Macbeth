@@ -453,6 +453,7 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
                         }
                     }
                 }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }));
 

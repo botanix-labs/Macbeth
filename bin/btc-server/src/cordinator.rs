@@ -377,6 +377,8 @@ impl App {
         let psbt =
             self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
 
+        //psbt.finalize(secp)
+
         let mut is_finalized = true;
         for (_index, psbt_input) in psbt.inputs.iter().enumerate() {
             if psbt_input.sighash_type.is_none() || psbt_input.tap_key_sig.is_none() {

@@ -116,6 +116,13 @@ impl Db {
     pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<[u8; 32]>, Error> {
         let mut ret = Vec::new();
         let mut results = 0;
+
+        let x = self.psbt.iter().count();
+        if x > 0 {
+            panic!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx");
+        }
+
+        info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx {:?}", x);
         for res in self.psbt.iter() {
             let (k, _) = res?;
             let signing_session_id: [u8; 32] =
@@ -441,13 +448,30 @@ impl From<Error> for tonic::Status {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::create_tx;
+
     use super::*;
+    use bitcoin::Transaction;
     use tempfile::TempDir;
 
     fn setup_db() -> (Db, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn test_reading_session_ids() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        let signing_session_id: [u8; 32] = [0; 32];
+        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        db.flush().unwrap();
+
+        let signing_session_ids = db.get_session_ids(10).unwrap();
+        println!("Signing session ids {:?}", signing_session_ids);
     }
 
     #[test]
