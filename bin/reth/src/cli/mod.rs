@@ -5,9 +5,10 @@ use crate::{
         utils::{chain_help, genesis_value_parser, SUPPORTED_CHAINS},
         LogArgs,
     },
+    cli::ext::{NoArgs, PoaNodeCommandConfig},
     commands::{
-        config_cmd, db, debug_cmd, dump_genesis, import, init_cmd, init_state, node, node::NoArgs,
-        p2p, poa, recover, stage, test_vectors,
+        config_cmd, db, debug_cmd, dump_genesis, import, init_cmd, init_state, node, p2p, poa,
+        recover, stage, test_vectors,
     },
     version::{LONG_VERSION, SHORT_VERSION},
 };
@@ -26,6 +27,8 @@ use std::{ffi::OsString, fmt, future::Future, sync::Arc};
 /// change.
 pub use crate::core::cli::*;
 
+pub mod ext;
+
 /// Default [Directive] for [EnvFilter] which disables high-frequency debug logs from `hyper` and
 /// `trust-dns`
 const DEFAULT_ENV_FILTER_DIRECTIVE: &str =
@@ -36,7 +39,7 @@ const DEFAULT_ENV_FILTER_DIRECTIVE: &str =
 /// This is the entrypoint to the executable.
 #[derive(Debug, Parser)]
 #[command(author, version = SHORT_VERSION, long_version = LONG_VERSION, about = "Reth", long_about = None)]
-pub struct Cli<Ext: clap::Args + fmt::Debug = NoArgs> {
+pub struct Cli<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig = NoArgs> {
     /// The command to run
     #[command(subcommand)]
     command: Commands<Ext>,
@@ -90,7 +93,7 @@ impl Cli {
     }
 }
 
-impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
+impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> Cli<Ext> {
     /// Execute the configured cli command.
     ///
     /// This accepts a closure that is used to launch the node via the
@@ -149,9 +152,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
             Commands::Node(command) => {
                 runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
             }
-            Commands::Poa(command) => {
-                runner.run_command_until_exit(|ctx| command.execute(ctx))
-            }
+            Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
             Commands::Init(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::InitState(command) => runner.run_blocking_until_ctrl_c(command.execute()),
             Commands::Import(command) => runner.run_blocking_until_ctrl_c(command.execute()),

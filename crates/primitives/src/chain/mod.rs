@@ -13,7 +13,7 @@ pub use spec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
 pub(crate) use spec::{OP_BASE_FEE_PARAMS, OP_SEPOLIA_BASE_FEE_PARAMS};
 
 // The chain spec module.
-mod spec;
+pub mod spec;
 // The chain info module.
 mod info;
 

@@ -6,9 +6,10 @@ use crate::{
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
+    cli::ext::NoArgs,
     dirs::{DataDirPath, MaybePlatformPath},
 };
-use clap::{value_parser, Args, Parser};
+use clap::{value_parser, Parser};
 use reth_cli_runner::CliContext;
 use reth_db::{init_db, DatabaseEnv};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
@@ -197,14 +198,10 @@ impl<Ext: clap::Args + fmt::Debug> NodeCommand<Ext> {
     }
 }
 
-/// No Additional arguments
-#[derive(Debug, Clone, Copy, Default, Args)]
-#[non_exhaustive]
-pub struct NoArgs;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::ext::NoArgs;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
         net::{IpAddr, Ipv4Addr},

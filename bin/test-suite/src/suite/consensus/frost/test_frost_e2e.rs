@@ -11,13 +11,13 @@ use ethers::{
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
-use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
+use reth_cli_runner::CliRunner;
 use reth_primitives::{Address, Receipt, B256};
 use reth_provider::chain::BlockReceipts;
 use std::{collections::HashMap, str::FromStr, time::Duration};
@@ -80,8 +80,8 @@ async fn await_botanix_event(
                 it_info_print!("Final block receipts", final_block_receipts);
                 for block_receipt in final_block_receipts.into_iter() {
                     for log in block_receipt.logs.into_iter() {
-                        for topic in log.topics.into_iter() {
-                            if topic == event_topic {
+                        for topic in log.topics() {
+                            if *topic == event_topic {
                                 return;
                             }
                         }
@@ -130,7 +130,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(500, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
@@ -183,12 +183,25 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
 
     it_info_print!("Gateway Address Response", gateway_address_response);
 
+    // print balance
+    let balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
+    it_info_print!("Bitcoin balance", balance);
+
     // Send some bitcoin to that gateway address
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
         .assume_checked();
     let pegin_txid = bitcoind_rpc
-        .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
+        .send_to_address(
+            &btc_address,
+            Amount::from_sat(20_000_000),
+            None,
+            None,
+            Some(true),
+            None,
+            Some(1),
+            None,
+        )
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
@@ -208,7 +221,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     };
     it_info_print!("Vout", vout);
     let amount_in_sat = pegin_tx.output[vout].value;
-    let amount = U256::from(Amount::from_sat(amount_in_sat).to_wei());
+    let amount = amount_in_sat.to_wei();
     it_info_print!("Btc Amount", amount);
 
     // get block headers
@@ -261,6 +274,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     it_info_print!("Mint Tx Receipt ", tx_receipt);
 
     // wait for a few blocks to make sure the tx got included and mined
+    it_info_print!("Waiting for botanix event after mint call");
     await_botanix_event(&mut rx, *MINT_TOPIC).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -275,7 +289,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
         ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
     // use empty pegout data
     let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_btc(0.5).unwrap();
+    let pegout_amount = Amount::from_sat(1000);
     let tx_receipt =
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
     it_info_print!("Pegout Tx Receipt: ", tx_receipt);
@@ -328,7 +342,9 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let mut match_found = false;
     for output in pegout_tx.output.iter() {
         let pegout_address = output.script_pubkey.clone();
+        it_info_print!("Pegout address: ", pegout_address);
         let address_spk = btc_address.script_pubkey();
+        it_info_print!("Address script pubkey: ", address_spk);
         match_found = pegout_address == address_spk;
         if match_found {
             break;
@@ -336,7 +352,7 @@ pub async fn frost_e2e(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     }
     assert!(match_found);
     // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > 0);
+    assert!(pegout_tx.output[1].value > Amount::from_sat(0));
 
     Ok(())
 }

@@ -1,5 +1,6 @@
 //! Main node command
 
+use crate::cli::ext::{NoArgs, RethNodeComponents};
 use crate::payload::PayloadBuilderService;
 
 use crate::{
@@ -8,6 +9,7 @@ use crate::{
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
+    cli::ext::PoaNodeCommandConfig,
     dirs::{DataDirPath, MaybePlatformPath},
 };
 
@@ -193,7 +195,7 @@ impl PoaNodeCommand {
     }
 }
 
-impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
+impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
     /// Replaces the extension of the node command
     pub fn with_ext<E: clap::Args + fmt::Debug>(self, ext: E) -> PoaNodeCommand<E> {
         let Self {
@@ -252,7 +254,7 @@ where {
             db,
             dev,
             pruning,
-            ext: _,
+            ext,
         } = self;
 
         // set up node config
@@ -676,12 +678,20 @@ where {
             node_config.chain.clone(),
             payload_builder,
         );
-        let (payload_service, payload_builder) =
-            PayloadBuilderService::new(payload_generator, blockchain_db.canonical_state_stream());
+        let (payload_service, payload_builder) = PayloadBuilderService::new(
+            payload_generator,
+            blockchain_db.clone().canonical_state_stream(),
+        );
 
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
 
+        // needed for on_node_started
+        let components = RethNodeComponents {
+            executor: executor.clone(),
+            db: blockchain_db.clone(),
+            network: network_handle.clone(),
+        };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
         let (
@@ -873,12 +883,15 @@ where {
             let _ = tx.send(res);
         });
 
+        let _ = ext.on_node_started(components);
+
         match rx.await? {
             Ok(()) => info!("Beacon consensus engine exited successfully"),
             Err(error) => {
                 error!(target: "reth::cli", %error, "Beacon consensus engine exited with an error")
             }
         };
+
         Ok(())
     }
 
@@ -1003,13 +1016,10 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
     }
 }
 
-/// No Additional arguments
-#[derive(Debug, Clone, Copy, Default, Args)]
-#[non_exhaustive]
-pub struct NoArgs;
-
 #[cfg(test)]
 mod tests {
+    use crate::cli::ext::NoArgs;
+
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
