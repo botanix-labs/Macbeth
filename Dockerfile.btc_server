@@ -13,8 +13,8 @@ WORKDIR /app/server/btc-server
 RUN apt-get update && apt-get install -y libclang-dev pkg-config build-essential libssl-dev protobuf-compiler
 
 # Build your Rust application using the specified nightly version
-RUN rustup toolchain install nightly && \
-    rustup default nightly && \
+RUN rustup toolchain install stable && \
+    rustup default stable && \
     cargo build --release --target-dir /app/server/btc-server/target/
 
 # Stage 2: Create the final lightweight image
