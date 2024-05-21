@@ -10,7 +10,10 @@ name = "btcserverlib"
 miniscript = "11.0.0"
 bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
 
+reth-primitives.workspace = true
+
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
+reth-botanix-lib.workspace = true
 client = {path = "./client"}
 bitcoincore-rpc = "0.18.0"
 

@@ -31,7 +31,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bitcoin::{BlockHash, Transaction, TxOut};
+use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::{Auth, RpcApi};
 use client::jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret};
 use config::{load_config, Config};
@@ -47,8 +47,8 @@ use tonic::{codegen::CompressionEncoding, transport::Server};
 use crate::{
     config::{GrpcConfig, TomlConfig},
     dkg::DKGError,
+    pegouts::{PegoutManager, PegoutId},
     signer::SigningError,
-    pegouts::PegoutManager,
     util::ParsingError,
 };
 
@@ -76,6 +76,14 @@ pub enum Error {
     PegoutMgrSync(#[from] pegouts::SyncError),
     #[error("failed to sync to given checkpoint block: {0}")]
     FailedToReachCheckPoint(BlockHash),
+}
+
+#[derive(Debug, Error)]
+pub enum IndexTxError {
+    #[error("pegout references used were invalid")]
+    PegoutRefs(#[from] pegouts::InternalPegoutRefError),
+    #[error("db error: {0}")]
+    Db(#[from] database::Error),
 }
 
 #[allow(dead_code)]
@@ -300,11 +308,11 @@ impl App {
     pub async fn add_index_tx(
         &self,
         tx: Transaction,
-        targets: &[TxOut],
+        pegouts: &[PegoutId],
         timestamp: SystemTime,
-    ) -> Result<(), database::Error> {
-        let mut pegouts = self.pegouts.lock().await;
-        let tx = pegouts.add_tx(tx, targets, timestamp);
+    ) -> Result<(), IndexTxError> {
+        let mut lock = self.pegouts.lock().await;
+        let tx = lock.add_tx(tx, pegouts, timestamp)?;
         self.db.store_pending_tx(tx)?;
         self.db.flush()?;
         Ok(())

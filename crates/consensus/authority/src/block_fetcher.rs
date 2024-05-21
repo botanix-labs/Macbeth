@@ -30,7 +30,7 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{FinalizeSignerRequest, Output};
+use client::{FinalizeSignerRequest, PegoutDelivery};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus
@@ -206,10 +206,11 @@ where
                     let should_process_receipts =
                         header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
                     if is_fed_node && should_process_receipts {
+                        info!("EPOCH BLOCK FETCHING STARTING...");
+
                         // process pegins
                         // must be done before getting utxo commitment
                         let btc_server = self.btc_server.as_mut().expect("have btc_server");
-                        let mut pegouts = Vec::new();
                         for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
                             for receipt in receipts {
                                 if idx == 0 && receipt.is_none() {
@@ -234,13 +235,6 @@ where
                                                 }
                                                 info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                                             }
-                                        }
-
-                                        let pegout_match =
-                                            try_parse_burn_event(log, self.btc_network)
-                                                .expect("passed EVM check");
-                                        if let Some(pegout) = pegout_match {
-                                            pegouts.push(pegout);
                                         }
                                     }
                                 }
@@ -270,7 +264,7 @@ where
                             self.client.best_block_number().expect("best block number exists");
 
                         // get the pegouts from during the epoch
-                        let epoch_pegouts = match crate::utils::epoch_pegouts(
+                        let pegouts = match crate::utils::epoch_pegouts(
                             best_block,
                             &self.client,
                             self.btc_network,
@@ -283,7 +277,6 @@ where
                                 continue;
                             }
                         };
-                        pegouts.extend(epoch_pegouts);
 
                         // finalizing signing if there are pegouts
                         // at this point this singer or others have provided partial signatures and
@@ -293,11 +286,12 @@ where
                                 .iter()
                                 .map(|witness| witness.to_vec()[0].clone())
                                 .collect::<Vec<Vec<u8>>>();
-                            let outputs = pegouts
+                            let pegouts = pegouts
                                 .iter()
-                                .map(|pegout| Output {
-                                    address: pegout.destination.to_string(),
-                                    value: pegout.amount.to_sat(),
+                                .map(|(id, pegout)| PegoutDelivery {
+                                    pegout_id: id.as_bytes().to_vec(),
+                                    script_pubkey: pegout.destination.script_pubkey().to_bytes(),
+                                    amount: pegout.amount.to_sat(),
                                 })
                                 .collect();
 
@@ -314,9 +308,9 @@ where
                                 .expect("btc_server exists")
                                 .signer_finalize(FinalizeSignerRequest {
                                     witness: wit,
-                                    outputs,
                                     checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
                                     utxo_merkle_root: utxo_commitment[..].to_vec(),
+                                    pegouts,
                                 })
                                 .await;
 

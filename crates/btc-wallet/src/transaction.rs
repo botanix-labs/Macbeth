@@ -4,7 +4,7 @@ use bitcoin::{
     OutPoint, TxOut,
 };
 
-use crate::psbt::PsbtInputExt;
+use crate::psbt::{PegoutId, PsbtInputExt, PsbtOutputExt};
 
 /// Utxo DTO struct
 pub struct Input {
@@ -14,7 +14,7 @@ pub struct Input {
 }
 
 /// Create psbt with proprietary tweak fields
-pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut>) -> Psbt {
+pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<(TxOut, Option<PegoutId>)>) -> Psbt {
     let tx = bitcoin::Transaction {
         version: bitcoin::transaction::Version(2i32),
         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
@@ -27,21 +27,24 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<TxOut>, change: Option<TxOut
                 witness: Default::default(),
             })
             .collect(),
-        output: {
-            let mut ret = outputs;
-            if let Some(change) = change.clone() {
-                ret.push(change);
-            }
-            ret
-        },
+        output: outputs.iter().map(|(out, _)| out).cloned().collect(),
     };
 
     // Create PSBT
     let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
+
+    // add input meta
     for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
         psbt_input.witness_utxo = Some(utxo.output.clone());
         if let Some(eth_addr) = utxo.eth_address {
             psbt_input.set_eth_address(eth_addr);
+        }
+    }
+
+    // add output meta
+    for (psbt_output, (_out, pegout_id)) in psbt.outputs.iter_mut().zip(outputs.iter()) {
+        if let Some(id) = pegout_id {
+            psbt_output.set_pegout_id(*id);
         }
     }
 

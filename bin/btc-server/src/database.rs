@@ -23,6 +23,8 @@ const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
 /// sled tree id for the pending txs
 const TREE_PENDING_TXS: &[u8; 10] = b"pendingtxs";
+/// sled tree for pending pegout requests
+const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 
 /// sled key for the UTXO merkle tree root
 const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
@@ -76,6 +78,11 @@ pub struct Db {
     ///
     /// Indexed by txid.
     pending_txs: sled::Tree,
+
+    /// A tree of pending pegout requests, serialized as the [pegouts::PegoutRequest] format.
+    ///
+    /// Indexed by the [PegoutRequest::id] inspector.
+    pegouts: sled::Tree,
 }
 
 impl Db {
@@ -87,6 +94,7 @@ impl Db {
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
             pending_txs: db.open_tree(TREE_PENDING_TXS)?,
+            pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             db,
         })
     }
@@ -98,6 +106,7 @@ impl Db {
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
         self.pending_txs.flush()?;
+        self.pegouts.flush()?;
         Ok(())
     }
 
@@ -452,6 +461,23 @@ impl Db {
         Ok(self.db.get(KEY_UTXO_MERKLE_ROOT)?.map(|b| {
             sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
         }))
+    }
+
+    pub fn store_pending_pegout(&self, req: &pegouts::PegoutRequest) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
+        self.pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
+        Ok(())
+    }
+
+    pub fn get_pending_pegouts(&self) -> Result<Vec<pegouts::PegoutRequest>, Error> {
+        let mut ret = Vec::new();
+        for res in self.pegouts.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
     }
 }
 

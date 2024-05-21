@@ -1684,7 +1684,9 @@ dependencies = [
  "prost",
  "prost-build",
  "rand 0.8.5",
+ "reth-botanix-lib",
  "reth-btc-wallet",
+ "reth-primitives",
  "rs_merkle",
  "secp256k1 0.27.0",
  "serde",
@@ -7960,6 +7962,7 @@ dependencies = [
  "reth-primitives",
  "revm",
  "secp256k1 0.28.2",
+ "serde",
  "thiserror",
  "tracing",
 ]

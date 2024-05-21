@@ -3,11 +3,14 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bitcoin::{Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
+use bitcoin::{Amount, Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use thiserror::Error;
 
 use crate::database;
+
+pub use reth_botanix_lib::peg_contract::PegoutId;
+
 
 macro_rules! print_safe {
     ($e:expr) => {
@@ -41,12 +44,67 @@ impl HeaderExt for bitcoincore_rpc::json::GetBlockHeaderResult {
     }
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PegoutRequest {
+    pub id: PegoutId,
+    /// The scriptpubkey of the pegout request.
+    pub spk: bitcoin::ScriptBuf,
+    /// The btc amount of pegout to deliver.
+    pub value: Amount,
+    /// Botanix block height this pegout was requested at.
+    pub botanix_height: u64,
+}
+
+impl PegoutRequest {
+    pub fn txout(&self) -> TxOut {
+        TxOut {
+            script_pubkey: self.spk.clone(),
+            value: self.value,
+        }
+    }
+}
+
+struct PendingPegout {
+    request: PegoutRequest,
+    attempts: HashSet<bitcoin::Txid>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum OutputMeta {
+    Pegout(PegoutId),
+    Change,
+}
+
+impl OutputMeta {
+    pub fn is_pegout(&self) -> bool {
+        match self {
+            Self::Pegout(_) => true,
+            Self::Change => false,
+        }
+    }
+
+    pub fn is_change(&self) -> bool {
+        match self {
+            Self::Pegout(_) => false,
+            Self::Change => true,
+        }
+    }
+
+    pub fn pegout_id(&self) -> Option<PegoutId> {
+        match self {
+            Self::Pegout(id) => Some(*id),
+            Self::Change => None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Tx {
     pub txid: Txid,
     pub tx: Transaction,
-    pub pegout_idxs: Vec<usize>,
-    pub change_idxs: Vec<usize>,
+    /// Metadata for each output of the tx, by respective index.
+    pub output_meta: Vec<OutputMeta>,
     pub created: SystemTime,
 }
 
@@ -57,22 +115,17 @@ impl Tx {
 
     /// Get all the pegouts of this tx. These are the outputs this tx delivers.
     /// I.e. all outputs that are not change outputs.
-    pub fn pegouts(&self) -> impl ExactSizeIterator<Item = (OutPoint, &TxOut)> + '_ {
-        self.pegout_idxs.iter().map(|i| {
-            let point = OutPoint::new(self.txid, *i as u32);
-            let output = &self.tx.output[*i];
-            (point, output)
-        })
+    pub fn pegouts(&self) -> impl Iterator<Item = (OutPoint, &TxOut, PegoutId)> {
+        self.tx.output.iter().zip(self.output_meta.iter()).enumerate()
+            .filter_map(|(i, (o, m))| m.pegout_id().map(|id| (OutPoint::new(self.txid, i as u32), o, id)))
     }
 
     /// Get all change outputs of this tx.
     #[allow(unused)]
-    pub fn change(&self) -> impl ExactSizeIterator<Item = (OutPoint, &TxOut)> + '_ {
-        self.change_idxs.iter().map(|i| {
-            let point = OutPoint::new(self.txid, *i as u32);
-            let output = &self.tx.output[*i];
-            (point, output)
-        })
+    pub fn change(&self) -> impl Iterator<Item = (OutPoint, &TxOut)> {
+        self.tx.output.iter().zip(self.output_meta.iter()).enumerate()
+            .filter(|(_, (_, meta))| meta.is_change())
+            .map(|(i, (o, _))| (OutPoint::new(self.txid, i as u32), o))
     }
 }
 
@@ -83,16 +136,18 @@ struct BlockInfo {
 }
 
 pub struct PegoutManager {
-    /// The number of blocks to track txs for.
-    conf_window: u32,
+    /// List of pending pegouts, ordered by botanix block height.
+    pending_pegouts: HashMap<PegoutId, PegoutRequest>,
 
     /// The set of txs we are tracking.
     txs: HashMap<Txid, Tx>,
     txs_by_input: HashMap<OutPoint, Vec<Txid>>,
-    txs_by_pegout: HashMap<TxOut, Vec<Txid>>,
+    txs_by_pegout: HashMap<PegoutId, Vec<Txid>>,
     /// The txs that are confirmed but not finalized yet.
     confirmed_txs: HashSet<Txid>,
 
+    /// The number of blocks to track txs for.
+    conf_window: u32,
     last_blocks: VecDeque<BlockInfo>,
     last_finalized: BlockHash,
 }
@@ -100,11 +155,12 @@ pub struct PegoutManager {
 impl PegoutManager {
     pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> PegoutManager {
         let mut ret = PegoutManager {
-            conf_window: window,
+            pending_pegouts: HashMap::new(),
             txs: HashMap::with_capacity(txs.len()),
             txs_by_input: HashMap::with_capacity(txs.iter().map(|t| t.tx.input.len()).sum()),
-            txs_by_pegout: HashMap::with_capacity(txs.iter().map(|t| t.pegouts().len()).sum()),
+            txs_by_pegout: HashMap::with_capacity(txs.iter().map(|t| t.pegouts().count()).sum()),
             confirmed_txs: HashSet::new(),
+            conf_window: window,
             last_blocks: VecDeque::with_capacity(window as usize),
             last_finalized,
         };
@@ -122,6 +178,27 @@ impl PegoutManager {
         ret
     }
 
+    pub fn add_pegouts(
+        &mut self,
+        db: &database::Db,
+        pegouts: Vec<PegoutRequest>,
+    ) -> Result<(), database::Error> {
+        for pegout in &pegouts {
+            db.store_pending_pegout(pegout)?;
+        }
+
+        self.pending_pegouts.extend(pegouts.into_iter().map(|p| (p.id, p)));
+        Ok(())
+    }
+
+    pub fn schedule_pegouts(&self) -> Vec<&PegoutRequest> {
+        //TODO(stevenroose) be more intelligent here
+        self.pending_pegouts.iter()
+            .filter(|(id, _)| !self.txs_by_pegout.contains_key(id))
+            .map(|(_id, p)| p)
+            .collect()
+    }
+
     pub fn last_finalized(&self) -> BlockHash {
         self.last_finalized
     }
@@ -130,38 +207,48 @@ impl PegoutManager {
         for input in tx.inputs() {
             self.txs_by_input.entry(input).or_default().push(tx.txid);
         }
-        for (_utxo, pegout) in tx.pegouts() {
-            self.txs_by_pegout.entry(pegout.clone()).or_default().push(tx.txid);
+        for (_utxo, _, id) in tx.pegouts() {
+            self.txs_by_pegout.entry(id).or_default().push(tx.txid);
         }
         self.txs.insert(tx.txid, tx);
     }
 
     /// Add a new tx to the index for tracking.
     ///
-    /// Panics if [pegouts] isn't a strict subset of the transaction's outputs.
-    pub fn add_tx(&mut self, tx: Transaction, pegouts: &[TxOut], timestamp: SystemTime) -> &Tx {
-        let mut idxs = (0..tx.output.len()).collect::<Vec<_>>();
-        let pegout_idxs = {
-            let mut ret = Vec::with_capacity(idxs.len());
-            for pegout in pegouts {
-                let idx = idxs
-                    .iter()
-                    .find(|i| tx.output[**i] == *pegout)
-                    .expect("tx doesn't contain all pegouts");
-                ret.push(*idx);
-                idxs.remove(*idx);
+    /// The pegouts should be in order, this will error if pegouts are not in order.
+    pub fn add_tx(
+        &mut self,
+        tx: Transaction,
+        pegouts: &[PegoutId],
+        timestamp: SystemTime, //TODO(stevenroose) make height
+    ) -> Result<&Tx, InternalPegoutRefError> {
+        let pegouts = pegouts.iter()
+            .map(|i| self.pending_pegouts.get(i).ok_or(InternalPegoutRefError))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut pegouts = &pegouts[..];
+
+        // Tag each output with either the pegout id they are delivering or change.
+        let output_meta = tx.output.iter().map(|out| {
+            if !pegouts.is_empty() && out.script_pubkey == pegouts[0].spk && out.value == pegouts[0].value {
+                let id = pegouts[0].id;
+                pegouts = &pegouts[1..];
+                OutputMeta::Pegout(id)
+            } else {
+                //TODO(stevenroose) maybe add additional checks for change?
+                OutputMeta::Change
             }
-            ret
-        };
+        }).collect();
+        if !pegouts.is_empty() {
+            return Err(InternalPegoutRefError);
+        }
         let txid = tx.txid();
         self.track_tx(Tx {
             created: timestamp,
-            change_idxs: idxs, // leftover not pegouts is change
             txid,
             tx,
-            pegout_idxs,
+            output_meta,
         });
-        self.txs.get(&txid).expect("just put it in")
+        Ok(self.txs.get(&txid).expect("just put it in"))
     }
 
     /// Get all input utxos that are spent by pending txs.
@@ -392,6 +479,16 @@ fn is_syncing(bitcoind: &impl RpcApi) -> Result<bool, bitcoincore_rpc::Error> {
     }
 
     Ok(false)
+}
+
+#[derive(Debug, Error)]
+#[error("invalid pegouts passed into method")]
+pub struct InternalPegoutRefError;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid pegouts passed into method")]
+    InvalidPegouts,
 }
 
 #[derive(Debug, Error)]

@@ -5,7 +5,7 @@ use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-    peg_contract::{PeginMeta, PegoutData},
+    peg_contract::{PeginMeta, PegoutId, PegoutData},
 };
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
@@ -16,7 +16,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
+use client::{MakeTxRequest, NotifyPeginRequest, PegoutRequest,SigningPackage};
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -90,17 +90,20 @@ pub(crate) enum FrostParseError {
 // TODO better name for this function
 pub(crate) async fn call_get_psbt(
     btc_server: &mut BtcServerExtendedClient,
-    pegouts: &[PegoutData],
+    pegouts: &[(PegoutId, PegoutData)],
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
     utxo_merkle_root: sha256::Hash,
+    botanix_height: u64,
 ) -> Result<SigningPackage, GrpcClientError> {
     let req = MakeTxRequest {
-        outputs: pegouts
+        new_pegouts: pegouts
             .iter()
-            .map(|pegout| Output {
-                address: pegout.destination.to_string(),
-                value: pegout.amount.to_sat(),
+            .map(|(id, pegout)| PegoutRequest {
+                pegout_id: id.as_bytes().to_vec(),
+                script_pubkey: pegout.destination.script_pubkey().to_bytes(),
+                amount: pegout.amount.to_sat(),
+                botanix_height: botanix_height,
             })
             .collect(),
         signing_session_id: signing_session_id.to_vec(),
@@ -217,35 +220,12 @@ pub(crate) async fn epoch_pegouts(
     best_block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
-) -> Result<Vec<PegoutData>, EpochPegoutsError> {
-    let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
-    let mut pegouts = Vec::new();
+) -> Result<Vec<(PegoutId, PegoutData)>, EpochPegoutsError> {
+    let mut ret = Vec::new();
+    let start_block = find_epoch_start(EPOCH_LENGTH, best_block) - 1;
     for block in start_block..=best_block {
-        match client.block_by_number(block) {
-            Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-                match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
-                    Ok(Some(receipts)) => {
-                        for receipt in receipts {
-                            if !receipt.success {
-                                continue;
-                            }
-                            for log in receipt.logs {
-                                if let Ok(Some(p)) = try_parse_burn_event(&log, btc_network) {
-                                    pegouts.push(p);
-                                }
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        info!("No receipts found for block {:?}", block);
-                        continue;
-                    }
-                    Err(e) => {
-                        error!("Error fetching receipts for block {:?}: {}", block, e);
-                        return Err(EpochPegoutsError::FailedToFetchPegouts);
-                    }
-                }
-            }
+        let block = match client.block_by_number(block) {
+            Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => block,
             Ok(Some(_)) => continue,
             Ok(None) => {
                 error!("Block {} not found", block);
@@ -255,10 +235,28 @@ pub(crate) async fn epoch_pegouts(
                 error!("Error fetching block {}: {}", block, e);
                 return Err(EpochPegoutsError::FailedToFetchPegouts);
             }
-        }
-    }
+        };
 
-    Ok(pegouts)
+        for tx in &block.body {
+            let txhash = tx.hash();
+            let receipt = match client.receipt_by_hash(txhash) {
+                Ok(Some(r)) => r,
+                _ => continue,
+            };
+            if !receipt.success {
+                continue;
+            }
+            let mut idx = 0;
+            for log in receipt.logs {
+                if let Some(p) = try_parse_burn_event(&log, btc_network).expect("already checked") {
+                    let id = PegoutId::new(txhash, idx);
+                    idx += 1;
+                    ret.push((id, p));
+                }
+            }
+        }
+    };
+    Ok(ret)
 }
 
 /// Errors that can occur while generating a signing session ID

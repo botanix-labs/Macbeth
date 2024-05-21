@@ -186,7 +186,6 @@ where
         drop(storage);
 
         // Process pegins and pegouts from the [Minting] contract.
-        let mut block_pegouts = Vec::new();
         for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
             for receipt in receipts {
                 if idx == 0 && receipt.is_none() {
@@ -210,12 +209,6 @@ where
                                 info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                             }
                         }
-
-                        let pegout_match =
-                            try_parse_burn_event(log, self.btc_network).expect("passed EVM check");
-                        if let Some(pegout) = pegout_match {
-                            block_pegouts.push(pegout);
-                        }
                     }
                 }
             }
@@ -234,18 +227,16 @@ where
         // If end of epoch, process pegouts
         let mut epoch_witness: Option<Vec<Witness>> = None;
         if block.header.is_poa_epoch() {
+            info!("EPOCH BLOCK BUILDING STARTING...");
+
             // get pegouts up to best block
-            let mut pegouts =
-                match crate::utils::epoch_pegouts(best_block, &self.client, self.btc_network).await
-                {
-                    Ok(epoch_pegouts) => epoch_pegouts,
-                    Err(e) => {
-                        error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
-                        return;
-                    }
-                };
-            // add current block pegouts
-            pegouts.extend(block_pegouts);
+            let pegouts = match crate::utils::epoch_pegouts(best_block, &self.client, self.btc_network).await {
+                Ok(epoch_pegouts) => epoch_pegouts,
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
+                    return;
+                }
+            };
 
             // send pegouts
             if !pegouts.is_empty() {
@@ -267,6 +258,7 @@ where
                     &signing_session_id,
                     bitcoin_checkpoint.0.block_hash(),
                     utxo_commitment,
+                    block.header.number,
                 )
                 .await
                 {

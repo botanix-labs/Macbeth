@@ -2,9 +2,10 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
-use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
+
+use reth_botanix_lib::peg_contract::PegoutId;
 
 use crate::{
     it_info_print,
@@ -17,6 +18,7 @@ use crate::{
         ConsensusIntegrationTestSuite,
     },
 };
+use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 
 const INPUTS_TO_SPEND: usize = 2;
 
@@ -134,10 +136,15 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         .merkle_root;
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
-            outputs: vec![client::Output {
-                address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
+            new_pegouts: vec![client::PegoutRequest {
+                pegout_id: {
+                    let hex = "0x0000000000000000000000000000000000000000000000000000000000000001";
+                    PegoutId::new(hex.parse().unwrap(), 0).as_bytes().to_vec()
+                },
+                script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh").unwrap().assume_checked().script_pubkey().to_bytes(),
                 // At this point there should be 2000 sats in the wallet
-                value: 1200,
+                amount: 1200,
+                botanix_height: 1000,
             }],
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),

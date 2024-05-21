@@ -55,9 +55,15 @@ service BtcServer {
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
 }
 
+message PegoutDelivery {
+    bytes pegout_id = 1;
+    bytes script_pubkey = 2;
+    uint64 amount = 3;
+}
+
 message FinalizeSignerRequest {
-    repeated bytes witness = 1;
-    repeated Output outputs = 2;
+    repeated PegoutDelivery pegouts = 1;
+    repeated bytes witness = 2;
     // The checkpoint of the best finalized Bitcoin block hash.
     bytes checkpoint_block_hash = 3;
     // The merkle root of our wallet's UTXO set.
@@ -81,7 +87,7 @@ message OutPoint {
 }
 
 message Utxo {
-    OutPoint outpoint = 1; 
+    OutPoint outpoint = 1;
     uint32 output = 2;
     string eth_address = 3;
 }
@@ -142,13 +148,19 @@ message SigningPackage {
     bytes signing_session_id = 3;
 }
 
-message Output {
-    string address = 1;
-    uint64 value = 2;
+message PegoutRequest {
+    bytes pegout_id = 1;
+    bytes script_pubkey = 2;
+    uint64 amount = 3;
+    // The botanix transaction ID for this pegout, to be able to identify duplicates.
+    uint64 botanix_height = 4;
 }
 
 message MakeTxRequest {
-    repeated Output outputs = 1;
+    // New pegouts that should be delivered.
+    // The actual tx returned has to attempt deliver them,
+    // but might also attempt to re-try deliver older pegouts.
+    repeated PegoutRequest new_pegouts = 1;
     bytes signing_session_id = 2;
     // The checkpoint of the best finalized Bitcoin block hash.
     bytes checkpoint_block_hash = 3;

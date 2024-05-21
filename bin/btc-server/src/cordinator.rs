@@ -14,7 +14,7 @@ use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt, PsbtOutputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -25,7 +25,8 @@ use crate::{
         validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
         NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
     },
-    App, Error,
+    pegouts::{PegoutId},
+    App, Error, IndexTxError,
 };
 
 #[derive(Debug, Error)]
@@ -72,6 +73,8 @@ pub enum CoordinatorError {
     PegoutMgrSync(#[from] crate::pegouts::SyncError),
     #[error("utxo merkle root mismatch: expected {expected}, actual {actual:?}")]
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
+    #[error("error indexing pegout")]
+    IndexTx(#[from] IndexTxError)
 }
 
 impl App {
@@ -169,7 +172,7 @@ impl App {
 
     pub(crate) async fn make_tx(
         &self,
-        outputs: Vec<TxOut>,
+        pegouts: Vec<(PegoutId, TxOut)>,
         fee_rate: FeeRate,
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,
@@ -227,7 +230,7 @@ impl App {
         // Now we're going to hijack BDK coin selection real quick..
         let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value).sum::<Amount>();
+        let target_amount = pegouts.iter().map(|o| o.1.value).sum::<Amount>();
 
         // Try once with finalized, then add pending and try again.
         let selection = coin_select
@@ -263,8 +266,10 @@ impl App {
                     eth_address: s.eth_address,
                 })
                 .collect(),
-            outputs,
-            change.clone(),
+            pegouts.iter()
+                .map(|p| (p.1.clone(), Some(p.0.as_bytes())))
+                .chain(change.map(|c| (c, None)))
+                .collect(),
         );
 
         // Sanity check that we created a valid PSBT
@@ -366,17 +371,9 @@ impl App {
             Err(e) => return Err(CoordinatorError::PbstFinalizationFailed(vec![e])),
         };
 
-        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let targets = tx
-            .output
-            .iter()
-            .filter(|o| o.script_pubkey != change_script)
-            .cloned()
-            .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        self.add_index_tx(tx, &targets, tx_timestamp).await?;
+        let pegouts = psbt.outputs.iter().filter_map(|o| o.pegout_id().map(|i| i.into())).collect::<Vec<_>>();
+        self.add_index_tx(tx, &pegouts, tx_timestamp).await?;
 
         // Lets broadcast the tx
         let tx_id = match self

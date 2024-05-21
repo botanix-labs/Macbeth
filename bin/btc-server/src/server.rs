@@ -3,7 +3,7 @@ use bitcoin::{
     consensus::encode as btcencode,
     hashes::{sha256, Hash},
     psbt::Psbt,
-    Amount, BlockHash, FeeRate, OutPoint, TxOut,
+    Amount, BlockHash, FeeRate, TxOut, OutPoint,
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
@@ -11,7 +11,9 @@ use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
+use reth_btc_wallet::psbt::PsbtOutputExt;
 use crate::{database::Utxo, rpc, util, App};
+use crate::pegouts::{PegoutId, PegoutRequest};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -232,18 +234,16 @@ impl rpc::BtcServer for App {
 
         debug!("Cord Fee rate: {:?}", fee_rate);
 
-        let outputs = req
-            .outputs
+        let new_pegouts = req
+            .new_pegouts
             .into_iter()
-            .map(|o| {
-                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
-                    .map_err(|e| internal!("invalid address: {}", e))?
-                    .assume_checked()
-                    .script_pubkey();
-
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
-            })
-            .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
+            .map(|o| Ok(PegoutRequest {
+                id: PegoutId::from_bytes(&o.pegout_id).map_err(|_| badarg!("invalid pegout id"))?,
+                spk: o.script_pubkey.into(),
+                value: Amount::from_sat(o.amount),
+                botanix_height: o.botanix_height,
+            }))
+            .collect::<Result<Vec<_>, tonic::Status>>()?;
 
         // TODO this should live in coordinator.rs
         let pk_package = self
@@ -258,8 +258,18 @@ impl rpc::BtcServer for App {
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
+        // Schedule the new pegouts and get all pegouts we should try to make.
+        self.pegouts.lock().await.add_pegouts(&self.db, new_pegouts)
+            .map_err(|e| internal!("error adding pegouts: {}", e))?;
+
+        let pegouts = {
+            let lock = self.pegouts.lock().await;
+            let pegouts = lock.schedule_pegouts();
+            pegouts.iter().map(|p| (p.id, p.txout())).collect()
+        };
+
         let psbt = self
-            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .make_tx(pegouts, fee_rate, change_script, checkpoint, utxo_root)
             .await
             .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
@@ -583,6 +593,15 @@ impl rpc::BtcServer for App {
             .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
         let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
             .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
+        let pegouts = req.pegouts.into_iter().map(|p| {
+            let id = PegoutId::from_bytes(&p.pegout_id)
+                .map_err(|_| badarg!("invalid pegout id"))?;
+            let txout = TxOut {
+                script_pubkey: p.script_pubkey.into(),
+                value: Amount::from_sat(p.amount),
+            };
+            Ok((id, txout))
+        }).collect::<Result<_, tonic::Status>>()?;
 
         let fee_res = self
             .bitcoind_client
@@ -595,23 +614,11 @@ impl rpc::BtcServer for App {
                 fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
             }
         }
-        let outputs = req
-            .outputs
-            .into_iter()
-            .map(|o| {
-                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
-                    .map_err(|e| internal!("invalid address: {}", e))?
-                    .assume_checked()
-                    .script_pubkey();
-
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
-            })
-            .collect::<Result<Vec<_>, tonic::Status>>()?;
 
         // Witnesses can be get big. Remove this clone()
         let witnesses = req.witness;
         let psbt = self
-            .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
+            .finalize_signer(pegouts, fee_rate, witnesses, checkpoint, utxo_root)
             .await
             .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())

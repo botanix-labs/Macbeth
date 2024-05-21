@@ -18,7 +18,8 @@ use reth_btc_wallet::{
 use crate::{
     database,
     util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
-    App, Error,
+    pegouts::PegoutId,
+    App, Error, IndexTxError,
 };
 
 #[derive(Debug)]
@@ -119,6 +120,8 @@ pub enum SigningFinalizeError {
     SigFromSliceError(#[from] SigFromSliceError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("error indexing pegout")]
+    IndexTx(#[from] IndexTxError)
 }
 
 #[derive(Debug, Error)]
@@ -282,7 +285,7 @@ impl App {
 
     pub(crate) async fn finalize_signer(
         &self,
-        outputs: Vec<TxOut>,
+        pegouts: Vec<(PegoutId, TxOut)>,
         fee_rate: FeeRate,
         witness: Vec<Vec<u8>>,
         checkpoint_block: BlockHash,
@@ -293,8 +296,9 @@ impl App {
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+        let pegout_ids = pegouts.iter().map(|(id, _)| *id).collect::<Vec<_>>();
         let mut original_psbt = self
-            .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
+            .make_tx(pegouts, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
             .await
             .unwrap();
 
@@ -324,14 +328,9 @@ impl App {
                 Ok(tx) => tx,
                 Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
             };
-        let targets = tx
-            .output
-            .iter()
-            .filter(|o| o.script_pubkey != change_script)
-            .cloned()
-            .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        self.add_index_tx(tx, &targets, tx_timestamp).await?;
+
+        self.add_index_tx(tx, &pegout_ids, tx_timestamp).await?;
 
         Ok(original_psbt)
     }
