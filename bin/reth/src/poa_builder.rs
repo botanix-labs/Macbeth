@@ -52,7 +52,7 @@ use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
@@ -206,64 +206,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         // fetch and store bitcoin block tx ids
         let is_testnet = is_testnet(self.config.chain.chain.id());
-        let confirmation_depth = get_confirmation_depth(is_testnet);
-        let bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>> =
-            Arc::new(RwLock::new(HashMap::new()));
-        let bitcoin_block_tx_ids_clone = bitcoin_block_tx_ids.clone();
-        let bitcoind_config_clone = bitcoind_config.clone();
-
-        executor.spawn_critical("async bitcoin block tx ids task", Box::pin(async move {
-            let sleep_ms = tokio::time::Duration::from_millis(5000);
-            let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone).expect("Unable to create bitcoind client");
-
-            let mut current_tx_ids: HashMap<u64, Vec<bitcoin::Txid>> = bitcoin_block_tx_ids.read().await.clone();
-            loop {
-                let tip = match bitcoind_client.get_tip().await {
-                    Ok(tip) => tip,
-                    Err(_) => {
-                        error!(target: "reth::cli", "Failed to fetch the tip. Retrying...");
-                        tokio::time::sleep(sleep_ms).await;
-                        continue;
-                    }
-                };
-
-                // prune tx ids older than confirmation_depth
-                let confirmation_depth_u64 = <u32 as Into<u64>>::into(confirmation_depth);
-                current_tx_ids.retain(|block_height, _| *block_height >= tip - confirmation_depth_u64);
-
-                let start = tip - confirmation_depth_u64;
-                for height in start..=tip {
-                    // don't fetch tx ids we already have
-                    if !current_tx_ids.is_empty() && current_tx_ids.contains_key(&height) {
-                        continue;
-                    }
-                    let block_hash = match bitcoind_client.get_block_hash(height).await {
-                        Ok(block_hash) => block_hash,
-                        Err(_) => {
-                            error!(target: "reth::cli", "Failed to fetch block hash while fetching tx ids. Retrying...");
-                            tokio::time::sleep(sleep_ms).await;
-                            break;
-                        }
-                    };
-
-                    match bitcoind_client.get_block_info(&block_hash).await {
-                        Ok(block_info) => {
-                            let tx_ids = block_info.tx;
-                            current_tx_ids.insert(height, tx_ids);
-                        }
-                        Err(_) => {
-                            error!(target: "reth::cli", "Failed to fetch block info while fetching tx ids. Retrying...");
-                            tokio::time::sleep(sleep_ms).await;
-                            break;
-                        }
-                    }
-                }
-                let mut tx_ids_write = bitcoin_block_tx_ids.write().await;
-                *tx_ids_write = current_tx_ids.clone();
-                drop(tx_ids_write);
-            }
-        }));
-        info!(target: "reth::cli", "Spawned async bitcoin block tx ids task");
 
         let bitcoind_config = bitcoind_config.clone();
         executor.spawn_critical(
@@ -501,7 +443,6 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 canon_state_notification_sender.clone(),
                 btc_server_client.clone(),
                 bitcoin_block_headers_clone,
-                bitcoin_block_tx_ids_clone,
                 bitcoind_config,
                 secp256k1::Secp256k1::new(),
                 network_sk,
