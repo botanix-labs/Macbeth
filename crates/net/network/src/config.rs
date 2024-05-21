@@ -19,7 +19,6 @@ use reth_primitives::{
 };
 use reth_provider::{BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
-use reth_transaction_pool::TransactionPool;
 use secp256k1::SECP256K1;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
@@ -483,8 +482,10 @@ impl NetworkConfigBuilder {
     }
 
     /// Sets the frost config.
-    pub fn frost_config(mut self, frost_config: FrostConfig) -> Self {
-        self.frost_config = Some(frost_config);
+    pub fn frost_config(mut self, frost_config: Option<FrostConfig>) -> Self {
+        if frost_config.is_some() {
+            self.frost_config = frost_config;
+        }
         self
     }
 

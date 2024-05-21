@@ -6,7 +6,7 @@ use crate::payload::PayloadBuilderService;
 use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
-        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
+        DatabaseArgs, DebugArgs, DevArgs, FrostArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::ext::PoaNodeCommandConfig,
@@ -268,7 +268,7 @@ where {
         let mut node_config = NodeConfig {
             config: config.clone(),
             chain: chain.clone(),
-            federation_mode,
+            federation_mode: *federation_mode,
             metrics: metrics.clone(),
             instance: instance.clone(),
             network: network.clone(),
@@ -329,14 +329,24 @@ where {
         let default_jwt_path = data_dir.jwt_path();
         let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // Connect to btc signining server
-        let btc_server_client = BtcServerExtendedClient::new(
-            node_config.rpc.btc_server.clone(),
-            Some(jwt_secret.clone()),
-        )
-        .await
-        .expect("cannot create btc_server");
-        info!(target: "reth::cli", "Btc server connected");
+        // This determines which tasks are spawned. For example, the block production and
+        // frost tasks are only spawned for a federation node.
+        let is_fed_node = node_config.federation_mode;
+
+        // Connect to btc signining server if in federation mode
+        let btc_server_client = if is_fed_node {
+            let client = BtcServerExtendedClient::new(
+                node_config.rpc.btc_server.clone().expect("btc_server exists"),
+                Some(jwt_secret.clone()),
+            )
+            .await
+            .expect("can create btc_server");
+            info!(target: "reth::cli", "Btc server connected");
+
+            Some(client)
+        } else {
+            None
+        };
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -472,13 +482,6 @@ where {
         );
         info!(target: "reth::cli", "Spawned async bitcoin block header task");
 
-        // let mut provider_factory = ProviderFactory::new(
-        //     Arc::clone(&database),
-        //     Arc::clone(&node_config.chain),
-        //     data_dir.static_files_path(),
-        // )
-        // .expect("make provider factory");
-
         let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
 
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
@@ -600,19 +603,30 @@ where {
         let (block_import_tx, block_import_rx) = unbounded_channel();
         let block_import = ProofOfAuthorityBlockImport::new(self.chain.clone(), block_import_tx);
 
-        // create authority config
-        let (authority_index, authorities) = get_authority_signer_index(
-            blockchain_db.clone(),
-            Arc::clone(&self.chain),
-            secp256k1::Secp256k1::new(),
-            secret_key,
-        )
-        .expect("Failed to get authority index");
+        // create frost config if in federation mode
+        let frost_config = if is_fed_node {
+            // create authority config
+            let (authority_index, authorities) = get_authority_signer_index(
+                blockchain_db.clone(),
+                Arc::clone(&self.chain),
+                secp256k1::Secp256k1::new(),
+                secret_key,
+            )
+            .expect("Failed to get authority index");
 
-        // create frost config
-        let mut frost_config: FrostConfig = node_config.rpc.frost.clone().into();
-        frost_config.set_authority_index(authority_index);
-        frost_config.set_authorities(authorities);
+            let mut config: FrostConfig = FrostArgs {
+                min_signers: node_config.rpc.min_signers.expect("min signers to exist"),
+                max_signers: node_config.rpc.max_signers.expect("max signer to exist"),
+            }
+            .into();
+            config.set_authority_index(authority_index);
+            config.set_authorities(authorities);
+            info!(target: "reth::cli", "Frost config initialized");
+
+            Some(config)
+        } else {
+            None
+        };
 
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
@@ -641,8 +655,6 @@ where {
 
         let network_config = cfg_builder.build(provider_factory.clone());
 
-        // let network_builder = NetworkManager::builder(network_config).await?;
-
         // Now we need to build the network components including frost p2p, txpool p2p, eth request handling p2p, as well as the general p2p network
         let (network_handle, network_manager, tx_pool_p2p, eth_request_handler_p2p, frost_p2p) =
             NetworkManager::builder(network_config)
@@ -653,7 +665,7 @@ where {
                 .split_with_handle();
         // Start all the p2p tasks
         let frost_manager = frost_p2p.expect("should be some");
-        let frost_handler = frost_manager.handle();
+        let frost_handle = frost_manager.handle();
         executor.spawn_critical("p2p frost", frost_manager);
         executor.spawn_critical("txpool p2p task", tx_pool_p2p);
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
@@ -663,10 +675,6 @@ where {
         // debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(), "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
-        // TODO: dont' use unwrap
-        // all of this will break bc of typing probably...might be another rabbit hole
-        // Alternative: move the custom payload builder logic into bin/reth (like the other branch does)
-        // then create it
         debug!(target: "reth::cli", "Spawning payload builder service");
         let payload_builder = reth_ethereum_payload_builder::EthereumPayloadBuilder::default();
         let conf = DefaultPoAPayloadBuilderConfig {};
@@ -713,7 +721,7 @@ where {
             blockchain_db.clone(),
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
-            Some(btc_server_client.clone()),
+            btc_server_client.clone(),
             bitcoin_block_headers_clone,
             bitcoin_block_tx_ids_clone,
             bitcoind_config,
@@ -722,11 +730,11 @@ where {
             None,
             network_handle.clone(),
             // TODO this doesnt need to be an option
-            Some(frost_handler),
+            Some(frost_handle),
             block_import_rx,
             executor.clone(),
             evm_config,
-            Some(frost_config),
+            frost_config,
             payload_builder.clone(),
             node_config.rpc.btc_network,
         )
@@ -768,19 +776,22 @@ where {
         let pipeline_events = pipeline.events();
 
         // Spawn authority consensus specific tasks
-        executor.spawn_critical(
-            "PoA Block Production Task",
-            Box::pin(async move {
-                block_production_task.start_task().await;
-            }),
-        );
+        // federation mode tasks
+        if is_fed_node {
+            executor.spawn_critical(
+                "PoA Block Production Task",
+                Box::pin(async move {
+                    block_production_task.expect("block production task exists").start_task().await;
+                }),
+            );
 
-        executor.spawn_critical(
-            "Frost Task",
-            Box::pin(async move {
-                frost_task.start_task().await;
-            }),
-        );
+            executor.spawn_critical(
+                "Frost Task",
+                Box::pin(async move {
+                    frost_task.expect("frost task exists").start_task().await;
+                }),
+            );
+        }
         executor.spawn_critical(
             "PoA Block Fetcher Task",
             Box::pin(async move {

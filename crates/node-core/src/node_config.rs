@@ -510,7 +510,7 @@ impl NodeConfig {
         }
 
         // Frost specific network configurations
-        if let Some(frost_config) = frost_config {
+        if frost_config.is_some() {
             cfg_builder =
                 cfg_builder.frost_config(frost_config).network_mode(NetworkMode::Authority);
         }

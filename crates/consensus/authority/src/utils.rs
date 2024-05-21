@@ -25,7 +25,6 @@ use reth_primitives::{
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
-use std::time::Duration;
 use uuid::Uuid;
 
 use reth_rpc_types::BlockHashOrNumber;

@@ -533,7 +533,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     {
         let mut network_builder =
             builder.transactions(pool, Default::default()).request_handler(self.provider().clone());
-        if let Some(frost_config) = frost_config {
+        if frost_config.is_some() {
             network_builder = network_builder.frost(frost_config);
         }
         let (handle, network, txpool, eth, _frost) = network_builder.split_with_handle();
