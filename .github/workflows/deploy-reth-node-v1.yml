@@ -2,8 +2,7 @@ name: Build, Tag, and Deploy Docker Reth Node v1 Image to GCP
 
 on:
   pull_request:
-    branches: 
-      - feature/poA-consensus
+    branches: [feature/poA-consenus]
     types: [closed]
 
 jobs:
