@@ -3,7 +3,7 @@
 use clap::Args;
 use reth_db::DatabaseEnv;
 use reth_network::NetworkHandle;
-use reth_provider::{providers::BlockchainProvider, ProviderFactory};
+use reth_provider::providers::BlockchainProvider;
 use reth_tasks::TaskExecutor;
 use std::{fmt, sync::Arc};
 use tracing::info;

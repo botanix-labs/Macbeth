@@ -153,7 +153,7 @@ pub async fn frost_e2e_stable(
         .enumerate()
         .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
         .unwrap();
-    let amount = U256::from(Amount::from_sat(pegin_output.value).to_wei());
+    let amount = pegin_output.value.to_wei();
     it_info_print!("Btc Amount", amount);
 
     // get block headers
