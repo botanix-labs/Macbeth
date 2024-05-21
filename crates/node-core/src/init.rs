@@ -90,13 +90,13 @@ pub fn init_genesis<DB: Database>(factory: ProviderFactory<DB>) -> Result<B256, 
         Ok(Some(block_hash)) => {
             if block_hash == hash {
                 debug!("Genesis already written, skipping.");
-                return Ok(hash)
+                return Ok(hash);
             }
 
             return Err(InitDatabaseError::GenesisHashMismatch {
                 chainspec_hash: hash,
                 database_hash: block_hash,
-            })
+            });
         }
         Err(e) => return Err(dbg!(e).into()),
     }
@@ -446,7 +446,7 @@ fn compute_state_root<DB: Database>(provider: &DatabaseProviderRW<DB>) -> eyre::
                     "State root has been computed"
                 );
 
-                return Ok(root)
+                return Ok(root);
             }
         }
     }
@@ -479,8 +479,8 @@ mod tests {
         DatabaseEnv,
     };
     use reth_primitives::{
-        Chain, ForkTimestamps, Genesis, IntegerList, GOERLI, GOERLI_GENESIS_HASH, MAINNET,
-        MAINNET_GENESIS_HASH, SEPOLIA, SEPOLIA_GENESIS_HASH,
+        Chain, Genesis, IntegerList, GOERLI, GOERLI_GENESIS_HASH, MAINNET, MAINNET_GENESIS_HASH,
+        SEPOLIA, SEPOLIA_GENESIS_HASH,
     };
     use reth_provider::test_utils::create_test_provider_factory_with_chain_spec;
 
@@ -570,7 +570,6 @@ mod tests {
                 ..Default::default()
             },
             hardforks: BTreeMap::default(),
-            fork_timestamps: ForkTimestamps::default(),
             genesis_hash: None,
             paris_block_and_final_difficulty: None,
             deposit_contract: None,

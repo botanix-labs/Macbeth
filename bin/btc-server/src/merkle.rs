@@ -18,7 +18,7 @@ pub fn construct_merkle_tree(hashes: &[Vec<u8>]) -> MerkleTree<MerkleSha256> {
 mod tests {
     use super::*;
     use crate::database::Utxo;
-    use bitcoin::{hashes::Hash, OutPoint, Script, TxOut, Txid};
+    use bitcoin::{hashes::Hash, Amount, OutPoint, Script, TxOut, Txid};
     use rand::{thread_rng, Rng};
 
     // Helper function to create a UTXO with random values
@@ -26,11 +26,16 @@ mod tests {
         let mut rng = thread_rng();
         let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
         let vout = rng.gen_range(0..u32::MAX);
-        let value = rng.gen_range(1..1_000_000);
+        let value: u64 = rng.gen_range(1..1_000_000);
+        let amount = Amount::from_sat(value);
         let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
         let script = Script::from_bytes(script_bytes.as_slice());
 
-        Utxo::new(OutPoint::new(txid, vout), TxOut { value, script_pubkey: script.into() }, None)
+        Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value: amount, script_pubkey: script.into() },
+            None,
+        )
     }
 
     #[test]
