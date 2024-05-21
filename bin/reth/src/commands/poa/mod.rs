@@ -664,9 +664,15 @@ where {
                 .transactions(transaction_pool.clone(), Default::default())
                 .split_with_handle();
         // Start all the p2p tasks
-        let frost_manager = frost_p2p.expect("should be some");
-        let frost_handle = frost_manager.handle();
-        executor.spawn_critical("p2p frost", frost_manager);
+        let frost_handle = if is_fed_node {
+            let frost_manager = frost_p2p.expect("should be some");
+            let frost_handle = frost_manager.handle();
+            executor.spawn_critical("p2p frost", frost_manager);
+
+            Some(frost_handle)
+        } else {
+            None
+        };
         executor.spawn_critical("txpool p2p task", tx_pool_p2p);
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
@@ -723,14 +729,12 @@ where {
             canon_state_notification_sender.clone(),
             btc_server_client.clone(),
             bitcoin_block_headers_clone,
-            bitcoin_block_tx_ids_clone,
             bitcoind_config,
             secp256k1::Secp256k1::new(),
             secret_key,
             None,
             network_handle.clone(),
-            // TODO this doesnt need to be an option
-            Some(frost_handle),
+            frost_handle,
             block_import_rx,
             executor.clone(),
             evm_config,

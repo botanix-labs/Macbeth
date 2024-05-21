@@ -62,7 +62,7 @@ pub async fn frost_e2e_stable(
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(500, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
@@ -124,16 +124,7 @@ pub async fn frost_e2e_stable(
         .expect("valid btc_address")
         .assume_checked();
     let pegin_txid = bitcoind_rpc
-        .send_to_address(
-            &btc_address,
-            Amount::from_sat(20_000_000),
-            None,
-            None,
-            Some(true),
-            None,
-            Some(1),
-            None,
-        )
+        .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
@@ -221,7 +212,7 @@ pub async fn frost_e2e_stable(
         ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
     // use empty pegout data
     let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_sat(1000);
+    let pegout_amount = Amount::from_btc(0.5).unwrap();
     let tx_receipt =
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
     it_info_print!("Pegout Tx Receipt: ", tx_receipt);
