@@ -6,7 +6,11 @@ use crate::{
 use bdk::miniscript::psbt::Error as PsbtError;
 
 use bdk::psbt::PsbtUtils;
-use bitcoin::{psbt::{ExtractTxError, Psbt}, taproot::SigFromSliceError, FeeRate, TxOut};
+use bitcoin::{
+    psbt::{ExtractTxError, Psbt},
+    taproot::SigFromSliceError,
+    FeeRate, TxOut,
+};
 use bitcoincore_rpc::json::EstimateMode;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;

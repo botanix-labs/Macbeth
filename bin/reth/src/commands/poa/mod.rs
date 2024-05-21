@@ -1,7 +1,9 @@
 //! Main node command
 
-use crate::cli::ext::{NoArgs, RethNodeComponents};
-use crate::payload::PayloadBuilderService;
+use crate::{
+    cli::ext::{NoArgs, RethNodeComponents},
+    payload::PayloadBuilderService,
+};
 
 use crate::{
     args::{
@@ -16,16 +18,15 @@ use crate::{
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::AuthorityConsensusBuilder;
 use reth_basic_payload_builder::BasicPayloadJobGenerator;
-use reth_beacon_consensus::hooks::EngineHooks;
-use reth_beacon_consensus::BeaconConsensusEngine;
-use reth_beacon_consensus::MIN_BLOCKS_FOR_PIPELINE_RUN;
+use reth_beacon_consensus::{
+    hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
+};
 use reth_config::config::StageConfig;
 use reth_network::NetworkEvents;
 
 use reth_node_builder::PayloadBuilderConfig;
 use reth_node_events::node::handle_events;
-use reth_primitives::constants::ETHEREUM_BLOCK_GAS_LIMIT;
-use reth_primitives::{Bytes, PruneModes};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, PruneModes};
 use reth_provider::providers::StaticFileProvider;
 use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
@@ -49,8 +50,7 @@ use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
 use reth_config::Config;
 use reth_consensus::Consensus;
-use reth_consensus_common::utils;
-use reth_consensus_common::utils::get_authority_signer_index;
+use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 
 use reth_exex::ExExManagerHandle;
@@ -75,8 +75,10 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
-use std::borrow::Cow;
-use std::{collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
+    sync::Arc,
+};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
     time::Duration,
@@ -655,7 +657,8 @@ where {
 
         let network_config = cfg_builder.build(provider_factory.clone());
 
-        // Now we need to build the network components including frost p2p, txpool p2p, eth request handling p2p, as well as the general p2p network
+        // Now we need to build the network components including frost p2p, txpool p2p, eth request
+        // handling p2p, as well as the general p2p network
         let (network_handle, network_manager, tx_pool_p2p, eth_request_handler_p2p, frost_p2p) =
             NetworkManager::builder(network_config)
                 .await?
@@ -677,8 +680,10 @@ where {
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
 
-        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr = %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to P2P network");
-        // debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(), "Full peer ID");
+        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr =
+        // %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to
+        // P2P network"); debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(),
+        // "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
         debug!(target: "reth::cli", "Spawning payload builder service");

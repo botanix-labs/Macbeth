@@ -4,7 +4,12 @@ use crate::{
     database::{Db, Utxo},
     Error, SECP,
 };
-use bitcoin::{consensus::encode as btcencode, hashes::Hash, psbt::{ExtractTxError, Psbt}, Amount, OutPoint};
+use bitcoin::{
+    consensus::encode as btcencode,
+    hashes::Hash,
+    psbt::{ExtractTxError, Psbt},
+    Amount, OutPoint,
+};
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use reth_btc_wallet::psbt::PsbtInputExt;
@@ -186,7 +191,6 @@ pub fn add_remove_utxo_from_psbt(
     }
     (change_outputs, selected_inputs)
 }
-
 
 #[derive(Debug, Error)]
 pub enum ValidatePSBTError {
@@ -666,7 +670,8 @@ mod util_tests {
     fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
         let tx = create_tx(1);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
-        psbt.inputs[0].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
 
         let signing_packages = psbt.signing_packages();
         assert!(signing_packages.is_err());
@@ -703,8 +708,10 @@ mod util_tests {
         let tx = create_tx(num_inputs);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments and TxOut to the psbt for each input
-        psbt.inputs[0].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
-        psbt.inputs[1].witness_utxo = Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
+        psbt.inputs[0].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
+        psbt.inputs[1].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
         psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1_0);
         psbt.inputs[1].set_signing_commitment(frost_id1, &signing_commits1_1);
         psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2_0);

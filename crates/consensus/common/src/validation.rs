@@ -3,8 +3,9 @@
 use reth_consensus::ConsensusError;
 use reth_interfaces::RethResult;
 use reth_primitives::{
-    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK}, ChainSpec, GotExpected, Hardfork, Header, SealedBlock,
-    SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
+    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
+    ChainSpec, GotExpected, Hardfork, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH,
+    U256,
 };
 use reth_provider::{HeaderProvider, WithdrawalsProvider};
 
@@ -24,8 +25,8 @@ pub fn validate_header_standalone(
     }
 
     // Check if base fee is set.
-    if chain_spec.fork(Hardfork::London).active_at_block(header.number)
-        && header.base_fee_per_gas.is_none()
+    if chain_spec.fork(Hardfork::London).active_at_block(header.number) &&
+        header.base_fee_per_gas.is_none()
     {
         return Err(ConsensusError::BaseFeeMissing);
     }
@@ -35,14 +36,14 @@ pub fn validate_header_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
-        && header.withdrawals_root.is_none()
-        && chain_spec.chain.id() != 3636
-        && wd_root_missing
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
+        header.withdrawals_root.is_none() &&
+        chain_spec.chain.id() != 3636 &&
+        wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing);
-    } else if !chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
-        && header.withdrawals_root.is_some()
+    } else if !chain_spec.is_shanghai_active_at_timestamp(header.timestamp) &&
+        header.withdrawals_root.is_some()
     {
         return Err(ConsensusError::WithdrawalsRootUnexpected);
     }
@@ -87,8 +88,8 @@ pub fn validate_block_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp)
-        && chain_spec.chain.id() != 3636
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
+        chain_spec.chain.id() != 3636
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;

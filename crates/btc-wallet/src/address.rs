@@ -204,8 +204,7 @@ mod tests {
     }
 
     use super::*;
-    use secp256k1::rand::rngs::OsRng;
-    use secp256k1::Keypair;
+    use secp256k1::{rand::rngs::OsRng, Keypair};
     fn generate_key_pair() -> Keypair {
         let (secret_key, _) = SECP.generate_keypair(&mut OsRng);
         let keypair = Keypair::from_secret_key(&SECP, &secret_key);

@@ -13,7 +13,11 @@ use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
-use bitcoin::{psbt::{ExtractTxError, Psbt}, Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{
+    psbt::{ExtractTxError, Psbt},
+    secp256k1::PublicKey,
+    Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
+};
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
@@ -21,7 +25,6 @@ use reth_btc_wallet::{
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
-use bitcoin::secp256k1::PublicKey;
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -240,9 +243,10 @@ impl App {
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
-            bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
-                Some(TxOut { script_pubkey: change_script.clone(), value: Amount::from_sat(amount) })
-            }
+            bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
+                script_pubkey: change_script.clone(),
+                value: Amount::from_sat(amount),
+            }),
             _ => None,
         };
 

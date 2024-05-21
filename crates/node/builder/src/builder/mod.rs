@@ -16,8 +16,7 @@ use reth_db::{
     DatabaseEnv,
 };
 use reth_exex::ExExContext;
-use reth_network::frost::manager::FrostConfig;
-use reth_network::{NetworkBuilder, NetworkConfig, NetworkHandle};
+use reth_network::{frost::manager::FrostConfig, NetworkBuilder, NetworkConfig, NetworkHandle};
 use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeTypes};
 use reth_node_core::{
     cli::config::{PayloadBuilderConfig, RethTransactionPoolConfig},

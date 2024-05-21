@@ -19,8 +19,8 @@ use reth_network::{
     config::NetworkMode,
     frost::manager::{FrostConfig, FrostHandle},
     import::BlockImport,
+    NetworkBuilder, NetworkConfig, NetworkManager,
 };
-use reth_network::{NetworkBuilder, NetworkConfig, NetworkManager};
 use reth_primitives::{
     constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, kzg::KzgSettings, stage::StageId,
     BlockHashOrNumber, BlockNumber, ChainSpec, Head, SealedHeader, B256, MAINNET,
