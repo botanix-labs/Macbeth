@@ -183,4 +183,5 @@ message GetSessionIdsResponse {
 enum SigningStatus {
     RUNNING = 0;
     FINALIZED = 1;
+    FAILED = 2;
 }

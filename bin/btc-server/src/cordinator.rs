@@ -9,16 +9,16 @@ use crate::{
 };
 use std::collections::HashMap;
 
-use crate::rpc;
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::RpcApi;
+use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PsbtExt, PsbtInputExt},
+    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -369,29 +369,14 @@ impl App {
         Ok(psbt)
     }
 
-    /// Retruns signing status
+    /// Returns signing status
     pub(crate) async fn get_signing_status(
         &self,
         signing_session_id: &[u8; 32],
-    ) -> Result<rpc::SigningStatus, CoordinatorError> {
-        let psbt =
-            self.db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
-
-        //psbt.finalize(secp)
-
-        let mut is_finalized = true;
-        for (_index, psbt_input) in psbt.inputs.iter().enumerate() {
-            if psbt_input.sighash_type.is_none() || psbt_input.tap_key_sig.is_none() {
-                is_finalized = false;
-                break;
-            }
-        }
-
-        if is_finalized {
-            Ok(rpc::SigningStatus::Finalized)
-        } else {
-            Ok(rpc::SigningStatus::Running)
-        }
+    ) -> Result<SigningStatus, CoordinatorError> {
+        self.db
+            .get_signing_status(signing_session_id)
+            .map_err(|_| CoordinatorError::CouldNotFindPsbt)
     }
 
     /// Retruns signing status

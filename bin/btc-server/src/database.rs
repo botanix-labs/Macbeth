@@ -4,7 +4,9 @@ use bitcoin::{
     psbt::{self, Psbt},
     OutPoint, TxOut,
 };
+use client::SigningStatus;
 use frost_secp256k1_tr as frost;
+use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -116,13 +118,6 @@ impl Db {
     pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<[u8; 32]>, Error> {
         let mut ret = Vec::new();
         let mut results = 0;
-
-        let x = self.psbt.iter().count();
-        if x > 0 {
-            panic!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx");
-        }
-
-        info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx {:?}", x);
         for res in self.psbt.iter() {
             let (k, _) = res?;
             let signing_session_id: [u8; 32] =
@@ -134,6 +129,22 @@ impl Db {
             ret.push(signing_session_id);
         }
         Ok(ret)
+    }
+
+    pub fn get_signing_status(
+        &self,
+        signing_session_id: &[u8; 32],
+    ) -> Result<SigningStatus, Error> {
+        match self.get_psbt(signing_session_id)? {
+            Some(psbt) => {
+                let secp = secp256k1::Secp256k1::new();
+                match psbt.finalize(&secp) {
+                    Ok(_) => Ok(SigningStatus::Finalized),
+                    Err(_) => Ok(SigningStatus::Running),
+                }
+            }
+            None => Ok(SigningStatus::Failed), // session id deleted/expired
+        }
     }
 
     /// Retrieves the public key package stored in the database, if available.
@@ -451,7 +462,6 @@ mod tests {
     use crate::test::create_tx;
 
     use super::*;
-    use bitcoin::Transaction;
     use tempfile::TempDir;
 
     fn setup_db() -> (Db, TempDir) {
@@ -471,7 +481,22 @@ mod tests {
         db.flush().unwrap();
 
         let signing_session_ids = db.get_session_ids(10).unwrap();
-        println!("Signing session ids {:?}", signing_session_ids);
+        assert!(signing_session_ids.len() == 1);
+    }
+
+    #[test]
+    fn test_getting_session_id_status() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        let signing_session_id: [u8; 32] = [0; 32];
+        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        db.flush().unwrap();
+
+        let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
+        let signing_status = db.get_signing_status(&signing_session_id).unwrap();
+        assert!(signing_status == SigningStatus::Running);
     }
 
     #[test]

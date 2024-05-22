@@ -197,6 +197,7 @@ pub struct GetSessionIdsResponse {
 pub enum SigningStatus {
     Running = 0,
     Finalized = 1,
+    Failed = 2,
 }
 impl SigningStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -207,6 +208,7 @@ impl SigningStatus {
         match self {
             SigningStatus::Running => "RUNNING",
             SigningStatus::Finalized => "FINALIZED",
+            SigningStatus::Failed => "FAILED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -214,6 +216,7 @@ impl SigningStatus {
         match value {
             "RUNNING" => Some(Self::Running),
             "FINALIZED" => Some(Self::Finalized),
+            "FAILED" => Some(Self::Failed),
             _ => None,
         }
     }
