@@ -6,10 +6,13 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{blockchain_tree::{
-    error::{BlockchainTreeError, CanonicalError},
-    BlockchainTreeViewer,
-}, RethError};
+use reth_interfaces::{
+    blockchain_tree::{
+        error::{BlockchainTreeError, CanonicalError},
+        BlockchainTreeViewer,
+    },
+    RethError,
+};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -75,6 +78,27 @@ pub(crate) enum ValidateBlockError {
     ProviderError(#[from] reth_provider::ProviderError),
     #[error("Failed to find tip")]
     FailedToFindTip,
+}
+
+impl PartialEq for ValidateBlockError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                ValidateBlockError::ParentBlockNotFound(a),
+                ValidateBlockError::ParentBlockNotFound(b),
+            )
+            | (
+                ValidateBlockError::ForkDepthGreaterThanOne(a),
+                ValidateBlockError::ForkDepthGreaterThanOne(b),
+            )
+            | (ValidateBlockError::AncestorNotFound(a), ValidateBlockError::AncestorNotFound(b))
+            | (
+                ValidateBlockError::BlockAlreadyInCanonChain(a),
+                ValidateBlockError::BlockAlreadyInCanonChain(b),
+            ) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// Defines the states of the state machine
@@ -317,6 +341,10 @@ where
         // Check if we are building on a block that is in the canonical chain
         // or a fork
         if block_to_sign.parent_hash == best_block_hash {
+            return Ok(());
+        } else if best_block.header.number == 0 {
+            // Case where the best block is the genesis block
+            // This should never happen
             return Ok(());
         } else {
             // if suggested block is not even registered in the canonical chain, we should not sign it
@@ -615,6 +643,7 @@ mod tests {
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
 
     use reth_provider::test_utils::MockEthProvider;
+    use secp256k1::SECP256K1;
 
     macro_rules! setup_multi_party_test {
         ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident) => {
@@ -1262,5 +1291,82 @@ mod tests {
 
             assert!(recovered);
         }
+    }
+
+    /* Validating fork */
+    #[tokio::test]
+    async fn will_not_sign_if_block_is_known() {
+        let mock_eth_provider = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+        );
+        let edh = ExtraDataHeader::default();
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+        mock_eth_provider.add_block(block.hash(), block.clone().into());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+
+        assert_eq!(
+            res.err().unwrap(),
+            ValidateBlockError::BlockAlreadyInCanonChain(block.hash_slow())
+        );
+    }
+
+    #[tokio::test]
+    async fn signing_on_parent_block() {
+        let mock_eth_provider = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+        );
+        let edh = ExtraDataHeader::default();
+        let mut parent_header = Header::default();
+        parent_header.add_extra_data_header(&edh);
+        parent_header.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(parent_header.seal_slow(), BlockBody::default());
+        mock_eth_provider.add_block(parent_block.hash(), parent_block.clone().into());
+
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.number = 1;
+        header.parent_hash = parent_block.hash_slow();
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+        // mock_eth_provider.add_block(block.hash(), block.clone().into());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+        assert!(res.is_ok());
+        // assert_eq!(
+        //     res.err().unwrap(),
+        //     ValidateBlockError::BlockAlreadyInCanonChain(block.hash_slow())
+        // );
     }
 }
