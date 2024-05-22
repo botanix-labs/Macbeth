@@ -121,11 +121,20 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> Cli<Ext> {
     ///
     /// ```no_run
     /// use clap::Parser;
-    /// use reth::cli::Cli;
+    /// use reth::cli::{
+    ///     ext::{PoaNodeCommandConfig, RethNodeComponents},
+    ///     Cli,
+    /// };
     ///
     /// #[derive(Debug, Parser)]
     /// pub struct MyArgs {
     ///     pub enable: bool,
+    /// }
+    ///
+    /// impl PoaNodeCommandConfig for MyArgs {
+    ///     fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+    ///         Ok(())
+    ///     }
     /// }
     ///
     /// Cli::parse()
