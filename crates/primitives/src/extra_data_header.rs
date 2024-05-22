@@ -16,7 +16,9 @@ const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
 
+/// Extension traits for a block hearder allowing the deserialization of an edh
 pub trait HeaderExt {
+    /// Deserializes the edh into a struct
     fn deserialize_extra_data_header(
         &self,
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError>;
