@@ -20,7 +20,13 @@
 use clap::Parser;
 use futures_util::stream::StreamExt;
 use mev_share_sse::{client::EventStream, EventClient};
-use reth::{cli::Cli, rpc::types::beacon::events::PayloadAttributesEvent};
+use reth::{
+    cli::{
+        ext::{PoaNodeCommandConfig, RethNodeComponents},
+        Cli,
+    },
+    rpc::types::beacon::events::PayloadAttributesEvent,
+};
 use reth_node_ethereum::EthereumNode;
 use std::net::{IpAddr, Ipv4Addr};
 use tracing::{info, warn};
@@ -85,6 +91,12 @@ impl BeaconEventsConfig {
                 }
             }
         }
+    }
+}
+
+impl PoaNodeCommandConfig for BeaconEventsConfig {
+    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+        Ok(())
     }
 }
 

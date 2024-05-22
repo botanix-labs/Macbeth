@@ -14,7 +14,10 @@
 
 use clap::Parser;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use reth::cli::Cli;
+use reth::cli::{
+    ext::{PoaNodeCommandConfig, RethNodeComponents},
+    Cli,
+};
 use reth_node_ethereum::EthereumNode;
 use reth_transaction_pool::TransactionPool;
 
@@ -25,7 +28,7 @@ fn main() {
                 .node(EthereumNode::default())
                 .extend_rpc_modules(move |ctx| {
                     if !args.enable_ext {
-                        return Ok(())
+                        return Ok(());
                     }
 
                     // here we get the configured pool.
@@ -54,6 +57,12 @@ struct RethCliTxpoolExt {
     /// CLI flag to enable the txpool extension namespace
     #[arg(long)]
     pub enable_ext: bool,
+}
+
+impl PoaNodeCommandConfig for RethCliTxpoolExt {
+    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+        Ok(())
+    }
 }
 
 /// trait interface for a custom rpc namespace: `txpool`

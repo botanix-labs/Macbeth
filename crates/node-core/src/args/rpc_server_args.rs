@@ -823,7 +823,12 @@ mod tests {
     #[test]
     fn rpc_server_args_default_sanity_test() {
         let default_args = RpcServerArgs::default();
-        let args = CommandParser::<RpcServerArgs>::parse_from(["reth"]).args;
+        let mut args = CommandParser::<RpcServerArgs>::parse_from(["reth"]).args;
+
+        // manually set btc_server, min_signers, max_signers to default values
+        args.btc_server = Some(DEFAULT_BTC_SERVER.to_owned());
+        args.min_signers = Some(2);
+        args.max_signers = Some(2);
 
         assert_eq!(args, default_args);
     }

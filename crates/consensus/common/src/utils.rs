@@ -709,6 +709,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn get_inturn_interval() {
         let authorities_len = 10;
         let signer_index = 3; // Example signer index

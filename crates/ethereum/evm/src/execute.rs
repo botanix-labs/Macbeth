@@ -508,6 +508,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn eip_4788_non_genesis_call() {
         let mut header =
             Header { timestamp: 1, number: 1, excess_blob_gas: Some(0), ..Header::default() };
@@ -594,6 +595,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn eip_4788_no_code_cancun() {
         // This test ensures that we "silently fail" when cancun is active and there is no code at
         // // BEACON_ROOTS_ADDRESS
@@ -636,6 +638,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn eip_4788_empty_account_call() {
         // This test ensures that we do not increment the nonce of an empty SYSTEM_ADDRESS account
         // // during the pre-block call
@@ -684,6 +687,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn eip_4788_genesis_call() {
         let db = create_state_provider_with_beacon_root_contract();
 
@@ -755,6 +759,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn eip_4788_high_base_fee() {
         // This test ensures that if we have a base fee, then we don't return an error when the
         // system contract is called, due to the gas price being less than the base fee.

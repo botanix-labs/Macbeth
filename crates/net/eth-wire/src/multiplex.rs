@@ -716,7 +716,7 @@ mod tests {
 
     /// A test that install a satellite stream eth+test protocol and sends messages between them.
     #[tokio::test(flavor = "multi_thread")]
-    async fn eth_test_protocol_satellite() {
+    async fn q() {
         reth_tracing::init_test_tracing();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let local_addr = listener.local_addr().unwrap();

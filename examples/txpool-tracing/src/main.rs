@@ -14,7 +14,10 @@ use clap::Parser;
 use futures_util::StreamExt;
 use reth::{
     builder::NodeHandle,
-    cli::Cli,
+    cli::{
+        ext::{PoaNodeCommandConfig, RethNodeComponents},
+        Cli,
+    },
     primitives::{Address, IntoRecoveredTransaction},
     rpc::{
         compat::transaction::transaction_to_call_request,
@@ -78,5 +81,11 @@ impl RethCliTxpoolExt {
     /// Check if the recipient is in the list of recipients to trace.
     pub fn is_match(&self, recipient: &Address) -> bool {
         self.recipients.is_empty() || self.recipients.contains(recipient)
+    }
+}
+
+impl PoaNodeCommandConfig for RethCliTxpoolExt {
+    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+        Ok(())
     }
 }

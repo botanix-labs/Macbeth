@@ -1774,14 +1774,11 @@ pub(crate) fn build_transaction_receipt_with_block_receipts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        eth::{
-            botanix_config::{Botanix, BotanixConfig},
-            cache::EthStateCache,
-            gas_oracle::GasPriceOracle,
-            FeeHistoryCache, FeeHistoryCacheConfig,
-        },
-        BlockingTaskPool,
+    use crate::eth::{
+        botanix_config::{Botanix, BotanixConfig},
+        cache::EthStateCache,
+        gas_oracle::GasPriceOracle,
+        FeeHistoryCache, FeeHistoryCacheConfig,
     };
     use reth_evm_ethereum::EthEvmConfig;
     use reth_network_api::noop::NoopNetwork;
@@ -1811,6 +1808,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             fee_history_cache,
             evm_config,
+            None,
             Botanix::new(BotanixConfig::default()),
         );
 

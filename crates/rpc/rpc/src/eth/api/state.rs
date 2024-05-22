@@ -118,14 +118,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        eth::{
-            botanix_config::{Botanix, BotanixConfig},
-            cache::EthStateCache,
-            gas_oracle::GasPriceOracle,
-            FeeHistoryCache, FeeHistoryCacheConfig,
-        },
-        BlockingTaskPool,
+    use crate::eth::{
+        botanix_config::{Botanix, BotanixConfig},
+        cache::EthStateCache,
+        gas_oracle::GasPriceOracle,
+        FeeHistoryCache, FeeHistoryCacheConfig,
     };
     use reth_evm_ethereum::EthEvmConfig;
     use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, StorageKey, StorageValue};
@@ -151,6 +148,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             FeeHistoryCache::new(cache, FeeHistoryCacheConfig::default()),
             evm_config,
+            None,
             Botanix::new(BotanixConfig::default()),
         );
         let address = Address::random();
@@ -176,6 +174,7 @@ mod tests {
             BlockingTaskPool::build().expect("failed to build tracing pool"),
             FeeHistoryCache::new(cache, FeeHistoryCacheConfig::default()),
             evm_config,
+            None,
             Botanix::new(BotanixConfig::default()),
         );
 

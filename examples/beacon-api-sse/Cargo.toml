@@ -14,3 +14,4 @@ tracing.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, features = ["time"] }
 mev-share-sse = {  version = "0.2.0" , default-features = false }
+eyre.workspace = true

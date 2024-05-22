@@ -1245,6 +1245,7 @@ name = "beacon-api-sse"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "futures-util",
  "mev-share-sse",
  "reth",
@@ -2514,6 +2515,7 @@ name = "custom-inspector"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "futures-util",
  "reth",
  "reth-node-ethereum",
@@ -6242,9 +6244,8 @@ dependencies = [
 name = "node-event-hooks"
 version = "0.0.0"
 dependencies = [
- "clap",
- "eyre",
  "reth",
+ "reth-node-ethereum",
 ]
 
 [[package]]
@@ -12037,6 +12038,7 @@ name = "txpool-tracing"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "futures-util",
  "reth",
  "reth-node-ethereum",

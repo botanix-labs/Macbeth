@@ -530,6 +530,7 @@ mod test {
         hash_types::TxMerkleNode,
         hashes::Hash,
         psbt::{Input, Psbt},
+        transaction::Version,
         BlockHash, CompactTarget,
     };
     use rand::Rng;
@@ -692,7 +693,7 @@ mod test {
     #[test]
     fn test_get_witness_data_from_psbt() {
         let unsigned_tx = bitcoin::Transaction {
-            version: 2,
+            version: Version(2),
             lock_time: bitcoin::absolute::LockTime::from_height(0).unwrap(),
             input: vec![],
             output: vec![],

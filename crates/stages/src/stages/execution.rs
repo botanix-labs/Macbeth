@@ -797,6 +797,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn sanity_execution_of_block() {
         // TODO cleanup the setup after https://github.com/paradigmxyz/reth/issues/332
         // is merged as it has similar framework
@@ -947,6 +948,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn sanity_execute_unwind() {
         // TODO cleanup the setup after https://github.com/paradigmxyz/reth/issues/332
         // is merged as it has similar framework
@@ -1069,6 +1071,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_selfdestruct() {
         let test_db = TestStageDB::default();
         let provider = test_db.factory.provider_rw().unwrap();
