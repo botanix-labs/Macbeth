@@ -71,6 +71,9 @@ mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
 
+/// Block time duration (secs)
+pub const BLOCK_TIME_DURATION_SECS: u64 = 1 * 60;
+
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.
