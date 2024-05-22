@@ -212,7 +212,7 @@ where
     ) {
         let Self {
             btc_server,
-            client: _,
+            client,
             consensus,
             storage,
             to_engine,
@@ -289,9 +289,16 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
+<<<<<<< HEAD
             let task = PbftTask::new(
                 frost_handle.expect("Requires frost handle"),
                 frost_config,
+=======
+            let pbft = PbftTask::new(
+                client,
+                frost_handle.clone().expect("Requires frost handle"),
+                frost_config.unwrap(),
+>>>>>>> c0388cefd (using block height)
                 storage.clone(),
                 sk,
                 pbft_task_notifications1_rx,
