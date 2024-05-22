@@ -1,5 +1,6 @@
-use crate::utils::retry_exec;
+use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
+use reth_interfaces::blockchain_tree::BlockchainTreeViewer;
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
@@ -10,7 +11,6 @@ use reth_network::frost::{
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_primitives::{
-    constants::EPOCH_DURATION,
     extra_data_header::{
         ExtraDataHeaderDeserializeError, ExtraDataHeaderSerializeError,
         ValidateAuthoritySignatureError,
@@ -18,6 +18,7 @@ use reth_primitives::{
     header_ext::HeaderExt,
     BlockBody, BlockHash, SealedBlock,
 };
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -29,8 +30,6 @@ use tokio::sync::{
     RwLock,
 };
 use tracing::{debug, error, info, warn};
-
-const BLOCK_TIME_DURATION_SECS: u64 = 1 * 10;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -94,7 +93,8 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<F: ToFrostManager> {
+pub(crate) struct PbftStateMachine<F: ToFrostManager, Client> {
+    client: Client,
     frost_handle: F,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -106,9 +106,13 @@ pub(crate) struct PbftStateMachine<F: ToFrostManager> {
     personal_frost_identifier: frost::Identifier,
 }
 
-impl<F: ToFrostManager> PbftStateMachine<F> {
+impl<F: ToFrostManager, Client> PbftStateMachine<F, Client>
+where
+    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+{
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
+        client: Client,
         frost_handle: F,
         config: FrostConfig,
         peer_id: PeerId,
@@ -135,6 +139,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             >,
         > = Arc::clone(&pre_commitments);
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
+        let client_clone = client.clone();
         tokio::spawn(async move {
             loop {
                 // find stale tx hashes
@@ -143,7 +148,15 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
                     .values()
                     .cloned()
                     .filter_map(|sealed_block| {
-                        if sealed_block.timestamp < unix_timestamp() - sleep_duration.as_secs() {
+                        let tip = client_clone.canonical_tip();
+                        let best_block_height = client_clone
+                            .block_by_number(tip.number)
+                            .ok()
+                            .flatten()
+                            .map(|b| b.header.number)
+                            .unwrap_or_default();
+                        let best_block_height = (best_block_height - 2).max(0);
+                        if sealed_block.header.number < best_block_height {
                             Some(sealed_block.hash())
                         } else {
                             None
@@ -170,6 +183,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         });
 
         Self {
+            client,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -184,6 +198,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     /// Resets the state machine to its initial state
     pub(crate) fn reset(self) -> Self {
         Self {
+            client: self.client,
             personal_frost_identifier: self.personal_frost_identifier,
             frost_handle: self.frost_handle,
             state: BTreeMap::new(),
@@ -207,7 +222,10 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     }
 }
 
-impl<F: ToFrostManager> PbftStateMachine<F> {
+impl<F: ToFrostManager, Client> PbftStateMachine<F, Client>
+where
+    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+{
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
@@ -567,8 +585,11 @@ mod tests {
             let mut $block_to_propose = None;
             let mut $coord = None;
 
+            let client = ClientMock {};
             for i in 0..$n {
+                let client = client.clone();
                 let pbft_state_machine = PbftStateMachine::new(
+                    client,
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
                     $peer_ids[i],
@@ -581,15 +602,21 @@ mod tests {
                     $block_to_propose = Some($signed_blocks[i].clone());
                 }
             }
-            let mut $block_to_propose = $block_to_propose.expect("should have a block to propose");
+            let $block_to_propose = $block_to_propose.expect("should have a block to propose");
             let mut $coord = $coord.expect("should have a coordinator");
         };
     }
 
     use super::*;
     use rand;
+    use reth_interfaces::provider::ProviderResult;
     use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
+    use reth_primitives::{
+        extra_data_header::ExtraDataHeader, Block, BlockNumber, ChainInfo, Header, Receipt,
+        SealedHeader, B256,
+    };
+    use reth_provider::{BlockHashReader, BlockIdReader, BlockNumReader, ReceiptProviderIdExt};
+    use reth_rpc_types::BlockId;
 
     // mock frost handle
     #[derive(Clone)]
@@ -607,6 +634,103 @@ mod tests {
                     // sender.send(tx).unwrap();
                 }
             }
+        }
+    }
+
+    #[derive(Clone)]
+    struct ClientMock {}
+
+    impl BlockReaderIdExt for ClientMock {
+        fn block_by_id(&self, id: BlockId) -> ProviderResult<Option<Block>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn sealed_header_by_id(&self, id: BlockId) -> ProviderResult<Option<SealedHeader>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn header_by_id(&self, id: BlockId) -> ProviderResult<Option<Header>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn ommers_by_id(&self, id: BlockId) -> ProviderResult<Option<Vec<Header>>> {
+            ProviderResult::Ok(None)
+        }
+    }
+
+    impl BlockchainTreeViewer for ClientMock {
+        fn blocks(&self) -> BTreeMap<reth_primitives::BlockNumber, HashSet<BlockHash>> {
+            BTreeMap::default()
+        }
+
+        fn header_by_hash(&self, hash: BlockHash) -> Option<reth_primitives::SealedHeader> {
+            None
+        }
+
+        fn block_by_hash(&self, hash: BlockHash) -> Option<SealedBlock> {
+            None
+        }
+
+        fn block_with_senders_by_hash(
+            &self,
+            hash: BlockHash,
+        ) -> Option<reth_primitives::SealedBlockWithSenders> {
+            None
+        }
+
+        fn buffered_block_by_hash(&self, block_hash: BlockHash) -> Option<SealedBlock> {
+            None
+        }
+
+        fn buffered_header_by_hash(
+            &self,
+            block_hash: BlockHash,
+        ) -> Option<reth_primitives::SealedHeader> {
+            None
+        }
+
+        fn canonical_blocks(&self) -> BTreeMap<reth_primitives::BlockNumber, BlockHash> {
+            BTreeMap::default()
+        }
+
+        fn find_canonical_ancestor(&self, parent_hash: BlockHash) -> Option<BlockHash> {
+            None
+        }
+
+        fn is_canonical(&self, hash: BlockHash) -> reth_interfaces::RethResult<bool> {
+            reth_interfaces::RethResult::Ok(true)
+        }
+
+        fn lowest_buffered_ancestor(
+            &self,
+            hash: BlockHash,
+        ) -> Option<reth_primitives::SealedBlockWithSenders> {
+            None
+        }
+
+        fn canonical_tip(&self) -> reth_rpc_types::BlockNumHash {
+            reth_rpc_types::BlockNumHash::default()
+        }
+
+        fn pending_blocks(&self) -> (reth_primitives::BlockNumber, Vec<BlockHash>) {
+            (reth_primitives::BlockNumber::default(), vec![])
+        }
+
+        fn pending_block_num_hash(&self) -> Option<reth_rpc_types::BlockNumHash> {
+            None
+        }
+
+        fn pending_block_and_receipts(
+            &self,
+        ) -> Option<(SealedBlock, Vec<reth_primitives::Receipt>)> {
+            None
+        }
+
+        fn receipts_by_block_hash(
+            &self,
+            block_hash: BlockHash,
+        ) -> Option<Vec<reth_primitives::Receipt>> {
+            None
         }
     }
 

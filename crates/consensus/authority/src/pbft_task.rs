@@ -34,7 +34,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan>,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive pbft notifications (from the block production task)
@@ -60,6 +60,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        client: Client,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<Client>,
@@ -68,8 +69,13 @@ where
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
-        let pbft_state_machine =
-            PbftStateMachine::new(frost_handle.clone(), config.clone(), my_peerid, secret_key);
+        let pbft_state_machine = PbftStateMachine::new(
+            client,
+            frost_handle.clone(),
+            config.clone(),
+            my_peerid,
+            secret_key,
+        );
         Self {
             frost_handle,
             pbft_state_machine,
