@@ -29,7 +29,7 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoincore_rpc::{Auth, RpcApi};
 
-pub async fn pbft_e2e_failed_pbft_round(
+pub async fn pbft_e2e_failed_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection

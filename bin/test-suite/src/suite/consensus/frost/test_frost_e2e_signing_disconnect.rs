@@ -28,7 +28,7 @@ use reth_btc_wallet::address::EthAddress;
 use reth_primitives::Address;
 use std::{str::FromStr, time::Duration};
 
-pub async fn frost_e2e_failed_signing_round(
+pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
