@@ -11,6 +11,7 @@ use reth_interfaces::{
         error::{BlockchainTreeError, CanonicalError},
         BlockchainTreeViewer,
     },
+    p2p::headers::client::HeadersClient,
     RethError,
 };
 use reth_network::frost::{
@@ -78,6 +79,10 @@ pub(crate) enum ValidateBlockError {
     ProviderError(#[from] reth_provider::ProviderError),
     #[error("Failed to find tip")]
     FailedToFindTip,
+    #[error(
+        "Parent hash known but is not canonnical tip, proposed block hash: {0}, parent hash: {1}"
+    )]
+    ParentHashNotCanonicalTip(BlockHash, BlockHash),
 }
 
 impl PartialEq for ValidateBlockError {
@@ -141,7 +146,7 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client> {
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient> {
     client: Client,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
@@ -153,9 +158,12 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client> {
     secret_key: secp256k1::SecretKey,
     personal_frost_identifier: frost::Identifier,
     task_executor: Option<TaskExecutor>,
+    network_client: NetworkClient,
 }
 
-impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient>
+{
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         client: Client,
@@ -164,6 +172,7 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
         task_executor: Option<TaskExecutor>,
+        network_client: NetworkClient,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
@@ -183,6 +192,7 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
             sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
             secret_key,
             task_executor: task_executor.clone(),
+            network_client,
         }
     }
 
@@ -199,6 +209,7 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
             sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
             secret_key: self.secret_key,
             task_executor: self.task_executor,
+            network_client: self.network_client,
         }
     }
 
@@ -214,10 +225,12 @@ impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
     }
 }
 
-impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient>
 where
     Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
+    NetworkClient: HeadersClient + Clone + 'static,
 {
     pub(crate) fn spawn_cleanup_task(&mut self) {
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
@@ -347,24 +360,31 @@ where
             // This should never happen
             return Ok(());
         } else {
-            // if suggested block is not even registered in the canonical chain, we should not sign it
-            if !self.client.contains(block_to_sign.parent_hash) {
-                return Err(ValidateBlockError::ParentBlockNotFound(block_to_sign.parent_hash));
-            }
-            // We are signing a forked block
-            // We need to be sure that the fork is only 1 block deep
-            // To do that we retrieve the last canonical ancestor
-            // That ancestor should be the grandfather of the block we are signing
-            //    tip -1      current tip       next tip
-            // [ancestor] -> [best_block] -> [block_to_sign]
-            let ancestor_block_hash = self
-                .client
-                .find_canonical_ancestor(block_to_sign.parent_hash)
-                .expect("ancestor should exist");
-            if ancestor_block_hash != best_block.parent_hash {
-                return Err(ValidateBlockError::ForkDepthGreaterThanOne(block_hash));
+            // Somehow we have the parent block but its not the current canon chain?
+            // This should not happen
+            if self.client.contains(block_to_sign.parent_hash)? {
+                return Err(ValidateBlockError::ParentHashNotCanonicalTip(
+                    block_to_sign.hash_slow(),
+                    block_to_sign.parent_hash,
+                ));
             }
 
+            // we could be missing the parent block that is being suggested indicating that there is a fork
+            // retrieve the missing block via the network client.
+            // if that retrieved block's parent is not the best block's parent hash then the fork is deeper than 1 block
+            // and we do not sign
+            // TODO does the peer that we are getting this block from matter?
+            match self.network_client.get_header(block_to_sign.parent_hash).await? {
+                Ok(header) => {
+                    if header.parent_hash != best_block.parent_hash {
+                        return Err(ValidateBlockError::ForkDepthGreaterThanOne(block_hash));
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get header for block: {:?}", e);
+                    return Err(ValidateBlockError::ParentBlockNotFound(block_to_sign.parent_hash));
+                }
+            }
             return Ok(());
         }
     }
