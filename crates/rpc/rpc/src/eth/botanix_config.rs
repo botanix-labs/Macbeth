@@ -263,7 +263,6 @@ impl Botanix {
                 bitcoin::BlockHash::from_str(&block_hash)
                     .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?,
             )
-            .await
             .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
         if !txids.contains(&tx_id) {
             return Err(MerkleProofRPCError::TxIdNotInBlock);
@@ -283,7 +282,6 @@ impl Botanix {
             .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
         let fee_result = bitcoind_client
             .get_estimate_smart_fee()
-            .await
             .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {

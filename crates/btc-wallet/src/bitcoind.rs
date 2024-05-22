@@ -1,5 +1,5 @@
 use bitcoincore_rpc::{
-    json::{EstimateMode, EstimateSmartFeeResult, GetBlockResult},
+    json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
     Auth, Client, RpcApi,
 };
 use serde::{Deserialize, Serialize};
@@ -63,13 +63,13 @@ impl BitcoindClient {
         &self.rpc
     }
 
-    pub async fn get_best_block_hash(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
+    pub fn get_best_block_hash(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
         let best_block_hash =
             self.rpc.get_best_block_hash().map_err(BitcoindError::BestBlockHashRetrievalFailed)?;
         Ok(best_block_hash)
     }
 
-    pub async fn get_block_header(
+    pub fn get_block_header(
         &self,
         block_hash: bitcoin::BlockHash,
     ) -> Result<bitcoin::blockdata::block::Header, BitcoindError> {
@@ -98,28 +98,28 @@ impl BitcoindClient {
         }
     }
 
-    pub async fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
+    pub fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
         let block_hash =
             self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
         Ok(block_hash)
     }
 
-    pub async fn get_block_info(
+    pub fn get_block_info(
         &self,
         block_hash: &bitcoin::BlockHash,
-    ) -> Result<GetBlockResult, BitcoindError> {
+    ) -> Result<GetBlockHeaderResult, BitcoindError> {
         let block =
-            self.rpc.get_block_info(block_hash).map_err(BitcoindError::BlockInfoRetrievalFailed)?;
+            self.rpc.get_block_header_info(block_hash).map_err(BitcoindError::BlockInfoRetrievalFailed)?;
         Ok(block)
     }
 
-    pub async fn get_tip(&self) -> Result<u64, BitcoindError> {
+    pub fn get_tip(&self) -> Result<u64, BitcoindError> {
         let tip = self.rpc.get_block_count().map_err(BitcoindError::BlockTipRetrievalFailed)?;
 
         Ok(tip)
     }
 
-    pub async fn get_txids(
+    pub fn get_txids(
         &self,
         block_hash: bitcoin::BlockHash,
     ) -> Result<Vec<bitcoin::Txid>, BitcoindError> {
@@ -130,7 +130,7 @@ impl BitcoindClient {
         Ok(block.tx)
     }
 
-    pub async fn broadcast_tx(&self, raw_tx: &String) -> Result<bitcoin::Txid, BitcoindError> {
+    pub fn broadcast_tx(&self, raw_tx: &String) -> Result<bitcoin::Txid, BitcoindError> {
         let tx_id = self
             .rpc
             .send_raw_transaction(raw_tx.to_owned())
@@ -156,7 +156,7 @@ impl BitcoindClient {
         }
     }
 
-    pub async fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
+    pub fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
         self.rpc
             .estimate_smart_fee(1, Some(EstimateMode::Conservative))
             .map_err(BitcoindError::EstimateSmartFeeFailed)
