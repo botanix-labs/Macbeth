@@ -1,3 +1,21 @@
+use std::{str::FromStr, time::Duration};
+
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
+use bitcoincore_rpc::{Auth, RpcApi};
+use ethers::{
+    prelude::Provider,
+    providers::{Http, Middleware},
+    types::{NameOrAddress, U256},
+};
+use reth_botanix_lib::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta},
+    utils::AmountExt,
+};
+use reth_btc_wallet::address::EthAddress;
+use reth_cli_runner::CliRunner;
+use reth_primitives::Address;
+
 use crate::{
     it_info_print,
     suite::consensus::{
@@ -11,24 +29,6 @@ use crate::{
         ConsensusIntegrationTestSuite,
     },
 };
-use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
-use ethers::{
-    prelude::Provider,
-    providers::{Http, Middleware},
-    types::{NameOrAddress, U256},
-};
-use reth_botanix_lib::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::PeginMeta,
-    utils::AmountExt,
-};
-use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
-use reth_primitives::{Address, Receipt, B256};
-use reth_provider::chain::BlockReceipts;
-use std::{collections::HashMap, str::FromStr, time::Duration};
-
-use bitcoincore_rpc::{Auth, RpcApi};
 
 pub async fn frost_e2e_stable(
     suite: &ConsensusIntegrationTestSuite,
