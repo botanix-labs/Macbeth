@@ -79,6 +79,9 @@ rand = "0.8.5"
 [dev-dependencies]
 pretty_assertions = "1.3.0"
 
+[build-dependencies]
+ethers = "2.0.11"
+
 [features]
 default = ["tests"]
 tests = []
