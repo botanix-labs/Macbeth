@@ -43,6 +43,8 @@ pub(crate) enum Error {
     MissingInTurnSignature,
     #[error("Proposed block has too many signatures")]
     TooManySignaturesOnProposedBlock,
+    #[error("Proposed block has failed validation")]
+    BlockValidationFailed,
     #[error("Failed to recover signature: {0}")]
     RecoverSignatureError(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
@@ -318,6 +320,12 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             return Ok(());
         }
 
+        // perform block validation
+        if !self.validate_block(&block).await? {
+            warn!(target: "pbft" ,"Block proposal failed validation");
+            return Err(Error::BlockValidationFailed);
+        }
+
         if peer_id == self.peer_id {
             return Ok(());
         }
@@ -418,6 +426,12 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             return Ok(());
         }
 
+        // perform block validation
+        if !self.validate_block(&block).await? {
+            warn!(target: "pbft" ,"Block proposal failed validation");
+            return Err(Error::BlockValidationFailed);
+        }
+
         // Add the peer's precommitment
         let pre_commits = self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new);
         pre_commits.insert(peer_id);
@@ -444,6 +458,13 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         if peer_id == self.peer_id {
             return Ok(None);
         }
+
+        // perform block validation
+        if !self.validate_block(&block).await? {
+            warn!(target: "pbft" ,"Block proposal failed validation");
+            return Err(Error::BlockValidationFailed);
+        }
+
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
