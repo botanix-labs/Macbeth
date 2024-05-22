@@ -5,7 +5,7 @@ use crate::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
         FrostParseError,
     },
-    Storage,
+    Storage, BLOCK_TIME_DURATION_SECS,
 };
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
@@ -25,8 +25,6 @@ use tokio::sync::{
     RwLock,
 };
 use tracing::{error, info, warn};
-
-const BLOCK_TIME_DURATION_SECS: u64 = 1 * 10;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
