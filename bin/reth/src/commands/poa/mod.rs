@@ -383,7 +383,7 @@ where {
                 let mut current_block_hash = bitcoin::BlockHash::all_zeros();
                 loop {
                     let mut header_write = bitcoin_block_headers.write().await;
-                    let best_block_hash = match bitcoind_client.get_best_block_hash().await {
+                    let best_block_hash = match bitcoind_client.get_best_block_hash() {
                         Ok(current_block_hash) => current_block_hash,
                         Err(_) => {
                             drop(header_write);
@@ -394,7 +394,7 @@ where {
                     };
                     if current_block_hash != best_block_hash {
                         info!("Async bitcoin worker tip mismatch");
-                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash).await {
+                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash) {
                             Ok(block_header) => block_header,
                             Err(_) => {
                                 drop(header_write);
@@ -404,7 +404,7 @@ where {
                             }
                         };
 
-                        let tip = match bitcoind_client.get_tip().await {
+                        let tip = match bitcoind_client.get_tip() {
                             Ok(block_header) => block_header,
                             Err(_) => {
                                 drop(header_write);
