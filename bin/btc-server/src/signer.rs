@@ -6,7 +6,11 @@ use crate::{
 use bdk::miniscript::psbt::Error as PsbtError;
 
 use bdk::psbt::PsbtUtils;
-use bitcoin::{psbt::Psbt, FeeRate, TxOut};
+use bitcoin::{
+    psbt::{ExtractTxError, Psbt},
+    taproot::SigFromSliceError,
+    FeeRate, TxOut,
+};
 use bitcoincore_rpc::json::EstimateMode;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
@@ -56,6 +60,8 @@ pub enum SigningRound1Error {
     FeeRateDifferenceTooGreat,
     #[error("failed to validate psbt: {0}")]
     FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
+    #[error("extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 
 #[derive(Debug, Error)]
@@ -80,6 +86,8 @@ pub enum SigningRound2Error {
     ),
     #[error("failed to validate psbt: {0}")]
     FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
+    #[error("extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 impl From<SigningRound1Error> for SigningError {
     fn from(e: SigningRound1Error) -> Self {
@@ -102,9 +110,13 @@ pub enum SigningFinalizeError {
     #[error("PSBT finalization failed : {0:?}")]
     PsbtFinalizationFailed(Vec<PsbtError>),
     #[error("Taproot Signature validation error: {0}")]
-    TaprootSignatureValidationError(#[from] bitcoin::taproot::Error),
+    TaprootSignatureValidationError(#[from] bitcoin::taproot::TaprootError),
     #[error("internal DB error")]
     DbError(#[from] DbError),
+    #[error("sig from slice error: {0}")]
+    SigFromSliceError(#[from] SigFromSliceError),
+    #[error("extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 
 #[derive(Debug, Error)]
@@ -140,8 +152,9 @@ impl App {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
-        let psbt_fee_rate =
-            util::convert_bdk_feerate_to_bitcoin(psbt.fee_rate().expect("valid fee rate"));
+
+        // TODO(armins) handle error
+        let psbt_fee_rate = psbt.fee_rate().expect("valid fee rate");
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
@@ -160,7 +173,7 @@ impl App {
             return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
         }
 
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx()?;
         // Validate the psbt
         for (index, input) in psbt.inputs.iter().enumerate() {
             if input.witness_utxo.is_none() {
@@ -215,7 +228,7 @@ impl App {
         // Validate PSBT
         validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
 
-        let tx = psbt.clone().extract_tx();
+        let tx = psbt.clone().extract_tx()?;
         let num_inputs = tx.input.len();
         let mut signing_packages = psbt.signing_packages()?;
 

@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use base64::decode as base64_decode;
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, FeeRate, OutPoint, TxOut};
+use bitcoin::{consensus::encode as btcencode, psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
@@ -168,7 +168,7 @@ impl rpc::BtcServer for App {
                     .assume_checked()
                     .script_pubkey();
 
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
             })
             .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
 
@@ -525,7 +525,7 @@ impl rpc::BtcServer for App {
                     .assume_checked()
                     .script_pubkey();
 
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
             })
             .collect();
 

@@ -17,15 +17,16 @@ use ethers::{
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
-use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_primitives::Address;
-use std::{str::FromStr, time::Duration};
+use reth_cli_runner::CliRunner;
+use reth_primitives::{Address, Receipt, B256};
+use reth_provider::chain::BlockReceipts;
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use bitcoincore_rpc::{Auth, RpcApi};
 
@@ -114,6 +115,10 @@ pub async fn frost_e2e_stable(
 
     it_info_print!("Gateway Address Response", gateway_address_response);
 
+    // print balance
+    let balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
+    it_info_print!("Bitcoin balance", balance);
+
     // Send some bitcoin to that gateway address
     let btc_address = bitcoin::Address::from_str(gateway_address_response.gateway_address.as_str())
         .expect("valid btc_address")
@@ -139,7 +144,7 @@ pub async fn frost_e2e_stable(
         .enumerate()
         .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
         .unwrap();
-    let amount = U256::from(Amount::from_sat(pegin_output.value).to_wei());
+    let amount = pegin_output.value.to_wei();
     it_info_print!("Btc Amount", amount);
 
     // get block headers
@@ -192,6 +197,7 @@ pub async fn frost_e2e_stable(
     it_info_print!("Mint Tx Receipt ", tx_receipt);
 
     // wait for a few blocks to make sure the tx got included and mined
+    it_info_print!("Waiting for botanix event after mint call");
     await_botanix_event(&mut rx, *MINT_TOPIC).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -267,7 +273,7 @@ pub async fn frost_e2e_stable(
     }
     assert!(match_found);
     // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > 0);
+    assert!(pegout_tx.output[1].value > Amount::from_sat(0));
 
     Ok(())
 }

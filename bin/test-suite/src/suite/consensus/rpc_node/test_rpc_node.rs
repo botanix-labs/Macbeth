@@ -1,5 +1,6 @@
 use ethers::types::U64;
-use reth::{core::cli::runner::CliRunner, primitives::ChainSpec};
+use reth::primitives::ChainSpec;
+use reth_cli_runner::CliRunner;
 use std::time::Duration;
 
 use crate::{

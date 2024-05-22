@@ -1,5 +1,12 @@
 //! Botanix consensus utility functions
-use bitcoin::{block::Header, psbt::PartiallySignedTransaction, witness::Witness};
+use std::{io::Write, time::Duration};
+
+use bitcoin::{
+    block::Header,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    witness::Witness,
+};
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use futures_util::Future;
 use reth_botanix_lib::{
@@ -18,7 +25,6 @@ use reth_primitives::{
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
-use std::time::Duration;
 use uuid::Uuid;
 
 use reth_rpc_types::BlockHashOrNumber;
@@ -204,7 +210,7 @@ pub(crate) async fn process_receipts(
 ///
 /// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
 fn get_pegout_data(log: Log, btc_network: bitcoin::Network) -> Option<PegoutData> {
-    for topic in &log.topics {
+    for topic in &log.topics().to_vec() {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => continue,
             Ok(GenesisContractEvents::BurnEvent) => {
@@ -278,7 +284,7 @@ async fn process_botanix_log(
     btc_network: bitcoin::Network,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
-    for topic in &log.topics {
+    for topic in &log.topics().to_vec() {
         match GenesisContractEvents::try_from(*topic) {
             Ok(GenesisContractEvents::MintingEvent) => {
                 info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
@@ -393,7 +399,7 @@ pub fn is_testnet(chain_id: u64) -> bool {
     chain_id == BOTANIX_TESTNET.chain().id()
 }
 
-pub(crate) fn get_witness_data_from_psbt(psbt: PartiallySignedTransaction) -> Vec<Witness> {
+pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }
 
@@ -523,7 +529,8 @@ mod test {
     use bitcoin::{
         hash_types::TxMerkleNode,
         hashes::Hash,
-        psbt::{Input, PartiallySignedTransaction},
+        psbt::{Input, Psbt},
+        transaction::Version,
         BlockHash, CompactTarget,
     };
     use rand::Rng;
@@ -686,12 +693,12 @@ mod test {
     #[test]
     fn test_get_witness_data_from_psbt() {
         let unsigned_tx = bitcoin::Transaction {
-            version: 2,
+            version: Version(2),
             lock_time: bitcoin::absolute::LockTime::from_height(0).unwrap(),
             input: vec![],
             output: vec![],
         };
-        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsigned_tx).unwrap();
+        let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
 
         let mut input_1 = Input::default();
         input_1.final_script_witness = Some(Witness::default());

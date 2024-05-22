@@ -59,12 +59,6 @@ pub use bitcoind_args::BitcoindArgs;
 mod frost_args;
 pub use frost_args::FrostArgs;
 
-/// RollupArgs for configuring the op-reth rollup
-#[cfg(feature = "optimism")]
-mod rollup_args;
-#[cfg(feature = "optimism")]
-pub use rollup_args::RollupArgs;
-
 pub mod utils;
 
 pub mod types;

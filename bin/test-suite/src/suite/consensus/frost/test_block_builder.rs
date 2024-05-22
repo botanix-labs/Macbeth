@@ -1,8 +1,6 @@
 use bitcoincore_rpc::{Auth, RpcApi};
-use reth::{
-    core::cli::runner::CliRunner,
-    primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
-};
+use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address};
+use reth_cli_runner::CliRunner;
 
 use std::{collections::HashSet, time::Duration};
 
@@ -70,6 +68,9 @@ pub async fn block_builder(
             let (fed_member_command, _chain_spec) = fed_member_config.build_command();
             let runner = CliRunner::default();
             runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
+
+            // TODO: wire up on_node_started since reth logic has changed
+            // fed_member_config.on_node_started();
         });
         // wait for one second inbetween members start
         tokio::time::sleep(Duration::from_secs(1)).await;

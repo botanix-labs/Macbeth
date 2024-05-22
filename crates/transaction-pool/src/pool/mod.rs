@@ -103,7 +103,6 @@ use crate::{
     traits::{GetPooledTransactionLimit, NewBlobSidecar, TransactionListenerKind},
     validate::ValidTransaction,
 };
-use alloy_rlp::Encodable;
 pub use best::BestTransactionFilter;
 pub use blob::{blob_tx_priority, fee_delta};
 pub use events::{FullTransactionEvent, TransactionEvent};
@@ -303,7 +302,7 @@ where
     fn get_blob_transaction(&self, transaction: TransactionSigned) -> Option<BlobTransaction> {
         if let Ok(Some(sidecar)) = self.blob_store.get(transaction.hash()) {
             if let Ok(blob) = BlobTransaction::try_from_signed(transaction, sidecar) {
-                return Some(blob)
+                return Some(blob);
             }
         }
         None
@@ -319,22 +318,33 @@ where
         let mut elements = Vec::with_capacity(transactions.len());
         let mut size = 0;
         for transaction in transactions {
+            let encoded_len = transaction.encoded_length();
             let tx = transaction.to_recovered_transaction().into_signed();
             let pooled = if tx.is_eip4844() {
+                // for EIP-4844 transactions, we need to fetch the blob sidecar from the blob store
                 if let Some(blob) = self.get_blob_transaction(tx) {
                     PooledTransactionsElement::BlobTransaction(blob)
                 } else {
-                    continue
+                    continue;
                 }
             } else {
-                PooledTransactionsElement::from(tx)
+                match PooledTransactionsElement::try_from(tx) {
+                    Ok(element) => element,
+                    Err(err) => {
+                        debug!(
+                            target: "txpool", %err,
+                            "failed to convert transaction to pooled element; skipping",
+                        );
+                        continue;
+                    }
+                }
             };
 
-            size += pooled.length();
+            size += encoded_len;
             elements.push(pooled);
 
             if limit.exceeds(size) {
-                break
+                break;
             }
         }
 
@@ -351,7 +361,7 @@ where
             if tx.is_eip4844() {
                 self.get_blob_transaction(tx).map(PooledTransactionsElement::BlobTransaction)
             } else {
-                Some(PooledTransactionsElement::from(tx))
+                PooledTransactionsElement::try_from(tx).ok()
             }
         })
     }
@@ -510,7 +520,7 @@ where
             if added.iter().any(Result::is_ok) { self.discard_worst() } else { Default::default() };
 
         if discarded.is_empty() {
-            return added
+            return added;
         }
 
         {
@@ -540,7 +550,7 @@ where
             if listener.kind.is_propagate_only() && !propagate_allowed {
                 // only emit this hash to listeners that are only allowed to receive propagate only
                 // transactions, such as network
-                return !listener.sender.is_closed()
+                return !listener.sender.is_closed();
             }
 
             // broadcast all pending transactions to the listener
@@ -555,7 +565,7 @@ where
             if listener.kind.is_propagate_only() && !event.transaction.propagate {
                 // only emit this hash to listeners that are only allowed to receive propagate only
                 // transactions, such as network
-                return !listener.sender.is_closed()
+                return !listener.sender.is_closed();
             }
 
             listener.send(event.clone())
@@ -564,6 +574,8 @@ where
 
     /// Notify all listeners about a blob sidecar for a newly inserted blob (eip4844) transaction.
     fn on_new_blob_sidecar(&self, tx_hash: &TxHash, sidecar: &BlobTransactionSidecar) {
+        let sidecar = Arc::new(sidecar.clone());
+
         let mut sidecar_listeners = self.blob_transaction_sidecar_listener.lock();
         sidecar_listeners.retain_mut(|listener| {
             let new_blob_event = NewBlobSidecar { tx_hash: *tx_hash, sidecar: sidecar.clone() };
@@ -673,7 +685,7 @@ where
         hashes: Vec<TxHash>,
     ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
         if hashes.is_empty() {
-            return Vec::new()
+            return Vec::new();
         }
         let removed = self.pool.write().remove_transactions(hashes);
 
@@ -685,12 +697,12 @@ where
     }
 
     /// Removes and returns all transactions that are present in the pool.
-    pub(crate) fn retain_unknown<A: HandleMempoolData>(&self, announcement: &mut A) -> Option<A> {
+    pub(crate) fn retain_unknown<A: HandleMempoolData>(&self, announcement: &mut A) {
         if announcement.is_empty() {
-            return None
+            return;
         }
         let pool = self.get_pool_data();
-        Some(announcement.retain_by_hash(|tx| !pool.contains(tx)))
+        announcement.retain_by_hash(|tx| !pool.contains(tx))
     }
 
     /// Returns the transaction by hash.
@@ -726,7 +738,7 @@ where
         txs: Vec<TxHash>,
     ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
         if txs.is_empty() {
-            return Vec::new()
+            return Vec::new();
         }
         self.get_pool_data().get_all(txs).collect()
     }
@@ -734,7 +746,7 @@ where
     /// Notify about propagated transactions.
     pub(crate) fn on_propagated(&self, txs: PropagatedTransactions) {
         if txs.0.is_empty() {
-            return
+            return;
         }
         let mut listener = self.event_listener.write();
 
@@ -781,26 +793,18 @@ where
 
     /// Delete a blob from the blob store
     pub(crate) fn delete_blob(&self, blob: TxHash) {
-        if let Err(err) = self.blob_store.delete(blob) {
-            warn!(target: "txpool", %err, "[{:?}] failed to delete blobs", blob);
-            self.blob_store_metrics.blobstore_failed_deletes.increment(1);
-        }
-        self.update_blob_store_metrics();
+        let _ = self.blob_store.delete(blob);
     }
 
     /// Delete all blobs from the blob store
     pub(crate) fn delete_blobs(&self, txs: Vec<TxHash>) {
-        let num = txs.len();
-        if let Err(err) = self.blob_store.delete_all(txs) {
-            warn!(target: "txpool", %err,?num, "failed to delete blobs");
-            self.blob_store_metrics.blobstore_failed_deletes.increment(num as u64);
-        }
-        self.update_blob_store_metrics();
+        let _ = self.blob_store.delete_all(txs);
     }
 
     /// Cleans up the blob store
     pub(crate) fn cleanup_blobs(&self) {
-        self.blob_store.cleanup();
+        let stat = self.blob_store.cleanup();
+        self.blob_store_metrics.blobstore_failed_deletes.increment(stat.delete_failed as u64);
         self.update_blob_store_metrics();
     }
 
@@ -961,9 +965,9 @@ where
         loop {
             let next = self.iter.next()?;
             if self.kind.is_propagate_only() && !next.propagate {
-                continue
+                continue;
             }
-            return Some(*next.hash())
+            return Some(*next.hash());
         }
     }
 }
@@ -985,12 +989,12 @@ where
         loop {
             let next = self.iter.next()?;
             if self.kind.is_propagate_only() && !next.propagate {
-                continue
+                continue;
             }
             return Some(NewTransactionEvent {
                 subpool: SubPool::Pending,
                 transaction: next.clone(),
-            })
+            });
         }
     }
 }
@@ -1165,7 +1169,7 @@ mod tests {
         .unwrap()];
 
         // Generate a BlobTransactionSidecar from the blobs.
-        let sidecar = generate_blob_sidecar(blobs.clone());
+        let sidecar = generate_blob_sidecar(blobs);
 
         // Create an in-memory blob store.
         let blob_store = InMemoryBlobStore::default();
