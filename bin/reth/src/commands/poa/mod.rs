@@ -1,9 +1,62 @@
 //! Main node command
 
-use crate::{
-    cli::ext::{NoArgs, RethNodeComponents},
-    payload::PayloadBuilderService,
+use std::{
+    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
+    sync::Arc,
 };
+
+use bitcoin::hashes::Hash;
+use clap::{value_parser, Args, Parser};
+use eyre::Context;
+use fdlimit::raise_fd_limit;
+use futures::{stream_select, StreamExt};
+use reth_authority_consensus::{
+    extended_client::BtcServerExtendedClient, AuthorityConsensus, AuthorityConsensusBuilder,
+};
+use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
+use reth_beacon_consensus::{
+    hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
+};
+use reth_blockchain_tree::{
+    BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
+};
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
+use reth_cli_runner::CliContext;
+use reth_config::{config::StageConfig, Config};
+use reth_consensus::Consensus;
+use reth_consensus_common::{utils, utils::get_authority_signer_index};
+use reth_db::{database::Database, init_db, DatabaseEnv};
+use reth_exex::ExExManagerHandle;
+use reth_network::{
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents, NetworkManager,
+};
+use reth_node_builder::{
+    setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig, RethTransactionPoolConfig,
+};
+use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
+use reth_node_ethereum::EthEvmConfig;
+use reth_node_events::node::handle_events;
+use reth_primitives::{
+    constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
+    kzg::KzgSettings,
+    stage::StageId,
+    Bytes, ChainSpec, Head, PruneModes,
+};
+use reth_provider::{
+    providers::{BlockchainProvider, StaticFileProvider},
+    BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
+    StageCheckpointReader,
+};
+use reth_revm::EvmProcessorFactory;
+use reth_rpc::EngineApi;
+use reth_static_file::StaticFileProducer;
+use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
+use rsntp::AsyncSntpClient;
+use tokio::{
+    sync::{mpsc::unbounded_channel, oneshot, RwLock},
+    time::Duration,
+};
+use tracing::{debug, error, info};
 
 use crate::{
     args::{
@@ -11,79 +64,11 @@ use crate::{
         DatabaseArgs, DebugArgs, DevArgs, FrostArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
-    cli::ext::PoaNodeCommandConfig,
+    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
+    payload::PayloadBuilderService,
 };
 
-use futures::{stream_select, StreamExt};
-use reth_authority_consensus::AuthorityConsensusBuilder;
-use reth_basic_payload_builder::BasicPayloadJobGenerator;
-use reth_beacon_consensus::{
-    hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
-};
-use reth_config::config::StageConfig;
-use reth_network::NetworkEvents;
-
-use reth_node_builder::PayloadBuilderConfig;
-use reth_node_events::node::handle_events;
-use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, PruneModes};
-use reth_provider::providers::StaticFileProvider;
-use reth_rpc::EngineApi;
-use reth_static_file::StaticFileProducer;
-use tokio::sync::oneshot;
-
-use bitcoin::hashes::Hash;
-use clap::{value_parser, Parser};
-use eyre::Context;
-use fdlimit::raise_fd_limit;
-use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient,
-    utils::{get_confirmation_depth, is_testnet},
-    AuthorityConsensus,
-};
-use reth_basic_payload_builder::BasicPayloadJobGeneratorConfig;
-use reth_blockchain_tree::{
-    BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
-};
-
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_cli_runner::CliContext;
-use reth_config::Config;
-use reth_consensus::Consensus;
-use reth_consensus_common::{utils, utils::get_authority_signer_index};
-use reth_db::{database::Database, init_db, DatabaseEnv};
-
-use reth_exex::ExExManagerHandle;
-use reth_network::{
-    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkManager,
-};
-
-use reth_node_builder::{
-    setup::build_networked_pipeline, RethRpcConfig, RethTransactionPoolConfig,
-};
-use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
-use reth_node_ethereum::EthEvmConfig;
-
-use reth_primitives::{
-    constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, kzg::KzgSettings, stage::StageId, ChainSpec,
-    Head,
-};
-use reth_provider::{
-    providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
-    ProviderFactory, StageCheckpointReader,
-};
-use reth_revm::EvmProcessorFactory;
-use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
-use rsntp::AsyncSntpClient;
-use std::{
-    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
-    sync::Arc,
-};
-use tokio::{
-    sync::{mpsc::unbounded_channel, RwLock},
-    time::Duration,
-};
-use tracing::{debug, error, info};
 /// Start the node
 #[derive(Debug, Parser)]
 pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
@@ -378,47 +363,49 @@ where {
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
-                let sleep_ms = tokio::time::Duration::from_millis(10);
-                let bitcoind_client =  BitcoindClient::new(bitcoind_config_clone.clone()).expect("Unable to create bitcoind client");
-                let mut current_block_hash = bitcoin::BlockHash::all_zeros();
-                loop {
-                    let mut header_write = bitcoin_block_headers.write().await;
-                    let best_block_hash = match bitcoind_client.get_best_block_hash() {
-                        Ok(current_block_hash) => current_block_hash,
-                        Err(_) => {
-                            drop(header_write);
-                            error!(target: "reth::cli", "Failed to fetch the best block hash. Retrying...");
-                            tokio::time::sleep(sleep_ms).await;
-                            continue;
-                        }
-                    };
-                    if current_block_hash != best_block_hash {
-                        info!("Async bitcoin worker tip mismatch");
-                        let block_header: bitcoin::block::Header = match bitcoind_client.get_block_header(best_block_hash) {
-                            Ok(block_header) => block_header,
-                            Err(_) => {
-                                drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch a block header. Retrying...");
-                                tokio::time::sleep(sleep_ms).await;
-                                continue;
-                            }
-                        };
+                /// Sleep interval between wake-ups.
+                const SLEEP: tokio::time::Duration = tokio::time::Duration::from_millis(10);
 
-                        let tip = match bitcoind_client.get_tip() {
-                            Ok(block_header) => block_header,
+                macro_rules! or_continue {
+                    ($e:expr) => {{
+                        match $e {
+                            Ok(r) => r,
                             Err(_) => {
-                                drop(header_write);
-                                error!(target: "reth::cli", "Failed to fetch best tip. Retrying...");
-                                tokio::time::sleep(sleep_ms).await;
+                                error!(
+                                    target: "reth::cli",
+                                    "Error calling '{}'. Retrying...",
+                                    stringify!($e),
+                                );
+                                tokio::time::sleep(SLEEP).await;
                                 continue;
                             }
+                        }
+                    }};
+                }
+
+                let bitcoind = BitcoindClient::new(bitcoind_config_clone)
+                    .expect("Unable to create bitcoind client");
+                let mut last_tip = bitcoin::BlockHash::all_zeros();
+                loop {
+                    let tip_hash = or_continue!(bitcoind.get_best_block_hash());
+                    if last_tip != tip_hash {
+                        info!("Async bitcoin worker tip changed (new={})", tip_hash);
+
+                        let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
+                        let height = tip_block.height;
+                        let finalized = {
+                            let depth = reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH;
+                            let height = height.saturating_sub(depth as usize - 1);
+                            let hash = or_continue!(bitcoind.get_block_hash(height as u64));
+                            or_continue!(bitcoind.get_block_info(&hash))
                         };
-                        // TODO (armins) in v1 we will need the nth deep block header not tip
-                        *header_write = Some((block_header, tip.try_into().expect("valid conversion")));
-                        drop(header_write);
-                        current_block_hash = best_block_hash;
+                        let header = or_continue!(bitcoind.get_block_header(finalized.hash));
+
+                        *bitcoin_block_headers.write().await =
+                            Some((header, finalized.height as u32));
+                        last_tip = tip_hash;
                     }
-                    tokio::time::sleep(sleep_ms).await;
+                    tokio::time::sleep(SLEEP).await;
                 }
             }),
         );

@@ -113,12 +113,6 @@ impl BitcoindClient {
         Ok(block)
     }
 
-    pub fn get_tip(&self) -> Result<u64, BitcoindError> {
-        let tip = self.rpc.get_block_count().map_err(BitcoindError::BlockTipRetrievalFailed)?;
-
-        Ok(tip)
-    }
-
     pub fn get_txids(
         &self,
         block_hash: bitcoin::BlockHash,
