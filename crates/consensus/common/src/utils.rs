@@ -343,9 +343,12 @@ pub fn validate_inturn(
 
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
+/// Return zero address if the authority is not present which is the case for reth tests
 pub fn get_block_producer_address(header: &Header) -> Address {
-    let block_builder_public_key = recovery_authority(header).expect("recovered authority");
-    public_key_to_address(block_builder_public_key)
+    match recovery_authority(header) {
+        Ok(pk) => public_key_to_address(pk),
+        Err(_) => Address::ZERO,
+    }
 }
 // not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
@@ -706,6 +709,13 @@ mod tests {
             block_producer_address,
             public_key_to_address(edh.authority_signers.unwrap()[0])
         );
+    }
+
+    #[test]
+    fn should_return_zero_address_when_no_authority() {
+        let header = Header::default();
+        let block_producer_address = get_block_producer_address(&header);
+        assert_eq!(block_producer_address, Address::ZERO);
     }
 
     #[test]

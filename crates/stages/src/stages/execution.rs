@@ -134,8 +134,8 @@ impl<EF> ExecutionStage<EF> {
 
         // If we're not executing MerkleStage from scratch (by threshold or first-sync), then erase
         // changeset related pruning configurations
-        if !(max_block - start_block > self.external_clean_threshold ||
-            provider.count_entries::<tables::AccountsTrie>()?.is_zero())
+        if !(max_block - start_block > self.external_clean_threshold
+            || provider.count_entries::<tables::AccountsTrie>()?.is_zero())
         {
             prune_modes.account_history = None;
             prune_modes.storage_history = None;
@@ -161,8 +161,8 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
         let static_file_provider = provider.static_file_provider();
 
         // We only use static files for Receipts, if there is no receipt pruning of any kind.
-        let static_file_producer = if self.prune_modes.receipts.is_none() &&
-            self.prune_modes.receipts_log_filter.is_empty()
+        let static_file_producer = if self.prune_modes.receipts.is_none()
+            && self.prune_modes.receipts_log_filter.is_empty()
         {
             Some(prepare_static_file_producer(provider, start_block)?)
         } else {
@@ -354,8 +354,8 @@ fn execution_checkpoint(
                 block_range: CheckpointBlockRange { from: start_block, to: max_block },
                 progress: EntitiesCheckpoint {
                     processed,
-                    total: processed +
-                        calculate_gas_used_from_headers(provider, start_block..=max_block)?,
+                    total: processed
+                        + calculate_gas_used_from_headers(provider, start_block..=max_block)?,
                 },
             }
         }
@@ -520,10 +520,10 @@ impl ExecutionStageThresholds {
         cumulative_gas_used: u64,
         elapsed: Duration,
     ) -> bool {
-        blocks_processed >= self.max_blocks.unwrap_or(u64::MAX) ||
-            changes_processed >= self.max_changes.unwrap_or(u64::MAX) ||
-            cumulative_gas_used >= self.max_cumulative_gas.unwrap_or(u64::MAX) ||
-            elapsed >= self.max_duration.unwrap_or(Duration::MAX)
+        blocks_processed >= self.max_blocks.unwrap_or(u64::MAX)
+            || changes_processed >= self.max_changes.unwrap_or(u64::MAX)
+            || cumulative_gas_used >= self.max_cumulative_gas.unwrap_or(u64::MAX)
+            || elapsed >= self.max_duration.unwrap_or(Duration::MAX)
     }
 }
 
@@ -797,7 +797,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn sanity_execution_of_block() {
         // TODO cleanup the setup after https://github.com/paradigmxyz/reth/issues/332
         // is merged as it has similar framework
@@ -948,7 +947,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn sanity_execute_unwind() {
         // TODO cleanup the setup after https://github.com/paradigmxyz/reth/issues/332
         // is merged as it has similar framework
@@ -1071,7 +1069,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_selfdestruct() {
         let test_db = TestStageDB::default();
         let provider = test_db.factory.provider_rw().unwrap();
