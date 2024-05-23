@@ -1,12 +1,7 @@
 //! Botanix consensus utility functions
-use std::{io::Write, time::Duration};
+use std::time::Duration;
 
-use bitcoin::{
-    block::Header,
-    hashes::{sha256, Hash},
-    psbt::Psbt,
-    witness::Witness,
-};
+use bitcoin::{block::Header, psbt::Psbt, witness::Witness};
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use futures_util::Future;
 use reth_botanix_lib::{

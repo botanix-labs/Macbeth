@@ -5,8 +5,8 @@ edition = "2021"
 
 
 [dependencies]
-miniscript.workspace = true
-bitcoin.workspace = true
+miniscript = "11.0.0"
+bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
 
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
