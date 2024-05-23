@@ -32,6 +32,9 @@ use tokio::sync::{
 };
 use tracing::{debug, error, info, warn};
 
+type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
+type PreCommitmentsMap = Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("Failed to validate signatures on block: {0}")]
@@ -126,19 +129,10 @@ where
             config.authority_index, personal_frost_identifier
         );
 
-        let sealed_blocks: Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>> =
-            Arc::new(RwLock::new(BTreeMap::new()));
-        let pre_commitments: Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>> =
-            Arc::new(RwLock::new(BTreeMap::new()));
+        let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
+        let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));
         let sealed_blocks_clone = Arc::clone(&sealed_blocks);
-        let precommitments_clone: Arc<
-            RwLock<
-                BTreeMap<
-                    reth_revm::primitives::FixedBytes<32>,
-                    HashSet<reth_revm::primitives::FixedBytes<64>>,
-                >,
-            >,
-        > = Arc::clone(&pre_commitments);
+        let precommitments_clone: PreCommitmentsMap = Arc::clone(&pre_commitments);
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
         let client_clone = client.clone();
         tokio::spawn(async move {
@@ -156,7 +150,7 @@ where
                             .flatten()
                             .map(|b| b.header.number)
                             .unwrap_or_default();
-                        let best_block_height = (best_block_height - 2).max(0);
+                        let best_block_height = best_block_height.saturating_sub(2);
                         if sealed_block.header.number < best_block_height {
                             Some(sealed_block.hash())
                         } else {
