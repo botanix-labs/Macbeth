@@ -105,9 +105,9 @@ impl From<RecoverAuthorityError> for ConsensusError {
             RecoverAuthorityError::FailedToRecoverSigner(_) => {
                 ConsensusError::TransactionSignerRecoveryError
             }
-            RecoverAuthorityError::FailedToCreateSigHash(_) |
-            RecoverAuthorityError::FailedToDerserializeExtraData(_) |
-            RecoverAuthorityError::NoSignaturePresentInExtraData => {
+            RecoverAuthorityError::FailedToCreateSigHash(_)
+            | RecoverAuthorityError::FailedToDerserializeExtraData(_)
+            | RecoverAuthorityError::NoSignaturePresentInExtraData => {
                 ConsensusError::ExtraDataInvalid
             }
         }
@@ -709,7 +709,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn get_inturn_interval() {
         let authorities_len = 10;
         let signer_index = 3; // Example signer index
