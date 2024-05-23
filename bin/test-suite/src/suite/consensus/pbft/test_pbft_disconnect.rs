@@ -6,7 +6,7 @@ use crate::{
                 await_botanix_event, await_dkg, await_signing_completion, GatewayAddressResponse,
                 BITCOIND_WALLET_NAME, SEND_AMOUNT,
             },
-            poa_node::{create_poa_federation_members, current_inturn_index, TestSignal},
+            poa_node::{create_poa_federation_members, TestSignal},
         },
         ConsensusIntegrationTestSuite,
     },
@@ -17,7 +17,10 @@ use ethers::{
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
-use reth::core::cli::runner::CliRunner;
+use reth::{
+    consensus_common::utils::{current_inturn_index, unix_timestamp},
+    core::cli::runner::CliRunner,
+};
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
@@ -193,7 +196,7 @@ pub async fn pbft_e2e_failed_disconnect(
 
     // find out who is in turn
     let total_authorities = test_fed_members.len();
-    let inturn_member_index = current_inturn_index(total_authorities as u64);
+    let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
 
     // wait for the signing to finish for coordinator
     await_signing_completion(inturn_member_index as u16, &mut rx).await;

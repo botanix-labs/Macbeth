@@ -47,23 +47,6 @@ struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
 }
 
-/// Returns the index of the authority which is currently in turn
-pub fn current_inturn_index(authorities_len: u64) -> u64 {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len
-}
-
-pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len == signer_index
-}
-
-pub fn unix_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-}
-
 #[derive(Clone, Debug)]
 pub enum Notifications {
     CanonState(CannonStateNofificationPayload),

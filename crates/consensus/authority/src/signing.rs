@@ -542,8 +542,10 @@ where
             false => {
                 // if we are not inturn, find the coordinator in the list of peers
                 let all_connected_frost_peers = self.get_all_peers_handle().await?;
-                let current_inturn_authority_index =
-                    current_inturn_index(self.frost_config.authorities.len() as u64);
+                let current_inturn_authority_index = current_inturn_index(
+                    self.frost_config.authorities.len() as u64,
+                    unix_timestamp(),
+                );
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
                 let sender_channel = all_connected_frost_peers
@@ -575,6 +577,7 @@ where
         get_in_turn_interval(
             self.frost_config.authorities.len() as u64,
             coordinator_index.unwrap_or_else(|| self.frost_config.authority_index as u64),
+            unix_timestamp(),
         )
     }
 

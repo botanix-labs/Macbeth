@@ -1,5 +1,7 @@
 use crate::utils::retry_exec;
-use reth_consensus_common::utils::{get_in_turn_interval, is_inturn, CoordinatorInterval};
+use reth_consensus_common::utils::{
+    get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
+};
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
@@ -25,7 +27,7 @@ use std::{
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
-const VALIDITY_CRITERIA_RELAXATION: u64 = 10;
+const BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -180,10 +182,18 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             self.get_coordinator().await?.map(|(_, _, authority_index)| authority_index);
         let (start, end, _, _) = self.get_inturn_interval_for_coordinator(coordinator_index);
 
-        if block.timestamp >= end + VALIDITY_CRITERIA_RELAXATION {
+        if block.timestamp >= end + BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION.as_secs() {
+            error!(
+                "Block validity end range violation. Timestamp = {:?}. Range end = {:?}",
+                block.timestamp, end
+            );
             return Ok(false);
         }
-        if block.timestamp <= start - VALIDITY_CRITERIA_RELAXATION {
+        if block.timestamp <= start - BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION.as_secs() {
+            error!(
+                "Block validity start range violation. Timestamp = {:?}. Range end = {:?}",
+                block.timestamp, start
+            );
             return Ok(false);
         }
 
@@ -207,7 +217,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
                 // if we are not inturn, find the coordinator in the list of peers
                 let all_connected_frost_peers = self.get_all_peers_handle().await?;
                 let current_inturn_authority_index =
-                    current_inturn_index(self.config.authorities.len() as u64);
+                    current_inturn_index(self.config.authorities.len() as u64, unix_timestamp());
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
                 let sender_channel = all_connected_frost_peers
@@ -235,6 +245,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         get_in_turn_interval(
             self.config.authorities.len() as u64,
             coordinator_index.unwrap_or_else(|| self.config.authority_index as u64),
+            unix_timestamp(),
         )
     }
 
@@ -333,7 +344,8 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         let coordinator = self
             .config
             .authorities
-            .get(current_inturn_index(self.config.authorities.len() as u64) as usize)
+            .get(current_inturn_index(self.config.authorities.len() as u64, unix_timestamp())
+                as usize)
             .expect("should be valid index");
 
         // Check if the inturn block producer has the first signature on the block

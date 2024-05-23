@@ -259,37 +259,59 @@ pub fn validate_current_signer_against_last(
 
 /// Returns true if the authority is in turn
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
+    let timestamp = unix_timestamp(); // Keep the timestamp in seconds
+    let cycle_length = authorities_len * 60; // Full cycle length in seconds
 
-    (timestamp / authorities_len) % authorities_len == signer_index
+    // Calculate the position in the current cycle
+    let position_in_cycle = timestamp % cycle_length;
+
+    // Determine the current signer index based on the position in the cycle
+    // Each signer's turn lasts for 60 seconds
+    (position_in_cycle / 60) % authorities_len == signer_index
 }
 
 /// Typedef for (start of current turn, end of current turn, time taken, time remaining)
 pub type CoordinatorInterval = (u64, u64, u64, u64);
 
-/// Returns the inturn interval for a signer index
-pub fn get_in_turn_interval(authorities_len: u64, signer_index: u64) -> CoordinatorInterval {
-    let timestamp = unix_timestamp();
-    let current_minute = timestamp / 60;
-    let current_interval = current_minute / authorities_len;
+/// Returns the inturn interval for a signer index based on the seconds passed
+pub fn get_in_turn_interval(
+    authorities_len: u64,
+    signer_index: u64,
+    reference_timestamp: u64,
+) -> CoordinatorInterval {
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * 60;
 
-    let start_of_current_turn = (current_interval * authorities_len + signer_index) * 60;
-    let end_of_current_turn = (start_of_current_turn + authorities_len * 60) - 1;
+    // Calculate how many complete cycles have passed since the epoch
+    let cycles_since_epoch = reference_timestamp / cycle_length;
+
+    // Calculate the start time of the current cycle
+    let current_cycle_start = cycles_since_epoch * cycle_length;
+
+    // Calculate the start time of the current turn for the given signer_index
+    let start_of_current_turn = current_cycle_start + (signer_index * 60);
+
+    // End time of the current turn, ensuring full 60 seconds
+    let end_of_current_turn = start_of_current_turn + 59;
 
     (
         start_of_current_turn,
         end_of_current_turn,
-        timestamp - start_of_current_turn,
-        end_of_current_turn - timestamp,
+        reference_timestamp - start_of_current_turn,
+        end_of_current_turn - reference_timestamp,
     )
 }
 
-/// Returns the index of the authority which is currently in turn
-pub fn current_inturn_index(authorities_len: u64) -> u64 {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len
+/// Returns the index of the authority which is currently in turn based on the seconds passed
+pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u64 {
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * 60;
+
+    // Calculate the position in the current cycle
+    let position_in_cycle = reference_timestamp % cycle_length;
+
+    // Determine the current signer index based on the position in the cycle
+    position_in_cycle / 60
 }
 
 #[cfg(test)]
@@ -488,22 +510,23 @@ mod tests {
     }
 
     #[test]
-    fn get_inturn_interval() {
-        let authorities_len = 10;
-        let signer_index = 3; // Example signer index
-        let (start, end, time_passed, time_remaining): CoordinatorInterval =
-            get_in_turn_interval(authorities_len, signer_index);
+    fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
+        let authorities_len = 10;
+        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
+        let (start, end, time_passed, time_remaining) =
+            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
-            signer_index,
+            current_in_turn_signer,
             start,
             end,
-            super::unix_timestamp(),
+            current_ts,
             time_passed,
             time_remaining,
         );
-        assert!(current_ts > start);
-        assert!(current_ts < end);
+        assert!(current_ts >= start);
+        assert!(current_ts <= end);
     }
 }

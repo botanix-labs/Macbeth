@@ -122,8 +122,15 @@ impl HeaderExt for Header {
             .ok_or(ValidateInturnError::AuthorityNotInTurn)?;
 
         let authorities_len = authorities.len() as u64;
-        let block_timestamp_min = self.timestamp / 60;
-        if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
+        let cycle_length = authorities_len * 60; // Define the cycle length in seconds
+        let block_timestamp_sec = self.timestamp; // Use the block timestamp in seconds
+
+        // Calculate the current cycle's position and determine the current in-turn signer
+        let current_cycle_position = block_timestamp_sec % cycle_length;
+        let current_in_turn_index = (current_cycle_position / 60) % authorities_len;
+
+        // Check if the calculated index matches the signer index
+        if current_in_turn_index != (signer_index as u64) {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
 

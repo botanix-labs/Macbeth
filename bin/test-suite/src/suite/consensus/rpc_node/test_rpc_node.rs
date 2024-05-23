@@ -1,5 +1,9 @@
 use ethers::types::U64;
-use reth::{core::cli::runner::CliRunner, primitives::ChainSpec};
+use reth::{
+    consensus_common::utils::{current_inturn_index, unix_timestamp},
+    core::cli::runner::CliRunner,
+    primitives::ChainSpec,
+};
 use std::time::Duration;
 
 use crate::{
@@ -8,9 +12,7 @@ use crate::{
         common::{
             botanix_client::BotanixEthClient,
             events::{await_dkg, SEND_AMOUNT},
-            poa_node::{
-                create_poa_federation_members, current_inturn_index, PREFUNDED_ACCOUNT_SECRET_KEY,
-            },
+            poa_node::{create_poa_federation_members, PREFUNDED_ACCOUNT_SECRET_KEY},
             rpc_node::create_rpc_node,
         },
         rpc_node::error::NonFederationMemberTestConfigError,
@@ -60,7 +62,7 @@ pub async fn test_rpc_node(
     let eoa_receiver = ethers::core::types::Address::random();
     // build a block for each fed member
     for index in 0..total_authorities {
-        let inturn_member_index = current_inturn_index(total_authorities as u64);
+        let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
 
         it_info_print!("Sending eoa transaction to poa member", inturn_member_index);
         let last_tx_hash = botanix_clients[inturn_member_index as usize]
