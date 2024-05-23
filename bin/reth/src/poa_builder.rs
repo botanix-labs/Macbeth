@@ -517,6 +517,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             network_sk,
             None,
             network.clone(),
+            network_client.clone(),
             frost_handle.clone(),
             block_import_rx,
             executor.clone(),
