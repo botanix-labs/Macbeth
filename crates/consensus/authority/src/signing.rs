@@ -26,6 +26,8 @@ use tokio::sync::{
 };
 use tracing::{error, info, warn};
 
+type SigningStatesMap = Arc<RwLock<HashMap<[u8; 32], SigningSession>>>;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("Unknown internal error")]
@@ -167,8 +169,7 @@ where
             frost_config.authority_index, personal_frost_identifier
         );
 
-        let signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>> =
-            Arc::new(RwLock::new(HashMap::default()));
+        let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
         let signing_states_clone = Arc::clone(&signing_states);
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
         tokio::spawn(async move {
