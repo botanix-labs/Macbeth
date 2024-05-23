@@ -1517,8 +1517,8 @@ mod tests {
                             signer,
                             (
                                 AccountInfo {
-                                    balance: initial_signer_balance
-                                        - (single_tx_cost * U256::from(num_of_signer_txs)),
+                                    balance: initial_signer_balance -
+                                        (single_tx_cost * U256::from(num_of_signer_txs)),
                                     nonce: num_of_signer_txs,
                                     ..Default::default()
                                 },
