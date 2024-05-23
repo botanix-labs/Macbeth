@@ -392,8 +392,8 @@ where
         );
 
         // Sign the header and append to extra data header
-        let message =
-            secp256k1::Message::from_slice(sig_hash.as_slice()).expect("Valid message to sign");
+        let message = secp256k1::Message::from_digest_slice(sig_hash.as_slice())
+            .expect("Valid message to sign");
         let signature = secp.sign_ecdsa_recoverable(&message, sk);
 
         extra_header_content_no_signature.set_signature(signature);

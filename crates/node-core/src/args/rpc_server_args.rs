@@ -42,7 +42,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use tracing::{debug, info};
+use tracing::debug;
 use url::Url;
 
 use super::{

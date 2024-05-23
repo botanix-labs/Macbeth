@@ -16,10 +16,8 @@ use reth_config::{config::PruneConfig, Config};
 use reth_db::{database::Database, database_metrics::DatabaseMetrics};
 use reth_interfaces::{p2p::headers::client::HeadersClient, RethResult};
 use reth_network::{
-    config::NetworkMode,
-    frost::manager::{FrostConfig, FrostHandle},
-    import::BlockImport,
-    NetworkBuilder, NetworkConfig, NetworkManager,
+    config::NetworkMode, frost::manager::FrostConfig, import::BlockImport, NetworkBuilder,
+    NetworkConfig, NetworkManager,
 };
 use reth_primitives::{
     constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, kzg::KzgSettings, stage::StageId,

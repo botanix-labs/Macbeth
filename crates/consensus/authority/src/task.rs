@@ -4,7 +4,6 @@ use crate::{
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
-use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::FrostHandle, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
@@ -18,7 +17,7 @@ use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
 use secp256k1::{All, Secp256k1};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},

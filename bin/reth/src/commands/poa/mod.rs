@@ -33,7 +33,7 @@ use reth_static_file::StaticFileProducer;
 use tokio::sync::oneshot;
 
 use bitcoin::hashes::Hash;
-use clap::{value_parser, Args, Parser};
+use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use reth_authority_consensus::{
@@ -661,34 +661,29 @@ where {
         };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
-        let (
-            _,
-            mut block_production_task,
-            mut block_fetcher_task,
-            mut frost_task,
-            mut sync_controller,
-        ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&self.chain),
-            blockchain_db.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
-            btc_server_client.clone(),
-            bitcoin_block_headers_clone,
-            bitcoind_config,
-            secp256k1::Secp256k1::new(),
-            secret_key,
-            None,
-            network_handle.clone(),
-            frost_handle,
-            block_import_rx,
-            executor.clone(),
-            evm_config,
-            frost_config,
-            payload_builder.clone(),
-            node_config.rpc.btc_network,
-        )
-        .expect("Failed to create authority consensus builder")
-        .build();
+        let (_, block_production_task, mut block_fetcher_task, frost_task, mut sync_controller) =
+            AuthorityConsensusBuilder::try_new(
+                Arc::clone(&self.chain),
+                blockchain_db.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender.clone(),
+                btc_server_client.clone(),
+                bitcoin_block_headers_clone,
+                bitcoind_config,
+                secp256k1::Secp256k1::new(),
+                secret_key,
+                None,
+                network_handle.clone(),
+                frost_handle,
+                block_import_rx,
+                executor.clone(),
+                evm_config,
+                frost_config,
+                payload_builder.clone(),
+                node_config.rpc.btc_network,
+            )
+            .expect("Failed to create authority consensus builder")
+            .build();
 
         // TODO do we need this?
         // if let Some(store_path) = self.config.debug.engine_api_store.clone() {
