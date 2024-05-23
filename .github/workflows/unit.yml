@@ -42,51 +42,50 @@ jobs:
             --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
- # Commenting this out until we have the latest Reth updates
-  # state:
-  #   name: Ethereum state tests
-  #   runs-on: botanix-actions-runner
-  #   env:
-  #     RUST_LOG: info,sync=error
-  #     RUST_BACKTRACE: 1
-  #   timeout-minutes: 90
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Checkout ethereum/tests
-  #       uses: actions/checkout@v4
-  #       with:
-  #         repository: ethereum/tests
-  #         path: testing/ef-tests/ethereum-tests
-  #         submodules: recursive
-  #         fetch-depth: 1
-  #     - uses: dtolnay/rust-toolchain@stable
-  #     - uses: taiki-e/install-action@nextest
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-on-failure: true
-  #         cache-all-crates: true
+  state:
+    name: Ethereum state tests
+    runs-on: botanix-actions-runner
+    env:
+      RUST_LOG: info,sync=error
+      RUST_BACKTRACE: 1
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout ethereum/tests
+        uses: actions/checkout@v4
+        with:
+          repository: ethereum/tests
+          path: testing/ef-tests/ethereum-tests
+          submodules: recursive
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
 
-  #     - name: Install Protobuf Compiler
-  #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-  #     - name: Start BTC Server
-  #       run: |
-  #         cd ./bin/btc-server && \
-  #         /home/runner/.cargo/bin/cargo run --bin btc-server -- \
-  #         --identifier 0 \
-  #         --address 0.0.0.0:8080 \
-  #         --db "./db1" \
-  #         --min-signers 2 \
-  #         --max-signers 2 \
-  #         --toml ./config.toml \
-  #         --fee-rate-diff-percentage 30 \
-  #         --btc-network ${{env.BITCOIND_NETWORK}} \
-  #         --bitcoind-url ${{env.BITCOIND_URL}} \
-  #         --bitcoind-user ${{env.BITCOIND_USER}} \
-  #         --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-  #         --fall-back-fee-rate-sat-per-vbyte 5 &
+      - name: Start BTC Server
+        run: |
+          cd ./bin/btc-server && \
+          /home/runner/.cargo/bin/cargo run --bin btc-server -- \
+          --identifier 0 \
+          --address 0.0.0.0:8080 \
+          --db "./db1" \
+          --min-signers 2 \
+          --max-signers 2 \
+          --toml ./config.toml \
+          --fee-rate-diff-percentage 30 \
+          --btc-network ${{env.BITCOIND_NETWORK}} \
+          --bitcoind-url ${{env.BITCOIND_URL}} \
+          --bitcoind-user ${{env.BITCOIND_USER}} \
+          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
+          --fall-back-fee-rate-sat-per-vbyte 5 &
 
-  #     - run: cargo nextest run --release -p ef-tests --features ef-tests
+      - run: cargo nextest run --release -p ef-tests --features ef-tests
 
   doc:
     name: doc tests (ethereum)
