@@ -12,7 +12,7 @@ use crate::{
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
@@ -35,7 +35,7 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToFrostMan, NetworkClient> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -52,6 +52,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToF
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
+    network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
@@ -72,8 +73,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine, ToFrostMan>
-    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan>
+impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Engine: EngineTypes + 'static,
@@ -85,6 +86,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    NetworkClient: HeadersClient + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -102,6 +104,7 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
+        network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
@@ -189,6 +192,7 @@ where
             vote,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -211,7 +215,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
     ) {
         let Self {
             btc_server,
@@ -228,6 +232,7 @@ where
             vote: _,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -303,6 +308,7 @@ where
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
                 task_executor.clone(),
+                network_client,
             );
             pbft_task = Some(pbft);
 

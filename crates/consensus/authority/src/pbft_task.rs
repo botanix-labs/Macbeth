@@ -1,6 +1,7 @@
 use crate::{pbft::PbftStateMachine, Storage};
+use bitcoin::Network;
 use reth_ecies::util::pk2id;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -31,7 +32,7 @@ pub(crate) struct PbftNotification {
     pub(crate) block: SealedBlock,
 }
 
-pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
+pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
@@ -48,7 +49,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
     config: FrostConfig,
 }
 
-impl<Client, ToFrostMan> PbftTask<Client, ToFrostMan>
+impl<Client, ToFrostMan, NetworkClient> PbftTask<Client, ToFrostMan, NetworkClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
@@ -57,6 +58,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    NetworkClient: HeadersClient + Clone + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -68,6 +70,7 @@ where
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         task_executor: TaskExecutor,
+        network_client: NetworkClient,  
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
@@ -77,6 +80,7 @@ where
             my_peerid,
             secret_key,
             Some(task_executor),
+            network_client,
         );
         pbft_state_machine.spawn_cleanup_task();
         Self {
@@ -215,7 +219,7 @@ where
     }
 }
 
-impl<Client, F> std::fmt::Debug for PbftTask<Client, F>
+impl<Client, F, NetworkClient> std::fmt::Debug for PbftTask<Client, F, NetworkClient>
 where
     F: ToFrostManager + Clone,
     Client: Clone + 'static,

@@ -69,8 +69,6 @@ pub(crate) enum ValidateBlockError {
     ParentBlockNotFound(BlockHash),
     #[error("Fork is greater that 1 depth: {0}")]
     ForkDepthGreaterThanOne(BlockHash),
-    #[error("Could not find ancestor block: {0}")]
-    AncestorNotFound(BlockHash),
     #[error("Failed to deserialize extra data header: {0}")]
     ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
     #[error("Block is already in canon chain: {0}")]
@@ -83,11 +81,17 @@ pub(crate) enum ValidateBlockError {
         "Parent hash known but is not canonnical tip, proposed block hash: {0}, parent hash: {1}"
     )]
     ParentHashNotCanonicalTip(BlockHash, BlockHash),
+    #[error("Will not sign genesis block")]
+    WillNotSignGenesisBlock,
 }
 
 impl PartialEq for ValidateBlockError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (
+                ValidateBlockError::ParentHashNotCanonicalTip(a0, b0),
+                ValidateBlockError::ParentHashNotCanonicalTip(a1, b1),
+            ) => a0 == a1 && b0 == b1,
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
@@ -96,11 +100,14 @@ impl PartialEq for ValidateBlockError {
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
             )
-            | (ValidateBlockError::AncestorNotFound(a), ValidateBlockError::AncestorNotFound(b))
             | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
+            (
+                ValidateBlockError::WillNotSignGenesisBlock,
+                ValidateBlockError::WillNotSignGenesisBlock,
+            ) => true,
             _ => false,
         }
     }
@@ -332,6 +339,11 @@ where
     }
 
     async fn validate_block(&self, block_to_sign: &SealedBlock) -> Result<(), ValidateBlockError> {
+        // Should never sign genesis block
+        if block_to_sign.header.number == 0 {
+            return Err(ValidateBlockError::WillNotSignGenesisBlock);
+        }
+
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         // Blocks should only be signed if they are building on the best block
         // Or building on one of the 1 block deep forks
@@ -362,7 +374,7 @@ where
         } else {
             // Somehow we have the parent block but its not the current canon chain?
             // This should not happen
-            if self.client.contains(block_to_sign.parent_hash)? {
+            if self.client.contains(block_to_sign.parent_hash) {
                 return Err(ValidateBlockError::ParentHashNotCanonicalTip(
                     block_to_sign.hash_slow(),
                     block_to_sign.parent_hash,
@@ -374,10 +386,20 @@ where
             // if that retrieved block's parent is not the best block's parent hash then the fork is deeper than 1 block
             // and we do not sign
             // TODO does the peer that we are getting this block from matter?
-            match self.network_client.get_header(block_to_sign.parent_hash).await? {
-                Ok(header) => {
-                    if header.parent_hash != best_block.parent_hash {
-                        return Err(ValidateBlockError::ForkDepthGreaterThanOne(block_hash));
+            match self
+                .network_client
+                .get_header(reth_rpc_types::BlockHashOrNumber::Hash(block_to_sign.parent_hash))
+                .await
+            {
+                Ok(header_with_peer_id) => {
+                    if let Some(header) = header_with_peer_id.1 {
+                        if header.parent_hash != best_block.parent_hash {
+                            return Err(ValidateBlockError::ForkDepthGreaterThanOne(block_hash));
+                        }
+                    } else {
+                        return Err(ValidateBlockError::ParentBlockNotFound(
+                            block_to_sign.parent_hash,
+                        ));
                     }
                 }
                 Err(e) => {
@@ -659,16 +681,67 @@ mod tests {
     use super::*;
     use rand;
     use reth_ecies::util::pk2id;
+    use reth_interfaces::p2p::download::DownloadClient;
+    use reth_interfaces::p2p::error::{PeerRequestResult, RequestError};
+    use reth_interfaces::p2p::{headers::client::HeadersRequest, priority::Priority};
     use reth_network::frost::manager::ToFrostManager;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
-
+    use reth_primitives::{WithPeerId, B256};
     use reth_provider::test_utils::MockEthProvider;
+    use reth_provider::HeaderProvider;
     use secp256k1::SECP256K1;
 
+    #[derive(Clone, Debug)]
+    pub(crate) struct MockNetworkClient {
+        pub(crate) client: MockEthProvider,
+    }
+
+    impl MockNetworkClient {
+        pub(crate) fn new(provider: MockEthProvider) -> Self {
+            Self { client: provider }
+        }
+    }
+
+    impl DownloadClient for MockNetworkClient {
+        fn report_bad_message(&self, _peer_id: PeerId) {
+            unimplemented!()
+        }
+
+        fn num_connected_peers(&self) -> usize {
+            unimplemented!()
+        }
+    }
+
+    impl HeadersClient for MockNetworkClient {
+        type Output = futures_util::future::Ready<PeerRequestResult<Vec<Header>>>;
+
+        fn get_headers_with_priority(
+            &self,
+            request: HeadersRequest,
+            _priority: Priority,
+        ) -> Self::Output {
+            // let headers = self.client.headers.lock();
+            match self.client.header_by_hash_or_number(request.start) {
+                Ok(header_res) => {
+                    if let Some(header) = header_res {
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
+                    }
+                }
+                // Error is caught below
+                Err(_) => (),
+            }
+
+            futures_util::future::ready(PeerRequestResult::Err(RequestError::BadResponse))
+        }
+    }
+
     macro_rules! setup_multi_party_test {
-        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident) => {
+        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident, $mock_network_client:ident) => {
             let secp = secp256k1::Secp256k1::new();
             let mut $mock_eth_provider = MockEthProvider::default();
+            let mut $mock_network_client = MockNetworkClient::new($mock_eth_provider.clone());
 
             let mut $sks = vec![];
             let mut $configs = vec![];
@@ -710,6 +783,7 @@ mod tests {
             for i in 0..$n {
                 let edh = ExtraDataHeader::default();
                 let mut header = Header::default();
+                header.number = 1;
                 header.parent_hash = parent_block.hash_slow();
                 header.add_extra_data_header(&edh);
                 header.sign_block(&$sks[i]).unwrap();
@@ -729,6 +803,7 @@ mod tests {
                     $peer_ids[i],
                     $sks[i],
                     None,
+                    $mock_network_client.clone(),
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -773,8 +848,10 @@ mod tests {
             non_coords,
             coord,
             _block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
+
         let pbft_state_machine = coord;
         // Check that the initial state is empty
         assert!(pbft_state_machine.state.is_empty());
@@ -792,7 +869,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
         let pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -867,7 +945,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
         let mut pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -897,7 +976,8 @@ mod tests {
             non_coords,
             coord,
             _block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         let tip = mock_eth_provider.canonical_tip();
@@ -906,6 +986,7 @@ mod tests {
         let edh = ExtraDataHeader::default();
         let mut invalid_block_header = Header::default();
         invalid_block_header.parent_hash = tip.hash;
+        invalid_block_header.number = 1;
         invalid_block_header.add_extra_data_header(&edh);
         invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
         let invalid_block =
@@ -931,7 +1012,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         // sign the block as the non-coordinator
@@ -962,7 +1044,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         // Propose valid block and assert correct state transitions
@@ -1032,7 +1115,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         // Propose valid block and assert correct state transitions
@@ -1080,7 +1164,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         // Propose valid block and assert correct state transitions
@@ -1169,7 +1254,8 @@ mod tests {
             non_coords,
             coord,
             block_to_propose,
-            mock_eth_provider
+            mock_eth_provider,
+            mock_network_client
         );
 
         coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
@@ -1326,15 +1412,18 @@ mod tests {
             min_signers: 0,
             authority_pk: sk.public_key(SECP256K1),
         };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider.clone(),
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
+            mock_network_client,
         );
         let edh = ExtraDataHeader::default();
         let mut header = Header::default();
+        header.number = 1;
         header.add_extra_data_header(&edh);
         header.sign_block(&sk).expect("to sign block");
         let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
@@ -1360,12 +1449,14 @@ mod tests {
             min_signers: 0,
             authority_pk: sk.public_key(SECP256K1),
         };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider.clone(),
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
+            mock_network_client,
         );
         let edh = ExtraDataHeader::default();
         let mut parent_header = Header::default();
@@ -1380,13 +1471,238 @@ mod tests {
         header.parent_hash = parent_block.hash_slow();
         header.sign_block(&sk).expect("to sign block");
         let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
-        // mock_eth_provider.add_block(block.hash(), block.clone().into());
 
         let res = pbft_state_machine.validate_block(&block).await;
         assert!(res.is_ok());
-        // assert_eq!(
-        //     res.err().unwrap(),
-        //     ValidateBlockError::BlockAlreadyInCanonChain(block.hash_slow())
-        // );
     }
+
+    #[tokio::test]
+    async fn signing_genisis_block() {
+        let mock_eth_provider = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+            mock_network_client,
+        );
+
+        let edh = ExtraDataHeader::default();
+
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.number = 0;
+        header.parent_hash = B256::ZERO;
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+
+        assert_eq!(res.err().unwrap(), ValidateBlockError::WillNotSignGenesisBlock);
+    }
+
+    #[tokio::test]
+    async fn will_not_sign_if_parent_block_is_known_but_not_canon() {
+        let mock_eth_provider = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+            mock_network_client,
+        );
+        let edh = ExtraDataHeader::default();
+        let mut b0 = Header::default();
+        b0.add_extra_data_header(&edh);
+        b0.sign_block(&sk).expect("to sign block");
+        let b0_block = SealedBlock::new(b0.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider.add_block(b0_block.hash(), b0_block.clone().into());
+
+        let mut b1 = Header::default();
+        b1.add_extra_data_header(&edh);
+        b1.number = 1;
+        b1.parent_hash = b0_block.hash_slow();
+        b1.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b1.seal_slow(), BlockBody::default());
+        mock_eth_provider.add_block(parent_block.hash(), parent_block.clone().into());
+
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.number = 2;
+        header.parent_hash = b0.clone().hash_slow();
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+        assert_eq!(
+            res.err().unwrap(),
+            ValidateBlockError::ParentHashNotCanonicalTip(block.hash_slow(), b0.hash_slow())
+        );
+    }
+
+    #[tokio::test]
+    async fn will_sign_for_valid_fork() {
+        // to simulate the fork we will create two providers
+        // one for our and another which the network client will use to "fetch"
+        // blocks from the peer
+        let mock_eth_provider_mine = MockEthProvider::default();
+        let mock_eth_provider_peers = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider_peers.clone());
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider_mine.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+            mock_network_client,
+        );
+        let edh = ExtraDataHeader::default();
+        let mut b0 = Header::default();
+        b0.add_extra_data_header(&edh);
+        b0.sign_block(&sk).expect("to sign block");
+        let b0_block = SealedBlock::new(b0.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider_mine.add_block(b0_block.hash(), b0_block.clone().into());
+
+        // Now we create a fork
+        // Something has to be different btwn the blocks, so we can modify the nonce
+        let mut b1_0 = Header::default();
+        b1_0.add_extra_data_header(&edh);
+        b1_0.number = 1;
+        b1_0.parent_hash = b0_block.hash_slow();
+        b1_0.nonce = 0;
+        b1_0.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b1_0.seal_slow(), BlockBody::default());
+        mock_eth_provider_mine.add_block(parent_block.hash(), parent_block.clone().into());
+
+        // we'll propose a block on top of the fork
+        let mut b1_1 = Header::default();
+        b1_1.add_extra_data_header(&edh);
+        b1_1.number = 1;
+        b1_1.parent_hash = b0_block.hash_slow();
+        b1_1.nonce = 2;
+        b1_1.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b1_1.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider_peers.add_block(parent_block.hash(), parent_block.clone().into());
+
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.number = 2;
+        header.parent_hash = b1_1.clone().hash_slow();
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn will_not_sign_for_forks_deeper_than_1() {
+        // to simulate the fork we will create two providers
+        // one for our and another which the network client will use to "fetch"
+        // blocks from the peer
+        let mock_eth_provider_mine = MockEthProvider::default();
+        let mock_eth_provider_peers = MockEthProvider::default();
+        // frost config is not needed for this test
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let config = FrostConfig {
+            authorities: vec![],
+            authority_index: 0,
+            max_signers: 0,
+            min_signers: 0,
+            authority_pk: sk.public_key(SECP256K1),
+        };
+        let mock_network_client = MockNetworkClient::new(mock_eth_provider_peers.clone());
+        let pbft_state_machine = PbftStateMachine::new(
+            mock_eth_provider_mine.clone(),
+            FrostHandleMock {},
+            config,
+            PeerId::default(),
+            sk.clone(),
+            mock_network_client,
+        );
+        let edh = ExtraDataHeader::default();
+        let mut b0 = Header::default();
+        b0.add_extra_data_header(&edh);
+        b0.sign_block(&sk).expect("to sign block");
+        let b0_block = SealedBlock::new(b0.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider_mine.add_block(b0_block.hash(), b0_block.clone().into());
+
+        // Now we create a fork
+        // Something has to be different btwn the blocks, so we can modify the nonce
+        let mut b1_0 = Header::default();
+        b1_0.add_extra_data_header(&edh);
+        b1_0.number = 1;
+        b1_0.parent_hash = b0_block.hash_slow();
+        b1_0.nonce = 0;
+        b1_0.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b1_0.seal_slow(), BlockBody::default());
+        mock_eth_provider_mine.add_block(parent_block.hash(), parent_block.clone().into());
+
+        // First block of the fork
+        let mut b1_1 = Header::default();
+        b1_1.add_extra_data_header(&edh);
+        b1_1.number = 1;
+        b1_1.parent_hash = b0_block.hash_slow();
+        b1_1.nonce = 2;
+        b1_1.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b1_1.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider_peers.add_block(parent_block.hash(), parent_block.clone().into());
+
+        // Second block of the fork
+        let mut b2_1 = Header::default();
+        b2_1.add_extra_data_header(&edh);
+        b2_1.number = 2;
+        b2_1.parent_hash = b1_1.hash_slow();
+        b2_1.nonce = 3;
+        b2_1.sign_block(&sk).expect("to sign block");
+        let parent_block = SealedBlock::new(b2_1.clone().seal_slow(), BlockBody::default());
+        mock_eth_provider_peers.add_block(parent_block.hash(), parent_block.clone().into());
+
+        let mut header = Header::default();
+        header.add_extra_data_header(&edh);
+        header.number = 3;
+        header.parent_hash = b2_1.clone().hash_slow();
+        header.sign_block(&sk).expect("to sign block");
+        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
+
+        let res = pbft_state_machine.validate_block(&block).await;
+        assert_eq!(
+            res.err().unwrap(),
+            ValidateBlockError::ForkDepthGreaterThanOne(block.hash_slow())
+        );
+    }
+
+
+
 }

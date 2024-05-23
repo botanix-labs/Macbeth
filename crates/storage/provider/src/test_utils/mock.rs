@@ -9,7 +9,7 @@ use crate::{
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_interfaces::{
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
+    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeEngine, BlockchainTreeViewer},
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
