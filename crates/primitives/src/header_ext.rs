@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
+use alloy_eips::merge::ALLOWED_FUTURE_BLOCK_TIME_SECONDS;
 use thiserror::Error;
 
-use crate::{Bytes, Header, B256};
 use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
+use crate::{Bytes, Header, B256};
 /// Extension trait for the block header
 /// Mainly adding extra data header utility functions
 pub trait HeaderExt {
@@ -37,6 +38,9 @@ pub trait HeaderExt {
         &self,
         authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateInturnError>;
+
+    /// Validate the header timestamp against current timestamp
+    fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError>;
 
     /// Get the block hash excluding the authority signatures
     fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError>;
@@ -186,6 +190,17 @@ impl HeaderExt for Header {
         Ok(())
     }
 
+    /// Validate timestamp
+    fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
+        // Time stamp should be less that or greater than by 2 seconds
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        {
+            return Err(ValidateInturnError::AuthorityNotInTurn);
+        }
+        Ok(())
+    }
+
     /// Recover the signed authorities from the extra data header
     fn recovered_signed_authorities(
         &self,
@@ -307,7 +322,10 @@ impl HeaderExt for Header {
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError> {
         let edh = self.deserialize_extra_data_header()?;
-        let sigs = edh.authority_signatures.as_ref().ok_or(ValidateAuthoritySignatureError::MissingSignature)?;
+        let sigs = edh
+            .authority_signatures
+            .as_ref()
+            .ok_or(ValidateAuthoritySignatureError::MissingSignature)?;
         let sighash = self.create_sighash()?;
 
         let msg = secp256k1::Message::from_slice(sighash.as_slice())
@@ -316,7 +334,7 @@ impl HeaderExt for Header {
         // Just validating the first signature
         let sig = sigs[0];
         let recovered_pk =
-           sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
+            sig.recover(&msg).map_err(|_| ValidateAuthoritySignatureError::RecoverFailed)?;
 
         // find pk in authority signers
         for signer in authority_signers {

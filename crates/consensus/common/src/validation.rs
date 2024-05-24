@@ -349,6 +349,10 @@ pub fn validate_poa_header_standalone(
 
     // Validate signer is in turn
     header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
+    // Place a tigher limit on the timestamp
+    let current_timestamp = utils::unix_timestamp();
+    header.validate_timestamp(current_timestamp).map_err(|_| ConsensusError::TimestampIsInFuture { timestamp: header.timestamp, present_timestamp: current_timestamp })?; 
+
 
     Ok(())
 }
