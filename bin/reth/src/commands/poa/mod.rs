@@ -394,7 +394,8 @@ where {
                         let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
                         let height = tip_block.height;
                         let finalized = {
-                            let depth = reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH;
+                            let depth =
+                                reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH;
                             let height = height.saturating_sub(depth as usize - 1);
                             let hash = or_continue!(bitcoind.get_block_hash(height as u64));
                             or_continue!(bitcoind.get_block_info(&hash))

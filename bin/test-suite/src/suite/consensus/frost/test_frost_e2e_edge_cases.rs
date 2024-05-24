@@ -1,8 +1,6 @@
-
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
-use bitcoin::hashes::Hash;
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::{Auth, RpcApi};
 use ethers::{
     prelude::Provider,
@@ -138,7 +136,10 @@ pub async fn frost_e2e_failed_signing_round(
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc
-        .generate_to_address(2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64, &address)
+        .generate_to_address(
+            2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64,
+            &address,
+        )
         .expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -205,7 +206,8 @@ pub async fn frost_e2e_failed_signing_round(
     };
 
     // send the pegin transactions to all fed memebers
-    it_info_print!("Sending pegin tx: block headers",
+    it_info_print!(
+        "Sending pegin tx: block headers",
         meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
     );
     let serialized_pegin_meta = meta.serialize();

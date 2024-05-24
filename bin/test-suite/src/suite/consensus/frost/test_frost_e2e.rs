@@ -116,9 +116,12 @@ pub async fn frost_e2e_stable(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc.generate_to_address(
-        2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64, &address,
-    ).expect("generate to address");
+    bitcoind_rpc
+        .generate_to_address(
+            2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64,
+            &address,
+        )
+        .expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -188,7 +191,7 @@ pub async fn frost_e2e_stable(
     // validate the pegin data first offchain before submitting
     let pegin_data = PeginData {
         account: Address::from_slice(eth_destination.as_bytes()),
-        amount: amount,
+        amount,
         bitcoin_block_height: bitcoin_block_height as u32,
         meta: vec![meta.clone()],
     };
@@ -198,16 +201,20 @@ pub async fn frost_e2e_stable(
         let hash = bitcoind_rpc.get_block_hash(height).unwrap();
         (bitcoind_rpc.get_block_header(&hash).unwrap(), height as u32)
     };
-    pegin_data.validate(
-        &finalized,
-        &bitcoin::secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        ).unwrap(),
-    ).expect("pegin data should be invalid!");
+    pegin_data
+        .validate(
+            &finalized,
+            &bitcoin::secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .unwrap(),
+        )
+        .expect("pegin data should be invalid!");
     it_info_print!("Pegindata successfully validated");
 
     // send the pegin transactions to all fed memebers
-    it_info_print!("Sending pegin tx: block headers={:?}",
+    it_info_print!(
+        "Sending pegin tx: block headers={:?}",
         meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
     );
     let serialized_pegin_meta = meta.serialize();
