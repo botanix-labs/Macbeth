@@ -12,7 +12,7 @@ use crate::{
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
+use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::{bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient}};
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
@@ -86,7 +86,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    NetworkClient: HeadersClient + Clone + 'static,
+    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -212,7 +212,7 @@ where
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
-        BlockFetcherTask<Client, EvmConfig, Engine>,
+        BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
@@ -262,6 +262,7 @@ where
             bitcoin_block_header.clone(),
             evm_config.clone(),
             btc_network,
+            network_client.clone(),
         );
 
         // Set up frost notification message queue
