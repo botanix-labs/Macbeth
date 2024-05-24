@@ -1,14 +1,16 @@
 use std::str::FromStr;
 
-use super::{
-    error::Error,
-    test_dkg::{do_dkg, send_pegin_notification},
-};
-use crate::suite::consensus::ConsensusIntegrationTestSuite;
 use bitcoin::Address;
+use bitcoincore_rpc::{Auth, RpcApi};
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
+
+use crate::suite::consensus::ConsensusIntegrationTestSuite;
+use crate::suite::consensus::frost::{
+    error::Error,
+    test_dkg::{do_dkg, send_pegin_notification},
+};
 
 const INPUTS_TO_SPEND: usize = 2;
 
@@ -25,6 +27,12 @@ impl Pegins {
 }
 
 pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
+    // generate a block to the network looks live
+    bitcoind.generate_to_address(1, &address).expect("generate to address");
+
+
     // create pegins container
     let mut pegins = Pegins::new();
 
