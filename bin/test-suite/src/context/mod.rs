@@ -66,10 +66,8 @@ impl GlobalContext {
         let host = self.bitcoind_url.host_str().unwrap_or_default().to_owned();
         let port = self.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
         let url = format!("{}:{}", host, port);
-        let auth = bitcoincore_rpc::Auth::UserPass(
-            self.bitcoind_user.clone(),
-            self.bitcoind_pass.clone(),
-        );
+        let auth =
+            bitcoincore_rpc::Auth::UserPass(self.bitcoind_user.clone(), self.bitcoind_pass.clone());
         bitcoincore_rpc::Client::new(&url, auth).expect("bitcoind client")
     }
 }

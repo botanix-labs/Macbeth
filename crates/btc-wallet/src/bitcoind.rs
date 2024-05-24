@@ -108,8 +108,10 @@ impl BitcoindClient {
         &self,
         block_hash: &bitcoin::BlockHash,
     ) -> Result<GetBlockHeaderResult, BitcoindError> {
-        let block =
-            self.rpc.get_block_header_info(block_hash).map_err(BitcoindError::BlockInfoRetrievalFailed)?;
+        let block = self
+            .rpc
+            .get_block_header_info(block_hash)
+            .map_err(BitcoindError::BlockInfoRetrievalFailed)?;
         Ok(block)
     }
 
