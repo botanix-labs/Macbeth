@@ -116,11 +116,14 @@ pub async fn frost_e2e_stable(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(
+        2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64, &address,
+    ).expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
     let tx_res = bitcoind_rpc.get_transaction(&pegin_txid, None).expect("valid tx");
+    assert!(tx_res.info.confirmations > 1);
     let pegin_tx = tx_res.transaction().expect("valid tx");
     it_info_print!("Bitcoin pegin Tx", pegin_tx);
     it_info_print!("Gateway Data", gateway_address_response);
@@ -138,17 +141,32 @@ pub async fn frost_e2e_stable(
 
     // get block headers
     // first we need the block hash of the block with the conf'd pegin tx
-    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
+    let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
+    let tip = bitcoind_rpc.get_best_block_hash().unwrap();
     it_info_print!("Bitcoin Chain Tip", tip);
+    let tip_header = bitcoind_rpc.get_block_header(&tip).expect("valid block header");
+    // We will collect all the headers all the way up to the tip which is not needed, but allowed.
+    // In theory, we only need to collect headers from the block our pegin is in, to the finalized
+    // block (the one in the mainchain commitment).
+    let mut headers = vec![];
+    let mut cursor = tip_header;
+    let mut stopgap = 200; // just to make sure we don't infinite loop until genesis
+    loop {
+        stopgap -= 1;
+        if stopgap == 0 || cursor.prev_blockhash == bitcoin::BlockHash::all_zeros() {
+            panic!("confirmation block not found...");
+        }
 
-    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
-    let tip_header = bitcoind_rpc.get_block_header(&tip_hash).expect("valid block header");
+        headers.push(cursor);
+        if cursor.block_hash() == conf_hash {
+            break;
+        }
+        cursor = bitcoind_rpc.get_block_header(&cursor.prev_blockhash).unwrap();
+    }
+    headers.reverse();
+    it_info_print!("Number of pegin_headers: {}", headers.len());
 
-    let conf_block_hash = bitcoind_rpc.get_block_hash(tip - 1).expect("valid block hash");
-    let block_header = bitcoind_rpc.get_block_header(&conf_block_hash).expect("valid block header");
-    let block_headers = vec![block_header, tip_header];
-
-    let conf_block_info = bitcoind_rpc.get_block_info(&conf_block_hash).expect("valid txids");
+    let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid txids");
     it_info_print!("Block info", conf_block_info);
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
@@ -164,13 +182,36 @@ pub async fn frost_e2e_stable(
         .expect("valid public key"),
         tx: pegin_tx.clone(),
         merkle_proof: pmt,
-        block_headers,
+        block_headers: headers,
     };
 
+    // validate the pegin data first offchain before submitting
+    let pegin_data = PeginData {
+        account: Address::from_slice(eth_destination.as_bytes()),
+        amount: amount,
+        bitcoin_block_height: bitcoin_block_height as u32,
+        meta: vec![meta.clone()],
+    };
+    let finalized = {
+        let tip = bitcoind_rpc.get_block_count().unwrap();
+        let height = tip - reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64;
+        let hash = bitcoind_rpc.get_block_hash(height).unwrap();
+        (bitcoind_rpc.get_block_header(&hash).unwrap(), height as u32)
+    };
+    pegin_data.validate(
+        &finalized,
+        &bitcoin::secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        ).unwrap(),
+    ).expect("pegin data should be invalid!");
+    it_info_print!("Pegindata successfully validated");
+
     // send the pegin transactions to all fed memebers
+    it_info_print!("Sending pegin tx: block headers={:?}",
+        meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
+    );
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-
     let mint_contract = mint_contract_instances.first().cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
@@ -227,8 +268,7 @@ pub async fn frost_e2e_stable(
     bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Retrieve the last block
-    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
-    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
+    let tip_hash = bitcoind_rpc.get_best_block_hash().expect("valid block hash");
     let tip_block = bitcoind_rpc.get_block(&tip_hash).expect("valid block");
     // there should be 2 transaction one of which is the pegout the other is coinbase
     assert_eq!(tip_block.txdata.len(), 2);
