@@ -44,8 +44,6 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
     btc_server: Option<BtcServerExtendedClient>,
-    /// bitcoin block source
-    bitcoind_client: BitcoindClient,
     /// Consensus cache
     storage: Storage<Client>,
     /// Recent bitcoin header
@@ -78,7 +76,6 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
-        bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
@@ -91,7 +88,6 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
-            bitcoind_client,
             storage,
             bitcoin_block_header,
             evm_config,

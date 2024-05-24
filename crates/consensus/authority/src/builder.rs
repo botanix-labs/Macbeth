@@ -12,7 +12,10 @@ use crate::{
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::{bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient}};
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeEngine,
+    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+};
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
@@ -35,7 +38,13 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToFrostMan, NetworkClient> {
+pub struct AuthorityConsensusBuilder<
+    Client,
+    EvmConfig,
+    Engine: EngineTypes,
+    ToFrostMan,
+    NetworkClient,
+> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -249,15 +258,12 @@ where
             to_engine.clone(),
         );
 
-        let bitcoind_client =
-            BitcoindClient::new(bitcoind_config.clone()).expect("Invalid Bitcoind client");
         let block_fetcher_task = crate::block_fetcher::BlockFetcherTask::new(
             Arc::clone(&consensus.chain_spec),
             block_import_rx,
             to_engine.clone(),
             canon_state_notification.clone(),
             btc_server.clone(),
-            bitcoind_client,
             storage.clone(),
             bitcoin_block_header.clone(),
             evm_config.clone(),
