@@ -86,7 +86,7 @@ jobs:
           --bitcoind-url ${{env.BITCOIND_URL}} \
           --bitcoind-user ${{env.BITCOIND_USER}} \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-          --fall-back-fee-rate-sat-per-vbyte 5 
+          --fall-back-fee-rate-sat-per-vbyte 5 &&
 
           if [ $? -eq 0 ]; then
             echo "Btc-server ran successfully, exiting..."
@@ -101,7 +101,7 @@ jobs:
   doc:
     name: doc tests (ethereum)
     runs-on: 
-      group: botanix-actions-runner
+      group: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
