@@ -68,9 +68,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
       - name: Start BTC Server
         run: |
           cd ./bin/btc-server && \
@@ -100,8 +97,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on: 
-      group: botanix-actions-runner-vm-1
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90

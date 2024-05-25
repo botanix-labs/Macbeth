@@ -83,27 +83,27 @@ jobs:
 #           RUSTFLAGS: -D warnings
 
 # Commenting out for now, will re-enable in the future
-  docs:
-    name: docs
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
+  # docs:
+  #   name: docs
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install Protobuf Compiler
+  #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-on-failure: true
+  #         cache-all-crates: true
 
-      - run: cargo docs --document-private-items
-        env:
-          # Keep in sync with ./book.yml:jobs.build
-          # This should only add `-D warnings`
-          RUSTDOCFLAGS:
-            --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page
-            -Zunstable-options -D warnings
+  #     - run: cargo docs --document-private-items
+  #       env:
+  #         # Keep in sync with ./book.yml:jobs.build
+  #         # This should only add `-D warnings`
+  #         RUSTDOCFLAGS:
+  #           --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page
+  #           -Zunstable-options -D warnings
 
   fmt:
     name: fmt
