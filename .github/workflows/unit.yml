@@ -24,8 +24,7 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on: 
-      group: botanix-actions-runner
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
