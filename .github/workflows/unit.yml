@@ -35,7 +35,6 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - uses: taiki-e/install-action@nextest
 
       - name: Run tests
         run: |
