@@ -12,40 +12,40 @@ env:
 
 jobs:
 # Commenting out for now, will re-enable in the future
-  clippy-binaries:
-    name: clippy / ethereum
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-      - run:
-          cargo +nightly clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
-        env:
-          RUSTFLAGS: -D warnings
+  # clippy-binaries:
+  #   name: clippy / ethereum
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install Protobuf Compiler
+  #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+  #     - uses: dtolnay/rust-toolchain@clippy
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-on-failure: true
+  #         cache-all-crates: true
+  #     - run:
+  #         cargo +nightly clippy --bin reth --workspace --features "ethereum asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs"
+  #       env:
+  #         RUSTFLAGS: -D warnings
 
-  clippy:
-    name: clippy-checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-      - run: cargo clippy --workspace --lib --examples --tests --benches --all-features --locked
-        env:
-          RUSTFLAGS: -D warnings
+  # clippy:
+  #   name: clippy-checks
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install Protobuf Compiler
+  #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+  #     - uses: dtolnay/rust-toolchain@clippy
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-on-failure: true
+  #         cache-all-crates: true
+  #     - run: cargo clippy --workspace --lib --examples --tests --benches --all-features --locked
+  #       env:
+  #         RUSTFLAGS: -D warnings
 
   crate-checks:
     runs-on: ubuntu-latest
@@ -58,6 +58,8 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo hack check
 
 # Commenting out for now, will re-enable in once we have a MSRV

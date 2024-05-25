@@ -62,7 +62,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
