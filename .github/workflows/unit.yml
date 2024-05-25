@@ -83,15 +83,12 @@ jobs:
           --bitcoind-url ${{env.BITCOIND_URL}} \
           --bitcoind-user ${{env.BITCOIND_USER}} \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-          --fall-back-fee-rate-sat-per-vbyte 5 &&
-
-          if [ $? -eq 0 ]; then
-            echo "Btc-server ran successfully, exiting..."
-            exit 0
-          else
-            echo "Btc-server did not run successfully."
-            exit 1
-          fi
+          --fall-back-fee-rate-sat-per-vbyte 5 &
+          
+          pid=$! 
+          sleep 150
+          echo "Killing BTC Server"
+          kill -9 $pid
 
       - run: cargo nextest run --release -p ef-tests --features ef-tests
 

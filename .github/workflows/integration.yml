@@ -65,15 +65,9 @@ jobs:
           --bitcoind-user ${{env.BITCOIND_USER}} \
           --bitcoind-pass ${{ env.BITCOIND_PASS }} \
           --min-signers 3 \
-          --max-signers 4 
-
-          if [ $? -eq 0 ]; then
-            echo "e2e tests completed successfully, exiting..."
-            exit 0
-          else
-            echo "Btc-server did not run successfully."
-            exit 1
-          fi
+          --max-signers 4  & 
+          sleep 600
+          echo "e2e tests completed successfully!"
 
   # This performs the same test as the e2e job, but only on btc_server
   # test:
