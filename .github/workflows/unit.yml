@@ -15,7 +15,7 @@ env:
   BITCOIND_URL: http:/localhost:18443
   BITCOIND_USER: botanix-ci-user
   BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
-  TEST_JWT_DIR: "/home/ubuntu/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
+  TEST_JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo nextest run \
+          /home/runner/.cargo/bin/cargo nextest run \
             --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
@@ -88,7 +88,7 @@ jobs:
           echo "Killing BTC Server"
           kill -9 $pid
 
-      - run: cargo nextest run --release -p ef-tests --features ef-tests
+      - run: /home/runner/.cargo/bin/cargo nextest run --release -p ef-tests --features ef-tests
 
   doc:
     name: doc tests (ethereum)
@@ -105,7 +105,7 @@ jobs:
           cache-all-crates: true
 
       - name: Run doctests
-        run: cargo test --doc --workspace --features "ethereum"
+        run: /home/runner/.cargo/bin/cargo test --doc --workspace --features "ethereum"
 
   unit-success:
     name: unit success
