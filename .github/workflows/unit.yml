@@ -88,7 +88,7 @@ jobs:
           echo "Killing BTC Server"
           kill -9 $pid
 
-      - run: /home/runner/.cargo/bin/cargo nextest run --release -p ef-tests --features ef-tests
+      - run: /home/runner/.cargo/bin/cargo nextest run --release -p ef-tests --features "asm-keccak ef-tests"
 
   doc:
     name: doc tests (ethereum)
