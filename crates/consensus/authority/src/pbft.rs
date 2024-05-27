@@ -20,6 +20,7 @@ use reth_primitives::{
 };
 use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::PeerId;
+use reth_tasks::TaskExecutor;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
@@ -120,6 +121,7 @@ where
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
+        task_executor: Option<TaskExecutor>,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
@@ -134,47 +136,49 @@ where
         let precommitments_clone: PreCommitmentsMap = Arc::clone(&pre_commitments);
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
         let client_clone = client.clone();
-        tokio::spawn(async move {
-            loop {
-                // find stale tx hashes
-                let guard = sealed_blocks_clone.read().await;
-                let stale_hashes = guard
-                    .values()
-                    .cloned()
-                    .filter_map(|sealed_block| {
-                        let tip = client_clone.canonical_tip();
-                        let best_block_height = client_clone
-                            .block_by_number(tip.number)
-                            .ok()
-                            .flatten()
-                            .map(|b| b.header.number)
-                            .unwrap_or_default();
-                        let best_block_height = best_block_height.saturating_sub(2);
-                        if sealed_block.header.number < best_block_height {
-                            Some(sealed_block.hash())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                drop(guard);
+        if let Some(task_exec) = task_executor.as_ref() {
+            task_exec.spawn(async move {
+                loop {
+                    // find stale tx hashes
+                    let guard = sealed_blocks_clone.read().await;
+                    let stale_hashes = guard
+                        .values()
+                        .cloned()
+                        .filter_map(|sealed_block| {
+                            let tip = client_clone.canonical_tip();
+                            let best_block_height = client_clone
+                                .block_by_number(tip.number)
+                                .ok()
+                                .flatten()
+                                .map(|b| b.header.number)
+                                .unwrap_or_default();
+                            let best_block_height = best_block_height.saturating_sub(2);
+                            if sealed_block.header.number < best_block_height {
+                                Some(sealed_block.hash())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    drop(guard);
 
-                // remove stale sealed blocks
-                let mut guard = sealed_blocks_clone.write().await;
-                guard.retain(|_, sealed_block| {
-                    sealed_block.timestamp >= unix_timestamp() - sleep_duration.as_secs()
-                });
-                drop(guard);
+                    // remove stale sealed blocks
+                    let mut guard = sealed_blocks_clone.write().await;
+                    guard.retain(|_, sealed_block| {
+                        sealed_block.timestamp >= unix_timestamp() - sleep_duration.as_secs()
+                    });
+                    drop(guard);
 
-                // remove precommitments belonging to stale blocks
-                let mut guard = precommitments_clone.write().await;
-                guard.retain(|k, _| !stale_hashes.contains(k));
-                drop(guard);
+                    // remove precommitments belonging to stale blocks
+                    let mut guard = precommitments_clone.write().await;
+                    guard.retain(|k, _| !stale_hashes.contains(k));
+                    drop(guard);
 
-                // sleep until next cleanup round
-                tokio::time::sleep(sleep_duration).await;
-            }
-        });
+                    // sleep until next cleanup round
+                    tokio::time::sleep(sleep_duration).await;
+                }
+            });
+        }
 
         Self {
             client,
@@ -588,6 +592,7 @@ mod tests {
                     $configs[i].clone(),
                     $peer_ids[i],
                     $sks[i],
+                    None,
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -597,20 +602,30 @@ mod tests {
                 }
             }
             let $block_to_propose = $block_to_propose.expect("should have a block to propose");
+            #[allow(unused_mut)]
             let mut $coord = $coord.expect("should have a coordinator");
         };
     }
 
+    use std::ops::{RangeBounds, RangeInclusive};
+
     use super::*;
     use rand;
+    use reth_db::models::StoredBlockBodyIndices;
     use reth_interfaces::provider::ProviderResult;
     use reth_network::frost::manager::ToFrostManager;
     use reth_primitives::{
-        extra_data_header::ExtraDataHeader, Block, BlockNumber, ChainInfo, Header, Receipt,
-        SealedHeader, B256,
+        extra_data_header::ExtraDataHeader, Address, Block, BlockNumber, BlockWithSenders,
+        ChainInfo, Header, Receipt, SealedBlockWithSenders, SealedHeader, TransactionMeta,
+        TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals,
+        B256, U256,
     };
-    use reth_provider::{BlockHashReader, BlockIdReader, BlockNumReader, ReceiptProviderIdExt};
-    use reth_rpc_types::BlockId;
+    use reth_provider::{
+        BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockSource, HeaderProvider,
+        ReceiptProvider, ReceiptProviderIdExt, TransactionVariant, TransactionsProvider,
+        WithdrawalsProvider,
+    };
+    use reth_rpc_types::{BlockHashOrNumber, BlockId};
 
     // mock frost handle
     #[derive(Clone)]
@@ -634,6 +649,251 @@ mod tests {
     #[derive(Clone)]
     struct ClientMock {}
 
+    impl ReceiptProviderIdExt for ClientMock {}
+
+    #[allow(unused_variables)]
+    impl ReceiptProvider for ClientMock {
+        fn receipt(&self, id: TxNumber) -> ProviderResult<Option<Receipt>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn receipt_by_hash(&self, hash: TxHash) -> ProviderResult<Option<Receipt>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn receipts_by_block(
+            &self,
+            block: BlockHashOrNumber,
+        ) -> ProviderResult<Option<Vec<Receipt>>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn receipts_by_tx_range(
+            &self,
+            range: impl RangeBounds<TxNumber>,
+        ) -> ProviderResult<Vec<Receipt>> {
+            ProviderResult::Ok(vec![])
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl BlockHashReader for ClientMock {
+        fn block_hash(&self, number: BlockNumber) -> ProviderResult<Option<B256>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn canonical_hashes_range(
+            &self,
+            start: BlockNumber,
+            end: BlockNumber,
+        ) -> ProviderResult<Vec<B256>> {
+            ProviderResult::Ok(vec![])
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl BlockNumReader for ClientMock {
+        fn chain_info(&self) -> ProviderResult<ChainInfo> {
+            ProviderResult::Ok(ChainInfo::default())
+        }
+
+        fn best_block_number(&self) -> ProviderResult<BlockNumber> {
+            ProviderResult::Ok(BlockNumber::MIN)
+        }
+
+        fn last_block_number(&self) -> ProviderResult<BlockNumber> {
+            ProviderResult::Ok(BlockNumber::MIN)
+        }
+
+        fn block_number(&self, hash: B256) -> ProviderResult<Option<BlockNumber>> {
+            ProviderResult::Ok(None)
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl BlockIdReader for ClientMock {
+        fn pending_block_num_hash(&self) -> ProviderResult<Option<reth_primitives::BlockNumHash>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn safe_block_num_hash(&self) -> ProviderResult<Option<reth_primitives::BlockNumHash>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn finalized_block_num_hash(
+            &self,
+        ) -> ProviderResult<Option<reth_primitives::BlockNumHash>> {
+            ProviderResult::Ok(None)
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl WithdrawalsProvider for ClientMock {
+        fn withdrawals_by_block(
+            &self,
+            id: BlockHashOrNumber,
+            timestamp: u64,
+        ) -> ProviderResult<Option<Withdrawals>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn latest_withdrawal(&self) -> ProviderResult<Option<Withdrawal>> {
+            ProviderResult::Ok(None)
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl TransactionsProvider for ClientMock {
+        fn transaction_id(&self, tx_hash: TxHash) -> ProviderResult<Option<TxNumber>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transaction_by_id(&self, id: TxNumber) -> ProviderResult<Option<TransactionSigned>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transaction_by_id_no_hash(
+            &self,
+            id: TxNumber,
+        ) -> ProviderResult<Option<TransactionSignedNoHash>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transaction_by_hash(&self, hash: TxHash) -> ProviderResult<Option<TransactionSigned>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transaction_by_hash_with_meta(
+            &self,
+            hash: TxHash,
+        ) -> ProviderResult<Option<(TransactionSigned, TransactionMeta)>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transaction_block(&self, id: TxNumber) -> ProviderResult<Option<BlockNumber>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transactions_by_block(
+            &self,
+            block: BlockHashOrNumber,
+        ) -> ProviderResult<Option<Vec<TransactionSigned>>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn transactions_by_block_range(
+            &self,
+            range: impl RangeBounds<BlockNumber>,
+        ) -> ProviderResult<Vec<Vec<TransactionSigned>>> {
+            ProviderResult::Ok(vec![])
+        }
+
+        fn transactions_by_tx_range(
+            &self,
+            range: impl RangeBounds<TxNumber>,
+        ) -> ProviderResult<Vec<TransactionSignedNoHash>> {
+            ProviderResult::Ok(vec![])
+        }
+
+        fn senders_by_tx_range(
+            &self,
+            range: impl RangeBounds<TxNumber>,
+        ) -> ProviderResult<Vec<Address>> {
+            ProviderResult::Ok(vec![])
+        }
+
+        fn transaction_sender(&self, id: TxNumber) -> ProviderResult<Option<Address>> {
+            ProviderResult::Ok(None)
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl HeaderProvider for ClientMock {
+        fn header(&self, block_hash: &BlockHash) -> ProviderResult<Option<Header>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn header_by_number(&self, num: u64) -> ProviderResult<Option<Header>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn header_td(&self, hash: &BlockHash) -> ProviderResult<Option<U256>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn header_td_by_number(&self, number: BlockNumber) -> ProviderResult<Option<U256>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn headers_range(
+            &self,
+            range: impl RangeBounds<BlockNumber>,
+        ) -> ProviderResult<Vec<Header>> {
+            ProviderResult::Ok(vec![])
+        }
+
+        fn sealed_header(&self, number: BlockNumber) -> ProviderResult<Option<SealedHeader>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn sealed_headers_while(
+            &self,
+            range: impl RangeBounds<BlockNumber>,
+            predicate: impl FnMut(&SealedHeader) -> bool,
+        ) -> ProviderResult<Vec<SealedHeader>> {
+            ProviderResult::Ok(vec![])
+        }
+    }
+
+    #[allow(unused_variables)]
+    impl BlockReader for ClientMock {
+        fn find_block_by_hash(
+            &self,
+            hash: B256,
+            source: BlockSource,
+        ) -> ProviderResult<Option<Block>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn block(&self, id: BlockHashOrNumber) -> ProviderResult<Option<Block>> {
+            ProviderResult::Ok(None)
+        }
+        fn pending_block(&self) -> ProviderResult<Option<SealedBlock>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn pending_block_with_senders(&self) -> ProviderResult<Option<SealedBlockWithSenders>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn pending_block_and_receipts(
+            &self,
+        ) -> ProviderResult<Option<(SealedBlock, Vec<Receipt>)>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn ommers(&self, id: BlockHashOrNumber) -> ProviderResult<Option<Vec<Header>>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn block_body_indices(&self, num: u64) -> ProviderResult<Option<StoredBlockBodyIndices>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn block_with_senders(
+            &self,
+            id: BlockHashOrNumber,
+            transaction_kind: TransactionVariant,
+        ) -> ProviderResult<Option<BlockWithSenders>> {
+            ProviderResult::Ok(None)
+        }
+
+        fn block_range(&self, range: RangeInclusive<BlockNumber>) -> ProviderResult<Vec<Block>> {
+            ProviderResult::Ok(vec![])
+        }
+    }
+
+    #[allow(unused_variables)]
     impl BlockReaderIdExt for ClientMock {
         fn block_by_id(&self, id: BlockId) -> ProviderResult<Option<Block>> {
             ProviderResult::Ok(None)
@@ -652,6 +912,7 @@ mod tests {
         }
     }
 
+    #[allow(unused_variables)]
     impl BlockchainTreeViewer for ClientMock {
         fn blocks(&self) -> BTreeMap<reth_primitives::BlockNumber, HashSet<BlockHash>> {
             BTreeMap::default()

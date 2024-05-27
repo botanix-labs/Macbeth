@@ -18,6 +18,7 @@ use reth_network::frost::{
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{error::SendError, UnboundedSender},
@@ -160,6 +161,7 @@ where
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(frost_config.authority_index as u16);
@@ -171,7 +173,7 @@ where
         let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
         let signing_states_clone = Arc::clone(&signing_states);
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
-        tokio::spawn(async move {
+        task_executor.spawn(async move {
             loop {
                 // remove stale signing sessions
                 let mut guard = signing_states_clone.write().await;
