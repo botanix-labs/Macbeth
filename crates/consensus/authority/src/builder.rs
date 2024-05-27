@@ -282,20 +282,10 @@ where
                 storage.clone(),
                 frost_task_notifications1_rx,
                 frost_task_notifications2_tx,
+                task_executor.clone(),
             );
 
             frost_task = Some(task);
-
-            // let frost_task = FrostTask::new(
-            //     btc_server.clone(),
-            //     network_handle.clone(),
-            //     frost_handle.clone().expect("Requires frost handle"),
-            //     epoch_manager.clone(),
-            //     frost_config.clone(),
-            //     storage.clone(),
-            //     frost_task_notifications1_rx,
-            //     frost_task_notifications2_tx,
-            // );
 
             // Set up pbft notification message queue
             // these are two mpsc channels that are used to communicate between the pbft task and
@@ -313,6 +303,7 @@ where
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
+                task_executor.clone(),
             );
             pbft_task = Some(pbft);
 

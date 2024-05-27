@@ -6967,6 +6967,7 @@ dependencies = [
  "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-consensus-common",
+ "reth-db",
  "reth-ecies",
  "reth-eth-wire",
  "reth-interfaces",
