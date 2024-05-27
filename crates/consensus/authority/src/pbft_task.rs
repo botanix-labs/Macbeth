@@ -8,6 +8,7 @@ use reth_network::frost::{
 };
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, warn};
 
@@ -66,6 +67,7 @@ where
         secret_key: secp256k1::SecretKey,
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let pbft_state_machine = PbftStateMachine::new(
@@ -74,6 +76,7 @@ where
             config.clone(),
             my_peerid,
             secret_key,
+            Some(task_executor),
         );
         Self {
             frost_handle,

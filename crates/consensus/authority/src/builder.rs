@@ -278,31 +278,28 @@ where
                 storage.clone(),
                 frost_task_notifications1_rx,
                 frost_task_notifications2_tx,
+                task_executor.clone(),
             );
 
             frost_task = Some(task);
 
-             // Set up pbft notification message queue
-            // these are two mpsc channels that are used to communicate between the frost task and the block production task
+            // Set up pbft notification message queue
+            // these are two mpsc channels that are used to communicate between the pbft task and
+            // the block production task
             let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
-<<<<<<< HEAD
             let task = PbftTask::new(
+                client,
                 frost_handle.expect("Requires frost handle"),
                 frost_config,
-=======
-            let pbft = PbftTask::new(
-                client,
-                frost_handle.clone().expect("Requires frost handle"),
-                frost_config.unwrap(),
->>>>>>> c0388cefd (using block height)
                 storage.clone(),
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
+                task_executor.clone(),
             );
             let pbft_task = Some(task);
 
