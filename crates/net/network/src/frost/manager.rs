@@ -135,7 +135,7 @@ impl FrostManager {
                     warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
-                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
+                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response.to_string());
                 for task_forwarder in self.task_forwarder_txs.iter() {
                     // TODO:  handle error?
                     let _send_res = task_forwarder.send((peer_id, response.clone()));

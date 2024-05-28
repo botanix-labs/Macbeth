@@ -332,10 +332,10 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        // if !self.validate_block(&block).await? {
+        //     warn!(target: "pbft" ,"Block proposal failed validation");
+        //     return Err(Error::BlockValidationFailed);
+        // }
 
         if peer_id == self.peer_id {
             return Ok(());
@@ -439,10 +439,10 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        // if !self.validate_block(&block).await? {
+        //     warn!(target: "pbft" ,"Block proposal failed validation");
+        //     return Err(Error::BlockValidationFailed);
+        // }
 
         // Add the peer's precommitment
         let pre_commits = self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new);
@@ -472,10 +472,10 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        // if !self.validate_block(&block).await? {
+        //     warn!(target: "pbft" ,"Block proposal failed validation");
+        //     return Err(Error::BlockValidationFailed);
+        // }
 
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature

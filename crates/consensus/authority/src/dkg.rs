@@ -419,7 +419,11 @@ where
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
         // get round 1 package from db, if missing, create it
         let dkg1_package = self.get_round1_dkg_package().await?;
-        info!("dkg1_package: {:?}", dkg1_package);
+        info!(
+            "dkg1_package retrieved. Identifier Size:{:?}, Data Size: {:?}",
+            dkg1_package.identifier.len(),
+            dkg1_package.payload.len()
+        );
 
         let fut = || async {
             // get all connected peers

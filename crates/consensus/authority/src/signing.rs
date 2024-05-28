@@ -872,10 +872,7 @@ where
                 self.update_signing_state(session_id, SigningState::Failed);
                 return Err(e);
             }
-            info!(
-                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers {:?}",
-                to_sign_payload
-            );
+            info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers");
         }
 
         Ok(())
@@ -918,10 +915,7 @@ where
                     return Err(e);
                 }
             };
-        info!(
-            ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2 {:?}",
-            signing_package_round2
-        );
+        info!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2");
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator, if some, someone else is
