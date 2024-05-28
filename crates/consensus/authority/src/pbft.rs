@@ -139,20 +139,21 @@ where
         if let Some(task_exec) = task_executor.as_ref() {
             task_exec.spawn(async move {
                 loop {
+                    let tip = client_clone.canonical_tip();
+                    let best_block_height = client_clone
+                        .block_by_number(tip.number)
+                        .ok()
+                        .flatten()
+                        .map(|b| b.header.number)
+                        .unwrap_or_default();
+                    let best_block_height = best_block_height.saturating_sub(2);
+
                     // find stale tx hashes
                     let guard = sealed_blocks_clone.read().await;
                     let stale_hashes = guard
                         .values()
                         .cloned()
                         .filter_map(|sealed_block| {
-                            let tip = client_clone.canonical_tip();
-                            let best_block_height = client_clone
-                                .block_by_number(tip.number)
-                                .ok()
-                                .flatten()
-                                .map(|b| b.header.number)
-                                .unwrap_or_default();
-                            let best_block_height = best_block_height.saturating_sub(2);
                             if sealed_block.header.number < best_block_height {
                                 Some(sealed_block.hash())
                             } else {
@@ -164,9 +165,7 @@ where
 
                     // remove stale sealed blocks
                     let mut guard = sealed_blocks_clone.write().await;
-                    guard.retain(|_, sealed_block| {
-                        sealed_block.timestamp >= unix_timestamp() - sleep_duration.as_secs()
-                    });
+                    guard.retain(|_, sealed_block| sealed_block.header.number >= best_block_height);
                     drop(guard);
 
                     // remove precommitments belonging to stale blocks
