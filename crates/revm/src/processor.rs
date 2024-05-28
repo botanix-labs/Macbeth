@@ -8,8 +8,6 @@ use revm::{
     Evm, State,
 };
 use std::{sync::Arc, time::Instant};
-#[cfg(not(feature = "optimism"))]
-use tracing::{debug, error, trace, warn};
 
 use reth_evm::ConfigureEvm;
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
@@ -20,8 +18,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
-
-use tracing::{error, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
