@@ -71,7 +71,7 @@ where
         task_executor: TaskExecutor,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
-        let pbft_state_machine = PbftStateMachine::new(
+        let mut pbft_state_machine = PbftStateMachine::new(
             client,
             frost_handle.clone(),
             config.clone(),
@@ -79,6 +79,7 @@ where
             secret_key,
             Some(task_executor),
         );
+        pbft_state_machine.spawn_cleanup_task();
         Self {
             frost_handle,
             pbft_state_machine,
