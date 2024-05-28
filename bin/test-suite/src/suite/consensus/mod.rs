@@ -168,12 +168,12 @@ impl Suite for ConsensusIntegrationTestSuite {
                     Ok(_) => {
                         info!("Connected to btc server at port {:?}", port);
                         successes += 1;
-                    },
+                    }
                     Err(e) => {
                         warn!("Failed to connect to btc server at port {:?} -> {:?}", port, e);
                     }
                 }
-                
+
                 tries -= 1;
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             }
