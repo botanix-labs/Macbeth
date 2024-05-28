@@ -2,7 +2,7 @@
 
 use crate::{
     revm_primitives::{address, b256},
-    Address, B256, U256,
+    Address, B256, U256, BaseFeeParams
 };
 use std::time::Duration;
 

@@ -21,6 +21,8 @@ use reth_primitives::revm::env::fill_tx_env;
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
 
+use tracing::{error, warn};
+
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
     database::StateProviderDatabase,
