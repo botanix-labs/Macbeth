@@ -5,7 +5,7 @@ use strum_macros::{AsRefStr, EnumString};
 #[async_trait]
 pub trait Suite: Send + Sync + 'static {
     fn name(&self) -> &str;
-    async fn run(&mut self) -> Outcome;
+    async fn run(&mut self) -> Vec<Outcome>;
     async fn create_context(&mut self);
     async fn destroy_context(&mut self);
     fn set_panic_hook(&self);
