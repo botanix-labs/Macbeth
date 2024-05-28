@@ -31,7 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - run: /home/runner/.cargo/bin/rustup toolchain install stable --profile minimal
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, cargo-nextest
+
+      - run: rustup toolchain install stable --profile minimal
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -43,18 +47,18 @@ jobs:
       - name: Compile btc-server
         run: |
           cd ./bin/btc-server && \
-          /home/runner/.cargo/bin/cargo build --bin btc-server && \
+          cargo build --bin btc-server && \
           echo "Bitcoin server compiled successfully!"
 
       - name: Compile poa-node
         run: |
-          /home/runner/.cargo/bin/cargo build --bin reth && \
+          cargo build --bin reth && \
           echo "Poa node compiled successfully!"
 
       - name: Run e2e tests
         run: |
           cd ./bin/test-suite && \
-          /home/runner/.cargo/bin/cargo run --bin test-suite -- \
+          cargo run --bin test-suite -- \
           --config "./config.toml" \
           --run-suite all \
           --timeout 800000 \
@@ -118,7 +122,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - run: /home/runner/.cargo/bin/rustup toolchain install stable --profile minimal
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, cargo-nextest
+
+      - run: rustup toolchain install stable --profile minimal
 
       - uses: Swatinem/rust-cache@v2
         with:
