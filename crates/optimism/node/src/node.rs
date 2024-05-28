@@ -271,7 +271,7 @@ where
 
         let network = NetworkManager::builder(network_config).await?;
 
-        let handle = ctx.start_network(network, pool);
+        let handle = ctx.start_network(network, pool, None);
 
         Ok(handle)
     }
