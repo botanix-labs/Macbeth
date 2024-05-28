@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn should_recover_signed_authority() {
-        let mut header = Header::default();
+        let header = Header::default();
         let mut edh = ExtraDataHeader::default();
         let sk1 = generate_secret_key(SK1);
         let sk2 = generate_secret_key(SK2);
