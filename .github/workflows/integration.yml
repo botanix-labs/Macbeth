@@ -33,9 +33,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy, cargo-nextest
+          components: rustfmt, clippy
           toolchain: stable
       
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - run: rustup toolchain install stable --profile minimal
 
