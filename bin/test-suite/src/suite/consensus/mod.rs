@@ -61,9 +61,9 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // dkg tests
         run_test!(self, frost::test_dkg::dkg_flow);
-        // // signing tests
+        // signing tests
         run_test!(self, frost::test_signing::test_many_inputs_signing);
-        // // eoa tests
+        // eoa tests
         run_test!(self, frost::test_block_builder::block_builder);
         // utxo commitment test
         run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
@@ -124,6 +124,7 @@ impl Suite for ConsensusIntegrationTestSuite {
     }
 
     async fn create_context(&mut self) {
+        info!("Creating test suite context");
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
             // kill all btc server processes
             for (_, btc_server) in btc_servers.iter_mut().enumerate() {
@@ -144,8 +145,40 @@ impl Suite for ConsensusIntegrationTestSuite {
         // create new context
         self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));
 
-        // let servers come up
-        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        // try to connect to each btc server before moving on
+        let mut tries = 5;
+        let mut successes = 0;
+        loop {
+            info!("Trying to connect to all btc servers");
+            if successes == self.global_context.instances {
+                break;
+            }
+            if tries == 0 {
+                panic!("Failed to connect to all btc servers");
+            }
+            successes = 0;
+            for instance in 0..self.global_context.instances {
+                let port = self
+                    .local_context
+                    .btc_servers
+                    .as_ref()
+                    .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+                    .expect("btc server port");
+                match client::BtcServerClient::connect(format!("http://localhost:{}", port)).await {
+                    Ok(_) => {
+                        info!("Connected to btc server at port {:?}", port);
+                        successes += 1;
+                    },
+                    Err(e) => {
+                        warn!("Failed to connect to btc server at port {:?} -> {:?}", port, e);
+                    }
+                }
+                
+                tries -= 1;
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+            info!("Connected to all btc servers");
+        }
     }
 
     async fn destroy_context(&mut self) {
