@@ -77,43 +77,6 @@ jobs:
           sleep 600
           echo "e2e tests completed successfully!"
 
-  # This performs the same test as the e2e job, but only on btc_server
-  # test:
-  #   name: test / ethereum
-  #   runs-on: botanix-actions-runner-vm-1
-  #   env:
-  #     RUST_BACKTRACE: 1
-  #   timeout-minutes: 60
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - run: /home/runner/.cargo/bin/rustup toolchain install stable --profile minimal
-
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-on-failure: true
-  #         cache-all-crates: true
-
-  #     - name: Start BTC Server
-  #       run: |
-  #         cd ./bin/btc-server && \
-  #         /home/runner/.cargo/bin/cargo run --bin btc-server -- \
-  #         --identifier 0 \
-  #         --address 0.0.0.0:8080 \
-  #         --db "./db1" \
-  #         --min-signers 2 \
-  #         --max-signers 2 \
-  #         --toml ./config.toml \
-  #         --fee-rate-diff-percentage 30 \
-  #         --btc-network ${{env.BITCOIND_NETWORK}} \
-  #         --bitcoind-url ${{env.BITCOIND_URL}} \
-  #         --bitcoind-user ${{env.BITCOIND_USER}} \
-  #         --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-  #         --fall-back-fee-rate-sat-per-vbyte 5 &
-  #         pid=$! 
-  #         sleep 150
-  #         echo "Killing BTC Server"
-  #         kill -9 $pid
 
   sync:
     name: sync / 100k blocks
