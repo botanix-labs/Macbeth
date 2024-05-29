@@ -13,7 +13,7 @@ env:
   BITCOIND_URL: http:/localhost:18443
   BITCOIND_USER: botanix-ci-user
   BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
-  TEST_JWT_DIR: "/home/ubuntu/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
+  TEST_JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -96,7 +96,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on: botanix-actions-runner-vm
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90

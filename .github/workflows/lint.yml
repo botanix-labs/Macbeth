@@ -46,7 +46,7 @@ jobs:
 #           RUSTFLAGS: -D warnings
 
   crate-checks:
-    runs-on: botanix-actions-runner-vm
+    runs-on: botanix-actions-runner
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
