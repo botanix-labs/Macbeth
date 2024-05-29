@@ -10,15 +10,15 @@ exclude = [".github/"]
 
 [dependencies]
 anyhow = "1.0.71"
-bitcoin.workspace = true
-secp256k1 = { workspace = true, features = [
+bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+secp256k1 = { version = "0.28", features = [
     "global-context",
     "rand",
     "rand-std",
     "recovery",
 ] }
 rand = { version = "0.6", features = ["std"] }
-miniscript.workspace = true
+miniscript = "11.0.0"
 hex = "0.4.3"
 lazy_static = "1.4.0"
 reqwest = { version = "0.11.18", features = ["blocking", "json"] }
