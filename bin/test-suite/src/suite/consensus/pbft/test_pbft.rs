@@ -60,8 +60,8 @@ pub async fn pbft_e2e_stable(
     }
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
+    // generate > 100 blocks so coinbase utxos can be spent from the wallet
+    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
