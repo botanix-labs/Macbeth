@@ -73,7 +73,7 @@ where
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
-            client.clone()  ,
+            client.clone(),
             frost_handle.clone(),
             config.clone(),
             my_peerid,
