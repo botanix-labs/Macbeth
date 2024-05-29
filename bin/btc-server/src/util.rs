@@ -434,16 +434,17 @@ mod util_tests {
         let db = db_setup();
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx().expect("valid tx");
+        // use utxo value to avoid absurdly high fee rate error
+        let utxo_value = psbt.inputs[0].witness_utxo.clone().unwrap().value;
+
         let utxo = Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
         };
 
-        // TODO: changed value from 100_000_000 to 1_000_000 to make test pass
-        // rollback this change once fix for fee rate is in
         psbt.inputs[0].witness_utxo = Some(TxOut {
-            value: Amount::from_sat(1_000_000),
+            value: utxo_value,
             script_pubkey: ScriptBuf::from_hex("7e").expect("valid script"),
         });
 
