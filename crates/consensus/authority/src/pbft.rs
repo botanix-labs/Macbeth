@@ -1,7 +1,8 @@
-use crate::utils::retry_exec;
 use reth_consensus_common::utils::{
     get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
+use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
+use reth_interfaces::blockchain_tree::BlockchainTreeViewer;
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
@@ -19,15 +20,23 @@ use reth_primitives::{
     header_ext::HeaderExt,
     BlockBody, BlockHash, SealedBlock,
 };
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::PeerId;
+use reth_tasks::TaskExecutor;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
     time::Duration,
 };
-use tokio::sync::mpsc::{error::SendError, UnboundedSender};
+use tokio::sync::{
+    mpsc::{error::SendError, UnboundedSender},
+    RwLock,
+};
 use tracing::{debug, error, info, warn};
 
 const BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION: Duration = Duration::from_secs(10);
+type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
+type PreCommitmentsMap = Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -93,25 +102,29 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<F: ToFrostManager> {
-    frost_handle: F,
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client> {
+    client: Client,
+    frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
     peer_id: PeerId,
     config: FrostConfig,
-    pre_commitments: BTreeMap<BlockHash, HashSet<PeerId>>,
-    sealed_blocks: BTreeMap<BlockHash, SealedBlock>,
+    pre_commitments: Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>,
+    sealed_blocks: Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>,
     secret_key: secp256k1::SecretKey,
     personal_frost_identifier: frost::Identifier,
+    task_executor: Option<TaskExecutor>,
 }
 
-impl<F: ToFrostManager> PbftStateMachine<F> {
+impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client> {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        frost_handle: F,
+        client: Client,
+        frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
+        task_executor: Option<TaskExecutor>,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
@@ -119,29 +132,34 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             "Frost identifier used: {:?} - {:?}",
             config.authority_index, personal_frost_identifier
         );
+
         Self {
+            client,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
             config,
             peer_id,
-            pre_commitments: BTreeMap::new(),
-            sealed_blocks: BTreeMap::new(),
+            pre_commitments: Arc::new(RwLock::new(BTreeMap::new())),
+            sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
             secret_key,
+            task_executor: task_executor.clone(),
         }
     }
 
     /// Resets the state machine to its initial state
     pub(crate) fn reset(self) -> Self {
         Self {
+            client: self.client,
             personal_frost_identifier: self.personal_frost_identifier,
             frost_handle: self.frost_handle,
             state: BTreeMap::new(),
             config: self.config,
             peer_id: self.peer_id,
-            pre_commitments: BTreeMap::new(),
-            sealed_blocks: BTreeMap::new(),
+            pre_commitments: Arc::new(RwLock::new(BTreeMap::new())),
+            sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
             secret_key: self.secret_key,
+            task_executor: self.task_executor,
         }
     }
 
@@ -157,7 +175,61 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     }
 }
 
-impl<F: ToFrostManager> PbftStateMachine<F> {
+impl<ToFrostMan: ToFrostManager, Client> PbftStateMachine<ToFrostMan, Client>
+where
+    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+{
+    pub(crate) fn spawn_cleanup_task(&mut self) {
+        let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
+        let client_clone = self.client.clone();
+        let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
+        let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));
+        let sealed_blocks_clone = Arc::clone(&sealed_blocks);
+        let precommitments_clone: PreCommitmentsMap = Arc::clone(&pre_commitments);
+        if let Some(task_exec) = self.task_executor.as_ref() {
+            task_exec.spawn(async move {
+                loop {
+                    let tip = client_clone.canonical_tip();
+                    let best_block_height = client_clone
+                        .block_by_number(tip.number)
+                        .ok()
+                        .flatten()
+                        .map(|b| b.header.number)
+                        .unwrap_or_default();
+                    let best_block_height = best_block_height.saturating_sub(2);
+
+                    // find stale tx hashes
+                    let guard = sealed_blocks_clone.read().await;
+                    let stale_hashes = guard
+                        .values()
+                        .cloned()
+                        .filter_map(|sealed_block| {
+                            if sealed_block.header.number < best_block_height {
+                                Some(sealed_block.hash())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    drop(guard);
+
+                    // remove stale sealed blocks
+                    let mut guard = sealed_blocks_clone.write().await;
+                    guard.retain(|_, sealed_block| sealed_block.header.number >= best_block_height);
+                    drop(guard);
+
+                    // remove precommitments belonging to stale blocks
+                    let mut guard = precommitments_clone.write().await;
+                    guard.retain(|k, _| !stale_hashes.contains(k));
+                    drop(guard);
+
+                    // sleep until next cleanup round
+                    tokio::time::sleep(sleep_duration).await;
+                }
+            });
+        }
+    }
+
     pub(crate) async fn get_all_peers_handle(
         &self,
     ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
@@ -299,7 +371,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // Save block locally
-        self.sealed_blocks.insert(block_hash, block.clone());
+        self.sealed_blocks.write().await.insert(block_hash, block.clone());
         println!("block hash: {:?}", block_hash);
 
         // Set the state to awaiting pre-commitments
@@ -311,7 +383,12 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         .await?;
 
         // As the coordinator we can add our own pre-commitment
-        self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new).insert(self.peer_id);
+        self.pre_commitments
+            .write()
+            .await
+            .entry(block_hash)
+            .or_insert_with(HashSet::new)
+            .insert(self.peer_id);
 
         Ok(())
     }
@@ -374,7 +451,7 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         pre_commits.insert(self.peer_id);
         // And implicitly add the coordinator's pre-commitment
         pre_commits.insert(peer_id);
-        self.pre_commitments.insert(block_hash, pre_commits);
+        self.pre_commitments.write().await.insert(block_hash, pre_commits);
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
 
         // Broadcast our pre-commitment
@@ -395,8 +472,13 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
     async fn check_and_send_commitment(&mut self, block: &SealedBlock) -> Result<(), Error> {
         let block_hash = block.header.segregated_signature_block_hash()?;
 
-        let pre_commits =
-            self.pre_commitments.get(&block_hash).cloned().unwrap_or_else(HashSet::new);
+        let pre_commits = self
+            .pre_commitments
+            .read()
+            .await
+            .get(&block_hash)
+            .cloned()
+            .unwrap_or_else(HashSet::new);
         // if we have enough precommitments, we can move to the next state
         if pre_commits.len() >= self.config.max_signers as usize {
             info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
@@ -445,9 +527,11 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         // }
 
         // Add the peer's precommitment
-        let pre_commits = self.pre_commitments.entry(block_hash).or_insert_with(HashSet::new);
+        let mut write_handle = self.pre_commitments.write().await;
+        let pre_commits = write_handle.entry(block_hash).or_insert_with(HashSet::new);
         pre_commits.insert(peer_id);
         info!(target: "pbft" ,"pre-commitments: {:?}", pre_commits.len());
+        drop(write_handle);
 
         self.check_and_send_commitment(&block).await?;
 
@@ -486,8 +570,14 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
         }
 
         // This block is originally added during init block proposal
-        let mut current_header =
-            self.sealed_blocks.get(&block_hash).expect("block should exist").header().clone();
+        let mut current_header = self
+            .sealed_blocks
+            .read()
+            .await
+            .get(&block_hash)
+            .expect("block should exist")
+            .header()
+            .clone();
         let mut edh = current_header.deserialize_extra_data_header()?;
         let peer_edh = block.header().deserialize_extra_data_header()?;
 
@@ -521,13 +611,13 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
             BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
         );
         // Update local state
-        self.sealed_blocks.insert(block_hash, new_block.clone());
+        self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
         let number_of_valid_sigs = edh.check_authority_sig_add(
             &current_header.create_sighash()?.to_vec(),
             &self.config.authorities,
         )?;
-        println!("number of valid sigs: {}", number_of_valid_sigs);
-        println!("max signers: {}", self.config.max_signers);
+        info!("number of valid sigs: {}", number_of_valid_sigs);
+        info!("max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >= self.config.max_signers {
             info!(target: "pbft" ,"We have enough commitments, time to produce a block");
@@ -542,9 +632,17 @@ impl<F: ToFrostManager> PbftStateMachine<F> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use rand;
+    use reth_network::frost::manager::ToFrostManager;
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
+    use reth_provider::test_utils::MockEthProvider;
+
     macro_rules! setup_multi_party_test {
-        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident) => {
+        ($n:expr, $sks:ident, $frost_handle_mock:ident, $configs:ident, $peer_ids:ident, $signed_blocks:ident, $non_coords:ident, $coord:ident, $block_to_propose:ident, $mock_eth_provider:ident,) => {
             let secp = secp256k1::Secp256k1::new();
+            let mut $mock_eth_provider = MockEthProvider::default();
+
             let mut $sks = vec![];
             let mut $configs = vec![];
             let mut $peer_ids = vec![];
@@ -590,10 +688,12 @@ mod tests {
 
             for i in 0..$n {
                 let pbft_state_machine = PbftStateMachine::new(
+                    $mock_eth_provider.clone(),
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
                     $peer_ids[i],
                     $sks[i],
+                    None,
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -606,11 +706,6 @@ mod tests {
             let mut $coord = $coord.expect("should have a coordinator");
         };
     }
-
-    use super::*;
-    use rand;
-    use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
 
     // mock frost handle
     #[derive(Clone)]
@@ -642,7 +737,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            _block_to_propose
+            _block_to_propose,
+            mock_eth_provider,
         );
         let pbft_state_machine = coord;
         // Check that the initial state is empty
@@ -660,7 +756,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
         let pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -678,9 +775,15 @@ mod tests {
             .init_block_proposal(block_to_propose.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        assert_eq!(
+            pbft_state_machine.sealed_blocks.read().await.get(&block_hash).unwrap(),
+            &block_to_propose
+        );
         // there should only be the one pre-commitment
-        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(
+            pbft_state_machine.pre_commitments.read().await.get(&block_hash).unwrap().len(),
+            1
+        );
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
 
         // Since we are now waiting for pre commitments it should not change the state
@@ -688,9 +791,15 @@ mod tests {
             .init_block_proposal(block_to_propose.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        assert_eq!(
+            pbft_state_machine.sealed_blocks.read().await.get(&block_hash).unwrap(),
+            &block_to_propose
+        );
         // there should only be the one pre-commitment
-        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(
+            pbft_state_machine.pre_commitments.read().await.get(&block_hash).unwrap().len(),
+            1
+        );
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
 
         // Re initialing with the same block proposal should not change the state
@@ -699,9 +808,15 @@ mod tests {
             .init_block_proposal(block_to_propose.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash).unwrap(), &block_to_propose);
+        assert_eq!(
+            pbft_state_machine.sealed_blocks.read().await.get(&block_hash).unwrap(),
+            &block_to_propose
+        );
         // there should only be the one pre-commitment
-        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash).unwrap().len(), 1);
+        assert_eq!(
+            pbft_state_machine.pre_commitments.read().await.get(&block_hash).unwrap().len(),
+            1
+        );
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
     }
 
@@ -716,7 +831,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
         let mut pbft_state_machine = coord;
         let block_hash = block_to_propose
@@ -728,8 +844,8 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), pbft_state_machine.peer_id.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(pbft_state_machine.sealed_blocks.get(&block_hash), None);
-        assert_eq!(pbft_state_machine.pre_commitments.get(&block_hash), None);
+        assert_eq!(pbft_state_machine.sealed_blocks.read().await.get(&block_hash), None);
+        assert_eq!(pbft_state_machine.pre_commitments.read().await.get(&block_hash), None);
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::Initial);
     }
 
@@ -745,7 +861,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            _block_to_propose
+            _block_to_propose,
+            mock_eth_provider,
         );
 
         // sign the block as the non-coordinator
@@ -776,7 +893,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
 
         // sign the block as the non-coordinator
@@ -806,7 +924,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
 
         // Propose valid block and assert correct state transitions
@@ -820,11 +939,23 @@ mod tests {
             .await
             .expect("valid block proposal");
         // There should be two commitments
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         // One for the peer that sent their pre commitment
-        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[1]));
+        assert!(non_coords[0]
+            .pre_commitments
+            .read()
+            .await
+            .get(&block_hash)
+            .unwrap()
+            .contains(&peer_ids[1]));
         // Another implicitly added for the coord that proposed the block
-        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[0]));
+        assert!(non_coords[0]
+            .pre_commitments
+            .read()
+            .await
+            .get(&block_hash)
+            .unwrap()
+            .contains(&peer_ids[0]));
         // at this point we have two commitments from all peers we should be awaiting commitments
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
@@ -833,9 +964,21 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[1]));
-        assert!(non_coords[0].pre_commitments.get(&block_hash).unwrap().contains(&peer_ids[0]));
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
+        assert!(non_coords[0]
+            .pre_commitments
+            .read()
+            .await
+            .get(&block_hash)
+            .unwrap()
+            .contains(&peer_ids[1]));
+        assert!(non_coords[0]
+            .pre_commitments
+            .read()
+            .await
+            .get(&block_hash)
+            .unwrap()
+            .contains(&peer_ids[0]));
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
     }
 
@@ -851,7 +994,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
 
         // Propose valid block and assert correct state transitions
@@ -865,7 +1009,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         // There should be two commitments
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
 
         // Getting anther block proposal from the same peer should not change the state
@@ -873,7 +1017,7 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
 
         // Test that the other non-coord responds the same way
@@ -882,7 +1026,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         // There should be two commitments
-        assert_eq!(non_coords[1].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[1].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
     }
 
@@ -898,7 +1042,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
 
         // Propose valid block and assert correct state transitions
@@ -912,7 +1057,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         // There should be two commitments
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
 
         // Getting anther block proposal from the same peer should not change the state
@@ -920,7 +1065,7 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(non_coords[0].pre_commitments.get(&block_hash).unwrap().len(), 2);
+        assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
 
         let other_peer_id = non_coords[1].peer_id.clone();
@@ -932,7 +1077,8 @@ mod tests {
 
         // There should be three pre-commitments, non_coord[0], coord which was added at the block
         // proposal stage And non_coord[1] which we just added
-        let pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap();
+        let pre_commitments =
+            non_coords[0].pre_commitments.read().await.get(&block_hash).cloned().unwrap();
         assert_eq!(pre_commitments.len(), 3);
         for i in 0..pre_commitments.len() {
             assert!(pre_commitments.contains(&peer_ids[i]));
@@ -945,7 +1091,8 @@ mod tests {
             .process_precommitment(block_to_propose.clone(), other_peer_id)
             .await
             .expect("valid precommitment");
-        let mut pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap().clone();
+        let mut pre_commitments =
+            non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
         assert_eq!(pre_commitments.len(), 3);
         for i in 0..pre_commitments.len() {
             assert!(pre_commitments.contains(&peer_ids[i]));
@@ -954,7 +1101,7 @@ mod tests {
 
         // Remove the coord's pre-commits
         pre_commitments.remove(&coord.peer_id);
-        non_coords[0].pre_commitments.insert(block_hash, pre_commitments.clone());
+        non_coords[0].pre_commitments.write().await.insert(block_hash, pre_commitments.clone());
         non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
         // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await
         // for commitments
@@ -963,7 +1110,8 @@ mod tests {
             .await
             .expect("valid precommitment");
 
-        let pre_commitments = non_coords[0].pre_commitments.get(&block_hash).unwrap().clone();
+        let pre_commitments =
+            non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
         assert_eq!(pre_commitments.len(), 2);
         // At this point its us (non_coord[0]) and the other peer (non_coord[1)
         assert!(pre_commitments.contains(&non_coords[0].peer_id));
@@ -983,7 +1131,8 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose
+            block_to_propose,
+            mock_eth_provider,
         );
 
         coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
@@ -1053,6 +1202,8 @@ mod tests {
         assert!(coord.get_state(block_hash).is_awaiting_commitments());
         let sigs_so_far = coord
             .sealed_blocks
+            .read()
+            .await
             .get(&block_hash)
             .unwrap()
             .header()
@@ -1071,6 +1222,8 @@ mod tests {
             .expect("valid commitment");
         let sigs_again = coord
             .sealed_blocks
+            .read()
+            .await
             .get(&block_hash)
             .unwrap()
             .header()
@@ -1092,6 +1245,8 @@ mod tests {
 
         let sigs_so_far = coord
             .sealed_blocks
+            .read()
+            .await
             .get(&block_hash)
             .unwrap()
             .header()

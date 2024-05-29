@@ -12,6 +12,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
@@ -72,6 +73,7 @@ where
         storage: Storage<Client>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
@@ -88,6 +90,7 @@ where
             frost_handle.clone(),
             config,
             frost_task_tx,
+            task_executor,
         );
 
         Self {

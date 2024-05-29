@@ -7,6 +7,7 @@ use reth_network::frost::{
 };
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, warn};
 
@@ -34,7 +35,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan>,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive pbft notifications (from the block production task)
@@ -60,16 +61,25 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        client: Client,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<Client>,
         secret_key: secp256k1::SecretKey,
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
-        let pbft_state_machine =
-            PbftStateMachine::new(frost_handle.clone(), config.clone(), my_peerid, secret_key);
+        let mut pbft_state_machine = PbftStateMachine::new(
+            client,
+            frost_handle.clone(),
+            config.clone(),
+            my_peerid,
+            secret_key,
+            Some(task_executor),
+        );
+        pbft_state_machine.spawn_cleanup_task();
         Self {
             frost_handle,
             pbft_state_machine,
