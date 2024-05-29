@@ -86,6 +86,9 @@ pub enum BlockValidationError {
     /// Poa specific error when Extra data header is failed to deserialize
     #[error("Failed to serialize extra header")]
     ExtraDataSerializeError,
+    /// Error when witness data is missing for a pegout psbt
+    #[error("Missing witness data for pegout psbt")]
+    MissingWitnessData,
 }
 
 /// BlockExecutor Errors

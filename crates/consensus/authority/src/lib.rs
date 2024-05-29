@@ -373,8 +373,15 @@ where
             .unwrap();
         header.state_root = state_root;
 
-        // TODO(scott): if pegouts are pending but no witness data is provided, we should fail
-        // consensus validation
+        // fail if witness data is empty
+        // witness data will be None if no pegouts are being processed in this block
+        if let Some(witness_data) = witness_data {
+            if witness_data.is_empty() {
+                return Err(BlockExecutionError::Validation(
+                    BlockValidationError::MissingWitnessData,
+                ));
+            }
+        };
 
         // Serialize the header without signature
         let mut extra_header_content_no_signature = ExtraDataHeader::new(
