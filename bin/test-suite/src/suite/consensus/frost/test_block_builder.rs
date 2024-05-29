@@ -48,8 +48,8 @@ pub async fn block_builder(
     }
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate some blocks so the wallet has a non-zero balance
-    bitcoind_rpc.generate_to_address(10, &address).expect("generate to address");
+    // generate > 100 blocks so coinbase utxos can be spent from the wallet
+    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
 
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
@@ -174,8 +174,8 @@ pub async fn block_builder(
                 // verify 80/20 block reward split is correct
                 let target_fed_member_reward =
                     target_fed_member_balance_after - target_fed_member_balance_before;
-                let botanix_block_reward = botanix_block_reward_address_balance_before_after -
-                    botanix_block_reward_address_balance_before;
+                let botanix_block_reward = botanix_block_reward_address_balance_before_after
+                    - botanix_block_reward_address_balance_before;
 
                 let total_block_reward = target_fed_member_reward + botanix_block_reward;
 
