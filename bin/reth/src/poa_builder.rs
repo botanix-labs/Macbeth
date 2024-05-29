@@ -34,25 +34,24 @@ use reth_network::{
 };
 use reth_network_api::{NetworkInfo, PeersInfo};
 use reth_node_core::{
-    cli::{
+    args::utils::get_federation_pk_from_path, cli::{
         components::{RethNodeComponentsImpl, RethRpcServerHandles},
         config::RethRpcConfig,
         db_type::DatabaseInstance,
         ext::{DefaultRethNodeCommandConfig, RethCliExt, RethNodeCommandConfig},
-    },
-    dirs::{ChainPath, DataDirPath},
-    version::SHORT_VERSION,
+    }, dirs::{ChainPath, DataDirPath}, version::SHORT_VERSION
 };
 #[cfg(not(feature = "optimism"))]
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 #[cfg(feature = "optimism")]
 use reth_node_optimism::{OptimismEngineTypes, OptimismEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
+use reth_primitives::AllGenesisFormats;
 use reth_provider::{providers::BlockchainProvider, ProviderFactory};
 use reth_prune::PrunerBuilder;
 use reth_rpc_engine_api::EngineApi;
 use reth_tasks::{TaskExecutor, TaskManager};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fs, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::sync::{mpsc::unbounded_channel, oneshot, RwLock};
 use tracing::*;
 
@@ -671,6 +670,15 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         });
 
         // TODO launch poa specific CL stuff
+
+        // Connect to poa federation members
+        // assumes chain.toml is present
+        let chain_path = PathBuf::from_str("chain.toml").unwrap();
+        let fed_members = get_federation_pk_from_path(&chain_path).expect("Failed to get federation pks");
+        for fed_member in fed_members.iter() {
+            let peer_id = pk2peerid(&fed_member.0);
+            network.add_trusted_peer(peer_id, &fed_member.1);
+        }
 
         ext.on_node_started(&components)?;
 
