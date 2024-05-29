@@ -35,6 +35,8 @@ pub(crate) struct GenesisAddressBalance {
 pub(crate) struct FedMemberPubKey {
     /// The pub key of the member
     pub(crate) key: String,
+    /// The socket address of the member
+    pub(crate) socket_addr: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

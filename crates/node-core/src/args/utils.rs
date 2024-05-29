@@ -72,6 +72,26 @@ pub fn chain_help() -> String {
     format!("The chain this node is running.\nPossible values are either a built-in chain or the path to a chain specification file.\n\nBuilt-in chains:\n    {}", SUPPORTED_CHAINS.join(", "))
 }
 
+/// Get the public keys from the genesis toml config
+pub fn get_federation_pk_from_path(path: &PathBuf) -> eyre::Result<Vec<(secp256k1::PublicKey, SocketAddr)>> {
+    let raw = fs::read_to_string(path)?;
+    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+
+    let federation_members = genesis_toml_config
+        .federation_member_public_key
+        .iter()
+        .map(|key| {
+            let public_key =
+                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey");
+
+            let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
+            (public_key, soc_addr)
+        })
+        .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
+
+    Ok(federation_members)
+}
+
 /// Clap value parser for [ChainSpec]s.
 ///
 /// The value parser matches either a known chain, the path
@@ -104,7 +124,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     if s.contains('{') {
                         s.to_string()
                     } else {
-                        return Err(io_err.into()) // assume invalid path
+                        return Err(io_err.into()); // assume invalid path
                     }
                 }
             };
@@ -186,7 +206,7 @@ pub enum UrlParsingError {
 /// An error is returned if the value is empty or if non socket value is passed
 pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {
     if value.is_empty() {
-        return Err(SocketAddressParsingError::Empty)
+        return Err(SocketAddressParsingError::Empty);
     }
     // TODO configuarable for https
     let addr = format!("http://{}", value);
@@ -214,15 +234,15 @@ pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
 /// An error is returned if the value is empty.
 pub fn parse_socket_address(value: &str) -> eyre::Result<SocketAddr, SocketAddressParsingError> {
     if value.is_empty() {
-        return Err(SocketAddressParsingError::Empty)
+        return Err(SocketAddressParsingError::Empty);
     }
 
     if let Some(port) = value.strip_prefix(':').or_else(|| value.strip_prefix("localhost:")) {
         let port: u16 = port.parse()?;
-        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
+        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
     if let Ok(port) = value.parse::<u16>() {
-        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
+        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
     value
         .to_socket_addrs()?
