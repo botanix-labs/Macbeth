@@ -119,12 +119,10 @@ impl Db {
         let mut ret = Vec::new();
         let mut results = 0;
         for res in self.psbt.iter() {
-            info!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
             let (k, _) = res?;
             let signing_session_id: [u8; 32] =
                 k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
             results += 1;
-            info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX {:?}", signing_session_id);
             if max_results == results {
                 break;
             }
