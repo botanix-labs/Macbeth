@@ -3,8 +3,10 @@ use std::collections::HashSet;
 use alloy_eips::merge::ALLOWED_FUTURE_BLOCK_TIME_SECONDS;
 use thiserror::Error;
 
-use crate::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
-use crate::{Bytes, Header, B256};
+use crate::{
+    extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
+    Bytes, Header, B256,
+};
 /// Extension trait for the block header
 /// Mainly adding extra data header utility functions
 pub trait HeaderExt {
@@ -46,8 +48,8 @@ pub trait HeaderExt {
     fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError>;
 
     /// Validates all signatures present on the edh
-    /// its not garunteed that all signers are present in the `authority_signers`, they are only provided in epoch blocks
-    /// If a signature is not valid and Error is returned
+    /// its not garunteed that all signers are present in the `authority_signers`, they are only
+    /// provided in epoch blocks If a signature is not valid and Error is returned
     /// Returns total number of valid signatures
     fn check_authority_sig_add(
         &self,
@@ -132,13 +134,13 @@ pub enum ValidateAuthoritySignatureError {
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::InvalidAuthority, Self::InvalidAuthority)
-            | (Self::InvalidMessage, Self::InvalidMessage)
-            | (Self::InvalidSignature, Self::InvalidSignature)
-            | (Self::MissingSignature, Self::MissingSignature)
-            | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
-            | (Self::RecoverFailed, Self::RecoverFailed)
-            | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
+            (Self::InvalidAuthority, Self::InvalidAuthority) |
+            (Self::InvalidMessage, Self::InvalidMessage) |
+            (Self::InvalidSignature, Self::InvalidSignature) |
+            (Self::MissingSignature, Self::MissingSignature) |
+            (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
+            (Self::RecoverFailed, Self::RecoverFailed) |
+            (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
             _ => false,
         }
     }
@@ -193,8 +195,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
-            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
+            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
@@ -307,8 +309,8 @@ impl HeaderExt for Header {
                         signer_count += 1;
                     } else {
                         // Should really not make it here
-                        // Incase a signature was produced over the wrong message the recovered authority
-                        // shouldnt be on the list
+                        // Incase a signature was produced over the wrong message the recovered
+                        // authority shouldnt be on the list
                         return Err(ValidateAuthoritySignatureError::InvalidSignature);
                     }
                 }

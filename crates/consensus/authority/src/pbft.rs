@@ -99,12 +99,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -391,10 +391,10 @@ where
                 ));
             }
 
-            // we could be missing the parent block that is being suggested indicating that there is a fork
-            // retrieve the missing block via the network client.
-            // if that retrieved block's parent is not the best block's parent hash then the fork is deeper than 1 block
-            // and we do not sign
+            // we could be missing the parent block that is being suggested indicating that there is
+            // a fork retrieve the missing block via the network client.
+            // if that retrieved block's parent is not the best block's parent hash then the fork is
+            // deeper than 1 block and we do not sign
             // TODO does the peer that we are getting this block from matter?
             match self
                 .network_client
@@ -666,8 +666,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()?
-            != block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()? !=
+            block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -711,14 +711,15 @@ mod tests {
     use rand;
     use reth_consensus_common::utils::unix_timestamp;
     use reth_ecies::util::pk2id;
-    use reth_interfaces::p2p::download::DownloadClient;
-    use reth_interfaces::p2p::error::{PeerRequestResult, RequestError};
-    use reth_interfaces::p2p::{headers::client::HeadersRequest, priority::Priority};
+    use reth_interfaces::p2p::{
+        download::DownloadClient,
+        error::{PeerRequestResult, RequestError},
+        headers::client::HeadersRequest,
+        priority::Priority,
+    };
     use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header};
-    use reth_primitives::{WithPeerId, B256};
-    use reth_provider::test_utils::MockEthProvider;
-    use reth_provider::HeaderProvider;
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, WithPeerId, B256};
+    use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
     use secp256k1::SECP256K1;
 
     #[derive(Clone, Debug)]
@@ -754,9 +755,10 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(
-                            WithPeerId::new(PeerId::random(), vec![header]),
-                        ));
+                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
+                            PeerId::random(),
+                            vec![header],
+                        )));
                     }
                 }
                 // Error is caught below
@@ -1313,11 +1315,10 @@ mod tests {
         pre_commitments.remove(&coord.peer_id);
         non_coords[0].pre_commitments.write().await.insert(block_hash, pre_commitments.clone());
         non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
-        // Adding the same pre-commit here is requesting another signed block. This will fail b/c we have already
-        // signed for this timeslot
-        let res = non_coords[0]
-            .process_precommitment(block_to_propose.clone(), other_peer_id)
-            .await;
+        // Adding the same pre-commit here is requesting another signed block. This will fail b/c we
+        // have already signed for this timeslot
+        let res =
+            non_coords[0].process_precommitment(block_to_propose.clone(), other_peer_id).await;
         assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
 
         let pre_commitments =

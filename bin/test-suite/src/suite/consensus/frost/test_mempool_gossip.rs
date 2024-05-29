@@ -7,16 +7,16 @@ use crate::{
     suite::consensus::{
         common::{
             events::{await_dkg, SEND_AMOUNT},
-            poa_node::{
-                create_poa_federation_members, current_inturn_index, Notifications,
-            },
+            poa_node::{create_poa_federation_members, current_inturn_index, Notifications},
         },
         ConsensusIntegrationTestSuite,
     },
 };
 
 /// test that nodes will propogate txs using mempool gossip
-pub async fn mempool_gossip(suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
+pub async fn mempool_gossip(
+    suite: &ConsensusIntegrationTestSuite,
+) -> Result<(), super::error::Error> {
     // generate test fed members poa nodes
     let (mut test_fed_members, mut rx) = create_poa_federation_members(
         suite.global_context.clone(),

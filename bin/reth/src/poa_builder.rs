@@ -370,7 +370,12 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
 
         // configure blockchain tree
         // Rest of these block chain tree configs are defaults
-        let tree_config = BlockchainTreeConfig::new(POA_MAX_REORG_DEPTH, 65 /* max_blocks_in_chain */, 256/* num_of_additional_canonical_block_hashes*/, 200 /* max_unconnected_blocks */);
+        let tree_config = BlockchainTreeConfig::new(
+            POA_MAX_REORG_DEPTH,
+            65,  /* max_blocks_in_chain */
+            256, /* num_of_additional_canonical_block_hashes */
+            200, /* max_unconnected_blocks */
+        );
         let tree = self.config.build_blockchain_tree(
             provider_factory.clone(),
             consensus.clone(),
