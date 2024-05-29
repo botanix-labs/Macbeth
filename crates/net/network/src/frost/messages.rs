@@ -1,4 +1,5 @@
 #![allow(unreachable_pub)]
+use core::fmt;
 use std::str::FromStr;
 
 use alloy_rlp::{Decodable, Encodable};
@@ -17,6 +18,17 @@ pub struct PbftRequest {
     pub version: u16,
     /// PBFT data
     pub block: reth_primitives::SealedBlock,
+}
+
+impl fmt::Display for PbftRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Block Number: {} bytes, Data Size: {} bytes",
+            self.block.number,
+            self.block.size(),
+        )
+    }
 }
 
 impl PbftRequest {
