@@ -1,5 +1,4 @@
-use crate::{pbft::PbftStateMachine, Storage};
-use bitcoin::Network;
+use crate::pbft::PbftStateMachine;
 use reth_ecies::util::pk2id;
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::frost::{
@@ -36,7 +35,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client>,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient>,
     /// Shared storage to insert aggregate public key
     pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
@@ -51,7 +50,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
 
 impl<Client, ToFrostMan, NetworkClient> PbftTask<Client, ToFrostMan, NetworkClient>
 where
-    ToFrostMan: ToFrostManager + Clone,
+    ToFrostMan: ToFrostManager + Clone + 'static,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -70,11 +69,11 @@ where
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         task_executor: TaskExecutor,
-        network_client: NetworkClient,  
+        network_client: NetworkClient,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
-            client,
+            client.clone()  ,
             frost_handle.clone(),
             config.clone(),
             my_peerid,

@@ -99,12 +99,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -666,8 +666,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()? !=
-            block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -688,9 +688,8 @@ where
         );
         // Update local state
         self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
-        let number_of_valid_sigs = edh.check_authority_sig_add(
-            &current_header.create_sighash()?.to_vec(),
-        )?;
+        let number_of_valid_sigs =
+            new_block.header().check_authority_sig_add(&self.config.authorities)?;
         info!("number of valid sigs: {}", number_of_valid_sigs);
         info!("max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
@@ -755,10 +754,9 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
-                            PeerId::random(),
-                            vec![header],
-                        )));
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
                     }
                 }
                 // Error is caught below
@@ -991,16 +989,20 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
+        let other_peer = non_coords.get_mut(0).unwrap();
 
-        let binding = non_coords.clone();
-        let pre_commits = binding[0].pre_commitments.get(&block_hash).unwrap();
+        let binding = other_peer.pre_commitments.read().await;
+        let pre_commits = binding.get(&block_hash).expect("to get pre-commits");
         assert_eq!(pre_commits.len(), 2);
-        let time_slots = &binding[0].time_slot_commitment;
+        drop(binding);
+
+        let time_slots = &other_peer.clone().time_slot_commitment;
         assert_eq!(time_slots.len(), 1);
         // only timeslot should be coord peerid
         assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
 
-        let res = non_coords[0].check_and_send_commitment(&block_to_propose, &coord.peer_id).await;
+        let res =
+            other_peer.clone().check_and_send_commitment(&block_to_propose, &coord.peer_id).await;
         // TODO should be checking an error variant
         assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
 
@@ -1013,7 +1015,8 @@ mod tests {
         header_to_sign.add_extra_data_header(&edh);
         header_to_sign.sign_block(&coord.secret_key).expect("to sign block");
         let block = SealedBlock::new(header_to_sign.seal_slow(), BlockBody::default());
-        non_coords[0]
+        other_peer
+            .clone()
             .process_block_proposal(block.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
@@ -1405,6 +1408,7 @@ mod tests {
         let mut header_to_sign_1 = block_to_propose.header().clone();
         header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
         let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_1.header().segregated_signature_block_hash().unwrap(), block_hash);
 
         coord
             .process_commitment(signed_block_0.clone(), peer_id_0)
@@ -1424,7 +1428,7 @@ mod tests {
             .unwrap()
             .authority_signatures
             .expect("should have signatures");
-
+        // Coord has its own signature and the one from peer 0
         assert_eq!(sigs_so_far.len(), 2);
 
         // adding the same commitment should not change anything
@@ -1579,6 +1583,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
         let edh = ExtraDataHeader::default();
@@ -1616,6 +1621,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
         let edh = ExtraDataHeader::default();
@@ -1655,6 +1661,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
 
@@ -1691,6 +1698,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
         let edh = ExtraDataHeader::default();
@@ -1745,6 +1753,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
         let edh = ExtraDataHeader::default();
@@ -1809,6 +1818,7 @@ mod tests {
             config,
             PeerId::default(),
             sk.clone(),
+            None,
             mock_network_client,
         );
         let edh = ExtraDataHeader::default();

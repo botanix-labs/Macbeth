@@ -85,7 +85,7 @@ pub enum AuthorityConsensusBuilderError {
 impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
     AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
 where
-    ToFrostMan: ToFrostManager + Clone,
+    ToFrostMan: ToFrostManager + Clone + 'static,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -308,7 +308,7 @@ where
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
             let pbft = PbftTask::new(
-                self.client.clone(),
+                client.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,

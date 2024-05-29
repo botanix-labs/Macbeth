@@ -9,7 +9,7 @@ use crate::{
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_interfaces::{
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeEngine, BlockchainTreeViewer},
+    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
@@ -485,17 +485,6 @@ impl BlockReader for MockEthProvider {
 
         Ok(blocks)
     }
-
-    #[doc = " retrieves a range of blocks from the database, along with the senders of each"]
-    #[doc = " transaction in the blocks."]
-    #[doc = ""]
-    #[doc = " The `transaction_kind` parameter determines whether to return its hash"]
-    fn block_with_senders_range(
-        &self,
-        range: RangeInclusive<BlockNumber>,
-    ) -> ProviderResult<Vec<BlockWithSenders>> {
-        todo!()
-    }
 }
 
 impl BlockReaderIdExt for MockEthProvider {
@@ -780,7 +769,7 @@ impl BlockchainTreeViewer for MockEthProvider {
 
     fn is_canonical(&self, block_hash: BlockHash) -> RethResult<bool> {
         let blocks = self.blocks.lock();
-        if !blocks.contains_key(&block_hash) {
+        if blocks.contains_key(&block_hash) {
             let tip = blocks.keys().nth(0).expect("at least one block");
             return Ok(*tip == block_hash);
         }
@@ -797,6 +786,10 @@ impl BlockchainTreeViewer for MockEthProvider {
             .unwrap_or_default();
 
         BlockNumHash::new(num, hash)
+    }
+
+    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
+        None
     }
 
     fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {
