@@ -200,43 +200,40 @@ pub async fn pbft_e2e_failed_disconnect(
 
     // wait for the signing to finish for coordinator
     await_signing_completion(inturn_member_index as u16, &mut rx).await;
-    panic!(
-        "PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP"
-    );
 
     // ===================== INDUCED FAILURE =====================
     // once the signing is done, try to break the consensus by disconnecting a peer
     // wait for a few seconds before disconnecting a peer
-    // tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
-    // // now disconnect the peers of another peer that is not a coordinator
-    // let next_peer_index = (inturn_member_index + 1).max(total_authorities as u64 - 1);
+    // now disconnect the peers of another peer that is not a coordinator
+    let next_peer_index = (inturn_member_index + 1).max(total_authorities as u64 - 1);
 
-    // test_fed_members
-    //     .get(&(next_peer_index as u16))
-    //     .cloned()
-    //     .unwrap()
-    //     .send_test_signal(TestSignal::DisconnectAll());
+    test_fed_members
+        .get(&(next_peer_index as u16))
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::DisconnectAll());
 
-    // // wait for a new epoch to start
-    // tokio::time::sleep(Duration::from_secs(10)).await;
+    // wait for a new epoch to start
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
-    // // now reconnect the peers of fed member next_peer_index
-    // test_fed_members
-    //     .get(&(next_peer_index as u16))
-    //     .cloned()
-    //     .unwrap()
-    //     .send_test_signal(TestSignal::ReconnectAll());
-    // // ============================================================
+    // now reconnect the peers of fed member next_peer_index
+    test_fed_members
+        .get(&(next_peer_index as u16))
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::ReconnectAll());
+    // ============================================================
 
-    // // wait for a few blocks to make sure the tx got included and mined
-    // await_botanix_event(&mut rx, *MINT_TOPIC).await;
-    // tokio::time::sleep(Duration::from_secs(5)).await;
+    // wait for a few blocks to make sure the tx got included and mined
+    await_botanix_event(&mut rx, *MINT_TOPIC).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
-    // // make sure we have received the botanix btc on botanix
-    // let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
-    // let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
-    // assert!(!eth_address_balance.is_zero());
+    // make sure we have received the botanix btc on botanix
+    let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
+    let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
+    assert!(!eth_address_balance.is_zero());
 
     Ok(())
 }
