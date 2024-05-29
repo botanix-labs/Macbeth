@@ -1,7 +1,7 @@
+use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::{
     get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
-use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_interfaces::blockchain_tree::BlockchainTreeViewer;
 use reth_network::frost::manager::ToFrostManager;
 
