@@ -17,25 +17,18 @@ mod frost;
 mod pbft;
 mod rpc_node;
 
-fn kill_child_processes_at_port(index: u16) {
-    // kill btc server processes
-    let btc_server_port = BTC_SERVER_START_PORT + index;
-    match kill(btc_server_port) {
+fn kill_child_processes_at_port(port: u16) {
+    // kill server process
+    match kill(port) {
         Ok(pid) => {
             if pid {
-                info!(
-                    "Sucessfully killed btc-server process on port process on port {:?}",
-                    btc_server_port
-                );
+                info!("Sucessfully killed server process on port process on port {:?}", port);
             } else {
-                warn!("Unable to kill btc-server process on port {:?}", btc_server_port);
+                warn!("Unable to kill server process on port {:?}", port);
             }
         }
         Err(err) => {
-            error!(
-                "Error attempting to kill btc-server process on port {:?} -> {:?}",
-                btc_server_port, err
-            );
+            error!("Error attempting to kill server process on port {:?} -> {:?}", port, err);
         }
     }
 }
@@ -124,21 +117,30 @@ impl Suite for ConsensusIntegrationTestSuite {
         }));
     }
 
-    async fn create_context(&mut self) {
+    async fn create_new_context(&mut self) {
         info!("Creating test suite context");
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
             // kill all btc server processes
-            for (_, btc_server) in btc_servers.iter_mut().enumerate() {
+            for (index, btc_server) in btc_servers.iter_mut().enumerate() {
                 let _ = btc_server.child_process.kill().await;
+                // kill processes at designated ports
+                kill_child_processes_at_port(BTC_SERVER_START_PORT + index as u16);
             }
             // Remove db dirs
             clean_db(btc_servers);
         }
 
-        // kill processes at designated ports
-        (0..self.global_context.instances).for_each(|i| {
-            kill_child_processes_at_port(i);
-        });
+        let last_rpc_port = self.global_context.last_poa_node_rpc_port.lock().await;
+        kill_child_processes_at_port(*last_rpc_port);
+        drop(last_rpc_port);
+
+        let last_authrpc_port = self.global_context.last_poa_node_authrpc_port.lock().await;
+        kill_child_processes_at_port(*last_authrpc_port);
+        drop(last_authrpc_port);
+
+        let last_discovery_port = self.global_context.last_poa_node_discovery_port.lock().await;
+        kill_child_processes_at_port(*last_discovery_port);
+        drop(last_discovery_port);
 
         // let old context be fully destroyed
         tokio::time::sleep(Duration::from_secs(15)).await;
@@ -187,7 +189,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
             for (index, btc_server) in btc_servers.iter_mut().enumerate() {
                 let _ = btc_server.child_process.kill().await;
-                kill_child_processes_at_port(index as u16);
+                kill_child_processes_at_port(BTC_SERVER_START_PORT + index as u16);
             }
             // Remove db dirs
             clean_db(btc_servers);
