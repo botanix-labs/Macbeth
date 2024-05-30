@@ -137,7 +137,7 @@ pub fn validate_poa_extra_data_header(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let edh = header.deserialize_extra_data_header().map_err(|e| {
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;

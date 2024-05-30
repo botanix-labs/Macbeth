@@ -1,7 +1,5 @@
 use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
-use reth_consensus_common::utils::{
-    get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
-};
+use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_ecies::util::pk2id;
 use reth_network::frost::manager::ToFrostManager;
 

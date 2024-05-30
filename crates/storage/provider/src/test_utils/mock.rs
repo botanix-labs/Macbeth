@@ -808,7 +808,7 @@ impl BlockchainTreeViewer for MockEthProvider {
         None
     }
 
-    fn lowest_buffered_ancestor(&self, hash: BlockHash) -> Option<SealedBlockWithSenders> {
-        todo!()
+    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
     }
 }
