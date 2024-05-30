@@ -256,7 +256,10 @@ where
 
     fn validate_block(&self, block: &SealedBlock) -> Result<(), Error> {
         let block_hash = block.header.segregated_signature_block_hash()?;
-        block.header.validate_inturn(&self.config.authorities).map_err(|_| Error::InvalidBlock(ValidateBlockError::TimecheckViolated(block_hash)))?;
+        block
+            .header
+            .validate_inturn(&self.config.authorities)
+            .map_err(|_| Error::InvalidBlock(ValidateBlockError::TimecheckViolated(block_hash)))?;
         Ok(())
     }
 
