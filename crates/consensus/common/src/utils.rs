@@ -103,9 +103,14 @@ pub fn unix_timestamp() -> u64 {
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
 pub fn get_block_producer_address(header: &Header) -> Address {
-    let binding = header.recovered_signed_authorities().expect("recovered authority");
-    let block_builder_public_key = binding.get(0).expect("block producer authority to be present");
-    public_key_to_address(*block_builder_public_key)
+    if let Ok(authorities) = header.recovered_signed_authorities() {
+        // TODO remove this unwrap
+        let block_builder_public_key = authorities.get(0).expect("block producer authority to be present");
+        return public_key_to_address(*block_builder_public_key)
+    }
+
+    // TODO this method should return a Result
+    Address::ZERO
 }
 // not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
