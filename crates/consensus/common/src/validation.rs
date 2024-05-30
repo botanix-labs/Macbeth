@@ -1,6 +1,10 @@
 //! Collection of methods for block validation.
 
-use reth_interfaces::{consensus::ConsensusError, RethResult};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+
+use reth_consensus::ConsensusError;
+use reth_interfaces::RethResult;
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     header_ext::HeaderExt,
@@ -8,7 +12,7 @@ use reth_primitives::{
     SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
     TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
-use reth_provider::{HeaderProvider, WithdrawalsProvider};
+use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
 
 use crate::utils;
 

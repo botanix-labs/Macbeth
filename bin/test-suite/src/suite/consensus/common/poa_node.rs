@@ -12,7 +12,7 @@ use reth::{
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
-use reth_ecies::util::pk2id;
+use reth_network_types::pk2id;
 use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},

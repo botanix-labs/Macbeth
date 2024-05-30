@@ -10,7 +10,7 @@ use crate::{
     Address, BlockNumber, Chain, ForkFilter, ForkFilterKey, ForkHash, ForkId, Genesis, Hardfork,
     Head, Header, NamedChain, NodeRecord, SealedHeader, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
-use alloy_chains::{Chain, NamedChain, ChainKind};
+use alloy_chains::ChainKind;
 use askama::Template;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};

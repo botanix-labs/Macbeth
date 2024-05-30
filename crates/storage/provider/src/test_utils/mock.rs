@@ -7,13 +7,13 @@ use crate::{
 };
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
+use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_interfaces::{
     blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
 
-use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
     BlockNumHash, BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header,
@@ -744,14 +744,13 @@ impl BlockchainTreeViewer for MockEthProvider {
         map
     }
 
-    fn is_canonical(&self, block_hash: BlockHash) -> RethResult<bool> {
+    fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
         let blocks = self.blocks.lock();
         if blocks.contains_key(&block_hash) {
             let tip = blocks.keys().nth(0).expect("at least one block");
             return Ok(*tip == block_hash);
         }
-
-        return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
+        return Err(ProviderError::BlockHashNotFound(block_hash));
     }
 
     fn canonical_tip(&self) -> BlockNumHash {
@@ -763,10 +762,6 @@ impl BlockchainTreeViewer for MockEthProvider {
             .unwrap_or_default();
 
         BlockNumHash::new(num, hash)
-    }
-
-    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
-        None
     }
 
     fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {

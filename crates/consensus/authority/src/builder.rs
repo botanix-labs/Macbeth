@@ -5,19 +5,18 @@ use crate::{
     frost_task::{FrostNotificationMessage, FrostTask},
     pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
-    voting::AuthorityVote,
     AuthorityConsensus, Storage,
 };
 
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
+use reth_btc_wallet::bitcoind::BitcoindConfig;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
 };
 use reth_network::{
-    frost::manager::{FrostConfig, FrostHandle, ToFrostManager},
+    frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
@@ -57,7 +56,6 @@ pub struct AuthorityConsensusBuilder<
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
     #[allow(dead_code)]
-    vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
     network_client: NetworkClient,
@@ -109,7 +107,6 @@ where
         secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
-        vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
         network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
@@ -195,7 +192,6 @@ where
             bitcoind_config,
             secp,
             sk,
-            vote,
             epoch_manager,
             network_handle,
             network_client,
@@ -234,7 +230,6 @@ where
             bitcoind_config,
             secp,
             sk,
-            vote: _,
             epoch_manager,
             network_handle,
             network_client,
@@ -280,13 +275,12 @@ where
         let mut pbft_task = None;
         if is_fed_node {
             // frost task
-            let frost_handle_clone = frost_handle.clone().expect("Frost handle exists");
             let task = FrostTask::new(
                 btc_server.clone().expect("btc_server is available"),
                 network_handle.clone(),
-                frost_handle.expect("Requires frost handle"),
+                frost_handle.clone().expect("Requires frost handle"),
                 epoch_manager.clone(),
-                frost_config.expect("frost config exists"),
+                frost_config.clone().expect("frost config exists"),
                 storage.clone(),
                 frost_task_notifications1_rx,
                 frost_task_notifications2_tx,
@@ -305,32 +299,28 @@ where
 
             let task = PbftTask::new(
                 client,
-                frost_handle.expect("Requires frost handle"),
-                frost_config,
+                frost_handle.clone().expect("Requires frost handle"),
+                frost_config.clone().expect("frost config exists"),
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
                 task_executor.clone(),
                 network_client,
             );
-            let pbft_task = Some(task);
+            pbft_task = Some(task);
 
-            let bitcoind_client =
-                BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let task = BlockProductionTask::new(
                 Arc::clone(&consensus.chain_spec),
                 to_engine,
                 canon_state_notification,
                 storage,
-                btc_server,
+                btc_server.clone().expect("btc_server is available"),
                 bitcoin_block_header,
-                bitcoin_block_tx_ids,
-                bitcoind_client,
                 secp,
                 sk,
                 epoch_manager,
                 network_handle,
-                frost_task.frost_handle.clone(),
+                frost_handle.clone().expect("Requires frost handle"),
                 task_executor,
                 evm_config.clone(),
                 payload_builder,
@@ -341,8 +331,8 @@ where
                 btc_network,
             );
 
-        block_production_task = Some(task);
-    }
+            block_production_task = Some(task);
+        }
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
     }

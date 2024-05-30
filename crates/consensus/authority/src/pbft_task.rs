@@ -1,11 +1,11 @@
 use crate::pbft::PbftStateMachine;
-use reth_ecies::util::pk2id;
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{FrostCommand, FrostConfig, FrostHandle},
+    manager::{FrostCommand, FrostConfig},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
+use reth_network_types::pk2id;
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_tasks::TaskExecutor;

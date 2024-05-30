@@ -7919,6 +7919,7 @@ dependencies = [
  "reth-eth-wire",
  "reth-interfaces",
  "reth-network",
+ "reth-network-types",
  "reth-node-api",
  "reth-node-ethereum",
  "reth-payload-builder",
@@ -8853,8 +8854,6 @@ dependencies = [
 name = "reth-node-core"
 version = "0.2.0-beta.6"
 dependencies = [
- "alloy-chains",
- "alloy-rlp",
  "askama",
  "assert_matches",
  "bitcoin",
@@ -8863,6 +8862,7 @@ dependencies = [
  "derive_more",
  "dirs-next",
  "discv5",
+ "displaydoc",
  "eyre",
  "futures 0.3.30",
  "hex",
@@ -9118,6 +9118,7 @@ dependencies = [
  "test-fuzz",
  "thiserror",
  "toml",
+ "tracing",
  "triehash",
  "zstd 0.13.1",
 ]
