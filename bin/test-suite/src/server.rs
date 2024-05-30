@@ -58,15 +58,15 @@ impl TestServer {
             },
             res = async {
                 for suite in suits_to_run.iter_mut() {
-                    let _ = match suite.run().await {
-                        Outcome::Passed => Ok(()),
-                        Outcome::Failed => Err(Error::TestRunFailed),
-                    };
+                    let outcomes = suite.run().await;
+                    // if any of them failed return error
+                    if outcomes.iter().any(|outcome| outcome == &Outcome::Failed) {
+                        return Err(Error::TestRunFailed);
+                    }
                 }
-            } => { res },
+                Ok(())
+            } => { return res; },
         }
-
-        Ok(())
     }
 
     fn create_consensus_test_suite(&self) -> Box<dyn Suite> {

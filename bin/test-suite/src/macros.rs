@@ -31,13 +31,13 @@ macro_rules! run_test {
                 }
                 Err(err) => {
                     error!("({}) {} {} ({}ms): {}", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed(), err);
-                    $self.outcome = crate::suite::Outcome::Failed;
+                    $self.outcomes.push(crate::suite::Outcome::Failed);
                 }
             },
 
             _ = &mut timer => {
                 error!("({}) {} {} ({}ms): timeout", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed());
-                $self.outcome = crate::suite::Outcome::Failed;
+                $self.outcomes.push(crate::suite::Outcome::Failed);
             }
         }
     };
