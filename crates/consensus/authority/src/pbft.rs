@@ -408,14 +408,14 @@ where
             return Ok(());
         }
 
+        if peer_id == self.peer_id {
+            return Ok(());
+        }
+
         // perform block validation
         if !self.validate_block(&block).await? {
             warn!(target: "pbft" ,"Block proposal failed validation");
             return Err(Error::BlockValidationFailed);
-        }
-
-        if peer_id == self.peer_id {
-            return Ok(());
         }
 
         let coordinator = self
@@ -508,6 +508,11 @@ where
         peer_id: PeerId,
     ) -> Result<(), Error> {
         info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
+        // perform block validation
+        if !self.validate_block(&block).await? {
+            warn!(target: "pbft" ,"Block proposal failed validation");
+            return Err(Error::BlockValidationFailed);
+        }
         let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
@@ -518,12 +523,6 @@ where
         // Do not process our own response
         if peer_id == self.peer_id {
             return Ok(());
-        }
-
-        // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
         }
 
         // Add the peer's precommitment
@@ -546,6 +545,11 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<Option<SealedBlock>, Error> {
+        // perform block validation
+        if !self.validate_block(&block).await? {
+            warn!(target: "pbft" ,"Block proposal failed validation");
+            return Err(Error::BlockValidationFailed);
+        }
         // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
@@ -553,12 +557,6 @@ where
         }
         if peer_id == self.peer_id {
             return Ok(None);
-        }
-
-        // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
         }
 
         let block_hash = block.header.segregated_signature_block_hash()?;
