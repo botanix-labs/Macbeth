@@ -12,7 +12,10 @@ use crate::{
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeEngine,
+    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+};
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
@@ -35,7 +38,13 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
+pub struct AuthorityConsensusBuilder<
+    Client,
+    EvmConfig,
+    Engine: EngineTypes,
+    ToFrostMan,
+    NetworkClient,
+> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -52,6 +61,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, ToF
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
+    network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
@@ -72,10 +82,10 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine, ToFrostMan>
-    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan>
+impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
 where
-    ToFrostMan: ToFrostManager + Clone,
+    ToFrostMan: ToFrostManager + Clone + 'static,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -85,6 +95,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -102,6 +113,7 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
+        network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
@@ -189,6 +201,7 @@ where
             vote,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -208,10 +221,10 @@ where
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
-        BlockFetcherTask<Client, EvmConfig, Engine>,
+        BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
     ) {
         let Self {
             btc_server,
@@ -228,6 +241,7 @@ where
             vote: _,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -244,19 +258,17 @@ where
             to_engine.clone(),
         );
 
-        let bitcoind_client =
-            BitcoindClient::new(bitcoind_config.clone()).expect("Invalid Bitcoind client");
         let block_fetcher_task = crate::block_fetcher::BlockFetcherTask::new(
             Arc::clone(&consensus.chain_spec),
             block_import_rx,
             to_engine.clone(),
             canon_state_notification.clone(),
             btc_server.clone(),
-            bitcoind_client,
             storage.clone(),
             bitcoin_block_header.clone(),
             evm_config.clone(),
             btc_network,
+            network_client.clone(),
         );
 
         // Set up frost notification message queue
@@ -296,14 +308,14 @@ where
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
             let pbft = PbftTask::new(
-                client,
+                client.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
-                frost_config.unwrap(),
-                storage.clone(),
+                frost_config.expect("valid frost config"),
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
                 task_executor.clone(),
+                network_client,
             );
             pbft_task = Some(pbft);
 
