@@ -142,15 +142,10 @@ pub fn validate_poa_extra_data_header(
         ConsensusError::ExtraDataInvalid
     })?;
     // Validate the authority signature and signature came from one of the authorities
-    let sig_hash = header.create_sighash().map_err(|e| {
-        error!("Failed to deserialize extra data header: {:?}", e);
-        ConsensusError::ExtraDataInvalid
+    let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
     })?;
-    let valid_sigs =
-        edh.check_authority_sig_add(&sig_hash.to_vec(), authority_signers).map_err(|e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
 
     if valid_sigs != authority_signers.len() as u16 {
         return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
@@ -179,16 +174,12 @@ pub fn validate_poa_extra_data_header_single_signer(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let edh = header.deserialize_extra_data_header().map_err(|e| {
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
     // Validate the authority signature and signature came from one of the authorities
-    let sig_hash = header.create_sighash().map_err(|e| {
-        error!("Failed to deserialize extra data header: {:?}", e);
-        ConsensusError::ExtraDataInvalid
-    })?;
-    edh.validate_first_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(|e| {
+    header.validate_first_authority_signature(authority_signers).map_err(|e| {
         error!("Failed to validate authority signature: {:?}", e);
         ConsensusError::InvalidAuthoritySignature
     })?;

@@ -9,10 +9,11 @@ use crate::{
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_interfaces::{
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeEngine, BlockchainTreeViewer},
+    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
+
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
@@ -766,21 +767,14 @@ impl BlockchainTreeViewer for MockEthProvider {
         map
     }
 
-    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
-        None
-    }
-
     fn is_canonical(&self, block_hash: BlockHash) -> RethResult<bool> {
         let blocks = self.blocks.lock();
-        if !blocks.contains_key(&block_hash) {
-            return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
+        if blocks.contains_key(&block_hash) {
+            let tip = blocks.keys().nth(0).expect("at least one block");
+            return Ok(*tip == block_hash);
         }
-        let tip = blocks.keys().nth(0).expect("at least one block");
-        Ok(*tip == block_hash)
-    }
 
-    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
-        None
+        return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
     }
 
     fn canonical_tip(&self) -> BlockNumHash {
@@ -792,6 +786,10 @@ impl BlockchainTreeViewer for MockEthProvider {
             .unwrap_or_default();
 
         BlockNumHash::new(num, hash)
+    }
+
+    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
+        None
     }
 
     fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {
@@ -808,5 +806,9 @@ impl BlockchainTreeViewer for MockEthProvider {
 
     fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
         None
+    }
+
+    fn lowest_buffered_ancestor(&self, hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        todo!()
     }
 }
