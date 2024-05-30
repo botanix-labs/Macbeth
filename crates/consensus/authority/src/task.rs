@@ -5,10 +5,7 @@ use crate::{
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::{
-    frost::manager::{FrostHandle, ToFrostManager},
-    NetworkHandle,
-};
+use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;

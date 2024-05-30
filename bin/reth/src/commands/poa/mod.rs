@@ -36,11 +36,7 @@ use bitcoin::hashes::Hash;
 use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
-use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient,
-    utils::{get_confirmation_depth, is_testnet},
-    AuthorityConsensus,
-};
+use reth_authority_consensus::{extended_client::BtcServerExtendedClient, AuthorityConsensus};
 use reth_basic_payload_builder::BasicPayloadJobGeneratorConfig;
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
@@ -548,21 +544,20 @@ where {
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
             // create authority config
-            let (authority_index, authorities) = get_authority_signer_index(
+            let (authority_index, authorities, authority_pk) = get_authority_signer_index(
                 blockchain_db.clone(),
                 Arc::clone(&self.chain),
                 secp256k1::Secp256k1::new(),
                 secret_key,
             )
             .expect("Failed to get authority index");
-
-            let mut config: FrostConfig = FrostArgs {
-                min_signers: node_config.rpc.min_signers.expect("min signers to exist"),
-                max_signers: node_config.rpc.max_signers.expect("max signer to exist"),
-            }
-            .into();
-            config.set_authority_index(authority_index);
-            config.set_authorities(authorities);
+            let mut config = FrostConfig::new(
+                authority_pk,
+                authority_index,
+                authorities,
+                node_config.rpc.min_signers.expect("min signers"),
+                node_config.rpc.max_signers.expect("max signers"),
+            );
             info!(target: "reth::cli", "Frost config initialized");
 
             Some(config)
@@ -661,29 +656,35 @@ where {
         };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
-        let (_, block_production_task, mut block_fetcher_task, frost_task, mut sync_controller) =
-            AuthorityConsensusBuilder::try_new(
-                Arc::clone(&self.chain),
-                blockchain_db.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender.clone(),
-                btc_server_client.clone(),
-                bitcoin_block_headers_clone,
-                bitcoind_config,
-                secp256k1::Secp256k1::new(),
-                secret_key,
-                None,
-                network_handle.clone(),
-                frost_handle,
-                block_import_rx,
-                executor.clone(),
-                evm_config,
-                frost_config,
-                payload_builder.clone(),
-                node_config.rpc.btc_network,
-            )
-            .expect("Failed to create authority consensus builder")
-            .build();
+        let (
+            _,
+            block_production_task,
+            mut block_fetcher_task,
+            frost_task,
+            mut sync_controller,
+            mut pbft_task,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&self.chain),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            secret_key,
+            network_handle.clone(),
+            network_client.clone(),
+            frost_handle,
+            block_import_rx,
+            executor.clone(),
+            evm_config,
+            frost_config,
+            payload_builder.clone(),
+            node_config.rpc.btc_network,
+        )
+        .expect("Failed to create authority consensus builder")
+        .build();
 
         // TODO do we need this?
         // if let Some(store_path) = self.config.debug.engine_api_store.clone() {
@@ -735,7 +736,15 @@ where {
                     frost_task.expect("frost task exists").start_task().await;
                 }),
             );
+
+            executor.spawn_critical(
+                "Pbft Task",
+                Box::pin(async move {
+                    pbft_task.expect("pbft task exists").start_task().await;
+                }),
+            );
         }
+
         executor.spawn_critical(
             "PoA Block Fetcher Task",
             Box::pin(async move {

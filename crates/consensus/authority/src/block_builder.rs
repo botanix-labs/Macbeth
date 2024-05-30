@@ -12,7 +12,7 @@ use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{
-    BlockValidationKind::{self, SkipStateRootValidation},
+    BlockValidationKind::{self},
     BlockchainTreeEngine,
 };
 use reth_network::frost::manager::ToFrostManager;
@@ -150,8 +150,6 @@ where
             transactions.clone(),
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
             &self.secp,
             self.evm_config.clone(),
@@ -275,8 +273,6 @@ where
             block,
             gas_used,
             Some(botanix_consensus_pkg),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
             &self.secp,
             &authority_signers,

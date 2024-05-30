@@ -1,5 +1,6 @@
 use crate::validation;
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, consensus::ConsensusError};
+use reth_consensus::ConsensusError;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
@@ -45,7 +46,10 @@ pub fn read_staker_balance(
     Ok(balance)
 }
 
-/// Returns the authority signer index
+/// Returns
+/// - The index of the authority that is currently in turn
+/// - The list of all authorities
+/// - The public key of the authority
 pub fn get_authority_signer_index<Client>(
     client: Client,
     chain_spec: Arc<ChainSpec>,
@@ -287,7 +291,7 @@ pub fn current_inturn_index(authorities_len: u64) -> u64 {
 mod tests {
     use std::str::FromStr;
 
-    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
 
     use super::*;
 

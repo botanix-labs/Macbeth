@@ -1,29 +1,22 @@
 use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::is_inturn;
-use reth_ecies::util::pk2id;
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{
-    blockchain_tree::{
-        error::{BlockchainTreeError, CanonicalError},
-        BlockchainTreeViewer,
-    },
-    p2p::headers::client::HeadersClient,
-    RethError,
-};
+use reth_interfaces::{blockchain_tree::BlockchainTreeViewer, p2p::headers::client::HeadersClient};
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
+use reth_network_types::pk2id;
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_provider::{BlockReaderIdExt, ProviderError};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -99,12 +92,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -364,10 +357,8 @@ where
 
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
-            Ok(false) => (), // continue
-            Err(RethError::Canonical(CanonicalError::BlockchainTree(
-                BlockchainTreeError::BlockHashNotFoundInChain { block_hash: _ },
-            ))) => (), // great block being proposed is no canon
+            Ok(false) => (),                                // continue
+            Err(ProviderError::BlockHashNotFound(_)) => (), // great block being proposed is not canon
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
@@ -709,7 +700,7 @@ mod tests {
     use super::*;
     use rand;
     use reth_consensus_common::utils::unix_timestamp;
-    use reth_ecies::util::pk2id;
+
     use reth_interfaces::p2p::{
         download::DownloadClient,
         error::{PeerRequestResult, RequestError},
@@ -717,7 +708,8 @@ mod tests {
         priority::Priority,
     };
     use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, WithPeerId, B256};
+    use reth_network_types::WithPeerId;
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
     use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
     use secp256k1::SECP256K1;
 
@@ -754,10 +746,9 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
-                            PeerId::random(),
-                            vec![header],
-                        )));
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
                     }
                 }
                 // Error is caught below
@@ -786,7 +777,7 @@ mod tests {
                 let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
                 let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
                 $sks.push(sk);
-                let peer_id = reth_ecies::util::pk2id(&pk);
+                let peer_id = pk2id(&pk);
                 $peer_ids.push(peer_id);
 
                 pks.push(pk);
