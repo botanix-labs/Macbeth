@@ -1,6 +1,7 @@
-use reth::core::cli::runner::CliRunner;
 
 use std::time::Duration;
+
+use reth::CliRunner;
 
 use crate::{
     it_info_print,

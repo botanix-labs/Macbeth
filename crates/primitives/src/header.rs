@@ -9,7 +9,7 @@ use crate::{
     eip4844::{calc_blob_gasprice, calculate_excess_blob_gas},
     header_ext::HeaderExt,
     keccak256, Address, BaseFeeParams, BlockHash, BlockNumHash, BlockNumber, Bloom, Bytes,
-    ChainSpec, GotExpected, GotExpectedBoxed, Hardfork, B256, B64, U256,
+    ChainSpec, GotExpected, GotExpectedBoxed, Hardfork, B256, B64, U256, BytesMut,
 };
 use alloy_rlp::{length_of_length, Decodable, Encodable};
 use bytes::BufMut;

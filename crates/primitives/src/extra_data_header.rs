@@ -585,62 +585,6 @@ mod tests {
         assert_eq!(recovered_pk, public_key);
     }
 
-<<<<<<< HEAD
-    // Test case for validating with an invalid signature
-    #[test]
-    fn test_validate_authorities_signature_with_invalid_signatures() {
-        let mut authority_signers = vec![];
-        let secp = Secp256k1::new();
-        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key);
-
-        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
-        let message = Message::from(hello_world_hash);
-        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
-
-        let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            Some(vec![signature]),
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-        let invalid_hash = sha256::Hash::hash("Not hello world!".as_bytes());
-        let result = header
-            .check_authority_sig_add(&invalid_hash.as_byte_array().to_vec(), &authority_signers);
-
-        // Since the message is different from the one signed the signature signers will be un-recovable
-        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::InvalidAuthority);
-    }
-
-    // Test case for validating without a signature
-    #[test]
-    fn test_validate_authorities_signature_without_signatures() {
-        let mut authority_signers = vec![];
-        let secp = Secp256k1::new();
-        let (_, public_key) = secp.generate_keypair(&mut OsRng);
-        authority_signers.push(public_key);
-
-        let header_without_signature = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            None,
-            Some(authority_signers.clone()),
-            None,
-            None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
-        );
-
-        let message = vec![0u8; 32];
-
-        let result = header_without_signature.check_authority_sig_add(&message, &authority_signers);
-        assert_eq!(result.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
-    }
-
-=======
->>>>>>> 66a8cce13 (Arm/feature/bft forks (#191))
     #[test]
     fn creates_correct_optional_fields_bitmask() {
         let mut authority_signers = vec![];
