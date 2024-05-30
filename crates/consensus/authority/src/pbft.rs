@@ -34,7 +34,6 @@ use tokio::sync::{
 };
 use tracing::{debug, error, info, warn};
 
-const BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION: Duration = Duration::from_secs(10);
 type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
 type PreCommitmentsMap = Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>;
 
@@ -54,12 +53,19 @@ pub(crate) enum Error {
     MissingInTurnSignature,
     #[error("Proposed block has too many signatures")]
     TooManySignaturesOnProposedBlock,
-    #[error("Proposed block has failed validation")]
-    BlockValidationFailed,
     #[error("Failed to recover signature: {0}")]
     RecoverSignatureError(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
+    #[error("Recieved block is not valid: {0}")]
+    InvalidBlock(#[from] ValidateBlockError),
+}
+
+/// Error when validating a block as a block signer
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ValidateBlockError {
+    #[error("Time check has been violated for blockhash: {0}")]
+    TimecheckViolated(BlockHash),
 }
 
 /// Defines the states of the state machine
@@ -248,77 +254,14 @@ where
         }
     }
 
-    async fn validate_block(&self, block: &SealedBlock) -> Result<bool, Error> {
-        // get current coordinator and its validity range
-        let coordinator_index =
-            self.get_coordinator().await?.map(|(_, _, authority_index)| authority_index);
-        let (start, end, _, _) = self.get_inturn_interval_for_coordinator(coordinator_index);
-
-        if block.timestamp >= end + BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION.as_secs() {
-            error!(
-                "Block validity end range violation. Timestamp = {:?}. Range end = {:?}",
-                block.timestamp, end
-            );
-            return Ok(false);
-        }
-        if block.timestamp <= start - BLOCK_TIME_VALIDITY_CRITERIA_RELAXATION.as_secs() {
-            error!(
-                "Block validity start range violation. Timestamp = {:?}. Range end = {:?}",
-                block.timestamp, start
-            );
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
-    /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
-    /// else is
-    pub(crate) async fn get_coordinator(
-        &self,
-    ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>, u64)>, Error> {
-        // check if we are in turn
-        let is_inturn =
-            is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64);
-        match is_inturn {
-            true => {
-                // if we are inturn, return None to avoid sending messages to ourselves.
-                Ok(None)
-            }
-            false => {
-                // if we are not inturn, find the coordinator in the list of peers
-                let all_connected_frost_peers = self.get_all_peers_handle().await?;
-                let current_inturn_authority_index =
-                    current_inturn_index(self.config.authorities.len() as u64, unix_timestamp());
-                let current_inturn_authority_frost_identifier =
-                    peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
-                let sender_channel = all_connected_frost_peers
-                    .get(&current_inturn_authority_frost_identifier)
-                    .cloned();
-
-                Ok(Some(current_inturn_authority_frost_identifier)
-                    .zip(sender_channel)
-                    .zip(Some(current_inturn_authority_index))
-                    .map(|((a, b), c)| (a, b, c)))
-            }
-        }
+    fn validate_block(&self, block: &SealedBlock) -> Result<(), Error> {
+        let block_hash = block.header.segregated_signature_block_hash()?;
+        block.header.validate_inturn(&self.config.authorities).map_err(|_| Error::InvalidBlock(ValidateBlockError::TimecheckViolated(block_hash)))?;
+        Ok(())
     }
 
     pub(crate) fn is_coordinator(&self) -> bool {
         is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64)
-    }
-
-    /// Returns the inturn time data or a given coordinator index. If None, our authority index is
-    /// being used
-    pub(crate) fn get_inturn_interval_for_coordinator(
-        &self,
-        coordinator_index: Option<u64>,
-    ) -> CoordinatorInterval {
-        get_in_turn_interval(
-            self.config.authorities.len() as u64,
-            coordinator_index.unwrap_or_else(|| self.config.authority_index as u64),
-            unix_timestamp(),
-        )
     }
 
     pub(crate) async fn gossip_to_peers(
@@ -413,10 +356,7 @@ where
         }
 
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        self.validate_block(&block)?;
 
         let coordinator = self
             .config
@@ -509,10 +449,7 @@ where
     ) -> Result<(), Error> {
         info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        self.validate_block(&block)?;
         let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
@@ -546,10 +483,7 @@ where
         peer_id: PeerId,
     ) -> Result<Option<SealedBlock>, Error> {
         // perform block validation
-        if !self.validate_block(&block).await? {
-            warn!(target: "pbft" ,"Block proposal failed validation");
-            return Err(Error::BlockValidationFailed);
-        }
+        self.validate_block(&block)?;
         // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
             warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);

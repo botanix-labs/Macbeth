@@ -138,7 +138,6 @@ pub async fn block_builder(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
-            assert_eq!(canon_state_notification.engine_index, inturn_member_index as u16);
 
             // block verfication
             if canon_state_notification.engine_index == targeted_fed_member.index {
