@@ -40,10 +40,6 @@ pub async fn await_signing_completion(
         if let Notifications::SigningStatusReport((member_index, _session_id, status)) =
             notification
         {
-            info!(
-                "NOTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT {:?} - {:?} -{:?} - {:?}",
-                in_turn_member_index, member_index, _session_id, status
-            );
             if in_turn_member_index == member_index && status.eq(&SigningStatus::Finalized) {
                 break;
             }
