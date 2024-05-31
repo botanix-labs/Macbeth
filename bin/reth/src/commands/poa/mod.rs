@@ -439,16 +439,6 @@ where {
             PruneModes::default(),
         );
 
-        // configure snapshotter
-        // let snapshotter = reth_snapshot::Snapshotter::new(
-        //     provider_factory.clone(),
-        //     data_dir.snapshots_path(),
-        //     node_config.chain.snapshot_block_interval,
-        // )?;
-
-        // provider_factory = provider_factory
-        //     .with_snapshots(data_dir.snapshots_path(), snapshotter.highest_snapshot_receiver())?;
-
         node_config
             .start_metrics_endpoint(
                 prometheus_handle,
