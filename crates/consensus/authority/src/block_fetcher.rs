@@ -126,10 +126,10 @@ where
             }
 
             // check for missing blocks from the tip
-            let missing_blocks = block.number.saturating_sub(best_block);
+            let are_blocks_missing = !block.parent_hash.eq(&best_hash);
             let mut blocks_to_sync: Vec<Block> = vec![];
-            if missing_blocks > 1 {
-                warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", missing_blocks);
+            if are_blocks_missing {
+                warn!(target: "consensus::authority", "Block fetcher is missing blocks. Catching up...");
                 let mut block_num_hash = block.parent_num_hash();
                 loop {
                     if let Some(block) =
