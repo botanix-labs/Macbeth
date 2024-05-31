@@ -109,7 +109,10 @@ impl ProofOfAuthorityBlockImport {
 
 impl BlockImport for ProofOfAuthorityBlockImport {
     fn on_new_block(&mut self, peer_id: PeerId, incoming_block: NewBlockMessage) {
-        info!("on_new_block, peer_id: {:?}, incoming_block: {:?}", peer_id, incoming_block);
+        info!(
+            "on_new_block, peer_id: {:?}, incoming_block hash: {:?}",
+            peer_id, incoming_block.hash
+        );
         self.queue.push_back((peer_id, incoming_block));
     }
 
