@@ -515,6 +515,16 @@ start-poa-server-2:
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304
 
+clean-poa-2:
+	cd ${NODE_2_DIR} && \
+	rm -rf "${NODE_2_DIR}/db" && \
+	rm -rf "${NODE_2_DIR}/static_files"
+
+clean-poa-1:
+	cd ${NODE_1_DIR} && \
+	rm -rf "${NODE_1_DIR}/db" && \
+	rm -rf "${NODE_1_DIR}/static_files"
+
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
