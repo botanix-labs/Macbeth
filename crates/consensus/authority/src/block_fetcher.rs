@@ -1,5 +1,5 @@
 use crate::{
-    engine_util,
+    engine_util::{self, SendNewPayloadError},
     extended_client::BtcServerExtendedClient,
     utils::{get_recent_block_height_or_zero, is_testnet},
 };
@@ -8,9 +8,11 @@ use client::{FinalizeSignerRequest, Output};
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
+    botanix::BotanixConsensusPackage, Block, SealedBlockWithSenders, TransactionSigned,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
+use reth_provider::{
+    BlockReader, BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory,
+};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -86,6 +88,14 @@ where
         }
     }
 
+    async fn send_block_to_beacon(&self, block: &Block) -> Result<(), SendNewPayloadError> {
+        // Seal the block
+        let sealed_block = block.clone().seal_slow();
+        // Notify the engine of the new block
+        engine_util::send_beacon_new_payload(sealed_block.clone(), self.to_engine.clone()).await?;
+        Ok(())
+    }
+
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
@@ -105,30 +115,46 @@ where
                 },
             };
 
-            let block = new_block.block.block.clone();
+            let block: reth_primitives::Block = new_block.block.block.clone();
             let storage = self.storage.read().await;
-            info!(target: "consensus::authority", "Recieved new block from peer {:?}", block.header.hash_slow());
-            let best_hash = storage.get_best_block_and_hash().expect("best block exists").1;
+            info!(target: "consensus::authority", ?block, "Recieved new block from peer");
+            let (best_block, best_hash) =
+                storage.get_best_block_and_hash().expect("best block exists");
             if block.header.hash_slow() == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
                 continue;
             }
+
+            // check for missing blocks from the tip
+            let missing_blocks = block.number.saturating_sub(best_block);
+            let mut blocks_to_sync: Vec<Block> = vec![];
+            if missing_blocks > 1 {
+                warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", missing_blocks);
+                let mut block_num_hash = block.parent_num_hash();
+                loop {
+                    if let Some(block) =
+                        BlockReader::block_by_hash(&storage.client, block_num_hash.hash)
+                            .ok()
+                            .flatten()
+                    {
+                        block_num_hash = block.parent_num_hash();
+                        blocks_to_sync.push(block);
+                        if block_num_hash.number == best_block {
+                            break;
+                        }
+                    }
+                }
+            }
+            blocks_to_sync.reverse();
             drop(storage);
-            // Seal the block
-            let sealed_block = block.clone().seal_slow();
-            // Notify the engine of the new block
-            let _payload_status = match engine_util::send_beacon_new_payload(
-                sealed_block.clone(),
-                self.to_engine.clone(),
-            )
-            .await
-            {
-                Ok(payload) => payload,
-                Err(err) => {
+
+            // send the blocks to the beacon engine
+            for block_to_sync in blocks_to_sync.iter() {
+                if let Err(err) = self.send_block_to_beacon(&block_to_sync).await {
                     error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
                     continue;
                 }
-            };
+            }
 
             let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let recent_bitcoin_block_height =
@@ -137,7 +163,7 @@ where
                 error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
                 continue;
             }
-            let mut storage = self.storage.write().await;
+            let storage = self.storage.write().await;
 
             if recent_bitcoin_block_header.is_none() {
                 warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
@@ -160,145 +186,159 @@ where
                     });
                 }
             }
+            drop(storage);
 
-            match storage.execute_imported_block(
-                self.chain_spec.clone(),
-                sealed_block.clone(),
-                botanix_consensus_pkg,
-                self.evm_config.clone(),
-            ) {
-                Ok(bundle_state) => {
-                    let senders =
-                        TransactionSigned::recover_signers(&block.body, block.body.len()).unwrap();
-                    let sealed_block_with_senders =
-                        SealedBlockWithSenders::new(sealed_block.clone(), senders)
-                            .expect("senders are valid");
-                    // Process Botanix specific logs
-                    let is_testnet = is_testnet(self.chain_spec.chain().id());
-                    // get pegouts if btc_server is available
-                    // only federation nodes will have btc_server
-                    let mut pegouts = match self.btc_server.as_ref() {
-                        Some(btc_server) => {
-                            let pegouts = match crate::utils::process_receipts(
-                                &mut btc_server.clone(),
-                                &bundle_state,
-                                recent_bitcoin_block_height,
-                                is_testnet,
-                                self.btc_network,
-                            )
-                            .await
-                            {
-                                Ok(pegouts) => pegouts,
+            // execute the entirety of blocks
+            for block_to_sync in blocks_to_sync.iter() {
+                let sealed_block = block.clone().seal_slow();
+                let botanix_consensus_pkg = botanix_consensus_pkg.clone();
+
+                let mut storage = self.storage.write().await;
+
+                match storage.execute_imported_block(
+                    self.chain_spec.clone(),
+                    sealed_block.clone(),
+                    botanix_consensus_pkg,
+                    self.evm_config.clone(),
+                ) {
+                    Ok(bundle_state) => {
+                        let senders = TransactionSigned::recover_signers(
+                            &block_to_sync.body,
+                            block_to_sync.body.len(),
+                        )
+                        .unwrap();
+                        let sealed_block_with_senders =
+                            SealedBlockWithSenders::new(sealed_block.clone(), senders)
+                                .expect("senders are valid");
+                        // Process Botanix specific logs
+                        let is_testnet = is_testnet(self.chain_spec.chain().id());
+                        // get pegouts if btc_server is available
+                        // only federation nodes will have btc_server
+                        let mut pegouts = match self.btc_server.as_ref() {
+                            Some(btc_server) => {
+                                let pegouts = match crate::utils::process_receipts(
+                                    &mut btc_server.clone(),
+                                    &bundle_state,
+                                    recent_bitcoin_block_height,
+                                    is_testnet,
+                                    self.btc_network,
+                                )
+                                .await
+                                {
+                                    Ok(pegouts) => pegouts,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                        continue;
+                                    }
+                                };
+
+                                pegouts
+                            }
+                            None => vec![],
+                        };
+
+                        // Validate utxo commitment
+                        let header = sealed_block.header.clone();
+                        if is_fed_node {
+                            let utxo_commitment: [u8; 32] =
+                            match self.btc_server.clone().expect("btc_server exists").get_utxo_merkle_root(client::Empty {}).await {
+                                Ok(utxo_commitment) => utxo_commitment,
                                 Err(e) => {
-                                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                    error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
                                     continue;
                                 }
-                            };
-
-                            pegouts
-                        }
-                        None => vec![],
-                    };
-
-                    // Validate utxo commitment
-                    let header = sealed_block.header.clone();
-                    if is_fed_node {
-                        let utxo_commitment: [u8; 32] =
-                        match self.btc_server.clone().expect("btc_server exists").get_utxo_merkle_root(client::Empty {}).await {
-                            Ok(utxo_commitment) => utxo_commitment,
-                            Err(e) => {
-                                error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
+                            }
+                            .merkle_root
+                            .try_into()
+                            .expect("valid UTXO commitment");
+                            info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
+                            let edh =
+                                header.deserialize_extra_data_header().expect("valid extra data");
+                            if edh.utxo_commitment != utxo_commitment {
+                                error!(target: "consensus::authority", "UTXO commitment mismatch");
                                 continue;
                             }
                         }
-                        .merkle_root
-                        .try_into()
-                        .expect("valid UTXO commitment");
-                        info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
-                        let edh = header.deserialize_extra_data_header().expect("valid extra data");
-                        if edh.utxo_commitment != utxo_commitment {
-                            error!(target: "consensus::authority", "UTXO commitment mismatch");
-                            continue;
-                        }
-                    }
 
-                    let (best_block, _best_hash) =
-                        storage.get_best_block_and_hash().expect("best block exists");
-                    if header.is_poa_epoch() && is_fed_node {
-                        // get the pegouts from during the epoch
-                        let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
-                            error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
-                            e
-                        }).unwrap();
-                        pegouts.extend(past_pegouts);
-                        let extra_data = ExtraDataHeader::deserialize(
-                            &mut header.extra_data.clone().to_vec().as_slice(),
+                        let (best_block, _best_hash) =
+                            storage.get_best_block_and_hash().expect("best block exists");
+                        if header.is_poa_epoch() && is_fed_node {
+                            // get the pegouts from during the epoch
+                            let past_pegouts = crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network,).await.map_err(|e| {
+                                error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
+                                e
+                            }).unwrap();
+                            pegouts.extend(past_pegouts);
+                            let extra_data = ExtraDataHeader::deserialize(
+                                &mut header.extra_data.clone().to_vec().as_slice(),
+                            )
+                            .expect("extra data is valid");
+                            // finalizing signing if there are pegouts
+                            // at this point this singer or others have provided partial signatures
+                            // and completed the signing session
+                            if let Some(witness) = extra_data.witness_data {
+                                let wit = witness
+                                    .iter()
+                                    .map(|witness| witness.to_vec()[0].clone())
+                                    .collect::<Vec<Vec<u8>>>();
+                                let outputs = pegouts
+                                    .iter()
+                                    .map(|pegout| Output {
+                                        address: pegout.destination.to_string(),
+                                        value: pegout.amount.to_sat(),
+                                    })
+                                    .collect();
+                                let res = self
+                                    .btc_server
+                                    .clone()
+                                    .expect("btc_server exists")
+                                    .signer_finalize(FinalizeSignerRequest {
+                                        witness: wit,
+                                        outputs,
+                                    })
+                                    .await;
+
+                                if let Err(e) = res {
+                                    error!(target: "consensus::authority", ?e, "Failed to finalize signer");
+                                    continue;
+                                }
+                                info!(target: "consensus::authority", "Witness data valid and finalized");
+                            }
+                        }
+
+                        // Notify engine api about new FCU
+                        engine_util::send_fork_choice_update_payload(
+                            sealed_block.clone().hash(),
+                            self.to_engine.clone(),
                         )
-                        .expect("extra data is valid");
-                        // finalizing signing if there are pegouts
-                        // at this point this singer or others have provided partial signatures and
-                        // completed the signing session
-                        if let Some(witness) = extra_data.witness_data {
-                            let wit = witness
-                                .iter()
-                                .map(|witness| witness.to_vec()[0].clone())
-                                .collect::<Vec<Vec<u8>>>();
-                            let outputs = pegouts
-                                .iter()
-                                .map(|pegout| Output {
-                                    address: pegout.destination.to_string(),
-                                    value: pegout.amount.to_sat(),
-                                })
-                                .collect();
-                            let res = self
-                                .btc_server
-                                .clone()
-                                .expect("btc_server exists")
-                                .signer_finalize(FinalizeSignerRequest { witness: wit, outputs })
-                                .await;
+                        .await
+                        // TODO remove unwrap
+                        .unwrap();
 
-                            if let Err(e) = res {
-                                error!(target: "consensus::authority", ?e, "Failed to finalize signer");
-                                continue;
-                            }
-                            info!(target: "consensus::authority", "Witness data valid and finalized");
-                        } else {
-                            // if there are pegouts but no witness data in the EDH, fail consensus
-                            if !pegouts.is_empty() {
-                                error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
-                                continue;
-                            }
-                        }
+                        // update canon chain for rpc
+                        // TODO do we need to insert the block here?
+                        storage.client.set_canonical_head(header);
+                        storage.client.set_safe(sealed_block.header.clone());
+                        storage.client.set_finalized(sealed_block.header.clone());
+                        drop(storage);
+
+                        // TODO(armins) trie updates here are non. is that correct?
+                        let chain = Arc::new(Chain::new(
+                            vec![sealed_block_with_senders],
+                            bundle_state,
+                            None,
+                        ));
+
+                        info!(target: "consensus::authority", "sending block notification to block chain tree");
+                        // send block notification
+                        let _ = self
+                            .canon_state_notification
+                            .send(reth_provider::CanonStateNotification::Commit { new: chain });
                     }
-
-                    // Notify engine api about new FCU
-                    engine_util::send_fork_choice_update_payload(
-                        sealed_block.clone().hash(),
-                        self.to_engine.clone(),
-                    )
-                    .await
-                    // TODO remove unwrap
-                    .unwrap();
-
-                    // update canon chain for rpc
-                    // TODO do we need to insert the block here?
-                    storage.client.set_canonical_head(header);
-                    storage.client.set_safe(sealed_block.header.clone());
-                    storage.client.set_finalized(sealed_block.header.clone());
-                    drop(storage);
-
-                    // TODO(armins) trie updates here are non. is that correct?
-                    let chain =
-                        Arc::new(Chain::new(vec![sealed_block_with_senders], bundle_state, None));
-
-                    info!(target: "consensus::authority", "sending block notification to block chain tree");
-                    // send block notification
-                    let _ = self
-                        .canon_state_notification
-                        .send(reth_provider::CanonStateNotification::Commit { new: chain });
-                }
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                    Err(err) => {
+                        error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
+                        drop(storage);
+                    }
                 }
             }
         }
