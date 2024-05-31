@@ -177,7 +177,7 @@ pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> Scrip
     // so we can use the dangerous_assume_tweaked method to create the script
     // In the case of a change output being created no eth address tweak is provided
     let tweaked_pk = TweakedPublicKey::dangerous_assume_tweaked(public_key.x_only_public_key().0);
-    bitcoin::ScriptBuf::new_v1_p2tr_tweaked(tweaked_pk)
+    bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
 }
 
 pub fn generate_taproot_change_scriptpubkey(
@@ -188,7 +188,7 @@ pub fn generate_taproot_change_scriptpubkey(
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
 
-    bitcoin::ScriptBuf::new_v1_p2tr(secp, public_key.x_only_public_key().0, None)
+    bitcoin::ScriptBuf::new_p2tr(secp, public_key.x_only_public_key().0, None)
 }
 
 /// Note: pk provided to this address is the frost public key already tweaked
