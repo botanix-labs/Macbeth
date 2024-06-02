@@ -1,11 +1,6 @@
 //! Main node command
 
 use crate::{
-    cli::ext::{NoArgs, RethNodeComponents},
-    payload::PayloadBuilderService,
-};
-
-use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
@@ -14,6 +9,11 @@ use crate::{
     cli::ext::PoaNodeCommandConfig,
     dirs::{DataDirPath, MaybePlatformPath},
 };
+use crate::{
+    cli::ext::{NoArgs, RethNodeComponents},
+    payload::PayloadBuilderService,
+};
+use std::str::FromStr;
 
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::AuthorityConsensusBuilder;
@@ -23,12 +23,14 @@ use reth_beacon_consensus::{
 };
 use reth_config::config::StageConfig;
 use reth_network::NetworkEvents;
+use reth_network_types::pk2id;
 
 use reth_node_builder::PayloadBuilderConfig;
 use reth_node_events::node::handle_events;
 use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, PruneModes};
 use reth_provider::providers::StaticFileProvider;
 use reth_rpc::EngineApi;
+use reth_rpc_types::NodeRecord;
 use reth_static_file::StaticFileProducer;
 use tokio::sync::oneshot;
 
@@ -57,7 +59,12 @@ use reth_network::{
 use reth_node_builder::{
     setup::build_networked_pipeline, RethRpcConfig, RethTransactionPoolConfig,
 };
-use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
+use reth_node_core::{
+    args::{get_secret_key, utils::get_federation_pks_from_path},
+    init::init_genesis,
+    node_config::NodeConfig,
+    version,
+};
 use reth_node_ethereum::EthEvmConfig;
 
 use reth_primitives::{
@@ -71,6 +78,7 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
+use secp256k1::SECP256K1;
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
@@ -453,11 +461,35 @@ where {
 
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
+
+        let network_secret_path =
+            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+
+        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
+        let secret_key = get_secret_key(&network_secret_path)?;
+
+        // set trusted nodes with --trusted-peers flag or chain.toml
+        // --trusted-peers flag takes precedence
+        info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
-            info!(target: "reth::cli", "Adding trusted nodes");
             node_config.network.trusted_peers.iter().for_each(|peer| {
                 reth_config.peers.trusted_nodes.insert(*peer);
             });
+        } else {
+            // Connect to poa federation members
+            // assumes chain.toml is present at `bin/reth/chain.toml` based on Makefile command
+            let chain_path = PathBuf::from_str("chain.toml").unwrap();
+            let fed_members =
+                get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
+            for fed_member in fed_members.iter() {
+                // don't add self
+                let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+                let peer_id = pk2id(&fed_member.0);
+                if self_peer_id != peer_id {
+                    let peer = NodeRecord::new(fed_member.1, peer_id);
+                    reth_config.peers.trusted_nodes.insert(peer);
+                }
+            }
         }
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -526,13 +558,6 @@ where {
             );
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
-
-        info!(target: "reth::cli", "Connecting to P2P network");
-        let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
-
-        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
-        let secret_key = get_secret_key(&network_secret_path)?;
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
@@ -612,10 +637,6 @@ where {
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
 
-        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr =
-        // %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to
-        // P2P network"); debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(),
-        // "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
         debug!(target: "reth::cli", "Spawning payload builder service");
