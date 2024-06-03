@@ -262,6 +262,12 @@ where
                                 continue;
                             }
                             info!(target: "consensus::authority", "Witness data valid and finalized");
+                        } else {
+                            // if there are pegouts but no witness data in the EDH, fail consensus
+                            if !pegouts.is_empty() {
+                                error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
+                                continue;
+                            }
                         }
                     }
 
