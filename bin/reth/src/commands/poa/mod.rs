@@ -468,29 +468,29 @@ where {
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
 
-        // set trusted nodes with --trusted-peers flag or chain.toml
-        // --trusted-peers flag takes precedence
+        // add trusted nodes with --trusted-peers flag
         info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
             node_config.network.trusted_peers.iter().for_each(|peer| {
                 reth_config.peers.trusted_nodes.insert(*peer);
             });
-        } else {
-            // Connect to poa federation members
-            // assumes chain.toml is present at `bin/reth/chain.toml` based on Makefile command
-            let chain_path = PathBuf::from_str("chain.toml").unwrap();
-            let fed_members =
-                get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
-            for fed_member in fed_members.iter() {
-                // don't add self
-                let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
-                let peer_id = pk2id(&fed_member.0);
-                if self_peer_id != peer_id {
-                    let peer = NodeRecord::new(fed_member.1, peer_id);
-                    reth_config.peers.trusted_nodes.insert(peer);
-                }
+        }
+
+        // add trusted nodes (federation members) with chain.toml
+        // assumes chain.toml is present at `bin/reth/chain.toml` based on Makefile command
+        let chain_path = PathBuf::from_str("chain.toml").unwrap();
+        let fed_members =
+            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
+        for fed_member in fed_members.iter() {
+            // don't add self
+            let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+            let peer_id = pk2id(&fed_member.0);
+            if self_peer_id != peer_id {
+                let peer = NodeRecord::new(fed_member.1, peer_id);
+                reth_config.peers.trusted_nodes.insert(peer);
             }
         }
+
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
