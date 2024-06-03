@@ -1,6 +1,10 @@
 //! Collection of methods for block validation.
 
-use reth_interfaces::{consensus::ConsensusError, RethResult};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+
+use reth_consensus::ConsensusError;
+use reth_interfaces::RethResult;
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     header_ext::HeaderExt,
@@ -9,7 +13,6 @@ use reth_primitives::{
     TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
-use std::collections::{hash_map::Entry, HashMap};
 
 use crate::utils;
 
@@ -18,7 +21,7 @@ pub fn validate_header_standalone(
     header: &SealedHeader,
     chain_spec: &ChainSpec,
 ) -> Result<(), ConsensusError> {
-    // Gas used needs to be less then gas limit. Gas used is going to be check after execution.
+    // Gas used needs to be less than gas limit. Gas used is going to be checked after execution.
     if header.gas_used > header.gas_limit {
         return Err(ConsensusError::HeaderGasUsedExceedsGasLimit {
             gas_used: header.gas_used,
@@ -27,8 +30,8 @@ pub fn validate_header_standalone(
     }
 
     // Check if base fee is set.
-    if chain_spec.fork(Hardfork::London).active_at_block(header.number) &&
-        header.base_fee_per_gas.is_none()
+    if chain_spec.fork(Hardfork::London).active_at_block(header.number)
+        && header.base_fee_per_gas.is_none()
     {
         return Err(ConsensusError::BaseFeeMissing);
     }
@@ -38,20 +41,20 @@ pub fn validate_header_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_none() &&
-        chain_spec.chain.id() != 3636 &&
-        wd_root_missing
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_none()
+        && chain_spec.chain.id() != 3636
+        && wd_root_missing
     {
         return Err(ConsensusError::WithdrawalsRootMissing);
-    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp) &&
-        header.withdrawals_root.is_some()
+    } else if !chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(header.timestamp)
+        && header.withdrawals_root.is_some()
     {
         return Err(ConsensusError::WithdrawalsRootUnexpected);
     }
 
     // Ensures that EIP-4844 fields are valid once cancun is active.
-    if chain_spec.fork(Hardfork::Cancun).active_at_timestamp(header.timestamp) {
+    if chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
         validate_4844_header_standalone(header)?;
     } else if header.blob_gas_used.is_some() {
         return Err(ConsensusError::BlobGasUsedUnexpected);
@@ -77,8 +80,8 @@ pub fn validate_transaction_regarding_header(
     let chain_id = match transaction {
         Transaction::Legacy(TxLegacy { chain_id, .. }) => {
             // EIP-155: Simple replay attack protection: https://eips.ethereum.org/EIPS/eip-155
-            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number) &&
-                chain_id.is_some()
+            if !chain_spec.fork(Hardfork::SpuriousDragon).active_at_block(at_block_number)
+                && chain_id.is_some()
             {
                 return Err(InvalidTransactionError::OldLegacyChainId.into());
             }
@@ -229,8 +232,8 @@ pub fn validate_block_standalone(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != 3636
+    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp)
+        && chain_spec.chain.id() != 3636
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;
@@ -261,7 +264,7 @@ pub fn validate_block_standalone(
     Ok(())
 }
 
-/// Validate block in regards to chain (parent)
+/// Validate block with regard to chain (parent)
 ///
 /// Checks:
 ///  If we already know the block.
@@ -295,12 +298,10 @@ pub fn validate_block_regarding_chain<PROV: HeaderProvider + WithdrawalsProvider
 ///  * `parent_beacon_block_root` exists as a header field
 ///  * `blob_gas_used` is less than or equal to `MAX_DATA_GAS_PER_BLOCK`
 ///  * `blob_gas_used` is a multiple of `DATA_GAS_PER_BLOB`
+///  * `excess_blob_gas` is a multiple of `DATA_GAS_PER_BLOB`
 pub fn validate_4844_header_standalone(header: &SealedHeader) -> Result<(), ConsensusError> {
     let blob_gas_used = header.blob_gas_used.ok_or(ConsensusError::BlobGasUsedMissing)?;
-
-    if header.excess_blob_gas.is_none() {
-        return Err(ConsensusError::ExcessBlobGasMissing);
-    }
+    let excess_blob_gas = header.excess_blob_gas.ok_or(ConsensusError::ExcessBlobGasMissing)?;
 
     if header.parent_beacon_block_root.is_none() {
         return Err(ConsensusError::ParentBeaconBlockRootMissing);
@@ -316,6 +317,15 @@ pub fn validate_4844_header_standalone(header: &SealedHeader) -> Result<(), Cons
     if blob_gas_used % DATA_GAS_PER_BLOB != 0 {
         return Err(ConsensusError::BlobGasUsedNotMultipleOfBlobGasPerBlob {
             blob_gas_used,
+            blob_gas_per_blob: DATA_GAS_PER_BLOB,
+        });
+    }
+
+    // `excess_blob_gas` must also be a multiple of `DATA_GAS_PER_BLOB`. This will be checked later
+    // (via `calculate_excess_blob_gas`), but it doesn't hurt to catch the problem sooner.
+    if excess_blob_gas % DATA_GAS_PER_BLOB != 0 {
+        return Err(ConsensusError::ExcessBlobGasNotMultipleOfBlobGasPerBlob {
+            excess_blob_gas,
             blob_gas_per_blob: DATA_GAS_PER_BLOB,
         });
     }
@@ -406,10 +416,11 @@ mod tests {
         test_utils::generators::{self, Rng},
     };
     use reth_primitives::{
-        hex_literal::hex, proofs, Account, Address, BlockBody, BlockHash, BlockHashOrNumber, Bytes,
-        ChainSpecBuilder, Signature, TransactionKind, TransactionSigned, Withdrawal, Withdrawals,
-        MAINNET, U256,
+        hex_literal::hex, proofs, Account, Address, BlockBody, BlockHash, BlockHashOrNumber,
+        BlockNumber, Bytes, ChainSpecBuilder, Signature, Transaction, TransactionSigned, TxEip4844,
+        Withdrawal, Withdrawals, U256,
     };
+    use reth_provider::AccountReader;
     use std::ops::RangeBounds;
 
     mock! {
@@ -439,15 +450,6 @@ mod tests {
             Self {
                 is_known: false,
                 parent,
-                account: None,
-                withdrawals_provider: MockWithdrawalsProvider::new(),
-            }
-        }
-        /// New provider where is_known is always true
-        fn new_known() -> Self {
-            Self {
-                is_known: true,
-                parent: None,
                 account: None,
                 withdrawals_provider: MockWithdrawalsProvider::new(),
             }
@@ -518,25 +520,6 @@ mod tests {
         }
     }
 
-    fn mock_tx(nonce: u64) -> TransactionSignedEcRecovered {
-        let request = Transaction::Eip2930(TxEip2930 {
-            chain_id: 1u64,
-            nonce,
-            gas_price: 0x28f000fff,
-            gas_limit: 10,
-            to: TransactionKind::Call(Address::default()),
-            value: 3_u64.into(),
-            input: Bytes::from(vec![1, 2]),
-            access_list: Default::default(),
-        });
-
-        let signature = Signature { odd_y_parity: true, r: U256::default(), s: U256::default() };
-
-        let tx = TransactionSigned::from_transaction_and_signature(request, signature);
-        let signer = Address::ZERO;
-        TransactionSignedEcRecovered::from_signed_transaction(tx, signer)
-    }
-
     fn mock_blob_tx(nonce: u64, num_blobs: usize) -> TransactionSigned {
         let mut rng = generators::rng();
         let request = Transaction::Eip4844(TxEip4844 {
@@ -546,8 +529,8 @@ mod tests {
             max_priority_fee_per_gas: 0x28f000fff,
             max_fee_per_blob_gas: 0x7,
             gas_limit: 10,
-            to: TransactionKind::Call(Address::default()),
-            value: 3_u64.into(),
+            to: Address::default().into(),
+            value: U256::from(3_u64),
             input: Bytes::from(vec![1, 2]),
             access_list: Default::default(),
             blob_versioned_hashes: std::iter::repeat_with(|| rng.gen()).take(num_blobs).collect(),
@@ -598,60 +581,6 @@ mod tests {
         let body = Vec::new();
 
         (SealedBlock { header: header.seal_slow(), body, ommers, withdrawals: None }, parent)
-    }
-
-    #[test]
-    fn sanity_tx_nonce_check() {
-        let (block, _) = mock_block();
-        let tx1 = mock_tx(0);
-        let tx2 = mock_tx(1);
-        let provider = Provider::new_known();
-
-        let txs = vec![tx1, tx2];
-        validate_all_transaction_regarding_block_and_nonces(
-            txs.iter(),
-            &block.header,
-            provider,
-            &MAINNET,
-        )
-        .expect("To Pass");
-    }
-
-    #[test]
-    fn nonce_gap_in_first_transaction() {
-        let (block, _) = mock_block();
-        let tx1 = mock_tx(1);
-        let provider = Provider::new_known();
-
-        let txs = vec![tx1];
-        assert_eq!(
-            validate_all_transaction_regarding_block_and_nonces(
-                txs.iter(),
-                &block.header,
-                provider,
-                &MAINNET,
-            ),
-            Err(ConsensusError::from(InvalidTransactionError::NonceNotConsistent).into())
-        )
-    }
-
-    #[test]
-    fn nonce_gap_on_second_tx_from_same_signer() {
-        let (block, _) = mock_block();
-        let tx1 = mock_tx(0);
-        let tx2 = mock_tx(3);
-        let provider = Provider::new_known();
-
-        let txs = vec![tx1, tx2];
-        assert_eq!(
-            validate_all_transaction_regarding_block_and_nonces(
-                txs.iter(),
-                &block.header,
-                provider,
-                &MAINNET,
-            ),
-            Err(ConsensusError::from(InvalidTransactionError::NonceNotConsistent).into())
-        );
     }
 
     #[test]

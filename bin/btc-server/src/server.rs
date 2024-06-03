@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use base64::decode as base64_decode;
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, FeeRate, OutPoint, TxOut};
+use bitcoin::{consensus::encode as btcencode, psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
@@ -211,7 +211,7 @@ impl rpc::BtcServer for App {
                     .assume_checked()
                     .script_pubkey();
 
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
             })
             .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
 
@@ -324,7 +324,7 @@ impl rpc::BtcServer for App {
 
         self.add_round2_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
             error!("Failed to add round2 signing: {}", e);
-            badarg!("Failed to add round2 signing")
+            badarg!("Failed to add round2 signing: {}", e)
         })?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
@@ -387,7 +387,7 @@ impl rpc::BtcServer for App {
 
         self.add_round2_dkg(frost_id, packages).await.map_err(|e| {
             error!("Failed to add round2 dkg: {}", e);
-            badarg!("Failed to add round2 dkg")
+            badarg!("Failed to add round2 dkg: {}", e)
         })?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -429,7 +429,7 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to deserialize round1 dkg package: {}", e)
             })?;
         self.add_round1_dkg(frost_id, dkg_round1)
-            .map_err(|_e| internal!("Failed to add round1 dkg"))?;
+            .map_err(|e| internal!("Failed to add round1 dkg: {}", e))?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
@@ -568,7 +568,7 @@ impl rpc::BtcServer for App {
                     .assume_checked()
                     .script_pubkey();
 
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: o.value })
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
             })
             .collect();
 

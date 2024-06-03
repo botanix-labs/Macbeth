@@ -2,7 +2,7 @@
 
 use crate::{
     revm_primitives::{address, b256},
-    Address, B256, U256,
+    Address, BaseFeeParams, B256, U256,
 };
 use std::time::Duration;
 
@@ -50,7 +50,7 @@ pub const ETHEREUM_BLOCK_GAS_LIMIT: u64 = 30_000_000;
 /// 12.5% of 7 is less than 1.
 ///
 /// Note that min base fee under different 1559 parameterizations may differ, but there's no
-/// signifant harm in leaving this setting as is.
+/// significant harm in leaving this setting as is.
 pub const MIN_PROTOCOL_BASE_FEE: u64 = 7;
 
 /// Same as [MIN_PROTOCOL_BASE_FEE] but as a U256.
@@ -74,32 +74,60 @@ pub const MINIMUM_GAS_LIMIT: u64 = 5000;
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 50;
+pub const OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u128 = 50;
 
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism Canyon
 /// hardfork.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u64 = 250;
+pub const OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u128 = 250;
 
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u64 = 6;
+pub const OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 6;
 
 /// Base fee max change denominator for Optimism Sepolia as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_SEPOLIA_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 50;
+pub const OP_SEPOLIA_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u128 = 50;
 
 /// Base fee max change denominator for Optimism Sepolia as defined in the Optimism Canyon
 /// hardfork.
 #[cfg(feature = "optimism")]
-pub const OP_SEPOLIA_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u64 = 250;
+pub const OP_SEPOLIA_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u128 = 250;
 
 /// Base fee max change denominator for Optimism Sepolia as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u64 = 10;
+pub const OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 10;
+
+/// Get the base fee parameters for Optimism Sepolia.
+#[cfg(feature = "optimism")]
+pub const OP_SEPOLIA_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_SEPOLIA_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR,
+    elasticity_multiplier: OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Sepolia (post Canyon).
+#[cfg(feature = "optimism")]
+pub const OP_SEPOLIA_CANYON_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_SEPOLIA_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON,
+    elasticity_multiplier: OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Mainnet.
+#[cfg(feature = "optimism")]
+pub const OP_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR,
+    elasticity_multiplier: OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Mainnet (post Canyon).
+#[cfg(feature = "optimism")]
+pub const OP_CANYON_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON,
+    elasticity_multiplier: OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
 
 /// Multiplier for converting gwei to wei.
 pub const GWEI_TO_WEI: u64 = 1_000_000_000;

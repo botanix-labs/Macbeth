@@ -3,9 +3,7 @@
 use askama::Template;
 use bitcoin::hashes::Hash;
 use reth_primitives::{
-    create_botanix_config_with_genesis,
-    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
+    chain::spec::BotanixTestnetGenesisConfig, create_botanix_config_with_genesis, extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION}, fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256
 };
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
@@ -17,18 +15,18 @@ use std::{
 use url::Url;
 
 #[cfg(feature = "optimism")]
-use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA};
+use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::{
-    BotanixTestnetGenesisConfig, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 
 use super::genesis_args::GenesisTomlConfig;
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
-pub const SUPPORTED_CHAINS: &[&str] = &["base", "base-sepolia"];
+pub const SUPPORTED_CHAINS: &[&str] = &["base", "base-sepolia", "optimism", "optimism-sepolia"];
 #[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] =
@@ -57,9 +55,13 @@ pub fn chain_spec_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Er
         #[cfg(not(feature = "optimism"))]
         "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
         #[cfg(feature = "optimism")]
-        "base_sepolia" | "base-sepolia" => BASE_SEPOLIA.clone(),
+        "optimism" => OP_MAINNET.clone(),
+        #[cfg(feature = "optimism")]
+        "optimism_sepolia" | "optimism-sepolia" => OP_SEPOLIA.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
+        #[cfg(feature = "optimism")]
+        "base_sepolia" | "base-sepolia" => BASE_SEPOLIA.clone(),
         _ => {
             let raw = fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned()))?;
             serde_json::from_str(&raw)?
@@ -87,12 +89,15 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "sepolia" => SEPOLIA.clone(),
         #[cfg(not(feature = "optimism"))]
         "holesky" => HOLESKY.clone(),
-        #[cfg(not(feature = "optimism"))]
         "dev" => DEV.clone(),
         #[cfg(feature = "optimism")]
-        "base_sepolia" | "base-sepolia" => BASE_SEPOLIA.clone(),
+        "optimism" => OP_MAINNET.clone(),
+        #[cfg(feature = "optimism")]
+        "optimism_sepolia" | "optimism-sepolia" => OP_SEPOLIA.clone(),
         #[cfg(feature = "optimism")]
         "base" => BASE_MAINNET.clone(),
+        #[cfg(feature = "optimism")]
+        "base_sepolia" | "base-sepolia" => BASE_SEPOLIA.clone(),
         #[cfg(not(feature = "optimism"))]
         "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
         _ => {
@@ -104,7 +109,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     if s.contains('{') {
                         s.to_string()
                     } else {
-                        return Err(io_err.into()) // assume invalid path
+                        return Err(io_err.into()); // assume invalid path
                     }
                 }
             };
@@ -137,7 +142,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                         [0u8; 32],
                     );
                     let edh = hex::encode(extra_data_header.serialize());
-                    let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+                    let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig{ edh: &edh };
                     let rendered_json = botanix_testnet_config_genesis.render()?;
                     let genesis = serde_json::from_str(&rendered_json)?;
                     let botanix_testnet = create_botanix_config_with_genesis(genesis);
@@ -186,7 +191,7 @@ pub enum UrlParsingError {
 /// An error is returned if the value is empty or if non socket value is passed
 pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {
     if value.is_empty() {
-        return Err(SocketAddressParsingError::Empty)
+        return Err(SocketAddressParsingError::Empty);
     }
     // TODO configuarable for https
     let addr = format!("http://{}", value);
@@ -214,15 +219,15 @@ pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
 /// An error is returned if the value is empty.
 pub fn parse_socket_address(value: &str) -> eyre::Result<SocketAddr, SocketAddressParsingError> {
     if value.is_empty() {
-        return Err(SocketAddressParsingError::Empty)
+        return Err(SocketAddressParsingError::Empty);
     }
 
     if let Some(port) = value.strip_prefix(':').or_else(|| value.strip_prefix("localhost:")) {
         let port: u16 = port.parse()?;
-        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
+        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
     if let Ok(port) = value.parse::<u16>() {
-        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
+        return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
     value
         .to_socket_addrs()?

@@ -18,13 +18,13 @@ pub const TAPROOT_KEYSPEND_SATISFACTION_WEIGHT: Weight = Weight::from_wu(66);
 mod test {
     use super::*;
 
-    use bitcoin::secp256k1::{self, rand, KeyPair};
+    use bitcoin::secp256k1::{self, rand, Keypair};
     use miniscript::{self, Descriptor};
 
     #[test]
     fn taproot_keyspend_satisfaction_weights() {
         let secp = secp256k1::Secp256k1::new();
-        let key_pair = KeyPair::new(&secp, &mut rand::thread_rng());
+        let key_pair = Keypair::new(&secp, &mut rand::thread_rng());
 
         let desc =
             Descriptor::Tr(miniscript::descriptor::Tr::new(key_pair.public_key(), None).unwrap());

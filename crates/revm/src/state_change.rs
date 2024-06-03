@@ -43,16 +43,23 @@ pub fn post_block_balance_increments(
             calc::block_reward(base_block_reward, ommers.len());
     }
 
-    // split block fees between builder and botanix
-    let (botanix_fees, builder_fees) =
-        utils::block_fees_split(total_block_fees.expect("Total block fees to exist"));
+    // split block fees between builder and botanix if total_block_fees exist and
+    // block_builder_address is not zero.
+    // need conditional statement so reth tests can pass:
+    // sometimes tests will pass None for fees (ie processor eip4788 tests)
+    // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
+    // choice tests) During normal operation, the block_builder address will never be zero: it
+    // will be an authority address
+    let fees = total_block_fees.unwrap_or(0);
+    let address = block_builder_address.unwrap_or(Address::ZERO);
+    if fees > 0 && address != Address::ZERO {
+        let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
 
-    *balance_increments
-        .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
-        .or_default() += botanix_fees;
-    *balance_increments
-        .entry(block_builder_address.expect("Block builder address to exist"))
-        .or_default() += builder_fees;
+        *balance_increments
+            .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
+            .or_default() += botanix_fees;
+        *balance_increments.entry(address).or_default() += builder_fees;
+    }
 
     // process withdrawals
     insert_post_block_withdrawals_balance_increments(
@@ -166,7 +173,7 @@ pub fn insert_post_block_withdrawals_balance_increments(
             for withdrawal in withdrawals.iter() {
                 if withdrawal.amount > 0 {
                     *balance_increments.entry(withdrawal.address).or_default() +=
-                        withdrawal.amount_wei();
+                        withdrawal.amount_wei().to::<u128>();
                 }
             }
         }

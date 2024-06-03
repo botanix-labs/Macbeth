@@ -4,7 +4,6 @@ use crate::{
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
-use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
@@ -18,7 +17,7 @@ use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
 use secp256k1::{All, Secp256k1};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -41,10 +40,6 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) btc_server: BtcServerExtendedClient,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Recent bitcoin block tx ids
-    pub(crate) bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
-    /// Bitcoind client
-    pub(crate) bitcoind_client: BitcoindClient,
     /// Instance of secp
     pub(crate) secp: Secp256k1<All>,
     /// Key of authority
@@ -94,8 +89,6 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoin_block_tx_ids: Arc<RwLock<HashMap<u64, Vec<bitcoin::Txid>>>>,
-        bitcoind_client: BitcoindClient,
         secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager<Client>,
@@ -117,8 +110,6 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            bitcoin_block_tx_ids,
-            bitcoind_client,
             secp,
             sk,
             epoch_manager,

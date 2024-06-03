@@ -1,29 +1,25 @@
 use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
-use reth_ecies::util::pk2id;
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
 use reth_interfaces::{
-    blockchain_tree::{
-        error::{BlockchainTreeError, CanonicalError},
-        BlockchainTreeViewer,
-    },
+    blockchain_tree::BlockchainTreeViewer,
     p2p::headers::client::HeadersClient,
-    RethError,
 };
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
+use reth_network_types::pk2id;
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_provider::{BlockReaderIdExt, ProviderError};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -101,12 +97,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -349,17 +345,13 @@ where
     }
 
     async fn validate_block(&self, block_to_sign: &SealedBlock) -> Result<(), ValidateBlockError> {
-        let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
-        block_to_sign
-            .header
-            .validate_inturn(&self.config.authorities)
-            .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
-
         // Should never sign genesis block
         if block_to_sign.header.number == 0 {
             return Err(ValidateBlockError::WillNotSignGenesisBlock);
         }
 
+        let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
+        block_to_sign.header.validate_inturn(&self.config.authorities).map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
         // Blocks should only be signed if they are building on the best block
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
@@ -371,10 +363,8 @@ where
 
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
-            Ok(false) => (), // continue
-            Err(RethError::Canonical(CanonicalError::BlockchainTree(
-                BlockchainTreeError::BlockHashNotFoundInChain { block_hash: _ },
-            ))) => (), // great block being proposed is no canon
+            Ok(false) => (),                                // continue
+            Err(ProviderError::BlockHashNotFound(_)) => (), // great block being proposed is not canon
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
@@ -648,7 +638,6 @@ where
         if peer_id == self.peer_id {
             return Ok(None);
         }
-
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
@@ -684,8 +673,8 @@ where
         // Check all the signatures on the commited block from the peer
         block.header().check_authority_sig_add(&self.config.authorities)?;
 
-        // Should merge this peers siganture into the main block where we are tracking all
-        // signatures If that signature provided is not valid fail
+        // Should merge this peers siganture into the main block where we are tracking all signatures
+        // If that signature provided is not valid fail
         // If they did not provide a sig fail
         // merge signature from peer
         edh.merge_signature(&peer_edh);

@@ -147,8 +147,6 @@ where
             transactions.clone(),
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
             &self.secp,
             self.evm_config.clone(),
@@ -272,8 +270,6 @@ where
             block,
             gas_used,
             Some(botanix_consensus_pkg),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
             &self.secp,
             &authority_signers,

@@ -131,10 +131,8 @@ pub async fn send_pegin_notification(
     eth_address: String,
     txid: [u8; 32],
 ) -> Result<(), Error> {
-    let prev_out = TxOut {
-        script_pubkey: address.script_pubkey(),
-        value: Amount::from_sat(100_000_000).to_sat(),
-    };
+    let prev_out =
+        TxOut { script_pubkey: address.script_pubkey(), value: Amount::from_sat(100_000_000) };
 
     let mut prev_out_bytes = Vec::new();
     prev_out.consensus_encode(&mut prev_out_bytes).unwrap();

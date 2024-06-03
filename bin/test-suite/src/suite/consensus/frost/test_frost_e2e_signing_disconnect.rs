@@ -18,13 +18,13 @@ use ethers::{
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
-use reth::core::cli::runner::CliRunner;
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
+use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 use std::{str::FromStr, time::Duration};
 
@@ -150,7 +150,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         .enumerate()
         .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
         .unwrap();
-    let amount = U256::from(Amount::from_sat(pegin_output.value).to_wei());
+    let amount = pegin_output.value.to_wei();
     it_info_print!("Btc Amount", amount);
 
     // get block headers
@@ -290,7 +290,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
     }
     assert!(match_found);
     // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > 0);
+    assert!(pegout_tx.output[1].value > Amount::ZERO);
 
     Ok(())
 }

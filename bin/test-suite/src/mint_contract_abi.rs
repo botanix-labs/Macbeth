@@ -10,11 +10,6 @@ pub use mint_contract::*;
     non_camel_case_types,
 )]
 pub mod mint_contract {
-    const _: () = {
-        ::core::include_bytes!(
-            "/home/evgeni/Documents/BOTANIX/Macbeth/bin/test-suite/mint_contract_abi.json",
-        );
-    };
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {

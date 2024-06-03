@@ -16,24 +16,6 @@ const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
 const HAS_WITNESS_DATA_POS: u8 = 3;
 
-/// Extension traits for a block hearder allowing the deserialization of an edh
-pub trait HeaderExt {
-    /// Deserializes the edh into a struct
-    fn deserialize_extra_data_header(
-        &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError>;
-}
-
-impl HeaderExt for Header {
-    fn deserialize_extra_data_header(
-        &self,
-    ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError> {
-        let binding = self.extra_data.to_vec();
-        let mut extra_data = binding.as_slice();
-        ExtraDataHeader::deserialize(&mut extra_data)
-    }
-}
-
 /// Metadata fields that are included in the extra data header of botanix blocks
 /// Federation members sign this data attesting to a new block and the set of authority signers
 /// A block producer will sign `Hash(block_hash || extra_data_version || authority_signers ||

@@ -73,8 +73,8 @@ pub async fn await_botanix_event(
             it_info_print!("Final block receipts", final_block_receipts);
             for block_receipt in final_block_receipts.into_iter() {
                 for log in block_receipt.logs.into_iter() {
-                    for topic in log.topics.into_iter() {
-                        if topic == event_topic {
+                    for topic in log.topics() {
+                        if *topic == event_topic {
                             return;
                         }
                     }

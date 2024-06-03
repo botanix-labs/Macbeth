@@ -1,10 +1,10 @@
 use crate::pbft::PbftStateMachine;
-use reth_ecies::util::pk2id;
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
+use reth_network_types::pk2id;
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_tasks::TaskExecutor;
@@ -16,11 +16,9 @@ use tracing::{error, info, warn};
 pub(crate) enum PbftNotificationMessage {
     /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
-    /// A notification to the block builder task that we have received a with a quorum of
-    /// commitments
+    /// A notification to the block builder task that we have received a with a quorum of commitments
     CommitmentsReceived(PbftNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we
-    /// can reset
+    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
     Reset,
 }
 

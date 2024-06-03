@@ -6,9 +6,9 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
+use reth_consensus::Consensus;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
-    consensus::Consensus,
     p2p::{
         bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
     },
@@ -36,8 +36,11 @@ use tokio::sync::{
 use tracing::{debug, error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
+    /// Chain spec
     chain_spec: Arc<ChainSpec>,
+    /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,

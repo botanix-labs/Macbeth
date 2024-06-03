@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate tracing;
 use anyhow::{anyhow, Context, Result};
-use ethers::contract::Abigen;
 use reth_tracing::{
     tracing_subscriber::filter::LevelFilter, LayerInfo, LogFormat, RethTracer, Tracer,
 };
@@ -14,14 +13,6 @@ use tokio::{
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<()> {
-    // generate contract abi
-    Abigen::new("MintContract", "mint_contract_abi.json")
-        .expect("Error reading mint contract json abi")
-        .generate()
-        .expect("Error generating mint contract rust defintions")
-        .write_to_file("./src/mint_contract_abi.rs")
-        .expect("Error writing mint contract rust file");
-
     // init config
     dotenv::dotenv().ok();
     let cli_args: CliArgs = argh::from_env();

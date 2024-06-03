@@ -164,24 +164,14 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
         let default_jwt_path = self.data_dir.jwt_path();
         let jwt_secret = self.config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // This determines which tasks are spawned. For example, the block production and
-        // frost tasks are only spawned for a federation node.
-        let is_fed_node = self.config.federation_mode;
-
-        // Connect to btc signining server if in federation mode
-        let btc_server_client = if is_fed_node {
-            let client = BtcServerExtendedClient::new(
-                self.config.rpc.btc_server.clone().expect("btc_server exists"),
-                Some(jwt_secret.clone()),
-            )
-            .await
-            .expect("can create btc_server");
-            info!(target: "reth::cli", "Btc server connected");
-
-            Some(client)
-        } else {
-            None
-        };
+        // Connect to btc signining server
+        let btc_server_client = BtcServerExtendedClient::new(
+            self.config.rpc.btc_server.clone(),
+            Some(jwt_secret.clone()),
+        )
+        .await
+        .expect("cannot create btc_server");
+        info!(target: "reth::cli", "Btc server connected");
 
         let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
@@ -445,7 +435,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
                 head,
                 &self.data_dir,
                 Some(Box::new(block_import)),
-                frost_config.clone(),
+                Some(frost_config.clone()),
             )
             .await?;
 
@@ -468,7 +458,7 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             transaction_pool.clone(),
             provider_factory.clone(),
             &self.data_dir,
-            frost_config.clone(),
+            Some(frost_config.clone()),
         );
 
         info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), enode = %network.local_node_record(), "Connected to P2P network");
@@ -592,6 +582,18 @@ impl<DB: Database + DatabaseMetrics + DatabaseMetadata + 'static> NodeBuilderWit
             "PoA Block Fetcher Task",
             Box::pin(async move {
                 block_fetcher_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "Frost Task",
+            Box::pin(async move {
+                frost_task.start_task().await;
+            }),
+        );
+        executor.spawn_critical(
+            "Pbft Task",
+            Box::pin(async move {
+                pbft_task.start_task().await;
             }),
         );
         executor.spawn_critical(

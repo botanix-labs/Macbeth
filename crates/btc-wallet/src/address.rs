@@ -6,10 +6,10 @@ use bitcoin::{
     key::TweakedPublicKey,
     opcodes,
     script::Builder,
+    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification},
     taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
-use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -204,14 +204,18 @@ mod tests {
     }
 
     use super::*;
-    use crate::key::generate_bip340_keypair;
+    use secp256k1::{rand::rngs::OsRng, Keypair};
+    fn generate_key_pair() -> Keypair {
+        let (secret_key, _) = SECP.generate_keypair(&mut OsRng);
+        let keypair = Keypair::from_secret_key(&SECP, &secret_key);
 
-    use secp256k1::KeyPair;
+        keypair
+    }
 
     #[test]
     fn correct_eth_address() {
         let network: Network = Network::Testnet;
-        let key_pair = KeyPair::from_seckey_str(
+        let key_pair = Keypair::from_seckey_str(
             &SECP,
             "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
         )
@@ -227,7 +231,7 @@ mod tests {
     #[test]
     fn it_should_produce_a_testnet_taproot_address() {
         let network: Network = Network::Testnet;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
         let address = generate_taproot_address(&key_pair.public_key(), network);
         assert!(address.to_string().starts_with("tb1p"));
@@ -237,7 +241,7 @@ mod tests {
     #[test]
     fn it_should_produce_a_mainnet_taproot_address() {
         let network = Network::Bitcoin;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
         let address = generate_taproot_address(&key_pair.public_key(), network);
 
@@ -248,7 +252,7 @@ mod tests {
     #[test]
     fn it_should_produce_34_byte_script_pubkey() {
         let network = Network::Bitcoin;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
         let address = generate_taproot_address(&key_pair.public_key(), network);
 

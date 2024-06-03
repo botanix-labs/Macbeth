@@ -1,5 +1,6 @@
 use crate::validation;
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, consensus::ConsensusError};
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_consensus::ConsensusError;
 use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
@@ -45,7 +46,10 @@ pub fn read_staker_balance(
     Ok(balance)
 }
 
-/// Returns the authority signer index
+/// Returns
+/// - The index of the authority that is currently in turn
+/// - The list of all authorities
+/// - The public key of the authority
 pub fn get_authority_signer_index<Client>(
     client: Client,
     chain_spec: Arc<ChainSpec>,
@@ -99,9 +103,14 @@ pub fn unix_timestamp() -> u64 {
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
 pub fn get_block_producer_address(header: &Header) -> Address {
-    let binding = header.recovered_signed_authorities().expect("recovered authority");
-    let block_builder_public_key = binding.get(0).expect("block producer authority to be present");
-    public_key_to_address(*block_builder_public_key)
+    if let Ok(authorities) = header.recovered_signed_authorities() {
+        // TODO remove this unwrap
+        let block_builder_public_key = authorities.get(0).expect("block producer authority to be present");
+        return public_key_to_address(*block_builder_public_key)
+    }
+
+    // TODO this method should return a Result
+    Address::ZERO
 }
 // not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
@@ -137,7 +146,7 @@ pub fn validate_poa_extra_data_header(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let _edh = header.deserialize_extra_data_header().map_err(|e| {
+    let edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;

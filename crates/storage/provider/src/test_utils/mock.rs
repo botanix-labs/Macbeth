@@ -1,5 +1,4 @@
 use crate::{
-    bundle_state::BundleStateWithReceipts,
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     BundleStateDataProvider, ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider,
@@ -8,13 +7,13 @@ use crate::{
 };
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
+use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_interfaces::{
     blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
     provider::{ProviderError, ProviderResult},
     RethResult,
 };
 
-use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
     BlockNumHash, BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header,
@@ -23,7 +22,10 @@ use reth_primitives::{
     Withdrawals, B256, U256,
 };
 use reth_trie::updates::TrieUpdates;
-use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg};
+use revm::{
+    db::BundleState,
+    primitives::{BlockEnv, CfgEnvWithHandlerCfg},
+};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::{RangeBounds, RangeInclusive},
@@ -250,6 +252,7 @@ impl TransactionsProvider for MockEthProvider {
                         block_number: block.header.number,
                         base_fee: block.header.base_fee_per_gas,
                         excess_blob_gas: block.header.excess_blob_gas,
+                        timestamp: block.header.timestamp,
                     };
                     return Ok(Some((tx.clone(), meta)));
                 }
@@ -485,6 +488,13 @@ impl BlockReader for MockEthProvider {
 
         Ok(blocks)
     }
+
+    fn block_with_senders_range(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<BlockWithSenders>> {
+        Ok(vec![])
+    }
 }
 
 impl BlockReaderIdExt for MockEthProvider {
@@ -521,13 +531,13 @@ impl AccountReader for MockEthProvider {
 }
 
 impl StateRootProvider for MockEthProvider {
-    fn state_root(&self, _bundle_state: &BundleStateWithReceipts) -> ProviderResult<B256> {
+    fn state_root(&self, _bundle_state: &BundleState) -> ProviderResult<B256> {
         Ok(B256::default())
     }
 
     fn state_root_with_updates(
         &self,
-        _bundle_state: &BundleStateWithReceipts,
+        _bundle_state: &BundleState,
     ) -> ProviderResult<(B256, TrieUpdates)> {
         Ok((B256::default(), Default::default()))
     }
@@ -661,48 +671,15 @@ impl StateProviderFactory for MockEthProvider {
     }
 }
 
-impl StateProviderFactory for Arc<MockEthProvider> {
-    fn latest(&self) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn history_by_block_number(&self, _block: BlockNumber) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn history_by_block_hash(&self, _block: BlockHash) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn state_by_block_hash(&self, _block: BlockHash) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn pending(&self) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn pending_state_by_hash(&self, _block_hash: B256) -> ProviderResult<Option<StateProviderBox>> {
-        Ok(Some(Box::new(self.clone())))
-    }
-
-    fn pending_with_provider<'a>(
-        &'a self,
-        _bundle_state_data: Box<dyn BundleStateDataProvider + 'a>,
-    ) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-}
-
 impl WithdrawalsProvider for MockEthProvider {
-    fn latest_withdrawal(&self) -> ProviderResult<Option<Withdrawal>> {
-        Ok(None)
-    }
     fn withdrawals_by_block(
         &self,
         _id: BlockHashOrNumber,
         _timestamp: u64,
     ) -> ProviderResult<Option<Withdrawals>> {
+        Ok(None)
+    }
+    fn latest_withdrawal(&self) -> ProviderResult<Option<Withdrawal>> {
         Ok(None)
     }
 }
@@ -767,14 +744,13 @@ impl BlockchainTreeViewer for MockEthProvider {
         map
     }
 
-    fn is_canonical(&self, block_hash: BlockHash) -> RethResult<bool> {
+    fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
         let blocks = self.blocks.lock();
         if blocks.contains_key(&block_hash) {
             let tip = blocks.keys().nth(0).expect("at least one block");
             return Ok(*tip == block_hash);
         }
-
-        return Err(BlockchainTreeError::BlockHashNotFoundInChain { block_hash }.into());
+        return Err(ProviderError::BlockHashNotFound(block_hash));
     }
 
     fn canonical_tip(&self) -> BlockNumHash {
@@ -786,10 +762,6 @@ impl BlockchainTreeViewer for MockEthProvider {
             .unwrap_or_default();
 
         BlockNumHash::new(num, hash)
-    }
-
-    fn find_canonical_ancestor(&self, _parent_hash: BlockHash) -> Option<BlockHash> {
-        None
     }
 
     fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {

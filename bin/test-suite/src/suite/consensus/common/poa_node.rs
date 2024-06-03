@@ -6,17 +6,13 @@ use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
-    cli::{
-        components::RethNodeComponents,
-        ext::{NoArgs, NoArgsCliExt, RethNodeCommandConfig},
-    },
+    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     network::{PeerKind, Peers},
-    tasks::TaskSpawner,
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
-use reth_ecies::util::pk2id;
+use reth_network_types::pk2id;
 use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
@@ -165,9 +161,7 @@ impl FederationMemberTestConfig {
         let _ = self.test_signal_tx.send(signal);
     }
 
-    pub fn build_command(
-        &self,
-    ) -> (PoaNodeCommand<NoArgsCliExt<FederationMemberTestConfig>>, ChainSpec) {
+    pub fn build_command(&self) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
         it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
@@ -192,7 +186,7 @@ impl FederationMemberTestConfig {
         };
 
         let no_args = NoArgs::with(self.clone());
-        let mut command = PoaNodeCommand::<NoArgsCliExt<FederationMemberTestConfig>>::parse_from([
+        let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--chain",
             "botanix_testnet",
@@ -234,7 +228,7 @@ impl FederationMemberTestConfig {
             "--p2p-secret-key",
             discovery_secret_path.to_str().unwrap(),
         ])
-        .with_ext::<NoArgsCliExt<FederationMemberTestConfig>>(no_args);
+        .with_ext::<NoArgs<FederationMemberTestConfig>>(no_args);
 
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
@@ -246,20 +240,22 @@ impl FederationMemberTestConfig {
     }
 }
 
-impl RethNodeCommandConfig for FederationMemberTestConfig {
-    fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
+impl PoaNodeCommandConfig for FederationMemberTestConfig {
+    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
         it_info_print!("Engine started task with index: ", self.index);
 
-        let _pool = components.pool();
+        let RethNodeComponents { executor, db, network } = components;
+        let network_clone = network.clone();
+
+        let mut canon_events = db.subscribe_to_canonical_state();
         let engine_index = self.index;
         let rx_sender = self.sender.clone();
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let jwt_secret_path = self.jwt_secret_path.clone();
         let peers_list = self.peers_list.clone();
-        let comp = components.clone();
 
         // ~~~~~~~~~~ spawn initial task that adds peers and awaits dkg to finish ~~~~~~~~~~~
-        components.task_executor().spawn(Box::pin(async move {
+        executor.spawn(Box::pin(async move {
             // add the peers
             'inner: loop {
                 for peer in peers_list.iter() {
@@ -267,10 +263,10 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    comp.network().add_peer(peer.peer_id, peer_socket);
+                    network.add_peer(peer.peer_id, peer_socket);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let all_peers = comp.network().get_all_peers().await.unwrap();
+                let all_peers = network.get_all_peers().await.unwrap();
                 it_info_print!(
                     "Engine connected with peers",
                     format!("index={}: peers_count={}", engine_index, all_peers.len())
@@ -314,9 +310,8 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
 
         // ~~~~~~~~~~~ spawn a task that loops and sends over channel all received canon state
         // notifications ~~~~~~~~~~~
-        let mut canon_events = components.events().subscribe_to_canonical_state();
         let rx_sender = self.sender.clone();
-        components.task_executor().spawn(Box::pin(async move {
+        executor.spawn(Box::pin(async move {
             // start waiting for canon event notifications
             while let Some(canon_state_notification) = canon_events.recv().await.ok() {
                 let _ = rx_sender
@@ -332,18 +327,17 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
         // ~~~~~~~~~~~ spawn a task awaiting test signals from the test suite ~~~~~~~~~~~
         let mut receiver = self.test_signal_tx.subscribe();
         let peers_list = self.peers_list.clone();
-        let comp = components.clone();
-        components.task_executor().spawn(Box::pin(async move {
+        executor.spawn(Box::pin(async move {
             while let Ok(test_signal) = receiver.recv().await {
                 match test_signal {
                     TestSignal::DisconnectAll() => {
                         // disconnect all peers
                         'inner: loop {
                             for peer in peers_list.iter() {
-                                comp.network().remove_peer(peer.peer_id, PeerKind::Basic);
+                                network_clone.remove_peer(peer.peer_id, PeerKind::Basic);
                             }
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                            let all_peers = comp.network().get_all_peers().await.unwrap();
+                            let all_peers = network_clone.get_all_peers().await.unwrap();
                             it_info_print!(
                                 "Engine disconnected from peers",
                                 format!("index={}: peers_count={}", engine_index, all_peers.len())
@@ -361,10 +355,10 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
                                     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                                     peer.discovery_port,
                                 );
-                                comp.network().add_peer(peer.peer_id, peer_socket);
+                                network_clone.add_peer(peer.peer_id, peer_socket);
                             }
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                            let all_peers = comp.network().get_all_peers().await.unwrap();
+                            let all_peers = network_clone.get_all_peers().await.unwrap();
                             it_info_print!(
                                 "Engine (re)connected with peers",
                                 format!("index={}: peers_count={}", engine_index, all_peers.len())
@@ -382,7 +376,7 @@ impl RethNodeCommandConfig for FederationMemberTestConfig {
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let jwt_secret_path = self.jwt_secret_path.clone();
         let rx_sender = self.sender.clone();
-        components.task_executor().spawn(Box::pin(async move {
+        executor.spawn(Box::pin(async move {
             // create a btc client
             let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
             let mut btc_server_client = BtcServerExtendedClient::new(
@@ -551,7 +545,7 @@ mod tests {
     use super::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
-    use reth::primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use reth_primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
     use std::{io::Write, path::Path};
 
     #[test]

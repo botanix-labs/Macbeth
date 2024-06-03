@@ -13,7 +13,11 @@ use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
-use bitcoin::{psbt::Psbt, Address, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{
+    psbt::{ExtractTxError, Psbt},
+    secp256k1::PublicKey,
+    Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
+};
 use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
@@ -22,7 +26,6 @@ use reth_btc_wallet::{
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
-use secp256k1::PublicKey;
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -62,6 +65,8 @@ pub enum CoordinatorError {
     CouldNotFindParticipantInformation(),
     #[error("Failed to validate psbt: {0}")]
     FailedToValidatePsbt(#[from] ValidatePSBTError),
+    #[error("extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 
 impl App {
@@ -222,12 +227,12 @@ impl App {
             })
             .collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value).sum();
+        let target_amount = outputs.iter().map(|o| o.value.to_sat()).sum();
         let selection = coin_select
             .coin_select(
                 vec![],
                 bdk_utxos,
-                bdk::FeeRate::from_sat_per_vb(fee_rate.to_sat_per_vb_ceil() as f32),
+                fee_rate,
                 target_amount,
                 change_script.clone().as_script(), // drain_script
             )
@@ -239,9 +244,10 @@ impl App {
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
-            bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
-                Some(TxOut { script_pubkey: change_script.clone(), value: amount })
-            }
+            bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
+                script_pubkey: change_script.clone(),
+                value: Amount::from_sat(amount),
+            }),
             _ => None,
         };
 
@@ -354,7 +360,7 @@ impl App {
             .bitcoind_client
             .as_ref()
             .expect("bitcoind client")
-            .send_raw_transaction(&psbt.clone().extract_tx())
+            .send_raw_transaction(&psbt.clone().extract_tx()?)
             .map_err(|e| {
                 error!("Failed to broadcast tx: {}", e);
                 CoordinatorError::FailedToBroadcastTx(e)
