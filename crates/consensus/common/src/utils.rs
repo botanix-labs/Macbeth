@@ -1,6 +1,6 @@
 use crate::validation;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_consensus::ConsensusError;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     constants::STAKING_CONTRACT_ADDRESS,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
@@ -105,7 +105,8 @@ pub fn unix_timestamp() -> u64 {
 pub fn get_block_producer_address(header: &Header) -> Address {
     if let Ok(authorities) = header.recovered_signed_authorities() {
         // TODO remove this unwrap
-        let block_builder_public_key = authorities.get(0).expect("block producer authority to be present");
+        let block_builder_public_key =
+            authorities.get(0).expect("block producer authority to be present");
         return public_key_to_address(*block_builder_public_key)
     }
 
@@ -146,7 +147,7 @@ pub fn validate_poa_extra_data_header(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let edh = header.deserialize_extra_data_header().map_err(|e| {
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;

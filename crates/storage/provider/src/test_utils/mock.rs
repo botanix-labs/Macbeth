@@ -9,9 +9,8 @@ use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_interfaces::{
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
+    blockchain_tree::BlockchainTreeViewer,
     provider::{ProviderError, ProviderResult},
-    RethResult,
 };
 
 use reth_primitives::{

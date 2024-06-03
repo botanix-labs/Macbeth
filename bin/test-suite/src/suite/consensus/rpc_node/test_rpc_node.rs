@@ -1,5 +1,8 @@
 use ethers::types::U64;
-use reth::primitives::ChainSpec;
+use reth::{
+    consensus_common::utils::{current_inturn_index, unix_timestamp},
+    primitives::ChainSpec,
+};
 use reth_cli_runner::CliRunner;
 use std::time::Duration;
 

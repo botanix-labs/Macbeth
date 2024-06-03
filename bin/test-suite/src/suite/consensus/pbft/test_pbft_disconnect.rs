@@ -17,10 +17,7 @@ use ethers::{
     providers::{Http, Middleware},
     types::{NameOrAddress, U256},
 };
-use reth::{
-    consensus_common::utils::{current_inturn_index, unix_timestamp},
-    core::cli::runner::CliRunner,
-};
+use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,

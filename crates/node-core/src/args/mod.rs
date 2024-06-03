@@ -58,11 +58,9 @@ pub use pruning_args::PruningArgs;
 mod bitcoind_args;
 pub use bitcoind_args::BitcoindArgs;
 
-/// RollupArgs for configuring the op-reth rollup
-#[cfg(feature = "optimism")]
-mod rollup_args;
-#[cfg(feature = "optimism")]
-pub use rollup_args::RollupArgs;
+/// BitcoindArgs for configuration settings of the bitcoind instance
+mod frost_args;
+pub use frost_args::FrostArgs;
 
 pub mod utils;
 

@@ -5,10 +5,7 @@ use reth_network::frost::manager::ToFrostManager;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeViewer,
-    p2p::headers::client::HeadersClient,
-};
+use reth_interfaces::{blockchain_tree::BlockchainTreeViewer, p2p::headers::client::HeadersClient};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
@@ -97,12 +94,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -351,7 +348,10 @@ where
         }
 
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
-        block_to_sign.header.validate_inturn(&self.config.authorities).map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
+        block_to_sign
+            .header
+            .validate_inturn(&self.config.authorities)
+            .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
         // Blocks should only be signed if they are building on the best block
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
@@ -364,7 +364,8 @@ where
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
-            Err(ProviderError::BlockHashNotFound(_)) => (), // great block being proposed is not canon
+            Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
+            // canon
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
@@ -500,8 +501,9 @@ where
                 if sigs.len() > 1 {
                     return Err(Error::TooManySignaturesOnProposedBlock);
                 }
-                let msg =
-                    secp256k1::Message::from_slice(&block.header.create_sighash()?.0.as_slice())?;
+                let msg = secp256k1::Message::from_digest_slice(
+                    &block.header.create_sighash()?.0.as_slice(),
+                )?;
                 let recovered_pk = sigs[0].recover(&msg)?;
                 if recovered_pk != *coordinator {
                     warn!(target: "pbft" ,"In turn block producer does not have the first signature on the block");
@@ -673,8 +675,8 @@ where
         // Check all the signatures on the commited block from the peer
         block.header().check_authority_sig_add(&self.config.authorities)?;
 
-        // Should merge this peers siganture into the main block where we are tracking all signatures
-        // If that signature provided is not valid fail
+        // Should merge this peers siganture into the main block where we are tracking all
+        // signatures If that signature provided is not valid fail
         // If they did not provide a sig fail
         // merge signature from peer
         edh.merge_signature(&peer_edh);
@@ -707,7 +709,6 @@ mod tests {
     use super::*;
     use rand;
     use reth_consensus_common::utils::unix_timestamp;
-    use reth_ecies::util::pk2id;
     use reth_interfaces::p2p::{
         download::DownloadClient,
         error::{PeerRequestResult, RequestError},
@@ -715,7 +716,8 @@ mod tests {
         priority::Priority,
     };
     use reth_network::frost::manager::ToFrostManager;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, WithPeerId, B256};
+    use reth_network_types::{pk2id, WithPeerId};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
     use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
     use secp256k1::SECP256K1;
 
@@ -784,7 +786,7 @@ mod tests {
                 let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
                 let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
                 $sks.push(sk);
-                let peer_id = reth_ecies::util::pk2id(&pk);
+                let peer_id = pk2id(&pk);
                 $peer_ids.push(peer_id);
 
                 pks.push(pk);

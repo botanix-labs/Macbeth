@@ -71,10 +71,7 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
-use std::{
-    borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
-    sync::Arc,
-};
+use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
     time::Duration,

@@ -1,6 +1,6 @@
 use reth::{
     consensus_common::utils::{current_inturn_index, unix_timestamp},
-    core::cli::runner::CliRunner,
+    CliRunner,
 };
 
 use std::time::Duration;

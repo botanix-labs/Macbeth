@@ -137,7 +137,7 @@ impl Db {
     ) -> Result<SigningStatus, Error> {
         match self.get_psbt(signing_session_id)? {
             Some(psbt) => {
-                let secp = secp256k1::Secp256k1::new();
+                let secp = bitcoin::secp256k1::Secp256k1::new();
                 match psbt.finalize(&secp) {
                     Ok(_) => Ok(SigningStatus::Finalized),
                     Err(_) => Ok(SigningStatus::Running),
