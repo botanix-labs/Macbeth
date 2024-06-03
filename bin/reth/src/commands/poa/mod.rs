@@ -6,11 +6,8 @@ use crate::{
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
-    cli::ext::PoaNodeCommandConfig,
+    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
-};
-use crate::{
-    cli::ext::{NoArgs, RethNodeComponents},
     payload::PayloadBuilderService,
 };
 use std::str::FromStr;
