@@ -90,7 +90,7 @@ impl Case for BlockchainTestCase {
                     static_files_dir_path,
                 )?
                 .provider_rw()
-                .unwrap();
+                .expect("to create test provider");
 
                 // Insert initial test state into the provider.
                 provider
@@ -132,7 +132,7 @@ impl Case for BlockchainTestCase {
                     .latest_writer(StaticFileSegment::Headers)
                     .unwrap()
                     .commit_without_sync_all()
-                    .unwrap();
+                    .expect("to commit headers");
 
                 // Execute the execution stage using the EVM processor factory for the test case
                 // network.
