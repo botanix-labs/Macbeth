@@ -5,7 +5,10 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
+use reth_botanix_lib::{
+    extra_data_header::{ExtraDataHeader, HeaderExt},
+    peg_contract::PegoutData,
+};
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -13,9 +16,8 @@ use reth_interfaces::{
 use reth_primitives::{
     botanix::BotanixConsensusPackage, Block, SealedBlockWithSenders, TransactionSigned,
 };
-use reth_provider::{
-    BlockReader, BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory,
-};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
+use reth_rpc_types::{BlockHashOrNumber, BlockNumHash};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -25,7 +27,7 @@ use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{
     mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -124,6 +126,9 @@ where
                 },
             };
 
+            // TODO: validate block once pbft networking is merged
+
+            // get best block and hash from db and verify
             let block: reth_primitives::Block = new_block.block.block.clone();
             let storage = self.storage.read().await;
             info!(target: "consensus::authority", ?block, "Recieved new block from peer");
@@ -131,40 +136,46 @@ where
                 storage.get_best_block_and_hash().expect("best block exists");
             if block.header.hash_slow() == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
+                drop(storage);
                 continue;
             }
 
-            // check for missing blocks from the tip
+            // send the just received block to FCU. FCU will sync with all peers and download the
+            // missing blocks in the background
+            if let Err(err) = self.send_block_to_beacon(&block).await {
+                error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
+                drop(storage);
+                continue;
+            }
+
+            // check for missing blocks from the tip and use the network client to fetch them
+            let network_client = self.network_client.clone();
             let are_blocks_missing = !block.parent_hash.eq(&best_hash);
-            let mut blocks_to_sync: Vec<Block> = vec![];
+            let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![block.parent_num_hash()]; // add the incoming block first
             if are_blocks_missing {
                 warn!(target: "consensus::authority", "Block fetcher is missing blocks. Catching up...");
-                let mut block_num_hash = block.parent_num_hash();
+                let mut block_parent_num_hash = block.parent_num_hash();
                 loop {
-                    if let Some(block) =
-                        BlockReader::block_by_hash(&storage.client, block_num_hash.hash)
-                            .ok()
-                            .flatten()
-                    {
-                        block_num_hash = block.parent_num_hash();
-                        blocks_to_sync.push(block);
-                        if block_num_hash.number == best_block {
+                    let block_header = network_client
+                        .get_header(BlockHashOrNumber::Hash(block_parent_num_hash.hash))
+                        .await
+                        .ok()
+                        .map(|val| val.1)
+                        .flatten();
+                    if let Some(block_header) = block_header {
+                        blocks_headers_to_sync
+                            .push(BlockNumHash::new(block_header.number, block_header.mix_hash)); // TODO: check if mix_hash is correct
+                        block_parent_num_hash = block_header.parent_num_hash();
+                        if block_parent_num_hash.number == best_block {
                             break;
                         }
                     }
                 }
             }
-            blocks_to_sync.reverse();
+            blocks_headers_to_sync.reverse();
             drop(storage);
 
-            // send the blocks to the beacon engine
-            for block_to_sync in blocks_to_sync.iter() {
-                if let Err(err) = self.send_block_to_beacon(&block_to_sync).await {
-                    error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
-                    continue;
-                }
-            }
-
+            // ger recent bitcoin block and header
             let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let recent_bitcoin_block_height =
                 get_recent_block_height_or_zero(recent_bitcoin_block_header);
@@ -172,17 +183,18 @@ where
                 error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
                 continue;
             }
-            let storage = self.storage.write().await;
-
             if recent_bitcoin_block_header.is_none() {
                 warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
                 continue;
             }
 
+            // build the botanix consensus pkg
+            let storage = self.storage.read().await;
             let mut botanix_consensus_pkg = None;
             if is_fed_node {
                 if storage.aggregate_public_key.is_none() {
                     warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                    drop(storage);
                     continue;
                 } else {
                     botanix_consensus_pkg = Some(BotanixConsensusPackage {
@@ -195,10 +207,41 @@ where
                     });
                 }
             }
+
+            // filter blocks with pegouts
+            let mut blocks_with_pegouts: HashMap<u64, (Block, Vec<PegoutData>)> = HashMap::new();
+            for block_header in blocks_headers_to_sync.iter() {
+                let block_pegouts = crate::utils::fetch_pegouts_for_block(
+                    block_header.number,
+                    &storage.client,
+                    self.btc_network,
+                )
+                .await
+                .map_err(|e| {
+                    error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
+                    e
+                })
+                .unwrap_or_default();
+                if block_pegouts.is_empty() {
+                    continue;
+                }
+                // pull the block
+                let block = match storage.client.block(BlockHashOrNumber::Hash(block_header.hash)) {
+                    Ok(block) => block,
+                    Err(e) => {
+                        error!(target: "consensus::authority",?e, "Failed to get missing block");
+                        continue;
+                    }
+                };
+                if let Some(block) = block {
+                    let key = block.header.number;
+                    blocks_with_pegouts.insert(key, (block, block_pegouts));
+                }
+            }
             drop(storage);
 
-            // execute the entirety of blocks
-            for block_to_sync in blocks_to_sync.iter() {
+            // execute the entirety of blocks containing pegins/pegouts
+            for (_block_number, (block_to_sync, _block_pegouts)) in blocks_with_pegouts.iter() {
                 let sealed_block = block.clone().seal_slow();
                 let botanix_consensus_pkg = botanix_consensus_pkg.clone();
 

@@ -460,40 +460,54 @@ where
     let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
     let mut pegouts: Vec<PegoutData> = vec![];
     for block in start_block..=best_block {
-        match client.block_by_number(block) {
-            Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-                match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
-                    Ok(Some(receipts)) => {
-                        for receipt in receipts {
-                            if let Some(p) =
-                                make_tx_request_for_pegout_in_receipt(receipt, btc_network)
-                            {
-                                pegouts.push(p);
-                            }
+        match fetch_pegouts_for_block(block, client, btc_network).await {
+            Ok(block_pegouts) if !pegouts.is_empty() => pegouts.extend(block_pegouts),
+            _ => continue,
+        }
+    }
+
+    Ok(pegouts)
+}
+
+pub(crate) async fn fetch_pegouts_for_block<Client>(
+    block: u64,
+    client: &Client,
+    btc_network: bitcoin::Network,
+) -> Result<Vec<PegoutData>, EpochPegoutsError>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
+    let mut pegouts: Vec<PegoutData> = vec![];
+    match client.block_by_number(block) {
+        Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
+                Ok(Some(receipts)) => {
+                    for receipt in receipts {
+                        if let Some(p) = make_tx_request_for_pegout_in_receipt(receipt, btc_network)
+                        {
+                            pegouts.push(p);
                         }
                     }
-                    Ok(None) => {
-                        info!("No receipts found for block {:?}", block);
-                        continue;
-                    }
-                    Err(e) => {
-                        error!("Error fetching receipts for block {:?}: {}", block, e);
-                        return Err(EpochPegoutsError::FailedToFetchPegouts);
-                    }
+                }
+                Ok(None) => {
+                    info!("No receipts found for block {:?}", block);
+                }
+                Err(e) => {
+                    error!("Error fetching receipts for block {:?}: {}", block, e);
+                    return Err(EpochPegoutsError::FailedToFetchPegouts);
                 }
             }
-            Ok(Some(_)) => {
-                info!("No pegouts found in block {}", block);
-                continue;
-            }
-            Ok(None) => {
-                error!("Block {} not found", block);
-                return Err(EpochPegoutsError::FailedToFetchPegouts);
-            }
-            Err(e) => {
-                error!("Error fetching block {}: {}", block, e);
-                return Err(EpochPegoutsError::FailedToFetchPegouts);
-            }
+        }
+        Ok(Some(_)) => {
+            info!("No pegouts found in block {}", block);
+        }
+        Ok(None) => {
+            error!("Block {} not found", block);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+        Err(e) => {
+            error!("Error fetching block {}: {}", block, e);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
         }
     }
 
