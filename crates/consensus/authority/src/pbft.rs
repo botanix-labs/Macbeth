@@ -695,9 +695,6 @@ where
         // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >= self.config.max_signers {
             info!(target: "pbft" ,"We have enough commitments, time to produce a block");
-            // TODO remove debug
-            let sigs = edh.authority_signatures.unwrap();
-            info!(target: "pbft" ,"signatures: {:?}", sigs);
             return Ok(Some(new_block));
         }
         Ok(None)
