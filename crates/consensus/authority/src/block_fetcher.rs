@@ -6,7 +6,10 @@ use crate::{
 
 use client::{FinalizeSignerRequest, Output};
 use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeEngine,
+    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+};
 use reth_primitives::{
     botanix::BotanixConsensusPackage, Block, SealedBlockWithSenders, TransactionSigned,
 };
@@ -30,7 +33,7 @@ use tokio::sync::{
 
 use tracing::{debug, error, info, warn};
 
-pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
+pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     chain_spec: Arc<ChainSpec>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -48,9 +51,12 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     evm_config: EvmConfig,
     /// Bitcoin network
     btc_network: bitcoin::Network,
+    /// Network Client, used to create [FullBlockClient]
+    network_client: NetworkClient,
 }
 
-impl<Client, EvmConfig, Engine> BlockFetcherTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine, NetworkClient>
+    BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -61,6 +67,7 @@ where
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
+    NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
@@ -73,6 +80,7 @@ where
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
         btc_network: bitcoin::Network,
+        network_client: NetworkClient,
     ) -> Self {
         Self {
             chain_spec,
@@ -85,6 +93,7 @@ where
             bitcoin_block_header,
             evm_config,
             btc_network,
+            network_client,
         }
     }
 

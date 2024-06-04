@@ -12,7 +12,10 @@ use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_consensus_common::utils::get_authority_list;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeEngine,
+    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+};
 use reth_network::{
     frost::manager::{FrostConfig, FrostHandle},
     message::NewBlockMessage,
@@ -35,7 +38,7 @@ use tokio::sync::{
 use tracing::error;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
+pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
@@ -51,6 +54,7 @@ pub struct AuthorityConsensusBuilder<Client, EvmConfig, Engine: EngineTypes> {
     vote: Option<AuthorityVote>,
     epoch_manager: EpochManager<Client>,
     network_handle: NetworkHandle,
+    network_client: NetworkClient,
     frost_handle: Option<FrostHandle>,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     task_executor: TaskExecutor,
@@ -71,7 +75,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine> AuthorityConsensusBuilder<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine, NetworkClient>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, NetworkClient>
 where
     Engine: EngineTypes + 'static,
     EvmConfig:
@@ -82,6 +87,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -98,6 +104,7 @@ where
         sk: secp256k1::SecretKey,
         vote: Option<AuthorityVote>,
         network_handle: NetworkHandle,
+        network_client: NetworkClient,
         frost_handle: Option<FrostHandle>,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         task_executor: TaskExecutor,
@@ -183,6 +190,7 @@ where
             vote,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -202,7 +210,7 @@ where
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine>>,
-        BlockFetcherTask<Client, EvmConfig, Engine>,
+        BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client>>,
         SyncController<Engine>,
     ) {
@@ -220,6 +228,7 @@ where
             vote: _,
             epoch_manager,
             network_handle,
+            network_client,
             frost_handle,
             block_import_rx,
             task_executor,
@@ -249,6 +258,7 @@ where
             bitcoin_block_header.clone(),
             evm_config.clone(),
             btc_network,
+            network_client.clone(),
         );
 
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =

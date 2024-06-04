@@ -663,6 +663,7 @@ where {
                 secret_key,
                 None,
                 network_handle.clone(),
+                network_client.clone(),
                 frost_handle,
                 block_import_rx,
                 executor.clone(),
