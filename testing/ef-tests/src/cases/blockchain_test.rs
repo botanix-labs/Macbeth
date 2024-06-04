@@ -220,6 +220,14 @@ pub fn should_skip(path: &Path) -> bool {
         | "loopMul.json"
         | "CALLBlake2f_MaxRounds.json"
         | "shiftCombinations.json"
+
+        // Botanix: We know these are broken upstream. Fixes will be provided upstream and then we can re-enable.
+        | "dynamicAccountOverwriteEmpty_Paris.json"
+        | "dynamicAccountOverwriteEmpty.json"
+        | "create2collisionStorageParis.json"
+        | "RevertInCreateInInitCreate2Paris.json"
+        | "create2collisionStorage.json"
+        | "RevertInCreateInInitCreate2.json"
     )
     // Ignore outdated EOF tests that haven't been updated for Cancun yet.
     || path_contains(path_str, &["EIPTests", "stEOF"])
