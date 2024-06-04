@@ -215,7 +215,7 @@ impl HeaderExt for Header {
         &self,
     ) -> Result<Vec<secp256k1::PublicKey>, RecoverAuthorityError> {
         let sighash = self.create_sighash()?;
-        let message = secp256k1::Message::from_slice(sighash.as_slice())
+        let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .expect("Valid message to recover signers");
         let edh = self.deserialize_extra_data_header()?;
 
@@ -271,8 +271,8 @@ impl HeaderExt for Header {
         sk: &secp256k1::SecretKey,
     ) -> Result<(), ExtraDataHeaderDeserializeError> {
         let sighash = self.create_sighash()?;
-        let message =
-            secp256k1::Message::from_slice(sighash.as_slice()).expect("Valid message to sign");
+        let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
+            .expect("Valid message to sign");
         let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, &sk);
 
         let mut edh = self.deserialize_extra_data_header()?;

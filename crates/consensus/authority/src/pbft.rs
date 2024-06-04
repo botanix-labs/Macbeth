@@ -1478,7 +1478,7 @@ mod tests {
             let pk = sk.public_key(secp256k1::SECP256K1);
             let mut recovered = false;
             for sig in sigs_so_far.iter() {
-                let msg = secp256k1::Message::from_slice(
+                let msg = secp256k1::Message::from_digest_slice(
                     &block_to_propose.header().create_sighash().unwrap().0.as_slice(),
                 )
                 .unwrap();
