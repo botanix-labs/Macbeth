@@ -126,11 +126,18 @@ impl BitcoindClient {
         Ok(block.tx)
     }
 
-    pub fn broadcast_tx(&self, raw_tx: &String) -> Result<bitcoin::Txid, BitcoindError> {
-        let tx_id = self
-            .rpc
-            .send_raw_transaction(raw_tx.to_owned())
-            .map_err(BitcoindError::TransactionBroadcastFailed)?;
+    pub fn broadcast_tx(&self, raw_tx: &String) -> Result<Option<bitcoin::Txid>, BitcoindError> {
+        let tx_id = match self.rpc.send_raw_transaction(raw_tx.to_owned()) {
+            Ok(tx_id) => Ok(Some(tx_id)),
+            Err(err) => {
+                let err_msg = err.to_string();
+                if err_msg.contains("already in chain") {
+                    return Ok(None);
+                } else {
+                    return Err(BitcoindError::TransactionBroadcastFailed(err));
+                }
+            }
+        }?;
         Ok(tx_id)
     }
 
