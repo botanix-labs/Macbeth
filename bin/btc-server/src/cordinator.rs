@@ -355,16 +355,29 @@ impl App {
         }
 
         // Lets broadcast the tx
-        let txid = self
+        let tx_id = match self
             .bitcoind_client
             .as_ref()
             .expect("bitcoind client")
             .send_raw_transaction(&psbt.clone().extract_tx()?)
-            .map_err(|e| {
-                error!("Failed to broadcast tx: {}", e);
-                CoordinatorError::FailedToBroadcastTx(e)
-            })?;
-        info!("Broadcasted tx: {}", txid);
+        {
+            Ok(tx_id) => Ok(Some(tx_id)),
+            Err(err) => {
+                let err_msg = err.to_string();
+                if err_msg.contains("already in chain") {
+                    Ok(None)
+                } else {
+                    error!("Failed to broadcast tx: {}", err);
+                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                }
+            }
+        }?;
+
+        if let Some(tx_id) = tx_id {
+            info!("Broadcasted tx: {:?}", tx_id);
+        } else {
+            info!("Transaction already broadcasted and in pool");
+        }
 
         // Finally we should remove the utxos from the db and add the change one
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
