@@ -148,24 +148,19 @@ where
             // check for missing blocks from the tip and use the network client to fetch them
             let network_client = self.network_client.clone();
             let are_blocks_missing = !block.parent_hash.eq(&best_hash);
-            let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![block.parent_num_hash()]; // add the incoming block first
+            let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![];
             if are_blocks_missing {
                 warn!(target: "consensus::authority", "Block fetcher is missing blocks. Catching up...");
-                let mut block_parent_num_hash = block.parent_num_hash();
-                loop {
+                for block_index in block.header.number..best_block {
                     let block_header = network_client
-                        .get_header(BlockHashOrNumber::Hash(block_parent_num_hash.hash))
+                        .get_header(BlockHashOrNumber::Number(block_index))
                         .await
                         .ok()
                         .map(|val| val.1)
                         .flatten();
                     if let Some(block_header) = block_header {
                         blocks_headers_to_sync
-                            .push(BlockNumHash::new(block_header.number, block_header.mix_hash)); // TODO: check if mix_hash is correct
-                        block_parent_num_hash = block_header.parent_num_hash();
-                        if block_parent_num_hash.number == best_block {
-                            break;
-                        }
+                            .push(BlockNumHash::new(block_header.number, block_header.mix_hash));
                     }
                 }
             }
