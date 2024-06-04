@@ -150,7 +150,7 @@ where
             let are_blocks_missing = !block.parent_hash.eq(&best_hash);
             let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![];
             if are_blocks_missing {
-                warn!(target: "consensus::authority", "Block fetcher is missing blocks. Catching up...");
+                warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", block.header.number - best_block);
                 for block_index in block.header.number..best_block {
                     let block_header = network_client
                         .get_header(BlockHashOrNumber::Number(block_index))
@@ -160,7 +160,7 @@ where
                         .flatten();
                     if let Some(block_header) = block_header {
                         blocks_headers_to_sync
-                            .push(BlockNumHash::new(block_header.number, block_header.mix_hash));
+                            .push(BlockNumHash::new(block_header.number, block_header.hash_slow()));
                     }
                 }
             }
