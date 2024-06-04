@@ -514,6 +514,58 @@ where
     Ok(pegouts)
 }
 
+pub(crate) async fn has_block_pegins<Client>(
+    block: u64,
+    client: &Client,
+) -> Result<bool, EpochPegoutsError>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
+    match client.block_by_number(block) {
+        Ok(Some(block)) if bloom_contains_pegin(block.header.logs_bloom) => {
+            return Ok(true);
+        }
+        Ok(Some(_)) => {
+            info!("No pegins found in block {}", block);
+            return Ok(false);
+        }
+        Ok(None) => {
+            error!("Block {} not found", block);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+        Err(e) => {
+            error!("Error fetching block {}: {}", block, e);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+    }
+}
+
+pub(crate) async fn has_block_pegouts<Client>(
+    block: u64,
+    client: &Client,
+) -> Result<bool, EpochPegoutsError>
+where
+    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+{
+    match client.block_by_number(block) {
+        Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            return Ok(true);
+        }
+        Ok(Some(_)) => {
+            info!("No pegouts found in block {}", block);
+            return Ok(false);
+        }
+        Ok(None) => {
+            error!("Block {} not found", block);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+        Err(e) => {
+            error!("Error fetching block {}: {}", block, e);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+    }
+}
+
 /// Errors that can occur while generating a signing session ID
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GenerateSigningSesssionIdError {

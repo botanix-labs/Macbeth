@@ -5,10 +5,7 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::{
-    extra_data_header::{ExtraDataHeader, HeaderExt},
-    peg_contract::PegoutData,
-};
+use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -208,21 +205,36 @@ where
                 }
             }
 
-            // filter blocks with pegouts
-            let mut blocks_with_pegouts: HashMap<u64, (Block, Vec<PegoutData>)> = HashMap::new();
+            // filter blocks with pegouts/pegins
+            let mut blocks_with_pegins_pegouts: HashMap<u64, Block> = HashMap::new();
             for block_header in blocks_headers_to_sync.iter() {
-                let block_pegouts = crate::utils::fetch_pegouts_for_block(
+                // fetch pegouts
+                let has_block_pegouts = crate::utils::has_block_pegouts(
                     block_header.number,
                     &storage.client,
-                    self.btc_network,
                 )
                 .await
                 .map_err(|e| {
-                    error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
+                    error!(target: "consensus::authority", ?e, "Failed to check for block pegouts");
                     e
                 })
+                .ok()
                 .unwrap_or_default();
-                if block_pegouts.is_empty() {
+
+                // check for pegins
+                let has_block_pegins = crate::utils::has_block_pegins(
+                    block_header.number,
+                    &storage.client,
+                )
+                .await
+                .map_err(|e| {
+                    error!(target: "consensus::authority", ?e, "Failed to check for block pegins");
+                    e
+                })
+                .ok()
+                .unwrap_or_default();
+
+                if !has_block_pegouts && !has_block_pegins {
                     continue;
                 }
                 // pull the block
@@ -235,13 +247,13 @@ where
                 };
                 if let Some(block) = block {
                     let key = block.header.number;
-                    blocks_with_pegouts.insert(key, (block, block_pegouts));
+                    blocks_with_pegins_pegouts.insert(key, block);
                 }
             }
             drop(storage);
 
             // execute the entirety of blocks containing pegins/pegouts
-            for (_block_number, (block_to_sync, _block_pegouts)) in blocks_with_pegouts.iter() {
+            for (_block_number, block_to_sync) in blocks_with_pegins_pegouts.iter() {
                 let sealed_block = block.clone().seal_slow();
                 let botanix_consensus_pkg = botanix_consensus_pkg.clone();
 
