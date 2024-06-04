@@ -75,7 +75,7 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
-use secp256k1::SECP256K1;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
@@ -475,18 +475,16 @@ where {
 
         // add trusted nodes (federation members) with chain.toml
         // assumes chain.toml is present at `bin/reth/chain.toml` based on Makefile command
-        let chain_path = PathBuf::from_str("chain.toml").unwrap();
-        let fed_members =
-            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
-        for fed_member in fed_members.iter() {
-            // don't add self
-            let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
-            let peer_id = pk2id(&fed_member.0);
-            if self_peer_id != peer_id {
-                let peer = NodeRecord::new(fed_member.1, peer_id);
-                reth_config.peers.trusted_nodes.insert(peer);
+        let chain_path = match PathBuf::from_str("chain.toml") {
+            Ok(path) => path,
+            Err(_) => {
+                error!(target: "reth::cli", "Failed to create path to chain.toml");
+                return Err(eyre::eyre!("Failed to create path to chain.toml"));
             }
-        }
+        };
+        let authorities =
+            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
+        self.add_trusted_peers_from_authorities(secret_key, authorities, &mut reth_config);
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -950,6 +948,23 @@ where {
     /// Returns the [Consensus] instance to use.
     pub fn consensus(&self) -> Arc<dyn Consensus> {
         Arc::new(AuthorityConsensus::new(self.chain.clone()))
+    }
+
+    fn add_trusted_peers_from_authorities(
+        &self,
+        secret_key: SecretKey,
+        authorities: Vec<(PublicKey, SocketAddr)>,
+        config: &mut Config,
+    ) {
+        for authority in authorities.iter() {
+            // don't add self
+            let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+            let peer_id = pk2id(&authority.0);
+            if self_peer_id != peer_id {
+                let peer = NodeRecord::new(authority.1, peer_id);
+                config.peers.trusted_nodes.insert(peer);
+            }
+        }
     }
 }
 
