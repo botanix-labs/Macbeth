@@ -11,7 +11,8 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient, AuthorityConsensus, AuthorityConsensusBuilder,
+    extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
+    AuthorityConsensusBuilder,
 };
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
@@ -322,12 +323,22 @@ where {
 
         // Connect to btc signining server if in federation mode
         let btc_server_client = if is_fed_node {
-            let client = BtcServerExtendedClient::new(
-                node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                Some(jwt_secret.clone()),
-            )
-            .await
-            .expect("can create btc_server");
+            let fut = || async {
+                let client = BtcServerExtendedClient::new(
+                    node_config.rpc.btc_server.clone().expect("btc_server exists"),
+                    Some(jwt_secret.clone()),
+                )
+                .await;
+                client
+            };
+
+            let client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
+                Ok(client) => client,
+                Err(err) => {
+                    error!(target: "reth::cli", "Failed to connect to btc server: {}", err);
+                    return Err(eyre::eyre!("Failed to connect to btc server: {}", err));
+                }
+            };
             info!(target: "reth::cli", "Btc server connected");
 
             Some(client)
