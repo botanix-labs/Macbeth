@@ -16,6 +16,7 @@ reth-network-api.workspace = true
 reth-eth-wire-types.workspace = true
 reth-consensus.workspace = true
 reth-network-types.workspace = true
+ethers = "2.0.9"
 
 # async
 futures.workspace = true
