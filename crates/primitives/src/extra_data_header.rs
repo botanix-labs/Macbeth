@@ -328,15 +328,21 @@ impl ExtraDataHeader {
 
     /// Merge the signatures from another ExtraDataHeader into this one
     pub fn merge_signature(&mut self, other: &ExtraDataHeader) {
+        if self.authority_signatures.is_none() {
+            return;
+        }
         if let Some(other_sigs) = &other.authority_signatures {
-            let mut set: HashSet<RecoverableSignature> =
-                self.authority_signatures.clone().unwrap_or_default().into_iter().collect();
+            let mut set = self.authority_signatures.clone().expect("has signatures");
 
             for sig in other_sigs {
-                set.insert(*sig);
+                if set.contains(sig) {
+                    continue;
+                }
+                set.push(*sig);
             }
 
-            self.authority_signatures = Some(set.into_iter().collect());
+            self.authority_signatures = Some(set);
+            self.set_optional_fields_bitmask();
         }
     }
 }
