@@ -5,6 +5,7 @@ use reth_network::frost::{
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
+use reth_primitives::header_ext::BlockWitness;
 use reth_primitives::SealedBlock;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_tasks::TaskExecutor;
@@ -16,19 +17,24 @@ use tracing::{error, info, warn};
 pub(crate) enum PbftNotificationMessage {
     /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
-    /// A notification to the block builder task that we have received a with a quorum of
-    /// commitments
-    CommitmentsReceived(PbftNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we
-    /// can reset
+    /// A notification to the block builder task that we have received a with a quorum of commitments
+    CommitmentsReceived(PbftFinalizationNotification),
+    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
     Reset,
 }
 
-/// Finalised frost signature message
+/// Notification for proposing a block
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PbftNotification {
     /// The signing session id
     pub(crate) block: SealedBlock,
+}
+
+/// Notification for finalizing a pbft round
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PbftFinalizationNotification {
+    /// The signing session id
+    pub(crate) block_witness: BlockWitness,
 }
 
 pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
@@ -141,7 +147,6 @@ where
             }
             // receive over a channel message from other peers and update our state machine
             if let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
-                info!(target: "PBFT Task", "Peer messaged received {:?}", msg.to_string());
                 match msg {
                     PeerMessageResponse::Pbft(pbft_response) => {
                         let PbftResponse { response_type, data } = pbft_response;
@@ -183,11 +188,11 @@ where
                                     Ok(None) => {
                                         info!(target: "PBFT Task", "Peer commitment processed successfully, still waiting for other commits");
                                     }
-                                    Ok(Some(signed_block)) => {
+                                    Ok(Some(block_witness)) => {
                                         info!(target: "PBFT Task", "Peer commitment processed successfully, quorum reached");
                                         self.pbft_task_tx
                                             .send(PbftNotificationMessage::CommitmentsReceived(
-                                                PbftNotification { block: signed_block },
+                                                PbftFinalizationNotification { block_witness },
                                             ))
                                             // TODO remove unwrap()
                                             .unwrap();

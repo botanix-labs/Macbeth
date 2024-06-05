@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use crate::{
-    engine_util::{self},
+    engine_util,
     frost_task::{FrostNotification, FrostNotificationMessage},
-    pbft_task::{PbftNotification, PbftNotificationMessage},
+    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
     utils::{get_witness_data_from_psbt, is_testnet},
 };
@@ -16,7 +16,9 @@ use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
+    botanix::BotanixConsensusPackage,   
+    header_ext::{self, HeaderExt},
+    public_key_to_address, Block, SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
@@ -282,7 +284,6 @@ where
                 return;
             }
         };
-
         // Seal the block
         let mut block_to_commit = Block {
             header: new_header.clone().unseal(),
@@ -290,11 +291,14 @@ where
             ommers: vec![],
             withdrawals: None,
         };
+        // print tx ids 
+        let tx_ids: Vec<String> = block_to_commit.body.iter().map(|tx| tx.hash().to_string()).collect();
+        info!(target: "consensus::authority", ">>>>>>>>> b4 Block tx ids: {:?}", tx_ids);
 
         // Propose block to network for commitments
         self.pbft_task_tx
             .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
-                block: block_to_commit.seal_slow(),
+                block: block_to_commit.clone().seal_slow(),
             }))
             .expect("send pbft task message");
         // Wait for commitments before we can commit to this block
@@ -302,8 +306,9 @@ where
         let _ = match tokio::time::timeout(Duration::from_secs(60), self.pbft_task_rx.recv()).await
         {
             Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
-                let PbftNotification { block: commited_block } = notif;
-                block_to_commit = commited_block.into();
+                info!(target: "consensus::authority", "Commitments received");
+                let PbftFinalizationNotification { block_witness } = notif;
+                block_to_commit.header.add_block_witness(block_witness).unwrap();
             }
             Err(e) => {
                 error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
@@ -320,11 +325,13 @@ where
 
         let sealed_block = block_to_commit.clone().seal_slow();
         let commited_header = sealed_block.header();
+
+        // TODO(armins) assert that block hash has not changed after adding witness
+
         let sealed_block_with_senders =
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
 
-        // update canon chain for rpc
         match storage
             .client
             .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
