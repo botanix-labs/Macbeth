@@ -7,7 +7,7 @@ use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};

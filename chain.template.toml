@@ -3,9 +3,11 @@ name="botanix_testnet"
 # >>>>>>>>>>> federation members public keys
 [[federation-member-public-key]]
 key="02bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710"
+socket-addr="127.0.0.1:30303"
 
 [[federation-member-public-key]]
 key="039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d"
+socket-addr="127.0.0.1:30304"
 
 # >>>>>>>>>>> initial_account_state
 [[initial-account-state]]

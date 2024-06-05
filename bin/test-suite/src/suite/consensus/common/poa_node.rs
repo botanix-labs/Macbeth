@@ -546,10 +546,9 @@ mod tests {
     use askama::Template;
     use bitcoin::hashes::Hash;
     use reth_primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
-    use std::{io::Write, path::Path};
 
     #[test]
-    fn test_edh_tempate() {
+    fn test_edh_template() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
         let secret_key1 = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk1 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key1);
@@ -570,13 +569,6 @@ mod tests {
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();
         let json = serde_json::to_string_pretty(&rendered_json).unwrap();
         println!("Rendered botanix testnet configuration {json:?}");
-
-        let botanix_genesis_filepath = Path::new("./").join("botanix_testnet.json");
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(botanix_genesis_filepath)
-            .unwrap();
-        file.write_all(rendered_json.as_bytes()).unwrap();
+        assert!(json.len() > 0);
     }
 }

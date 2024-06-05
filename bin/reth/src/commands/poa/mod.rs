@@ -69,6 +69,7 @@ use crate::{
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
 };
+use std::str::FromStr;
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -449,12 +450,34 @@ where {
 
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
+
+        let network_secret_path =
+            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+
+        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
+        let secret_key = get_secret_key(&network_secret_path)?;
+
+        // add trusted nodes with --trusted-peers flag
+        info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
-            info!(target: "reth::cli", "Adding trusted nodes");
             node_config.network.trusted_peers.iter().for_each(|peer| {
                 reth_config.peers.trusted_nodes.insert(*peer);
             });
         }
+
+        // add trusted nodes (federation members) with chain.toml
+        // assumes chain.toml is present at data_dir
+        let chain_path = match PathBuf::from_str(format!("{}/chain.toml", data_dir).as_str()) {
+            Ok(path) => path,
+            Err(_) => {
+                error!(target: "reth::cli", "Failed to create path to chain.toml");
+                return Err(eyre::eyre!("Failed to create path to chain.toml"));
+            }
+        };
+        let authorities =
+            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
+        self.add_trusted_peers_from_authorities(secret_key, authorities, &mut reth_config);
+
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
@@ -522,13 +545,6 @@ where {
             );
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
-
-        info!(target: "reth::cli", "Connecting to P2P network");
-        let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
-
-        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
-        let secret_key = get_secret_key(&network_secret_path)?;
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
@@ -608,10 +624,6 @@ where {
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
 
-        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr =
-        // %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to
-        // P2P network"); debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(),
-        // "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
         debug!(target: "reth::cli", "Spawning payload builder service");
@@ -928,6 +940,23 @@ where {
     /// Returns the [Consensus] instance to use.
     pub fn consensus(&self) -> Arc<dyn Consensus> {
         Arc::new(AuthorityConsensus::new(self.chain.clone()))
+    }
+
+    fn add_trusted_peers_from_authorities(
+        &self,
+        secret_key: SecretKey,
+        authorities: Vec<(PublicKey, SocketAddr)>,
+        config: &mut Config,
+    ) {
+        for authority in authorities.iter() {
+            // don't add self
+            let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+            let peer_id = pk2id(&authority.0);
+            if self_peer_id != peer_id {
+                let peer = NodeRecord::new(authority.1, peer_id);
+                config.peers.trusted_nodes.insert(peer);
+            }
+        }
     }
 }
 
