@@ -322,7 +322,8 @@ where
                                 output: output_match,
                             };
 
-                            // Update state to decrement pegin address balance since pegin is being reverted
+                            // Update state to decrement pegin address balance since pegin is being
+                            // reverted
                             if let BlockExecutionError::Validation(
                                 BlockValidationError::MintContractViolation {
                                     pegin: (address, amount),
