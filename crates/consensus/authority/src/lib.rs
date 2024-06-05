@@ -30,7 +30,15 @@ use reth_interfaces::{
 };
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT}, extra_data_header::ExtraDataHeader, header_ext::HeaderExt, proofs, public_key_to_address, revm_primitives::FixedBytes, Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256, EMPTY_OMMER_ROOT_HASH, U256
+    botanix::BotanixConsensusPackage,
+    constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+    extra_data_header::ExtraDataHeader,
+    header_ext::HeaderExt,
+    proofs, public_key_to_address,
+    revm_primitives::FixedBytes,
+    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
@@ -398,8 +406,7 @@ where
         }
 
         // Construct block and header
-        let header =
-            self.build_header_template(&transactions, &chain_spec.clone(), sk, secp)?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone(), sk, secp)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())

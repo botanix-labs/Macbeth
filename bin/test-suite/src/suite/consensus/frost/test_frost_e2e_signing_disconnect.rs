@@ -1,17 +1,7 @@
-use crate::{
-    it_info_print,
-    suite::consensus::{
-        common::{
-            events::{
-                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
-                SEND_AMOUNT,
-            },
-            poa_node::create_poa_federation_members,
-        },
-        ConsensusIntegrationTestSuite,
-    },
-};
-use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
+use std::{str::FromStr, time::Duration};
+
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
+use bitcoincore_rpc::{Auth, RpcApi};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
@@ -25,11 +15,22 @@ use reth_botanix_lib::{
 use reth_btc_wallet::address::EthAddress;
 use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
-use std::{str::FromStr, time::Duration};
 
-use bitcoincore_rpc::{Auth, RpcApi};
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        common::{
+            events::{
+                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
+                SEND_AMOUNT,
+            },
+            poa_node::{create_poa_federation_members, TestSignal},
+        },
+        ConsensusIntegrationTestSuite,
+    },
+};
 
-pub async fn pbft_e2e_stable(
+pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
@@ -93,6 +94,18 @@ pub async fn pbft_e2e_stable(
         mint_contract_instances.push(botanix_eth_client);
     }
 
+    // Load up the bitcoin wallet and generate some blocks
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate > 100 blocks so coinbase utxos can be spent from the wallet
+    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
 
@@ -122,7 +135,12 @@ pub async fn pbft_e2e_stable(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
+    bitcoind_rpc
+        .generate_to_address(
+            2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64,
+            &address,
+        )
+        .expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -144,17 +162,31 @@ pub async fn pbft_e2e_stable(
 
     // get block headers
     // first we need the block hash of the block with the conf'd pegin tx
-    let tip = bitcoind_rpc.get_block_count().expect("valid block count");
+    let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
+    let tip = bitcoind_rpc.get_best_block_hash().unwrap();
     it_info_print!("Bitcoin Chain Tip", tip);
+    let tip_header = bitcoind_rpc.get_block_header(&tip).expect("valid block header");
+    // We will collect all the headers all the way up to the tip which is not needed, but allowed.
+    // In theory, we only need to collect headers from the block our pegin is in, to the finalized
+    // block (the one in the mainchain commitment).
+    let mut headers = vec![];
+    let mut cursor = tip_header;
+    let mut stopgap = 200; // just to make sure we don't infinite loop until genesis
+    loop {
+        stopgap -= 1;
+        if stopgap == 0 || cursor.prev_blockhash == bitcoin::BlockHash::all_zeros() {
+            panic!("confirmation block not found...");
+        }
 
-    let tip_hash = bitcoind_rpc.get_block_hash(tip).expect("valid block hash");
-    let tip_header = bitcoind_rpc.get_block_header(&tip_hash).expect("valid block header");
+        headers.push(cursor);
+        if cursor.block_hash() == conf_hash {
+            break;
+        }
+        cursor = bitcoind_rpc.get_block_header(&cursor.prev_blockhash).unwrap();
+    }
+    headers.reverse();
 
-    let conf_block_hash = bitcoind_rpc.get_block_hash(tip - 1).expect("valid block hash");
-    let block_header = bitcoind_rpc.get_block_header(&conf_block_hash).expect("valid block header");
-    let block_headers = vec![block_header, tip_header];
-
-    let conf_block_info = bitcoind_rpc.get_block_info(&conf_block_hash).expect("valid txids");
+    let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid txids");
     it_info_print!("Block info", conf_block_info);
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
@@ -170,14 +202,18 @@ pub async fn pbft_e2e_stable(
         .expect("valid public key"),
         tx: pegin_tx.clone(),
         merkle_proof: pmt,
-        block_headers,
+        block_headers: headers,
     };
 
     // send the pegin transactions to all fed memebers
+    it_info_print!(
+        "Sending pegin tx: block headers",
+        meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
+    );
     let serialized_pegin_meta = meta.serialize();
-    it_info_print!("Serialized pegin meta:", hex::encode(serialized_pegin_meta.clone()));
+    it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.first().cloned().unwrap();
+    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -211,16 +247,28 @@ pub async fn pbft_e2e_stable(
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
     it_info_print!("Pegout Tx Receipt: ", tx_receipt);
 
-    // wait for the tx to be included in a botanix block
-    await_botanix_event(&mut rx, *BURN_TOPIC).await;
-
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
+    // create a tx to enter a new epoch
     let eoa_tx_receipt =
         mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
     it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
+
+    // ===================== FAILURE =====================
+    // wait for a few seconds to allow the signing to start ???
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // now disconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::DisconnectAll());
+
+    // wait for a new epoch to start
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // now reconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::ReconnectAll());
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    // =====================================================
+
+    // signing should be now fine! Wait for the tx to be included in a botanix block
+    await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
     // sleep for a few more seconds
     tokio::time::sleep(Duration::from_secs(5)).await;

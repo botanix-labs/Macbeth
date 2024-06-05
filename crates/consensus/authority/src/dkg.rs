@@ -6,9 +6,8 @@ use crate::{
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -420,7 +419,11 @@ where
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
         // get round 1 package from db, if missing, create it
         let dkg1_package = self.get_round1_dkg_package().await?;
-        info!("dkg1_package: {:?}", dkg1_package);
+        info!(
+            "dkg1_package retrieved. Identifier Size:{:?}, Data Size: {:?}",
+            dkg1_package.identifier.len(),
+            dkg1_package.payload.len()
+        );
 
         let fut = || async {
             // get all connected peers

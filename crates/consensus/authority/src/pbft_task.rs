@@ -1,8 +1,7 @@
 use crate::pbft::PbftStateMachine;
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{FrostCommand, FrostConfig},
+    manager::{FrostCommand, FrostConfig, ToFrostManager},
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
@@ -17,9 +16,11 @@ use tracing::{error, info, warn};
 pub(crate) enum PbftNotificationMessage {
     /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
-    /// A notification to the block builder task that we have received a with a quorum of commitments
+    /// A notification to the block builder task that we have received a with a quorum of
+    /// commitments
     CommitmentsReceived(PbftNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
+    /// A notification to the block builder task we have timed out or are no longer in turn so we
+    /// can reset
     Reset,
 }
 
@@ -129,7 +130,7 @@ where
                             }
                         }
                     }
-                    (msg) => {
+                    msg => {
                         warn!(
                             target: "PBFT Task",
                             "uncovered pbft notification message {:?}",
@@ -140,7 +141,7 @@ where
             }
             // receive over a channel message from other peers and update our state machine
             if let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
-                info!(target: "PBFT Task", "Peer messaged received {:?}", msg);
+                info!(target: "PBFT Task", "Peer messaged received {:?}", msg.to_string());
                 match msg {
                     PeerMessageResponse::Pbft(pbft_response) => {
                         let PbftResponse { response_type, data } = pbft_response;
@@ -199,11 +200,13 @@ where
                         }
                     }
                     PeerMessageResponse::Dkg(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        // Nothing to do for dkg related messages. Does are handled by the frost
+                        // task
                         continue;
                     }
                     PeerMessageResponse::Signing(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost task
+                        // Nothing to do for dkg related messages. Does are handled by the frost
+                        // task
                         continue;
                     }
                 }

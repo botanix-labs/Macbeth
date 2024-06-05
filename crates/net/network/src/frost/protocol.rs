@@ -198,7 +198,10 @@ impl Stream for FrostProtoConnection {
                                     ))
                                 }
                                 PbftEventResponseType::PeerCommitment => {
-                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT = {:?}", req);
+                                    info!(
+                                        ">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT = {:?}",
+                                        req.to_string()
+                                    );
                                     Poll::Ready(Some(
                                         FrostProtoMessage::peer_commit_message(req).encoded(),
                                     ))
