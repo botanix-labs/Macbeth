@@ -47,9 +47,9 @@ pub async fn mempool_gossip(
 
     // Pick an authority member that is not inturn
     // Send the eoa to them and they should propogate it to the inturn member
-    let inturn_member_index = (current_inturn_index(total_authorities as u64, unix_timestamp())
-        + 1)
-        % total_authorities as u64;
+    let inturn_member_index = (current_inturn_index(total_authorities as u64, unix_timestamp()) +
+        1) %
+        total_authorities as u64;
     it_info_print!("Inturn member index", inturn_member_index);
 
     // assign targeted fed memeber

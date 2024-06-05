@@ -94,12 +94,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -667,8 +667,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()?
-            != block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()? !=
+            block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -755,9 +755,10 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(
-                            WithPeerId::new(PeerId::random(), vec![header]),
-                        ));
+                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
+                            PeerId::random(),
+                            vec![header],
+                        )));
                     }
                 }
                 // Error is caught below

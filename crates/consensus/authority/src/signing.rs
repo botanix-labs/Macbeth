@@ -667,8 +667,8 @@ where
                 // session was previously already registered, maybe it got retriggered
                 // check if it was the same coordinator
                 // check if it is still valid time-wise
-                if (signing_session.coordinator_index != self.frost_config.authority_index as u64)
-                    || time_remaining < time_passed
+                if (signing_session.coordinator_index != self.frost_config.authority_index as u64) ||
+                    time_remaining < time_passed
                 {
                     // session is no longer valid, remove it from cache and return
                     self.remove_signing_session(session_id).await;
