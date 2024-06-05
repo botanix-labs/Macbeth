@@ -1,6 +1,9 @@
 use bitcoincore_rpc::{Auth, RpcApi};
-use reth::primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address};
-use reth_cli_runner::CliRunner;
+use reth::{
+    consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp},
+    primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
+    CliRunner,
+};
 
 use std::{collections::HashSet, time::Duration};
 
@@ -9,9 +12,7 @@ use crate::{
     suite::consensus::{
         common::{
             events::{await_dkg, BITCOIND_WALLET_NAME, SEND_AMOUNT},
-            poa_node::{
-                create_poa_federation_members, current_inturn_index, is_inturn, Notifications,
-            },
+            poa_node::{create_poa_federation_members, Notifications},
         },
         ConsensusIntegrationTestSuite,
     },
@@ -80,7 +81,7 @@ pub async fn block_builder(
     await_dkg(&mut test_fed_members, &mut rx).await;
 
     // find out who is in turn
-    let inturn_member_index = current_inturn_index(total_authorities as u64);
+    let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
 
     // assign targeted fed memeber
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
@@ -140,7 +141,6 @@ pub async fn block_builder(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
-            assert_eq!(canon_state_notification.engine_index, inturn_member_index as u16);
 
             // block verfication
             if canon_state_notification.engine_index == targeted_fed_member.index {

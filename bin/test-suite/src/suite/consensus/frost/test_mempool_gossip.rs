@@ -1,14 +1,16 @@
+use reth::{
+    consensus_common::utils::{current_inturn_index, unix_timestamp},
+    CliRunner,
+};
 
 use std::time::Duration;
-
-use reth::CliRunner;
 
 use crate::{
     it_info_print,
     suite::consensus::{
         common::{
             events::{await_dkg, SEND_AMOUNT},
-            poa_node::{create_poa_federation_members, current_inturn_index, Notifications},
+            poa_node::{create_poa_federation_members, Notifications},
         },
         ConsensusIntegrationTestSuite,
     },
@@ -45,8 +47,9 @@ pub async fn mempool_gossip(
 
     // Pick an authority member that is not inturn
     // Send the eoa to them and they should propogate it to the inturn member
-    let inturn_member_index =
-        (current_inturn_index(total_authorities as u64) + 1) % total_authorities as u64;
+    let inturn_member_index = (current_inturn_index(total_authorities as u64, unix_timestamp()) +
+        1) %
+        total_authorities as u64;
     it_info_print!("Inturn member index", inturn_member_index);
 
     // assign targeted fed memeber

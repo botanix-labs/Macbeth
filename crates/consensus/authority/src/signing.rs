@@ -13,9 +13,8 @@ use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -574,8 +573,10 @@ where
             false => {
                 // if we are not inturn, find the coordinator in the list of peers
                 let all_connected_frost_peers = self.get_all_peers_handle().await?;
-                let current_inturn_authority_index =
-                    current_inturn_index(self.frost_config.authorities.len() as u64);
+                let current_inturn_authority_index = current_inturn_index(
+                    self.frost_config.authorities.len() as u64,
+                    unix_timestamp(),
+                );
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
                 let sender_channel = all_connected_frost_peers
@@ -607,6 +608,7 @@ where
         get_in_turn_interval(
             self.frost_config.authorities.len() as u64,
             coordinator_index.unwrap_or_else(|| self.frost_config.authority_index as u64),
+            unix_timestamp(),
         )
     }
 
@@ -904,10 +906,7 @@ where
                 self.update_signing_state(session_id, SigningState::Failed).await;
                 return Err(e);
             }
-            info!(
-                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers {:?}",
-                to_sign_payload
-            );
+            info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers");
         }
 
         Ok(())
@@ -950,10 +949,7 @@ where
                     return Err(e);
                 }
             };
-        info!(
-            ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2 {:?}",
-            signing_package_round2
-        );
+        info!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2");
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator, if some, someone else is

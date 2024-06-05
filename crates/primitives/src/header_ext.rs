@@ -170,7 +170,8 @@ impl HeaderExt for Header {
         Ok(hash)
     }
 
-    /// Validates that the authority in the first signature position was in turn when producing the block
+    /// Validates that the authority in the first signature position was in turn when producing the
+    /// block
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
@@ -183,8 +184,15 @@ impl HeaderExt for Header {
             .ok_or(ValidateInturnError::AuthorityNotInTurn)?;
 
         let authorities_len = authorities.len() as u64;
-        let block_timestamp_min = self.timestamp / 60;
-        if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
+        let cycle_length = authorities_len * 60; // Define the cycle length in seconds
+        let block_timestamp_sec = self.timestamp; // Use the block timestamp in seconds
+
+        // Calculate the current cycle's position and determine the current in-turn signer
+        let current_cycle_position = block_timestamp_sec % cycle_length;
+        let current_in_turn_index = (current_cycle_position / 60) % authorities_len;
+
+        // Check if the calculated index matches the signer index
+        if current_in_turn_index != (signer_index as u64) {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
 
@@ -207,7 +215,7 @@ impl HeaderExt for Header {
         &self,
     ) -> Result<Vec<secp256k1::PublicKey>, RecoverAuthorityError> {
         let sighash = self.create_sighash()?;
-        let message = secp256k1::Message::from_slice(sighash.as_slice())
+        let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .expect("Valid message to recover signers");
         let edh = self.deserialize_extra_data_header()?;
 
@@ -263,8 +271,8 @@ impl HeaderExt for Header {
         sk: &secp256k1::SecretKey,
     ) -> Result<(), ExtraDataHeaderDeserializeError> {
         let sighash = self.create_sighash()?;
-        let message =
-            secp256k1::Message::from_slice(sighash.as_slice()).expect("Valid message to sign");
+        let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
+            .expect("Valid message to sign");
         let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, &sk);
 
         let mut edh = self.deserialize_extra_data_header()?;
@@ -354,8 +362,7 @@ mod tests {
     use secp256k1::Secp256k1;
 
     use super::*;
-    use crate::Bytes;
-    use crate::Header;
+    use crate::{Bytes, Header};
     use std::str::FromStr;
 
     #[allow(dead_code)]

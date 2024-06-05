@@ -12,7 +12,7 @@ max-encoding-message-size = 52428800
 # limits the maximum size of streaming channel
 max-channel-size = 128
 # set a timeout on for all request handlers in seconds. Defaults to 60s
-timeout = 60
+timeout = 180
 # sets the maximum frame size to use for HTTP2(must be within 16,384 and 16,777,215). Defaults to 16MB
 max-frame-size = 16777215
 # set the concurrency limit applied to on requests inbound per connection. Defaults to 32
@@ -24,6 +24,6 @@ tcp-nodelay = true
 # max number of future periods considered during requests
 draw-lookahead-period-count = 10
 # set whether HTTP2 Ping frames are enabled on accepted connections. Default is no HTTP2 keepalive (`None`)
-http2-keepalive-interval = 60
+http2-keepalive-interval = 180
 # sets a timeout for receiving an acknowledgement of the keepalive ping. Default is 20 seconds
-http2-keepalive-timeout = 20
+http2-keepalive-timeout = 60

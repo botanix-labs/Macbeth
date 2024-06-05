@@ -3,7 +3,7 @@ use crate::{context::GlobalContext, it_info_print, it_warn_print};
 use askama::Template;
 use bitcoin::hashes::Hash;
 use clap::Parser;
-use client::Empty;
+use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
@@ -43,28 +43,11 @@ struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
 }
 
-/// Returns the index of the authority which is currently in turn
-pub fn current_inturn_index(authorities_len: u64) -> u64 {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len
-}
-
-pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len == signer_index
-}
-
-pub fn unix_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-}
-
 #[derive(Clone, Debug)]
 pub enum Notifications {
     CanonState(CannonStateNofificationPayload),
     DkgFinished(DkgPayload),
-    SigningReady(String),
+    SigningStatusReport((u16, Vec<u8>, SigningStatus)),
 }
 
 #[derive(Clone, Debug)]
@@ -403,20 +386,51 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
             .await
             .unwrap();
             loop {
-                // TODO: get all session ids
+                // get all session ids
+                let session_ids = btc_server_client
+                    .get_session_ids(GetSessionIdsRequest { max_results: 10 })
+                    .await
+                    .ok()
+                    .map(|res| res.data)
+                    .unwrap_or_default();
 
-                // TODO: for each session get the signing status. If ready return
-                // match btc_server_client.finalize_signing(Empty {}).await {
-                //     Ok(pub_key) => {
-                //         it_info_print!("Signing Finished for index {:?}!", engine_index);
-                //         let _ = rx_sender.send(Notifications::SigningReady("")).await;
-                //     }
-                //     Err(_) => {
-                //         it_warn_print!("The signing has not finished yet {:?}...", engine_index);
-                //         tokio::time::sleep(Duration::from_secs(1)).await;
-                //         continue;
-                //     }
-                // }
+                // for each session get the signing status and send the response
+                for session_id in session_ids.into_iter() {
+                    match btc_server_client
+                        .get_signing_status(GetSigningStatusRequest {
+                            signing_session_id: session_id.clone(),
+                        })
+                        .await
+                    {
+                        Ok(status) => {
+                            it_info_print!(
+                                "Signing status fetched for index and session id",
+                                engine_index,
+                                session_id
+                            );
+                            let s = SigningStatus::try_from(status.status).ok();
+                            if let Some(status) = s {
+                                let _ = rx_sender
+                                    .send(Notifications::SigningStatusReport((
+                                        engine_index,
+                                        session_id,
+                                        status,
+                                    )))
+                                    .await;
+                            }
+                        }
+                        Err(_) => {
+                            it_warn_print!(
+                                "Error getting signing status for index and session id ...",
+                                engine_index,
+                                session_id
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }));
 

@@ -10,7 +10,7 @@ use crate::{
 
 use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::bitcoind::BitcoindConfig;
+use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -263,7 +263,8 @@ where
         );
 
         // Set up frost notification message queue
-        // these are two mpsc channels that are used to communicate between the frost task and the block production task
+        // these are two mpsc channels that are used to communicate between the frost task and the
+        // block production task
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
         let (frost_task_notifications2_tx, frost_task_notifications2_rx) =
@@ -297,19 +298,21 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
-            let task = PbftTask::new(
-                client,
+            let pbft = PbftTask::new(
+                client.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
-                frost_config.clone().expect("frost config exists"),
+                frost_config.expect("valid frost config"),
                 sk,
                 pbft_task_notifications1_rx,
                 pbft_task_notifications2_tx,
                 task_executor.clone(),
                 network_client,
             );
-            pbft_task = Some(task);
+            pbft_task = Some(pbft);
 
-            let task = BlockProductionTask::new(
+            let _bitcoind_client =
+                BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
+            let block_production = BlockProductionTask::new(
                 Arc::clone(&consensus.chain_spec),
                 to_engine,
                 canon_state_notification,
@@ -320,7 +323,7 @@ where
                 sk,
                 epoch_manager,
                 network_handle,
-                frost_handle.clone().expect("Requires frost handle"),
+                frost_handle.expect("Requires frost handle"),
                 task_executor,
                 evm_config.clone(),
                 payload_builder,
@@ -331,7 +334,7 @@ where
                 btc_network,
             );
 
-            block_production_task = Some(task);
+            block_production_task = Some(block_production);
         }
 
         (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)

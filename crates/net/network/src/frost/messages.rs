@@ -1,4 +1,5 @@
 #![allow(unreachable_pub)]
+use core::fmt;
 use std::str::FromStr;
 
 use alloy_rlp::{Decodable, Encodable};
@@ -17,6 +18,17 @@ pub struct PbftRequest {
     pub version: u16,
     /// PBFT data
     pub block: reth_primitives::SealedBlock,
+}
+
+impl fmt::Display for PbftRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Block Number: {} bytes, Data Size: {} bytes",
+            self.block.number,
+            self.block.size(),
+        )
+    }
 }
 
 impl PbftRequest {
@@ -330,9 +342,9 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
             }
-            FrostProtoMessageKind::CoordinatorBlockProposal(resource)
-            | FrostProtoMessageKind::PeerPreCommitment(resource)
-            | FrostProtoMessageKind::PeerCommit(resource) => {
+            FrostProtoMessageKind::CoordinatorBlockProposal(resource) |
+            FrostProtoMessageKind::PeerPreCommitment(resource) |
+            FrostProtoMessageKind::PeerCommit(resource) => {
                 // Use u32 to support larger data sizes
                 let mut buffer = vec![];
                 resource.block.encode(&mut buffer);
@@ -629,7 +641,6 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
-
     }
 
     #[test]
