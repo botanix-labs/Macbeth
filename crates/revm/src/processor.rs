@@ -277,13 +277,6 @@ where
         #[cfg(not(feature = "optimism"))]
         fill_tx_env(self.evm.tx_mut(), transaction, sender);
 
-        #[cfg(feature = "optimism")]
-        {
-            let mut envelope_buf = Vec::with_capacity(transaction.length_without_header());
-            transaction.encode_enveloped(&mut envelope_buf);
-            fill_op_tx_env(self.evm.tx_mut(), transaction, sender, envelope_buf.into());
-        }
-
         let hash = transaction.hash_ref();
         let should_inspect = self.evm.context.external.should_inspect(self.evm.env(), hash);
         let out = if should_inspect {
@@ -313,7 +306,7 @@ where
                             error!("Botanix mint contract validation failed: {:?}", e);
                             let output_match = match result {
                                 ExecutionResult::Success { output, .. } => {
-                                    output.clone().into_data().clone()
+                                    output.clone().into_data()
                                 }
                                 ExecutionResult::Revert { output, .. } => output.clone(),
                                 ExecutionResult::Halt { .. } => Bytes::new(),

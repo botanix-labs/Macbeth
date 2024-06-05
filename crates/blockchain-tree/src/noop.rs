@@ -8,8 +8,8 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock, SealedBlockWithSenders,
-    SealedHeader,
+    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock,
+    SealedBlockWithSenders, SealedHeader,
 };
 use reth_provider::{
     BlockchainTreePendingStateProvider, BundleStateDataProvider, CanonStateNotificationSender,
@@ -50,6 +50,15 @@ impl BlockchainTreeEngine for NoopBlockchainTree {
             BlockchainTreeError::BlockHashNotFoundInChain { block_hash: block.hash() },
             block.block,
         ))
+    }
+
+    fn insert_block_with_botanix_consensus_package(
+        &self,
+        block: SealedBlockWithSenders,
+        validation_kind: BlockValidationKind,
+        _botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+    ) -> Result<InsertPayloadOk, InsertBlockError> {
+        self.insert_block(block, validation_kind)
     }
 
     fn finalize_block(&self, _finalized_block: BlockNumber) {}

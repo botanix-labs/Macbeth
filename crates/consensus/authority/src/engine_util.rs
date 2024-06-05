@@ -8,7 +8,7 @@ use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::{
     error::PayloadBuilderError, EthBuiltPayload, EthPayloadBuilderAttributes, PayloadBuilderHandle,
 };
-use reth_primitives::{BlockHash, SealedBlock};
+use reth_primitives::{botanix::BotanixConsensusPackage, BlockHash, SealedBlock};
 use reth_rpc_types::engine::{ForkchoiceState, PayloadId, PayloadStatus, PayloadStatusEnum};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -33,6 +33,7 @@ pub(crate) enum SendNewPayloadError {
 pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
     sealed_block: SealedBlock,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+    botanix_consensus_pkg: Option<BotanixConsensusPackage>,
 ) -> Result<PayloadStatus, SendNewPayloadError> {
     loop {
         let (tx, rx) = oneshot::channel();
@@ -40,6 +41,7 @@ pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
             payload: sealed_block.clone().into(),
             cancun_fields: None,
             tx,
+            botanix_consensus_pkg: botanix_consensus_pkg.clone(),
         };
         to_engine.send(payload).map_err(|_| SendNewPayloadError::EngineError)?;
         let recv = rx.await.map_err(|_| SendNewPayloadError::RecvError)?;
@@ -270,12 +272,17 @@ mod tests {
         };
         let header = SealedHeader::new(header.clone(), header.hash_slow());
         let sealed_block = SealedBlock::new(header, block_body);
-        tokio::spawn(send_beacon_new_payload(sealed_block.clone(), tx.clone()));
+        tokio::spawn(send_beacon_new_payload(sealed_block.clone(), tx.clone(), None));
 
         // Ensure that the engine received the message
         let msg = rx.recv().await.unwrap();
         match msg {
-            BeaconEngineMessage::NewPayload { payload, cancun_fields, tx: _ } => {
+            BeaconEngineMessage::NewPayload {
+                payload,
+                cancun_fields,
+                tx: _,
+                botanix_consensus_pkg: _,
+            } => {
                 assert_eq!(payload.block_hash(), sealed_block.hash());
                 assert_eq!(cancun_fields, None);
             }
