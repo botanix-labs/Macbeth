@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 /// Trait for sending commands to the [`FrostManager`]
 /// Trait was created mainly for the convenience of mocking during testing
 pub trait ToFrostManager {
+    /// Sends a command to the Protocol
     fn send_command(&self, cmd: FrostCommand) -> ();
 }
 
@@ -68,7 +69,7 @@ impl FrostManager {
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
         let FrostConfig {
-            authority_index,
+            authority_index: _,
             authorities,
             min_signers: _,
             max_signers: _,
@@ -134,7 +135,7 @@ impl FrostManager {
                     warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
-                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response);
+                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response.to_string());
                 for task_forwarder in self.task_forwarder_txs.iter() {
                     // TODO:  handle error?
                     let _send_res = task_forwarder.send((peer_id, response.clone()));
@@ -238,6 +239,7 @@ pub enum FrostCommand {
 /// Config type for initiating a [`FrostManager`] instance.
 #[derive(Clone, Debug)]
 pub struct FrostConfig {
+    /// Authority public key of the current peer participating in frost
     pub authority_pk: secp256k1::PublicKey,
     /// Authority index of the current peer participating in frost
     pub authority_index: usize,

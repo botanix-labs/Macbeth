@@ -3,10 +3,9 @@ use crate::{
     signing::SigningStateMachine, Storage,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::frost::manager::ToFrostManager;
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, FrostHandle},
+        manager::{FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, PeerMessageResponse, SigningEventResponseType,
         SigningResponse,
     },
@@ -165,9 +164,9 @@ where
 
             // start dkg only when we are in turn + initial state + no public key
             // TODO this logic is wrong you only need dkg if there is no public key
-            if is_inturn
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_inturn &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
@@ -197,10 +196,11 @@ where
             }
             // receive over a channel message from other peers and update our state machine
             if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
-                info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
+                info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg.to_string());
                 match msg {
                     PeerMessageResponse::Pbft(_) => {
-                        // Nothing to do for pbft related messages. Does are handled by the pbft task
+                        // Nothing to do for pbft related messages. Does are handled by the pbft
+                        // task
                         continue;
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {

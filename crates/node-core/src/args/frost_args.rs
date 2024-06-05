@@ -1,5 +1,4 @@
 use clap::Args;
-use reth_network::frost::manager::FrostConfig;
 
 /// Default min signers
 pub(crate) const DEFAULT_MIN_SIGNERS: u16 = 2;

@@ -5,13 +5,13 @@ use crate::{
     ReceiptProviderIdExt, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
     TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
+use itertools::Itertools;
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_interfaces::{
-    blockchain_tree::{error::BlockchainTreeError, BlockchainTreeViewer},
+    blockchain_tree::BlockchainTreeViewer,
     provider::{ProviderError, ProviderResult},
-    RethResult,
 };
 
 use reth_primitives::{
@@ -747,7 +747,13 @@ impl BlockchainTreeViewer for MockEthProvider {
     fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
         let blocks = self.blocks.lock();
         if blocks.contains_key(&block_hash) {
-            let tip = blocks.keys().nth(0).expect("at least one block");
+            let sorted_blocks = blocks
+                .iter()
+                .map(|b| b.1)
+                .sorted_by(|a, b| Ord::cmp(&a.number, &b.number))
+                .collect::<Vec<&Block>>();
+            // get the last element of the hashmap
+            let tip = sorted_blocks.last().expect("at least one block").hash_slow();
             return Ok(*tip == block_hash);
         }
         return Err(ProviderError::BlockHashNotFound(block_hash));
@@ -780,7 +786,7 @@ impl BlockchainTreeViewer for MockEthProvider {
         None
     }
 
-    fn lowest_buffered_ancestor(&self, hash: BlockHash) -> Option<SealedBlockWithSenders> {
-        todo!()
+    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
     }
 }

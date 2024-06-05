@@ -6,12 +6,13 @@ use crate::{
                 await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
                 SEND_AMOUNT,
             },
-            poa_node::create_poa_federation_members,
+            poa_node::{create_poa_federation_members, TestSignal},
         },
         ConsensusIntegrationTestSuite,
     },
 };
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
+use bitcoincore_rpc::{Auth, RpcApi};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
@@ -27,9 +28,7 @@ use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 use std::{str::FromStr, time::Duration};
 
-use bitcoincore_rpc::{Auth, RpcApi};
-
-pub async fn pbft_e2e_stable(
+pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     // Set up regtest connection
@@ -92,6 +91,18 @@ pub async fn pbft_e2e_stable(
             test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
         mint_contract_instances.push(botanix_eth_client);
     }
+
+    // Load up the bitcoin wallet and generate some blocks
+    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+    }
+    let address =
+        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+    // generate some blocks so the wallet has a non-zero balance
+    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
@@ -175,9 +186,9 @@ pub async fn pbft_e2e_stable(
 
     // send the pegin transactions to all fed memebers
     let serialized_pegin_meta = meta.serialize();
-    it_info_print!("Serialized pegin meta:", hex::encode(serialized_pegin_meta.clone()));
+    it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.first().cloned().unwrap();
+    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -211,16 +222,28 @@ pub async fn pbft_e2e_stable(
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
     it_info_print!("Pegout Tx Receipt: ", tx_receipt);
 
-    // wait for the tx to be included in a botanix block
-    await_botanix_event(&mut rx, *BURN_TOPIC).await;
-
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
+    // create a tx to enter a new epoch
     let eoa_tx_receipt =
         mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
     it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
+
+    // ===================== FAILURE =====================
+    // wait for a few seconds to allow the signing to start ???
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // now disconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::DisconnectAll());
+
+    // wait for a new epoch to start
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // now reconnect the peers of fed member 0
+    test_fed_members.get(&0).cloned().unwrap().send_test_signal(TestSignal::ReconnectAll());
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    // =====================================================
+
+    // signing should be now fine! Wait for the tx to be included in a botanix block
+    await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
     // sleep for a few more seconds
     tokio::time::sleep(Duration::from_secs(5)).await;

@@ -47,6 +47,10 @@ service BtcServer {
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
+
+    rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
+
+    rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
 }
 
 message FinalizeSignerRequest {
@@ -158,4 +162,26 @@ message FinalizeSigningResponse {
 message GetUTXOMerkleRootResponse {
     // The Merkle root of all spendable UTXOs.
     bytes merkle_root = 1;
+}
+
+message GetSigningStatusRequest {
+    bytes signing_session_id = 1;
+}
+
+message GetSigningStatusResponse {
+    SigningStatus status = 1;
+}
+
+message GetSessionIdsRequest {
+    uint32 max_results = 1;
+}
+
+message GetSessionIdsResponse {
+    repeated bytes data = 1;
+}
+
+enum SigningStatus {
+    RUNNING = 0;
+    FINALIZED = 1;
+    FAILED = 2;
 }

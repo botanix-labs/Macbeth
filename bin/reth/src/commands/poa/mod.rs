@@ -8,7 +8,7 @@ use crate::{
 use crate::{
     args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
-        DatabaseArgs, DebugArgs, DevArgs, FrostArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
+        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::ext::PoaNodeCommandConfig,
@@ -71,10 +71,7 @@ use reth_provider::{
 use reth_revm::EvmProcessorFactory;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
 use rsntp::AsyncSntpClient;
-use std::{
-    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
-    sync::Arc,
-};
+use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{mpsc::unbounded_channel, RwLock},
     time::Duration,
