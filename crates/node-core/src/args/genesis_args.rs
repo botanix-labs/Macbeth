@@ -35,6 +35,8 @@ pub(crate) struct GenesisAddressBalance {
 pub(crate) struct FedMemberPubKey {
     /// The pub key of the member
     pub(crate) key: String,
+    /// The socket address of the member
+    pub(crate) socket_addr: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,7 +44,7 @@ pub(crate) struct FedMemberPubKey {
 pub(crate) struct GenesisTomlConfig {
     /// Network name
     pub(crate) name: String,
-    /// federation members secret keys
+    /// federation members public keys
     pub(crate) federation_member_public_key: Vec<FedMemberPubKey>,
     /// genesis addresses initial account state
     #[serde(skip_serializing_if = "Option::is_none")]

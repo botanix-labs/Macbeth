@@ -7771,6 +7771,7 @@ dependencies = [
  "reth-interfaces",
  "reth-network",
  "reth-network-api",
+ "reth-network-types",
  "reth-nippy-jar",
  "reth-node-api",
  "reth-node-builder",

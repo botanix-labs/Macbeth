@@ -365,7 +365,8 @@ where
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
-            Err(ProviderError::BlockHashNotFound(_)) => (), // continue
+            Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
+            // canon
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 

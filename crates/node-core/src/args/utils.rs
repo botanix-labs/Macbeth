@@ -75,6 +75,28 @@ pub fn chain_help() -> String {
     format!("The chain this node is running.\nPossible values are either a built-in chain or the path to a chain specification file.\n\nBuilt-in chains:\n    {}", SUPPORTED_CHAINS.join(", "))
 }
 
+/// Get the public keys from the genesis toml config
+pub fn get_federation_pks_from_path(
+    path: &PathBuf,
+) -> eyre::Result<Vec<(secp256k1::PublicKey, SocketAddr)>> {
+    let raw = fs::read_to_string(path)?;
+    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+
+    let federation_members = genesis_toml_config
+        .federation_member_public_key
+        .iter()
+        .map(|key| {
+            let public_key =
+                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey");
+
+            let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
+            (public_key, soc_addr)
+        })
+        .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
+
+    Ok(federation_members)
+}
+
 /// Clap value parser for [ChainSpec]s.
 ///
 /// The value parser matches either a known chain, the path

@@ -65,3 +65,6 @@ contracts/.env
 
 # Rust bug report
 rustc-ice-*
+
+# botanix federation chain toml
+chain.toml
