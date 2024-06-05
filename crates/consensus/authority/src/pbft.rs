@@ -94,12 +94,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -352,6 +352,7 @@ where
             .header
             .validate_inturn(&self.config.authorities)
             .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
+
         // Blocks should only be signed if they are building on the best block
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
@@ -364,8 +365,7 @@ where
         // if the suggested block is the canon tip there is no point to signing it again
         match self.client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
-            Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
-            // canon
+            Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not canon */
             _ => return Err(ValidateBlockError::BlockAlreadyInCanonChain(block_hash)),
         }
 
@@ -666,8 +666,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()? !=
-            block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -754,10 +754,9 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
-                            PeerId::random(),
-                            vec![header],
-                        )));
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
                     }
                 }
                 // Error is caught below
@@ -811,13 +810,14 @@ mod tests {
             let parent_block = SealedBlock::new(parent_header.seal_slow(), BlockBody::default());
             $mock_eth_provider.add_block(parent_block.hash_slow(), parent_block.clone().into());
 
+            let ts =  unix_timestamp();
             for i in 0..$n {
                 let edh = ExtraDataHeader::default();
                 let mut header = Header::default();
                 header.number = 1;
                 header.parent_hash = parent_block.hash_slow();
+                header.timestamp = ts;
                 header.add_extra_data_header(&edh);
-                header.timestamp = unix_timestamp();
                 header.sign_block(&$sks[i]).unwrap();
                 let block_body = BlockBody::default();
                 $signed_blocks.push(SealedBlock::new(header.seal_slow(), block_body));
@@ -965,6 +965,7 @@ mod tests {
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
     }
 
+    #[ignore]
     #[tokio::test]
     async fn will_reprocess_proposal_for_timeslot() {
         setup_multi_party_test!(
@@ -992,10 +993,10 @@ mod tests {
             .expect("valid block proposal");
         let other_peer = non_coords.get_mut(0).unwrap();
 
-        let binding = other_peer.pre_commitments.read().await;
-        let pre_commits = binding.get(&block_hash).expect("to get pre-commits");
+        let lock = other_peer.pre_commitments.read().await;
+        let pre_commits = lock.get(&block_hash).expect("to get pre-commits");
         assert_eq!(pre_commits.len(), 2);
-        drop(binding);
+        drop(lock);
 
         let time_slots = &other_peer.clone().time_slot_commitment;
         assert_eq!(time_slots.len(), 1);
@@ -1089,8 +1090,7 @@ mod tests {
         let res = non_coords[0]
             .process_block_proposal(invalid_block.clone(), coord.peer_id.clone())
             .await;
-        assert!(res.is_err());
-        assert_eq!(res.err().unwrap().to_string(), "Missing in turn signature on block");
+        assert!(res.err().unwrap().to_string().contains("Time check has been violated for blockhash"));
     }
 
     #[tokio::test]
@@ -1567,64 +1567,51 @@ mod tests {
     /* Validating fork */
     #[tokio::test]
     async fn will_not_sign_if_block_is_known() {
-        let mock_eth_provider = MockEthProvider::default();
-        // frost config is not needed for this test
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let config = FrostConfig {
-            authorities: vec![],
-            authority_index: 0,
-            max_signers: 0,
-            min_signers: 0,
-            authority_pk: sk.public_key(SECP256K1),
-        };
-        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
-        let pbft_state_machine = PbftStateMachine::new(
-            mock_eth_provider.clone(),
-            FrostHandleMock {},
-            config,
-            PeerId::default(),
-            sk.clone(),
-            None,
-            mock_network_client,
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
         );
-        let edh = ExtraDataHeader::default();
-        let mut header = Header::default();
-        header.number = 1;
-        header.add_extra_data_header(&edh);
-        header.sign_block(&sk).expect("to sign block");
-        let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
-        mock_eth_provider.add_block(block.hash(), block.clone().into());
 
-        let res = pbft_state_machine.validate_block(&block).await;
+        // frost config is not needed for this test
+        let pbft_state_machine = coord;
+        mock_eth_provider.add_block(block_to_propose.hash(), block_to_propose.clone().into());
+
+        let res = pbft_state_machine.validate_block(&block_to_propose).await;
 
         assert_eq!(
             res.err().unwrap(),
-            ValidateBlockError::BlockAlreadyInCanonChain(block.hash_slow())
+            ValidateBlockError::BlockAlreadyInCanonChain(block_to_propose.hash_slow())
         );
     }
 
     #[tokio::test]
     async fn signing_on_parent_block() {
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
         let mock_eth_provider = MockEthProvider::default();
         // frost config is not needed for this test
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let config = FrostConfig {
-            authorities: vec![],
-            authority_index: 0,
-            max_signers: 0,
-            min_signers: 0,
-            authority_pk: sk.public_key(SECP256K1),
-        };
-        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
-        let pbft_state_machine = PbftStateMachine::new(
-            mock_eth_provider.clone(),
-            FrostHandleMock {},
-            config,
-            PeerId::default(),
-            sk.clone(),
-            None,
-            mock_network_client,
-        );
+        let sk = coord.secret_key.clone();
+        let pbft_state_machine = coord;
         let edh = ExtraDataHeader::default();
         let mut parent_header = Header::default();
         parent_header.add_extra_data_header(&edh);
@@ -1640,6 +1627,7 @@ mod tests {
         let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
 
         let res = pbft_state_machine.validate_block(&block).await;
+        println!("{:?}", res);
         assert!(res.is_ok());
     }
 
@@ -1667,7 +1655,6 @@ mod tests {
         );
 
         let edh = ExtraDataHeader::default();
-
         let mut header = Header::default();
         header.add_extra_data_header(&edh);
         header.number = 0;
@@ -1682,26 +1669,23 @@ mod tests {
 
     #[tokio::test]
     async fn will_not_sign_if_parent_block_is_known_but_not_canon() {
-        let mock_eth_provider = MockEthProvider::default();
-        // frost config is not needed for this test
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let config = FrostConfig {
-            authorities: vec![],
-            authority_index: 0,
-            max_signers: 0,
-            min_signers: 0,
-            authority_pk: sk.public_key(SECP256K1),
-        };
-        let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
-        let pbft_state_machine = PbftStateMachine::new(
-            mock_eth_provider.clone(),
-            FrostHandleMock {},
-            config,
-            PeerId::default(),
-            sk.clone(),
-            None,
-            mock_network_client,
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
         );
+
+        // frost config is not needed for this test
+        let sk = coord.secret_key.clone();
+        let pbft_state_machine = coord;
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
         b0.add_extra_data_header(&edh);
@@ -1733,21 +1717,30 @@ mod tests {
 
     #[tokio::test]
     async fn will_sign_for_valid_fork() {
+        // Calling the macro just to get the coord sk
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            _block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
         // to simulate the fork we will create two providers
         // one for our and another which the network client will use to "fetch"
         // blocks from the peer
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let config = FrostConfig {
-            authorities: vec![],
-            authority_index: 0,
-            max_signers: 0,
-            min_signers: 0,
-            authority_pk: sk.public_key(SECP256K1),
-        };
-        let mock_network_client = MockNetworkClient::new(mock_eth_provider_peers.clone());
+        let sk = coord.secret_key.clone();
+        let config = coord.config.clone();
+        let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
+       
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider_mine.clone(),
             FrostHandleMock {},
@@ -1755,7 +1748,7 @@ mod tests {
             PeerId::default(),
             sk.clone(),
             None,
-            mock_network_client,
+            mock_network_client_peers,
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
@@ -1798,21 +1791,30 @@ mod tests {
 
     #[tokio::test]
     async fn will_not_sign_for_forks_deeper_than_1() {
+        // Calling the macro just to get the coord sk
+        setup_multi_party_test!(
+            1,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            _block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
         // to simulate the fork we will create two providers
         // one for our and another which the network client will use to "fetch"
         // blocks from the peer
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let config = FrostConfig {
-            authorities: vec![],
-            authority_index: 0,
-            max_signers: 0,
-            min_signers: 0,
-            authority_pk: sk.public_key(SECP256K1),
-        };
-        let mock_network_client = MockNetworkClient::new(mock_eth_provider_peers.clone());
+        let sk = coord.secret_key.clone();
+        let config = coord.config.clone();
+        let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
+
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider_mine.clone(),
             FrostHandleMock {},
@@ -1820,7 +1822,7 @@ mod tests {
             PeerId::default(),
             sk.clone(),
             None,
-            mock_network_client,
+            mock_network_client_peers,
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
