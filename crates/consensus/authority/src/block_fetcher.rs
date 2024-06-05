@@ -129,7 +129,7 @@ where
             let block: reth_primitives::Block = new_block.block.block.clone();
             let storage = self.storage.read().await;
             info!(target: "consensus::authority", ?block, "Recieved new block from peer");
-            let (best_block, best_hash) =
+            let (best_block_num, best_hash) =
                 storage.get_best_block_and_hash().expect("best block exists");
             if block.header.hash_slow() == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
@@ -147,11 +147,19 @@ where
 
             // check for missing blocks from the tip and use the network client to fetch them
             let network_client = self.network_client.clone();
-            let are_blocks_missing = !block.parent_hash.eq(&best_hash);
+
+            let mut are_blocks_missing = false;
+            // check if the incoming block is beyond our tip. In all other cases < tip, it is part
+            // of invalid side chain
+            if block.header.number > best_block_num {
+                are_blocks_missing = true
+            };
+
             let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![];
             if are_blocks_missing {
-                warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", block.header.number - best_block);
-                for block_index in block.header.number..best_block {
+                let blocks_to_catch = block.header.number.saturating_sub(best_block_num);
+                warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", blocks_to_catch);
+                for block_index in best_block_num..block.header.number {
                     let block_header = network_client
                         .get_header(BlockHashOrNumber::Number(block_index))
                         .await
@@ -167,7 +175,7 @@ where
             blocks_headers_to_sync.reverse();
             drop(storage);
 
-            // ger recent bitcoin block and header
+            // get recent bitcoin block and header
             let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let recent_bitcoin_block_height =
                 get_recent_block_height_or_zero(recent_bitcoin_block_header);
