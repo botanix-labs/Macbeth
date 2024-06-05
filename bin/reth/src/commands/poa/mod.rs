@@ -474,8 +474,8 @@ where {
         }
 
         // add trusted nodes (federation members) with chain.toml
-        // assumes chain.toml is present at `bin/reth/chain.toml` based on Makefile command
-        let chain_path = match PathBuf::from_str("chain.toml") {
+        // assumes chain.toml is present at data_dir
+        let chain_path = match PathBuf::from_str(format!("{}/chain.toml", data_dir).as_str()) {
             Ok(path) => path,
             Err(_) => {
                 error!(target: "reth::cli", "Failed to create path to chain.toml");
