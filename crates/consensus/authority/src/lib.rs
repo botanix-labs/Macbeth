@@ -397,6 +397,7 @@ where
     //// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns bundle state, block, and gas used.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,

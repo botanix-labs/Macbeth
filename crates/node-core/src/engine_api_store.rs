@@ -70,7 +70,12 @@ impl EngineApiStore {
                     })?,
                 )?;
             }
-            BeaconEngineMessage::NewPayload { payload, cancun_fields, tx: _tx } => {
+            BeaconEngineMessage::NewPayload {
+                payload,
+                cancun_fields,
+                tx: _tx,
+                botanix_consensus_pkg: _,
+            } => {
                 let filename = format!("{}-new_payload-{}.json", timestamp, payload.block_hash());
                 fs::write(
                     self.path.join(filename),
@@ -83,8 +88,8 @@ impl EngineApiStore {
                 )?;
             }
             // noop
-            BeaconEngineMessage::TransitionConfigurationExchanged |
-            BeaconEngineMessage::EventListener(_) => (),
+            BeaconEngineMessage::TransitionConfigurationExchanged
+            | BeaconEngineMessage::EventListener(_) => (),
         };
         Ok(())
     }
