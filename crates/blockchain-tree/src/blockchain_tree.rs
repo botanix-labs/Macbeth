@@ -791,7 +791,8 @@ where
         Ok(InsertPayloadOk::Inserted(status))
     }
 
-    /// Insert a block (with recovered senders) into the tree. Use the Botanix consensus package for additional validation.
+    /// Insert a block (with recovered senders) into the tree. Use the Botanix consensus package for
+    /// additional validation.
     ///
     /// Returns the [BlockStatus] on success:
     ///
