@@ -336,8 +336,10 @@ where
                                     .expect("Pegin account to exist")
                                     .clone();
                                 // decrement balance by pegin amount
-                                pegin_account.info.balance =
-                                    pegin_account.info.balance.saturating_sub(amount.into());
+                                pegin_account.info.balance = pegin_account
+                                    .info
+                                    .balance
+                                    .saturating_sub(U256::from_le_bytes(amount.into()));
                                 // update state with new balance
                                 updated_state.insert(address, pegin_account);
 
