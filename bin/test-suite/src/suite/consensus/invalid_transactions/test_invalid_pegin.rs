@@ -187,7 +187,6 @@ pub async fn invalid_pegin(
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
     // pegin address balance before pegin
-    // let eth_pegin_address = hex::encode(eth_destination.0);
     let eth_pegin_address = eth_account.to_string();
     let pegin_address_initial_balance =
         botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
