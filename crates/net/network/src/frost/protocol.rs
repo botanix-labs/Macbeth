@@ -181,27 +181,23 @@ impl Stream for FrostProtoConnection {
                             let req = PbftRequest::new(data);
                             match response_type {
                                 PbftEventResponseType::CoordinatorBlockProposal => {
-                                    info!(">>>>>>>>> [PROTOCOL] SENDING COORDINATOR BLOCK PROPOSAL = {:?}", req);
+                                    info!(
+                                        ">>>>>>>>> [PROTOCOL] SENDING COORDINATOR BLOCK PROPOSAL"
+                                    );
                                     Poll::Ready(Some(
                                         FrostProtoMessage::coordinator_block_proposal_message(req)
                                             .encoded(),
                                     ))
                                 }
                                 PbftEventResponseType::PeerPreCommitment => {
-                                    info!(
-                                        ">>>>>>>>> [PROTOCOL] SENDING PEER PRE COMMITMENT = {:?}",
-                                        req
-                                    );
+                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER PRE COMMITMENT");
                                     Poll::Ready(Some(
                                         FrostProtoMessage::peer_pre_commitment_message(req)
                                             .encoded(),
                                     ))
                                 }
                                 PbftEventResponseType::PeerCommitment => {
-                                    info!(
-                                        ">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT = {:?}",
-                                        req.to_string()
-                                    );
+                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT");
                                     Poll::Ready(Some(
                                         FrostProtoMessage::peer_commit_message(req).encoded(),
                                     ))
