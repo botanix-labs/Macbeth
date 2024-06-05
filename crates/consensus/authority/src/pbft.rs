@@ -13,7 +13,7 @@ use reth_network::frost::{
 use reth_network_types::pk2id;
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
-    header_ext::{HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
+    header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
 use reth_provider::{BlockReaderIdExt, ProviderError};
@@ -630,7 +630,7 @@ where
         &mut self,
         block: SealedBlock,
         peer_id: PeerId,
-    ) -> Result<Option<SealedBlock>, Error> {
+    ) -> Result<Option<BlockWitness>, Error> {
         self.validate_block(&block).await?;
         // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
@@ -647,16 +647,15 @@ where
             warn!(target: "pbft" ,"State machine is not awaiting commitments for block {:?}", block_hash);
             return Ok(None);
         }
-
+        let lock = self.sealed_blocks.read().await;
         // This block is originally added during init block proposal
-        let mut current_header = self
-            .sealed_blocks
-            .read()
-            .await
+        let current_block = lock
             .get(&block_hash)
+            // TODO should we be error'ing here instead
             .expect("block should exist")
-            .header()
             .clone();
+        drop(lock);
+        let mut current_header = current_block.header().clone();
         let mut edh = current_header.deserialize_extra_data_header()?;
         let peer_edh = block.header().deserialize_extra_data_header()?;
 
@@ -681,11 +680,11 @@ where
         // merge signature from peer
         edh.merge_signature(&peer_edh);
         // update header
+
         current_header.add_extra_data_header(&edh);
-        let new_block = SealedBlock::new(
-            current_header.clone().seal_slow(),
-            BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
-        );
+        // TODO do we need to clone here
+        let mut new_block = current_block.clone();
+        new_block.header = current_header.seal(block_hash);
         // Update local state
         self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
         let number_of_valid_sigs =
@@ -695,7 +694,10 @@ where
         // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >= self.config.max_signers {
             info!(target: "pbft" ,"We have enough commitments, time to produce a block");
-            return Ok(Some(new_block));
+            let block_witness =
+                new_block.header().get_block_witness()?.expect("set the witness above");
+            info!(target: "pbft" ,"Block witness: {:?}", block_witness);
+            return Ok(Some(block_witness));
         }
         Ok(None)
     }

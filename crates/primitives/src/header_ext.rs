@@ -1,15 +1,27 @@
 use std::collections::HashSet;
 
 use alloy_eips::merge::ALLOWED_FUTURE_BLOCK_TIME_SECONDS;
+use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
 
 use crate::{
     extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
     Bytes, Header, B256,
 };
+
+pub type BlockWitness = Vec<RecoverableSignature>;
 /// Extension trait for the block header
 /// Mainly adding extra data header utility functions
 pub trait HeaderExt {
+    /// Add block witness to the edh
+    fn add_block_witness(
+        &mut self,
+        witness: BlockWitness,
+    ) -> Result<(), ExtraDataHeaderDeserializeError>;
+
+    /// Get block witness from the edh
+    fn get_block_witness(&self) -> Result<Option<BlockWitness>, ExtraDataHeaderDeserializeError>;
+
     /// serilaizes and adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader);
 
@@ -134,19 +146,39 @@ pub enum ValidateAuthoritySignatureError {
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::InvalidAuthority, Self::InvalidAuthority) |
-            (Self::InvalidMessage, Self::InvalidMessage) |
-            (Self::InvalidSignature, Self::InvalidSignature) |
-            (Self::MissingSignature, Self::MissingSignature) |
-            (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
-            (Self::RecoverFailed, Self::RecoverFailed) |
-            (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
+            (Self::InvalidAuthority, Self::InvalidAuthority)
+            | (Self::InvalidMessage, Self::InvalidMessage)
+            | (Self::InvalidSignature, Self::InvalidSignature)
+            | (Self::MissingSignature, Self::MissingSignature)
+            | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
+            | (Self::RecoverFailed, Self::RecoverFailed)
+            | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
             _ => false,
         }
     }
 }
 
 impl HeaderExt for Header {
+    /// Get block witness from the edh
+    fn get_block_witness(&self) -> Result<Option<BlockWitness>, ExtraDataHeaderDeserializeError> {
+        let edh = self.deserialize_extra_data_header()?;
+        Ok(edh.authority_signatures)
+    }
+
+    /// Adds block witness to the edh
+    /// If there is already a witness present it will be overwritten
+    fn add_block_witness(
+        &mut self,
+        witness: BlockWitness,
+    ) -> Result<(), ExtraDataHeaderDeserializeError> {
+        let mut edh = self.deserialize_extra_data_header()?;
+        edh.authority_signatures = Some(witness);
+        edh.set_optional_fields_bitmask();
+        self.extra_data = Bytes::from(edh.serialize());
+
+        Ok(())
+    }
+
     /// Adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
         self.extra_data = Bytes::from(edh.serialize());
@@ -202,8 +234,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
-            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
