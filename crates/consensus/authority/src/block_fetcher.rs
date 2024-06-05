@@ -131,35 +131,10 @@ where
             drop(storage);
             // Seal the block
             let sealed_block = block.clone().seal_slow();
-            // Notify the engine of the new block
-            let _payload_status = match engine_util::send_beacon_new_payload(
-                sealed_block.clone(),
-                self.to_engine.clone(),
-            )
-            .await
-            {
-                Ok(payload) => payload,
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
-                    continue;
-                }
-            };
 
             let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
-            let recent_bitcoin_block_height =
-                get_recent_block_height_or_zero(recent_bitcoin_block_header);
-            if recent_bitcoin_block_height == 0 {
-                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
-                continue;
-            }
-            let mut storage = self.storage.write().await;
-
-            if recent_bitcoin_block_header.is_none() {
-                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
-                continue;
-            }
-
             let mut botanix_consensus_pkg = None;
+            let mut storage = self.storage.write().await;
             if is_fed_node {
                 if storage.aggregate_public_key.is_none() {
                     warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
@@ -174,6 +149,33 @@ where
                         btc_network: self.btc_network,
                     });
                 }
+            }
+
+            // Notify the engine of the new block
+            let _payload_status = match engine_util::send_beacon_new_payload(
+                sealed_block.clone(),
+                self.to_engine.clone(),
+                botanix_consensus_pkg.clone(),
+            )
+            .await
+            {
+                Ok(payload) => payload,
+                Err(err) => {
+                    error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
+                    continue;
+                }
+            };
+
+            let recent_bitcoin_block_height =
+                get_recent_block_height_or_zero(recent_bitcoin_block_header);
+            if recent_bitcoin_block_height == 0 {
+                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+                continue;
+            }
+
+            if recent_bitcoin_block_header.is_none() {
+                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
+                continue;
             }
 
             match storage.execute_imported_block(

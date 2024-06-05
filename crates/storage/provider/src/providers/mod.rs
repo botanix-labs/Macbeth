@@ -22,6 +22,7 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
+    botanix::BotanixConsensusPackage,
     stage::{StageCheckpoint, StageId},
     Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumber,
     BlockNumberOrTag, BlockWithSenders, ChainInfo, ChainSpec, Header, PruneCheckpoint,
@@ -621,7 +622,7 @@ where
 
         if let Some(block) = self.tree.pending_block_num_hash() {
             if let Ok(pending) = self.tree.pending_state_provider(block.hash) {
-                return self.pending_with_provider(pending)
+                return self.pending_with_provider(pending);
             }
         }
 
@@ -631,7 +632,7 @@ where
 
     fn pending_state_by_hash(&self, block_hash: B256) -> ProviderResult<Option<StateProviderBox>> {
         if let Some(state) = self.tree.find_pending_state_provider(block_hash) {
-            return Ok(Some(self.pending_with_provider(state)?))
+            return Ok(Some(self.pending_with_provider(state)?));
         }
         Ok(None)
     }
@@ -663,6 +664,19 @@ where
         validation_kind: BlockValidationKind,
     ) -> Result<InsertPayloadOk, InsertBlockError> {
         self.tree.insert_block(block, validation_kind)
+    }
+
+    fn insert_block_with_botanix_consensus_package(
+        &self,
+        block: SealedBlockWithSenders,
+        validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+    ) -> Result<InsertPayloadOk, InsertBlockError> {
+        self.tree.insert_block_with_botanix_consensus_package(
+            block,
+            validation_kind,
+            botanix_consensus_pkg,
+        )
     }
 
     fn finalize_block(&self, finalized_block: BlockNumber) {

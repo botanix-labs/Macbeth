@@ -54,7 +54,12 @@ where
         cancun_fields: Option<CancunPayloadFields>,
     ) -> Result<PayloadStatus, BeaconOnNewPayloadError> {
         let (tx, rx) = oneshot::channel();
-        let _ = self.to_engine.send(BeaconEngineMessage::NewPayload { payload, cancun_fields, tx });
+        let _ = self.to_engine.send(BeaconEngineMessage::NewPayload {
+            payload,
+            cancun_fields,
+            tx,
+            botanix_consensus_pkg: None,
+        });
         rx.await.map_err(|_| BeaconOnNewPayloadError::EngineUnavailable)?
     }
 

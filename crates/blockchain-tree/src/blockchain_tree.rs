@@ -17,8 +17,8 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    BlockHash, BlockNumHash, BlockNumber, ForkBlock, GotExpected, Hardfork, PruneModes, Receipt,
-    SealedBlock, SealedBlockWithSenders, SealedHeader, U256,
+    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, ForkBlock, GotExpected,
+    Hardfork, PruneModes, Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, U256,
 };
 use reth_provider::{
     chain::{ChainSplit, ChainSplitTarget},
@@ -331,6 +331,7 @@ where
         &mut self,
         block: SealedBlockWithSenders,
         block_validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<BlockStatus, InsertBlockErrorKind> {
         debug_assert!(self.validate_block(&block).is_ok(), "Block must be validated");
 
@@ -344,7 +345,11 @@ where
 
         // if not found, check if the parent can be found inside canonical chain.
         if self.is_block_hash_canonical(&parent.hash)? {
-            return self.try_append_canonical_chain(block.clone(), block_validation_kind);
+            return self.try_append_canonical_chain(
+                block.clone(),
+                block_validation_kind,
+                botanix_consensus_pkg,
+            );
         }
 
         // this is another check to ensure that if the block points to a canonical block its block
@@ -393,6 +398,7 @@ where
         &mut self,
         block: SealedBlockWithSenders,
         block_validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<BlockStatus, InsertBlockErrorKind> {
         let parent = block.parent_num_hash();
         let block_num_hash = block.num_hash();
@@ -440,6 +446,7 @@ where
             &self.externals,
             block_attachment,
             block_validation_kind,
+            botanix_consensus_pkg,
         )?;
 
         self.insert_chain(chain);
@@ -779,7 +786,52 @@ where
         }
 
         let status = self
-            .try_insert_validated_block(block.clone(), block_validation_kind)
+            .try_insert_validated_block(block.clone(), block_validation_kind, None)
+            .map_err(|kind| InsertBlockError::new(block.block, kind))?;
+        Ok(InsertPayloadOk::Inserted(status))
+    }
+
+    /// Insert a block (with recovered senders) into the tree. Use the Botanix consensus package for additional validation.
+    ///
+    /// Returns the [BlockStatus] on success:
+    ///
+    /// - The block is already part of a sidechain in the tree, or
+    /// - The block is already part of the canonical chain, or
+    /// - The parent is part of a sidechain in the tree, and we can fork at this block, or
+    /// - The parent is part of the canonical chain, and we can fork at this block
+    ///
+    /// Otherwise, an error is returned, indicating that neither the block nor its parent are part
+    /// of the chain or any sidechains.
+    ///
+    /// This means that if the block becomes canonical, we need to fetch the missing blocks over
+    /// P2P.
+    ///
+    /// If the [BlockValidationKind::SkipStateRootValidation] variant is provided the state root is
+    /// not validated.
+    ///
+    /// # Note
+    ///
+    /// If the senders have not already been recovered, call
+    /// [`BlockchainTree::insert_block_without_senders`] instead.
+    pub fn insert_block_with_botanix_consensus_package(
+        &mut self,
+        block: SealedBlockWithSenders,
+        block_validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+    ) -> Result<InsertPayloadOk, InsertBlockError> {
+        // check if we already have this block
+        match self.is_block_known(block.num_hash()) {
+            Ok(Some(status)) => return Ok(InsertPayloadOk::AlreadySeen(status)),
+            Err(err) => return Err(InsertBlockError::new(block.block, err)),
+            _ => {}
+        }
+
+        // validate block consensus rules
+        if let Err(err) = self.validate_block(&block) {
+            return Err(InsertBlockError::consensus_error(err, block.block));
+        }
+        let status = self
+            .try_insert_validated_block(block.clone(), block_validation_kind, botanix_consensus_pkg)
             .map_err(|kind| InsertBlockError::new(block.block, kind))?;
         Ok(InsertPayloadOk::Inserted(status))
     }
@@ -889,7 +941,11 @@ where
         for block in include_blocks.into_iter() {
             // dont fail on error, just ignore the block.
             let _ = self
-                .try_insert_validated_block(block, BlockValidationKind::SkipStateRootValidation)
+                .try_insert_validated_block(
+                    block,
+                    BlockValidationKind::SkipStateRootValidation,
+                    None,
+                )
                 .map_err(|err| {
                     debug!(
                         target: "blockchain_tree", %err,
@@ -1518,8 +1574,8 @@ mod tests {
                     signer,
                     (
                         AccountInfo {
-                            balance: initial_signer_balance -
-                                (single_tx_cost * U256::from(num_of_signer_txs)),
+                            balance: initial_signer_balance
+                                - (single_tx_cost * U256::from(num_of_signer_txs)),
                             nonce: num_of_signer_txs,
                             ..Default::default()
                         },
