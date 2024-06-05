@@ -444,7 +444,6 @@ where
 
         // Save block locally
         self.sealed_blocks.write().await.insert(block_hash, block.clone());
-        println!("block hash: {:?}", block_hash);
 
         // Set the state to awaiting pre-commitments
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
@@ -1083,6 +1082,7 @@ mod tests {
         let mut invalid_block_header = Header::default();
         invalid_block_header.parent_hash = tip.hash;
         invalid_block_header.number = 1;
+        invalid_block_header.timestamp = unix_timestamp();
         invalid_block_header.add_extra_data_header(&edh);
         invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
         let invalid_block =
@@ -1632,7 +1632,6 @@ mod tests {
         let block = SealedBlock::new(header.seal_slow(), BlockBody::default());
 
         let res = pbft_state_machine.validate_block(&block).await;
-        println!("{:?}", res);
         assert!(res.is_ok());
     }
 
