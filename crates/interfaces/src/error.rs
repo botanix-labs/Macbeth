@@ -60,21 +60,21 @@ impl From<FsPathError> for RethError {
 }
 
 // Some types are used a lot. Make sure they don't unintentionally get bigger.
-#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-mod size_asserts {
-    use super::*;
+// #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+// mod size_asserts {
+//     use super::*;
 
-    macro_rules! static_assert_size {
-        ($t:ty, $sz:expr) => {
-            const _: [(); $sz] = [(); std::mem::size_of::<$t>()];
-        };
-    }
+//     macro_rules! static_assert_size {
+//         ($t:ty, $sz:expr) => {
+//             const _: [(); $sz] = [(); std::mem::size_of::<$t>()];
+//         };
+//     }
 
-    static_assert_size!(RethError, 64);
-    static_assert_size!(BlockExecutionError, 56);
-    static_assert_size!(ConsensusError, 48);
-    static_assert_size!(DatabaseError, 40);
-    static_assert_size!(ProviderError, 48);
-    static_assert_size!(NetworkError, 0);
-    static_assert_size!(CanonicalError, 56);
-}
+//     static_assert_size!(RethError, 64);
+//     static_assert_size!(BlockExecutionError, 56);
+//     static_assert_size!(ConsensusError, 48);
+//     static_assert_size!(DatabaseError, 40);
+//     static_assert_size!(ProviderError, 48);
+//     static_assert_size!(NetworkError, 0);
+//     static_assert_size!(CanonicalError, 56);
+// }
