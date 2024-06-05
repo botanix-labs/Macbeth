@@ -259,6 +259,7 @@ where
             evm_config.clone(),
             btc_network,
             network_client.clone(),
+            network_handle.clone(),
         );
 
         let (frost_task_notifications1_tx, frost_task_notifications1_rx) =

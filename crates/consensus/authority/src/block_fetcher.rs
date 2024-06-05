@@ -9,6 +9,7 @@ use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+    sync::SyncStateProvider,
 };
 use reth_primitives::{
     botanix::BotanixConsensusPackage, Block, SealedBlockWithSenders, TransactionSigned,
@@ -19,12 +20,12 @@ use reth_rpc_types::{BlockHashOrNumber, BlockNumHash};
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindClient;
-use reth_network::message::NewBlockMessage;
+use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -52,6 +53,8 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     btc_network: bitcoin::Network,
     /// Network Client, used to create [FullBlockClient]
     network_client: NetworkClient,
+    /// Network Handle
+    network_handle: NetworkHandle,
 }
 
 impl<Client, EvmConfig, Engine, NetworkClient>
@@ -80,6 +83,7 @@ where
         evm_config: EvmConfig,
         btc_network: bitcoin::Network,
         network_client: NetworkClient,
+        network_handle: NetworkHandle,
     ) -> Self {
         Self {
             chain_spec,
@@ -93,6 +97,7 @@ where
             evm_config,
             btc_network,
             network_client,
+            network_handle,
         }
     }
 
@@ -152,14 +157,26 @@ where
             // check if the incoming block is beyond our tip. In all other cases < tip, it is part
             // of invalid side chain
             if block.header.number > best_block_num {
-                are_blocks_missing = true
+                are_blocks_missing = true;
             };
 
             let mut blocks_headers_to_sync: Vec<BlockNumHash> = vec![];
             if are_blocks_missing {
                 let blocks_to_catch = block.header.number.saturating_sub(best_block_num);
                 warn!(target: "consensus::authority", "Block fetcher is missing {} blocks. Catching up...", blocks_to_catch);
-                for block_index in best_block_num..block.header.number {
+
+                // wait for the FCU to be fully synced with the network before using the DB client
+                // to fetch blocks
+                loop {
+                    if !self.network_handle.is_syncing() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+
+                // now that we are fully synced, we can use the db client to fetch blocks from
+                // storage
+                for block_index in best_block_num..=block.header.number {
                     let block_header = network_client
                         .get_header(BlockHashOrNumber::Number(block_index))
                         .await
@@ -171,6 +188,9 @@ where
                             .push(BlockNumHash::new(block_header.number, block_header.hash_slow()));
                     }
                 }
+            } else {
+                blocks_headers_to_sync
+                    .push(BlockNumHash::new(block.header.number, block.header.hash_slow()));
             }
             blocks_headers_to_sync.reverse();
             drop(storage);
