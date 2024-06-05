@@ -312,7 +312,7 @@ pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u
     let position_in_cycle = reference_timestamp % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
-    position_in_cycle / 60
+    (position_in_cycle / 60) % authorities_len
 }
 
 #[cfg(test)]
