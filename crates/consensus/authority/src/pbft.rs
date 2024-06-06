@@ -705,6 +705,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_mut)]
     use super::*;
     use rand;
     use reth_consensus_common::utils::unix_timestamp;
@@ -1609,7 +1610,7 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose,
+            _block_to_propose,
             mock_eth_provider,
             mock_network_client
         );
@@ -1682,7 +1683,7 @@ mod tests {
             signed_blocks,
             non_coords,
             coord,
-            block_to_propose,
+            _block_to_propose,
             mock_eth_provider,
             mock_network_client
         );
