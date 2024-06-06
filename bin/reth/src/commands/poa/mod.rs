@@ -1,6 +1,8 @@
 //! Main node command
 
-use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc, time::Instant,
+};
 
 use bitcoin::hashes::Hash;
 use clap::{value_parser, Parser};
@@ -28,6 +30,7 @@ use reth_consensus::Consensus;
 use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
+use reth_interfaces::sync::SyncStateProvider;
 use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents, NetworkManager,
 };
@@ -59,6 +62,8 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
+const LIVE_SYNC_TIMEOUT: u64 = 60;
+
 use crate::{
     args::{
         utils::{
@@ -74,6 +79,15 @@ use crate::{
     rpc::types::NodeRecord,
 };
 use std::str::FromStr;
+
+/// Enum representing the node sync status
+#[derive(Debug, Copy, Clone)]
+pub enum LiveSyncStatus {
+    /// Node is still syncing
+    Syncing,
+    /// Noe is fully synced
+    Synced,
+}
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -728,6 +742,54 @@ where {
         .await?;
 
         let pipeline_events = pipeline.events();
+
+        // spawn a network sync task
+        let network_handle_clone = network_handle.clone();
+        let (reporting_channels_tx, mut reporting_channels_rx) =
+            tokio::sync::mpsc::unbounded_channel::<tokio::sync::oneshot::Sender<LiveSyncStatus>>();
+        executor.spawn_critical(
+            "Live Sync Task",
+            Box::pin(async move {
+                while let Some(rx) = reporting_channels_rx.recv().await {
+                    match network_handle_clone.is_syncing() {
+                        true => {
+                            let _ = rx.send(LiveSyncStatus::Syncing);
+                        }
+                        false => {
+                            let _ = rx.send(LiveSyncStatus::Synced);
+                        }
+                    }
+                }
+            }),
+        );
+
+        // wait until the node is fully synced with the rest of the network
+        let start = Instant::now();
+        loop {
+            let (tx, rx) = tokio::sync::oneshot::channel::<LiveSyncStatus>();
+            let _ = reporting_channels_tx.send(tx);
+
+            match rx.await {
+                Ok(LiveSyncStatus::Synced) => {
+                    info!(target: "reth::cli", "Live sync was successfull! Spawning network services...");
+                    break;
+                }
+                Ok(LiveSyncStatus::Syncing) => {
+                    if start.elapsed().as_secs() >= LIVE_SYNC_TIMEOUT {
+                        error!(target: "reth::cli", "Live Sync did not finish within {LIVE_SYNC_TIMEOUT} secs");
+                        return Err(eyre::eyre!(
+                            "Node did not reach synced status within {LIVE_SYNC_TIMEOUT} secs. Exiting..."
+                        ));
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                Err(e) => {
+                    error!(target: "reth::cli", "Live Sync Error: {:?}", e);
+                    return Err(eyre::eyre!("Live Sync receiver error. Exiting..."));
+                }
+            }
+        }
 
         // Spawn authority consensus specific tasks
         // federation mode tasks
