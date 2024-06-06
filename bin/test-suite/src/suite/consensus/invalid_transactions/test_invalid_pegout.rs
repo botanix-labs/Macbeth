@@ -1,18 +1,23 @@
-use std::{str::FromStr, time::Duration};
-
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
-use ethers::{prelude::Provider, providers::Http};
-use reth_botanix_lib::{peg_contract::PeginMeta, utils::AmountExt};
+use ethers::{
+    prelude::Provider,
+    providers::{Http, Middleware},
+    types::NameOrAddress,
+};
+use reth_botanix_lib::{mint_validation::MINT_TOPIC, peg_contract::PeginMeta, utils::AmountExt};
 use reth_btc_wallet::address::EthAddress;
 use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
+use std::{str::FromStr, time::Duration};
 
 use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            events::{await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME},
+            events::{
+                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
+            },
             poa_node::create_poa_federation_members,
         },
         ConsensusIntegrationTestSuite,
@@ -20,7 +25,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub async fn invalid_pegin(
+pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::InvalidTransactionError> {
     // Set up regtest connection
@@ -177,7 +182,7 @@ pub async fn invalid_pegin(
         .expect("valid public key"),
         tx: pegin_tx.clone(),
         merkle_proof: pmt,
-        block_headers: vec![],
+        block_headers: headers,
     };
 
     // send the pegin transactions to all fed members
@@ -192,7 +197,7 @@ pub async fn invalid_pegin(
         botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
     it_info_print!("Inital pegin address balance", pegin_address_initial_balance);
 
-    it_info_print!("Sending invalid pegin transaction to mint contract");
+    it_info_print!("Sending pegin transaction to mint contract");
     let tx_receipt = botanix_eth_client
         .mint(
             eth_destination.clone(),
@@ -204,17 +209,39 @@ pub async fn invalid_pegin(
         .await
         .unwrap()
         .unwrap();
+    it_info_print!("Mint Tx Receipt ", tx_receipt);
 
-    // status should be 0 (failure)
-    it_info_print!("Pegin Tx Receipt", tx_receipt);
-    assert!(tx_receipt.status.unwrap().is_zero());
+    // wait for a few blocks to make sure the tx got included and mined
+    it_info_print!("Waiting for botanix event after mint call");
+    await_botanix_event(&mut rx, *MINT_TOPIC).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    // make sure we have received the botanix btc on botanix
+    let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
+    let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
+    assert!(!eth_address_balance.is_zero());
 
     // pegin address balance after pegin
     let pegin_address_final_balance =
         botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
     it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
-    assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
+    // Generate and send pegout tx
+    // invalid bitcoin address
+    let invalid_pegout_destination = ethers::core::types::Bytes::from(
+        "invalid_pegout_destination".to_string().as_bytes().to_vec(),
+    );
+    // use empty pegout data
+    let pegout_data = ethers::core::types::Bytes::new();
+    let pegout_amount = Amount::from_btc(0.5).unwrap();
+    let tx_receipt = botanix_eth_client
+        .burn(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
+        .await
+        .unwrap()
+        .unwrap();
+    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
+
+    assert!(tx_receipt.status.unwrap().is_zero());
 
     Ok(())
 }
