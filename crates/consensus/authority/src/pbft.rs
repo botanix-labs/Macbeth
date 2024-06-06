@@ -122,6 +122,7 @@ pub(crate) enum PbftState {
     /// We have received k pre-commitments, now we are waiting for k commitments from peers
     AwaitingCommitments,
     /// finished state for either the block producer or the peer
+    #[allow(dead_code)]
     /// TODO do we really need this?
     Finished,
 }

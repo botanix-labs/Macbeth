@@ -5,8 +5,7 @@ use reth_network::frost::{
     PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
-use reth_primitives::header_ext::BlockWitness;
-use reth_primitives::SealedBlock;
+use reth_primitives::{header_ext::BlockWitness, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -17,9 +16,11 @@ use tracing::{error, info, warn};
 pub(crate) enum PbftNotificationMessage {
     /// Block builder task propose a block to get gossip'd to peers
     ProposeBlock(PbftNotification),
-    /// A notification to the block builder task that we have received a with a quorum of commitments
+    /// A notification to the block builder task that we have received a with a quorum of
+    /// commitments
     CommitmentsReceived(PbftFinalizationNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we can reset
+    /// A notification to the block builder task we have timed out or are no longer in turn so we
+    /// can reset
     Reset,
 }
 

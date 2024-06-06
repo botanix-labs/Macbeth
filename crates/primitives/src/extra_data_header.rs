@@ -1,6 +1,5 @@
-use std::{collections::HashSet, io};
+use std::io;
 
-use crate::Header;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::Hash,

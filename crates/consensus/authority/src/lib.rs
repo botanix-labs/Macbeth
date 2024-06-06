@@ -376,6 +376,16 @@ where
             }
         };
 
+        // Construct [ExtraDataHeader] and sign the block
+        let edh = ExtraDataHeader::new(
+            0,
+            None,
+            if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
+            None,
+            witness_data.clone(),
+            recent_block_hash,
+            utxo_commitment.clone(),
+        );
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk).map_err(|e| {
             warn!(target: "consensus::authority", "failed to sign block: {:?}", e);

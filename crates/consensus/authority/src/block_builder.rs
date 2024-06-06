@@ -16,9 +16,8 @@ use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage,   
-    header_ext::{self, HeaderExt},
-    public_key_to_address, Block, SealedBlockWithSenders, B256,
+    botanix::BotanixConsensusPackage, header_ext::HeaderExt, public_key_to_address, Block,
+    SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
@@ -291,8 +290,9 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        // print tx ids 
-        let tx_ids: Vec<String> = block_to_commit.body.iter().map(|tx| tx.hash().to_string()).collect();
+        // print tx ids
+        let tx_ids: Vec<String> =
+            block_to_commit.body.iter().map(|tx| tx.hash().to_string()).collect();
         info!(target: "consensus::authority", ">>>>>>>>> b4 Block tx ids: {:?}", tx_ids);
 
         // Propose block to network for commitments

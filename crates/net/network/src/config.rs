@@ -2,7 +2,7 @@
 
 use crate::{
     error::NetworkError,
-    frost::manager::{FrostConfig, FrostHandle},
+    frost::manager::FrostConfig,
     import::{BlockImport, ProofOfStakeBlockImport},
     peers::PeersConfig,
     session::SessionsConfig,

@@ -9,6 +9,7 @@ use crate::{
     Bytes, Header, B256,
 };
 
+/// Authority Block signatures
 pub type BlockWitness = Vec<RecoverableSignature>;
 /// Extension trait for the block header
 /// Mainly adding extra data header utility functions
@@ -146,13 +147,13 @@ pub enum ValidateAuthoritySignatureError {
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::InvalidAuthority, Self::InvalidAuthority)
-            | (Self::InvalidMessage, Self::InvalidMessage)
-            | (Self::InvalidSignature, Self::InvalidSignature)
-            | (Self::MissingSignature, Self::MissingSignature)
-            | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
-            | (Self::RecoverFailed, Self::RecoverFailed)
-            | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
+            (Self::InvalidAuthority, Self::InvalidAuthority) |
+            (Self::InvalidMessage, Self::InvalidMessage) |
+            (Self::InvalidSignature, Self::InvalidSignature) |
+            (Self::MissingSignature, Self::MissingSignature) |
+            (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
+            (Self::RecoverFailed, Self::RecoverFailed) |
+            (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
             _ => false,
         }
     }
@@ -234,8 +235,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
-            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
+            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
@@ -326,7 +327,7 @@ impl HeaderExt for Header {
         let sigs = edh.authority_signatures.as_ref().expect("is some");
 
         let sighash = self.create_sighash()?;
-        let msg = secp256k1::Message::from_slice(sighash.as_slice())
+        let msg = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
 
         let mut signer_count = 0;
@@ -369,7 +370,7 @@ impl HeaderExt for Header {
             .ok_or(ValidateAuthoritySignatureError::MissingSignature)?;
         let sighash = self.create_sighash()?;
 
-        let msg = secp256k1::Message::from_slice(sighash.as_slice())
+        let msg = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .map_err(|_| ValidateAuthoritySignatureError::InvalidMessage)?;
 
         // Just validating the first signature
