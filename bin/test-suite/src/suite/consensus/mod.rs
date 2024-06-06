@@ -71,6 +71,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
         // run invalid transaction tests
         run_test!(self, invalid_transactions::test_invalid_pegin::invalid_pegin);
+        run_test!(self, invalid_transactions::test_invalid_pegout::invalid_pegout);
 
         // pbft tests (WIP)
         //run_test!(self, pbft::test_pbft_disconnect::pbft_e2e_failed_disconnect);
