@@ -1,12 +1,9 @@
 //! Main node command
 
-use std::{
-    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
-    sync::Arc,
-};
+use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use bitcoin::hashes::Hash;
-use clap::{value_parser, Args, Parser};
+use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
@@ -14,6 +11,9 @@ use reth_authority_consensus::{
     extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
     AuthorityConsensusBuilder,
 };
+use reth_network_types::pk2id;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
+
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
     hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -61,13 +61,17 @@ use tracing::{debug, error, info};
 
 use crate::{
     args::{
-        utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
+        utils::{
+            chain_help, genesis_value_parser, get_federation_pks_from_path, parse_socket_address,
+            SUPPORTED_CHAINS,
+        },
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
+    rpc::types::NodeRecord,
 };
 use std::str::FromStr;
 
@@ -560,7 +564,7 @@ where {
                 secret_key,
             )
             .expect("Failed to get authority index");
-            let mut config = FrostConfig::new(
+            let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
                 authorities,

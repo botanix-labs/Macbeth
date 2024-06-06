@@ -47,6 +47,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost Handler
+    #[allow(dead_code)]
     pub(crate) frost_handle: ToFrostMan,
     /// The type that defines how to configure the EVM.
     pub(crate) evm_config: EvmConfig,

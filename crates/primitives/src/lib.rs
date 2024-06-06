@@ -20,6 +20,7 @@
 mod account;
 pub mod basefee;
 mod block;
+/// Chain helpers and types
 pub mod chain;
 #[cfg(feature = "zstd-codec")]
 mod compression;

@@ -8088,10 +8088,7 @@ dependencies = [
 name = "reth-consensus-common"
 version = "0.2.0-beta.6"
 dependencies = [
- "alloy-chains",
- "cfg-if",
  "mockall",
- "reth-botanix-lib",
  "reth-consensus",
  "reth-interfaces",
  "reth-primitives",
@@ -8728,7 +8725,6 @@ name = "reth-node-builder"
 version = "0.2.0-beta.6"
 dependencies = [
  "aquamarine",
- "bitcoin",
  "confy",
  "eyre",
  "fdlimit",
@@ -8741,7 +8737,6 @@ dependencies = [
  "reth-consensus",
  "reth-db",
  "reth-downloaders",
- "reth-ethereum-engine-primitives",
  "reth-exex",
  "reth-interfaces",
  "reth-network",
@@ -8755,13 +8750,11 @@ dependencies = [
  "reth-revm",
  "reth-rpc",
  "reth-rpc-engine-api",
- "reth-rpc-types",
  "reth-stages",
  "reth-static-file",
  "reth-tasks",
  "reth-tracing",
  "reth-transaction-pool",
- "secp256k1 0.28.2",
  "tokio",
 ]
 
