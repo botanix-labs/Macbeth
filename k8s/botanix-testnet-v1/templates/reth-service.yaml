@@ -1,0 +1,18 @@
+{{- if (.Values.rethNode).enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ (.Values.rethNode).name  }}
+  labels:
+    {{- toYaml (.Values.rethNode).labels | nindent 8 }}
+spec:
+  type: {{ ((.Values.rethNode).service).type }}
+  ports:
+    {{- range ((.Values.rethNode).service).port }}
+        - name: {{ .name }}
+          port: {{ .port }}
+          targetPort: {{ .targetPort }}
+    {{- end }}
+  selector:
+    {{- toYaml (.Values.rethNode).labels | nindent 8 }}
+{{- end }}

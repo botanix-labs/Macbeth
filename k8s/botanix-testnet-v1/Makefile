@@ -1,0 +1,26 @@
+# Makefile for deploying, updating, and deleting the Helm chart
+
+# Variables
+CHART_NAME := botanix-testnet-v1
+NAMESPACE := testnet
+
+# Targets
+deploy:
+	helm upgrade --install $(CHART_NAME)-1 . --namespace $(NAMESPACE) --values testnet-1.yaml
+	helm upgrade --install $(CHART_NAME)-2 . --namespace $(NAMESPACE) --values testnet-2.yaml
+	helm upgrade --install $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values testnet-3.yaml
+	kubectl apply -f ingressRoute.yaml -n $(NAMESPACE)
+
+update:
+	helm upgrade $(CHART_NAME)-1 . --namespace $(NAMESPACE) --values testnet-1.yaml
+	helm upgrade $(CHART_NAME)-2 . --namespace $(NAMESPACE) --values testnet-2.yaml
+	helm upgrade $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values testnet-3.yaml
+	kubectl apply -f ingressRoute.yaml -n $(NAMESPACE)
+
+delete:
+	helm uninstall $(CHART_NAME)-1 --namespace $(NAMESPACE)
+	helm uninstall $(CHART_NAME)-2 --namespace $(NAMESPACE)
+	helm uninstall $(CHART_NAME)-3 --namespace $(NAMESPACE)
+	kubectl delete -f ingressRoute.yaml -n $(NAMESPACE)
+
+

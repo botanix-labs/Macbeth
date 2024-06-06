@@ -1,0 +1,209 @@
+bitcoinServer:
+    enabled: false 
+    replicaCount: 1
+
+    image:
+      repository: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1
+      pullPolicy: Always
+      tag: "latest"
+    name: botanix-bitcoin-server-testnet-v1-3
+
+    namespace: testnet
+
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        partition: 0
+
+    serviceAccount:
+      create: false
+      automount: true
+      annotations: {}
+      name: "gke-workload-runner"
+
+    securityContext:
+      fsGroup: 1000
+
+    labels:
+      app: botanix-bitcoin-server-testnet-v1-3
+
+    command: [ "/usr/local/bin/server", "--btc-network", "signet", "--identifier", "1", "--address", "0.0.0.0:8080", "--db", "/bitcoin-server/db", "--min-signers", "2", "--max-signers", "2", "--toml", "/bitcoin-server/config.toml", "--fee-rate-diff-percentage", "30", "--bitcoind-url", "http://botanix-bitcoin-core.testnet.svc.cluster.local:38332", "--bitcoind-user", "mempool", "--bitcoind-pass", "mempool", "--jwt-secret", "/bitcoin-server/jwt.hex", "--fall-back-fee-rate-sat-per-vbyte", "5"]
+
+    service:
+      type: ClusterIP
+      port: 8080
+
+    ingress:
+      enabled: false
+      annotations: {}
+      hosts:
+        - host: chart-example.local
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+
+    resources: 
+      limits:
+        cpu: '1.0'
+        memory: 2Gi
+      requests:
+        cpu: '0.5'
+        memory: 1Gi
+
+    volumeClaimTemplates:
+    - metadata:
+          name: botanix-testnet-bitcoin-server-data-v1-3
+      spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: botanix-storage-class
+          resources:
+            requests:
+              storage: 10Gi
+
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+
+    # Additional volumes on the output Deployment definition.
+    volumes: 
+      - name: botanix-bitcoin-server-config
+        configMap:
+          name: botanix-bitcoin-server-config
+      - name: botanix-key-hex
+        secret:
+          secretName: botanix-key-hex
+          items:
+          - key: hex-2
+            path: jwt.hex
+
+    volumeMounts: 
+      - name: botanix-testnet-bitcoin-server-data-v1-3
+        mountPath: /bitcoin-server
+      - name: botanix-bitcoin-server-config
+        mountPath: /bitcoin-server/config.toml
+        subPath: config.toml
+      - name: botanix-key-hex
+        mountPath: /bitcoin-server/jwt.hex
+        subPath: jwt.hex
+
+    nodeSelector:
+      iam.gke.io/gke-metadata-server-enabled: "true"
+      node_pool: dev-node-pool-new
+
+rethNode:
+    enabled: true
+    replicaCount: 1
+
+    image:
+      repository: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
+      pullPolicy: Always
+      tag: "latest"
+
+    imagePullSecrets: []
+
+    name: botanix-poa-node-v1-3
+    namespace: testnet
+
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        partition: 0
+
+    serviceAccount:
+      create: false
+      automount: true
+      annotations: {}
+      name: "gke-workload-runner"
+
+    securityContext:
+      fsGroup: 1000
+
+    labels:
+      app: botanix-poa-node-v1-3
+
+    command: 
+      - /usr/local/bin/reth 
+
+    args: 
+      - poa
+      - --chain=botanix_testnet
+      - --datadir=/reth/botanix_testnet
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=admin,debug,eth,net,trace,txpool,web3,rpc
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=admin,debug,eth,net,trace,txpool,web3,rpc
+      - -vvv
+      - --authrpc.addr=127.0.0.1
+      - --authrpc.port=8551
+      - --bitcoind.url=http://botanix-bitcoin-core.testnet.svc.cluster.local:38332
+      - --bitcoind.username="mempool"
+      - --bitcoind.password="mempool"
+      - --frost.min_signers=2
+      - --frost.max_signers=2
+      - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
+      - --port=30303
+      - --btc-network=signet
+      - --metrics=0.0.0.0:9001  
+  
+
+    service:
+      type: LoadBalancer
+      port: 
+        - name: http-port
+          port: 8545
+          targetPort: 8545
+        - name: ws-port
+          port: 8546
+          targetPort: 8546
+        - name: metrics-port
+          port: 9001
+          targetPort: 9001
+        - name: p2p-port
+          port: 30303
+          targetPort: 30303
+        - name: engine-api-port
+          port: 8551
+          targetPort: 8551
+
+    resources: 
+      limits:
+        cpu: '2.0'
+        memory: 4Gi
+      requests:
+        cpu: '1.0'
+        memory: 2Gi
+
+    volumeClaimTemplates:
+    - metadata:
+          name: botanix-poa-node-data-v1-3
+      spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: botanix-storage-class
+          resources:
+            requests:
+              storage: 200Gi
+
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+
+    volumes: []
+
+    volumeMounts: 
+      - name: botanix-poa-node-data-v1-3
+        mountPath: "/reth/botanix_testnet"
+
+
+    nodeSelector:
+      iam.gke.io/gke-metadata-server-enabled: "true"
+      node_pool: dev-node-pool-new
+
