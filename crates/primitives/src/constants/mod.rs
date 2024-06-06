@@ -1,5 +1,7 @@
 //! Ethereum protocol-related constants
 
+#[cfg(feature = "optimism")]
+use crate::BaseFeeParams;
 use crate::{
     revm_primitives::{address, b256},
     Address, B256, U256,
