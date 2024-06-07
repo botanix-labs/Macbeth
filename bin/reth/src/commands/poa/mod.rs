@@ -69,8 +69,7 @@ use crate::{
             chain_help, genesis_value_parser, get_federation_pks_from_path, parse_socket_address,
             SUPPORTED_CHAINS,
         },
-        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
-        RpcServerArgs, TxPoolArgs,
+        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
@@ -101,9 +100,9 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
     pub datadir: MaybePlatformPath<DataDirPath>,
 
-    /// The path to the configuration file to use.
+    /// The path to the configuration file to use for network properties.
     #[arg(long, value_name = "FILE", verbatim_doc_comment)]
-    pub config: Option<PathBuf>,
+    pub network_config_path: Option<PathBuf>,
 
     /// The chain this node is running.
     ///
@@ -176,14 +175,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[clap(flatten)]
     pub db: DatabaseArgs,
 
-    /// All dev related arguments with --dev prefix
-    #[command(flatten)]
-    pub dev: DevArgs,
-
-    /// All pruning related arguments
-    #[clap(flatten)]
-    pub pruning: PruningArgs,
-
     /// Additional cli arguments
     #[command(flatten, next_help_heading = "Extension")]
     pub ext: Ext,
@@ -210,7 +201,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
     pub fn with_ext<E: clap::Args + fmt::Debug>(self, ext: E) -> PoaNodeCommand<E> {
         let Self {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -222,13 +213,11 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             builder,
             debug,
             db,
-            dev,
-            pruning,
             ..
         } = self;
         PoaNodeCommand {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -240,8 +229,6 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             builder,
             debug,
             db,
-            dev,
-            pruning,
             ext,
         }
     }
@@ -253,7 +240,7 @@ where {
 
         let Self {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -265,14 +252,16 @@ where {
             builder,
             debug,
             db,
-            dev,
-            pruning,
             ext,
         } = self;
 
+        // Load reth config which is a bit different than cli config
+        let mut reth_config = self.load_config()?;
+
         // set up node config
+        // TODO should set up PoaConfig 
         let mut node_config = NodeConfig {
-            config: config.clone(),
+            config: network_config_path.clone(),
             chain: chain.clone(),
             federation_mode: *federation_mode,
             metrics: metrics.clone(),
@@ -283,8 +272,8 @@ where {
             builder: builder.clone(),
             debug: debug.clone(),
             db: db.clone(),
-            dev: dev.clone(),
-            pruning: pruning.clone(),
+            dev: Default::default(),
+            pruning: Default::default(),
         };
 
         // Register the prometheus recorder before creating the database,
@@ -464,9 +453,6 @@ where {
                 executor.clone(),
             )
             .await?;
-
-        // Load reth config which is a bit different than cli config
-        let mut reth_config = self.load_config()?;
 
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
@@ -930,12 +916,12 @@ where {
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        match <std::option::Option<PathBuf> as Clone>::clone(&self.config) {
+        match <std::option::Option<PathBuf> as Clone>::clone(&self.network_config_path) {
             Some(config_path) => {
                 let mut config = confy::load_path::<Config>(&config_path)
                     .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
 
-                info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
+                info!(target: "reth::cli", path = ?config_path, "Network onfiguration loaded");
 
                 // Update the config with the command line arguments
                 config.peers.trusted_nodes_only = self.network.trusted_only;
@@ -1151,16 +1137,16 @@ mod tests {
             .unwrap();
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.unwrap_or_else(|| data_dir.config_path());
+        let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
         let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
 
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.clone().unwrap_or_else(|| data_dir.config_path());
+        let config_path = cmd.network_config_path.clone().unwrap_or_else(|| data_dir.config_path());
         let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
-        assert!(config_path.ends_with(end), "{:?}", cmd.config);
+        assert!(config_path.ends_with(end), "{:?}", cmd.network_config_path);
     }
 
     #[test]
@@ -1169,32 +1155,13 @@ mod tests {
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
-        assert!(db_path.ends_with(end), "{:?}", cmd.config);
+        assert!(db_path.ends_with(end), "{:?}", cmd.network_config_path);
 
         let cmd =
             PoaNodeCommand::try_parse_args_from(["reth", "--datadir", "my/custom/path"]).unwrap();
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
-    }
-
-    #[test]
-    #[cfg(not(feature = "optimism"))] // dev mode not yet supported in op-reth
-    fn parse_dev() {
-        let cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth", "--dev"]);
-        let chain = reth_primitives::DEV.clone();
-        assert_eq!(cmd.chain.chain, chain.chain);
-        assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
-        assert_eq!(
-            cmd.chain.paris_block_and_final_difficulty,
-            chain.paris_block_and_final_difficulty
-        );
-        assert_eq!(cmd.chain.hardforks, chain.hardforks);
-
-        assert!(cmd.rpc.http);
-        assert!(cmd.network.discovery.disable_discovery);
-
-        assert!(cmd.dev.dev);
     }
 
     #[test]
