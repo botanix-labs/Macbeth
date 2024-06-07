@@ -62,8 +62,6 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
-const LIVE_SYNC_TIMEOUT: u64 = 60;
-
 use crate::{
     args::{
         utils::{
@@ -775,12 +773,7 @@ where {
                     break;
                 }
                 Ok(LiveSyncStatus::Syncing) => {
-                    if start.elapsed().as_secs() >= LIVE_SYNC_TIMEOUT {
-                        error!(target: "reth::cli", "Live Sync did not finish within {LIVE_SYNC_TIMEOUT} secs");
-                        return Err(eyre::eyre!(
-                            "Node did not reach synced status within {LIVE_SYNC_TIMEOUT} secs. Exiting..."
-                        ));
-                    }
+                    error!(target: "reth::cli", "Syncing... ({} secs taken)", start.elapsed().as_secs());
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
