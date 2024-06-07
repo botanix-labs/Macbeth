@@ -38,7 +38,12 @@ use reth_node_builder::{
     launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
     RethTransactionPoolConfig,
 };
-use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
+use reth_node_core::{
+    args::{get_secret_key, BitcoindArgs},
+    init::init_genesis,
+    node_config::NodeConfig,
+    version,
+};
 use reth_node_ethereum::EthEvmConfig;
 use reth_node_events::node::handle_events;
 use reth_primitives::{
@@ -175,6 +180,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[clap(flatten)]
     pub db: DatabaseArgs,
 
+    /// The path to the configuration file to use for network properties.
+    #[arg(long, value_name = "FILE", verbatim_doc_comment)]
+    pub bitcoind_config_path: Option<PathBuf>,
+
     /// Additional cli arguments
     #[command(flatten, next_help_heading = "Extension")]
     pub ext: Ext,
@@ -213,6 +222,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             builder,
             debug,
             db,
+            bitcoind_config_path,
             ..
         } = self;
         PoaNodeCommand {
@@ -229,6 +239,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             builder,
             debug,
             db,
+            bitcoind_config_path,
             ext,
         }
     }
@@ -252,6 +263,7 @@ where {
             builder,
             debug,
             db,
+            bitcoind_config_path,
             ext,
         } = self;
 
@@ -259,7 +271,7 @@ where {
         let mut reth_config = self.load_config()?;
 
         // set up node config
-        // TODO should set up PoaConfig 
+        // TODO should set up PoaConfig
         let mut node_config = NodeConfig {
             config: network_config_path.clone(),
             chain: chain.clone(),
@@ -275,6 +287,19 @@ where {
             dev: Default::default(),
             pruning: Default::default(),
         };
+
+        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
+        // prioritize the bitcoind config path from cli args
+        if let Some(bitcoind_config_path) = bitcoind_config_path {
+            // node_config.rpc.bitcoind = Some(bitcoind_config_path);
+            let config =
+                confy::load_path::<BitcoindArgs>(&bitcoind_config_path).wrap_err_with(|| {
+                    format!("Could not load config file {:?}", bitcoind_config_path)
+                })?;
+
+            info!(target: "reth::cli", path = ?bitcoind_config_path, "Bitcoind config loaded from file");
+            bitcoind_config = config.into();
+        }
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
@@ -358,7 +383,6 @@ where {
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
         // create bitcoind client and make sure its synced
-        let bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
         let bitcoind_client =
             BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
 
