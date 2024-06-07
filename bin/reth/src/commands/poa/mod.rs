@@ -44,7 +44,7 @@ use reth_primitives::{
     constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
     kzg::KzgSettings,
     stage::StageId,
-    Bytes, ChainSpec, Head, PruneModes,
+    Bytes, ChainSpec, Head, PruneModes, BOTANIX_TESTNET,
 };
 use reth_provider::{
     providers::{BlockchainProvider, StaticFileProvider},
@@ -897,17 +897,19 @@ where {
         node_config.adjust_instance_ports();
 
         // Start RPC servers
-        let _rpc_server_handles = node_config
-            .rpc
-            .start_rpc_server(
-                blockchain_db.clone(),
-                transaction_pool.clone(),
-                network_handle.clone(),
-                executor.clone(),
-                blockchain_db.clone(),
-                evm_config.clone(),
-            )
-            .await?;
+        if !(node_config.chain.as_ref().eq(BOTANIX_TESTNET.as_ref())) {
+            let _rpc_server_handles = node_config
+                .rpc
+                .start_rpc_server(
+                    blockchain_db.clone(),
+                    transaction_pool.clone(),
+                    network_handle.clone(),
+                    executor.clone(),
+                    blockchain_db.clone(),
+                    evm_config.clone(),
+                )
+                .await?;
+        }
 
         // TODO do we need start auth server?
 
