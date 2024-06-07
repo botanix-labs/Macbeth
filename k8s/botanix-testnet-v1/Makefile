@@ -8,13 +8,13 @@ NAMESPACE := testnet
 deploy:
 	helm upgrade --install $(CHART_NAME)-1 . --namespace $(NAMESPACE) --values testnet-1.yaml
 	helm upgrade --install $(CHART_NAME)-2 . --namespace $(NAMESPACE) --values testnet-2.yaml
-	helm upgrade --install $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values testnet-3.yaml
+	helm upgrade --install $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values non-fed-node-1.yaml
 	kubectl apply -f ingressRoute.yaml -n $(NAMESPACE)
 
 update:
 	helm upgrade $(CHART_NAME)-1 . --namespace $(NAMESPACE) --values testnet-1.yaml
 	helm upgrade $(CHART_NAME)-2 . --namespace $(NAMESPACE) --values testnet-2.yaml
-	helm upgrade $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values testnet-3.yaml
+	helm upgrade $(CHART_NAME)-3 . --namespace $(NAMESPACE) --values non-fed-node-1.yaml
 	kubectl apply -f ingressRoute.yaml -n $(NAMESPACE)
 
 delete:

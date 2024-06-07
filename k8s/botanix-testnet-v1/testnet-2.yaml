@@ -65,9 +65,9 @@ bitcoinServer:
       - name: botanix-bitcoin-server-config
         configMap:
           name: botanix-bitcoin-server-config
-      - name: botanix-key-hex
+      - name: botanix-jwt-hex
         secret:
-          secretName: botanix-key-hex
+          secretName: botanix-jwt-hex
           items:
           - key: hex-2
             path: jwt.hex
@@ -78,7 +78,7 @@ bitcoinServer:
       - name: botanix-bitcoin-server-config
         mountPath: /bitcoin-server/config.toml
         subPath: config.toml
-      - name: botanix-key-hex
+      - name: botanix-jwt-hex
         mountPath: /bitcoin-server/jwt.hex
         subPath: jwt.hex
 
@@ -193,9 +193,9 @@ rethNode:
       targetCPUUtilizationPercentage: 80
 
     volumes: 
-      - name: botanix-key-hex
+      - name: botanix-jwt-hex
         secret:
-          secretName: botanix-key-hex
+          secretName: botanix-jwt-hex
           items:
           - key: hex-2
             path: jwt.hex
