@@ -952,9 +952,9 @@ where {
         authorities: Vec<(PublicKey, SocketAddr)>,
         config: &mut Config,
     ) {
+        let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
         for authority in authorities.iter() {
             // don't add self
-            let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
             let peer_id = pk2id(&authority.0);
             if self_peer_id != peer_id {
                 let peer = NodeRecord::new(authority.1, peer_id);
