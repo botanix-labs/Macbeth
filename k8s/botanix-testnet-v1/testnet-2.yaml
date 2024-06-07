@@ -148,6 +148,7 @@ rethNode:
       - --btc-network=signet
       - --metrics=0.0.0.0:9001  
       - --federation-mode    
+      - --ipcdisable
 
     service:
       type: LoadBalancer
