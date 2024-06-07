@@ -155,10 +155,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[clap(flatten)]
     pub txpool: TxPoolArgs,
 
-    /// All payload builder related arguments
-    #[clap(flatten)]
-    pub builder: PayloadBuilderArgs,
-
     /// All debug related arguments with --debug prefix
     #[clap(flatten)]
     pub debug: DebugArgs,
@@ -206,7 +202,6 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
             bitcoind_config_path,
@@ -223,7 +218,6 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
             bitcoind_config_path,
@@ -247,7 +241,6 @@ where {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
             bitcoind_config_path,
@@ -268,11 +261,11 @@ where {
             network: network.clone(),
             rpc: rpc.clone(),
             txpool: txpool.clone(),
-            builder: builder.clone(),
             debug: debug.clone(),
             db: db.clone(),
             dev: Default::default(),
             pruning: Default::default(),
+            builder: PayloadBuilderArgs::default(),
         };
 
         let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
@@ -779,22 +772,6 @@ where {
 
         let initial_target = node_config.initial_pipeline_target(genesis_hash);
         let hooks = EngineHooks::new();
-
-        // TODO do we want pruner
-        //  let pruner_events = if let Some(prune_config) = prune_config {
-        //     let mut pruner = PrunerBuilder::new(prune_config.clone())
-        //         .max_reorg_depth(tree_config.max_reorg_depth() as usize)
-        //         .prune_delete_limit(self.config.chain.prune_delete_limit)
-        //         .build(provider_factory, snapshotter.highest_snapshot_receiver());
-
-        //     let events = pruner.events();
-        //     hooks.add(PruneHook::new(pruner, Box::new(executor.clone())));
-
-        //     info!(target: "reth::cli", ?prune_config, "Pruner initialized");
-        //     Either::Left(events)
-        // } else {
-        //     Either::Right(stream::empty())
-        // };
 
         // Configure the consensus engine
         let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
