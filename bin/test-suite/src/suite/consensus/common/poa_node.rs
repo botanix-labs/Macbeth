@@ -6,6 +6,7 @@ use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
+    args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     network::{PeerKind, Peers},
@@ -13,6 +14,7 @@ use reth::{
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
+use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
@@ -21,7 +23,7 @@ use reth_primitives::{
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
-use secp256k1::PublicKey;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
     collections::HashMap,
     io::Write,
@@ -74,7 +76,8 @@ pub struct CannonStateNofificationPayload {
 pub struct FederationMemberTestConfig {
     pub index: u16,
     pub temp_path: PathBuf,
-    pub secret_key: String,
+    pub secret_key: SecretKey,
+    pub authorities: Vec<PublicKey>,
     pub rpc_port: u16,
     pub authrpc_port: u16,
     pub discovery_port: u16,
@@ -96,7 +99,8 @@ pub struct FederationMemberTestConfig {
 impl FederationMemberTestConfig {
     pub async fn new(
         index: u16,
-        secret_key: String,
+        secret_key: SecretKey,
+        authorities: Vec<PublicKey>,
         sender: tokio::sync::mpsc::Sender<Notifications>,
         bitcoind_url: Url,
         bitcoind_username: String,
@@ -119,6 +123,7 @@ impl FederationMemberTestConfig {
             index,
             temp_path: tempfile::TempDir::new().expect("tempdir is okay").into_path(),
             secret_key,
+            authorities,
             rpc_port,
             authrpc_port,
             discovery_port,
@@ -162,7 +167,9 @@ impl FederationMemberTestConfig {
     }
 
     pub fn build_command(&self) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
-        it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
+        // print secret key
+        it_info_print!(format!("sk: {:?}", self.secret_key));
+        it_info_print!(format!("Building federation member index: {}", self.index));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -171,7 +178,7 @@ impl FederationMemberTestConfig {
             .create(true)
             .open(discovery_secret_path.clone())
             .unwrap();
-        file.write_all(&self.secret_key.as_bytes()).unwrap();
+        file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
 
         let jwt_secret_path = self.jwt_secret_path.display().to_string();
 
@@ -184,6 +191,22 @@ impl FederationMemberTestConfig {
         } else {
             panic!("Edh data missing. Cannot create botanix testnet config genesis file");
         };
+
+        // Need to create a chain.toml in the data dir
+
+        // Need to zip together the soc address and pk
+        let mut fed_member_pk = vec![];
+        for peer in self.peers_list.iter() {
+            let pk = FedMemberPubKey {
+                key: peer.secret_key.public_key(SECP256K1).to_string(),
+                socket_addr: format!("127.0.0.1:{}", peer.discovery_port),
+            };
+            fed_member_pk.push(pk);
+        }
+
+        let chain_config =
+            GenesisTomlConfig::new("integration test toml".to_string(), fed_member_pk, None);
+        chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
@@ -449,9 +472,7 @@ pub async fn create_poa_federation_members(
     let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
 
     let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
-
-    let mut members_public_keys: Vec<PublicKey> = vec![];
-    let secp = secp256k1::Secp256k1::new();
+    let mut members_keypairs: Vec<(SecretKey, PublicKey)> = vec![];
 
     let mut last_rpc_port = global_context.last_poa_node_rpc_port.lock().await;
     let p = last_rpc_port.clone();
@@ -471,22 +492,26 @@ pub async fn create_poa_federation_members(
     *last_discovery_port = p + 10 + global_context.instances;
     drop(last_discovery_port);
 
+    for _ in 0..global_context.instances {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secret_key.public_key(SECP256K1);
+
+        members_keypairs.push((secret_key, pk));
+    }
+    let authorities = members_keypairs.iter().map(|(_, pk)| pk.clone()).collect::<Vec<_>>();
+    let member_peer_id = pk2id(&members_keypairs[0].1);
+
     for member_index in 0..global_context.instances {
         let port = btc_servers
             .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
             .unwrap();
 
-        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let member_secret_key = hex_encode(secret_key.as_ref());
-        let member_peer_id = pk2id(&pk);
-        members_public_keys.push(pk);
-
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
         let (_finished_signing_tx, _finished_signing_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
-            member_secret_key,
+            members_keypairs.to_vec().get(member_index as usize).unwrap().0,
+            authorities.clone(),
             tx.clone(),
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
@@ -509,7 +534,7 @@ pub async fn create_poa_federation_members(
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         None,
-        Some(members_public_keys),
+        Some(authorities),
         None,
         None,
         bitcoin::hash_types::BlockHash::all_zeros(),

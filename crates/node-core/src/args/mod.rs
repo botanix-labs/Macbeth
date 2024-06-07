@@ -6,6 +6,7 @@ pub use network_args::{DiscoveryArgs, NetworkArgs};
 
 /// Configuration for the genesis block (toml)
 mod genesis_args;
+pub use genesis_args::{FedMemberPubKey, GenesisTomlConfig};
 
 /// RpcServerArg struct for configuring the RPC
 mod rpc_server_args;
