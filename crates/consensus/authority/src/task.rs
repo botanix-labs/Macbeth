@@ -1,6 +1,6 @@
 use crate::{
     epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, Storage,
+    frost_task::FrostNotificationMessage, AuthorityConsensus, Storage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
@@ -26,8 +26,8 @@ use tokio::sync::{
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
-    /// The configured chain spec
-    pub(crate) chain_spec: Arc<ChainSpec>,
+    /// The authority consensus wrapper
+    pub(crate) consensus: AuthorityConsensus,
     /// The active epoch
     pub(crate) epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
@@ -78,7 +78,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
+        consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         _canon_state_notification: CanonStateNotificationSender,
         storage: Storage<Client>,
@@ -97,7 +97,7 @@ where
         btc_network: bitcoin::Network,
     ) -> Self {
         Self {
-            chain_spec,
+            consensus,
             storage,
             to_engine,
             pipe_line_events: None,

@@ -239,7 +239,7 @@ where
         let bitcoind_client =
             BitcoindClient::new(bitcoind_config.clone()).expect("Invalid Bitcoind client");
         let block_fetcher_task = crate::block_fetcher::BlockFetcherTask::new(
-            Arc::clone(&consensus.chain_spec),
+            consensus.clone(),
             block_import_rx,
             to_engine.clone(),
             canon_state_notification.clone(),
@@ -277,7 +277,7 @@ where
 
             // block production task
             let task = BlockProductionTask::new(
-                Arc::clone(&consensus.chain_spec),
+                consensus.clone(),
                 to_engine,
                 canon_state_notification,
                 storage,

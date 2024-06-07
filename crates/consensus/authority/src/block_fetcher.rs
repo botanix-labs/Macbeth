@@ -2,6 +2,7 @@ use crate::{
     engine_util,
     extended_client::BtcServerExtendedClient,
     utils::{get_recent_block_height_or_zero, is_testnet},
+    AuthorityConsensus,
 };
 
 use client::{FinalizeSignerRequest, Output};
@@ -29,7 +30,7 @@ use tokio::sync::{
 use tracing::{debug, error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
-    chain_spec: Arc<ChainSpec>,
+    consensus: AuthorityConsensus,
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
@@ -61,7 +62,7 @@ where
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
+        consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
@@ -73,7 +74,7 @@ where
         btc_network: bitcoin::Network,
     ) -> Self {
         Self {
-            chain_spec,
+            consensus,
             block_import_rx,
             to_engine,
             canon_state_notification,
@@ -162,7 +163,7 @@ where
             }
 
             match storage.execute_imported_block(
-                self.chain_spec.clone(),
+                &self.consensus,
                 sealed_block.clone(),
                 botanix_consensus_pkg,
                 self.evm_config.clone(),
@@ -174,7 +175,7 @@ where
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
                     // Process Botanix specific logs
-                    let is_testnet = is_testnet(self.chain_spec.chain().id());
+                    let is_testnet = is_testnet(self.consensus.chain_spec.chain().id());
                     // get pegouts if btc_server is available
                     // only federation nodes will have btc_server
                     let mut pegouts = match self.btc_server.as_ref() {
