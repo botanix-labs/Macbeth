@@ -32,7 +32,8 @@ use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents, NetworkManager,
 };
 use reth_node_builder::{
-    setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig, RethTransactionPoolConfig,
+    launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
+    RethTransactionPoolConfig,
 };
 use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
 use reth_node_ethereum::EthEvmConfig;
@@ -829,34 +830,29 @@ where {
             ),
         );
 
-        let _engine_api = EngineApi::new(
+        // adjust rpc port numbers based on instance number
+        node_config.adjust_instance_ports();
+
+        // Start RPC servers
+        let engine_api = EngineApi::new(
             blockchain_db.clone(),
             self.chain.clone(),
             beacon_engine_handle,
             payload_builder.into(),
             Box::new(executor.clone()),
         );
-        info!(target: "reth::cli", "Engine API handler initialized");
-
-        // adjust rpc port numbers based on instance number
-        node_config.adjust_instance_ports();
-
-        // Start RPC servers
-        if !(node_config.chain.as_ref().eq(BOTANIX_TESTNET.as_ref())) {
-            let _rpc_server_handles = node_config
-                .rpc
-                .start_rpc_server(
-                    blockchain_db.clone(),
-                    transaction_pool.clone(),
-                    network_handle.clone(),
-                    executor.clone(),
-                    blockchain_db.clone(),
-                    evm_config.clone(),
-                )
-                .await?;
-        }
-
-        // TODO do we need start auth server?
+        let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
+            &rpc,
+            &node_config,
+            blockchain_db,
+            transaction_pool,
+            network_handle.clone(),
+            executor.clone(),
+            evm_config.clone(),
+            engine_api,
+            jwt_secret,
+        )
+        .await?;
 
         // Run consensus engine to completion
         let (tx, rx) = oneshot::channel();

@@ -8740,6 +8740,7 @@ dependencies = [
  "reth-exex",
  "reth-interfaces",
  "reth-network",
+ "reth-network-api",
  "reth-node-api",
  "reth-node-core",
  "reth-node-events",
