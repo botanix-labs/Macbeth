@@ -45,7 +45,7 @@ use reth_primitives::{
     constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
     kzg::KzgSettings,
     stage::StageId,
-    Bytes, ChainSpec, Head, PruneModes, BOTANIX_TESTNET,
+    Bytes, ChainSpec, Head, PruneModes,
 };
 use reth_provider::{
     providers::{BlockchainProvider, StaticFileProvider},
@@ -684,7 +684,7 @@ where {
             mut block_fetcher_task,
             frost_task,
             mut sync_controller,
-            mut pbft_task,
+            pbft_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),
@@ -693,7 +693,6 @@ where {
             btc_server_client.clone(),
             bitcoin_block_headers_clone,
             bitcoind_config,
-            secp256k1::Secp256k1::new(),
             secret_key,
             network_handle.clone(),
             network_client.clone(),

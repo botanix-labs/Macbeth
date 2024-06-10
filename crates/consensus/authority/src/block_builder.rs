@@ -52,7 +52,7 @@ where
         drop(storage);
 
         // use authority address as suggested fee recipient
-        let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
+        let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
         let payload_attributes = PayloadAttributes {
@@ -149,7 +149,6 @@ where
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
             &self.sk,
-            &self.secp,
             self.evm_config.clone(),
         ) {
             Ok(ret) => ret,
@@ -272,7 +271,6 @@ where
             gas_used,
             Some(botanix_consensus_pkg),
             &self.sk,
-            &self.secp,
             &authority_signers,
             &epoch_witness,
             &utxo_commitment,

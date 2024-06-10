@@ -1,19 +1,9 @@
-use secp256k1::{rand::rngs::OsRng, scalar::OutOfRangeError};
-
-use bitcoin::secp256k1::{Scalar, SecretKey};
-
 use frost_secp256k1_tr as frost;
 
 #[derive(Debug)]
 pub enum KeyError {
     OutOfRange,
     SecpError,
-}
-
-impl From<OutOfRangeError> for KeyError {
-    fn from(_err: OutOfRangeError) -> Self {
-        KeyError::OutOfRange
-    }
 }
 
 impl From<secp256k1::Error> for KeyError {
