@@ -144,6 +144,7 @@ where
     fn try_new(
         client: Client,
         headers: &mut [SealedHeader],
+        genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
@@ -157,6 +158,7 @@ where
 
         let storage = StorageInner {
             client: client.clone(),
+            genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
@@ -183,9 +185,11 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
+    /// The authority list in the genesis block
+    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// Keep track of the  signers
     pub(crate) authorities: Vec<secp256k1::PublicKey>,
-    /// keep track of my place among the singer
+    /// keep track of my place among the signer
     /// This will change as new signers are removed
     pub(crate) signer_index: usize,
     /// Authority Signer public key
@@ -523,13 +527,17 @@ where
 
         // validate before executing block
         let authority_signers = self.authorities.clone();
-        validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(
-            |e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            },
-        )?;
+        let genesis_authorities = self.genesis_authorities.clone();
+        validate_poa_header_standalone(
+            &sealed_block.header.clone(),
+            &authority_signers,
+            &genesis_authorities,
+        )
+        .map_err(|e| {
+            warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+            // TODO(armins) return more expressive error
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
 
         let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let (bundle_state, _gas_used) = self.execute(

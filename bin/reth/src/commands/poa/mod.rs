@@ -496,7 +496,9 @@ where {
         };
         let authorities =
             get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
-        self.add_trusted_peers_from_authorities(secret_key, authorities, &mut reth_config);
+        self.add_trusted_peers_from_authorities(secret_key, authorities.clone(), &mut reth_config);
+        let genesis_authorities =
+            authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -706,6 +708,7 @@ where {
             frost_config,
             payload_builder.clone(),
             node_config.rpc.btc_network,
+            genesis_authorities,
         )
         .expect("Failed to create authority consensus builder")
         .build();

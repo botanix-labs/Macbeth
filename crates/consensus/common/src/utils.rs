@@ -107,7 +107,7 @@ pub fn get_block_producer_address(header: &Header) -> Address {
         // TODO remove this unwrap
         let block_builder_public_key =
             authorities.get(0).expect("block producer authority to be present");
-        return public_key_to_address(*block_builder_public_key)
+        return public_key_to_address(*block_builder_public_key);
     }
 
     // TODO this method should return a Result
@@ -138,6 +138,7 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
 pub fn validate_poa_extra_data_header(
     header: &Header,
     authority_signers: &[secp256k1::PublicKey],
+    genesis_authorities: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     // Skip over genesis
     if header.number == 0 {
@@ -147,10 +148,18 @@ pub fn validate_poa_extra_data_header(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let _edh = header.deserialize_extra_data_header().map_err(|e| {
+    let edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
+
+    // Validate the list of authorities matches the authorities in the genesis block
+    // This check is only for a static federation
+    // Use EDH authority list as source of truth and not the list passed in
+    if genesis_authorities != edh.authority_signers.as_ref().expect("authority signers to exist") {
+        return Err(ConsensusError::InvalidAuthorityList);
+    }
+
     // Validate the authority signature and signature came from one of the authorities
     let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
         error!("Failed to validate authority signature: {:?}", e);
@@ -319,7 +328,9 @@ pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u
 mod tests {
     use std::str::FromStr;
 
-    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
+    use reth_primitives::{
+        extra_data_header::ExtraDataHeader, genesis, header_ext::HeaderExt, Bytes,
+    };
 
     use super::*;
 
@@ -364,7 +375,8 @@ mod tests {
         let mut header = Header::default();
         header.number = 0;
         let authority_signers = vec![];
-        let result = validate_poa_extra_data_header(&header, &authority_signers);
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
 
         assert!(result.is_ok());
     }
@@ -372,7 +384,7 @@ mod tests {
     #[test]
     fn should_fail_on_invalid_signature() {
         // In this case we are signing with a non federation different key
-        let edh = ExtraDataHeader::default();
+        let mut edh = ExtraDataHeader::default();
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let non_fed = secp256k1::SecretKey::from_str(
             "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
@@ -382,10 +394,13 @@ mod tests {
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.number = 1;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&non_fed).expect("valid sign");
 
-        let result = validate_poa_extra_data_header(&header, &authority_signers);
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
         assert!(result.is_err());
 
         // reset header and try again with a
@@ -394,8 +409,37 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk1).expect("valid sign");
 
-        let result = validate_poa_extra_data_header(&header, &authority_signers);
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn should_fail_on_invalid_authority_list() {
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        // genesis authorities does not contain the authority signers
+        let mut genesis_authorities = vec![sk2.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update genesis authorities to match the authority signers
+        genesis_authorities = authority_signers.clone();
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &genesis_authorities);
+        assert!(result.is_ok());
     }
 
     #[test]
