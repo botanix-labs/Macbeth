@@ -1,7 +1,7 @@
 use crate::{
     database::{self, Error as DbError},
     util::{self, validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
-    App, Error, SECP,
+    App, Error,
 };
 use bdk::miniscript::psbt::Error as PsbtError;
 
@@ -288,7 +288,7 @@ impl App {
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
         let mut original_psbt = self.make_tx(outputs, fee_rate, change_script).unwrap();
 
         let hash_ty = bitcoin::sighash::TapSighashType::All;
@@ -300,7 +300,10 @@ impl App {
             original_psbt.inputs[index].tap_key_sig = Some(signature);
         }
 
-        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(&mut original_psbt, &SECP) {
+        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(
+            &mut original_psbt,
+            bitcoin::secp256k1::SECP256K1,
+        ) {
             error!("Signer finalize: Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);
