@@ -1,12 +1,9 @@
 //! Main node command
 
-use std::{
-    borrow::Cow, collections::HashMap, ffi::OsString, fmt, net::SocketAddr, path::PathBuf,
-    sync::Arc,
-};
+use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use bitcoin::hashes::Hash;
-use clap::{value_parser, Args, Parser};
+use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
@@ -14,6 +11,9 @@ use reth_authority_consensus::{
     extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
     AuthorityConsensusBuilder,
 };
+use reth_network_types::pk2id;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
+
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
     hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -61,14 +61,19 @@ use tracing::{debug, error, info};
 
 use crate::{
     args::{
-        utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
-        DatabaseArgs, DebugArgs, DevArgs, FrostArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
+        utils::{
+            chain_help, genesis_value_parser, get_federation_pks_from_path, parse_socket_address,
+            SUPPORTED_CHAINS,
+        },
+        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
+    rpc::types::NodeRecord,
 };
+use std::str::FromStr;
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -449,12 +454,34 @@ where {
 
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
+
+        let network_secret_path =
+            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+
+        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
+        let secret_key = get_secret_key(&network_secret_path)?;
+
+        // add trusted nodes with --trusted-peers flag
+        info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
-            info!(target: "reth::cli", "Adding trusted nodes");
             node_config.network.trusted_peers.iter().for_each(|peer| {
                 reth_config.peers.trusted_nodes.insert(*peer);
             });
         }
+
+        // add trusted nodes (federation members) with chain.toml
+        // assumes chain.toml is present at data_dir
+        let chain_path = match PathBuf::from_str(format!("{}/chain.toml", data_dir).as_str()) {
+            Ok(path) => path,
+            Err(_) => {
+                error!(target: "reth::cli", "Failed to create path to chain.toml");
+                return Err(eyre::eyre!("Failed to create path to chain.toml"));
+            }
+        };
+        let authorities =
+            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
+        self.add_trusted_peers_from_authorities(secret_key, authorities, &mut reth_config);
+
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
@@ -523,13 +550,6 @@ where {
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
 
-        info!(target: "reth::cli", "Connecting to P2P network");
-        let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
-
-        debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
-        let secret_key = get_secret_key(&network_secret_path)?;
-
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
         let block_import = ProofOfAuthorityBlockImport::new(self.chain.clone(), block_import_tx);
@@ -537,21 +557,20 @@ where {
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
             // create authority config
-            let (authority_index, authorities) = get_authority_signer_index(
+            let (authority_index, authorities, authority_pk) = get_authority_signer_index(
                 blockchain_db.clone(),
                 Arc::clone(&self.chain),
                 secp256k1::Secp256k1::new(),
                 secret_key,
             )
             .expect("Failed to get authority index");
-
-            let mut config: FrostConfig = FrostArgs {
-                min_signers: node_config.rpc.min_signers.expect("min signers to exist"),
-                max_signers: node_config.rpc.max_signers.expect("max signer to exist"),
-            }
-            .into();
-            config.set_authority_index(authority_index);
-            config.set_authorities(authorities);
+            let config = FrostConfig::new(
+                authority_pk,
+                authority_index,
+                authorities,
+                node_config.rpc.min_signers.expect("min signers"),
+                node_config.rpc.max_signers.expect("max signers"),
+            );
             info!(target: "reth::cli", "Frost config initialized");
 
             Some(config)
@@ -609,10 +628,6 @@ where {
         executor.spawn_critical("eth request handler p2p task", eth_request_handler_p2p);
         executor.spawn_critical("network p2p", network_manager);
 
-        // info!(target: "reth::cli", peer_id = %network_manager..peer_id(), local_addr =
-        // %network_manager.local_addr(), enode = %network_handle.local_node_record(), "Connected to
-        // P2P network"); debug!(target: "reth::cli", peer_id = ?network_manager.peer_id(),
-        // "Full peer ID");
         let network_client = network_handle.fetch_client().await?;
 
         debug!(target: "reth::cli", "Spawning payload builder service");
@@ -650,30 +665,35 @@ where {
         };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
         // Build authority Consensus
-        let (_, block_production_task, mut block_fetcher_task, frost_task, mut sync_controller) =
-            AuthorityConsensusBuilder::try_new(
-                Arc::clone(&self.chain),
-                blockchain_db.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender.clone(),
-                btc_server_client.clone(),
-                bitcoin_block_headers_clone,
-                bitcoind_config,
-                secp256k1::Secp256k1::new(),
-                secret_key,
-                None,
-                network_handle.clone(),
-                network_client.clone(),
-                frost_handle,
-                block_import_rx,
-                executor.clone(),
-                evm_config,
-                frost_config,
-                payload_builder.clone(),
-                node_config.rpc.btc_network,
-            )
-            .expect("Failed to create authority consensus builder")
-            .build();
+        let (
+            _,
+            block_production_task,
+            mut block_fetcher_task,
+            frost_task,
+            mut sync_controller,
+            pbft_task,
+        ) = AuthorityConsensusBuilder::try_new(
+            Arc::clone(&self.chain),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_client.clone(),
+            bitcoin_block_headers_clone,
+            bitcoind_config,
+            secp256k1::Secp256k1::new(),
+            secret_key,
+            network_handle.clone(),
+            network_client.clone(),
+            frost_handle,
+            block_import_rx,
+            executor.clone(),
+            evm_config,
+            frost_config,
+            payload_builder.clone(),
+            node_config.rpc.btc_network,
+        )
+        .expect("Failed to create authority consensus builder")
+        .build();
 
         // TODO do we need this?
         // if let Some(store_path) = self.config.debug.engine_api_store.clone() {
@@ -725,7 +745,15 @@ where {
                     frost_task.expect("frost task exists").start_task().await;
                 }),
             );
+
+            executor.spawn_critical(
+                "Pbft Task",
+                Box::pin(async move {
+                    pbft_task.expect("pbft task exists").start_task().await;
+                }),
+            );
         }
+
         executor.spawn_critical(
             "PoA Block Fetcher Task",
             Box::pin(async move {
@@ -916,6 +944,23 @@ where {
     /// Returns the [Consensus] instance to use.
     pub fn consensus(&self) -> Arc<dyn Consensus> {
         Arc::new(AuthorityConsensus::new(self.chain.clone()))
+    }
+
+    fn add_trusted_peers_from_authorities(
+        &self,
+        secret_key: SecretKey,
+        authorities: Vec<(PublicKey, SocketAddr)>,
+        config: &mut Config,
+    ) {
+        let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+        for authority in authorities.iter() {
+            // don't add self
+            let peer_id = pk2id(&authority.0);
+            if self_peer_id != peer_id {
+                let peer = NodeRecord::new(authority.1, peer_id);
+                config.peers.trusted_nodes.insert(peer);
+            }
+        }
     }
 }
 

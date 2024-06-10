@@ -5,17 +5,18 @@ use crate::{
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, FrostHandle},
+        manager::{FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, PeerMessageResponse, SigningEventResponseType,
         SigningResponse,
     },
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
-/// Enum defining posisble frost message notifications
+/// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FrostNotificationMessage {
     /// Finalized frost signing signature
@@ -33,17 +34,17 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<Client> {
+pub struct FrostTask<Client, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
-    /// Frost Handler
-    pub(crate) frost_handle: FrostHandle,
+    /// Frost network Handler
+    pub(crate) frost_handle: ToFrostMan,
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<Client>,
+    pub(crate) dkg_state_machine: DKGStateMachine<Client, ToFrostMan>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<Client>,
+    pub(crate) signing_state_machine: SigningStateMachine<Client, ToFrostMan>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
     /// Channel to receive frost notifications (from the block production task)
@@ -51,8 +52,9 @@ pub struct FrostTask<Client> {
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
-impl<Client> FrostTask<Client>
+impl<Client, ToFrostMan> FrostTask<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -65,12 +67,13 @@ where
     pub(crate) fn new(
         btc_server: BtcServerExtendedClient,
         network_handle: NetworkHandle,
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
         storage: Storage<Client>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        task_executor: TaskExecutor,
     ) -> Self {
         info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
@@ -87,6 +90,7 @@ where
             frost_handle.clone(),
             config,
             frost_task_tx,
+            task_executor,
         );
 
         Self {
@@ -191,9 +195,13 @@ where
                 }
             }
             // receive over a channel message from other peers and update our state machine
-            if let Ok(msg) = peer_messages_rx.try_recv() {
-                info!(">>>>>>>>>>> [FROST_TASK] Peer messaged received {:?}", msg);
+            if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
+                    PeerMessageResponse::Pbft(_) => {
+                        // Nothing to do for pbft related messages. Does are handled by the pbft
+                        // task
+                        continue;
+                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
@@ -320,8 +328,9 @@ where
     }
 }
 
-impl<Client> std::fmt::Debug for FrostTask<Client>
+impl<Client, ToFrostMan> std::fmt::Debug for FrostTask<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: Clone + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -1,9 +1,9 @@
 pub use alloy_chains::{Chain, ChainKind, NamedChain};
 pub use info::ChainInfo;
 pub use spec::{
-    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder,
-    DisplayHardforks, ForkBaseFeeParams, ForkCondition, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY,
-    MAINNET, SEPOLIA,
+    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind,
+    ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition,
+    BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 #[cfg(feature = "optimism")]
 pub use spec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
@@ -12,10 +12,10 @@ pub use spec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
 #[cfg(test)]
 pub(crate) use spec::{OP_BASE_FEE_PARAMS, OP_SEPOLIA_BASE_FEE_PARAMS};
 
-// The chain spec module.
-pub mod spec;
-// The chain info module.
+/// The chain info module.
 mod info;
+/// The chain spec module.
+pub mod spec;
 
 #[cfg(test)]
 mod tests {

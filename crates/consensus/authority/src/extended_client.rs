@@ -8,7 +8,8 @@ use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
+    GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
     SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
@@ -113,16 +114,18 @@ impl BtcServerExtendedClient {
     generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
     generate_method!(get_utxo_merkle_root, Empty, GetUtxoMerkleRootResponse);
     generate_method!(abort_signing, Empty, Empty);
+    generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
+    generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::base64::decode;
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
         use super::JWT_HEADER_KEY;
         use crate::extended_client::to_u64;
+        use bitcoin::base64;
         use client::Empty;
         use reth_rpc::{Claims, JwtSecret};
         use std::time::SystemTime;
@@ -147,7 +150,7 @@ mod tests {
         if let Some(metadata_value) = request.metadata().get_bin(key) {
             // try to verify the received token
             let jwt_request_token_received = metadata_value.as_encoded_bytes();
-            let jwt_token_base64_decoded = decode(jwt_request_token_received).unwrap();
+            let jwt_token_base64_decoded = base64::decode(jwt_request_token_received).unwrap();
 
             let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
 

@@ -3,23 +3,27 @@ use crate::{context::GlobalContext, it_info_print, it_warn_print};
 use askama::Template;
 use bitcoin::hashes::Hash;
 use clap::Parser;
-use client::Empty;
+use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
+    args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     network::{PeerKind, Peers},
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
 use reth_network_types::pk2id;
+use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
-    chain::spec::create_botanix_config_with_genesis, hex::encode as hex_encode, ChainSpec,
+    create_botanix_config_with_genesis,
+    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    hex::encode as hex_encode,
+    ChainSpec,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
-use secp256k1::PublicKey;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
     collections::HashMap,
     io::Write,
@@ -41,28 +45,11 @@ struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
 }
 
-/// Returns the index of the authority which is currently in turn
-pub fn current_inturn_index(authorities_len: u64) -> u64 {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len
-}
-
-pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len == signer_index
-}
-
-pub fn unix_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-}
-
 #[derive(Clone, Debug)]
 pub enum Notifications {
     CanonState(CannonStateNofificationPayload),
     DkgFinished(DkgPayload),
-    SigningReady(String),
+    SigningStatusReport((u16, Vec<u8>, SigningStatus)),
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +76,8 @@ pub struct CannonStateNofificationPayload {
 pub struct FederationMemberTestConfig {
     pub index: u16,
     pub temp_path: PathBuf,
-    pub secret_key: String,
+    pub secret_key: SecretKey,
+    pub authorities: Vec<PublicKey>,
     pub rpc_port: u16,
     pub authrpc_port: u16,
     pub discovery_port: u16,
@@ -111,7 +99,8 @@ pub struct FederationMemberTestConfig {
 impl FederationMemberTestConfig {
     pub async fn new(
         index: u16,
-        secret_key: String,
+        secret_key: SecretKey,
+        authorities: Vec<PublicKey>,
         sender: tokio::sync::mpsc::Sender<Notifications>,
         bitcoind_url: Url,
         bitcoind_username: String,
@@ -134,6 +123,7 @@ impl FederationMemberTestConfig {
             index,
             temp_path: tempfile::TempDir::new().expect("tempdir is okay").into_path(),
             secret_key,
+            authorities,
             rpc_port,
             authrpc_port,
             discovery_port,
@@ -177,7 +167,9 @@ impl FederationMemberTestConfig {
     }
 
     pub fn build_command(&self) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
-        it_info_print!(format!("Engine {} secret key = {}", self.index, &self.secret_key));
+        // print secret key
+        it_info_print!(format!("sk: {:?}", self.secret_key));
+        it_info_print!(format!("Building federation member index: {}", self.index));
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -186,7 +178,7 @@ impl FederationMemberTestConfig {
             .create(true)
             .open(discovery_secret_path.clone())
             .unwrap();
-        file.write_all(&self.secret_key.as_bytes()).unwrap();
+        file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
 
         let jwt_secret_path = self.jwt_secret_path.display().to_string();
 
@@ -199,6 +191,22 @@ impl FederationMemberTestConfig {
         } else {
             panic!("Edh data missing. Cannot create botanix testnet config genesis file");
         };
+
+        // Need to create a chain.toml in the data dir
+
+        // Need to zip together the soc address and pk
+        let mut fed_member_pk = vec![];
+        for peer in self.peers_list.iter() {
+            let pk = FedMemberPubKey {
+                key: peer.secret_key.public_key(SECP256K1).to_string(),
+                socket_addr: format!("127.0.0.1:{}", peer.discovery_port),
+            };
+            fed_member_pk.push(pk);
+        }
+
+        let chain_config =
+            GenesisTomlConfig::new("integration test toml".to_string(), fed_member_pk, None);
+        chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
@@ -401,20 +409,51 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
             .await
             .unwrap();
             loop {
-                // TODO: get all session ids
+                // get all session ids
+                let session_ids = btc_server_client
+                    .get_session_ids(GetSessionIdsRequest { max_results: 10 })
+                    .await
+                    .ok()
+                    .map(|res| res.data)
+                    .unwrap_or_default();
 
-                // TODO: for each session get the signing status. If ready return
-                // match btc_server_client.finalize_signing(Empty {}).await {
-                //     Ok(pub_key) => {
-                //         it_info_print!("Signing Finished for index {:?}!", engine_index);
-                //         let _ = rx_sender.send(Notifications::SigningReady("")).await;
-                //     }
-                //     Err(_) => {
-                //         it_warn_print!("The signing has not finished yet {:?}...", engine_index);
-                //         tokio::time::sleep(Duration::from_secs(1)).await;
-                //         continue;
-                //     }
-                // }
+                // for each session get the signing status and send the response
+                for session_id in session_ids.into_iter() {
+                    match btc_server_client
+                        .get_signing_status(GetSigningStatusRequest {
+                            signing_session_id: session_id.clone(),
+                        })
+                        .await
+                    {
+                        Ok(status) => {
+                            it_info_print!(
+                                "Signing status fetched for index and session id",
+                                engine_index,
+                                session_id
+                            );
+                            let s = SigningStatus::try_from(status.status).ok();
+                            if let Some(status) = s {
+                                let _ = rx_sender
+                                    .send(Notifications::SigningStatusReport((
+                                        engine_index,
+                                        session_id,
+                                        status,
+                                    )))
+                                    .await;
+                            }
+                        }
+                        Err(_) => {
+                            it_warn_print!(
+                                "Error getting signing status for index and session id ...",
+                                engine_index,
+                                session_id
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }));
 
@@ -433,9 +472,7 @@ pub async fn create_poa_federation_members(
     let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
 
     let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
-
-    let mut members_public_keys: Vec<PublicKey> = vec![];
-    let secp = secp256k1::Secp256k1::new();
+    let mut members_keypairs: Vec<(SecretKey, PublicKey)> = vec![];
 
     let mut last_rpc_port = global_context.last_poa_node_rpc_port.lock().await;
     let p = last_rpc_port.clone();
@@ -455,22 +492,26 @@ pub async fn create_poa_federation_members(
     *last_discovery_port = p + 10 + global_context.instances;
     drop(last_discovery_port);
 
+    for _ in 0..global_context.instances {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secret_key.public_key(SECP256K1);
+
+        members_keypairs.push((secret_key, pk));
+    }
+    let authorities = members_keypairs.iter().map(|(_, pk)| pk.clone()).collect::<Vec<_>>();
+    let member_peer_id = pk2id(&members_keypairs[0].1);
+
     for member_index in 0..global_context.instances {
         let port = btc_servers
             .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
             .unwrap();
 
-        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let member_secret_key = hex_encode(secret_key.as_ref());
-        let member_peer_id = pk2id(&pk);
-        members_public_keys.push(pk);
-
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
         let (_finished_signing_tx, _finished_signing_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
-            member_secret_key,
+            members_keypairs.to_vec().get(member_index as usize).unwrap().0,
+            authorities.clone(),
             tx.clone(),
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
@@ -493,7 +534,7 @@ pub async fn create_poa_federation_members(
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         None,
-        Some(members_public_keys),
+        Some(authorities),
         None,
         None,
         bitcoin::hash_types::BlockHash::all_zeros(),
@@ -529,11 +570,10 @@ mod tests {
     use super::BotanixTestnetGenesisConfig;
     use askama::Template;
     use bitcoin::hashes::Hash;
-    use reth_botanix_lib::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
-    use std::{io::Write, path::Path};
+    use reth_primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
 
     #[test]
-    fn test_edh_tempate() {
+    fn test_edh_template() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
         let secret_key1 = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk1 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key1);
@@ -554,13 +594,6 @@ mod tests {
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();
         let json = serde_json::to_string_pretty(&rendered_json).unwrap();
         println!("Rendered botanix testnet configuration {json:?}");
-
-        let botanix_genesis_filepath = Path::new("./").join("botanix_testnet.json");
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(botanix_genesis_filepath)
-            .unwrap();
-        file.write_all(rendered_json.as_bytes()).unwrap();
+        assert!(json.len() > 0);
     }
 }

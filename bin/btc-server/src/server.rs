@@ -75,6 +75,49 @@ impl App {
 
 #[tonic::async_trait]
 impl rpc::BtcServer for App {
+    async fn get_signing_status(
+        &self,
+        req: tonic::Request<rpc::GetSigningStatusRequest>,
+    ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        //info!("Received get signing  status request");
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+
+        let signing_status = self
+            .get_signing_status(&signing_session_id)
+            .await
+            .map_err(|e| internal!("Failed to get signing status: {}", e))?;
+
+        let res =
+            tonic::Response::new(rpc::GetSigningStatusResponse { status: signing_status.into() });
+
+        Ok(res)
+    }
+
+    async fn get_session_ids(
+        &self,
+        req: tonic::Request<rpc::GetSessionIdsRequest>,
+    ) -> Result<tonic::Response<rpc::GetSessionIdsResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        //info!("Received get signing session ids request");
+        let req = req.into_inner();
+        let signing_session_ids = self
+            .get_session_ids(req.max_results)
+            .await
+            .map_err(|e| internal!("Failed to get signing session ids: {}", e))?;
+
+        let res = tonic::Response::new(rpc::GetSessionIdsResponse {
+            data: signing_session_ids.into_iter().map(|s| s.to_vec()).collect(),
+        });
+
+        Ok(res)
+    }
+
     // Saves peg'd in UTXO
     async fn notify_pegin(
         &self,

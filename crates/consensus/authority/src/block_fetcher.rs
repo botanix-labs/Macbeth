@@ -2,13 +2,15 @@ use crate::{
     engine_util::{self, SendNewPayloadError},
     extended_client::BtcServerExtendedClient,
     utils::{get_recent_block_height_or_zero, is_testnet},
+    AuthorityConsensus,
 };
-
+use tracing::{debug, info, error, warn};
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
+use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
+use reth_consensus::Consensus;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
-    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
+    p2p::{bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient},
     sync::SyncStateProvider,
 };
 use reth_primitives::{
@@ -19,30 +21,25 @@ use reth_rpc_types::{BlockHashOrNumber, BlockNumHash};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{
-    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
-
-use tracing::{debug, error, info, warn};
+use tokio::sync::{mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender}, RwLock};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     chain_spec: Arc<ChainSpec>,
+    /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
     btc_server: Option<BtcServerExtendedClient>,
-    /// bitcoin block source
-    bitcoind_client: BitcoindClient,
     /// Consensus cache
     storage: Storage<Client>,
     /// Recent bitcoin header
@@ -77,7 +74,6 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
-        bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
@@ -91,7 +87,6 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
-            bitcoind_client,
             storage,
             bitcoin_block_header,
             evm_config,
@@ -112,6 +107,9 @@ where
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
+        let consensus: Arc<dyn Consensus> =
+            Arc::new(AuthorityConsensus::new(Arc::clone(&self.chain_spec)));
+        let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
             let new_block = match self.block_import_rx.try_recv() {

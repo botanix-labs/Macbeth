@@ -1,11 +1,42 @@
 #![allow(unreachable_pub)]
+use core::fmt;
 use std::str::FromStr;
 
+use alloy_rlp::{Decodable, Encodable};
 use reth_eth_wire::{capability::Capability, protocol::Protocol};
 use reth_primitives::{Buf, BufMut, BytesMut};
 use reth_rpc_types::PeerId;
+use tracing::warn;
 
-const MESSAGE_VERSION: usize = 1;
+const MESSAGE_VERSION: usize = 0;
+const PBFT_MESSAGE_VERSION: usize = 0;
+
+/// A structured frost DKG message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PbftRequest {
+    /// The version of the request message
+    pub version: u16,
+    /// PBFT data
+    pub block: reth_primitives::SealedBlock,
+}
+
+impl fmt::Display for PbftRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Block Number: {} bytes, Data Size: {} bytes",
+            self.block.number,
+            self.block.size(),
+        )
+    }
+}
+
+impl PbftRequest {
+    /// Constructs a new PBFT Request using a data payload.
+    pub fn new(block: reth_primitives::SealedBlock) -> Self {
+        PbftRequest { version: PBFT_MESSAGE_VERSION as u16, block }
+    }
+}
 
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,6 +101,12 @@ pub enum FrostProtoMessageId {
     SignerRound2SigningPackage = 0x08,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage = 0x09,
+    /// PBFT message block proposal
+    CoordinatorBlockProposal = 0x0A,
+    /// PBFT message peer pre-commitment
+    PeerPreCommitment = 0x0B,
+    /// PBFT message peer commit
+    PeerCommit = 0x0C,
 }
 
 /// Enum defining the frost message kind
@@ -95,6 +132,12 @@ pub enum FrostProtoMessageKind {
     SignerRound2SigningPackage(SignRequest),
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage(SignRequest),
+    /// PBFT message block proposal
+    CoordinatorBlockProposal(PbftRequest),
+    /// PBFT message peer pre-commitment
+    PeerPreCommitment(PbftRequest),
+    /// PBFT message peer commit
+    PeerCommit(PbftRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -190,6 +233,30 @@ impl FrostProtoMessage {
         }
     }
 
+    /// In turn block producer will propose a block
+    pub fn coordinator_block_proposal_message(resource: PbftRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::CoordinatorBlockProposal,
+            message: FrostProtoMessageKind::CoordinatorBlockProposal(resource),
+        }
+    }
+
+    /// Peer pre-commitment -- peer commits to signing a block
+    pub fn peer_pre_commitment_message(resource: PbftRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::PeerPreCommitment,
+            message: FrostProtoMessageKind::PeerPreCommitment(resource),
+        }
+    }
+
+    /// Peer commitment -- peer signs a block
+    pub fn peer_commit_message(resource: PbftRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::PeerCommit,
+            message: FrostProtoMessageKind::PeerCommit(resource),
+        }
+    }
+
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -275,6 +342,15 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
             }
+            FrostProtoMessageKind::CoordinatorBlockProposal(resource) |
+            FrostProtoMessageKind::PeerPreCommitment(resource) |
+            FrostProtoMessageKind::PeerCommit(resource) => {
+                // Use u32 to support larger data sizes
+                let mut buffer = vec![];
+                resource.block.encode(&mut buffer);
+                buf.put_u32_le(buffer.len() as u32);
+                buf.put_slice(&buffer);
+            }
         }
         buf
     }
@@ -282,7 +358,7 @@ impl FrostProtoMessage {
     /// Decodes a `TestProtoMessage` from the given message buffer.
     pub fn decode_message(buf: &mut &[u8]) -> Option<Self> {
         if buf.is_empty() {
-            return None
+            return None;
         }
         let id = buf[0];
         buf.advance(1);
@@ -297,6 +373,9 @@ impl FrostProtoMessage {
             0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
             0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
             0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
+            0x0A => FrostProtoMessageId::CoordinatorBlockProposal,
+            0x0B => FrostProtoMessageId::PeerPreCommitment,
+            0x0C => FrostProtoMessageId::PeerCommit,
             _ => return None,
         };
         let message = match message_type {
@@ -453,6 +532,45 @@ impl FrostProtoMessage {
                     psbt,
                 ))
             }
+            FrostProtoMessageId::CoordinatorBlockProposal => {
+                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::CoordinatorBlockProposal(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode CoordinatorBlockProposal");
+                    return None;
+                }
+            }
+            FrostProtoMessageId::PeerPreCommitment => {
+                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::PeerPreCommitment(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode PeerPreCommitment");
+                    return None;
+                }
+            }
+            FrostProtoMessageId::PeerCommit => {
+                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                if let Ok(block) =
+                    reth_primitives::SealedBlock::decode(&mut buf[..data_len].as_ref())
+                {
+                    buf.advance(data_len);
+                    FrostProtoMessageKind::PeerCommit(PbftRequest::new(block))
+                } else {
+                    warn!("[Botanix Protocol] Failed to decode PeerCommit");
+                    return None;
+                }
+            }
         };
         Some(Self { message_type, message })
     }
@@ -460,16 +578,73 @@ impl FrostProtoMessage {
 
 mod tests {
     #[allow(unused_imports)]
-    use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind};
+    use super::{
+        DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
+        SignRequest,
+    };
+    #[allow(unused_imports)]
+    use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
     use reth_rpc_types::PeerId;
     #[allow(unused_imports)]
     use std::str::FromStr;
 
     #[test]
-    fn test_dkg_encoding_decoding() {
-        use super::{DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind};
+    fn test_pbft_encoding_decoding() {
+        let block = SealedBlock::default();
+        let pbft_request = PbftRequest::new(block);
 
+        // Testing block proposal messages
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::CoordinatorBlockProposal,
+            message: FrostProtoMessageKind::CoordinatorBlockProposal(pbft_request.clone()),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+        // Testing pre-commit messages
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::PeerPreCommitment,
+            message: FrostProtoMessageKind::PeerPreCommitment(pbft_request.clone()),
+        };
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+
+        // Testing commit messages
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::PeerCommit,
+            message: FrostProtoMessageKind::PeerCommit(pbft_request.clone()),
+        };
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_dkg_encoding_decoding() {
         let dkg_request = DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
 
         let message = FrostProtoMessage {
@@ -491,8 +666,6 @@ mod tests {
 
     #[test]
     fn test_signing_encoding_decoding() {
-        use super::{FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest};
-
         let signing_request =
             SignRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
 

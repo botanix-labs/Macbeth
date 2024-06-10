@@ -97,6 +97,10 @@ pub enum ConsensusError {
         /// The gas limit in the block header.
         gas_limit: u64,
     },
+    /// PoA specific: missing quorum of authority signatures
+    #[error("Missing quorum of authority signatures, expected: {0}, got: {1}")]
+    MissingQuorumOfAuthoritySignatures(u16, u16),
+
     /// PoA specific: Invalid block signature
     #[error("Invalid authority signature")]
     InvalidAuthoritySignature,

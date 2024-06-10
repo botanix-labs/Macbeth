@@ -38,9 +38,6 @@ reth-config.workspace = true
 reth-downloaders.workspace = true
 reth-node-events.workspace = true
 reth-consensus.workspace = true
-reth-ethereum-engine-primitives.workspace = true
-reth-rpc-types.workspace = true
-
 
 ## async
 futures.workspace = true
@@ -57,7 +54,3 @@ eyre.workspace = true
 fdlimit.workspace = true
 confy.workspace = true
 rayon.workspace = true
-
-secp256k1.workspace = true
-## bitcoin
-bitcoin.workspace = true

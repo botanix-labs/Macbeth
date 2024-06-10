@@ -13,18 +13,20 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::info;
 
 use crate::{
     frost::{
-        messages::DkgRequest, DkgEventResponseType, DkgResponse, SigningEventResponseType,
-        SigningResponse,
+        messages::{DkgRequest, PbftRequest},
+        DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
 
 use super::{
     messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
-    FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, ProtocolState,
+    FrostPeerCommand, FrostProtocolEvent, PbftEventResponseType, PbftResponse, PeerMessageResponse,
+    ProtocolState,
 };
 
 /// Frost Protocol Handler
@@ -121,13 +123,13 @@ impl ConnectionHandler for FrostConnectionHandler {
             peer_message_forwarder,
             conn,
             // incoming - another peer is connecting with me (set the ping message to Some),
-            // outgoing - i am connecting with a peer
+            // outgoing - I am connecting with a peer
             initial_ping: direction.is_outgoing().then(|| {
                 FrostProtoMessage::ping_message(self.state.peer_id, self.state.authority_index)
             }),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
-            pending_pong: None, // when the conn. is just esablished, there is no pending pong
+            pending_pong: None, // when the conn. is just established, there is no pending pong
             my_authority_index: self.state.authority_index,
             my_peer_id: self.state.peer_id,
             peer_id,
@@ -156,11 +158,7 @@ impl Stream for FrostProtoConnection {
 
         // in case of outgoing (i am connecting with a peer), send him a pure PING message
         if let Some(initial_ping) = this.initial_ping.take() {
-            //info!(
-            //    ">>>>>>>>> SENDING GREETINGS PING TO PEER I AM CONNECTING WITH {:?}",
-            //    initial_ping
-            //);
-            return Poll::Ready(Some(initial_ping.encoded()))
+            return Poll::Ready(Some(initial_ping.encoded()));
         }
         let peer_message_forwarder = this.peer_message_forwarder.clone();
         // poll the commands send by us to another peer
@@ -178,6 +176,34 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostPeerCommand::PeerMessage(response) => {
                     match response {
+                        PeerMessageResponse::Pbft(pbft_response) => {
+                            let PbftResponse { response_type, data } = pbft_response;
+                            let req = PbftRequest::new(data);
+                            match response_type {
+                                PbftEventResponseType::CoordinatorBlockProposal => {
+                                    info!(
+                                        ">>>>>>>>> [PROTOCOL] SENDING COORDINATOR BLOCK PROPOSAL"
+                                    );
+                                    Poll::Ready(Some(
+                                        FrostProtoMessage::coordinator_block_proposal_message(req)
+                                            .encoded(),
+                                    ))
+                                }
+                                PbftEventResponseType::PeerPreCommitment => {
+                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER PRE COMMITMENT");
+                                    Poll::Ready(Some(
+                                        FrostProtoMessage::peer_pre_commitment_message(req)
+                                            .encoded(),
+                                    ))
+                                }
+                                PbftEventResponseType::PeerCommitment => {
+                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT");
+                                    Poll::Ready(Some(
+                                        FrostProtoMessage::peer_commit_message(req).encoded(),
+                                    ))
+                                }
+                            }
+                        }
                         PeerMessageResponse::Dkg(dkg_response) => {
                             let DkgResponse { response_type, identifier, data } = dkg_response;
                             match response_type {
@@ -307,6 +333,33 @@ impl Stream for FrostProtoConnection {
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
                 }
+            }
+            FrostProtoMessageKind::CoordinatorBlockProposal(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    peer_id: this.peer_id,
+                    response: PeerMessageResponse::Pbft(PbftResponse {
+                        response_type: PbftEventResponseType::CoordinatorBlockProposal,
+                        data: data.block,
+                    }),
+                });
+            }
+            FrostProtoMessageKind::PeerPreCommitment(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    peer_id: this.peer_id,
+                    response: PeerMessageResponse::Pbft(PbftResponse {
+                        response_type: PbftEventResponseType::PeerPreCommitment,
+                        data: data.block,
+                    }),
+                });
+            }
+            FrostProtoMessageKind::PeerCommit(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    peer_id: this.peer_id,
+                    response: PeerMessageResponse::Pbft(PbftResponse {
+                        response_type: PbftEventResponseType::PeerCommitment,
+                        data: data.block,
+                    }),
+                });
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
                 //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 1 PACKAGE FROM PEER. {:?}", data);

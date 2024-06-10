@@ -1,6 +1,9 @@
 #![allow(unreachable_pub)]
 //! Testing gossiping of transactions.
+use core::fmt;
+
 use reth_network_api::Direction;
+use reth_primitives::SealedBlock;
 use reth_rpc_types::PeerId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
@@ -35,17 +38,29 @@ impl ProtocolState {
     }
 }
 
-/// Enum for peer message responses for dkg and signing
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Enum for peer message responses for dkg, signing and pbft
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PeerMessageResponse {
     /// Dkg response
     Dkg(DkgResponse),
     /// Signing response
     Signing(SigningResponse),
+    /// PBFT related responses
+    Pbft(PbftResponse),
+}
+
+impl fmt::Display for PeerMessageResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
+            PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
+            PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
+        }
+    }
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DkgResponse {
     /// The Response Type
     pub response_type: DkgEventResponseType,
@@ -55,8 +70,58 @@ pub struct DkgResponse {
     pub data: Vec<u8>,
 }
 
+impl fmt::Display for DkgResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} - Identifier Size: {} bytes, Data Size: {} bytes",
+            self.response_type,
+            self.identifier.len(),
+            self.data.len()
+        )
+    }
+}
+
+/// Response structure for PBFT internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum PbftEventResponseType {
+    /// in turn block producer proposes a block to sign    
+    CoordinatorBlockProposal,
+    /// peer precommitment
+    PeerPreCommitment,
+    /// peer commitment
+    PeerCommitment,
+}
+
+impl fmt::Display for PbftEventResponseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PbftEventResponseType::CoordinatorBlockProposal => {
+                write!(f, "coordinator block proposal")
+            }
+            PbftEventResponseType::PeerPreCommitment => write!(f, "peer precommitment"),
+            PbftEventResponseType::PeerCommitment => write!(f, "peer commitment"),
+        }
+    }
+}
+
 /// Response structure for internal communication
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PbftResponse {
+    /// The Response Type
+    pub response_type: PbftEventResponseType,
+    /// PBFT data
+    pub data: SealedBlock,
+}
+
+impl fmt::Display for PbftResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} - Data Size: {} bytes", self.response_type, self.data.size())
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SigningResponse {
     /// The Response Type
     pub response_type: SigningEventResponseType,
@@ -68,13 +133,35 @@ pub struct SigningResponse {
     pub psbt: Vec<u8>,
 }
 
+impl fmt::Display for SigningResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} - Identifier Size: {} bytes, Session ID Size: {} bytes, PSBT Size: {} bytes",
+            self.response_type,
+            self.identifier.len(),
+            self.signing_session_id.len(),
+            self.psbt.len()
+        )
+    }
+}
+
 /// Event Response Variants indicating the type of response
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum DkgEventResponseType {
     /// DKG round 1
     DkgRound1,
     /// DKG round 2
     DkgRound2,
+}
+
+impl fmt::Display for DkgEventResponseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DkgEventResponseType::DkgRound1 => write!(f, "dkground 1"),
+            DkgEventResponseType::DkgRound2 => write!(f, "dkground 2"),
+        }
+    }
 }
 
 /// Event Response Variants indicating the type of response
@@ -88,6 +175,25 @@ pub enum SigningEventResponseType {
     SignerRound2SigningPackage,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage,
+}
+
+impl fmt::Display for SigningEventResponseType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SigningEventResponseType::SignerRound1SigningPackage => {
+                write!(f, "signer round 1 signing package")
+            }
+            SigningEventResponseType::CoordinatorRound1SigningPackage => {
+                write!(f, "coordinator round 1 signing package")
+            }
+            SigningEventResponseType::SignerRound2SigningPackage => {
+                write!(f, "signer round 2 signing package")
+            }
+            SigningEventResponseType::CoordinatorRound2SigningPackage => {
+                write!(f, "coordinator round 2 signing package")
+            }
+        }
+    }
 }
 
 /// Frost Protocol Events
@@ -115,6 +221,8 @@ pub enum FrostProtocolEvent {
 }
 
 /// All events related to frost events emitted by the network.
+/// These are events that are emitted by the network to the frost manager.
+/// And most likely will be used to update the frost task state.
 #[derive(Debug)]
 pub enum NetworkFrostEvent {
     /// Represents the event of receiving a list of transactions from a peer.
@@ -140,7 +248,9 @@ pub enum NetworkFrostEvent {
     PeerConfirmed(PeerId, u16),
 }
 
-/// Commands sent by the peer to the network
+/// Commands sent by us to a peer.
+/// These are commands that are sent by the frost manager to the network via most likely the frost
+/// task
 #[derive(Debug)]
 pub enum FrostPeerCommand {
     /// Send a ping message to the peer.
@@ -152,4 +262,19 @@ pub enum FrostPeerCommand {
     },
     /// An emitted event once a peer sends a message to another peer
     PeerMessage(PeerMessageResponse),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DkgEventResponseType, PeerMessageResponse};
+
+    #[test]
+    fn message_format() {
+        let msg = PeerMessageResponse::Dkg(super::DkgResponse {
+            response_type: DkgEventResponseType::DkgRound1,
+            identifier: vec![2, 5, 6, 8],
+            data: vec![0, 1, 2, 3],
+        });
+        println!("Display: {:?}", msg.to_string());
+    }
 }

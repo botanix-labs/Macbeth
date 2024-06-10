@@ -1,10 +1,10 @@
 use crate::validation;
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS, keccak256, public_key_to_address, Address, Bytes,
-    ChainSpec, Header, B256, U256,
+    constants::STAKING_CONTRACT_ADDRESS,
+    header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
+    keccak256, public_key_to_address, Address, ChainSpec, Header, U256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProvider, StateProviderFactory};
 use reth_tracing::tracing::error;
@@ -20,24 +20,6 @@ use std::{
 pub enum StorageAccessError {
     /// Failed to access storage
     FailedAccess(&'static str),
-}
-
-/// Create sighash for authority to sign
-pub fn create_authority_sighash(header: &mut Header, extra_data: &ExtraDataHeader) -> B256 {
-    // Remove the signature from the extra data header
-    // And recalculate optional bitmask
-    let mut extra_data_header_clone = extra_data.clone();
-    extra_data_header_clone.authority_signature = None;
-    extra_data_header_clone.set_optional_fields_bitmask();
-
-    let mut writer: Vec<u8> = vec![];
-    extra_data_header_clone
-        .encode_into_without_signature(&mut writer)
-        .expect("Valid extra data header");
-    // Take ownership of the data in writer and leave an empty Vec<u8>
-    let bytes_data = Bytes::from(writer.clone());
-    header.extra_data = bytes_data;
-    header.hash_slow()
 }
 
 /// Read staker balance from staking contract storage
@@ -64,87 +46,16 @@ pub fn read_staker_balance(
     Ok(balance)
 }
 
-#[derive(Debug)]
-/// Error that can occur while recovering the authority list
-pub enum RecoverAuthorityError {
-    /// Signature is missing in the extra data
-    NoSignaturePresentInExtraData,
-    /// ecdsa Signature was not recoverable
-    FailedToRecoverSigner(secp256k1::Error),
-    /// Failed to deserialize the extra data
-    FailedToDerserializeExtraData(
-        reth_botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError,
-    ),
-    /// Failed to create the sighash that the authority signed
-    FailedToCreateSigHash(secp256k1::Error),
-}
-
-/// Recover the authority that signed the block
-pub fn recovery_authority(header: &Header) -> Result<secp256k1::PublicKey, RecoverAuthorityError> {
-    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-        &mut header.extra_data.to_vec().as_slice(),
-    )
-    .map_err(RecoverAuthorityError::FailedToDerserializeExtraData)?;
-
-    let sighash = create_authority_sighash(&mut header.clone(), &extra_data);
-    let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
-        .map_err(RecoverAuthorityError::FailedToCreateSigHash)?;
-
-    if let Some(signature) = extra_data.authority_signature {
-        let signer =
-            signature.recover(&message).map_err(RecoverAuthorityError::FailedToRecoverSigner)?;
-        return Ok(signer);
-    }
-
-    Err(RecoverAuthorityError::NoSignaturePresentInExtraData)
-}
-
-impl From<RecoverAuthorityError> for ConsensusError {
-    fn from(e: RecoverAuthorityError) -> Self {
-        match e {
-            RecoverAuthorityError::FailedToRecoverSigner(_) => {
-                ConsensusError::TransactionSignerRecoveryError
-            }
-            RecoverAuthorityError::FailedToCreateSigHash(_) |
-            RecoverAuthorityError::FailedToDerserializeExtraData(_) |
-            RecoverAuthorityError::NoSignaturePresentInExtraData => {
-                ConsensusError::ExtraDataInvalid
-            }
-        }
-    }
-}
-#[derive(Debug)]
-/// Errors that can occur while reading the authority list from the block header
-pub enum GetAuthoritiesError {
-    /// Failed to deserialize the extra data
-    FailedToRecoverAuthorityList(
-        reth_botanix_lib::extra_data_header::ExtraDataHeaderDeserialzeError,
-    ),
-    /// Failed to retrive epoch header
-    FailedToRetrieveEpochHeader,
-    /// Failed to find authority index
-    FailedToFindAuthoritySignerIndex,
-}
-
-/// Recover the authority list from the block header
-pub fn get_authority_list(
-    header: &Header,
-) -> Result<Option<Vec<secp256k1::PublicKey>>, GetAuthoritiesError> {
-    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-        &mut header.extra_data.to_vec().as_slice(),
-    )
-    .map_err(GetAuthoritiesError::FailedToRecoverAuthorityList)?;
-
-    Ok(extra_data.authority_signers)
-}
-
-/// Returns the authority signer index
+/// Returns
+/// - The index of the authority that is currently in turn
+/// - The list of all authorities
+/// - The public key of the authority
 pub fn get_authority_signer_index<Client>(
     client: Client,
     chain_spec: Arc<ChainSpec>,
     secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
-) -> Result<(usize, Vec<secp256k1::PublicKey>), GetAuthoritiesError>
+) -> Result<(usize, Vec<secp256k1::PublicKey>, secp256k1::PublicKey), GetAuthoritiesError>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -171,16 +82,44 @@ where
     // Latest epoch header is the last header in the vector
     // This header should include the authority list which is validated by consensus
     let authorities =
-        get_authority_list(&latest_header)?.expect("authority signer list in epoch block");
+        latest_header.get_authority_list()?.expect("authority signer list in epoch block");
 
+    let authority_pk = sk.public_key(&secp);
     let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
 
-    Ok((signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?, authorities))
+    Ok((
+        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
+        authorities,
+        authority_pk,
+    ))
 }
 
 /// Returns the unix timestamp in seconds
 pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+// TODO move this into header ext
+// not in authority utils because of circular dependency
+/// Get the authority address from the header
+pub fn get_block_producer_address(header: &Header) -> Address {
+    if let Ok(authorities) = header.recovered_signed_authorities() {
+        // TODO remove this unwrap
+        let block_builder_public_key =
+            authorities.get(0).expect("block producer authority to be present");
+        return public_key_to_address(*block_builder_public_key)
+    }
+
+    // TODO this method should return a Result
+    Address::ZERO
+}
+// not in authority utils because of circular dependency
+/// Calculate the block reward split between botanix and the beneficiary
+pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
+    // 20% of the block reward
+    let botanix_reward = total_block_fees / 5;
+    let beneficiary_reward = total_block_fees - botanix_reward;
+    (botanix_reward, beneficiary_reward)
 }
 
 /// Validate poa block beneficiary
@@ -193,6 +132,9 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
 }
 
 /// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
 pub fn validate_poa_extra_data_header(
     header: &Header,
     authority_signers: &[secp256k1::PublicKey],
@@ -205,22 +147,52 @@ pub fn validate_poa_extra_data_header(
     validation::validate_header_extradata(header)?;
 
     // Attempt to deserialize the extra data header
-    let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-        &mut header.extra_data.to_vec().as_slice(),
-    )
-    .map_err(|e| {
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
         error!("Failed to deserialize extra data header: {:?}", e);
         ConsensusError::ExtraDataInvalid
     })?;
     // Validate the authority signature and signature came from one of the authorities
-    let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
-    extra_data.validate_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
-        |e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        },
-    )?;
+    let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
+
+    if valid_sigs != authority_signers.len() as u16 {
+        return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
+            authority_signers.len() as u16,
+            valid_sigs,
+        ));
+    }
     // TODO (armins) in the future this is where we would validate federation votes
+
+    Ok(())
+}
+
+/// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
+pub fn validate_poa_extra_data_header_single_signer(
+    header: &Header,
+    authority_signers: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(());
+    }
+    // First run the basic validation
+    validation::validate_header_extradata(header)?;
+
+    // Attempt to deserialize the extra data header
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+    // Validate the authority signature and signature came from one of the authorities
+    header.validate_first_authority_signature(authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
 
     Ok(())
 }
@@ -255,11 +227,12 @@ pub fn validate_against_parent(
     if parent.number == 0 {
         return Ok(());
     }
-    let parent_signer = recovery_authority(&parent).map_err(|e: RecoverAuthorityError| {
-        ValidateAgainstParentError::FailedToDerserializeExtraData(e)
-    })?;
-    let current_signer = recovery_authority(&current)
-        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?;
+    let parent_signer = parent
+        .recovered_signed_authorities()
+        .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?[0];
+    let current_signer = current
+        .recovered_signed_authorities()
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
     // Check if the parent block was mined in a different turn
     let parent_ts = parent.timestamp as f64 / 60.0;
     let current_ts = current.timestamp as f64 / 60.0;
@@ -287,81 +260,66 @@ pub fn validate_current_signer_against_last(
 
 /// Returns true if the authority is in turn
 pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
+    let timestamp = unix_timestamp(); // Keep the timestamp in seconds
+    let cycle_length = authorities_len * 60; // Full cycle length in seconds
 
-    (timestamp / authorities_len) % authorities_len == signer_index
+    // Calculate the position in the current cycle
+    let position_in_cycle = timestamp % cycle_length;
+
+    // Determine the current signer index based on the position in the cycle
+    // Each signer's turn lasts for 60 seconds
+    (position_in_cycle / 60) % authorities_len == signer_index
 }
 
 /// Typedef for (start of current turn, end of current turn, time taken, time remaining)
 pub type CoordinatorInterval = (u64, u64, u64, u64);
 
-/// Returns the inturn interval for a signer index
-pub fn get_in_turn_interval(authorities_len: u64, signer_index: u64) -> CoordinatorInterval {
-    let timestamp = unix_timestamp();
-    let current_minute = timestamp / 60;
-    let current_interval = current_minute / authorities_len;
+/// Returns the inturn interval for a signer index based on the seconds passed
+pub fn get_in_turn_interval(
+    authorities_len: u64,
+    signer_index: u64,
+    reference_timestamp: u64,
+) -> CoordinatorInterval {
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * 60;
 
-    let start_of_current_turn = (current_interval * authorities_len + signer_index) * 60;
-    let end_of_current_turn = (start_of_current_turn + authorities_len * 60) - 1;
+    // Calculate how many complete cycles have passed since the epoch
+    let cycles_since_epoch = reference_timestamp / cycle_length;
+
+    // Calculate the start time of the current cycle
+    let current_cycle_start = cycles_since_epoch * cycle_length;
+
+    // Calculate the start time of the current turn for the given signer_index
+    let start_of_current_turn = current_cycle_start + (signer_index * 60);
+
+    // End time of the current turn, ensuring full 60 seconds
+    let end_of_current_turn = start_of_current_turn + 59;
 
     (
         start_of_current_turn,
         end_of_current_turn,
-        timestamp - start_of_current_turn,
-        end_of_current_turn - timestamp,
+        reference_timestamp - start_of_current_turn,
+        end_of_current_turn - reference_timestamp,
     )
 }
 
-/// Returns the index of the authority which is currently in turn
-pub fn current_inturn_index(authorities_len: u64) -> u64 {
-    // use minutes as time unit to determine in turn
-    let timestamp = unix_timestamp() / 60;
-    (timestamp / authorities_len) % authorities_len
-}
+/// Returns the index of the authority which is currently in turn based on the seconds passed
+pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u64 {
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * 60;
 
-/// Validates that the authority was in turn when producing the block
-pub fn validate_inturn(
-    header: &Header,
-    authority_signers: &[secp256k1::PublicKey],
-) -> Result<(), ConsensusError> {
-    let singer_pk = recovery_authority(header)?;
-    let signer_index = authority_signers
-        .iter()
-        .position(|pk| *pk == singer_pk)
-        .ok_or(ConsensusError::AuthorityNotInTurn)?;
+    // Calculate the position in the current cycle
+    let position_in_cycle = reference_timestamp % cycle_length;
 
-    let authorities_len = authority_signers.len() as u64;
-    let block_timestamp_min = header.timestamp / 60;
-    if (block_timestamp_min / authorities_len) % authorities_len != (signer_index as u64) {
-        error!(target = "authority_consensus", "Authority was not in turn when producing block");
-        return Err(ConsensusError::AuthorityNotInTurn);
-    }
-
-    Ok(())
-}
-
-// not in authority utils because of circular dependency
-/// Get the authority address from the header
-/// Return zero address if the authority is not present which is the case for reth tests
-pub fn get_block_producer_address(header: &Header) -> Address {
-    match recovery_authority(header) {
-        Ok(pk) => public_key_to_address(pk),
-        Err(_) => Address::ZERO,
-    }
-}
-// not in authority utils because of circular dependency
-/// Calculate the block reward split between botanix and the beneficiary
-pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
-    // 20% of the block reward
-    let botanix_reward = total_block_fees / 5;
-    let beneficiary_reward = total_block_fees - botanix_reward;
-    (botanix_reward, beneficiary_reward)
+    // Determine the current signer index based on the position in the cycle
+    (position_in_cycle / 60) % authorities_len
 }
 
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
+
+    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
 
     use super::*;
 
@@ -388,120 +346,16 @@ mod tests {
             secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
             secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
         ]);
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
 
-        let secp = secp256k1::Secp256k1::new();
         header.number = 1;
-
-        let sighash = create_authority_sighash(&mut header.clone(), &edh);
-        let message = secp256k1::Message::from_slice(sighash.as_slice()).unwrap();
-        let signature = {
-            if let Some(sk_str) = signer_sk {
-                let sk = generate_secret_key(sk_str);
-                secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &sk)
-            } else {
-                // By default sign with the first authority
-                secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &sk1)
-            }
-        };
-        edh.set_signature(signature);
-
-        header.extra_data = Bytes::from(edh.serialize());
-    }
-
-    /* Tests for create authority sighash utility */
-    #[test]
-    fn create_default_edh_sighhash() {
-        let edh = ExtraDataHeader::default();
-        let mut header = Header::default();
-        let sighash = create_authority_sighash(&mut header, &edh);
-
-        assert_eq!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
-    }
-
-    #[test]
-    fn create_sighash_with_authority_signature() {
-        // regarless of the signature, the sighash should be the same
-        // This is because we remove the signature from the extra data header before signing
-        let mut edh = ExtraDataHeader::default();
-        edh.set_signature(
-            secp256k1::ecdsa::RecoverableSignature::from_compact(
-                &[0u8; 64],
-                secp256k1::ecdsa::RecoveryId::from_i32(1i32).unwrap(),
-            )
-            .unwrap(),
-        );
-        let mut header = Header::default();
-        let sighash = create_authority_sighash(&mut header, &edh);
-
-        assert_eq!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
-    }
-    #[test]
-    fn create_sighash_with_authorities() {
-        // However adding something else such as authority members should result in a different
-        // sighash
-        let mut edh = ExtraDataHeader::default();
-        edh.authority_signers = Some(vec![
-            secp256k1::PublicKey::from_secret_key(
-                &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str(
-                    "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-                )
-                .unwrap(),
-            ),
-            secp256k1::PublicKey::from_secret_key(
-                &secp256k1::Secp256k1::new(),
-                &secp256k1::SecretKey::from_str(
-                    "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-                )
-                .unwrap(),
-            ),
-        ]);
-        let mut header = Header::default();
-        let sighash = create_authority_sighash(&mut header, &edh);
-
-        assert_ne!(sighash.to_string(), EDH_DEFAULT_SIGHASH);
-    }
-
-    // Get authority list tests
-    #[test]
-    fn should_recover_none_authorities() {
-        let edh = ExtraDataHeader::default();
-        let mut header = Header::default();
-        header.extra_data = Bytes::from(edh.serialize());
-        let signer_list = get_authority_list(&header).unwrap();
-
-        assert_eq!(signer_list, None);
-    }
-
-    #[test]
-    fn should_recovery_authorities() {
-        let mut header = Header::default();
-        sign_block_helper(&mut header, None);
-        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
-        let signer_list = get_authority_list(&header).unwrap();
-
-        assert_eq!(signer_list, edh.authority_signers);
-    }
-
-    #[test]
-    fn fails_to_recover_when_edh_invalid() {
-        let mut header = Header::default();
-        header.extra_data = Bytes::from("foobar");
-        let signer_list = get_authority_list(&header);
-
-        assert!(signer_list.is_err());
-    }
-
-    // Tests for recover authority pk
-    #[test]
-    fn should_recover_authority() {
-        let mut header = Header::default();
-        sign_block_helper(&mut header, None);
-        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
-
-        let recovered = recovery_authority(&header).unwrap();
-        // utility function above only signs with the first authority
-        assert_eq!(recovered, edh.authority_signers.unwrap()[0]);
+        if let Some(sk_str) = signer_sk {
+            let sk = generate_secret_key(sk_str);
+            header.sign_block(&sk).unwrap();
+        } else {
+            header.sign_block(&sk1).unwrap();
+        }
     }
 
     // Tests for validating poa extra data header
@@ -518,44 +372,30 @@ mod tests {
     #[test]
     fn should_fail_on_invalid_signature() {
         // In this case we are signing with a non federation different key
-        let mut edh = ExtraDataHeader::default();
-        let sk1 = secp256k1::SecretKey::from_str(
-            "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-        )
-        .unwrap();
+        let edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let non_fed = secp256k1::SecretKey::from_str(
             "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
         )
         .unwrap();
 
-        edh.authority_signers =
-            Some(vec![secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1)]);
-
-        let secp = secp256k1::Secp256k1::new();
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.number = 1;
-
-        let sighash = create_authority_sighash(&mut header, &edh);
-        let message = secp256k1::Message::from_slice(sighash.as_slice()).unwrap();
-        let signature = secp256k1::Secp256k1::sign_ecdsa_recoverable(&secp, &message, &non_fed);
-
-        edh.set_signature(signature);
-
         header.extra_data = Bytes::from(edh.serialize());
-        let authority_signers = vec![];
+        header.sign_block(&non_fed).expect("valid sign");
+
         let result = validate_poa_extra_data_header(&header, &authority_signers);
         assert!(result.is_err());
-    }
 
-    #[test]
-    fn should_validate_poa_header() {
-        // In this case we are signing with a non federation different key
+        // reset header and try again with a
         let mut header = Header::default();
-        sign_block_helper(&mut header, None);
-        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
-        let authority_signers = edh.authority_signers.unwrap();
+        header.number = 1;
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
         let result = validate_poa_extra_data_header(&header, &authority_signers);
-        assert!(result.is_ok());
+        assert!(result.is_ok())
     }
 
     #[test]
@@ -651,47 +491,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_inturn_ok() {
-        let mut header = Header::default();
-        header.timestamp = 1705621229;
-        sign_block_helper(&mut header, Some(SK1));
-
-        assert!(validate_inturn(
-            &header,
-            &[
-                secp256k1::PublicKey::from_secret_key(
-                    &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
-                ),
-                secp256k1::PublicKey::from_secret_key(
-                    &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
-                ),
-            ]
-        )
-        .is_ok());
-
-        // Sign the same header with a different key should fail
-
-        sign_block_helper(&mut header, Some(SK2));
-
-        assert!(validate_inturn(
-            &header,
-            &[
-                secp256k1::PublicKey::from_secret_key(
-                    &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(SK1).unwrap(),
-                ),
-                secp256k1::PublicKey::from_secret_key(
-                    &secp256k1::Secp256k1::new(),
-                    &secp256k1::SecretKey::from_str(SK2).unwrap(),
-                ),
-            ]
-        )
-        .is_err());
-    }
-
-    #[test]
     fn should_split_rewards() {
         let base_block_reward = 100;
         let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
@@ -712,29 +511,23 @@ mod tests {
     }
 
     #[test]
-    fn should_return_zero_address_when_no_authority() {
-        let header = Header::default();
-        let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(block_producer_address, Address::ZERO);
-    }
-
-    #[test]
-    fn get_inturn_interval() {
-        let authorities_len = 10;
-        let signer_index = 3; // Example signer index
-        let (start, end, time_passed, time_remaining): CoordinatorInterval =
-            get_in_turn_interval(authorities_len, signer_index);
+    fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
+        let authorities_len = 10;
+        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
+        let (start, end, time_passed, time_remaining) =
+            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
-            signer_index,
+            current_in_turn_signer,
             start,
             end,
-            super::unix_timestamp(),
+            current_ts,
             time_passed,
             time_remaining,
         );
-        assert!(current_ts > start);
-        assert!(current_ts < end);
+        assert!(current_ts >= start);
+        assert!(current_ts <= end);
     }
 }

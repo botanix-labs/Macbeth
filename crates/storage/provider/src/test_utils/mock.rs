@@ -5,16 +5,21 @@ use crate::{
     ReceiptProviderIdExt, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
     TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
+use itertools::Itertools;
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_evm::ConfigureEvmEnv;
-use reth_interfaces::provider::{ProviderError, ProviderResult};
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeViewer,
+    provider::{ProviderError, ProviderResult},
+};
+
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
-    BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header, Receipt,
-    SealedBlock, SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue, TransactionMeta,
-    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256,
-    U256,
+    BlockNumHash, BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header,
+    Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue,
+    TransactionMeta, TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal,
+    Withdrawals, B256, U256,
 };
 use reth_trie::updates::TrieUpdates;
 use revm::{
@@ -22,7 +27,7 @@ use revm::{
     primitives::{BlockEnv, CfgEnvWithHandlerCfg},
 };
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
 };
@@ -249,7 +254,7 @@ impl TransactionsProvider for MockEthProvider {
                         excess_blob_gas: block.header.excess_blob_gas,
                         timestamp: block.header.timestamp,
                     };
-                    return Ok(Some((tx.clone(), meta)))
+                    return Ok(Some((tx.clone(), meta)));
                 }
             }
         }
@@ -261,7 +266,7 @@ impl TransactionsProvider for MockEthProvider {
         let mut current_tx_number: TxNumber = 0;
         for block in lock.values() {
             if current_tx_number + (block.body.len() as TxNumber) > id {
-                return Ok(Some(block.header.number))
+                return Ok(Some(block.header.number));
             }
             current_tx_number += block.body.len() as TxNumber;
         }
@@ -496,7 +501,7 @@ impl BlockReaderIdExt for MockEthProvider {
     fn block_by_id(&self, id: BlockId) -> ProviderResult<Option<Block>> {
         match id {
             BlockId::Number(num) => self.block_by_number_or_tag(num),
-            BlockId::Hash(hash) => self.block_by_hash(hash.block_hash),
+            BlockId::Hash(hash) => BlockReader::block_by_hash(self, hash.block_hash),
         }
     }
 
@@ -685,5 +690,103 @@ impl ChangeSetReader for MockEthProvider {
         _block_number: BlockNumber,
     ) -> ProviderResult<Vec<AccountBeforeTx>> {
         Ok(Vec::default())
+    }
+}
+
+impl BlockchainTreeViewer for MockEthProvider {
+    fn blocks(&self) -> BTreeMap<BlockNumber, HashSet<BlockHash>> {
+        let lock = self.blocks.lock();
+        let mut map = BTreeMap::new();
+        for (block_hash, block) in lock.clone().into_iter() {
+            map.entry(block.number).or_insert_with(HashSet::new).insert(block_hash);
+        }
+
+        map
+    }
+
+    fn header_by_hash(&self, hash: BlockHash) -> Option<SealedHeader> {
+        let header = self.headers.lock().get(&hash).cloned();
+        if let Some(h) = header {
+            Some(h.seal(hash))
+        } else {
+            None
+        }
+    }
+
+    fn block_by_hash(&self, hash: BlockHash) -> Option<SealedBlock> {
+        let block = self.blocks.lock().get(&hash).cloned();
+        if let Some(b) = block {
+            Some(b.seal(hash))
+        } else {
+            None
+        }
+    }
+
+    fn block_with_senders_by_hash(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
+    }
+
+    fn buffered_block_by_hash(&self, _block_hash: BlockHash) -> Option<SealedBlock> {
+        None
+    }
+
+    fn buffered_header_by_hash(&self, _block_hash: BlockHash) -> Option<SealedHeader> {
+        None
+    }
+
+    fn canonical_blocks(&self) -> BTreeMap<BlockNumber, BlockHash> {
+        let lock = self.blocks.lock();
+        let mut map = BTreeMap::new();
+        for (block_hash, block) in lock.clone().into_iter() {
+            map.insert(block.number, block_hash);
+        }
+
+        map
+    }
+
+    fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
+        let blocks = self.blocks.lock();
+        if blocks.contains_key(&block_hash) {
+            let sorted_blocks = blocks
+                .iter()
+                .map(|b| b.1)
+                .sorted_by(|a, b| Ord::cmp(&a.number, &b.number))
+                .collect::<Vec<&Block>>();
+            // get the last element of the hashmap
+            let tip = sorted_blocks.last().expect("at least one block").hash_slow();
+            return Ok(*tip == block_hash);
+        }
+        return Err(ProviderError::BlockHashNotFound(block_hash));
+    }
+
+    fn canonical_tip(&self) -> BlockNumHash {
+        let (num, hash) = self
+            .canonical_blocks()
+            .iter()
+            .max_by_key(|(num, _)| *num)
+            .map(|(num, hash)| (*num, *hash))
+            .unwrap_or_default();
+
+        BlockNumHash::new(num, hash)
+    }
+
+    fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {
+        (0, vec![])
+    }
+
+    fn pending_block_num_hash(&self) -> Option<BlockNumHash> {
+        None
+    }
+
+    fn pending_block_and_receipts(&self) -> Option<(SealedBlock, Vec<Receipt>)> {
+        None
+    }
+
+    fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
+        None
+    }
+
+    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
     }
 }

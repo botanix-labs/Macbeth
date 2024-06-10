@@ -1282,6 +1282,8 @@ mod tests {
     use reth_primitives::proofs::calculate_receipt_root_optimism;
     use reth_primitives::{
         constants::{EIP1559_INITIAL_BASE_FEE, EMPTY_ROOT_HASH, ETHEREUM_BLOCK_GAS_LIMIT},
+        extra_data_header::ExtraDataHeader,
+        header_ext::HeaderExt,
         keccak256,
         proofs::{calculate_transaction_root, state_root_unhashed},
         revm_primitives::AccountInfo,
@@ -1502,32 +1504,35 @@ mod tests {
             #[cfg(feature = "optimism")]
             let receipts_root = calculate_receipt_root_optimism(&receipts, &chain_spec, 0);
 
+            let edh = ExtraDataHeader::default();
+            let mut header = Header {
+                number,
+                parent_hash: parent.unwrap_or_default(),
+                gas_used: body.len() as u64 * 21_000,
+                gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+                mix_hash: B256::random(),
+                base_fee_per_gas: Some(EIP1559_INITIAL_BASE_FEE),
+                transactions_root,
+                receipts_root,
+                state_root: state_root_unhashed(HashMap::from([(
+                    signer,
+                    (
+                        AccountInfo {
+                            balance: initial_signer_balance -
+                                (single_tx_cost * U256::from(num_of_signer_txs)),
+                            nonce: num_of_signer_txs,
+                            ..Default::default()
+                        },
+                        EMPTY_ROOT_HASH,
+                    ),
+                )])),
+                ..Default::default()
+            };
+            header.add_extra_data_header(&edh);
+
             SealedBlockWithSenders::new(
                 SealedBlock {
-                    header: Header {
-                        number,
-                        parent_hash: parent.unwrap_or_default(),
-                        gas_used: body.len() as u64 * 21_000,
-                        gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-                        mix_hash: B256::random(),
-                        base_fee_per_gas: Some(EIP1559_INITIAL_BASE_FEE),
-                        transactions_root,
-                        receipts_root,
-                        state_root: state_root_unhashed(HashMap::from([(
-                            signer,
-                            (
-                                AccountInfo {
-                                    balance: initial_signer_balance -
-                                        (single_tx_cost * U256::from(num_of_signer_txs)),
-                                    nonce: num_of_signer_txs,
-                                    ..Default::default()
-                                },
-                                EMPTY_ROOT_HASH,
-                            ),
-                        )])),
-                        ..Default::default()
-                    }
-                    .seal_slow(),
+                    header: header.seal_slow(),
                     body: body.clone().into_iter().map(|tx| tx.into_signed()).collect(),
                     ommers: Vec::new(),
                     withdrawals: Some(Withdrawals::default()),

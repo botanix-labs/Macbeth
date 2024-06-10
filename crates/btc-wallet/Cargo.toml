@@ -26,7 +26,7 @@ async-trait = "0.1.73"
 ethers = "2.0.10"
 bitcoincore-rpc = "0.18.0"
 serde = "1.0.171"
-tokio = { version = "1.29.1", features = ["full"] }
+tokio = { version = "1.37.0", features = ["full"] }
 thiserror = "1.0.43"
 
 ## url

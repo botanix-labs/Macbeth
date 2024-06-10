@@ -1,5 +1,4 @@
 use clap::Args;
-use reth_network::frost::manager::FrostConfig;
 
 /// Default min signers
 pub(crate) const DEFAULT_MIN_SIGNERS: u16 = 2;
@@ -25,15 +24,4 @@ pub struct FrostArgs {
     /// The maximum number required for frost signing.
     #[arg(default_value_t=DEFAULT_MAX_SIGNERS, long = "frost.max_signers", name = "frost.max_signers", value_name = "MAX_SIGNERS")]
     pub max_signers: u16,
-}
-
-impl From<FrostArgs> for FrostConfig {
-    fn from(args: FrostArgs) -> Self {
-        FrostConfig {
-            authority_index: 0,
-            authorities: vec![],
-            max_signers: args.max_signers,
-            min_signers: args.min_signers,
-        }
-    }
 }

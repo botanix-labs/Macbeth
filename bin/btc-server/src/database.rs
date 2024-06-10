@@ -4,7 +4,9 @@ use bitcoin::{
     psbt::{self, Psbt},
     OutPoint, TxOut,
 };
+use client::SigningStatus;
 use frost_secp256k1_tr as frost;
+use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -109,6 +111,39 @@ impl Db {
             Ok(Some(ret))
         } else {
             Ok(None)
+        }
+    }
+
+    /// Get signing session ids from db
+    pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<[u8; 32]>, Error> {
+        let mut ret = Vec::new();
+        let mut results = 0;
+        for res in self.psbt.iter() {
+            let (k, _) = res?;
+            let signing_session_id: [u8; 32] =
+                k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
+            results += 1;
+            if max_results == results {
+                break;
+            }
+            ret.push(signing_session_id);
+        }
+        Ok(ret)
+    }
+
+    pub fn get_signing_status(
+        &self,
+        signing_session_id: &[u8; 32],
+    ) -> Result<SigningStatus, Error> {
+        match self.get_psbt(signing_session_id)? {
+            Some(psbt) => {
+                let secp = bitcoin::secp256k1::Secp256k1::new();
+                match psbt.finalize(&secp) {
+                    Ok(_) => Ok(SigningStatus::Finalized),
+                    Err(_) => Ok(SigningStatus::Running),
+                }
+            }
+            None => Ok(SigningStatus::Failed), // session id deleted/expired
         }
     }
 
@@ -424,6 +459,8 @@ impl From<Error> for tonic::Status {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::create_tx;
+
     use super::*;
     use tempfile::TempDir;
 
@@ -431,6 +468,35 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn test_reading_session_ids() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        let signing_session_id: [u8; 32] = [0; 32];
+        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        db.flush().unwrap();
+
+        let signing_session_ids = db.get_session_ids(10).unwrap();
+        assert!(signing_session_ids.len() == 1);
+    }
+
+    #[test]
+    fn test_getting_session_id_status() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        let signing_session_id: [u8; 32] = [0; 32];
+        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        db.flush().unwrap();
+
+        let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
+        let signing_status = db.get_signing_status(&signing_session_id).unwrap();
+        assert!(signing_status == SigningStatus::Running);
     }
 
     #[test]

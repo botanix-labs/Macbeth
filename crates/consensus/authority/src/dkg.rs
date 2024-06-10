@@ -7,7 +7,7 @@ use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, FrostHandle},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -116,18 +116,19 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine<Client> {
+pub(crate) struct DKGStateMachine<Client, ToFrostMan> {
     btc_client: BtcServerExtendedClient,
     storage: Storage<Client>,
-    frost_handle: FrostHandle,
+    frost_handle: ToFrostMan,
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
     public_key_package: Option<secp256k1::PublicKey>,
     frost_config: FrostConfig,
 }
 
-impl<Client> DKGStateMachine<Client>
+impl<Client, ToFrostMan> DKGStateMachine<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -139,7 +140,7 @@ where
     pub(crate) fn new(
         btc_client: BtcServerExtendedClient,
         storage: Storage<Client>,
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         frost_config: FrostConfig,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
@@ -185,8 +186,9 @@ where
     }
 }
 
-impl<Client> DKGStateMachine<Client>
+impl<Client, ToFrostMan> DKGStateMachine<Client, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -417,7 +419,11 @@ where
     pub(crate) async fn gossip_round1_to_peers(&mut self) -> Result<(), Error> {
         // get round 1 package from db, if missing, create it
         let dkg1_package = self.get_round1_dkg_package().await?;
-        info!("dkg1_package: {:?}", dkg1_package);
+        info!(
+            "dkg1_package retrieved. Identifier Size:{:?}, Data Size: {:?}",
+            dkg1_package.identifier.len(),
+            dkg1_package.payload.len()
+        );
 
         let fut = || async {
             // get all connected peers
@@ -553,7 +559,7 @@ where
         if let Err(e) = self.add_round2_dkg_package(identifier, payload).await {
             warn!("Error adding round 2 dkg package {:?}", e);
             // We dont want to fail the whole dkg process if we can't add another's round2
-            return Ok(())
+            return Ok(());
         }
         info!(">>>>>>>>>>> [PROCESS_ROUND2] packages added successfully");
         // By adding this round2 dkg package we could be ready to progress to round 3
