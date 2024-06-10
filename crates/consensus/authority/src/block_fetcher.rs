@@ -4,20 +4,22 @@ use crate::{
     utils::{get_recent_block_height_or_zero, is_testnet},
     AuthorityConsensus,
 };
-use tracing::{debug, info, error, warn};
 use client::{FinalizeSignerRequest, Output};
-use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 use reth_consensus::Consensus;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
-    p2p::{bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient},
+    p2p::{
+        bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
+    },
     sync::SyncStateProvider,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, Block, SealedBlockWithSenders, TransactionSigned,
+    botanix::BotanixConsensusPackage, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
+    Block, SealedBlockWithSenders, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 use reth_rpc_types::{BlockHashOrNumber, BlockNumHash};
+use tracing::{debug, error, info, warn};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -28,7 +30,10 @@ use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender}, RwLock};
+use tokio::sync::{
+    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     chain_spec: Arc<ChainSpec>,
