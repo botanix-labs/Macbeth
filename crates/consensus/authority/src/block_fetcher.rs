@@ -181,7 +181,7 @@ where
             match storage.execute_imported_block(
                 self.chain_spec.clone(),
                 sealed_block.clone(),
-                botanix_consensus_pkg,
+                botanix_consensus_pkg.clone(),
                 self.evm_config.clone(),
             ) {
                 Ok(bundle_state) => {
@@ -304,6 +304,7 @@ where
                         if let Err(e) = storage.client.insert_block_without_senders(
                             missing_block.clone(),
                             BlockValidationKind::Exhaustive,
+                            botanix_consensus_pkg,
                         ) {
                             error!(target: "consensus::authority", ?e, "Failed to insert forked block");
                             continue;
