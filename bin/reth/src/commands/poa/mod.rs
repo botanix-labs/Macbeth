@@ -1082,8 +1082,12 @@ mod tests {
 
     #[test]
     fn parse_config_path() {
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth", "--config", "my/path/to/reth.toml"])
-            .unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--network-config-path",
+            "my/path/to/reth.toml",
+        ])
+        .unwrap();
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
