@@ -56,10 +56,6 @@ use super::botanix_config::{
     Botanix, BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError,
 };
 
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
-
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.

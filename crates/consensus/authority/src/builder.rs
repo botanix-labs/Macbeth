@@ -28,7 +28,6 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 use reth_tasks::TaskExecutor;
-use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -53,7 +52,6 @@ pub struct AuthorityConsensusBuilder<
     btc_server: Option<BtcServerExtendedClient>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoind_config: BitcoindConfig,
-    secp: Secp256k1<All>,
     sk: secp256k1::SecretKey,
     #[allow(dead_code)]
     epoch_manager: EpochManager<Client>,
@@ -104,7 +102,6 @@ where
         btc_server: Option<BtcServerExtendedClient>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoind_config: BitcoindConfig,
-        secp: Secp256k1<All>,
         // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
@@ -155,14 +152,15 @@ where
         let mut signer_index = Some(authorities.len() + 1);
         // only a federation node has a btc_server
         if is_fed_node {
-            signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
+            signer_index =
+                authorities.iter().position(|a| *a == sk.public_key(secp256k1::SECP256K1));
 
             if signer_index.is_none() {
                 return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
             }
         }
 
-        let pk = sk.public_key(&secp);
+        let pk = sk.public_key(&secp256k1::SECP256K1);
 
         // Try to instantiate storage
         let storage = Storage::try_new(
@@ -190,7 +188,6 @@ where
             btc_server,
             bitcoin_block_header,
             bitcoind_config,
-            secp,
             sk,
             epoch_manager,
             network_handle,
@@ -228,7 +225,6 @@ where
             canon_state_notification,
             bitcoin_block_header,
             bitcoind_config,
-            secp,
             sk,
             epoch_manager,
             network_handle,
@@ -319,7 +315,6 @@ where
                 storage,
                 btc_server.clone().expect("btc_server is available"),
                 bitcoin_block_header,
-                secp,
                 sk,
                 epoch_manager,
                 network_handle,

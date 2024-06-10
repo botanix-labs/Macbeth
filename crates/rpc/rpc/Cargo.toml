@@ -76,7 +76,6 @@ schnellru.workspace = true
 futures.workspace = true
 derive_more = "0.99"
 dyn-clone.workspace = true
-lazy_static = "*"
 reth-btc-wallet.workspace = true
 
 ## Bitcoin

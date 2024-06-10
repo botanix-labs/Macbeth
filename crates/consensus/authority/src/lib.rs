@@ -239,8 +239,6 @@ where
         &self,
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
-        _sk: &secp256k1::SecretKey,
-        _secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let timestamp = unix_timestamp();
@@ -333,7 +331,6 @@ where
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
-        _secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
@@ -403,7 +400,6 @@ where
         chain_spec: Arc<ChainSpec>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         evm_config: EvmConfig,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
@@ -416,7 +412,7 @@ where
         }
 
         // Construct block and header
-        let header = self.build_header_template(&transactions, &chain_spec.clone(), sk, secp)?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone())?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -461,7 +457,6 @@ where
         gas_used: u64,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         utxo_commitment: &[u8; 32],
@@ -475,7 +470,6 @@ where
             bundle_state,
             gas_used,
             sk,
-            secp,
             authority_signers,
             witness_data,
             // This is checked to be Some above

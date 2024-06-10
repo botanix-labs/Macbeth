@@ -9128,7 +9128,6 @@ dependencies = [
  "hyper 0.14.28",
  "jsonrpsee",
  "jsonwebtoken 8.3.0",
- "lazy_static",
  "metrics",
  "parking_lot 0.12.3",
  "pin-project",
