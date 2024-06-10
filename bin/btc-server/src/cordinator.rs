@@ -5,7 +5,7 @@ use crate::{
         self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
         NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
     },
-    App, Error, SECP,
+    App, Error,
 };
 use std::collections::HashMap;
 
@@ -347,7 +347,9 @@ impl App {
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
-        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, &SECP) {
+        if let Err(errs) =
+            miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, bitcoin::secp256k1::SECP256K1)
+        {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);

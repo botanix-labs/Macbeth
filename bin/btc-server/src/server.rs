@@ -7,7 +7,7 @@ use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, rpc, util, App, SECP};
+use crate::{database::Utxo, rpc, util, App};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -226,7 +226,7 @@ impl rpc::BtcServer for App {
             .to_secp_pk()
             .map_err(|e| internal!("Failed to convert verifying key to secp pk: {}", e))?;
         let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, &secp_pk);
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self
             .make_tx(outputs, fee_rate, change_script)
