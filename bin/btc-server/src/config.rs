@@ -1,8 +1,14 @@
+use clap::Parser;
 use displaydoc::Display as DisplayDoc;
-use serde::{Deserialize, Deserializer};
-use std::{path::Path, str::FromStr, time::Duration};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Duration,
+};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
+use url::Url;
 
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
@@ -126,4 +132,136 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
     let mut contents = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
     file.read_to_end(&mut contents).await.map_err(Error::ReadConfig)?;
     String::from_utf8(contents).map_err(Error::ParseUtf8)
+}
+
+// Cli args and config
+
+#[derive(Clone, Debug, Parser, Default, Deserialize, Serialize)]
+pub(crate) struct CliConfig {
+    /// The path to the database.
+    #[arg(long)]
+    db: Option<PathBuf>,
+    /// The path to the database.
+    #[arg(long)]
+    config_path: Option<PathBuf>,
+    /// The bitcoin network to operate on.
+    #[arg(long)]
+    btc_network: Option<bitcoin::Network>,
+    /// Frost participant identifier
+    #[arg(long)]
+    identifier: Option<u16>,
+    #[arg(long)]
+    address: Option<String>,
+    /// max signers
+    #[arg(long)]
+    max_signers: Option<u16>,
+    /// min signers
+    #[arg(long)]
+    min_signers: Option<u16>,
+    /// toml configuration path
+    #[arg(long)]
+    toml: Option<PathBuf>,
+    /// jwt secret path
+    #[arg(long)]
+    jwt_secret: Option<PathBuf>,
+    #[arg(long)]
+    /// bitcoind url
+    bitcoind_url: Option<Url>,
+    #[arg(long)]
+    /// bitcoind user
+    bitcoind_user: Option<String>,
+    #[arg(long)]
+    /// bitcoind pass
+    bitcoind_pass: Option<String>,
+    #[arg(long)]
+    /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
+    pub fee_rate_diff_percentage: Option<u32>,
+    /// Fall back fee rate expressed in sat per vbyte
+    #[arg(long)]
+    fall_back_fee_rate_sat_per_vbyte: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Config {
+    /// The path to the database.
+    pub(crate) db: PathBuf,
+    /// The bitcoin network to operate on.
+    pub(crate) btc_network: bitcoin::Network,
+    /// Frost participant identifier
+    pub(crate) identifier: u16,
+    pub(crate) address: String,
+    /// max signers
+    pub(crate) max_signers: u16,
+    /// min signers
+    pub(crate) min_signers: u16,
+    /// toml configuration path
+    pub(crate) toml: Option<PathBuf>,
+    /// jwt secret path
+    pub(crate) jwt_secret: Option<PathBuf>,
+    /// bitcoind url
+    pub(crate) bitcoind_url: Url,
+    /// bitcoind user
+    pub(crate) bitcoind_user: String,
+    /// bitcoind pass
+    pub(crate) bitcoind_pass: String,
+    /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
+    pub fee_rate_diff_percentage: u32,
+    /// Fall back fee rate expressed in sat per vbyte
+    pub(crate) fall_back_fee_rate_sat_per_vbyte: u64,
+}
+
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    // First parse from cli
+    let cli_config = CliConfig::parse();
+    // Initialize settings from file if specified
+    let mut file_config = CliConfig::default();
+    if let Some(path) = &cli_config.config_path {
+        file_config = confy::load_path::<CliConfig>(&path).unwrap();
+        info!("Loaded config from file: {:?}", path);
+    }
+
+    let config = Config {
+        db: cli_config.db.or(file_config.db).expect("db is required"),
+        toml: cli_config.toml.or(file_config.toml),
+        btc_network: cli_config
+            .btc_network
+            .or(file_config.btc_network)
+            .expect("btc_network is required"),
+        identifier: cli_config
+            .identifier
+            .or(file_config.identifier)
+            .expect("identifier is required"),
+        address: cli_config.address.or(file_config.address).expect("address is required"),
+        max_signers: cli_config
+            .max_signers
+            .or(file_config.max_signers)
+            .expect("max_signers is required"),
+        min_signers: cli_config
+            .min_signers
+            .or(file_config.min_signers)
+            .expect("min_signers is required"),
+        jwt_secret: cli_config.jwt_secret.or(file_config.jwt_secret),
+        bitcoind_url: cli_config
+            .bitcoind_url
+            .or(file_config.bitcoind_url)
+            .expect("bitcoind_url is required"),
+        bitcoind_user: cli_config
+            .bitcoind_user
+            .or(file_config.bitcoind_user)
+            .expect("bitcoind_user is required"),
+        bitcoind_pass: cli_config
+            .bitcoind_pass
+            .or(file_config.bitcoind_pass)
+            .expect("bitcoind_pass is required"),
+        fee_rate_diff_percentage: cli_config
+            .fee_rate_diff_percentage
+            .or(file_config.fee_rate_diff_percentage)
+            .expect("fee_rate_diff_percentage is required"),
+        fall_back_fee_rate_sat_per_vbyte: cli_config
+            .fall_back_fee_rate_sat_per_vbyte
+            .or(file_config.fall_back_fee_rate_sat_per_vbyte)
+            .expect("fall_back_fee_rate_sat_per_vbyte is required"),
+    };
+
+    Ok(config)
 }
