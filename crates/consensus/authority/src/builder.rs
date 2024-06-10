@@ -116,6 +116,7 @@ where
         frost_config: Option<FrostConfig>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
+        genesis_authorities: Vec<secp256k1::PublicKey>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server.is_some();
@@ -168,6 +169,7 @@ where
         let storage = Storage::try_new(
             client.clone(),
             &mut headers,
+            genesis_authorities,
             authorities,
             signer_index.expect("valid index"),
             pk,
