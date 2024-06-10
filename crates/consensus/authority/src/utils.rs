@@ -514,7 +514,7 @@ where
     Ok(pegouts)
 }
 
-pub(crate) async fn has_block_pegins<Client>(
+pub(crate) async fn block_has_pegins<Client>(
     block: u64,
     client: &Client,
 ) -> Result<bool, EpochPegoutsError>
@@ -540,7 +540,7 @@ where
     }
 }
 
-pub(crate) async fn has_block_pegouts<Client>(
+pub(crate) async fn block_has_pegouts<Client>(
     block: u64,
     client: &Client,
 ) -> Result<bool, EpochPegoutsError>

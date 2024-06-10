@@ -235,7 +235,7 @@ where
             let mut blocks_with_pegins_pegouts: HashMap<u64, Block> = HashMap::new();
             for block_header in blocks_headers_to_sync.iter() {
                 // fetch pegouts
-                let has_block_pegouts = crate::utils::has_block_pegouts(
+                let has_block_pegouts = crate::utils::block_has_pegouts(
                     block_header.number,
                     &storage.client,
                 )
@@ -248,7 +248,7 @@ where
                 .unwrap_or_default();
 
                 // check for pegins
-                let has_block_pegins = crate::utils::has_block_pegins(
+                let has_block_pegins = crate::utils::block_has_pegins(
                     block_header.number,
                     &storage.client,
                 )
