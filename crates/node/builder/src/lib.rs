@@ -28,6 +28,7 @@ mod handle;
 pub use handle::NodeHandle;
 
 pub mod rpc;
+pub use rpc::*;
 
 pub mod setup;
 
