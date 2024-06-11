@@ -190,7 +190,13 @@ pub async fn invalid_pegin(
     let eth_pegin_address = eth_account.to_string();
     let pegin_address_initial_balance =
         botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
-    it_info_print!("Inital pegin address balance", pegin_address_initial_balance);
+    it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+
+    // nonce before pegin
+    let sender_address = botanix_eth_client.get_sender_address();
+    it_info_print!("Sender address", sender_address);
+    let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
+    it_info_print!("Nonce before pegin", nonce_before);
 
     it_info_print!("Sending invalid pegin transaction to mint contract");
     let tx_receipt = botanix_eth_client
@@ -215,6 +221,12 @@ pub async fn invalid_pegin(
     it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
     assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
+
+    // nonce after pegin
+    let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
+    it_info_print!("Nonce after pegin", nonce_after);
+
+    assert!(nonce_after > nonce_before);
 
     Ok(())
 }

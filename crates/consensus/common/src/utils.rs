@@ -153,11 +153,17 @@ pub fn validate_poa_extra_data_header(
         ConsensusError::ExtraDataInvalid
     })?;
 
-    // Validate the list of authorities matches the authorities in the genesis block
-    // This check is only for a static federation
-    // Use EDH authority list as source of truth and not the list passed in
-    if genesis_authorities != edh.authority_signers.as_ref().expect("authority signers to exist") {
-        return Err(ConsensusError::InvalidAuthorityList);
+    if header.is_poa_epoch() {
+        // Validate the list of authorities matches the authorities in the genesis block
+        // This check is only for a static federation
+        // Use EDH authority list as source of truth and not the list passed in
+        if genesis_authorities !=
+            edh.authority_signers.as_ref().expect("authority signers to exist")
+        {
+            error!("Genesis authorities: {:?}", genesis_authorities);
+            error!("EDH authorities: {:?}", edh.authority_signers);
+            return Err(ConsensusError::InvalidAuthorityList);
+        }
     }
 
     // Validate the authority signature and signature came from one of the authorities
@@ -425,7 +431,8 @@ mod tests {
         // genesis authorities does not contain the authority signers
         let mut genesis_authorities = vec![sk2.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
-        header.number = 1;
+        // must be an epoch block
+        header.number = 3;
         edh.authority_signers = Some(authority_signers.clone());
         edh.set_optional_fields_bitmask();
         header.extra_data = Bytes::from(edh.serialize());
