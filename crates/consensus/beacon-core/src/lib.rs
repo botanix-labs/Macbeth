@@ -126,6 +126,7 @@ impl Consensus for BeaconConsensus {
         &self,
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
+        _genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
@@ -138,6 +139,7 @@ impl Consensus for BeaconConsensus {
         &self,
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
+        _genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         Ok(())
     }

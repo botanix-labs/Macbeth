@@ -9,8 +9,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 use reth_primitives::{
-    header_ext::ValidateInturnError, BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header,
-    HeaderValidationError, InvalidTransactionError, SealedBlock, SealedHeader, B256, U256,
+    BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header, HeaderValidationError,
+    InvalidTransactionError, SealedBlock, SealedHeader, B256, U256,
 };
 use std::fmt::Debug;
 
@@ -90,6 +90,7 @@ pub trait Consensus: Debug + Send + Sync {
         &self,
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError>;
 
     /// Validates that block has the right beneficiary
@@ -100,6 +101,7 @@ pub trait Consensus: Debug + Send + Sync {
         &self,
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError>;
 }
 
@@ -117,7 +119,9 @@ pub enum ConsensusError {
     /// PoA specific: missing quorum of authority signatures
     #[error("Missing quorum of authority signatures, expected: {0}, got: {1}")]
     MissingQuorumOfAuthoritySignatures(u16, u16),
-
+    /// PoA specific: authority list does not match the genesis block authority list
+    #[error("Invalid authority list")]
+    InvalidAuthorityList,
     /// PoA specific: Invalid block signature
     #[error("Invalid authority signature")]
     InvalidAuthoritySignature,

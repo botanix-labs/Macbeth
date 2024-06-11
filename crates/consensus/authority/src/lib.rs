@@ -20,7 +20,10 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 use reth_consensus::{Consensus, ConsensusError};
-use reth_consensus_common::utils::{get_block_producer_address, unix_timestamp};
+use reth_consensus_common::{
+    utils::{get_block_producer_address, unix_timestamp},
+    validation,
+};
 use reth_interfaces::{
     executor::{BlockExecutionError, BlockValidationError},
     provider::ProviderError,
@@ -47,9 +50,7 @@ use reth_revm::{
 };
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::error;
-
-use tracing::{trace, warn};
+use tracing::{error, trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -128,19 +129,30 @@ impl Consensus for AuthorityConsensus {
         &self,
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         // Skip over genesis
         if header.number == 0 {
             return Ok(());
         }
         // First run the basic validation
-        reth_consensus_common::validation::validate_header_extradata(header)?;
+        validation::validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
-        let _edh = header.deserialize_extra_data_header().map_err(|e| {
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
+
+        // Validate the list of authorities matches the authorities in the genesis block
+        // This check is only for a static federation
+        // Use EDH authority list as source of truth and not the list passed in
+        if genesis_authorities !=
+            edh.authority_signers.as_ref().expect("authority signers to exist")
+        {
+            return Err(ConsensusError::InvalidAuthorityList);
+        }
+
         // Validate the authority signature and signature came from one of the authorities
         let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
@@ -172,22 +184,26 @@ impl Consensus for AuthorityConsensus {
         &self,
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         // Validate EDH serialization and signature on block
-        self.validate_extra_data_header(header, authority_signers)?;
+        self.validate_extra_data_header(header, authority_signers, genesis_authorities)?;
 
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
 
-        // Validate header timestamps
-        header
-            .validate_timestamp(unix_timestamp())
-            .map_err(|_| ConsensusError::ValidateInturnError)?;
-
         // Validate signer is in turn
         header
             .validate_inturn(authority_signers)
-            .map_err(|_| ConsensusError::ValidateInturnError)?;
+            .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
+        // Place a tigher limit on the timestamp
+        let current_timestamp = unix_timestamp();
+        header.validate_timestamp(current_timestamp).map_err(|_| {
+            ConsensusError::TimestampIsInFuture {
+                timestamp: header.timestamp,
+                present_timestamp: current_timestamp,
+            }
+        })?;
 
         Ok(())
     }
@@ -213,6 +229,7 @@ where
     fn try_new(
         client: Client,
         headers: &mut [SealedHeader],
+        genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
@@ -226,6 +243,7 @@ where
 
         let storage = StorageInner {
             client: client.clone(),
+            genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
@@ -252,9 +270,11 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
+    /// The authority list in the genesis block
+    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// Keep track of the  signers
     pub(crate) authorities: Vec<secp256k1::PublicKey>,
-    /// keep track of my place among the singer
+    /// keep track of my place among the signer
     /// This will change as new signers are removed
     pub(crate) signer_index: usize,
     /// Authority Signer public key
@@ -548,11 +568,13 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        consensus.validate_header_standalone(&header, authority_signers).map_err(|e| {
-            warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-            // TODO(armins) return more expressive error
-            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-        })?;
+        consensus
+            .validate_header_standalone(&header, authority_signers, authority_signers)
+            .map_err(|e| {
+                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+                // TODO(armins) return more expressive error
+                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+            })?;
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
         let block_hash = header.hash_slow();
@@ -594,8 +616,13 @@ where
 
         // validate before executing block
         let authority_signers = self.authorities.clone();
+        let genesis_authorities = self.genesis_authorities.clone();
         consensus
-            .validate_header_standalone(&sealed_block.header.clone(), &authority_signers)
+            .validate_header_standalone(
+                &sealed_block.header.clone(),
+                &authority_signers,
+                &genesis_authorities,
+            )
             .map_err(|e| {
                 warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
                 // TODO(armins) return more expressive error
@@ -669,7 +696,8 @@ mod tests {
         let mut header = Header::default();
         header.number = 0;
         let authority_signers = vec![];
-        let result = consensus.validate_extra_data_header(&header, &authority_signers);
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
 
         assert!(result.is_ok());
     }
@@ -691,7 +719,8 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&non_fed).expect("valid sign");
 
-        let result = consensus.validate_extra_data_header(&header, &authority_signers);
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
         assert!(result.is_err());
 
         // reset header and try again with a
@@ -700,7 +729,8 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk1).expect("valid sign");
 
-        let result = consensus.validate_extra_data_header(&header, &authority_signers);
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
         assert!(result.is_ok())
     }
 

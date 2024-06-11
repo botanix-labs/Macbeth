@@ -1681,6 +1681,7 @@ dependencies = [
  "ciborium",
  "clap",
  "client",
+ "confy",
  "displaydoc",
  "env_logger",
  "frost-secp256k1-tr",

@@ -107,7 +107,7 @@ pub fn get_block_producer_address(header: &Header) -> Address {
         // TODO remove this unwrap
         let block_builder_public_key =
             authorities.get(0).expect("block producer authority to be present");
-        return public_key_to_address(*block_builder_public_key)
+        return public_key_to_address(*block_builder_public_key);
     }
 
     // TODO this method should return a Result

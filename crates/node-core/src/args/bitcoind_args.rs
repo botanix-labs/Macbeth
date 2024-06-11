@@ -1,5 +1,6 @@
 use clap::Args;
 use reth_btc_wallet::bitcoind::BitcoindConfig;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::utils::parse_url;
@@ -14,7 +15,7 @@ pub(crate) const DEFAULT_BITCOIND_USERNAME: &str = "foo";
 pub(crate) const DEFAULT_BITCOIND_PASSWORD: &str = "bar";
 
 /// Parameters to configure Bitcoind.
-#[derive(Debug, Clone, Args, PartialEq, Eq)]
+#[derive(Debug, Clone, Args, PartialEq, Eq, Serialize, Deserialize)]
 #[clap(next_help_heading = "Bitcoind")]
 
 pub struct BitcoindArgs {
@@ -45,6 +46,16 @@ pub struct BitcoindArgs {
         value_name = "BITCOIND_PASSWORD"
     )]
     pub password: String,
+}
+
+impl Default for BitcoindArgs {
+    fn default() -> Self {
+        BitcoindArgs {
+            url: Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"),
+            username: DEFAULT_BITCOIND_USERNAME.into(),
+            password: DEFAULT_BITCOIND_PASSWORD.into(),
+        }
+    }
 }
 
 impl From<BitcoindArgs> for BitcoindConfig {

@@ -38,7 +38,12 @@ use reth_node_builder::{
     launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
     RethTransactionPoolConfig,
 };
-use reth_node_core::{args::get_secret_key, init::init_genesis, node_config::NodeConfig, version};
+use reth_node_core::{
+    args::{get_secret_key, BitcoindArgs},
+    init::init_genesis,
+    node_config::NodeConfig,
+    version,
+};
 use reth_node_ethereum::EthEvmConfig;
 use reth_node_events::node::handle_events;
 use reth_primitives::{
@@ -69,8 +74,7 @@ use crate::{
             chain_help, genesis_value_parser, get_federation_pks_from_path, parse_socket_address,
             SUPPORTED_CHAINS,
         },
-        DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
-        RpcServerArgs, TxPoolArgs,
+        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
@@ -101,9 +105,9 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
     pub datadir: MaybePlatformPath<DataDirPath>,
 
-    /// The path to the configuration file to use.
+    /// The path to the configuration file to use for network properties.
     #[arg(long, value_name = "FILE", verbatim_doc_comment)]
-    pub config: Option<PathBuf>,
+    pub network_config_path: Option<PathBuf>,
 
     /// The chain this node is running.
     ///
@@ -164,10 +168,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[clap(flatten)]
     pub txpool: TxPoolArgs,
 
-    /// All payload builder related arguments
-    #[clap(flatten)]
-    pub builder: PayloadBuilderArgs,
-
     /// All debug related arguments with --debug prefix
     #[clap(flatten)]
     pub debug: DebugArgs,
@@ -176,13 +176,9 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[clap(flatten)]
     pub db: DatabaseArgs,
 
-    /// All dev related arguments with --dev prefix
-    #[command(flatten)]
-    pub dev: DevArgs,
-
-    /// All pruning related arguments
-    #[clap(flatten)]
-    pub pruning: PruningArgs,
+    /// The path to the configuration file to use for network properties.
+    #[arg(long, value_name = "FILE", verbatim_doc_comment)]
+    pub bitcoind_config_path: Option<PathBuf>,
 
     /// Additional cli arguments
     #[command(flatten, next_help_heading = "Extension")]
@@ -210,7 +206,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
     pub fn with_ext<E: clap::Args + fmt::Debug>(self, ext: E) -> PoaNodeCommand<E> {
         let Self {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -219,16 +215,14 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
-            dev,
-            pruning,
+            bitcoind_config_path,
             ..
         } = self;
         PoaNodeCommand {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -237,11 +231,9 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
-            dev,
-            pruning,
+            bitcoind_config_path,
             ext,
         }
     }
@@ -253,7 +245,7 @@ where {
 
         let Self {
             datadir,
-            config,
+            network_config_path,
             chain,
             federation_mode,
             metrics,
@@ -262,17 +254,19 @@ where {
             network,
             rpc,
             txpool,
-            builder,
             debug,
             db,
-            dev,
-            pruning,
+            bitcoind_config_path,
             ext,
         } = self;
 
+        // Load reth config which is a bit different than cli config
+        let mut reth_config = self.load_config()?;
+
         // set up node config
+        // TODO should set up PoaConfig
         let mut node_config = NodeConfig {
-            config: config.clone(),
+            config: network_config_path.clone(),
             chain: chain.clone(),
             federation_mode: *federation_mode,
             metrics: metrics.clone(),
@@ -280,12 +274,25 @@ where {
             network: network.clone(),
             rpc: rpc.clone(),
             txpool: txpool.clone(),
-            builder: builder.clone(),
             debug: debug.clone(),
             db: db.clone(),
-            dev: dev.clone(),
-            pruning: pruning.clone(),
+            dev: Default::default(),
+            pruning: Default::default(),
+            builder: PayloadBuilderArgs::default(),
         };
+
+        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
+        // prioritize the bitcoind config path from cli args
+        if let Some(bitcoind_config_path) = bitcoind_config_path {
+            // node_config.rpc.bitcoind = Some(bitcoind_config_path);
+            let config =
+                confy::load_path::<BitcoindArgs>(&bitcoind_config_path).wrap_err_with(|| {
+                    format!("Could not load config file {:?}", bitcoind_config_path)
+                })?;
+
+            info!(target: "reth::cli", path = ?bitcoind_config_path, "Bitcoind config loaded from file");
+            bitcoind_config = config.into();
+        }
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
@@ -369,7 +376,6 @@ where {
         let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
 
         // create bitcoind client and make sure its synced
-        let bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
         let bitcoind_client =
             BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
 
@@ -465,9 +471,6 @@ where {
             )
             .await?;
 
-        // Load reth config which is a bit different than cli config
-        let mut reth_config = self.load_config()?;
-
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
 
@@ -493,7 +496,9 @@ where {
         };
         let authorities =
             get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
-        self.add_trusted_peers_from_authorities(secret_key, authorities, &mut reth_config);
+        self.add_trusted_peers_from_authorities(secret_key, authorities.clone(), &mut reth_config);
+        let genesis_authorities =
+            authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -703,6 +708,7 @@ where {
             frost_config,
             payload_builder.clone(),
             node_config.rpc.btc_network,
+            genesis_authorities,
         )
         .expect("Failed to create authority consensus builder")
         .build();
@@ -825,22 +831,6 @@ where {
         let initial_target = node_config.initial_pipeline_target(genesis_hash);
         let hooks = EngineHooks::new();
 
-        // TODO do we want pruner
-        //  let pruner_events = if let Some(prune_config) = prune_config {
-        //     let mut pruner = PrunerBuilder::new(prune_config.clone())
-        //         .max_reorg_depth(tree_config.max_reorg_depth() as usize)
-        //         .prune_delete_limit(self.config.chain.prune_delete_limit)
-        //         .build(provider_factory, snapshotter.highest_snapshot_receiver());
-
-        //     let events = pruner.events();
-        //     hooks.add(PruneHook::new(pruner, Box::new(executor.clone())));
-
-        //     info!(target: "reth::cli", ?prune_config, "Pruner initialized");
-        //     Either::Left(events)
-        // } else {
-        //     Either::Right(stream::empty())
-        // };
-
         // Configure the consensus engine
         let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
             network_client,
@@ -930,12 +920,12 @@ where {
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        match <std::option::Option<PathBuf> as Clone>::clone(&self.config) {
+        match <std::option::Option<PathBuf> as Clone>::clone(&self.network_config_path) {
             Some(config_path) => {
                 let mut config = confy::load_path::<Config>(&config_path)
                     .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
 
-                info!(target: "reth::cli", path = ?config_path, "Configuration loaded");
+                info!(target: "reth::cli", path = ?config_path, "Network onfiguration loaded");
 
                 // Update the config with the command line arguments
                 config.peers.trusted_nodes_only = self.network.trusted_only;
@@ -1147,20 +1137,24 @@ mod tests {
 
     #[test]
     fn parse_config_path() {
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth", "--config", "my/path/to/reth.toml"])
-            .unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--network-config-path",
+            "my/path/to/reth.toml",
+        ])
+        .unwrap();
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.unwrap_or_else(|| data_dir.config_path());
+        let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
         let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
 
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
-        let config_path = cmd.config.clone().unwrap_or_else(|| data_dir.config_path());
+        let config_path = cmd.network_config_path.clone().unwrap_or_else(|| data_dir.config_path());
         let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
-        assert!(config_path.ends_with(end), "{:?}", cmd.config);
+        assert!(config_path.ends_with(end), "{:?}", cmd.network_config_path);
     }
 
     #[test]
@@ -1169,32 +1163,13 @@ mod tests {
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
-        assert!(db_path.ends_with(end), "{:?}", cmd.config);
+        assert!(db_path.ends_with(end), "{:?}", cmd.network_config_path);
 
         let cmd =
             PoaNodeCommand::try_parse_args_from(["reth", "--datadir", "my/custom/path"]).unwrap();
         let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
         let db_path = data_dir.db_path();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
-    }
-
-    #[test]
-    #[cfg(not(feature = "optimism"))] // dev mode not yet supported in op-reth
-    fn parse_dev() {
-        let cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth", "--dev"]);
-        let chain = reth_primitives::DEV.clone();
-        assert_eq!(cmd.chain.chain, chain.chain);
-        assert_eq!(cmd.chain.genesis_hash, chain.genesis_hash);
-        assert_eq!(
-            cmd.chain.paris_block_and_final_difficulty,
-            chain.paris_block_and_final_difficulty
-        );
-        assert_eq!(cmd.chain.hardforks, chain.hardforks);
-
-        assert!(cmd.rpc.http);
-        assert!(cmd.network.discovery.disable_discovery);
-
-        assert!(cmd.dev.dev);
     }
 
     #[test]
