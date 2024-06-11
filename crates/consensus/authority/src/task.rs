@@ -1,11 +1,11 @@
 use crate::{
     epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, AuthorityConsensus, Storage,
+    frost_task::FrostNotificationMessage, AuthorityConsensus, Storage, pbft_task::PbftNotificationMessage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::{frost::manager::FrostHandle, NetworkHandle};
+use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
@@ -16,7 +16,6 @@ use reth_provider::{
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
-use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 
 use tokio::sync::{
@@ -25,7 +24,7 @@ use tokio::sync::{
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
+pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
     /// The authority consensus wrapper
     pub(crate) consensus: AuthorityConsensus,
     /// The active epoch
@@ -40,14 +39,13 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) btc_server: BtcServerExtendedClient,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Instance of secp
-    pub(crate) secp: Secp256k1<All>,
     /// Key of authority
     pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost Handler
-    pub(crate) frost_handle: FrostHandle,
+    #[allow(dead_code)]
+    pub(crate) frost_handle: ToFrostMan,
     /// The type that defines how to configure the EVM.
     pub(crate) evm_config: EvmConfig,
     /// Task executor
@@ -59,12 +57,17 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes> {
     pub(crate) frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
     /// Frost Task Sender
     pub(crate) frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    /// Frost Task Receiver
+    pub(crate) pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+    /// Frost Task Sender
+    pub(crate) pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     /// Bitcoin Network
     pub(crate) btc_network: bitcoin::Network,
 }
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
-    BlockProductionTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
+    BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -84,16 +87,17 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
-        frost_handle: FrostHandle,
+        frost_handle: ToFrostMan,
         task_executor: TaskExecutor,
         evm_config: EvmConfig,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
+        pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         btc_network: bitcoin::Network,
     ) -> Self {
         Self {
@@ -103,7 +107,6 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            secp,
             sk,
             epoch_manager,
             network_handle,
@@ -113,6 +116,8 @@ where
             payload_builder,
             frost_task_rx,
             frost_task_tx,
+            pbft_task_rx,
+            pbft_task_tx,
             btc_network,
         }
     }
@@ -130,8 +135,8 @@ where
     }
 }
 
-impl<Client, EvmConfig: std::fmt::Debug, Engine: EngineTypes> std::fmt::Debug
-    for BlockProductionTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig: std::fmt::Debug, Engine: EngineTypes, ToFrostMan> std::fmt::Debug
+    for BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Authority Block Production Task").finish_non_exhaustive()

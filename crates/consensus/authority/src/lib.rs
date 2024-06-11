@@ -19,13 +19,12 @@
 //!
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
-use reth_botanix_lib::extra_data_header::ExtraDataHeader;
 use reth_consensus::{Consensus, ConsensusError};
 use reth_consensus_common::{
     utils::{
         create_authority_sighash, get_block_producer_address, unix_timestamp, validate_inturn,
     },
-    validation::validate_header_standalone,
+    validation::{self, validate_poa_header_standalone, validate_poa_header_template_standalone, validate_header_standalone},
 };
 use reth_interfaces::{
     executor::{BlockExecutionError, BlockValidationError},
@@ -35,6 +34,8 @@ use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+    extra_data_header::ExtraDataHeader,
+    header_ext::HeaderExt,
     proofs, public_key_to_address,
     revm_primitives::FixedBytes,
     Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
@@ -63,13 +64,17 @@ mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
+mod pbft;
+mod pbft_task;
 mod signing;
 mod sync;
 mod task;
 pub mod utils;
-mod voting;
 
 pub use builder::AuthorityConsensusBuilder;
+
+/// Block time duration (secs)
+pub const BLOCK_TIME_DURATION_SECS: u64 = 1 * 60;
 
 /// Ethereum authority consensus
 ///
@@ -222,7 +227,6 @@ where
             authorities,
             signer_index,
             authority: pk,
-            authority_votes: AuthorityVoteCollection::default(),
             aggregate_public_key: None,
             btc_network,
         };
@@ -246,8 +250,6 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
-    /// Keep track of current votes
-    pub(crate) authority_votes: AuthorityVoteCollection,
     /// Keep track of the  signers
     pub(crate) authorities: Vec<secp256k1::PublicKey>,
     /// keep track of my place among the singer
@@ -304,9 +306,6 @@ where
         &self,
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
-        vote: &Option<(secp256k1::PublicKey, Vote)>,
-        _sk: &secp256k1::SecretKey,
-        _secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let timestamp = unix_timestamp();
@@ -342,11 +341,6 @@ where
             extra_data: Default::default(),
             parent_beacon_block_root: None,
         };
-
-        // Add the vote to the header using the nonce field
-        if let Some(vote) = vote {
-            header.nonce = vote.1 as u64;
-        }
 
         header.transactions_root = if transactions.is_empty() {
             EMPTY_TRANSACTIONS
@@ -404,9 +398,7 @@ where
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &[secp256k1::PublicKey],
-        authority_to_vote_on: &Option<(secp256k1::PublicKey, Vote)>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
         utxo_commitment: &[u8; 32],
@@ -425,7 +417,6 @@ where
         };
         header.gas_used = gas_used;
 
-        let vote_for = authority_to_vote_on.as_ref().map(|vote| vote.0);
         // calculate the state root
         let state_root = self
             .client
@@ -449,29 +440,21 @@ where
             }
         };
 
-        // Serialize the header without signature
-        let mut extra_header_content_no_signature = ExtraDataHeader::new(
-            0u32,
+        // Construct [ExtraDataHeader] and sign the block
+        let edh = ExtraDataHeader::new(
+            0,
             None,
             if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
-            vote_for,
+            None,
             witness_data.clone(),
             recent_block_hash,
-            *utxo_commitment,
+            utxo_commitment.clone(),
         );
-        let sig_hash = reth_consensus_common::utils::create_authority_sighash(
-            &mut header.clone(),
-            &extra_header_content_no_signature,
-        );
-
-        // Sign the header and append to extra data header
-        let message = secp256k1::Message::from_digest_slice(sig_hash.as_slice())
-            .expect("Valid message to sign");
-        let signature = secp.sign_ecdsa_recoverable(&message, sk);
-
-        extra_header_content_no_signature.set_signature(signature);
-
-        header.extra_data = Bytes::from(extra_header_content_no_signature.serialize());
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk).map_err(|e| {
+            warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
         Ok(header)
     }
 
@@ -483,9 +466,7 @@ where
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-        vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         evm_config: EvmConfig,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
@@ -498,8 +479,7 @@ where
         }
 
         // Construct block and header
-        let header =
-            self.build_header_template(&transactions, &chain_spec.clone(), vote, sk, secp)?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone())?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -543,9 +523,7 @@ where
         block: Block,
         gas_used: u64,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-        vote: &Option<(secp256k1::PublicKey, Vote)>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         utxo_commitment: &[u8; 32],
@@ -560,9 +538,7 @@ where
             bundle_state,
             gas_used,
             sk,
-            secp,
             authority_signers,
-            vote,
             witness_data,
             // This is checked to be Some above
             botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
@@ -575,18 +551,6 @@ where
             // TODO(armins) return more expressive error
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
-
-        if vote.is_some() {
-            let vote = vote.expect("valid vote");
-            let authority_to_vote_on = vote.0;
-
-            // TODO(armins) Should we be verbose and fail the block or just ignore?
-            if authority_signers.iter().any(|signer| signer == &authority_to_vote_on) {
-                return Err(BlockExecutionError::CannotAddExistingFederationMember);
-            }
-            // Keep track of votes
-            self.authority_votes.vote_for(&sk.public_key(secp), &vote.1, &vote.0);
-        }
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
         let block_hash = header.hash_slow();
@@ -1021,9 +985,9 @@ mod tests {
     fn get_inturn_interval() {
         let authorities_len = 10;
         let signer_index = 3; // Example signer index
-        let (start, end, time_passed, time_remaining): CoordinatorInterval =
-            get_in_turn_interval(authorities_len, signer_index);
         let current_ts = super::unix_timestamp();
+        let (start, end, time_passed, time_remaining): CoordinatorInterval =
+            get_in_turn_interval(authorities_len, signer_index, current_ts);
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
             signer_index,

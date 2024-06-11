@@ -1,6 +1,6 @@
 use crate::Storage;
 use reth_consensus_common::utils;
-use reth_primitives::BlockHashOrNumber;
+use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider, StateProviderFactory};
 use tracing::{debug, info, warn};
 
@@ -60,10 +60,12 @@ where
 
         // Skip over genesis
         if latest_header.number != 0 {
-            let latest_signer = utils::recovery_authority(&latest_header).unwrap();
+            let latest_signers = latest_header.recovered_signed_authorities().unwrap();
+            let latest_inturn_signer =
+                latest_signers.get(0).expect("should have at least one signer");
             let current_ts = utils::unix_timestamp();
             let current_last_signer_validation = utils::validate_current_signer_against_last(
-                (latest_signer, latest_header.timestamp as f64 / 60.0),
+                (*latest_inturn_signer, latest_header.timestamp as f64 / 60.0),
                 (signer_pk, current_ts as f64 / 60.0),
             );
             if is_inturn && current_last_signer_validation.is_err() {

@@ -5,7 +5,7 @@ use crate::{
         self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
         NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
     },
-    App, Error, SECP,
+    App, Error,
 };
 use std::collections::HashMap;
 
@@ -19,9 +19,10 @@ use bitcoin::{
     Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
 use bitcoincore_rpc::RpcApi;
+use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PsbtExt, PsbtInputExt},
+    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -346,7 +347,9 @@ impl App {
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
-        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, &SECP) {
+        if let Err(errs) =
+            miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, bitcoin::secp256k1::SECP256K1)
+        {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
                 error!("  PSBT finalization error: {}", e);
@@ -385,5 +388,24 @@ impl App {
         self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
         self.db.flush()?;
         Ok(psbt)
+    }
+
+    /// Returns signing status
+    pub(crate) async fn get_signing_status(
+        &self,
+        signing_session_id: &[u8; 32],
+    ) -> Result<SigningStatus, CoordinatorError> {
+        self.db
+            .get_signing_status(signing_session_id)
+            .map_err(|_| CoordinatorError::CouldNotFindPsbt)
+    }
+
+    /// Retruns signing status
+    pub(crate) async fn get_session_ids(
+        &self,
+        max_requested_results: u32,
+    ) -> Result<Vec<[u8; 32]>, CoordinatorError> {
+        let signing_sessions = self.db.get_session_ids(max_requested_results)?;
+        Ok(signing_sessions)
     }
 }

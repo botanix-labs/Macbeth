@@ -26,7 +26,6 @@ mod rpc {
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
-use bitcoin::secp256k1;
 use bitcoincore_rpc::Auth;
 use clap::Parser;
 use frost_secp256k1_tr as frost;
@@ -46,10 +45,6 @@ use crate::{
     signer::SigningError,
     util::ParsingError,
 };
-
-lazy_static::lazy_static! {
-    pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 #[derive(Debug, Error)]
 pub enum Error {

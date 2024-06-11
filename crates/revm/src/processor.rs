@@ -18,7 +18,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
@@ -365,6 +365,7 @@ where
         }
         let time = Instant::now();
         let block_builder_address = get_block_producer_address(&block.header.clone());
+        info!(target: "evm", "Block builder address: {:?}", block_builder_address);
         self.apply_post_execution_state_change(
             block,
             total_difficulty,

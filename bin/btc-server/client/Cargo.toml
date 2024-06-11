@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 tonic = "0.11.0"
-prost = "0.12.3"
-tokio = "1.30.0"
+prost = "0.12.6"
+tokio = "1.37.0"
 
 [build-dependencies]
-tonic-build = "0.9"
+tonic-build = "0.11.0"

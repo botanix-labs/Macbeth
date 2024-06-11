@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::{
     engine_util,
     frost_task::{FrostNotification, FrostNotificationMessage},
+    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
     utils::{get_witness_data_from_psbt, is_testnet},
 };
@@ -10,22 +11,23 @@ use crate::{
 use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
-use reth_interfaces::blockchain_tree::{
-    BlockValidationKind::SkipStateRootValidation, BlockchainTreeEngine,
-};
+use reth_interfaces::blockchain_tree::{BlockValidationKind, BlockchainTreeEngine};
+use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, public_key_to_address, Block, SealedBlockWithSenders, B256,
+    botanix::BotanixConsensusPackage, header_ext::HeaderExt, public_key_to_address, Block,
+    SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
 
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes>
-    BlockProductionTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
+    BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
 where
+    ToFrostMan: ToFrostManager + Clone,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -50,7 +52,7 @@ where
         drop(storage);
 
         // use authority address as suggested fee recipient
-        let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
+        let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
         let payload_attributes = PayloadAttributes {
@@ -146,10 +148,7 @@ where
             transactions.clone(),
             self.consensus.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
-            &self.secp,
             self.evm_config.clone(),
         ) {
             Ok(ret) => ret,
@@ -271,10 +270,7 @@ where
             block,
             gas_used,
             Some(botanix_consensus_pkg),
-            // TODO(armins) read vote in as param
-            &None,
             &self.sk,
-            &self.secp,
             &authority_signers,
             &epoch_witness,
             &utxo_commitment,
@@ -286,23 +282,58 @@ where
                 return;
             }
         };
-
         // Seal the block
-        let block = Block {
+        let mut block_to_commit = Block {
             header: new_header.clone().unseal(),
             body: transactions,
             ommers: vec![],
             withdrawals: None,
         };
-        let sealed_block = block.clone().seal_slow();
+        // print tx ids
+        let tx_ids: Vec<String> =
+            block_to_commit.body.iter().map(|tx| tx.hash().to_string()).collect();
+        info!(target: "consensus::authority", ">>>>>>>>> b4 Block tx ids: {:?}", tx_ids);
+
+        // Propose block to network for commitments
+        self.pbft_task_tx
+            .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
+                block: block_to_commit.clone().seal_slow(),
+            }))
+            .expect("send pbft task message");
+        // Wait for commitments before we can commit to this block
+        info!(target: "consensus::authority", "Waiting for commitments...");
+        let _ = match tokio::time::timeout(Duration::from_secs(60), self.pbft_task_rx.recv()).await
+        {
+            Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
+                info!(target: "consensus::authority", "Commitments received");
+                let PbftFinalizationNotification { block_witness } = notif;
+                block_to_commit.header.add_block_witness(block_witness).unwrap();
+            }
+            Err(e) => {
+                error!(target: "consensus::authority", "Timeout: Failed to get commitments from peer, error: {:?}", e);
+                self.pbft_task_tx
+                    .send(PbftNotificationMessage::Reset)
+                    .expect("send pbft task message");
+                return;
+            }
+            msg => {
+                warn!(target: "consensus::authority", "Recieved unknown message from pbft task: {:?}", msg);
+                return;
+            }
+        };
+
+        let sealed_block = block_to_commit.clone().seal_slow();
+        let commited_header = sealed_block.header();
+
+        // TODO(armins) assert that block hash has not changed after adding witness
+
         let sealed_block_with_senders =
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
 
-        // update canon chain for rpc
         match storage
             .client
-            .insert_block(sealed_block_with_senders.clone(), SkipStateRootValidation)
+            .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
         {
             Ok(_) => {}
             Err(e) => {
@@ -315,7 +346,7 @@ where
         storage.client.set_finalized(sealed_block.header.clone());
 
         match engine_util::send_fork_choice_update_payload(
-            new_header.hash(),
+            commited_header.hash_slow(),
             self.to_engine.clone(),
         )
         .await
@@ -330,7 +361,7 @@ where
         drop(storage);
 
         // Notify peers
-        let new_block = NewBlock { block, td: Uint::ZERO };
+        let new_block = NewBlock { block: block_to_commit.clone(), td: Uint::ZERO };
         let block_hash = new_block.clone().block.hash_slow();
         self.network_handle.announce_block(new_block, block_hash);
     }

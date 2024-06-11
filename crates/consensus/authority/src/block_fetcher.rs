@@ -6,18 +6,24 @@ use crate::{
 };
 
 use client::{FinalizeSignerRequest, Output};
-use reth_botanix_lib::extra_data_header::{ExtraDataHeader, HeaderExt};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_consensus::Consensus;
+use reth_interfaces::{
+    blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
+    p2p::{
+        bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
+    },
+};
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, SealedBlockWithSenders, TransactionSigned,
+    botanix::BotanixConsensusPackage, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
+    SealedBlockWithSenders, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::bitcoind::BitcoindClient;
 use reth_network::message::NewBlockMessage;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
@@ -29,16 +35,17 @@ use tokio::sync::{
 
 use tracing::{debug, error, info, warn};
 
-pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
+pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
+    /// Authority consensus
     consensus: AuthorityConsensus,
+    /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
     btc_server: Option<BtcServerExtendedClient>,
-    /// bitcoin block source
-    bitcoind_client: BitcoindClient,
     /// Consensus cache
     storage: Storage<Client>,
     /// Recent bitcoin header
@@ -47,9 +54,12 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes> {
     evm_config: EvmConfig,
     /// Bitcoin network
     btc_network: bitcoin::Network,
+    /// Network Client, used to create [FullBlockClient]
+    network_client: NetworkClient,
 }
 
-impl<Client, EvmConfig, Engine> BlockFetcherTask<Client, EvmConfig, Engine>
+impl<Client, EvmConfig, Engine, NetworkClient>
+    BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -60,6 +70,7 @@ where
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
+    NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
     pub(crate) fn new(
         consensus: AuthorityConsensus,
@@ -67,11 +78,11 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
-        bitcoind_client: BitcoindClient,
         storage: Storage<Client>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
         btc_network: bitcoin::Network,
+        network_client: NetworkClient,
     ) -> Self {
         Self {
             consensus,
@@ -79,17 +90,20 @@ where
             to_engine,
             canon_state_notification,
             btc_server,
-            bitcoind_client,
             storage,
             bitcoin_block_header,
             evm_config,
             btc_network,
+            network_client,
         }
     }
 
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
+        let consensus: Arc<dyn Consensus> =
+            Arc::new(AuthorityConsensus::new(Arc::clone(&self.chain_spec)));
+        let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
             let new_block = match self.block_import_rx.try_recv() {
@@ -272,6 +286,40 @@ where
                         }
                     }
 
+                    // Need to decide if we accepting a forked block or not
+                    // There is a garuntee a quorum of signers will not sign an invalid fork
+                    let tip = storage.client.best_block_number().expect("best block exists");
+                    let best_block = storage
+                        .client
+                        .block_by_number(tip)
+                        .expect("best block exists")
+                        .expect("best block exists");
+                    if best_block.header.hash_slow() != header.parent_hash {
+                        warn!(target: "consensus::authority", "Recieved block is not a direct child of the best block");
+                        // need to retrieve this missing block from a peer
+                        let missing_block =
+                            full_block_client.get_full_block(header.parent_hash.clone()).await;
+                        if let Err(e) = storage.client.insert_block_without_senders(
+                            missing_block.clone(),
+                            BlockValidationKind::Exhaustive,
+                        ) {
+                            error!(target: "consensus::authority", ?e, "Failed to insert forked block");
+                            continue;
+                        }
+                        storage.client.set_canonical_head(missing_block.header.clone());
+                        storage.client.set_safe(missing_block.header.clone());
+                        storage.client.set_finalized(missing_block.header.clone());
+                        if let Err(e) = engine_util::send_fork_choice_update_payload(
+                            sealed_block.clone().hash(),
+                            self.to_engine.clone(),
+                        )
+                        .await
+                        {
+                            error!(target: "consensus::authority", ?e, "Failed to send fork choice update on forked block");
+                            continue;
+                        }
+                    }
+
                     // Notify engine api about new FCU
                     engine_util::send_fork_choice_update_payload(
                         sealed_block.clone().hash(),
@@ -282,7 +330,6 @@ where
                     .unwrap();
 
                     // update canon chain for rpc
-                    // TODO do we need to insert the block here?
                     storage.client.set_canonical_head(header);
                     storage.client.set_safe(sealed_block.header.clone());
                     storage.client.set_finalized(sealed_block.header.clone());

@@ -25,12 +25,15 @@ reth-payload-builder.workspace = true
 # reth-beacon-imports
 reth-tasks.workspace = true
 reth-rpc.workspace = true
+reth-db.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 serde_json = { workspace = true }
+reth-ecies.workspace = true
+reth-network-types.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 

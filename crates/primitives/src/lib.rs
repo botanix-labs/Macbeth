@@ -20,6 +20,7 @@
 mod account;
 pub mod basefee;
 mod block;
+/// Chain helpers and types
 pub mod chain;
 #[cfg(feature = "zstd-codec")]
 mod compression;
@@ -49,6 +50,10 @@ mod withdrawal;
 
 // Botanix specific stuff
 pub mod botanix;
+/// Extra data header helpers
+pub mod extra_data_header;
+/// Header extension helpers
+pub mod header_ext;
 
 pub use account::{Account, Bytecode};
 #[cfg(any(test, feature = "arbitrary"))]
@@ -58,9 +63,9 @@ pub use block::{
     ForkBlock, RpcBlockHash, SealedBlock, SealedBlockWithSenders,
 };
 pub use chain::{
-    AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain, ChainInfo, ChainKind, ChainSpec,
-    ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams, ForkCondition, NamedChain,
-    BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
+    create_botanix_config_with_genesis, AllGenesisFormats, BaseFeeParams, BaseFeeParamsKind, Chain,
+    ChainInfo, ChainKind, ChainSpec, ChainSpecBuilder, DisplayHardforks, ForkBaseFeeParams,
+    ForkCondition, NamedChain, BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA,
 };
 #[cfg(feature = "zstd-codec")]
 pub use compression::*;

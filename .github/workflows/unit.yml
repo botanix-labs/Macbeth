@@ -38,6 +38,14 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
