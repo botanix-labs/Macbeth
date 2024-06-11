@@ -309,7 +309,7 @@ where
             let _bitcoind_client =
                 BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let block_production = BlockProductionTask::new(
-                Arc::clone(&consensus.chain_spec),
+                consensus.clone(),
                 to_engine,
                 canon_state_notification,
                 storage,

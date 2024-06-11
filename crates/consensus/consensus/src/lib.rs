@@ -9,8 +9,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 use reth_primitives::{
-    BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header, HeaderValidationError,
-    InvalidTransactionError, SealedBlock, SealedHeader, B256, U256,
+    header_ext::ValidateInturnError, BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header,
+    HeaderValidationError, InvalidTransactionError, SealedBlock, SealedHeader, B256, U256,
 };
 use std::fmt::Debug;
 
@@ -298,6 +298,10 @@ pub enum ConsensusError {
     /// Error type transparently wrapping HeaderValidationError.
     #[error(transparent)]
     HeaderValidationError(#[from] HeaderValidationError),
+
+    /// Inturn Validation Error
+    #[error("in turn validation error")]
+    ValidateInturnError,
 }
 
 impl ConsensusError {

@@ -118,26 +118,26 @@ impl Consensus for BeaconConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         Ok(())
     }
 
     fn validate_extra_data_header(
         &self,
-        header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
 
-    fn validate_block_beneficiary(&self, header: &Header) -> Result<(), ConsensusError> {
+    fn validate_block_beneficiary(&self, _header: &Header) -> Result<(), ConsensusError> {
         Ok(())
     }
 
     fn validate_header_standalone(
         &self,
-        header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
         Ok(())
     }

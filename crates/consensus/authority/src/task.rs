@@ -1,6 +1,7 @@
 use crate::{
     epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, AuthorityConsensus, Storage, pbft_task::PbftNotificationMessage,
+    frost_task::FrostNotificationMessage, pbft_task::PbftNotificationMessage, AuthorityConsensus,
+    Storage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 
@@ -9,7 +10,6 @@ use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };

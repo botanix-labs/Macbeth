@@ -6,7 +6,6 @@ use reth_consensus::ConsensusError;
 use reth_interfaces::RethResult;
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
-    header_ext::HeaderExt,
     BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
     SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
     TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
@@ -342,32 +341,6 @@ pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError>
 
     Ok(())
 }
-
-// /// Validates PoA header standalone according to the authority consensus rules.
-// pub fn validate_poa_header_standalone(
-//     consensus: &AuthorityConsensus,
-//     header: &Header,
-//     authority_signers: &[secp256k1::PublicKey],
-// ) -> Result<(), ConsensusError> {
-//     // Validate EDH serialization and signature on block
-//     utils::validate_poa_extra_data_header(header, authority_signers)?;
-
-//     // Validate fee benificiary
-//     utils::validate_poa_block_beneficiary(header)?;
-
-// // Validate signer is in turn
-// header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
-// // Place a tigher limit on the timestamp
-// let current_timestamp = utils::unix_timestamp();
-// header.validate_timestamp(current_timestamp).map_err(|_| {
-//     ConsensusError::TimestampIsInFuture {
-//         timestamp: header.timestamp,
-//         present_timestamp: current_timestamp,
-//     }
-// })?;
-
-//     Ok(())
-// }
 
 /// Validates the header with the given total difficulty.
 /// Note: Used to validate PoA extra data header

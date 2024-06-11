@@ -118,6 +118,18 @@ pub enum ValidateInturnError {
     FailedToRecoverSigner(#[from] RecoverAuthorityError),
 }
 
+impl PartialEq for ValidateInturnError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
+            (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ValidateInturnError {}
+
 /// Errors that can occur when validating the authority signature
 #[derive(Debug, Error)]
 pub enum ValidateAuthoritySignatureError {

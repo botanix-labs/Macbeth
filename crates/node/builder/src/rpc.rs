@@ -367,10 +367,10 @@ where
     EvmConfig: ConfigureEvm + 'static,
     EngineT: EngineTypes + 'static,
 {
-    let (rpc_server_handle, auth_server_handle) = if (node_config
+    let (rpc_server_handle, auth_server_handle) = if node_config
         .chain
         .as_ref()
-        .eq(BOTANIX_TESTNET.as_ref()))
+        .eq(BOTANIX_TESTNET.as_ref())
     {
         let rpc_server_handle = rpc
             .start_rpc_server(

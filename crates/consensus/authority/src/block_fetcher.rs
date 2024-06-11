@@ -24,7 +24,6 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_network::message::NewBlockMessage;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
-use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
 use std::sync::Arc;
@@ -101,8 +100,7 @@ where
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
-        let consensus: Arc<dyn Consensus> =
-            Arc::new(AuthorityConsensus::new(Arc::clone(&self.chain_spec)));
+        let consensus: Arc<dyn Consensus> = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {

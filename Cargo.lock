@@ -8928,6 +8928,7 @@ dependencies = [
  "reth-consensus",
  "reth-consensus-common",
  "reth-primitives",
+ "secp256k1 0.28.2",
 ]
 
 [[package]]

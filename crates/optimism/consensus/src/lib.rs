@@ -36,11 +36,13 @@ impl OptimismBeaconConsensus {
 }
 
 impl Consensus for OptimismBeaconConsensus {
+    /// Validate header
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validation::validate_header_standalone(header, &self.chain_spec)?;
         Ok(())
     }
 
+    /// Validate header against parent
     fn validate_header_against_parent(
         &self,
         header: &SealedHeader,
@@ -50,53 +52,40 @@ impl Consensus for OptimismBeaconConsensus {
         Ok(())
     }
 
+    /// Validate header with total difficulty
     fn validate_header_with_total_difficulty(
         &self,
         header: &Header,
         _total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        // with OP-stack Bedrock activation number determines when TTD (eth Merge) has been reached.
-        let is_post_merge = self.chain_spec.is_bedrock_active_at_block(header.number);
-
-        if is_post_merge {
-            if header.nonce != 0 {
-                return Err(ConsensusError::TheMergeNonceIsNotZero)
-            }
-
-            if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
-                return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty)
-            }
-
-            // Post-merge, the consensus layer is expected to perform checks such that the block
-            // timestamp is a function of the slot. This is different from pre-merge, where blocks
-            // are only allowed to be in the future (compared to the system's clock) by a certain
-            // threshold.
-            //
-            // Block validation with respect to the parent should ensure that the block timestamp
-            // is greater than its parent timestamp.
-
-            // validate header extradata for all networks post merge
-            validate_header_extradata(header)?;
-
-            // mixHash is used instead of difficulty inside EVM
-            // https://eips.ethereum.org/EIPS/eip-4399#using-mixhash-field-instead-of-difficulty
-        } else {
-            // Check if timestamp is in the future. Clock can drift but this can be consensus issue.
-            let present_timestamp =
-                SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-
-            if header.exceeds_allowed_future_timestamp(present_timestamp) {
-                return Err(ConsensusError::TimestampIsInFuture {
-                    timestamp: header.timestamp,
-                    present_timestamp,
-                })
-            }
-        }
-
         Ok(())
     }
 
+    /// Validate block
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        validation::validate_block_standalone(block, &self.chain_spec)
+        Ok(())
+    }
+
+    /// Validate extra data header
+    fn validate_extra_data_header(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    /// Validate block beneficiary
+    fn validate_block_beneficiary(&self, header: &Header) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    /// Validates header standalone according to the authority consensus rules.
+    fn validate_header_standalone(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
     }
 }

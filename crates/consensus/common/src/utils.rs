@@ -1,4 +1,3 @@
-use reth_primitives::extra_data_header::ExtraDataHeader;
 use crate::validation;
 use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
@@ -100,47 +99,28 @@ pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
-// /// Validate poa block beneficiary
-// pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
-//     if header.beneficiary != Address::ZERO {
-//         return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
-//     }
+// TODO move this into header ext
+// not in authority utils because of circular dependency
+/// Get the authority address from the header
+pub fn get_block_producer_address(header: &Header) -> Address {
+    if let Ok(authorities) = header.recovered_signed_authorities() {
+        // TODO remove this unwrap
+        let block_builder_public_key =
+            authorities.get(0).expect("block producer authority to be present");
+        return public_key_to_address(*block_builder_public_key)
+    }
 
-//     Ok(())
-// }
-
-// /// Validate poa extra data header
-// pub fn validate_poa_extra_data_header(
-//     header: &Header,
-//     authority_signers: &[secp256k1::PublicKey],
-// ) -> Result<(), ConsensusError> {
-//     // Skip over genesis
-//     if header.number == 0 {
-//         return Ok(());
-//     }
-//     // First run the basic validation
-//     validation::validate_header_extradata(header)?;
-
-//     // Attempt to deserialize the extra data header
-//     let extra_data = reth_botanix_lib::extra_data_header::ExtraDataHeader::deserialize(
-//         &mut header.extra_data.to_vec().as_slice(),
-//     )
-//     .map_err(|e| {
-//         error!("Failed to deserialize extra data header: {:?}", e);
-//         ConsensusError::ExtraDataInvalid
-//     })?;
-//     // Validate the authority signature and signature came from one of the authorities
-//     let sig_hash = create_authority_sighash(&mut header.clone(), &extra_data);
-//     extra_data.validate_authority_signature(&sig_hash.to_vec(), authority_signers).map_err(
-//         |e| {
-//             error!("Failed to validate authority signature: {:?}", e);
-//             ConsensusError::InvalidAuthoritySignature
-//         },
-//     )?;
-//     // TODO (armins) in the future this is where we would validate federation votes
-
-//     Ok(())
-// }
+    // TODO this method should return a Result
+    Address::ZERO
+}
+// not in authority utils because of circular dependency
+/// Calculate the block reward split between botanix and the beneficiary
+pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
+    // 20% of the block reward
+    let botanix_reward = total_block_fees / 5;
+    let beneficiary_reward = total_block_fees - botanix_reward;
+    (botanix_reward, beneficiary_reward)
+}
 
 /// Validate poa extra data header
 /// This function will validate the extra data header and check for a quorum of signatures
@@ -288,4 +268,3 @@ pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u
     // Determine the current signer index based on the position in the cycle
     (position_in_cycle / 60) % authorities_len
 }
-
