@@ -165,10 +165,6 @@ where
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(frost_config.authority_index as u16);
-        info!(
-            "Frost identifier used: {:?} - {:?}",
-            frost_config.authority_index, personal_frost_identifier
-        );
 
         let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
         let signing_states_clone = Arc::clone(&signing_states);
