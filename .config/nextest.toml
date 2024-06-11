@@ -1,8 +1,9 @@
 [profile.default]
 retries = { backoff = "exponential", count = 2, delay = "2s", jitter = true }
-slow-timeout = { period = "1m", terminate-after = 4 }
-test-threads = 8
+slow-timeout = { period = "1m", terminate-after = 2 }
+test-threads = 4
 
 [[profile.default.overrides]]
 filter = "test(general_state_tests)"
-slow-timeout = { period = "2m", terminate-after = 10 }
+slow-timeout = { period = "4m", terminate-after = 2 }
+test-threads = 8

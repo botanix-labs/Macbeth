@@ -222,6 +222,7 @@ pub fn should_skip(path: &Path) -> bool {
         | "shiftCombinations.json"
 
         // Botanix: We know these are broken upstream. Fixes will be provided upstream and then we can re-enable.
+        // Tracked here https://github.com/paradigmxyz/reth/issues/8589
         | "dynamicAccountOverwriteEmpty_Paris.json"
         | "dynamicAccountOverwriteEmpty.json"
         | "create2collisionStorageParis.json"
