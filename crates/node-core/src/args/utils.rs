@@ -168,7 +168,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
                     let rendered_json = botanix_testnet_config_genesis.render()?;
                     let genesis = serde_json::from_str(&rendered_json)?;
-                    let botanix_testnet = create_botanix_config_with_genesis(genesis);
+                    let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
                     Arc::new(botanix_testnet)
                 }
             }

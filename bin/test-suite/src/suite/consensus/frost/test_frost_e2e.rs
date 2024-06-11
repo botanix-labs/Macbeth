@@ -30,6 +30,8 @@ use crate::{
 pub async fn frost_e2e_stable(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
+    let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
+
     // Set up regtest connection
     // config is hardcoded to only work with regtest
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -101,10 +103,7 @@ pub async fn frost_e2e_stable(
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc
-        .generate_to_address(
-            2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64,
-            &address,
-        )
+        .generate_to_address(2 + pegin_conf_depth, &address)
         .expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -181,7 +180,7 @@ pub async fn frost_e2e_stable(
     };
     let finalized = {
         let tip = bitcoind_rpc.get_block_count().unwrap();
-        let height = tip - reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64;
+        let height = tip - pegin_conf_depth;
         let hash = bitcoind_rpc.get_block_hash(height).unwrap();
         (bitcoind_rpc.get_block_header(&hash).unwrap(), height as u32)
     };

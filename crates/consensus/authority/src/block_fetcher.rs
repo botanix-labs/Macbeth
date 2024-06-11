@@ -1,9 +1,5 @@
-use crate::{
-    engine_util,
-    extended_client::BtcServerExtendedClient,
-    utils::{get_recent_block_height_or_zero, is_active_sync_in_progress, is_testnet},
-    AuthorityConsensus,
-};
+
+use std::{sync::Arc, time::Duration};
 
 use client::{FinalizeSignerRequest, Output};
 use reth_consensus::Consensus;
@@ -18,21 +14,22 @@ use reth_primitives::{
     SealedBlockWithSenders, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
-
-use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-
 use reth_provider::CanonStateNotificationSender;
-
-use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-
 use tracing::{debug, error, info, warn};
+
+use crate::{
+    engine_util,
+    extended_client::BtcServerExtendedClient,
+    utils::{get_recent_block_height_or_zero, get_witness_data_from_psbt, is_active_sync_in_progress},
+    AuthorityConsensus, Storage,
+};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus
@@ -200,7 +197,6 @@ where
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
                     // Process Botanix specific logs
-                    let is_testnet = is_testnet(self.consensus.chain_spec.chain().id());
                     // get pegouts if btc_server is available
                     // only federation nodes will have btc_server
                     let mut pegouts = match self.btc_server.as_ref() {
@@ -209,8 +205,8 @@ where
                                 &mut btc_server.clone(),
                                 &bundle_state,
                                 recent_bitcoin_block_height,
-                                is_testnet,
                                 self.btc_network,
+                                self.consensus.chain_spec.parent_confirmation_depth,
                             )
                             .await
                             {

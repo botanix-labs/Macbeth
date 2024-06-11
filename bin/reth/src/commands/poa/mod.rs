@@ -383,6 +383,8 @@ where {
         }
 
         let bitcoind_config_clone = bitcoind_config.clone();
+        let pegin_conf_depth = self.chain.parent_confirmation_depth;
+        assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
             "async bitcoin block header task",
             Box::pin(async move {
@@ -417,9 +419,7 @@ where {
                         let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
                         let height = tip_block.height;
                         let finalized = {
-                            let depth =
-                                reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH;
-                            let height = height.saturating_sub(depth as usize - 1);
+                            let height = height.saturating_sub(pegin_conf_depth as usize - 1);
                             let hash = or_continue!(bitcoind.get_block_hash(height as u64));
                             or_continue!(bitcoind.get_block_info(&hash))
                         };
