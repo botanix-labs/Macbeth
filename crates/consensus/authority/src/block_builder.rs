@@ -1,13 +1,5 @@
 use std::time::Duration;
 
-use crate::{
-    engine_util,
-    frost_task::{FrostNotification, FrostNotificationMessage},
-    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
-    task::BlockProductionTask,
-    utils::{get_witness_data_from_psbt, is_active_sync_in_progress, is_testnet},
-};
-
 use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
@@ -23,6 +15,14 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
+
+use crate::{
+    engine_util,
+    frost_task::{FrostNotification, FrostNotificationMessage},
+    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
+    task::BlockProductionTask,
+    utils::{get_witness_data_from_psbt, is_active_sync_in_progress},
+};
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
     BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
@@ -168,13 +168,12 @@ where
         drop(storage);
 
         // Process Botanix specific logs and get current block pegouts
-        let is_testnet = is_testnet(self.consensus.chain_spec.chain().id());
         let current_block_pegouts = match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
             botanix_consensus_pkg.recent_header.1,
-            is_testnet,
             self.btc_network,
+            self.consensus.chain_spec.parent_confirmation_depth,
         )
         .await
         {

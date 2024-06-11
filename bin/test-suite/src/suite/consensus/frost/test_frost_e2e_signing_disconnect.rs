@@ -31,6 +31,7 @@ use crate::{
 pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
+    let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
@@ -109,10 +110,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         .expect("valid send");
     // Generate some block to confirm it
     bitcoind_rpc
-        .generate_to_address(
-            2 + reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64,
-            &address,
-        )
+        .generate_to_address(2 + pegin_conf_depth, &address)
         .expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 

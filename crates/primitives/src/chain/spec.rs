@@ -1,3 +1,14 @@
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
+
+use alloy_chains::ChainKind;
+use askama::Template;
+use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+
 use crate::{
     constants::{
         BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS,
@@ -10,17 +21,6 @@ use crate::{
     Address, BlockNumber, Chain, ForkFilter, ForkFilterKey, ForkHash, ForkId, Genesis, Hardfork,
     Head, Header, NamedChain, NodeRecord, SealedHeader, B256, EMPTY_OMMER_ROOT_HASH, U256,
 };
-use alloy_chains::ChainKind;
-use askama::Template;
-use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
-
-pub use alloy_eips::eip1559::BaseFeeParams;
 
 #[cfg(feature = "optimism")]
 pub(crate) use crate::{
@@ -30,6 +30,8 @@ pub(crate) use crate::{
     },
     net::{base_nodes, base_testnet_nodes, op_nodes, op_testnet_nodes},
 };
+
+pub use alloy_eips::eip1559::BaseFeeParams;
 
 /// The Ethereum mainnet spec
 pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
@@ -78,6 +80,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 3500,
+        parent_confirmation_depth: 0,
     }
     .into()
 });
@@ -120,6 +123,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
+        parent_confirmation_depth: 0,
     }
     .into()
 });
@@ -166,6 +170,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
+        parent_confirmation_depth: 0,
     }
     .into()
 });
@@ -207,6 +212,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
+        parent_confirmation_depth: 0,
     }
     .into()
 });
@@ -294,13 +300,17 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
         ]),
         deposit_contract: None, // TODO: do we even have?
+        parent_confirmation_depth: 6,
         ..Default::default()
     }
     .into()
 });
 
 /// Creates a new botanix chain spec using a custom genesis block
-pub fn create_botanix_config_with_genesis(genesis: Genesis) -> ChainSpec {
+pub fn create_botanix_config_with_genesis(
+    genesis: Genesis,
+    pegin_conf_depth: u32,
+) -> ChainSpec {
     ChainSpec {
         chain: Chain::from_id(3636),
         genesis,
@@ -327,6 +337,7 @@ pub fn create_botanix_config_with_genesis(genesis: Genesis) -> ChainSpec {
             (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
         ]),
         deposit_contract: None, // TODO: do we even have?
+        parent_confirmation_depth: pegin_conf_depth,
         ..Default::default()
     }
 }
@@ -603,6 +614,9 @@ pub struct ChainSpec {
     /// data coming in.
     #[serde(default)]
     pub prune_delete_limit: usize,
+
+    /// The number of confirmations we require for pegins from the mainchain.
+    pub parent_confirmation_depth: u32,
 }
 
 impl Default for ChainSpec {
@@ -616,6 +630,7 @@ impl Default for ChainSpec {
             deposit_contract: Default::default(),
             base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
             prune_delete_limit: MAINNET.prune_delete_limit,
+            parent_confirmation_depth: 0,
         }
     }
 }
