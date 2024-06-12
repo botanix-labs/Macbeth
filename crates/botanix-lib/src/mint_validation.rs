@@ -9,6 +9,8 @@ use crate::{
     utils::AmountExt,
 };
 
+use tracing::error;
+
 lazy_static::lazy_static! {
     pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
@@ -35,6 +37,12 @@ impl TryFrom<B256> for GenesisContractEvents {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PeginDataError {
+    // Pegin address and amount
+    pub pegin: (Address, ethers::types::U256),
+}
+
 #[derive(Debug)]
 pub enum MintConsensusError {
     UnexpectedLog(&'static str),
@@ -44,8 +52,12 @@ pub enum MintConsensusError {
     PegoutValidationFailed(PegoutError),
     RecentBlocksCannotBeEmpty(),
     LogParsingError(&'static str),
+    LogParsingBlockHeightError(PeginDataError),
+    LogParsingMetaDataError(PeginDataError),
+    LogParsingMintAmountError(&'static str),
     UintParsingError(&'static str),
-    FailedToConvertMetadataToBytes(),
+    FailedToConvertMetadataToBytes(PeginDataError),
+    FailedtoDeserialiseMetadata(PeginDataError),
     MintContractDidNotEmitMintTopic(),
     PegoutAmountIsInvalid(),
     InvalidPayloadFromLog(),
@@ -156,6 +168,8 @@ pub fn parse_pegin_topic(
             let destination = topic_to_address(log.topics()[1])?;
             let data = &log.data;
 
+            let pegin_data_error = PeginDataError { pegin: (destination, amount) };
+
             let decoded_params: Vec<ethers::abi::Token> = decode(
                 &[
                     ethers::abi::param_type::ParamType::Uint(256_usize),
@@ -168,7 +182,7 @@ pub fn parse_pegin_topic(
 
             let bitcoin_block_height = decoded_params
                 .get(1)
-                .ok_or(MintConsensusError::LogParsingError("Failed to parse bitcoin block height"))?
+                .ok_or(MintConsensusError::LogParsingBlockHeightError(pegin_data_error.clone()))?
                 .clone()
                 .into_uint()
                 .ok_or(MintConsensusError::UintParsingError(
@@ -178,17 +192,27 @@ pub fn parse_pegin_topic(
 
             let meta_bytes = decoded_params
                 .get(2)
-                .ok_or(MintConsensusError::LogParsingError("Failed to parse metadata"))?
+                .ok_or(MintConsensusError::LogParsingMetaDataError(pegin_data_error.clone()))?
                 .clone()
                 .into_bytes()
-                .ok_or(MintConsensusError::FailedToConvertMetadataToBytes())?;
+                .ok_or(MintConsensusError::FailedToConvertMetadataToBytes(
+                    pegin_data_error.clone(),
+                ))?;
 
             let meta = {
                 let mut proofs = Vec::new();
                 let mut offset = 0;
                 while offset < meta_bytes.len() {
                     let (proof, proof_size) = PeginMeta::deserialize(&meta_bytes[offset..])
-                        .map_err(MintConsensusError::InvalidMetadata)?;
+                        .map_err(|e| {
+                            error!(
+                                "Failed to parse pegin meta: {:?}",
+                                MintConsensusError::InvalidMetadata(e)
+                            );
+                            MintConsensusError::FailedtoDeserialiseMetadata(
+                                pegin_data_error.clone(),
+                            )
+                        })?;
                     proofs.push(proof);
                     offset += proof_size;
                 }

@@ -1,10 +1,11 @@
+use ethers::types::U256 as EthersU256;
 #[cfg(not(feature = "optimism"))]
 use revm::DatabaseCommit;
 use revm::{
     db::StateDBBox,
     inspector_handle_register,
     interpreter::Host,
-    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState},
+    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState, State as EvmState},
     Evm, State,
 };
 use std::{sync::Arc, time::Instant};
@@ -28,7 +29,8 @@ use crate::{
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
 use reth_botanix_lib::mint_validation::{
-    parse_pegin_topic, parse_pegout_topic, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC,
+    parse_pegin_topic, parse_pegout_topic, MintConsensusError, BURN_TOPIC, MINT_CONTRACT_ADDRESS,
+    MINT_TOPIC,
 };
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
@@ -227,7 +229,23 @@ where
                 let pegin_data =
                     parse_pegin_topic(&log, &result.clone().into_logs()).map_err(|e| {
                         error!("Failed to parse pegin topic! {:?}", e);
-                        BlockValidationError::FailedToParseMintTopic
+                        let pegin_data_error = match e {
+                            MintConsensusError::LogParsingBlockHeightError(pegin) => Some(pegin),
+                            MintConsensusError::LogParsingMetaDataError(pegin) => Some(pegin),
+                            MintConsensusError::FailedToConvertMetadataToBytes(pegin) => {
+                                Some(pegin)
+                            }
+                            MintConsensusError::FailedtoDeserialiseMetadata(pegin) => Some(pegin),
+                            _ => None,
+                        };
+                        let mint_topic_pegin_data = if pegin_data_error.is_some() {
+                            Some(pegin_data_error.expect("pegin data error to exist").pegin)
+                        } else {
+                            None
+                        };
+                        BlockValidationError::FailedToParseMintTopic {
+                            pegin: mint_topic_pegin_data,
+                        }
                     })?;
 
                 let recent_header = consensus_pkg.expect("is some").recent_header;
@@ -255,18 +273,30 @@ where
                 }
             }
 
+            // TODO(scott) update state when pegout fails
+            // the pegout amount has already been burned and needs to be added back
             if log.topics().first() == Some(&BURN_TOPIC) {
                 let btc_network = consensus_pkg
                     .map(|package| package.btc_network)
                     .unwrap_or_else(|| bitcoin::Network::Regtest);
                 if let Err(e) = parse_pegout_topic(&log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::FailedToParseMintTopic.into());
+                    return Err(BlockValidationError::FailedToParseMintTopic { pegin: None }.into());
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Updates state for an account
+    fn update_state_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
+        let mut pegin_account = state.get(&address).expect("Pegin account to exist").clone();
+        // decrement balance by pegin amount
+        pegin_account.info.balance =
+            pegin_account.info.balance.saturating_sub(U256::from_le_bytes(amount.into()));
+        // update state with new balance
+        state.insert(address, pegin_account);
     }
 
     /// Runs a single transaction in the configured environment and proceeds
@@ -324,28 +354,39 @@ where
 
                             // Update state to decrement pegin address balance since pegin is being
                             // reverted
-                            if let BlockExecutionError::Validation(
-                                BlockValidationError::MintContractViolation {
-                                    pegin: (address, amount),
-                                },
-                            ) = e
-                            {
-                                let mut updated_state = state.clone();
-                                let mut pegin_account = updated_state
-                                    .get(&address)
-                                    .expect("Pegin account to exist")
-                                    .clone();
-                                // decrement balance by pegin amount
-                                pegin_account.info.balance = pegin_account
-                                    .info
-                                    .balance
-                                    .saturating_sub(U256::from_le_bytes(amount.into()));
-                                // update state with new balance
-                                updated_state.insert(address, pegin_account);
+                            match e {
+                                BlockExecutionError::Validation(
+                                    BlockValidationError::MintContractViolation {
+                                        pegin: (address, amount),
+                                    },
+                                ) => {
+                                    info!("Decrementing pegin address balance");
+                                    let mut updated_state = state.clone();
+                                    Self::update_state_by_address(
+                                        address,
+                                        amount,
+                                        &mut updated_state,
+                                    );
 
-                                ResultAndState { result: new_result, state: updated_state }
-                            } else {
-                                ResultAndState { result: new_result, state: state.clone() }
+                                    ResultAndState { result: new_result, state: updated_state }
+                                }
+                                BlockExecutionError::Validation(
+                                    BlockValidationError::FailedToParseMintTopic {
+                                        pegin: Some((address, amount)),
+                                    },
+                                ) => {
+                                    info!("Decrementing pegin address balance");
+                                    let mut updated_state = state.clone();
+                                    info!("Address: {:?}, Amount: {:?}", address, amount);
+                                    Self::update_state_by_address(
+                                        address,
+                                        amount,
+                                        &mut updated_state,
+                                    );
+
+                                    ResultAndState { result: new_result, state: updated_state }
+                                }
+                                _ => ResultAndState { result: new_result, state: state.clone() },
                             }
                         }),
                     }

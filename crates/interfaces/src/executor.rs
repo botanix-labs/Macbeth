@@ -80,7 +80,10 @@ pub enum BlockValidationError {
     },
     /// Error when failing to parse pegin/pegout topic
     #[error("Failed to parse topic")]
-    FailedToParseMintTopic,
+    FailedToParseMintTopic {
+        /// Optional pegin data
+        pegin: Option<(Address, U256)>,
+    },
     /// Error when pegin/pegout fails consenus validation
     #[error("Invalid Mint contract invocation")]
     MintContractViolation {
