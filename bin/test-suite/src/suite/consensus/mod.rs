@@ -11,6 +11,7 @@ use port_killer::kill;
 use reth_tracing::tracing::error;
 use std::{panic, path::PathBuf, process::Command, sync::Arc, time::Duration};
 use tracing::{info, warn};
+
 // scopes
 mod common;
 mod frost;
@@ -151,7 +152,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         tokio::time::sleep(Duration::from_secs(15)).await;
 
         // create new context
-        self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));
+        self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()).await);
 
         // let servers come up
         // try to connect to each btc server before moving on

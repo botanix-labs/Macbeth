@@ -23,6 +23,7 @@ macro_rules! run_test {
         };
 
         $self.create_new_context().await;
+        info!("({}) {} {}...", purple(test_type), cyan(test), green("\u{25B6} RUNNING"));
 
         tokio::select! {
             result = $module::$scope::$test_name($self $(, $arg )*) => match result {

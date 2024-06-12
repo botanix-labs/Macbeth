@@ -33,6 +33,7 @@ secp256k1 = { workspace = true, features = [
 
 # own dependencies
 client = { path = "../btc-server/client" }
+btc-server = { path = "../btc-server/" }
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 tempfile.workspace = true
 tracing.workspace = true

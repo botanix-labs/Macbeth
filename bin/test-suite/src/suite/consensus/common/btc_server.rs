@@ -1,5 +1,7 @@
-use crate::context::GlobalContext;
+use crate::{context::GlobalContext, it_info_print};
+use btc_server::config::{Config, GrpcConfig, TomlConfig};
 use std::{
+    fs::File,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -16,14 +18,12 @@ pub struct SpawnedBtcServer {
     pub child_process: Child,
 }
 
-fn spawn_btc_server(
+async fn spawn_btc_server(
     global_context: Arc<GlobalContext>,
     id: u16,
     address: String,
     db_path: PathBuf,
 ) -> Child {
-    let db_path_arg = db_path.display().to_string();
-
     let mut working_directory = std::env::current_dir().unwrap();
     for _ in 0..2 {
         working_directory.pop();
@@ -31,44 +31,29 @@ fn spawn_btc_server(
     working_directory.push("bin");
     working_directory.push("btc-server");
 
-    let jwt_secret_file =
-        global_context.jwt_dir.join(format!("{}.hex", id + 1)).display().to_string();
+    let app_config = Config {
+        db: db_path.clone(),
+        btc_network: bitcoin::Network::Regtest,
+        identifier: id,
+        address: address.clone(),
+        max_signers: global_context.max_signers,
+        min_signers: global_context.min_signers,
+        jwt_secret: Some(global_context.jwt_dir.join(format!("{}.hex", id + 1))),
+        bitcoind_url: global_context.bitcoind_url.clone(),
+        bitcoind_user: global_context.bitcoind_user.clone(),
+        bitcoind_pass: global_context.bitcoind_pass.clone(),
+        fee_rate_diff_percentage: 30,
+        fall_back_fee_rate_sat_per_vbyte: 3,
+    };
 
-    let identifier = id.to_string();
-    let frost_max_signers = global_context.max_signers.to_string();
-    let frost_min_signers = global_context.min_signers.to_string();
+    let config = TomlConfig { grpc: Default::default(), app: app_config };
+    let config_file_path =
+        db_path.parent().expect("parent temp dir").join(format!("config-{}.toml", id));
+
+    config.write_to_path(config_file_path.clone()).await.expect("write config to path");
 
     let command = "cargo";
-    let args = vec![
-        "run",
-        "--",
-        "--btc-network",
-        "regtest",
-        "--db",
-        db_path_arg.as_str(),
-        "--identifier",
-        identifier.as_str(),
-        "--address",
-        address.as_str(),
-        "--min-signers",
-        frost_min_signers.as_str(),
-        "--max-signers",
-        frost_max_signers.as_str(),
-        "--toml",
-        "./config.toml",
-        "--jwt-secret",
-        jwt_secret_file.as_str(),
-        "--bitcoind-url",
-        global_context.bitcoind_url.as_str(),
-        "--bitcoind-user",
-        global_context.bitcoind_user.as_str(),
-        "--bitcoind-pass",
-        global_context.bitcoind_pass.as_str(),
-        "--fee-rate-diff-percentage",
-        "30",
-        "--fall-back-fee-rate-sat-per-vbyte",
-        "3",
-    ];
+    let args = vec!["run", "--", "--config-path", config_file_path.to_str().expect("config path")];
 
     // Create a Command instance and set the working directory
     let mut cmd: Command = Command::new(command);
@@ -87,7 +72,7 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
+pub async fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..global_context.instances {
         let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
@@ -98,7 +83,8 @@ pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtc
             i,
             format!("0.0.0.0:{}", port),
             db_path.clone(),
-        );
+        )
+        .await;
         tasks.push(SpawnedBtcServer { db_path, port, child_process });
     }
     tasks
