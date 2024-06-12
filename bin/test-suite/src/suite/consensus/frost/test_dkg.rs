@@ -7,10 +7,6 @@ use tonic::transport::Channel;
 
 const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
 
-pub async fn dkg_flow_fails(_suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
-    panic!("FAILLLLSSSSS");
-}
-
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     let _secp = bitcoin::secp256k1::Secp256k1::new();
 
