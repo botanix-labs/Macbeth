@@ -118,8 +118,8 @@ impl Consensus for BeaconConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
-        Ok(())
+    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+        validation::validate_block_standalone(block, &self.chain_spec)
     }
 
     fn validate_extra_data_header(

@@ -157,7 +157,7 @@ impl Consensus for AuthorityConsensus {
             }
         }
 
-        // Validate the authority signature and signature came from one of the authorities
+        // Validate a quorum of authority signatures
         let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
             ConsensusError::InvalidAuthoritySignature
