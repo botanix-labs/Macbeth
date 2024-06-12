@@ -626,7 +626,7 @@ where
             authority_signers,
             witness_data,
             // This is checked to be Some above
-            botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
+            botanix_consensus_pkg.expect("consensus pkg").bitcoin_checkpoint.0.block_hash(),
             utxo_commitment,
         )?;
 

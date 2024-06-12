@@ -123,7 +123,12 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
 
     // First step: get the PSBT
-    let checkpoint = suite.global_context.bitcoind_rpc().get_best_block_hash().unwrap();
+    let checkpoint = {
+        let tip = bitcoind.get_block_count().unwrap();
+        bitcoind.get_block_hash(tip - 5).unwrap()
+    };
+    let utxo_merkle = coordinator.get_utxo_merkle_root(tonic::Request::new(client::Empty{})).await
+        .map_err(Error::Request)?.into_inner().merkle_root;
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
             outputs: vec![client::Output {
@@ -133,7 +138,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             }],
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
-            utxo_merkle_root: vec![1; 32],
+            utxo_merkle_root: utxo_merkle,
         }))
         .await
         .map_err(Error::Request)?

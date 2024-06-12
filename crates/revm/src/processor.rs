@@ -253,7 +253,7 @@ where
                         }
                     })?;
 
-                let recent_header = consensus_pkg.expect("is some").recent_header;
+                let recent_header = consensus_pkg.expect("is some").bitcoin_checkpoint;
                 let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
 
                 match pegin_data.validate(&recent_header, &aggregate_public_key) {

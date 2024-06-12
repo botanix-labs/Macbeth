@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     engine_util,
     extended_client::BtcServerExtendedClient,
-    utils::{get_recent_block_height_or_zero, get_witness_data_from_psbt, is_active_sync_in_progress},
+    utils::{get_witness_data_from_psbt, is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
 
@@ -45,7 +45,7 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     btc_server: Option<BtcServerExtendedClient>,
     /// Consensus cache
     storage: Storage<Client>,
-    /// Recent bitcoin header
+    /// Recent finalize bitcoin block checkpoint.
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// The type that defines how to configure the EVM.
     evm_config: EvmConfig,
@@ -139,7 +139,7 @@ where
             // Seal the block
             let sealed_block = block.clone().seal_slow();
 
-            let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+            let bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let mut botanix_consensus_pkg = None;
             let mut storage = self.storage.write().await;
             if is_fed_node {
@@ -148,7 +148,7 @@ where
                     continue;
                 } else {
                     botanix_consensus_pkg = Some(BotanixConsensusPackage {
-                        recent_header: recent_bitcoin_block_header.expect("recent header is some"),
+                        bitcoin_checkpoint: bitcoin_block_header.expect("recent header is some"),
                         aggregate_public_key: storage
                             .aggregate_public_key
                             .clone()
@@ -173,17 +173,12 @@ where
                 }
             };
 
-            let recent_bitcoin_block_height =
-                get_recent_block_height_or_zero(recent_bitcoin_block_header);
-            if recent_bitcoin_block_height == 0 {
-                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+            if bitcoin_block_header.is_none() {
+                warn!(target: "consensus::authority",
+                    "Do not have recent block header in memory, skipping block import");
                 continue;
             }
-
-            if recent_bitcoin_block_header.is_none() {
-                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
-                continue;
-            }
+            let bitcoin_block_header = bitcoin_block_header.unwrap();
 
             match storage.execute_imported_block(
                 &self.consensus,
@@ -205,7 +200,7 @@ where
                             let pegouts = match crate::utils::process_receipts(
                                 &mut btc_server.clone(),
                                 &bundle_state,
-                                recent_bitcoin_block_height,
+                                bitcoin_block_header.1,
                                 self.btc_network,
                                 self.consensus.chain_spec.parent_confirmation_depth,
                             )
@@ -275,7 +270,8 @@ where
                                     .collect();
 
                                 let bitcoin_checkpoint = self.bitcoin_block_header.read().await
-                                    .expect("should have tip").0.block_hash();
+                                    .expect("should have btc checkpoint")
+                                    .0.block_hash();
                                 let res = self
                                     .btc_server
                                     .clone()

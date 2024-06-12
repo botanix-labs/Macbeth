@@ -276,7 +276,7 @@ pub(crate) async fn get_psbt(
 ///
 /// * `btc_server` - The btc server client.
 /// * `log` - The log to process.
-/// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
+/// * `bitcoin_checkpoint_height` - the bitcoin block height deeply confirmed for pegins.
 /// * `pegin_conf_depth` - the number of confirmations required for a pegin
 ///
 /// # Returns
@@ -286,7 +286,7 @@ pub(crate) async fn get_psbt(
 async fn process_botanix_log(
     btc_server: &mut BtcServerExtendedClient,
     log: &Log,
-    recent_bitcoin_block_height: u32,
+    bitcoin_checkpoint_height: u32,
     receipt_logs: &[Log],
     btc_network: bitcoin::Network,
     pegin_conf_depth: u32,
@@ -299,9 +299,7 @@ async fn process_botanix_log(
                 let pegin_data = parse_pegin_reth_log_topic(log, receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
-                if pegin_data.bitcoin_block_height >
-                    recent_bitcoin_block_height - pegin_conf_depth
-                {
+                if pegin_data.bitcoin_block_height >= bitcoin_checkpoint_height {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
                 }
@@ -373,24 +371,6 @@ pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> 
         start_block_number -= 1;
     }
     start_block_number
-}
-
-/// Returns the recent block height from the given recent bitcoin block header.
-///
-/// # Arguments
-///
-/// * `recent_bitcoin_block_header` - The recent bitcoin block header
-///
-/// # Returns
-///
-/// Returns the recent block height or 0 if None.
-pub(crate) fn get_recent_block_height_or_zero(
-    recent_bitcoin_block_header: Option<(Header, u32)>,
-) -> u32 {
-    recent_bitcoin_block_header.map(|(_, height)| height).unwrap_or_else(|| {
-        error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
-        0
-    })
 }
 
 pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
@@ -647,26 +627,6 @@ mod test {
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
-    }
-
-    #[test]
-    fn test_get_recent_block_height_or_zero() {
-        let block_height = 100_u32;
-        let recent_bitcoin_block_header = Some((
-            bitcoin::block::Header {
-                version: bitcoin::block::Version::default(),
-                prev_blockhash: BlockHash::all_zeros(),
-                merkle_root: TxMerkleNode::all_zeros(),
-                time: 0,
-                bits: CompactTarget::default(),
-                nonce: 0,
-            },
-            block_height,
-        ));
-        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), block_height);
-
-        let recent_bitcoin_block_header = None;
-        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), 0);
     }
 
     #[test]
