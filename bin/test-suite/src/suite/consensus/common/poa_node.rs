@@ -9,6 +9,7 @@ use reth::{
     args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
+    consensus_common::utils::unix_timestamp,
     network::{PeerKind, Peers},
     utils::get_or_create_jwt_secret_from_path,
 };
@@ -121,7 +122,10 @@ impl FederationMemberTestConfig {
         let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
-            temp_path: tempfile::TempDir::new().expect("tempdir is okay").into_path(),
+            temp_path: tempfile::TempDir::new()
+                .expect("tempdir is okay")
+                .into_path()
+                .join(format!("_{}", unix_timestamp().to_string())),
             secret_key,
             authorities,
             rpc_port,

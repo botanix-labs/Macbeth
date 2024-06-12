@@ -11,6 +11,7 @@ use clap::Parser;
 use reth::{
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
+    consensus_common::utils::unix_timestamp,
     network::Peers,
 };
 use reth_network_types::pk2id;
@@ -65,7 +66,10 @@ impl NonFederationMemberTestConfig {
         let jwt_secret_path = jwt_secrets_dir.join(format!("{index}.hex"));
         Self {
             index,
-            temp_path: tempfile::TempDir::new().expect("tempdir is okay").into_path(),
+            temp_path: tempfile::TempDir::new()
+                .expect("tempdir is okay")
+                .into_path()
+                .join(format!("_{}", unix_timestamp().to_string())),
             secret_key,
             rpc_port,
             authrpc_port,
