@@ -1,3 +1,29 @@
+[app]
+# database path
+db="./db1"
+# Frost identifier index
+identifier=0
+# socket and address to bound to
+address="0.0.0.0:8080"
+# Frost multi sig min signer
+min_signers=2
+# Frost multi sig min signer
+max_signers=2
+# Precentage difference that bitcoin fees can differ
+fee_rate_diff_percentage=30
+# Path to JWT hex
+jwt_secret="${NODE_1_DIR}/jwt.hex"
+# Fall back bitcoin fee rate
+fall_back_fee_rate_sat_per_vbyte=5
+# Bitcoind Url
+bitcoind_url="http:127.0.0.1:18443"
+# Bitcoind username
+bitcoind_user="foo"
+# Bitcoind password
+bitcoind_pass="bar"
+# Bitcoin network
+btc_network="regtest"
+
 [grpc]
 # whether to enable gRPC reflection(introspection)
 enable-reflection = true
