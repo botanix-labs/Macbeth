@@ -7998,6 +7998,7 @@ dependencies = [
  "revm",
  "secp256k1 0.28.2",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -9095,6 +9096,7 @@ name = "reth-revm"
 version = "0.2.0-beta.6"
 dependencies = [
  "bitcoin",
+ "ethers",
  "reth-botanix-lib",
  "reth-consensus-common",
  "reth-evm",
