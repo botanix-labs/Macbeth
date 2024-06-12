@@ -143,8 +143,8 @@ rethNode:
       - --authrpc.addr=127.0.0.1
       - --authrpc.port=8551
       - --bitcoind.url=http://botanix-bitcoin-core.testnet.svc.cluster.local:38332
-      - --bitcoind.username="mempool"
-      - --bitcoind.password="mempool"
+      - --bitcoind.username="$(BITCOIND_USERNAME)"
+      - --bitcoind.password="$(BITCOIND_PASSWORD)"
       - --frost.min_signers=2
       - --frost.max_signers=2
       - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
@@ -152,6 +152,18 @@ rethNode:
       - --btc-network=signet
       - --metrics=0.0.0.0:9001  
       - --ipcdisable
+
+    env:
+      - name: BITCOIND_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_USERNAME
+      - name: BITCOIND_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_PASSWORD
 
     service:
       type: LoadBalancer
@@ -196,11 +208,29 @@ rethNode:
       maxReplicas: 3
       targetCPUUtilizationPercentage: 80
 
-    volumes: []
+    volumes: 
+      - name: botanix-testnet-v1-chain-config
+        configMap:
+          name: botanix-testnet-v1-chain-config
+          items:
+          - key: chain.toml
+            path: chain.toml
+      - name: botanix-bitcoin-server-v1-secret
+        secret:
+          secretName: botanix-bitcoin-server-v1-secret
+          items:
+          - key: botanix-bitcoin-server-v1-secret
+            path: config.toml
 
     volumeMounts: 
       - name: botanix-poa-node-data-v1-3
         mountPath: "/reth/botanix_testnet"
+      - name: botanix-testnet-v1-chain-config
+        mountPath: "/reth/botanix_testnet/chain.toml"
+        subPath: chain.toml
+      - name: botanix-bitcoin-server-v1-secret
+        mountPath: "/reth/botanix_testnet/config.toml"
+        subPath: config.toml
 
     nodeSelector:
       iam.gke.io/gke-metadata-server-enabled: "true"

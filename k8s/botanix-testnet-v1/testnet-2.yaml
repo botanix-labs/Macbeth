@@ -27,7 +27,19 @@ bitcoinServer:
     labels:
       app: botanix-bitcoin-server-testnet-v1-2
 
-    command: [ "/usr/local/bin/server", "--btc-network", "signet", "--identifier", "1", "--address", "0.0.0.0:8080", "--db", "/bitcoin-server/db", "--min-signers", "2", "--max-signers", "2", "--toml", "/bitcoin-server/config.toml", "--fee-rate-diff-percentage", "30", "--bitcoind-url", "http://botanix-bitcoin-core.testnet.svc.cluster.local:38332", "--bitcoind-user", "mempool", "--bitcoind-pass", "mempool", "--jwt-secret", "/bitcoin-server/jwt.hex", "--fall-back-fee-rate-sat-per-vbyte", "5"]
+    command: [ "/usr/local/bin/server", "--btc-network", "signet", "--identifier", "1", "--address", "0.0.0.0:8080", "--db", "/bitcoin-server/db", "--min-signers", "2", "--max-signers", "2", "--toml", "/bitcoin-server/config.toml", "--fee-rate-diff-percentage", "30", "--jwt-secret", "/bitcoin-server/jwt.hex", "--fall-back-fee-rate-sat-per-vbyte", "5", "--bitcoind-url", "http://botanix-bitcoin-core.testnet.svc.cluster.local:38332", "--bitcoind-user", "$(BITCOIND_USERNAME)", "--bitcoind-pass", "$(BITCOIND_PASSWORD)"]
+
+    env:
+      - name: BITCOIND_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_USERNAME
+      - name: BITCOIND_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_PASSWORD
 
     service:
       type: ClusterIP
@@ -139,8 +151,8 @@ rethNode:
       - --authrpc.port=8551
       - --btc-server=botanix-bitcoin-server-testnet-v1-2.testnet.svc.cluster.local:8080
       - --bitcoind.url=http://botanix-bitcoin-core.testnet.svc.cluster.local:38332
-      - --bitcoind.username="mempool"
-      - --bitcoind.password="mempool"
+      - --bitcoind.username="$(BITCOIND_USERNAME)"
+      - --bitcoind.password="$(BITCOIND_PASSWORD)"
       - --frost.min_signers=2
       - --frost.max_signers=2
       - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
@@ -150,8 +162,22 @@ rethNode:
       - --federation-mode    
       - --ipcdisable
 
+    env:
+      - name: BITCOIND_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_USERNAME
+
+      - name: BITCOIND_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: botanix-poa-v1-bitcoin-secret
+            key: BITCOIND_PASSWORD
+
     service:
       type: LoadBalancer
+      LoadBalancerIP: "104.154.56.234"
       port: 
         - name: http-port
           port: 8545
@@ -206,16 +232,25 @@ rethNode:
           items:
           - key: discovery2
             path: discovery-secret
+      - name: botanix-testnet-v1-chain-config
+        configMap:
+          name: botanix-testnet-v1-chain-config
+          items:
+          - key: chain.toml
+            path: chain.toml
 
     volumeMounts: 
       - name: botanix-poa-node-data-v1-2
         mountPath: "/reth/botanix_testnet"
-      - name: botanix-key-hex
+      - name: botanix-jwt-hex
         mountPath: /reth/botanix_testnet/jwt.hex
         subPath: jwt.hex
       - name: botanix-discovery-secret
         mountPath: /reth/botanix_testnet/discovery-secret
         subPath: discovery-secret
+      - name: botanix-testnet-v1-chain-config
+        mountPath: /reth/botanix_testnet/chain.toml
+        subPath: chain.toml
 
     nodeSelector:
       iam.gke.io/gke-metadata-server-enabled: "true"

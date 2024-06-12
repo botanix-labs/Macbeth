@@ -34,6 +34,8 @@ spec:
           imagePullPolicy: {{ (.Values.bitcoinServer).imagePullPolicy }}
           command:
             {{- toYaml (.Values.bitcoinServer).command | nindent 12 }}
+          env:
+            {{- toYaml (.Values.bitcoinServer).env | nindent 12 }}
           ports:
             - name: http-port
               protocol: TCP

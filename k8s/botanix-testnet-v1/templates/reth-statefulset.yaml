@@ -36,14 +36,8 @@ spec:
             {{- toYaml (.Values.rethNode).command | nindent 12 }}
           args:
             {{- toYaml (.Values.rethNode).args | nindent 12 }}
-          {{- with (.Values.rethNode).secret }}
           env:
-            - name: {{ .name }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .secretStoreRef.name }}
-                  key: {{ .dataFrom.key }}
-          {{- end }}             
+            {{- toYaml (.Values.rethNode).env | nindent 12 }}             
           ports:
             {{- toYaml (.Values.rethNode).ports | nindent 12 }}
 
