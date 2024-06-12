@@ -215,8 +215,7 @@ impl Header {
             // 2. signatures can be re-ordered without affecting the blockhash
             match this.deserialize_extra_data_header() {
                 Ok(mut extra_data) => {
-                    extra_data.authority_signatures = None;
-                    extra_data.set_optional_fields_bitmask();
+                    extra_data.clear_signatures();
 
                     // Update extra data without the signatures present in edh
                     this.add_extra_data_header(&extra_data);
