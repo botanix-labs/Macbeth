@@ -27,7 +27,8 @@ mod rpc {
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use bitcoincore_rpc::Auth;
-use config::{load_config, Config};
+use clap::Parser;
+use config::{CliConfig, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
@@ -160,14 +161,8 @@ impl App {
         })
     }
 
-    pub async fn serve_async(self) -> Result<StopHandle, Error> {
+    pub async fn serve_async(self, grpc_config: &GrpcConfig) -> Result<StopHandle, Error> {
         // init grpc config
-        let grpc_config = if let Some(toml_config) = self.config.toml.as_ref() {
-            TomlConfig::new(toml_config).await.unwrap().grpc
-        } else {
-            GrpcConfig::default()
-        };
-
         let (shutdown_send, shutdown_recv) = oneshot::channel::<()>();
         // create a server builder
         let mut server_builder = Server::builder()
@@ -256,15 +251,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_module("sled::", log::LevelFilter::Info)
         .init();
 
-    let config = load_config()?;
+    let cli_config = CliConfig::parse();
+    let toml_config = TomlConfig::new(cli_config.config_path).await.expect("valid config provided");
+    let app_config = toml_config.app;
+    let grpc_config = toml_config.grpc;
 
     // setup the grpc server
-    let btc_server = App::new(config.clone())?;
+    let btc_server = App::new(app_config.clone())?;
 
     // run grpc server in the background
-    let grpc_stop_tx = match btc_server.serve_async().await {
+    let grpc_stop_tx = match btc_server.serve_async(&grpc_config).await {
         Ok(s) => {
-            info!("Grpc server: started successfully on {:?}", config.address);
+            info!("Grpc server: started successfully on {:?}", app_config.address);
             info!("Grpc server: waiting for a shutdown signal...");
             Some(s)
         }
