@@ -1,6 +1,6 @@
 use clap::Parser;
 use displaydoc::Display as DisplayDoc;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -16,6 +16,8 @@ pub enum Error {
     OpenConfig(std::io::Error),
     /// Failed to parse config: {0}
     ParseConfig(toml::de::Error),
+    /// Failed to parse config: {0}
+    SerializeParseConfig(toml::ser::Error),
     /// Failed to parse config as utf-8: {0}
     ParseUtf8(std::string::FromUtf8Error),
     /// Failed to read config file: {0}
@@ -24,7 +26,7 @@ pub enum Error {
     ReadMeta(std::io::Error),
 }
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct GrpcConfig {
     /// whether to enable gRPC reflection
@@ -42,7 +44,10 @@ pub struct GrpcConfig {
     /// limits the maximum size of streaming channel
     pub max_channel_size: usize,
     /// set a timeout on for all request handlers
-    #[serde(deserialize_with = "deserialize_duration_from_usize")]
+    #[serde(
+        deserialize_with = "deserialize_duration_from_usize",
+        serialize_with = "serialize_duration_as_secs"
+    )]
     pub timeout: Duration,
     /// sets the SETTINGS_INITIAL_WINDOW_SIZE spec option for HTTP2 stream-level flow control.
     /// Default is 65,535
@@ -68,14 +73,16 @@ pub struct GrpcConfig {
     /// keepalive (`None`)
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_duration_option"
+        deserialize_with = "deserialize_duration_option",
+        serialize_with = "serialize_duration_option"
     )]
     pub http2_keepalive_interval: Option<Duration>,
     /// sets a timeout for receiving an acknowledgement of the keepalive ping. Default is 20
     /// seconds
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_duration_option"
+        deserialize_with = "deserialize_duration_option",
+        serialize_with = "serialize_duration_option"
     )]
     pub http2_keepalive_timeout: Option<Duration>,
     /// sets whether to use an adaptive flow control. Defaults to false
@@ -87,32 +94,32 @@ pub struct GrpcConfig {
     pub draw_lookahead_period_count: u64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) struct Config {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Config {
     /// The path to the database.
-    pub(crate) db: PathBuf,
+    pub db: PathBuf,
     /// The bitcoin network to operate on.
-    pub(crate) btc_network: bitcoin::Network,
+    pub btc_network: bitcoin::Network,
     /// Frost participant identifier
-    pub(crate) identifier: u16,
-    pub(crate) address: String,
+    pub identifier: u16,
+    pub address: String,
     /// max signers
-    pub(crate) max_signers: u16,
+    pub max_signers: u16,
     /// min signers
-    pub(crate) min_signers: u16,
+    pub min_signers: u16,
     /// jwt secret path
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) jwt_secret: Option<PathBuf>,
+    pub jwt_secret: Option<PathBuf>,
     /// bitcoind url
-    pub(crate) bitcoind_url: Url,
+    pub bitcoind_url: Url,
     /// bitcoind user
-    pub(crate) bitcoind_user: String,
+    pub bitcoind_user: String,
     /// bitcoind pass
-    pub(crate) bitcoind_pass: String,
+    pub bitcoind_pass: String,
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
-    pub(crate) fall_back_fee_rate_sat_per_vbyte: u64,
+    pub fall_back_fee_rate_sat_per_vbyte: u64,
 }
 
 fn deserialize_duration_from_usize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -121,6 +128,14 @@ where
 {
     let seconds = u64::deserialize(deserializer)?;
     Ok(Duration::from_secs(seconds))
+}
+
+fn serialize_duration_as_secs<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let seconds = duration.as_secs();
+    serializer.serialize_u64(seconds)
 }
 
 fn deserialize_duration_option<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
@@ -134,7 +149,20 @@ where
     Ok(seconds.map(Duration::from_secs))
 }
 
-#[derive(Clone, Debug, Deserialize)]
+fn serialize_duration_option<S>(
+    duration: &Option<Duration>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match duration {
+        Some(d) => serializer.serialize_some(&d.as_secs()),
+        None => serializer.serialize_none(),
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TomlConfig {
     pub grpc: GrpcConfig,
@@ -144,6 +172,11 @@ pub struct TomlConfig {
 impl TomlConfig {
     pub async fn new(path: impl AsRef<Path> + Send) -> Result<Self, Error> {
         read_to_string(path).await?.parse()
+    }
+
+    pub async fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
+        write_to_file(path, self.clone()).await?;
+        Ok(())
     }
 }
 
@@ -163,11 +196,17 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
     String::from_utf8(contents).map_err(Error::ParseUtf8)
 }
 
-// Cli args and config
+async fn write_to_file(path: impl AsRef<Path> + Send, config: TomlConfig) -> Result<(), Error> {
+    let toml = toml::to_string(&config).map_err(Error::SerializeParseConfig)?;
+    tokio::fs::write(path, toml).await.map_err(Error::OpenConfig)?;
 
+    Ok(())
+}
+
+// Cli args
 #[derive(Clone, Debug, Parser)]
-pub(crate) struct CliConfig {
+pub struct CliConfig {
     /// The path to the database.
     #[arg(long)]
-    pub(crate) config_path: PathBuf,
+    pub config_path: PathBuf,
 }
