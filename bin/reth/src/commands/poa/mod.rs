@@ -63,7 +63,7 @@ use tokio::{
     sync::{mpsc::unbounded_channel, oneshot, RwLock},
     time::Duration,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     args::{
@@ -359,9 +359,9 @@ where {
             None
         };
 
-        let bitcoin_block_headers: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
+        let bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
             Arc::new(RwLock::new(None));
-        let bitcoin_block_headers_clone = bitcoin_block_headers.clone();
+        let bitcoin_block_header_clone = bitcoin_block_header.clone();
 
         // create bitcoind client and make sure its synced
         let bitcoind_client =
@@ -386,10 +386,10 @@ where {
         let pegin_conf_depth = self.chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
-            "async bitcoin block header task",
+            "async bitcoin task for block headers",
             Box::pin(async move {
                 /// Sleep interval between wake-ups.
-                const SLEEP: tokio::time::Duration = tokio::time::Duration::from_millis(10);
+                const SLEEP: tokio::time::Duration = tokio::time::Duration::from_secs(1);
 
                 macro_rules! or_continue {
                     ($e:expr) => {{
@@ -398,7 +398,7 @@ where {
                             Err(_) => {
                                 error!(
                                     target: "reth::cli",
-                                    "Error calling '{}'. Retrying...",
+                                    "Async bitcoin task error calling '{}'. Retrying...",
                                     stringify!($e),
                                 );
                                 tokio::time::sleep(SLEEP).await;
@@ -414,8 +414,6 @@ where {
                 loop {
                     let tip_hash = or_continue!(bitcoind.get_best_block_hash());
                     if last_tip != tip_hash {
-                        info!("Async bitcoin worker tip changed (new={})", tip_hash);
-
                         let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
                         let height = tip_block.height;
                         let finalized = {
@@ -425,7 +423,10 @@ where {
                         };
                         let header = or_continue!(bitcoind.get_block_header(finalized.hash));
 
-                        *bitcoin_block_headers.write().await =
+                        info!("Async bitcoin task setting checkpoint to {}:{}",
+                            finalized.height, header.block_hash(),
+                        );
+                        *bitcoin_block_header.write().await =
                             Some((header, finalized.height as u32));
                         last_tip = tip_hash;
                     }
@@ -433,7 +434,7 @@ where {
                 }
             }),
         );
-        info!(target: "reth::cli", "Spawned async bitcoin block header task");
+        info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
         let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
 
@@ -684,7 +685,7 @@ where {
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
             btc_server_client.clone(),
-            bitcoin_block_headers_clone,
+            bitcoin_block_header_clone,
             bitcoind_config,
             secret_key,
             network_handle.clone(),

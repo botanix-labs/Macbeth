@@ -144,7 +144,7 @@ where
             }
         };
         let botanix_consensus_pkg = BotanixConsensusPackage {
-            recent_header: recent_bitcoin_block_header.expect("valid header and height tuple"),
+            bitcoin_checkpoint: recent_bitcoin_block_header.expect("valid header and height tuple"),
             aggregate_public_key: secp_pk,
             btc_network: self.btc_network,
         };
@@ -171,7 +171,7 @@ where
         let current_block_pegouts = match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
-            botanix_consensus_pkg.recent_header.1,
+            botanix_consensus_pkg.bitcoin_checkpoint.1,
             self.btc_network,
             self.consensus.chain_spec.parent_confirmation_depth,
         )
@@ -221,12 +221,12 @@ where
                 }).expect("valid signing session id");
 
                 let bitcoin_checkpoint = self.bitcoin_block_header.read().await
-                    .expect("should have tip").0;
+                    .expect("no bitcoin checkpoint in block creation procedure");
                 match crate::utils::get_psbt(
                     &mut self.btc_server,
                     &pegouts,
                     &signing_session_id,
-                    bitcoin_checkpoint.block_hash(),
+                    bitcoin_checkpoint.0.block_hash(),
                     utxo_commitment,
                 ).await {
                     Ok(psbt_payload) => self
