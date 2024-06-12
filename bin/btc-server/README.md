@@ -6,6 +6,8 @@ Bitcoin signer service that interacts with a database and performs transaction s
 
     Ensure you have Rust and Cargo installed on your system.
 
+    Run `cp config.toml template.config.toml` and ensure the config variables are correct
+
     Run `make start-btc-server-1` from the project root directory
 
 
