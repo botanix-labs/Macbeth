@@ -143,6 +143,14 @@ impl Consensus for BeaconConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
+
+    fn validate_extra_data_header_single_signer(
+        &self,
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
 }
 
 /// Validates the header's extradata according to the beacon consensus rules.

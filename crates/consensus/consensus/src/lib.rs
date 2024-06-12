@@ -103,6 +103,13 @@ pub trait Consensus: Debug + Send + Sync {
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError>;
+
+    /// Validates the edh single signer check
+    fn validate_extra_data_header_single_signer(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError>;
 }
 
 /// Consensus Errors

@@ -113,6 +113,14 @@ impl Consensus for AutoSealConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
+
+    fn validate_extra_data_header_single_signer(
+        &self,
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
 }
 
 /// Builder type for configuring the setup

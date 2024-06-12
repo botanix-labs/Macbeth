@@ -211,6 +211,36 @@ impl Consensus for AuthorityConsensus {
 
         Ok(())
     }
+
+    /// Validate poa extra data header
+    /// This function will validate the extra data header and check for a quorum of signatures
+    /// from authorities memebers.
+    /// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
+    fn validate_extra_data_header_single_signer(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        // Skip over genesis
+        if header.number == 0 {
+            return Ok(());
+        }
+        // First run the basic validation
+        validation::validate_header_extradata(header)?;
+
+        // Attempt to deserialize the extra data header
+        let _edh = header.deserialize_extra_data_header().map_err(|e| {
+            error!("Failed to deserialize extra data header: {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
+        // Validate the authority signature and signature came from one of the authorities
+        header.validate_first_authority_signature(authority_signers).map_err(|e| {
+            error!("Failed to validate authority signature: {:?}", e);
+            ConsensusError::InvalidAuthoritySignature
+        })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

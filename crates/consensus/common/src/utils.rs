@@ -122,35 +122,6 @@ pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     (botanix_reward, beneficiary_reward)
 }
 
-/// Validate poa extra data header
-/// This function will validate the extra data header and check for a quorum of signatures
-/// from authorities memebers.
-/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
-pub fn validate_poa_extra_data_header_single_signer(
-    header: &Header,
-    authority_signers: &[secp256k1::PublicKey],
-) -> Result<(), ConsensusError> {
-    // Skip over genesis
-    if header.number == 0 {
-        return Ok(());
-    }
-    // First run the basic validation
-    validation::validate_header_extradata(header)?;
-
-    // Attempt to deserialize the extra data header
-    let _edh = header.deserialize_extra_data_header().map_err(|e| {
-        error!("Failed to deserialize extra data header: {:?}", e);
-        ConsensusError::ExtraDataInvalid
-    })?;
-    // Validate the authority signature and signature came from one of the authorities
-    header.validate_first_authority_signature(authority_signers).map_err(|e| {
-        error!("Failed to validate authority signature: {:?}", e);
-        ConsensusError::InvalidAuthoritySignature
-    })?;
-
-    Ok(())
-}
-
 /// Validate against parent header errors
 #[derive(Debug)]
 pub enum ValidateAgainstParentError {
