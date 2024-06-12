@@ -101,4 +101,12 @@ impl Consensus for TestConsensus {
             Ok(())
         }
     }
+
+    fn validate_extra_data_header_single_signer(
+        &self,
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
 }
