@@ -190,6 +190,13 @@ impl Consensus for AuthorityConsensus {
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError> {
+        // run the reth header validation rule
+        let sealed_header = header.clone().seal_slow();
+        reth_consensus_common::validation::validate_header_standalone(
+            &sealed_header,
+            &self.chain_spec,
+        )?;
+
         // Validate EDH serialization and signature on block
         self.validate_extra_data_header(header, authority_signers, genesis_authorities)?;
 
