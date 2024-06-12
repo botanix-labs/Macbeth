@@ -144,13 +144,17 @@ impl Consensus for AuthorityConsensus {
             ConsensusError::ExtraDataInvalid
         })?;
 
-        // Validate the list of authorities matches the authorities in the genesis block
-        // This check is only for a static federation
-        // Use EDH authority list as source of truth and not the list passed in
-        if genesis_authorities !=
-            edh.authority_signers.as_ref().expect("authority signers to exist")
-        {
-            return Err(ConsensusError::InvalidAuthorityList);
+        if header.is_poa_epoch() {
+            // Validate the list of authorities matches the authorities in the genesis block
+            // This check is only for a static federation
+            // Use EDH authority list as source of truth and not the list passed in
+            if genesis_authorities !=
+                edh.authority_signers.as_ref().expect("authority signers to exist")
+            {
+                error!("Genesis authorities: {:?}", genesis_authorities);
+                error!("EDH authorities: {:?}", edh.authority_signers);
+                return Err(ConsensusError::InvalidAuthorityList);
+            }
         }
 
         // Validate the authority signature and signature came from one of the authorities
@@ -483,6 +487,7 @@ where
     //// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns bundle state, block, and gas used.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,

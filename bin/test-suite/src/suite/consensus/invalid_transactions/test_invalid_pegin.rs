@@ -1,17 +1,9 @@
 use std::{str::FromStr, time::Duration};
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
-use bitcoincore_rpc::{Auth, RpcApi};
-use ethers::{
-    prelude::Provider,
-    providers::{Http, Middleware},
-    types::{NameOrAddress, U256},
-};
-use reth_botanix_lib::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta},
-    utils::AmountExt,
-};
+use bitcoincore_rpc::RpcApi;
+use ethers::{prelude::Provider, providers::Http};
+use reth_botanix_lib::{peg_contract::PeginMeta, utils::AmountExt};
 use reth_btc_wallet::address::EthAddress;
 use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
@@ -20,10 +12,7 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            events::{
-                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
-                SEND_AMOUNT,
-            },
+            events::{await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME},
             poa_node::create_poa_federation_members,
         },
         ConsensusIntegrationTestSuite,
@@ -31,9 +20,9 @@ use crate::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub async fn frost_e2e_stable(
+pub async fn invalid_pegin(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> Result<(), super::error::InvalidTransactionError> {
     // Set up regtest connection
     // config is hardcoded to only work with regtest
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -170,59 +159,47 @@ pub async fn frost_e2e_stable(
     headers.reverse();
     it_info_print!("Number of pegin_headers: {}", headers.len());
 
+    // create partial merkle tree
+    let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
     let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid txids");
     it_info_print!("Block info", conf_block_info);
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
-    // create pegin meta
+    // create invalid pegin meta with empty headers list
     let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
         outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
-        address: eth_account,
+        address: eth_account.clone(),
         aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
         )
         .expect("valid public key"),
         tx: pegin_tx.clone(),
         merkle_proof: pmt,
-        block_headers: headers,
+        block_headers: vec![],
     };
 
-    // validate the pegin data first offchain before submitting
-    let pegin_data = PeginData {
-        account: Address::from_slice(eth_destination.as_bytes()),
-        amount,
-        bitcoin_block_height: bitcoin_block_height as u32,
-        meta: vec![meta.clone()],
-    };
-    let finalized = {
-        let tip = bitcoind_rpc.get_block_count().unwrap();
-        let height = tip - reth_primitives::constants::MAINNET_PEGIN_CONFIRMATION_DEPTH as u64;
-        let hash = bitcoind_rpc.get_block_hash(height).unwrap();
-        (bitcoind_rpc.get_block_header(&hash).unwrap(), height as u32)
-    };
-    pegin_data
-        .validate(
-            &finalized,
-            &bitcoin::secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .unwrap(),
-        )
-        .expect("pegin data should be invalid!");
-    it_info_print!("Pegindata successfully validated");
-
-    // send the pegin transactions to all fed memebers
-    it_info_print!(
-        "Sending pegin tx: block headers={:?}",
-        meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
-    );
+    // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let mint_contract = mint_contract_instances.first().cloned().unwrap();
+    let botanix_eth_client = mint_contract_instances.first().cloned().unwrap();
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
-    let tx_receipt = mint_contract
+
+    // pegin address balance before pegin
+    let eth_pegin_address = eth_account.to_string();
+    let pegin_address_initial_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+
+    // nonce before pegin
+    let sender_address = botanix_eth_client.get_sender_address();
+    it_info_print!("Sender address", sender_address);
+    let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
+    it_info_print!("Nonce before pegin", nonce_before);
+
+    it_info_print!("Sending invalid pegin transaction to mint contract");
+    let tx_receipt = botanix_eth_client
         .mint(
             eth_destination.clone(),
             amount,
@@ -231,75 +208,25 @@ pub async fn frost_e2e_stable(
             ethers::core::types::Address::random(),
         )
         .await
+        .unwrap()
         .unwrap();
-    it_info_print!("Mint Tx Receipt ", tx_receipt);
 
-    // wait for a few blocks to make sure the tx got included and mined
-    it_info_print!("Waiting for botanix event after mint call");
-    await_botanix_event(&mut rx, *MINT_TOPIC).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // status should be 0 (failure)
+    it_info_print!("Pegin Tx Receipt", tx_receipt);
+    assert!(tx_receipt.status.unwrap().is_zero());
 
-    // make sure we have received the botanix btc on botanix
-    let eth_address = NameOrAddress::from_str(&eth_account.to_string()).unwrap();
-    let eth_address_balance = provider.get_balance(eth_address, None).await.unwrap();
-    assert!(!eth_address_balance.is_zero());
+    // pegin address balance after pegin
+    let pegin_address_final_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
-    // Generate and send pegout tx
-    // bitcoin address
-    let pegout_destination =
-        ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
-    // use empty pegout data
-    let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_btc(0.5).unwrap();
-    let tx_receipt =
-        mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();
-    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
+    assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
 
-    // wait for the tx to be included in a botanix block
-    await_botanix_event(&mut rx, *BURN_TOPIC).await;
+    // nonce after pegin
+    let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
+    it_info_print!("Nonce after pegin", nonce_after);
 
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
-    let eoa_tx_receipt =
-        mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
-    it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
-
-    // sleep for a few more seconds
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
-    // processes connecting
-    let bitcoind_rpc = suite.global_context.bitcoind_rpc();
-    // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
-
-    // Retrieve the last block
-    let tip_hash = bitcoind_rpc.get_best_block_hash().expect("valid block hash");
-    let tip_block = bitcoind_rpc.get_block(&tip_hash).expect("valid block");
-    // there should be 2 transaction one of which is the pegout the other is coinbase
-    assert_eq!(tip_block.txdata.len(), 2);
-    let pegout_tx = tip_block.txdata.get(1).unwrap();
-    it_info_print!("Pegout tx: ", pegout_tx);
-
-    assert_eq!(pegout_tx.input.len(), 1);
-    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.txid());
-    assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
-    assert_eq!(pegout_tx.output.len(), 2);
-    // One of the values here should be the pegout address
-    let mut match_found = false;
-    for output in pegout_tx.output.iter() {
-        let pegout_address = output.script_pubkey.clone();
-        let address_spk = btc_address.script_pubkey();
-        match_found = pegout_address == address_spk;
-        if match_found {
-            break;
-        }
-    }
-    assert!(match_found);
-    // TODO We could do a percise amounts check here
-    assert!(pegout_tx.output[1].value > Amount::from_sat(0));
+    assert!(nonce_after > nonce_before);
 
     Ok(())
 }

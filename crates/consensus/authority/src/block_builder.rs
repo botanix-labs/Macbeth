@@ -11,7 +11,7 @@ use crate::{
 use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
-use reth_interfaces::blockchain_tree::{BlockValidationKind, BlockchainTreeEngine};
+use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
@@ -269,7 +269,8 @@ where
             &bundle_state,
             block,
             gas_used,
-            Some(botanix_consensus_pkg),
+            Some(botanix_consensus_pkg.clone()),
+            // TODO(armins) read vote in as param
             &self.sk,
             &authority_signers,
             &epoch_witness,
@@ -331,10 +332,12 @@ where
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
 
-        match storage
-            .client
-            .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
-        {
+        // update canon chain for rpc
+        match storage.client.insert_block_with_botanix_consensus_package(
+            sealed_block_with_senders.clone(),
+            Exhaustive,
+            Some(botanix_consensus_pkg),
+        ) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");

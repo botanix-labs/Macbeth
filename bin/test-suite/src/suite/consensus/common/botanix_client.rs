@@ -9,7 +9,7 @@ use ethers::{
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
     providers::{Http, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
+    types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
 };
 use reth_primitives::BOTANIX_TESTNET;
@@ -63,13 +63,17 @@ impl BotanixEthClient {
         Self { mint_contract, client: client2 }
     }
 
+    pub fn get_sender_address(&self) -> EtherAddress {
+        self.client.address()
+    }
+
     pub async fn mint(
         &self,
-        destination: ethers::core::types::Address,
+        destination: EtherAddress,
         amount: ethers::core::types::U256,
         bitcoin_block_height: u32,
         metadata: ethers::core::types::Bytes,
-        refund_address: ethers::core::types::Address,
+        refund_address: EtherAddress,
     ) -> Result<Option<TransactionReceipt>, Error> {
         let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
 
@@ -116,7 +120,7 @@ impl BotanixEthClient {
 
     pub async fn send_eoa(
         &self,
-        receiver_address: ethers::core::types::Address,
+        receiver_address: EtherAddress,
         amount: u64,
     ) -> Result<Option<TransactionReceipt>, Error> {
         // Eip1559TransactionRequest
@@ -168,5 +172,16 @@ impl BotanixEthClient {
             .expect("block exists");
 
         Ok(block)
+    }
+
+    pub async fn get_nonce(&self, address: EtherAddress) -> Result<U256, Error> {
+        let nonce = self
+            .client
+            .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
+            .await
+            .map_err(Error::SignerMiddleware)
+            .expect("nonce exists");
+
+        Ok(nonce)
     }
 }

@@ -1,7 +1,7 @@
 use crate::{blockchain_tree::error::InsertBlockError, provider::ProviderError, RethResult};
 use reth_primitives::{
-    BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock, SealedBlockWithSenders,
-    SealedHeader,
+    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock,
+    SealedBlockWithSenders, SealedHeader,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -25,9 +25,20 @@ pub trait BlockchainTreeEngine: BlockchainTreeViewer + Send + Sync {
         &self,
         block: SealedBlock,
         validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<InsertPayloadOk, InsertBlockError> {
         match block.try_seal_with_senders() {
-            Ok(block) => self.insert_block(block, validation_kind),
+            Ok(block) => {
+                if botanix_consensus_pkg.is_some() {
+                    self.insert_block_with_botanix_consensus_package(
+                        block,
+                        validation_kind,
+                        botanix_consensus_pkg,
+                    )
+                } else {
+                    self.insert_block(block, validation_kind)
+                }
+            }
             Err(block) => Err(InsertBlockError::sender_recovery_error(block)),
         }
     }
@@ -57,6 +68,20 @@ pub trait BlockchainTreeEngine: BlockchainTreeViewer + Send + Sync {
         &self,
         block: SealedBlockWithSenders,
         validation_kind: BlockValidationKind,
+    ) -> Result<InsertPayloadOk, InsertBlockError>;
+
+    /// Inserts block with senders and passes consensus package for additional validation.
+    ///
+    /// The `validation_kind` parameter controls which validation checks are performed.
+    ///
+    /// Caution: If the block was received from the consensus layer, this should always be called
+    /// with [BlockValidationKind::Exhaustive] to validate the state root, if possible to adhere to
+    /// the engine API spec.
+    fn insert_block_with_botanix_consensus_package(
+        &self,
+        block: SealedBlockWithSenders,
+        validation_kind: BlockValidationKind,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<InsertPayloadOk, InsertBlockError>;
 
     /// Finalize blocks up until and including `finalized_block`, and remove them from the tree.
