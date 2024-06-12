@@ -74,7 +74,8 @@ pub struct GrpcConfig {
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_duration_option",
-        serialize_with = "serialize_duration_option"
+        serialize_with = "serialize_duration_option",
+        default
     )]
     pub http2_keepalive_interval: Option<Duration>,
     /// sets a timeout for receiving an acknowledgement of the keepalive ping. Default is 20
@@ -82,7 +83,8 @@ pub struct GrpcConfig {
     #[serde(
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_duration_option",
-        serialize_with = "serialize_duration_option"
+        serialize_with = "serialize_duration_option",
+        default
     )]
     pub http2_keepalive_timeout: Option<Duration>,
     /// sets whether to use an adaptive flow control. Defaults to false
