@@ -173,8 +173,7 @@ impl HeaderExt for Header {
         witness: BlockWitness,
     ) -> Result<(), ExtraDataHeaderDeserializeError> {
         let mut edh = self.deserialize_extra_data_header()?;
-        edh.authority_signatures = Some(witness);
-        edh.set_optional_fields_bitmask();
+        edh.add_signatures(witness);
         self.extra_data = Bytes::from(edh.serialize());
 
         Ok(())
@@ -190,8 +189,7 @@ impl HeaderExt for Header {
     fn segregated_signature_block_hash(&self) -> Result<B256, ExtraDataHeaderDeserializeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
-        edh.authority_signatures = None;
-        edh.set_optional_fields_bitmask();
+        edh.clear_signatures();
 
         let mut writer: Vec<u8> = vec![];
         edh.encode_into_without_signature(&mut writer).expect("Valid extra data header");
@@ -285,8 +283,7 @@ impl HeaderExt for Header {
     fn create_sighash(&self) -> Result<B256, ExtraDataHeaderDeserializeError> {
         let mut this = self.clone();
         let mut edh = this.deserialize_extra_data_header()?;
-        edh.authority_signatures = None;
-        edh.set_optional_fields_bitmask();
+        edh.clear_signatures();
 
         let mut writer: Vec<u8> = vec![];
         edh.encode_into_without_signature(&mut writer).expect("Valid extra data header");

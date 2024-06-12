@@ -162,6 +162,20 @@ impl ExtraDataHeader {
         self.set_optional_fields_bitmask();
     }
 
+    /// Add multiple signatures to the extra data header
+    /// Will not add duplicates
+    pub fn add_signatures(&mut self, signatures: Vec<RecoverableSignature>) {
+        for sig in signatures {
+            self.add_signature(sig);
+        }
+    }
+
+    /// Removes signatures from the extra data header
+    pub fn clear_signatures(&mut self) {
+        self.authority_signatures = None;
+        self.set_optional_fields_bitmask();
+    }
+
     /// Set the optional fields bitmask based on the optional fields
     pub fn set_optional_fields_bitmask(&mut self) {
         let mut optional_fields = 0u8;
@@ -334,8 +348,7 @@ impl ExtraDataHeader {
                 set.push(*sig);
             }
 
-            self.authority_signatures = Some(set);
-            self.set_optional_fields_bitmask();
+            self.add_signatures(set);
         }
     }
 }
@@ -638,7 +651,6 @@ mod tests {
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.authority_signatures, None);
     }
-
 
     #[test]
     fn can_add_individual_signature() {
