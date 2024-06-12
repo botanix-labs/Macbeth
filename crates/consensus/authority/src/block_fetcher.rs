@@ -6,8 +6,9 @@ use crate::{
 };
 use client::{FinalizeSignerRequest, Output};
 use reth_consensus::Consensus;
+use reth_consensus_common::utils::unix_timestamp;
 use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine,
+    blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
     p2p::{
         bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
     },
@@ -101,11 +102,20 @@ where
         }
     }
 
-    async fn send_block_to_beacon(&self, block: &Block) -> Result<(), SendNewPayloadError> {
+    async fn send_block_to_beacon(
+        &self,
+        block: &Block,
+        botanix_consensus_pkg: &Option<BotanixConsensusPackage>,
+    ) -> Result<(), SendNewPayloadError> {
         // Seal the block
         let sealed_block = block.clone().seal_slow();
         // Notify the engine of the new block
-        engine_util::send_beacon_new_payload(sealed_block.clone(), self.to_engine.clone()).await?;
+        engine_util::send_beacon_new_payload(
+            sealed_block.clone(),
+            self.to_engine.clone(),
+            botanix_consensus_pkg.clone(),
+        )
+        .await?;
         Ok(())
     }
 
@@ -131,12 +141,24 @@ where
                 },
             };
 
-            // TODO: validate block once pbft networking is merged
+            // get handle on storage
+            let storage = self.storage.read().await;
+
+            // basic block verification
+            let block: reth_primitives::Block = new_block.block.block.clone();
+            info!(target: "consensus::authority", ?block, "Recieved new block from peer");
+            if let Err(err) = block.header.validate_timestamp(unix_timestamp()) {
+                error!(target: "consensus::authority", ?err, "Timestamp validation failed");
+                drop(storage);
+                continue;
+            }
+            if let Err(err) = block.header.validate_inturn(&storage.authorities) {
+                error!(target: "consensus::authority", ?err, "Inturn validation failed");
+                drop(storage);
+                continue;
+            }
 
             // get best block and hash from db and verify
-            let block: reth_primitives::Block = new_block.block.block.clone();
-            let storage = self.storage.read().await;
-            info!(target: "consensus::authority", ?block, "Recieved new block from peer");
             let (best_block_num, best_hash) =
                 storage.get_best_block_and_hash().expect("best block exists");
             if block.header.hash_slow() == best_hash {
@@ -145,9 +167,41 @@ where
                 continue;
             }
 
+            // get recent bitcoin block and header
+            let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+            let recent_bitcoin_block_height =
+                get_recent_block_height_or_zero(recent_bitcoin_block_header);
+            if recent_bitcoin_block_height == 0 {
+                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
+                continue;
+            }
+            if recent_bitcoin_block_header.is_none() {
+                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
+                continue;
+            }
+
+            // build the botanix consensus pkg
+            let mut botanix_consensus_pkg = None;
+            if is_fed_node {
+                if storage.aggregate_public_key.is_none() {
+                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                    drop(storage);
+                    continue;
+                } else {
+                    botanix_consensus_pkg = Some(BotanixConsensusPackage {
+                        recent_header: recent_bitcoin_block_header.expect("recent header is some"),
+                        aggregate_public_key: storage
+                            .aggregate_public_key
+                            .clone()
+                            .expect("aggregate pk is some"),
+                        btc_network: self.btc_network,
+                    });
+                }
+            }
+
             // send the just received block to FCU. FCU will sync with all peers and download the
             // missing blocks in the background
-            if let Err(err) = self.send_block_to_beacon(&block).await {
+            if let Err(err) = self.send_block_to_beacon(&block, &botanix_consensus_pkg).await {
                 error!(target: "consensus::authority", ?err, "Block import failed to send new payload to engine");
                 drop(storage);
                 continue;
@@ -177,10 +231,7 @@ where
                 // now that we are fully synced, we can use the db client to fetch blocks from
                 // storage
                 for block_index in best_block_num..=block.header.number {
-                    let block_header = storage.client
-                        .header_by_number(block_index)
-                        .ok()
-                        .flatten();
+                    let block_header = storage.client.header_by_number(block_index).ok().flatten();
                     if let Some(block_header) = block_header {
                         blocks_headers_to_sync
                             .push(BlockNumHash::new(block_header.number, block_header.hash_slow()));
@@ -191,40 +242,6 @@ where
                     .push(BlockNumHash::new(block.header.number, block.header.hash_slow()));
             }
             blocks_headers_to_sync.reverse();
-            drop(storage);
-
-            // get recent bitcoin block and header
-            let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
-            let recent_bitcoin_block_height =
-                get_recent_block_height_or_zero(recent_bitcoin_block_header);
-            if recent_bitcoin_block_height == 0 {
-                error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
-                continue;
-            }
-            if recent_bitcoin_block_header.is_none() {
-                warn!(target: "consensus::authority", "Do not have recent block header in memory, skipping block import");
-                continue;
-            }
-
-            // build the botanix consensus pkg
-            let storage = self.storage.read().await;
-            let mut botanix_consensus_pkg = None;
-            if is_fed_node {
-                if storage.aggregate_public_key.is_none() {
-                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
-                    drop(storage);
-                    continue;
-                } else {
-                    botanix_consensus_pkg = Some(BotanixConsensusPackage {
-                        recent_header: recent_bitcoin_block_header.expect("recent header is some"),
-                        aggregate_public_key: storage
-                            .aggregate_public_key
-                            .clone()
-                            .expect("aggregate pk is some"),
-                        btc_network: self.btc_network,
-                    });
-                }
-            }
 
             // filter blocks with pegouts/pegins
             let mut blocks_with_pegins_pegouts: HashMap<u64, Block> = HashMap::new();
@@ -271,6 +288,7 @@ where
                     blocks_with_pegins_pegouts.insert(key, block);
                 }
             }
+            // drop the read storage lock before the exec loop
             drop(storage);
 
             // execute the entirety of blocks containing pegins/pegouts
@@ -283,7 +301,7 @@ where
                 match storage.execute_imported_block(
                     self.chain_spec.clone(),
                     sealed_block.clone(),
-                    botanix_consensus_pkg,
+                    botanix_consensus_pkg.clone(),
                     self.evm_config.clone(),
                 ) {
                     Ok(bundle_state) => {
@@ -389,7 +407,8 @@ where
                                 }
                                 info!(target: "consensus::authority", "Witness data valid and finalized");
                             } else {
-                                // if there are pegouts but no witness data in the EDH, fail consensus
+                                // if there are pegouts but no witness data in the EDH, fail
+                                // consensus
                                 if !pegouts.is_empty() {
                                     error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
                                     continue;
@@ -398,20 +417,32 @@ where
                         }
 
                         // Notify engine api about new FCU
-                        engine_util::send_fork_choice_update_payload(
+                        if let Err(e) = engine_util::send_fork_choice_update_payload(
                             sealed_block.clone().hash(),
                             self.to_engine.clone(),
                         )
                         .await
-                        // TODO remove unwrap
-                        .unwrap();
+                        {
+                            error!(target: "consensus::authority", ?e, "Failed to send fork choice update payload");
+                            continue;
+                        }
+
+                        // need to retrieve this missing block from a peer
+                        let missing_block =
+                            full_block_client.get_full_block(header.parent_hash.clone()).await;
+                        if let Err(e) = storage.client.insert_block_without_senders(
+                            missing_block.clone(),
+                            BlockValidationKind::Exhaustive,
+                            botanix_consensus_pkg,
+                        ) {
+                            error!(target: "consensus::authority", ?e, "Failed to insert forked block");
+                            continue;
+                        }
 
                         // update canon chain for rpc
-                        // TODO do we need to insert the block here?
                         storage.client.set_canonical_head(header);
                         storage.client.set_safe(sealed_block.header.clone());
                         storage.client.set_finalized(sealed_block.header.clone());
-                        drop(storage);
 
                         // TODO(armins) trie updates here are non. is that correct?
                         let chain = Arc::new(Chain::new(
@@ -428,7 +459,6 @@ where
                     }
                     Err(err) => {
                         error!(target: "consensus::authority", ?err, "Failed to exectute block recieved by peer");
-                        drop(storage);
                     }
                 }
             }
