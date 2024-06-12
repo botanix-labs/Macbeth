@@ -122,10 +122,14 @@ impl FederationMemberTestConfig {
         let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
-            temp_path: tempfile::TempDir::new()
-                .expect("tempdir is okay")
-                .into_path()
-                .join(format!("_{}", unix_timestamp().to_string())),
+            temp_path: {
+                let ret = tempfile::TempDir::new()
+                    .expect("tempdir is okay")
+                    .into_path()
+                    .join(format!("_{}", unix_timestamp().to_string()));
+                std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
+                ret
+            },
             secret_key,
             authorities,
             rpc_port,

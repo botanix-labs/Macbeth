@@ -66,10 +66,14 @@ impl NonFederationMemberTestConfig {
         let jwt_secret_path = jwt_secrets_dir.join(format!("{index}.hex"));
         Self {
             index,
-            temp_path: tempfile::TempDir::new()
-                .expect("tempdir is okay")
-                .into_path()
-                .join(format!("_{}", unix_timestamp().to_string())),
+            temp_path: {
+                let ret = tempfile::TempDir::new()
+                    .expect("tempdir is okay")
+                    .into_path()
+                    .join(format!("_{}", unix_timestamp().to_string()));
+                std::fs::create_dir_all(&ret).expect("can't create tmpdir subdir");
+                ret
+            },
             secret_key,
             rpc_port,
             authrpc_port,
