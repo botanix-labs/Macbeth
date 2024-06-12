@@ -61,19 +61,21 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          cd ./bin/test-suite && \
+          set -e
+          set -o pipefail
+          cd ./bin/test-suite
           cargo run --bin test-suite -- \
-          --config "./config.toml" \
-          --run-suite all \
-          --timeout 800000 \
-          --dry-run false \
-          --jwt-dir ${{env.TEST_JWT_DIR}} \
-          --btc-network ${{env.BITCOIND_NETWORK}} \
-          --bitcoind-url ${{env.BITCOIND_URL}} \
-          --bitcoind-user ${{env.BITCOIND_USER}} \
-          --bitcoind-pass ${{ env.BITCOIND_PASS }} \
-          --min-signers 3 \
-          --max-signers 4  & 
+            --config "./config.toml" \
+            --run-suite all \
+            --timeout 800000 \
+            --dry-run false \
+            --jwt-dir ${{env.TEST_JWT_DIR}} \
+            --btc-network ${{env.BITCOIND_NETWORK}} \
+            --bitcoind-url ${{env.BITCOIND_URL}} \
+            --bitcoind-user ${{env.BITCOIND_USER}} \
+            --bitcoind-pass ${{env.BITCOIND_PASS}} \
+            --min-signers 3 \
+            --max-signers 4
           sleep 600
           echo "e2e tests completed successfully!"
 
