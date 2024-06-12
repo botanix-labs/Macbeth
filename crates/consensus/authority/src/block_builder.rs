@@ -11,7 +11,7 @@ use crate::{
 use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
-use reth_interfaces::blockchain_tree::{BlockValidationKind, BlockchainTreeEngine};
+use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
@@ -52,7 +52,7 @@ where
         drop(storage);
 
         // use authority address as suggested fee recipient
-        let authority_pub_key = secp256k1::PublicKey::from_secret_key(&self.secp, &self.sk);
+        let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
         let payload_attributes = PayloadAttributes {
@@ -149,7 +149,6 @@ where
             self.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
             &self.sk,
-            &self.secp,
             self.evm_config.clone(),
         ) {
             Ok(ret) => ret,
@@ -270,9 +269,9 @@ where
             &bundle_state,
             block,
             gas_used,
-            Some(botanix_consensus_pkg),
+            Some(botanix_consensus_pkg.clone()),
+            // TODO(armins) read vote in as param
             &self.sk,
-            &self.secp,
             &authority_signers,
             &epoch_witness,
             &utxo_commitment,
@@ -332,10 +331,12 @@ where
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
 
-        match storage
-            .client
-            .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
-        {
+        // update canon chain for rpc
+        match storage.client.insert_block_with_botanix_consensus_package(
+            sealed_block_with_senders.clone(),
+            Exhaustive,
+            Some(botanix_consensus_pkg),
+        ) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");

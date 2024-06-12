@@ -6,6 +6,7 @@ use futures::{future::Either, FutureExt};
 use reth_engine_primitives::EngineTypes;
 use reth_interfaces::RethResult;
 use reth_payload_builder::error::PayloadBuilderError;
+use reth_primitives::botanix::BotanixConsensusPackage;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ExecutionPayload, ForkChoiceUpdateResult, ForkchoiceState,
     ForkchoiceUpdateError, ForkchoiceUpdated, PayloadId, PayloadStatus, PayloadStatusEnum,
@@ -151,6 +152,8 @@ pub enum BeaconEngineMessage<Engine: EngineTypes> {
         cancun_fields: Option<CancunPayloadFields>,
         /// The sender for returning payload status result.
         tx: oneshot::Sender<Result<PayloadStatus, BeaconOnNewPayloadError>>,
+        /// Optional Botanix consensus package.
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     },
     /// Message with updated forkchoice state.
     ForkchoiceUpdated {

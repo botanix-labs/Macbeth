@@ -227,7 +227,7 @@ where
                 let pegin_data =
                     parse_pegin_topic(&log, &result.clone().into_logs()).map_err(|e| {
                         error!("Failed to parse pegin topic! {:?}", e);
-                        BlockValidationError::MintContractViolation
+                        BlockValidationError::FailedToParseMintTopic
                     })?;
 
                 let recent_header = consensus_pkg.expect("is some").recent_header;
@@ -239,12 +239,18 @@ where
                         tracing::info!("Pegin amount: {}", pegin_data.amount);
                         if aggregate_value == pegin_data.amount {
                             warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
-                            return Err(BlockValidationError::MintContractViolation.into());
+                            return Err(BlockValidationError::MintContractViolation {
+                                pegin: (pegin_data.account, pegin_data.amount),
+                            }
+                            .into());
                         }
                     }
                     Err(e) => {
                         warn!("Failed pegin attempt! {:?}", e);
-                        return Err(BlockValidationError::MintContractViolation.into());
+                        return Err(BlockValidationError::MintContractViolation {
+                            pegin: (pegin_data.account, pegin_data.amount),
+                        }
+                        .into());
                     }
                 }
             }
@@ -255,7 +261,7 @@ where
                     .unwrap_or_else(|| bitcoin::Network::Regtest);
                 if let Err(e) = parse_pegout_topic(&log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::MintContractViolation.into());
+                    return Err(BlockValidationError::FailedToParseMintTopic.into());
                 }
             }
         }
@@ -276,13 +282,6 @@ where
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
         fill_tx_env(self.evm.tx_mut(), transaction, sender);
-
-        #[cfg(feature = "optimism")]
-        {
-            let mut envelope_buf = Vec::with_capacity(transaction.length_without_header());
-            transaction.encode_enveloped(&mut envelope_buf);
-            fill_op_tx_env(self.evm.tx_mut(), transaction, sender, envelope_buf.into());
-        }
 
         let hash = transaction.hash_ref();
         let should_inspect = self.evm.context.external.should_inspect(self.evm.env(), hash);
@@ -313,7 +312,7 @@ where
                             error!("Botanix mint contract validation failed: {:?}", e);
                             let output_match = match result {
                                 ExecutionResult::Success { output, .. } => {
-                                    output.clone().into_data().clone()
+                                    output.clone().into_data()
                                 }
                                 ExecutionResult::Revert { output, .. } => output.clone(),
                                 ExecutionResult::Halt { .. } => Bytes::new(),
@@ -322,7 +321,32 @@ where
                                 gas_used: result.gas_used(),
                                 output: output_match,
                             };
-                            ResultAndState { result: new_result, state: state.clone() }
+
+                            // Update state to decrement pegin address balance since pegin is being
+                            // reverted
+                            if let BlockExecutionError::Validation(
+                                BlockValidationError::MintContractViolation {
+                                    pegin: (address, amount),
+                                },
+                            ) = e
+                            {
+                                let mut updated_state = state.clone();
+                                let mut pegin_account = updated_state
+                                    .get(&address)
+                                    .expect("Pegin account to exist")
+                                    .clone();
+                                // decrement balance by pegin amount
+                                pegin_account.info.balance = pegin_account
+                                    .info
+                                    .balance
+                                    .saturating_sub(U256::from_le_bytes(amount.into()));
+                                // update state with new balance
+                                updated_state.insert(address, pegin_account);
+
+                                ResultAndState { result: new_result, state: updated_state }
+                            } else {
+                                ResultAndState { result: new_result, state: state.clone() }
+                            }
                         }),
                     }
                 } else {

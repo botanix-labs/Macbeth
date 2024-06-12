@@ -180,15 +180,16 @@ pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> Scrip
     bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
 }
 
-pub fn generate_taproot_change_scriptpubkey(
-    secp: &Secp256k1<impl Verification>,
-    public_key: &PublicKey,
-) -> ScriptBuf {
+pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
     // This is commented out for now b/c the frost library only supports empty merkel root
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
 
-    bitcoin::ScriptBuf::new_p2tr(secp, public_key.x_only_public_key().0, None)
+    bitcoin::ScriptBuf::new_p2tr(
+        bitcoin::secp256k1::SECP256K1,
+        public_key.x_only_public_key().0,
+        None,
+    )
 }
 
 /// Note: pk provided to this address is the frost public key already tweaked
@@ -199,15 +200,11 @@ pub fn gateway_address(pk: &PublicKey, network: Network) -> anyhow::Result<Addre
 
 #[cfg(test)]
 mod tests {
-    lazy_static::lazy_static! {
-        static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-    }
-
     use super::*;
     use secp256k1::{rand::rngs::OsRng, Keypair};
     fn generate_key_pair() -> Keypair {
-        let (secret_key, _) = SECP.generate_keypair(&mut OsRng);
-        let keypair = Keypair::from_secret_key(&SECP, &secret_key);
+        let (secret_key, _) = secp256k1::SECP256K1.generate_keypair(&mut OsRng);
+        let keypair = Keypair::from_secret_key(secp256k1::SECP256K1, &secret_key);
 
         keypair
     }
@@ -216,7 +213,7 @@ mod tests {
     fn correct_eth_address() {
         let network: Network = Network::Testnet;
         let key_pair = Keypair::from_seckey_str(
-            &SECP,
+            secp256k1::SECP256K1,
             "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
         )
         .unwrap();

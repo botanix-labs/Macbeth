@@ -14,6 +14,7 @@ use tracing::{info, warn};
 // scopes
 mod common;
 mod frost;
+mod invalid_transactions;
 mod pbft;
 mod rpc_node;
 
@@ -54,21 +55,23 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // dkg tests
         run_test!(self, frost::test_dkg::dkg_flow);
-        // // // signing tests
+        // signing tests
         run_test!(self, frost::test_signing::test_many_inputs_signing);
-        // // // eoa tests
+        // eoa tests
         run_test!(self, frost::test_block_builder::block_builder);
-        // // utxo commitment test
+        // utxo commitment test
         run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
-        // // frost e2e tests
+        // frost e2e tests
         run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
         run_test!(
             self,
             frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
         );
-
         // rpc node tests
         run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
+        // run invalid transaction tests
+        run_test!(self, invalid_transactions::test_invalid_pegin::invalid_pegin);
+        run_test!(self, invalid_transactions::test_invalid_pegout::invalid_pegout);
 
         // pbft tests (WIP)
         //run_test!(self, pbft::test_pbft_disconnect::pbft_e2e_failed_disconnect);
@@ -181,7 +184,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 }
 
                 tries -= 1;
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
             info!("Connected to all btc servers");
         }

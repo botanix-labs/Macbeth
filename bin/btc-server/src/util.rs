@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     database::{Db, Utxo},
-    Error, SECP,
+    Error,
 };
 use bitcoin::{
     consensus::encode as btcencode,
@@ -179,7 +179,7 @@ pub fn add_remove_utxo_from_psbt(
     let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
     // For change outputs there will always be a no eth tweak
     let mut change_outputs: Vec<Utxo> = vec![];
-    let change_spk = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&SECP, pk);
+    let change_spk = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(pk);
     for (index, output) in tx.output.iter().enumerate() {
         if output.script_pubkey == change_spk {
             change_outputs.push(Utxo {

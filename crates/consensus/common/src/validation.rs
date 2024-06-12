@@ -349,9 +349,10 @@ pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError>
 pub fn validate_poa_header_standalone(
     header: &Header,
     authority_signers: &[secp256k1::PublicKey],
+    genesis_authorities: &[secp256k1::PublicKey],
 ) -> Result<(), ConsensusError> {
     // Validate EDH serialization and signature on block
-    utils::validate_poa_extra_data_header(header, authority_signers)?;
+    utils::validate_poa_extra_data_header(header, authority_signers, genesis_authorities)?;
 
     // Validate fee benificiary
     utils::validate_poa_block_beneficiary(header)?;

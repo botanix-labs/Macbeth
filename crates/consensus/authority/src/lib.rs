@@ -144,6 +144,7 @@ where
     fn try_new(
         client: Client,
         headers: &mut [SealedHeader],
+        genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
@@ -157,6 +158,7 @@ where
 
         let storage = StorageInner {
             client: client.clone(),
+            genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
@@ -183,9 +185,11 @@ where
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
     client: Client,
+    /// The authority list in the genesis block
+    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// Keep track of the  signers
     pub(crate) authorities: Vec<secp256k1::PublicKey>,
-    /// keep track of my place among the singer
+    /// keep track of my place among the signer
     /// This will change as new signers are removed
     pub(crate) signer_index: usize,
     /// Authority Signer public key
@@ -239,8 +243,6 @@ where
         &self,
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
-        _sk: &secp256k1::SecretKey,
-        _secp: &secp256k1::Secp256k1<secp256k1::All>,
     ) -> Result<Header, BlockExecutionError> {
         let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let timestamp = unix_timestamp();
@@ -333,7 +335,6 @@ where
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
-        _secp: &secp256k1::Secp256k1<secp256k1::All>,
         authorities: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
@@ -397,13 +398,13 @@ where
     //// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns bundle state, block, and gas used.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_execute<EvmConfig>(
         &mut self,
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         evm_config: EvmConfig,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
@@ -416,7 +417,7 @@ where
         }
 
         // Construct block and header
-        let header = self.build_header_template(&transactions, &chain_spec.clone(), sk, secp)?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone())?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -461,7 +462,6 @@ where
         gas_used: u64,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
-        secp: &secp256k1::Secp256k1<secp256k1::All>,
         authority_signers: &Vec<secp256k1::PublicKey>,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         utxo_commitment: &[u8; 32],
@@ -475,7 +475,6 @@ where
             bundle_state,
             gas_used,
             sk,
-            secp,
             authority_signers,
             witness_data,
             // This is checked to be Some above
@@ -529,13 +528,17 @@ where
 
         // validate before executing block
         let authority_signers = self.authorities.clone();
-        validate_poa_header_standalone(&sealed_block.header.clone(), &authority_signers).map_err(
-            |e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            },
-        )?;
+        let genesis_authorities = self.genesis_authorities.clone();
+        validate_poa_header_standalone(
+            &sealed_block.header.clone(),
+            &authority_signers,
+            &genesis_authorities,
+        )
+        .map_err(|e| {
+            warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+            // TODO(armins) return more expressive error
+            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+        })?;
 
         let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let (bundle_state, _gas_used) = self.execute(

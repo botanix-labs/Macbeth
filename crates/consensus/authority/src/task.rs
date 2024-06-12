@@ -16,7 +16,6 @@ use reth_provider::{
 use reth_stages::PipelineEvent;
 use reth_tasks::TaskExecutor;
 
-use secp256k1::{All, Secp256k1};
 use std::sync::Arc;
 
 use tokio::sync::{
@@ -40,8 +39,6 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) btc_server: BtcServerExtendedClient,
     /// Recent bitcoin block headers
     pub(crate) bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Instance of secp
-    pub(crate) secp: Secp256k1<All>,
     /// Key of authority
     pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
@@ -90,7 +87,6 @@ where
         storage: Storage<Client>,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        secp: Secp256k1<All>,
         sk: secp256k1::SecretKey,
         epoch_manager: EpochManager<Client>,
         network_handle: NetworkHandle,
@@ -111,7 +107,6 @@ where
             pipe_line_events: None,
             btc_server,
             bitcoin_block_header,
-            secp,
             sk,
             epoch_manager,
             network_handle,

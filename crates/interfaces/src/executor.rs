@@ -1,6 +1,7 @@
 use crate::{provider::ProviderError, trie::StateRootError};
+use ethers::types::U256;
 use reth_primitives::{
-    revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
+    revm_primitives::EVMError, Address, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
     PruneSegmentError, B256,
 };
 use thiserror::Error;
@@ -77,9 +78,15 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
+    /// Error when failing to parse pegin/pegout topic
+    #[error("Failed to parse topic")]
+    FailedToParseMintTopic,
     /// Error when pegin/pegout fails consenus validation
     #[error("Invalid Mint contract invocation")]
-    MintContractViolation,
+    MintContractViolation {
+        /// The pegin address and amount
+        pegin: (Address, U256),
+    },
     /// Poa specific error when Extra data header is invalid
     #[error("Invalid extra header")]
     InvalidExtraData,

@@ -24,11 +24,10 @@ mod rpc {
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use bitcoin::secp256k1;
 use bitcoincore_rpc::Auth;
-use clap::Parser;
+use config::{load_config, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
@@ -37,7 +36,6 @@ use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, transport::Server};
-use url::Url;
 
 use crate::{
     config::{GrpcConfig, TomlConfig},
@@ -46,10 +44,6 @@ use crate::{
     signer::SigningError,
     util::ParsingError,
 };
-
-lazy_static::lazy_static! {
-    pub static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -255,55 +249,14 @@ impl From<database::Utxo> for rpc::Utxo {
     }
 }
 
-#[derive(Clone, Debug, Parser)]
-struct Config {
-    /// The path to the database.
-    #[arg(long)]
-    db: PathBuf,
-    /// The bitcoin network to operate on.
-    #[arg(long)]
-    btc_network: bitcoin::Network,
-    /// Frost participant identifier
-    #[arg(long)]
-    identifier: u16,
-    #[arg(long)]
-    address: String,
-    /// max signers
-    #[arg(long)]
-    max_signers: u16,
-    /// min signers
-    #[arg(long)]
-    min_signers: u16,
-    /// toml configuration path
-    #[arg(long)]
-    toml: Option<PathBuf>,
-    /// jwt secret path
-    #[arg(long)]
-    jwt_secret: Option<PathBuf>,
-    #[arg(long)]
-    /// bitcoind url
-    bitcoind_url: Url,
-    #[arg(long)]
-    /// bitcoind user
-    bitcoind_user: String,
-    #[arg(long)]
-    /// bitcoind pass
-    bitcoind_pass: String,
-    #[arg(long)]
-    /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
-    pub fee_rate_diff_percentage: u32,
-    /// Fall back fee rate expressed in sat per vbyte
-    #[arg(long)]
-    fall_back_fee_rate_sat_per_vbyte: u64,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Trace)
         .filter_module("sled::", log::LevelFilter::Info)
         .init();
-    let config = Config::parse();
+
+    let config = load_config()?;
 
     // setup the grpc server
     let btc_server = App::new(config.clone())?;
@@ -348,6 +301,7 @@ mod test {
     use tonic::Request;
 
     use reth_btc_wallet::psbt::PsbtInputExt;
+    use url::Url;
 
     use crate::{
         database::Utxo,

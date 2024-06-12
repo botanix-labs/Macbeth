@@ -153,9 +153,6 @@ where
                 continue;
             }
 
-            // check for missing blocks from the tip and use the network client to fetch them
-            let network_client = self.network_client.clone();
-
             let mut are_blocks_missing = false;
             // check if the incoming block is beyond our tip. In all other cases < tip, it is part
             // of invalid side chain
@@ -180,11 +177,9 @@ where
                 // now that we are fully synced, we can use the db client to fetch blocks from
                 // storage
                 for block_index in best_block_num..=block.header.number {
-                    let block_header = network_client
-                        .get_header(BlockHashOrNumber::Number(block_index))
-                        .await
+                    let block_header = storage.client
+                        .header_by_number(block_index)
                         .ok()
-                        .map(|val| val.1)
                         .flatten();
                     if let Some(block_header) = block_header {
                         blocks_headers_to_sync
@@ -393,6 +388,12 @@ where
                                     continue;
                                 }
                                 info!(target: "consensus::authority", "Witness data valid and finalized");
+                            } else {
+                                // if there are pegouts but no witness data in the EDH, fail consensus
+                                if !pegouts.is_empty() {
+                                    error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
+                                    continue;
+                                }
                             }
                         }
 
