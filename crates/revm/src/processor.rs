@@ -5,7 +5,10 @@ use revm::{
     db::StateDBBox,
     inspector_handle_register,
     interpreter::Host,
-    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState, State as EvmState},
+    primitives::{
+        bitvec::view::BitViewSized, CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState,
+        State as EvmState,
+    },
     Evm, State,
 };
 use std::{sync::Arc, time::Instant};
@@ -283,8 +286,6 @@ where
                 }
             }
 
-            // TODO(scott) update state when pegout fails
-            // the pegout amount has already been burned and needs to be added back
             if log.topics().first() == Some(&BURN_TOPIC) {
                 let btc_network = consensus_pkg
                     .map(|package| package.btc_network)
@@ -294,7 +295,7 @@ where
                     return Err(BlockValidationError::FailedToParseMintTopic {
                         event_data: Some((
                             sender_address,
-                            sender_value.into(),
+                            EthersU256::from_little_endian(sender_value.as_le_slice()),
                             MintContractErrorType::Pegout.to_string(),
                         )),
                     }
