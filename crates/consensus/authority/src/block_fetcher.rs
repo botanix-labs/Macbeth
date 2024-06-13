@@ -1,7 +1,7 @@
 use crate::{
     engine_util,
     extended_client::BtcServerExtendedClient,
-    utils::{get_recent_block_height_or_zero, is_testnet},
+    utils::{get_recent_block_height_or_zero, is_active_sync_in_progress, is_testnet},
     AuthorityConsensus,
 };
 
@@ -21,13 +21,13 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFac
 
 use crate::Storage;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_network::message::NewBlockMessage;
+use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
 use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -56,6 +56,8 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     btc_network: bitcoin::Network,
     /// Network Client, used to create [FullBlockClient]
     network_client: NetworkClient,
+    /// Network Handle, used to create [FullBlockClient]
+    network_handle: NetworkHandle,
 }
 
 impl<Client, EvmConfig, Engine, NetworkClient>
@@ -83,6 +85,7 @@ where
         evm_config: EvmConfig,
         btc_network: bitcoin::Network,
         network_client: NetworkClient,
+        network_handle: NetworkHandle,
     ) -> Self {
         Self {
             chain_spec,
@@ -95,6 +98,7 @@ where
             evm_config,
             btc_network,
             network_client,
+            network_handle,
         }
     }
 
@@ -106,6 +110,13 @@ where
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
+            // ensure the node is not syncing
+            if is_active_sync_in_progress(&self.network_handle) {
+                warn!(target: "consensus::authority", "Node is still syncing, block fetcher task is awaiting fully synced status ...");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                return;
+            }
+
             let new_block = match self.block_import_rx.try_recv() {
                 Ok(b) => b,
                 Err(error) => match error {
