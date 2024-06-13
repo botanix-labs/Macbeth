@@ -68,6 +68,9 @@ pub enum ExtraDataHeaderDeserializeError {
     #[error("invalid version")]
     /// Invalid EDH version
     InvalidVersion,
+    #[error("invalid recovery id")]
+    /// Invalid Recovery Id
+    InvalidRecoveryId,
 }
 
 /// Errors that can occur when validating the authority signature
@@ -307,7 +310,8 @@ impl ExtraDataHeader {
             let mut sigs = vec![];
             let signature_len = u32::consensus_decode(reader)?;
             for _ in 0..signature_len {
-                let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
+                let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?)
+                    .map_err(|_| ExtraDataHeaderDeserializeError::InvalidRecoveryId)?;
                 let mut buf = [0; 64];
                 reader.read_exact(&mut buf)?;
                 let signature =
