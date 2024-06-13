@@ -87,7 +87,7 @@ pub struct FederationMemberTestConfig {
     pub bitcoind_password: String,
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
-    pub sender: tokio::sync::mpsc::Sender<Notifications>,
+    pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub jwt_secret_path: PathBuf,
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
@@ -102,7 +102,7 @@ impl FederationMemberTestConfig {
         index: u16,
         secret_key: SecretKey,
         authorities: Vec<PublicKey>,
-        sender: tokio::sync::mpsc::Sender<Notifications>,
+        sender: tokio::sync::broadcast::Sender<Notifications>,
         bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
@@ -222,6 +222,7 @@ impl FederationMemberTestConfig {
             "--chain",
             "botanix_testnet",
             "--federation-mode",
+            "--ipcdisable",
             "--datadir",
             datadir,
             "--debug.terminate",
@@ -336,7 +337,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                     ts: tokio::time::Instant::now(),
                     public_key: pub_key.publickey,
                 }))
-                .await;
+                .unwrap();
         }));
 
         // ~~~~~~~~~~~ spawn a task that loops and sends over channel all received canon state
@@ -351,7 +352,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         ts: tokio::time::Instant::now(),
                         notification: canon_state_notification,
                     }))
-                    .await;
+                    .expect("Failed to send canon state notification");
             }
         }));
 
@@ -447,7 +448,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                                         session_id,
                                         status,
                                     )))
-                                    .await;
+                                    .expect("Failed to send signing status report");
                             }
                         }
                         Err(_) => {
@@ -476,8 +477,8 @@ pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfi
 pub async fn create_poa_federation_members(
     global_context: Arc<GlobalContext>,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
-) -> (HashMap<u16, FederationMemberTestConfig>, tokio::sync::mpsc::Receiver<Notifications>) {
-    let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
+) -> (HashMap<u16, FederationMemberTestConfig>, tokio::sync::broadcast::Sender<Notifications>) {
+    let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
     let mut members_keypairs: Vec<(SecretKey, PublicKey)> = vec![];
@@ -570,7 +571,7 @@ pub async fn create_poa_federation_members(
         };
     }
 
-    (fed_members, rx)
+    (fed_members, tx)
 }
 
 #[cfg(test)]

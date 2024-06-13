@@ -12,10 +12,11 @@ pub const SEND_AMOUNT: u64 = 1; // = 1 ether
 
 pub async fn await_dkg(
     fed_members: &mut HashMap<u16, FederationMemberTestConfig>,
-    rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
+    rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
 ) {
     let mut pub_keys = vec![];
-    while let Some(notification) = rx.recv().await {
+    it_info_print!(">>>>>>> Awaiting DKG");
+    while let Ok(notification) = rx.recv().await {
         if let Notifications::DkgFinished(dkg_notification) = notification {
             if let Some(fed_member) = fed_members.get_mut(&dkg_notification.engine_index) {
                 fed_member.is_dkg_ready = true;
@@ -34,9 +35,9 @@ pub async fn await_dkg(
 
 pub async fn await_signing_completion(
     in_turn_member_index: u16,
-    rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
+    rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
 ) {
-    while let Some(notification) = rx.recv().await {
+    while let Ok(notification) = rx.recv().await {
         if let Notifications::SigningStatusReport((member_index, _session_id, status)) =
             notification
         {
@@ -48,11 +49,11 @@ pub async fn await_signing_completion(
 }
 
 pub async fn await_botanix_event(
-    rx: &mut tokio::sync::mpsc::Receiver<Notifications>,
+    rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
     event_topic: B256,
 ) {
     // wait for a few blocks to make sure the tx got included and mined
-    while let Some(notification) = rx.recv().await {
+    while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!("Canon state notification", canon_state_notification);
             let block_receipts = canon_state_notification.notification.block_receipts();

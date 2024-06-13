@@ -59,6 +59,7 @@ impl TestServer {
             res = async {
                 for suite in suits_to_run.iter_mut() {
                     let outcomes = suite.run().await;
+                    suite.destroy_context().await;
                     // if any of them failed return error
                     if outcomes.iter().any(|outcome| outcome == &Outcome::Failed) {
                         return Err(Error::TestRunFailed);
