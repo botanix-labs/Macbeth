@@ -11,7 +11,7 @@ use revm::{
 use std::{sync::Arc, time::Instant};
 
 use reth_evm::ConfigureEvm;
-use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
+use reth_interfaces::executor::{BlockExecutionError, BlockValidationError, MintContractErrorType};
 #[cfg(feature = "optimism")]
 use reth_primitives::revm::env::fill_op_tx_env;
 #[cfg(not(feature = "optimism"))]
@@ -19,7 +19,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, event, info, trace, warn};
 
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
@@ -221,6 +221,8 @@ where
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        sender_address: Address, // used for reverted pegouts
+        sender_value: U256,      // used for reverted pegouts
     ) -> Result<(), BlockExecutionError> {
         let binding = botanix_consensus_pkg.clone();
         let consensus_pkg = binding.as_ref();
@@ -244,7 +246,7 @@ where
                             None
                         };
                         BlockValidationError::FailedToParseMintTopic {
-                            pegin: mint_topic_pegin_data,
+                            event_data: mint_topic_pegin_data,
                         }
                     })?;
 
@@ -258,7 +260,11 @@ where
                         if aggregate_value == pegin_data.amount {
                             warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
                             return Err(BlockValidationError::MintContractViolation {
-                                pegin: (pegin_data.account, pegin_data.amount),
+                                event_data: (
+                                    pegin_data.account,
+                                    pegin_data.amount,
+                                    MintContractErrorType::Pegin.to_string(),
+                                ),
                             }
                             .into());
                         }
@@ -266,7 +272,11 @@ where
                     Err(e) => {
                         warn!("Failed pegin attempt! {:?}", e);
                         return Err(BlockValidationError::MintContractViolation {
-                            pegin: (pegin_data.account, pegin_data.amount),
+                            event_data: (
+                                pegin_data.account,
+                                pegin_data.amount,
+                                MintContractErrorType::Pegin.to_string(),
+                            ),
                         }
                         .into());
                     }
@@ -281,7 +291,14 @@ where
                     .unwrap_or_else(|| bitcoin::Network::Regtest);
                 if let Err(e) = parse_pegout_topic(&log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::FailedToParseMintTopic { pegin: None }.into());
+                    return Err(BlockValidationError::FailedToParseMintTopic {
+                        event_data: Some((
+                            sender_address,
+                            sender_value.into(),
+                            MintContractErrorType::Pegout.to_string(),
+                        )),
+                    }
+                    .into());
                 }
             }
         }
@@ -290,13 +307,30 @@ where
     }
 
     /// Updates state for an account
-    fn update_state_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
-        let mut pegin_account = state.get(&address).expect("Pegin account to exist").clone();
-        // decrement balance by pegin amount
-        pegin_account.info.balance =
-            pegin_account.info.balance.saturating_sub(U256::from_le_bytes(amount.into()));
+    fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
+        let mut account = state.get(&address).expect("Account to exist").clone();
+        // decrement balance by amount
+        info!("Decrementing address: {:?} by {:?}", address, amount);
+        account.info.balance = account
+            .info
+            .balance
+            .checked_sub(U256::from_be_bytes(amount.into()))
+            .expect("No overflow for checked_sub");
         // update state with new balance
-        state.insert(address, pegin_account);
+        state.insert(address, account);
+    }
+
+    fn increment_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
+        let mut account = state.get(&address).expect("Account to exist").clone();
+        // increment balance by amount
+        info!("Incrementing address: {:?} by {:?}", address, amount);
+        account.info.balance = account
+            .info
+            .balance
+            .checked_add(U256::from_be_bytes(amount.into()))
+            .expect("No overflow for checked_add");
+        // update state with new balance
+        state.insert(address, account);
     }
 
     /// Runs a single transaction in the configured environment and proceeds
@@ -335,8 +369,16 @@ where
         // ***** Botanix specific checks ******
         let out = match out {
             Ok(ResultAndState { ref result, ref state }) => {
+                // get pegout amount so can update balance if pegout reverts
+                let pegout_amount = transaction.value();
+
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(result, botanix_consensus_pkg) {
+                    match Self::botanix_mint_contract_checks(
+                        result,
+                        botanix_consensus_pkg,
+                        sender,
+                        pegout_amount,
+                    ) {
                         Ok(()) => out,
                         Err(e) => Ok({
                             error!("Botanix mint contract validation failed: {:?}", e);
@@ -352,33 +394,37 @@ where
                                 output: output_match,
                             };
 
-                            // Update state to decrement pegin address balance since pegin is being
-                            // reverted
-                            match e {
+                            // Update state for reverted pegins/pegouts:
+                            // balances have been updated since tx was successful according to EVM
+                            // and we are reverting according to botanix validation
+                            let event_data = match e {
                                 BlockExecutionError::Validation(
                                     BlockValidationError::MintContractViolation {
-                                        pegin: (address, amount),
+                                        event_data: (address, amount, event_type),
                                     },
-                                ) => {
-                                    info!("Decrementing pegin address balance");
-                                    let mut updated_state = state.clone();
-                                    Self::update_state_by_address(
-                                        address,
-                                        amount,
-                                        &mut updated_state,
-                                    );
-
-                                    ResultAndState { result: new_result, state: updated_state }
-                                }
+                                ) => Some((address, amount, event_type)),
                                 BlockExecutionError::Validation(
                                     BlockValidationError::FailedToParseMintTopic {
-                                        pegin: Some((address, amount)),
+                                        event_data: Some((address, amount, event_type)),
                                     },
-                                ) => {
-                                    info!("Decrementing pegin address balance");
+                                ) => Some((address, amount, event_type)),
+                                _ => None,
+                            };
+
+                            if let Some(event_data) = event_data {
+                                let (address, amount, event_type) = event_data;
+                                if event_type == MintContractErrorType::Pegin.to_string() {
                                     let mut updated_state = state.clone();
-                                    info!("Address: {:?}, Amount: {:?}", address, amount);
-                                    Self::update_state_by_address(
+                                    Self::decrement_balance_by_address(
+                                        address,
+                                        amount,
+                                        &mut updated_state,
+                                    );
+
+                                    ResultAndState { result: new_result, state: updated_state }
+                                } else {
+                                    let mut updated_state = state.clone();
+                                    Self::increment_balance_by_address(
                                         address,
                                         amount,
                                         &mut updated_state,
@@ -386,7 +432,8 @@ where
 
                                     ResultAndState { result: new_result, state: updated_state }
                                 }
-                                _ => ResultAndState { result: new_result, state: state.clone() },
+                            } else {
+                                ResultAndState { result: new_result, state: state.clone() }
                             }
                         }),
                     }
