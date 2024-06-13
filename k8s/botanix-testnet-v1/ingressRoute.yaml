@@ -1,0 +1,68 @@
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: botanix-poa-node-ingress
+  namespace: testnet 
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`poa-node.botanixlabs.dev`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-1
+          port: 8545
+    - match: Host(`poa-node.botanixlabs.dev`) && PathPrefix(`/ws`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-1
+          port: 8546
+
+    
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: botanix-poa-node-ingress-2
+  namespace: testnet 
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`poa-node-2.botanixlabs.dev`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-2
+          port: 8545
+    - match: Host(`poa-node-2.botanixlabs.dev`) && PathPrefix(`/ws`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-2
+          port: 8546
+
+
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: botanix-poa-node-ingress-3
+  namespace: testnet
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`poa-node-3.botanixlabs.dev`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-3
+          port: 8545
+    - match: Host(`poa-node-3.botanixlabs.dev`) && PathPrefix(`/ws`)
+      kind: Rule
+      services:
+        - name: botanix-poa-node-v1-3
+          port: 8546
+

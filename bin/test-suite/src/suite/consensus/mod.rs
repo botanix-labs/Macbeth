@@ -119,6 +119,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             for db_to_delete in &dbs_to_delete {
                 let _ = std::fs::remove_dir_all(db_to_delete.clone());
             }
+            std::process::exit(1);
         }));
     }
 
