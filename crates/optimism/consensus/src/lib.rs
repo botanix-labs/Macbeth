@@ -36,6 +36,14 @@ impl OptimismBeaconConsensus {
 }
 
 impl Consensus for OptimismBeaconConsensus {
+    fn validate_extra_data_header_single_signer(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
     /// Validate header
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validation::validate_header_standalone(header, &self.chain_spec)?;
