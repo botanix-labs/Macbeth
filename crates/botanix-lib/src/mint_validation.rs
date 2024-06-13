@@ -39,8 +39,8 @@ impl TryFrom<B256> for GenesisContractEvents {
 
 #[derive(Debug, Clone)]
 pub struct PeginDataError {
-    // Pegin address and amount
-    pub pegin: (Address, ethers::types::U256),
+    // Pegin address, amount, and type (pegin/pegout)
+    pub pegin: (Address, ethers::types::U256, String),
 }
 
 #[derive(Debug)]
@@ -168,7 +168,8 @@ pub fn parse_pegin_topic(
             let destination = topic_to_address(log.topics()[1])?;
             let data = &log.data;
 
-            let pegin_data_error = PeginDataError { pegin: (destination, amount) };
+            let pegin_data_error =
+                PeginDataError { pegin: (destination, amount, String::from("Pegin")) };
 
             let decoded_params: Vec<ethers::abi::Token> = decode(
                 &[
