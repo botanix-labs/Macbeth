@@ -2,7 +2,6 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use reth::{
     consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp},
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
-    CliRunner,
 };
 
 use std::{collections::HashSet, time::Duration};
@@ -11,8 +10,8 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            events::{await_dkg, BITCOIND_WALLET_NAME, SEND_AMOUNT},
-            poa_node::{create_poa_federation_members, Notifications},
+            events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
+            poa_node::Notifications,
         },
         ConsensusIntegrationTestSuite,
     },
@@ -21,20 +20,8 @@ use crate::{
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
-    // Set up regtest connection
-    // config is hardcoded to only work with regtest
-    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
-    let port =
-        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let bitcoind_url = format!("{host}:{port}");
-    let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        &bitcoind_url,
-        Auth::UserPass(
-            suite.global_context.bitcoind_user.clone(),
-            suite.global_context.bitcoind_pass.clone(),
-        ),
-    )
-    .expect("bitcoind client");
+    it_info_print!("Running block builder test...");
+    let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind_rpc.list_wallets().unwrap() {
@@ -52,33 +39,19 @@ pub async fn block_builder(
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
 
-    // generate test fed members poa nodes
-    let (mut test_fed_members, mut rx) = create_poa_federation_members(
-        suite.global_context.clone(),
-        suite.local_context.btc_servers.as_ref(),
-    )
-    .await;
+    let test_fed_members = suite
+        .local_context
+        .poa_nodes
+        .as_ref()
+        .expect("test federation member configurations")
+        .clone();
+    let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
     // get total authorities number
     let total_authorities = test_fed_members.len();
 
-    // run all poa nodes in the background
-    for (_index, fed_member_config) in test_fed_members.iter() {
-        let fed_member_config = fed_member_config.clone();
-        let _ = std::thread::spawn(move || {
-            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
-            let runner = CliRunner::default();
-            runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
-
-            // TODO: wire up on_node_started since reth logic has changed
-            // fed_member_config.on_node_started();
-        });
-        // wait for one second inbetween members start
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
     // wait for the dkg to finish for each of them
-    await_dkg(&mut test_fed_members, &mut rx).await;
+    // await_dkg(&mut test_fed_members, &mut rx).await;
 
     // find out who is in turn
     let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
@@ -135,7 +108,7 @@ pub async fn block_builder(
     tx_hashes_set.insert(last_tx_hash.transaction_hash);
 
     // wait for canonical chain updates reported by the node, then send new tx
-    while let Some(notification) = rx.recv().await {
+    while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
                 "Received payload from engine index",
@@ -174,8 +147,8 @@ pub async fn block_builder(
                 // verify 80/20 block reward split is correct
                 let target_fed_member_reward =
                     target_fed_member_balance_after - target_fed_member_balance_before;
-                let botanix_block_reward = botanix_block_reward_address_balance_before_after -
-                    botanix_block_reward_address_balance_before;
+                let botanix_block_reward = botanix_block_reward_address_balance_before_after
+                    - botanix_block_reward_address_balance_before;
 
                 let total_block_reward = target_fed_member_reward + botanix_block_reward;
 
