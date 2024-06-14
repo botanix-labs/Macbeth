@@ -1,5 +1,7 @@
 use crate::{
-    context::GlobalContext, it_info_print, suite::{consensus::ConsensusIntegrationTestSuite, Outcome, RunSuite, Suite}
+    context::GlobalContext,
+    it_info_print,
+    suite::{consensus::ConsensusIntegrationTestSuite, Outcome, RunSuite, Suite},
 };
 use displaydoc::Display as DisplayDoc;
 use reth_tracing::tracing::info;

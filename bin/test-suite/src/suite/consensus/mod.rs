@@ -89,26 +89,35 @@ impl Suite for ConsensusIntegrationTestSuite {
             ),
             "block_builder" => {
                 run_test!(self, Default::default(), frost::test_block_builder::block_builder)
-            },
+            }
             "frost_e2e_stable" => {
                 run_test!(self, Default::default(), frost::test_frost_e2e::frost_e2e_stable)
-            },
+            }
             "frost_e2e_failed_signing_disconnect" => run_test!(
                 self,
                 Default::default(),
                 frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
             ),
             // TODO
-            // "rpc_node" => run_test!(self, Default::default(), rpc_node::test_rpc_node::test_rpc_node),
+            // "rpc_node" => run_test!(self, Default::default(),
+            // rpc_node::test_rpc_node::test_rpc_node),
             "invalid_pegin" => {
-                run_test!(self, Default::default(), invalid_transactions::test_invalid_pegin::invalid_pegin)
-            },
+                run_test!(
+                    self,
+                    Default::default(),
+                    invalid_transactions::test_invalid_pegin::invalid_pegin
+                )
+            }
             "invalid_pegout" => {
-                run_test!(self, Default::default(), invalid_transactions::test_invalid_pegout::invalid_pegout)
-            },
+                run_test!(
+                    self,
+                    Default::default(),
+                    invalid_transactions::test_invalid_pegout::invalid_pegout
+                )
+            }
             "test_mempool_gossip" => {
                 run_test!(self, Default::default(), frost::test_mempool_gossip::test_mempool_gossip)
-            },  
+            }
             _ => {
                 panic!("Test not found");
             }
