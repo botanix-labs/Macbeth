@@ -5,16 +5,13 @@ use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
 use reth_botanix_lib::{peg_contract::PeginMeta, utils::AmountExt};
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
+
 use reth_primitives::Address;
 
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::{
-            events::{await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME},
-            poa_node::create_poa_federation_members,
-        },
+        common::events::{GatewayAddressResponse, BITCOIND_WALLET_NAME},
         ConsensusIntegrationTestSuite,
     },
 };
@@ -43,27 +40,12 @@ pub async fn invalid_pegin(
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
 
-    // generate test fed members poa nodes
-    let (mut test_fed_members, mut rx) = create_poa_federation_members(
-        suite.global_context.clone(),
-        suite.local_context.btc_servers.as_ref(),
-    )
-    .await;
-
-    // run all poa nodes in the background
-    for (_index, fed_member_config) in test_fed_members.iter() {
-        let fed_member_config = fed_member_config.clone();
-        let _ = std::thread::spawn(move || {
-            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
-            let runner = CliRunner::default();
-            runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
-        });
-        // wait for one second inbetween members start
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
-    // wait for the dkg to finish for each of them
-    await_dkg(&mut test_fed_members, &mut rx).await;
+    let test_fed_members = suite
+        .local_context
+        .poa_nodes
+        .as_ref()
+        .expect("test federation member configurations")
+        .clone();
 
     // generate mint contract test instances
     let mut mint_contract_instances = Vec::new();

@@ -57,6 +57,9 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
 #[derive(FromArgs)]
 pub struct CliArgs {
     /// path to the toml config file
+    #[argh(option, default = "String::from(\"block_builder\")")]
+    pub test_to_run: String,
+    /// path to the toml config file
     #[argh(option, short = 'c')]
     pub config: String,
     /// suite of tests to run: Consensus|all (default: all)
