@@ -1,0 +1,17 @@
+{{- if (.Values.bitcoinServer).enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ (.Values.bitcoinServer).name }}
+  labels:
+    {{- toYaml (.Values.bitcoinServer).labels | nindent 8 }}
+spec:
+  type: {{ ((.Values.bitcoinServer).service).type }}
+  ports:
+    - port: {{ ((.Values.bitcoinServer).service).port }}
+      targetPort: {{ ((.Values.bitcoinServer).service).port }}
+      protocol: TCP
+      name: http-port
+  selector:
+    {{- toYaml (.Values.bitcoinServer).labels | nindent 8 }}
+{{- end }}    

@@ -1,0 +1,62 @@
+{{- if (.Values.bitcoinServer).enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ (.Values.bitcoinServer).name }}
+  namespace: {{ (.Values.bitcoinServer).namespace }}
+  labels:
+    {{- toYaml (.Values.bitcoinServer).labels | nindent 8 }}
+spec:
+  {{- if not ((.Values.bitcoinServer).autoscaling).enabled }}
+  replicas: {{ (.Values.bitcoinServer).replicaCount }}
+  {{- end }}
+  serviceName: {{ (.Values.bitcoinServer).name }}
+  updateStrategy:
+    {{- toYaml (.Values.bitcoinServer).updateStrategy | nindent 8 }}
+  selector:
+    matchLabels:
+      {{- toYaml (.Values.bitcoinServer).labels | nindent 8 }}
+  template:
+    metadata:
+      labels:
+       {{- toYaml (.Values.bitcoinServer).labels | nindent 8 }}
+    spec:
+      {{- with (.Values.bitcoinServer).imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ ((.Values.bitcoinServer).serviceAccount).name }}
+      securityContext:
+         {{- toYaml (.Values.bitcoinServer).securityContext | nindent 8 }} 
+      containers:
+        - name: {{ (.Values.bitcoinServer).name }}
+          image: "{{ ((.Values.bitcoinServer).image).repository }}:{{ (.Values.bitcoinServer).image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ (.Values.bitcoinServer).imagePullPolicy }}
+          command:
+            {{- toYaml (.Values.bitcoinServer).command | nindent 12 }}
+          env:
+            {{- toYaml (.Values.bitcoinServer).env | nindent 12 }}
+          ports:
+            - name: http-port
+              protocol: TCP
+              containerPort: {{ ((.Values.bitcoinServer).service).port }}
+          {{- with (.Values.bitcoinServer).volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml (.Values.bitcoinServer).resources | nindent 12 }}
+      {{- with (.Values.bitcoinServer).volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (.Values.bitcoinServer).nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+  {{- with (.Values.bitcoinServer).volumeClaimTemplates }}
+  volumeClaimTemplates:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

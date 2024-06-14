@@ -1,0 +1,61 @@
+{{- if (.Values.rethNode).enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ (.Values.rethNode).name }}
+  namespace: {{ (.Values.rethNode).namespace }}
+  labels:
+    {{- toYaml (.Values.rethNode).labels | nindent 4 }}
+spec:
+  {{- if not ((.Values.rethNode).autoscaling).enabled }}
+  replicas: {{ (.Values.rethNode).replicaCount }}
+  {{- end }}
+  serviceName: {{ (.Values.rethNode).name }}
+  updateStrategy:
+    {{- toYaml (.Values.rethNode).updateStrategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- toYaml (.Values.rethNode).labels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml (.Values.rethNode).labels | nindent 8 }}
+    spec:
+      {{- with (.Values.rethNode).imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ (.Values.rethNode).serviceAccount.name }}
+      securityContext:
+        {{- toYaml (.Values.rethNode).securityContext | nindent 8 }}
+      containers:
+        - name: {{ (.Values.rethNode).name }}
+          image: "{{ ((.Values.rethNode).image).repository }}:{{ (.Values.rethNode).image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ (.Values.rethNode).imagepullPolicy }}
+          command: 
+            {{- toYaml (.Values.rethNode).command | nindent 12 }}
+          args:
+            {{- toYaml (.Values.rethNode).args | nindent 12 }}
+          env:
+            {{- toYaml (.Values.rethNode).env | nindent 12 }}             
+          ports:
+            {{- toYaml (.Values.rethNode).ports | nindent 12 }}
+
+          {{- with (.Values.rethNode).volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}            
+          {{- end }}
+          resources:
+            {{- toYaml (.Values.rethNode).resources | nindent 12 }}
+      volumes:
+        {{- toYaml (.Values.rethNode).volumes | nindent 8 }}          
+      {{- with (.Values.rethNode).nodeSelector }}
+      nodeSelector:      
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+  {{- with (.Values.rethNode).volumeClaimTemplates }}
+  volumeClaimTemplates:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

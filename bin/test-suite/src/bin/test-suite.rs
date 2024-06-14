@@ -1,11 +1,12 @@
-#[macro_use]
 extern crate tracing;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use reth_tracing::{
     tracing_subscriber::filter::LevelFilter, LayerInfo, LogFormat, RethTracer, Tracer,
 };
 use std::sync::Arc;
-use test_suite::{config::CliArgs, context::GlobalContext, it_info_print, server::TestServer};
+use test_suite::{
+    config::CliArgs, context::GlobalContext, it_error_print, it_info_print, server::TestServer,
+};
 use tokio::{
     signal::unix::{signal, SignalKind},
     sync::broadcast,
@@ -45,13 +46,16 @@ async fn main() -> Result<()> {
     tokio::spawn(stop_signal(stop_tx, resources_ctx));
 
     let result = tokio::spawn(async move { suite_test_server.start(stop_rx).await });
-    result
-        .await
-        .context("Failed to read test server result")?
-        .map(|()| it_info_print!("Testing complete."))
-        .map_err(|err| anyhow!("Testing failed: {}", err))?;
-
-    Ok(())
+    match result.await.context("Failed to read test server result")? {
+        Ok(_) => {
+            it_info_print!("Testing complete.");
+            std::process::exit(0);
+        }
+        Err(err) => {
+            it_error_print!("Testing failed: {}", err);
+            std::process::exit(1);
+        }
+    }
 }
 
 async fn stop_signal(stop_tx: broadcast::Sender<()>, _resources_ctx: Arc<GlobalContext>) {

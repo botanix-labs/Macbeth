@@ -1,0 +1,27 @@
+name: Docker Build Test for PoA Node
+
+on:
+  pull_request:
+    branches: 
+      - feature/poA-consensus
+    types: [opened, closed]
+
+jobs:
+  build_poa_node:
+    runs-on: botanix-actions-runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build Docker image
+        run: |
+          docker build --platform linux/amd64 -t botanix_testnet_v1 -f Dockerfile .
+        working-directory: ./
+
+
+
+

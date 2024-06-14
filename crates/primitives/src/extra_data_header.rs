@@ -68,6 +68,9 @@ pub enum ExtraDataHeaderDeserializeError {
     #[error("invalid version")]
     /// Invalid EDH version
     InvalidVersion,
+    #[error("invalid recovery id")]
+    /// Invalid Recovery Id
+    InvalidRecoveryId,
 }
 
 /// Errors that can occur when validating the authority signature
@@ -149,12 +152,6 @@ impl ExtraDataHeader {
         }
     }
 
-    /// Set the authority signatures
-    pub fn set_signature(&mut self, signature: Vec<RecoverableSignature>) {
-        self.authority_signatures = Some(signature);
-        self.set_optional_fields_bitmask();
-    }
-
     /// Add a signature to the extra data header
     pub fn add_signature(&mut self, signature: RecoverableSignature) {
         let mut current_signatures = self.authority_signatures.clone().unwrap_or(vec![]);
@@ -165,6 +162,20 @@ impl ExtraDataHeader {
         }
         current_signatures.push(signature);
         self.authority_signatures = Some(current_signatures);
+        self.set_optional_fields_bitmask();
+    }
+
+    /// Add multiple signatures to the extra data header
+    /// Will not add duplicates
+    pub fn add_signatures(&mut self, signatures: Vec<RecoverableSignature>) {
+        for sig in signatures {
+            self.add_signature(sig);
+        }
+    }
+
+    /// Removes signatures from the extra data header
+    pub fn clear_signatures(&mut self) {
+        self.authority_signatures = None;
         self.set_optional_fields_bitmask();
     }
 
@@ -299,7 +310,8 @@ impl ExtraDataHeader {
             let mut sigs = vec![];
             let signature_len = u32::consensus_decode(reader)?;
             for _ in 0..signature_len {
-                let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?).unwrap();
+                let recovery_id = RecoveryId::from_i32(i32::consensus_decode(reader)?)
+                    .map_err(|_| ExtraDataHeaderDeserializeError::InvalidRecoveryId)?;
                 let mut buf = [0; 64];
                 reader.read_exact(&mut buf)?;
                 let signature =
@@ -340,8 +352,7 @@ impl ExtraDataHeader {
                 set.push(*sig);
             }
 
-            self.authority_signatures = Some(set);
-            self.set_optional_fields_bitmask();
+            self.add_signatures(set);
         }
     }
 }
@@ -643,24 +654,6 @@ mod tests {
         );
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.authority_signatures, None);
-    }
-
-    #[test]
-    fn can_set_signature() {
-        let mut edh = ExtraDataHeader::default();
-
-        assert_eq!(edh.authority_signatures, None);
-        assert_eq!(edh.optional_fields, 0);
-        let secp = Secp256k1::new();
-        let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
-
-        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
-        let message = Message::from(hello_world_hash);
-        let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
-
-        edh.set_signature(vec![signature]);
-        assert_eq!(edh.authority_signatures.is_some(), true);
-        assert_eq!(edh.optional_fields, 1 << HAS_SIGNATURE_POS);
     }
 
     #[test]
