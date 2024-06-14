@@ -22,4 +22,14 @@ fn main() {
         .out_dir("client/src/")
         .compile_with_config(prost_config_client, protos, &[] as &[&str])
         .expect("failed to compile client protos");
+
+    // apply rustfmt to the generated files
+    let files = ["src/rpc/btc_server.rs", "client/src/btc_server.rs"];
+    for file in files {
+        let res = std::process::Command::new("cargo")
+            .args(["+nightly", "fmt", "--", "--config-path", "../../rustfmt.toml", file])
+            .status()
+            .expect(&format!("rustfmt error for {}", file));
+        assert!(res.success(), "rustfmt error for {}", file);
+    }
 }
