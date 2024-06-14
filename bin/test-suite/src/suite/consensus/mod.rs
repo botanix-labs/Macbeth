@@ -25,7 +25,7 @@ mod invalid_transactions;
 mod pbft;
 mod rpc_node;
 
-fn kill_child_processes_at_port(port: u16) {
+fn kill_process_at_port(port: u16) {
     // kill server process
     match kill(port) {
         Ok(pid) => {
@@ -49,9 +49,18 @@ pub struct ConsensusIntegrationTestSuite {
 }
 pub struct LocalContext {
     pub btc_servers: Option<Vec<SpawnedBtcServer>>,
-    pub poa_nodes_join_handles: Vec<std::thread::JoinHandle<()>>,
     pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
+}
+
+pub struct CreateTestConfig {
+    pub should_create_poa_nodes: bool,
+}
+
+impl Default for CreateTestConfig {
+    fn default() -> Self {
+        Self { should_create_poa_nodes: true }
+    }
 }
 
 #[async_trait]
@@ -60,31 +69,50 @@ impl Suite for ConsensusIntegrationTestSuite {
         "ConsensusIntegrationTestSuite"
     }
 
-    async fn run(&mut self) -> Vec<Outcome> {
+    async fn run(&mut self, test_to_run: String) -> Vec<Outcome> {
         self.set_panic_hook();
-
-        // dkg tests
-        // run_test!(self, frost::test_dkg::dkg_flow);
-        // // signing tests
-        // run_test!(self, frost::test_signing::test_many_inputs_signing);
-        // eoa tests
-        run_test!(self, frost::test_block_builder::block_builder);
-        // utxo commitment test
-        // run_test!(self, frost::test_utxo_commitment::test_utxo_commitment);
-        // // frost e2e tests
-        // run_test!(self, frost::test_frost_e2e::frost_e2e_stable);
-        // run_test!(
-        //     self,
-        //     frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
-        // );
-        // // rpc node tests
-        // run_test!(self, rpc_node::test_rpc_node::test_rpc_node);
-        // // run invalid transaction tests
-        // run_test!(self, invalid_transactions::test_invalid_pegin::invalid_pegin);
-        // run_test!(self, invalid_transactions::test_invalid_pegout::invalid_pegout);
-
-        // pbft tests (WIP)
-        //run_test!(self, pbft::test_pbft_disconnect::pbft_e2e_failed_disconnect);
+        match test_to_run.as_str() {
+            "dkg_flow" => run_test!(
+                self,
+                CreateTestConfig { should_create_poa_nodes: false },
+                frost::test_dkg::dkg_flow
+            ),
+            "many_inputs_signing" => run_test!(
+                self,
+                CreateTestConfig { should_create_poa_nodes: false },
+                frost::test_signing::test_many_inputs_signing
+            ),
+            "utxo_commitment" => run_test!(
+                self,
+                CreateTestConfig { should_create_poa_nodes: false },
+                frost::test_utxo_commitment::test_utxo_commitment
+            ),
+            "block_builder" => {
+                run_test!(self, Default::default(), frost::test_block_builder::block_builder)
+            },
+            "frost_e2e_stable" => {
+                run_test!(self, Default::default(), frost::test_frost_e2e::frost_e2e_stable)
+            },
+            "frost_e2e_failed_signing_disconnect" => run_test!(
+                self,
+                Default::default(),
+                frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
+            ),
+            // TODO
+            // "rpc_node" => run_test!(self, Default::default(), rpc_node::test_rpc_node::test_rpc_node),
+            "invalid_pegin" => {
+                run_test!(self, Default::default(), invalid_transactions::test_invalid_pegin::invalid_pegin)
+            },
+            "invalid_pegout" => {
+                run_test!(self, Default::default(), invalid_transactions::test_invalid_pegout::invalid_pegout)
+            },
+            "test_mempool_gossip" => {
+                run_test!(self, Default::default(), frost::test_mempool_gossip::test_mempool_gossip)
+            },  
+            _ => {
+                panic!("Test not found");
+            }
+        };
 
         self.outcomes.clone()
     }
@@ -133,11 +161,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         }));
     }
 
-    async fn create_new_context(&mut self) {
-        it_info_print!("Creating test suite context");
+    async fn create_new_context(&mut self, create_test_config: CreateTestConfig) {
         self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone()));
-
         // let btc servers come up
+        tokio::time::sleep(Duration::from_secs(5)).await;
         // try to connect to each btc server before moving on
         let mut tries = 5;
         let mut successes = 0;
@@ -176,7 +203,6 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
         }
         it_info_print!("Connected to all btc servers");
-
         // generate test fed members poa nodes
         let (mut test_fed_members, tx) = create_poa_federation_members(
             self.global_context.clone(),
@@ -185,28 +211,26 @@ impl Suite for ConsensusIntegrationTestSuite {
         .await;
 
         // run all poa nodes in the background
-        let mut rx = tx.subscribe();
-        let mut joins = vec![];
-        for (_index, fed_member_config) in test_fed_members.iter() {
-            it_info_print!("Starting poa node", _index);
-            let fed_member_config = fed_member_config.clone();
-            let join_handle = std::thread::spawn(move || {
-                let (fed_member_command, _chain_spec) = fed_member_config.build_command();
-                let runner = CliRunner::default();
-                runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
+        if create_test_config.should_create_poa_nodes {
+            let mut rx = tx.subscribe();
+            for (_index, fed_member_config) in test_fed_members.iter() {
+                it_info_print!("Starting poa node", _index);
+                let fed_member_config = fed_member_config.clone();
+                // Need to spawn a seperate thread due to nested runtime issues
+                let _ = std::thread::spawn(move || {
+                    let (fed_member_command, _chain_spec) = fed_member_config.build_command();
+                    let runner = CliRunner::default();
+                    runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
+                });
 
-                // TODO: wire up on_node_started since reth logic has changed
-                // fed_member_config.on_node_started();
-            });
-            joins.push(join_handle);
-            // wait for one second in between members start
-            tokio::time::sleep(Duration::from_secs(2)).await;
+                // wait for one second in between processes start
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            await_dkg(&mut test_fed_members, &mut rx).await;
+
+            self.local_context.poa_nodes = Some(test_fed_members);
+            self.local_context.poa_notification = Some(tx);
         }
-        await_dkg(&mut test_fed_members, &mut rx).await;
-
-        self.local_context.poa_nodes_join_handles = joins;
-        self.local_context.poa_nodes = Some(test_fed_members);
-        self.local_context.poa_notification = Some(tx);
     }
 
     async fn destroy_context(&mut self) {
@@ -214,29 +238,12 @@ impl Suite for ConsensusIntegrationTestSuite {
         if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
             for (index, btc_server) in btc_servers.iter_mut().enumerate() {
                 let _ = btc_server.child_process.kill().await;
-                kill_child_processes_at_port(BTC_SERVER_START_PORT + index as u16);
+                kill_process_at_port(BTC_SERVER_START_PORT + index as u16);
             }
             // Remove db dirs
             clean_db(btc_servers);
         }
-
-        // for each poa node, send SIG_KILL to the process
-        if let Some(poa_nodes) = &self.local_context.poa_nodes {
-            for (_index, fed_member_config) in poa_nodes.iter() {
-                kill_child_processes_at_port(fed_member_config.discovery_port);
-                kill_child_processes_at_port(fed_member_config.rpc_port);
-                kill_child_processes_at_port(fed_member_config.authrpc_port);
-            }
-        }
-        // Wait for children to die
-        tokio::time::sleep(Duration::from_secs(5)).await;
-
-        while let Some(handle) = self.local_context.poa_nodes_join_handles.pop() {
-            handle.join().unwrap();
-        }
-
         self.local_context.btc_servers = None;
-        self.local_context.poa_nodes_join_handles = vec![];
         self.local_context.poa_nodes = None;
         self.local_context.poa_notification = None;
     }
@@ -250,7 +257,6 @@ impl ConsensusIntegrationTestSuite {
             outcomes: Default::default(),
             local_context: LocalContext {
                 btc_servers: None,
-                poa_nodes_join_handles: vec![],
                 poa_nodes: None,
                 poa_notification: None,
             },

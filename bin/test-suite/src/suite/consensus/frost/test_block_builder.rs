@@ -50,9 +50,6 @@ pub async fn block_builder(
     // get total authorities number
     let total_authorities = test_fed_members.len();
 
-    // wait for the dkg to finish for each of them
-    // await_dkg(&mut test_fed_members, &mut rx).await;
-
     // find out who is in turn
     let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
 

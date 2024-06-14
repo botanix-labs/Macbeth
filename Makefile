@@ -422,6 +422,7 @@ pr:
 start-test-suite:
 	cd ./bin/test-suite && \
 	cargo run --bin test-suite -- \
+	--test-to-run "${TEST_TO_RUN}" \
 	--config "./config.toml" \
 	--run-suite all \
 	--timeout 400000 \
