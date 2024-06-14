@@ -28,7 +28,6 @@ use std::{
 use url::Url;
 
 const RPC_PORT_BASE: u16 = 8545;
-const AUTHRPC_PORT_BASE: u16 = 8551;
 const DISCOVERY_PORT_BASE: u16 = 30321;
 
 #[derive(Clone, Debug)]
@@ -37,7 +36,6 @@ pub struct NonFederationMemberTestConfig {
     pub temp_path: PathBuf,
     pub secret_key: String,
     pub rpc_port: u16,
-    pub authrpc_port: u16,
     pub discovery_port: u16,
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
@@ -61,7 +59,6 @@ impl NonFederationMemberTestConfig {
         peer_id: PeerId,
     ) -> Self {
         let rpc_port = RPC_PORT_BASE + index;
-        let authrpc_port = AUTHRPC_PORT_BASE + index;
         let discovery_port = DISCOVERY_PORT_BASE + index;
         let jwt_secret_path = jwt_secrets_dir.join(format!("{index}.hex"));
         Self {
@@ -76,7 +73,6 @@ impl NonFederationMemberTestConfig {
             },
             secret_key,
             rpc_port,
-            authrpc_port,
             discovery_port,
             bitcoind_url,
             bitcoind_username,
@@ -126,14 +122,8 @@ impl NonFederationMemberTestConfig {
             "127.0.0.1",
             "--http.api",
             "eth,net,trace,txpool,web3,rpc,admin",
-            "--authrpc.addr",
-            "127.0.0.1",
             "--btc-network",
             "regtest",
-            "--authrpc.port",
-            format!("{}", self.authrpc_port).as_str(),
-            "--authrpc.jwtsecret",
-            jwt_secret_path.as_str(),
             "--bitcoind.url",
             self.bitcoind_url.as_str(),
             "--bitcoind.username",

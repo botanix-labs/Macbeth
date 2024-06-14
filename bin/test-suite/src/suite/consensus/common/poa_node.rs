@@ -80,7 +80,6 @@ pub struct FederationMemberTestConfig {
     pub secret_key: SecretKey,
     pub authorities: Vec<PublicKey>,
     pub rpc_port: u16,
-    pub authrpc_port: u16,
     pub discovery_port: u16,
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
@@ -112,12 +111,10 @@ impl FederationMemberTestConfig {
         frost_max_signers: u16,
         peer_id: PeerId,
         rpc_port_base: u16,
-        authrpc_port_base: u16,
         discovery_port_base: u16,
         test_signal_tx: Sender<TestSignal>,
     ) -> Self {
         let rpc_port = rpc_port_base + index;
-        let authrpc_port = authrpc_port_base + index;
         let discovery_port = discovery_port_base + index;
         let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
@@ -133,7 +130,6 @@ impl FederationMemberTestConfig {
             secret_key,
             authorities,
             rpc_port,
-            authrpc_port,
             discovery_port,
             bitcoind_url,
             bitcoind_username,
@@ -242,12 +238,8 @@ impl FederationMemberTestConfig {
             "127.0.0.1",
             "--http.api",
             "eth,net,trace,txpool,web3,rpc,admin",
-            "--authrpc.addr",
-            "127.0.0.1",
             "--btc-network",
             "regtest",
-            "--authrpc.port",
-            format!("{}", self.authrpc_port).as_str(),
             "--authrpc.jwtsecret",
             jwt_secret_path.as_str(),
             "--btc-server",
@@ -496,12 +488,6 @@ pub async fn create_poa_federation_members(
     *last_rpc_port = p + 10 + global_context.instances;
     drop(last_rpc_port);
 
-    let mut last_authrpc_port = global_context.last_poa_node_authrpc_port.lock().await;
-    let p = last_authrpc_port.clone();
-    let authrpc_port_base: u16 = p + 1;
-    *last_authrpc_port = p + 10 + global_context.instances;
-    drop(last_authrpc_port);
-
     let mut last_discovery_port = global_context.last_poa_node_discovery_port.lock().await;
     let p = last_discovery_port.clone();
     let discovery_port_base: u16 = p + 1;
@@ -538,7 +524,6 @@ pub async fn create_poa_federation_members(
             global_context.max_signers,
             member_peer_id,
             rpc_port_base,
-            authrpc_port_base,
             discovery_port_base,
             test_signal_tx,
         )
