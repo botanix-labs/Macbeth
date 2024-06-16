@@ -157,9 +157,14 @@ pub fn validate_poa_extra_data_header(
         // Validate the list of authorities matches the authorities in the genesis block
         // This check is only for a static federation
         // Use EDH authority list as source of truth and not the list passed in
-        if genesis_authorities !=
-            edh.authority_signers.as_ref().expect("authority signers to exist")
-        {
+        let gensis_hashset = genesis_authorities.iter().collect::<std::collections::HashSet<_>>();
+        let edh_hashset = edh
+            .authority_signers
+            .as_ref()
+            .expect("authority signers to exist")
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        if gensis_hashset != edh_hashset {
             error!("Genesis authorities: {:?}", genesis_authorities);
             error!("EDH authorities: {:?}", edh.authority_signers);
             return Err(ConsensusError::InvalidAuthorityList);
