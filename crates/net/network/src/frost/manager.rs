@@ -281,6 +281,7 @@ impl FrostConfig {
 }
 
 /// Maps an authority index to a frost specific identifier
+// TODO rename this to authority_index to frost id
 pub fn peer_id_to_identifier(authority_index: u16) -> frost::Identifier {
     frost::Identifier::derive(authority_index.to_le_bytes().as_slice())
         .expect("can derive identifier")
