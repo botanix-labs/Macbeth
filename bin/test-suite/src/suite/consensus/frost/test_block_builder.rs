@@ -38,6 +38,8 @@ pub async fn block_builder(
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    // sleep and wait for poa nodes to register this block
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
         .local_context
