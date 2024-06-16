@@ -203,17 +203,24 @@ impl FederationMemberTestConfig {
         // Need to create a chain.toml in the data dir
 
         // Need to zip together the soc address and pk
-        let mut fed_member_pk = vec![];
+        let mut fed_member_pks = vec![];
         for peer in self.peers_list.iter() {
             let pk = FedMemberPubKey {
                 key: peer.secret_key.public_key(SECP256K1).to_string(),
                 socket_addr: format!("127.0.0.1:{}", peer.discovery_port),
             };
-            fed_member_pk.push(pk);
+            fed_member_pks.push(pk);
         }
+        // add our selves
+        let my_pk = FedMemberPubKey {
+            key: self.secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: format!("127.0.0.1:{}", self.discovery_port),
+        };
+        fed_member_pks.push(my_pk);
 
         let chain_config =
-            GenesisTomlConfig::new("integration test toml".to_string(), fed_member_pk, None);
+            GenesisTomlConfig::new("integration test toml".to_string(), fed_member_pks, None);
+        it_info_print!("Chain config", chain_config);
         chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
         let no_args = NoArgs::with(self.clone());
