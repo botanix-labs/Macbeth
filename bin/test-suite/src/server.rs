@@ -40,29 +40,16 @@ impl TestServer {
         mut stop_tx: tokio::sync::broadcast::Receiver<()>,
         test_to_run: String,
     ) -> Result<(), Error> {
-        let mut suits_to_run: Vec<Box<dyn Suite>> = vec![];
         let mut test_suite = self.create_consensus_test_suite();
-
-        // match self.context.run_suite {
-        //     RunSuite::All => {
-        //         suits_to_run.push(self.create_consensus_test_suite());
-        //     }
-        //     RunSuite::Consensus => {
-        //         suits_to_run.push(self.create_consensus_test_suite());
-        //     }
-        // }
 
         tokio::select! {
             _ = stop_tx.recv() => {
                 it_info_print!(">>>> Term Sig received.");
                 test_suite.destroy_context().await;
-                // for suite in suits_to_run.iter_mut() {
-                //     suite.destroy_context().await;
-                //     info!(">>>> Destroyed test context for {:?}", suite.name());
-                // }
                 return Err(Error::TestRunStopped);
             },
             res = async {
+                    // TODO this will always be a vec of one element
                     let outcomes = test_suite.run(test_to_run).await;
                     // if any of them failed return error
                     if outcomes.iter().any(|outcome| outcome == &Outcome::Failed) {
