@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use bitcoin::Address;
-use bitcoincore_rpc::{Auth, RpcApi};
+use bitcoincore_rpc::{RpcApi};
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
