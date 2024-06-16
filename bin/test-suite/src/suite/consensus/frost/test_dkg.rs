@@ -1,6 +1,6 @@
 use super::error::Error;
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
-use bitcoin::{consensus::Encodable, Address, Amount, FeeRate, TxOut};
+use bitcoin::{consensus::Encodable, Address, Amount, TxOut};
 use client::{self, BtcServerClient};
 use std::{str::FromStr, vec};
 use tonic::transport::Channel;
