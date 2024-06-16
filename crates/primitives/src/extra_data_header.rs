@@ -214,15 +214,8 @@ impl ExtraDataHeader {
         self.utxo_commitment.consensus_encode(writer)?;
 
         if let Some(authorities) = &self.authority_signers {
-            // first sort the pubkeys lexographically
-            let authority_signers = {
-                let mut authority_signers = authorities.clone();
-                authority_signers.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
-                println!(">>>>>>>>>>>>>>>> {:?}", authority_signers);
-                authority_signers
-            };
-            (authority_signers.len() as u32).consensus_encode(writer)?;
-            for k in authority_signers {
+            (authorities.len() as u32).consensus_encode(writer)?;
+            for k in authorities {
                 k.serialize().consensus_encode(writer)?;
             }
         }
@@ -287,8 +280,6 @@ impl ExtraDataHeader {
                     .map_err(|_| encode::Error::ParseFailed("invalid signer public key"))?;
                 signers.push(pk);
             }
-            // sort the pubkeys lexographically
-            // signers.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
             Some(signers)
         } else {
             None
