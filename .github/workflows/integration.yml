@@ -65,7 +65,7 @@ jobs:
           set -o pipefail
           chmod +x test_runner.sh
           bash test_runner.sh
-          sleep 600
+          sleep 1500
           echo "e2e tests completed successfully!"
 
 
