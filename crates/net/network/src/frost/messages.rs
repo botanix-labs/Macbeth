@@ -22,6 +22,7 @@ pub struct HealthcheckRequest {
 
 /// Healtcheck message builder
 impl HealthcheckRequest {
+    /// Constructs a new healthcheck request
     pub fn new(sender: PeerId, receiver: PeerId) -> Self {
         Self { sender, receiver }
     }

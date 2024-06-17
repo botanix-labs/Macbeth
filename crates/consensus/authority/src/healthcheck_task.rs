@@ -12,13 +12,10 @@ use reth_network::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
-use tracing::{debug, error, info, warn};
+use tokio::sync::RwLock;
+use tracing::{error, info, warn};
 
-const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 30;
+const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 5 * 60;
 
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
@@ -133,13 +130,31 @@ where
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
                 // check for any peers whose health checks havent been recently received
-                let none_responding_peers = peers_healthcheck_tracker.read().await.iter().filter(
+                let none_responding_peers = peers_healthcheck_tracker
+                .read()
+                .await
+                .iter()
+                .filter_map(
                     |(peer_id, &last_check)| {
-                        last_check.elapsed().as_secs().gt(&NONRESPONDING_PEERS_TIMEOUT_SECS)
-                    },
-                );
+                        if last_check.elapsed().as_secs().gt(&NONRESPONDING_PEERS_TIMEOUT_SECS) {
+                            Some(*peer_id)
+                        } else {
+                            None
+                        }
+                    }
+                )
+                .collect::<Vec<PeerId>>();
 
-                // TODO: force reconnection to that peer
+                // force reconnection to those peers
+                let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+                frost_handle.send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender));
+                match receiver.await {
+                    Ok(peers_reconnected) => peers_reconnected,
+                    Err(e) => {
+                        error!(target: "Healthcheck Task", "Error reconnecting peers = {:?}", e);
+                        panic!("Error reconnecting peers = {:?}", e);
+                    }
+                };
             }
         });
 
@@ -164,9 +179,12 @@ where
                         continue;
                     }
                     PeerMessageResponse::Healtcheck(healthcheck_response) => {
-                        let peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
-
-                        // TODO
+                        let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
+                        if healthcheck_response.sender.eq(self.network_handle.peer_id()) {
+                            peers_healthcheck_tracker.insert(healthcheck_response.receiver, Instant::now());
+                        } else {
+                            warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
+                        }
                         drop(peers_healthcheck_tracker);
                     }
                 }

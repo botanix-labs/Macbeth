@@ -113,7 +113,7 @@ impl FrostManager {
     fn send_healthcheck_to_peers(&self) {
         for (peer_id, conn_channel) in self.peers_connections.iter() {
             let resp =
-                HealthcheckResponse { sender: *self.network.peer_id(), receiver: peer_id.clone() };
+                HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
             match conn_channel
                 .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healtcheck(resp)))
             {
@@ -130,13 +130,6 @@ impl FrostManager {
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                // info!(
-                //     ">>>>>>>>>>> FROST PEER CONNECTION ESTABLISHED.
-                // COUNTER PEER ID: {:?}, MY_PEERID: {:?}",
-                //     peer_id.to_string(),
-                //     self.network.peer_id().to_string()
-                // );
-
                 if !self.is_authority_peer(&peer_id) {
                     warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
@@ -186,6 +179,9 @@ impl FrostManager {
         match cmd {
             FrostCommand::SendHealtcheckToPeers => {
                 self.send_healthcheck_to_peers();
+            }
+            FrostCommand::ReconnectPeers(peers, tx) => {
+                // TODO
             }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller
@@ -261,6 +257,8 @@ impl Future for FrostManager {
 pub enum FrostCommand {
     /// sends healthcheck messages to all peers
     SendHealtcheckToPeers,
+    /// Reconect peers in case their connection got dropped
+    ReconnectPeers(Vec<PeerId>, oneshot::Sender<bool>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
     /// Get the readily connected frost peers
