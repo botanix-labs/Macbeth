@@ -48,6 +48,9 @@ pub async fn invalid_pegin(
         .expect("test federation member configurations")
         .clone();
 
+    // subscribe to notifications so channel stays open
+    let _rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
+
     // generate mint contract test instances
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
