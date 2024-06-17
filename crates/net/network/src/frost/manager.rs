@@ -181,7 +181,9 @@ impl FrostManager {
                 self.send_healthcheck_to_peers();
             }
             FrostCommand::ReconnectPeers(peers, tx) => {
-                // TODO
+                for peer in peers.into_iter() {
+
+                }
             }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller

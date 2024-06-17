@@ -119,6 +119,7 @@ where
             }
         };
 
+        // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         self.task_executor.spawn(async move {
@@ -158,6 +159,13 @@ where
             }
         });
 
+        let authority_peers = self.storage
+        .read()
+        .await
+        .authorities
+        .iter()
+        .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+        .collect::<Vec<PeerId>>();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         loop {
             // receive over a channel message from other peers
@@ -179,6 +187,10 @@ where
                         continue;
                     }
                     PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                        if !authority_peers.contains(&healthcheck_response.sender) || !authority_peers.contains(&healthcheck_response.receiver) {
+                            warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
+                            continue;
+                        }
                         let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
                         if healthcheck_response.sender.eq(self.network_handle.peer_id()) {
                             peers_healthcheck_tracker.insert(healthcheck_response.receiver, Instant::now());
