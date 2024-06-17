@@ -6,12 +6,13 @@ use reth_network_api::Peers;
 use reth_rpc_types::PeerId;
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Trait for sending commands to the [`FrostManager`]
 /// Trait was created mainly for the convenience of mocking during testing
@@ -55,7 +56,8 @@ pub struct FrostManager {
     /// All the connected peers.
     peers_connections: HashMap<PeerId, UnboundedSender<FrostPeerCommand>>,
     /// All the connected frost peers.
-    frost_peers_connections: HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
+    frost_peers_connections:
+        HashMap<frost::Identifier, (UnboundedSender<FrostPeerCommand>, SocketAddr)>,
     /// total authorities to connect to
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
@@ -109,6 +111,23 @@ impl FrostManager {
         self.authority_peerid.contains(peer_id)
     }
 
+    fn send_healthcheck_to_peers(&self) {
+        for (frost_peer_id, (conn_channel, _)) in self.frost_peers_connections.iter() {
+            match conn_channel.send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healtcheck))
+            {
+                Ok(_) => {
+                    debug!("Healthcheck sent to peer {:?}", frost_peer_id,);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to send healthcheck to peer {:?}, error: {:?}",
+                        frost_peer_id, e
+                    );
+                }
+            }
+        }
+    }
+
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
@@ -155,7 +174,8 @@ impl FrostManager {
                         // add the peer conn mapped to a frost id based on authority index
                         let frost_identifier = peer_id_to_identifier(authority_index);
 
-                        self.frost_peers_connections.insert(frost_identifier, conn);
+                        self.frost_peers_connections
+                            .insert(frost_identifier, (conn, peer_socket_addr));
                     }
                 }
             }
@@ -165,13 +185,22 @@ impl FrostManager {
     /// Handles a command received from a detached [`FrostHandle`]
     fn on_command(&mut self, cmd: FrostCommand) {
         match cmd {
+            FrostCommand::SendHealtcheckToPeers => {
+                self.send_healthcheck_to_peers();
+            }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller
                 let _ = tx.send(self.all_peers_connected());
             }
             FrostCommand::GetAllConnectedFrostPeers(tx) => {
                 // reply to caller
-                let _ = tx.send(self.frost_peers_connections.clone());
+                let connections_map = self
+                    .frost_peers_connections
+                    .clone()
+                    .into_iter()
+                    .map(|(key, val)| (key, val.0))
+                    .collect();
+                let _ = tx.send(connections_map);
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
                 // reply to caller
@@ -231,6 +260,8 @@ impl Future for FrostManager {
 /// Commands the [`FrostManager`] listens for.
 #[derive(Debug)]
 pub enum FrostCommand {
+    /// sends healthcheck messages to all peers
+    SendHealtcheckToPeers,
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
     /// Get the readily connected frost peers

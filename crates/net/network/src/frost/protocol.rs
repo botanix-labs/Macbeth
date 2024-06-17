@@ -188,6 +188,9 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostPeerCommand::PeerMessage(response) => {
                     match response {
+                        PeerMessageResponse::Healtcheck => {
+                            Poll::Ready(Some(FrostProtoMessage::peer_health_message().encoded()))
+                        }
                         PeerMessageResponse::Pbft(pbft_response) => {
                             let PbftResponse { response_type, data } = pbft_response;
                             let req = PbftRequest::new(data);
@@ -309,6 +312,9 @@ impl Stream for FrostProtoConnection {
 
         // react on message type
         match msg.message {
+            FrostProtoMessageKind::Health => {
+                return Poll::Ready(Some(FrostProtoMessage::peer_health_message().encoded()));
+            }
             FrostProtoMessageKind::Ping => {
                 //info!(">>>>>>>>> RECEIVED PING FROM PEER. SENDING PONG...");
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));

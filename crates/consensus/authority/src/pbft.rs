@@ -866,6 +866,11 @@ mod tests {
                     // let (tx, _) = tokio::sync::mpsc::unbounded_channel();
                     // sender.send(tx).unwrap();
                 }
+                FrostCommand::GetAllConnectedPeers(sender) => {
+                    let peers = HashMap::new();
+                    sender.send(peers).unwrap();
+                }
+                FrostCommand::SendHealtcheckToPeers => {}
             }
         }
     }

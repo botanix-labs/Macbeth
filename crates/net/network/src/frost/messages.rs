@@ -107,6 +107,8 @@ pub enum FrostProtoMessageId {
     PeerPreCommitment = 0x0B,
     /// PBFT message peer commit
     PeerCommit = 0x0C,
+    /// Health
+    Health = 0x0D,
 }
 
 /// Enum defining the frost message kind
@@ -138,6 +140,8 @@ pub enum FrostProtoMessageKind {
     PeerPreCommitment(PbftRequest),
     /// PBFT message peer commit
     PeerCommit(PbftRequest),
+    /// Health
+    Health,
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -257,6 +261,11 @@ impl FrostProtoMessage {
         }
     }
 
+    /// Peer health
+    pub fn peer_health_message() -> Self {
+        Self { message_type: FrostProtoMessageId::Health, message: FrostProtoMessageKind::Health }
+    }
+
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -364,6 +373,7 @@ impl FrostProtoMessage {
                 buf.put_u32_le(buffer.len() as u32);
                 buf.put_slice(&buffer);
             }
+            FrostProtoMessageKind::Health => {}
         }
         buf
     }
@@ -596,6 +606,7 @@ impl FrostProtoMessage {
                     return None;
                 }
             }
+            FrostProtoMessageId::Health => FrostProtoMessageKind::Health,
         };
         Some(Self { message_type, message })
     }

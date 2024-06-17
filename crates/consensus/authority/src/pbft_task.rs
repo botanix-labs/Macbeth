@@ -215,6 +215,10 @@ where
                         // task
                         continue;
                     }
+                    PeerMessageResponse::Healtcheck => {
+                        // Nothing to do for health related messages.
+                        continue;
+                    }
                 }
             }
 

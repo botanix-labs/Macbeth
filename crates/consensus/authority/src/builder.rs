@@ -81,7 +81,7 @@ pub enum AuthorityConsensusBuilderError {
 impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
     AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
 where
-    ToFrostMan: ToFrostManager + Clone + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static + Send,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -267,6 +267,7 @@ where
             frost_handle.clone().expect("Requires frost handle"),
             frost_config.clone().expect("valid frost config"),
             storage.clone(),
+            task_executor.clone(),
         );
 
         // Set up frost notification message queue

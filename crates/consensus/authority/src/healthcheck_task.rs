@@ -1,7 +1,10 @@
 use crate::Storage;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
-    frost::manager::{FrostCommand, FrostConfig, ToFrostManager},
+    frost::{
+        manager::{FrostCommand, FrostConfig, ToFrostManager},
+        PeerMessageResponse,
+    },
     NetworkHandle,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -10,24 +13,6 @@ use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
-/// Enum defining possible frost message notifications
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum FrostNotificationMessage {
-    /// Finalized frost signing signature
-    FinalizedSignature(FrostNotification),
-    /// Initiate signing session
-    InitiateSigning(FrostNotification),
-}
-
-/// Finalised frost signature message
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct FrostNotification {
-    /// The signing session id
-    pub(crate) signing_session_id: Vec<u8>,
-    /// The agglomerated psbts
-    pub(crate) psbt: Vec<u8>,
-}
-
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
@@ -35,11 +20,13 @@ pub struct HealthcheckTask<Client, ToFrostMan> {
     pub(crate) frost_handle: ToFrostMan,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<Client>,
+    /// Task Executor
+    pub(crate) task_executor: TaskExecutor,
 }
 
 impl<Client, ToFrostMan> HealthcheckTask<Client, ToFrostMan>
 where
-    ToFrostMan: ToFrostManager + Clone,
+    ToFrostMan: ToFrostManager + Clone + Send + 'static,
     Client: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
@@ -54,13 +41,14 @@ where
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<Client>,
+        task_executor: TaskExecutor,
     ) -> Self {
         info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
-        Self { network_handle, frost_handle, storage }
+        Self { network_handle, frost_handle, storage, task_executor }
     }
 
-    async fn check_all_peers_connected(&mut self) -> bool {
+    async fn check_all_peers_initially_connected(&mut self) -> bool {
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
         self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender));
@@ -94,7 +82,7 @@ where
         info!(target: "Healthcheck Task", "Starting Healthcheck Task");
         loop {
             // await all peers to be connected
-            if self.check_all_peers_connected().await {
+            if self.check_all_peers_initially_connected().await {
                 break;
             }
 
@@ -113,12 +101,55 @@ where
             }
         };
 
-        // start looping and checking for disconnected peers
-        loop {
-            if !self.check_all_peers_connected().await {}
-        }
+        // get all peers rx channels
+        let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
+        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        let mut peer_messages_rx = match peer_messages_rx.await {
+            Ok(peer_messages_rx) => peer_messages_rx,
+            Err(e) => {
+                error!("Error getting receiver handle = {:?}", e);
+                panic!("Error getting receiver handle");
+            }
+        };
 
-        // start listening for dropped peers
+        let frost_handle = self.frost_handle.clone();
+        self.task_executor.spawn(async move {
+            // start looping and sending healthchecks to all connected peers
+            loop {
+                frost_handle.send_command(FrostCommand::SendHealtcheckToPeers);
+
+                // sleep for some time before the next check
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        });
+
+        // now
+        loop {
+            // receive over a channel message from other peers
+            if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
+                match msg {
+                    PeerMessageResponse::Pbft(_) => {
+                        // Nothing to do for pbft related messages. Does are handled by the frost
+                        // task
+                        continue;
+                    }
+                    PeerMessageResponse::Dkg(_) => {
+                        // Nothing to do for dkg related messages. Does are handled by the frost
+                        // task
+                        continue;
+                    }
+                    PeerMessageResponse::Signing(_) => {
+                        // Nothing to do for signing related messages. Does are handled by the frost
+                        // task
+                        continue;
+                    }
+                    PeerMessageResponse::Healtcheck => {}
+                }
+            }
+
+            // short sleep
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 }
 
