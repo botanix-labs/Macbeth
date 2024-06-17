@@ -8,6 +8,10 @@ pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::InvalidTransactionError> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
+
+    // subscribe to notifications so channel stays open
+    let _rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
+
     // Generate and send pegout tx
     // invalid bitcoin address
     let botanix_eth_client =
