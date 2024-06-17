@@ -3,6 +3,7 @@ use crate::{
     epoch_manager::EpochManager,
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
+    healthcheck_task::HealthcheckTask,
     pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
@@ -217,6 +218,7 @@ where
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        HealthcheckTask<Client, ToFrostMan>,
     ) {
         let Self {
             btc_server,
@@ -258,6 +260,13 @@ where
             evm_config.clone(),
             btc_network,
             network_client.clone(),
+        );
+
+        let healthcheck_task = HealthcheckTask::new(
+            network_handle.clone(),
+            frost_handle.clone().expect("Requires frost handle"),
+            frost_config.clone().expect("valid frost config"),
+            storage.clone(),
         );
 
         // Set up frost notification message queue
@@ -334,6 +343,14 @@ where
             block_production_task = Some(block_production);
         }
 
-        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
+        (
+            consensus,
+            block_production_task,
+            block_fetcher_task,
+            frost_task,
+            sync_task,
+            pbft_task,
+            healthcheck_task,
+        )
     }
 }

@@ -49,7 +49,7 @@ use reth_eth_wire::{
 };
 use reth_metrics::common::mpsc::UnboundedMeteredSender;
 use reth_net_common::bandwidth_meter::BandwidthMeter;
-use reth_network_api::ReputationChangeKind;
+use reth_network_api::{NetworkInfo, ReputationChangeKind};
 use reth_network_types::{pk2id, PeerId};
 use reth_primitives::{ForkId, NodeRecord};
 use reth_provider::{BlockNumReader, BlockReader};
@@ -362,11 +362,13 @@ where
             .map(pk2id)
             .collect::<Vec<_>>();
 
+        let network_handle = handle.clone();
+
         let protocol_state = ProtocolState::new(
             protocol_events_tx,
             frost_peer_messages_forwarder_tx,
             authority_index,
-            *handle.peer_id(),
+            network_handle,
             authorities,
         );
         let protocol_handler = FrostProtoHandler { state: protocol_state };
@@ -609,10 +611,11 @@ where
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 self.notify_frost_manager(NetworkFrostEvent::PeerMessage { peer_id, response });
             }
-            FrostProtocolEvent::PeerConfirmed(peer_id, authority_index) => {
+            FrostProtocolEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr) => {
                 self.notify_frost_manager(NetworkFrostEvent::PeerConfirmed(
                     peer_id,
                     authority_index,
+                    peer_socket_addr,
                 ));
             }
         }

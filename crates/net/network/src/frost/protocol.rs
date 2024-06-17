@@ -3,7 +3,7 @@ use futures::{Stream, StreamExt};
 use reth_eth_wire::{
     capability::SharedCapabilities, multiplex::ProtocolConnection, protocol::Protocol,
 };
-use reth_network_api::Direction;
+use reth_network_api::{Direction, NetworkInfo};
 use reth_primitives::BytesMut;
 use reth_rpc_types::PeerId;
 use std::{
@@ -21,6 +21,7 @@ use crate::{
         DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
+    NetworkHandle,
 };
 
 use super::{
@@ -45,7 +46,7 @@ impl ProtocolHandler for FrostProtoHandler {
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(&self.state.peer_id) {
+        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
             return None;
         }
         // once the other side establishes conn with us, clone and send the sender half to them
@@ -62,7 +63,7 @@ impl ProtocolHandler for FrostProtoHandler {
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(&self.state.peer_id) {
+        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
             return None;
         }
         // once I establish conn with the other peer, clone and send the sender half to them
@@ -125,14 +126,19 @@ impl ConnectionHandler for FrostConnectionHandler {
             // incoming - another peer is connecting with me (set the ping message to Some),
             // outgoing - I am connecting with a peer
             initial_ping: direction.is_outgoing().then(|| {
-                FrostProtoMessage::ping_message(self.state.peer_id, self.state.authority_index)
+                FrostProtoMessage::ping_message(
+                    *self.state.network_handle.peer_id(),
+                    self.state.authority_index,
+                    self.state.network_handle.local_addr(),
+                )
             }),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
             pending_pong: None, // when the conn. is just established, there is no pending pong
             my_authority_index: self.state.authority_index,
-            my_peer_id: self.state.peer_id,
+            my_peer_id: *self.state.network_handle.peer_id(),
             peer_id,
+            network_handle: self.state.network_handle.clone(),
         }
     }
 }
@@ -148,6 +154,7 @@ pub struct FrostProtoConnection {
     my_authority_index: u16,
     my_peer_id: PeerId,
     peer_id: PeerId,
+    network_handle: NetworkHandle,
 }
 
 impl Stream for FrostProtoConnection {
@@ -169,9 +176,14 @@ impl Stream for FrostProtoConnection {
                 FrostPeerCommand::PingMessage { msg: _, response } => {
                     //info!(">>>>>>>>> SENDING PING WITH MY AUTH INDEX {:?}", msg);
                     this.pending_pong = Some(response);
+                    let my_socket_addr = this.network_handle.local_addr();
                     Poll::Ready(Some(
-                        FrostProtoMessage::ping_message(this.my_peer_id, this.my_authority_index)
-                            .encoded(),
+                        FrostProtoMessage::ping_message(
+                            this.my_peer_id,
+                            this.my_authority_index,
+                            my_socket_addr,
+                        )
+                        .encoded(),
                     ))
                 }
                 FrostPeerCommand::PeerMessage(response) => {
@@ -304,30 +316,40 @@ impl Stream for FrostProtoConnection {
             FrostProtoMessageKind::Pong => {
                 //info!(">>>>>>>>> RECEIVED PONG FROM PEER. --.");
             }
-            FrostProtoMessageKind::PingMessage(peer_id, authority_index) => {
+            FrostProtoMessageKind::PingMessage(peer_id, authority_index, peer_socket_addr) => {
                 //info!(
                 //    ">>>>>>>>> RECEIVED PING FROM PEER WITH HIS AUTH INDEX = {}. SENDING PONG
                 // WITH MY AUTH INDEX",    authority_index
                 //);
 
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
 
                 // answer with pong of my_authority_index
                 return Poll::Ready(Some(
-                    FrostProtoMessage::pong_message(this.my_peer_id, this.my_authority_index)
-                        .encoded(),
+                    FrostProtoMessage::pong_message(
+                        this.my_peer_id,
+                        this.my_authority_index,
+                        this.network_handle.local_addr(),
+                    )
+                    .encoded(),
                 ));
             }
             // other peers answers with pong message with a peer id and authority index
-            FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
+            FrostProtoMessageKind::PongMessage(peer_id, authority_index, peer_socket_addr) => {
                 //info!(
                 //    ">>>>>>>>> RECEIVED PONG FROM PEER WITH AUTH INDEX {}. CONFIRMING
                 // RECEIVED",    authority_index
                 //);
 
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
                 //info!(">>>>>>>>> FORWARDED.");
 
                 if let Some(sender) = this.pending_pong.take() {

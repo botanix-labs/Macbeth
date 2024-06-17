@@ -2,6 +2,7 @@ use super::{FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
+use reth_network_api::Peers;
 use reth_rpc_types::PeerId;
 use std::{
     collections::HashMap,
@@ -141,7 +142,7 @@ impl FrostManager {
                     let _send_res = task_forwarder.send((peer_id, response.clone()));
                 }
             }
-            NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
+            NetworkFrostEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr) => {
                 //info!(">>>>>>>>>>> FROST PEER CONFIRMATION RECEIVED (PEER_ID = {:?}, AUTH_INDEX =
                 // {:?})", peer_id, authority_index);
                 if !self.is_authority_peer(&peer_id) {
@@ -171,6 +172,10 @@ impl FrostManager {
             FrostCommand::GetAllConnectedFrostPeers(tx) => {
                 // reply to caller
                 let _ = tx.send(self.frost_peers_connections.clone());
+            }
+            FrostCommand::GetAllConnectedPeers(tx) => {
+                // reply to caller
+                let _ = tx.send(self.peers_connections.clone());
             }
             FrostCommand::GetPeerMessagesStream(tx) => {
                 // create channel whereby keeping the sender half and sending to the caller the
@@ -232,6 +237,8 @@ pub enum FrostCommand {
     GetAllConnectedFrostPeers(
         oneshot::Sender<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>>,
     ),
+    /// Get the readily connected peers
+    GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, UnboundedSender<FrostPeerCommand>>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
 }

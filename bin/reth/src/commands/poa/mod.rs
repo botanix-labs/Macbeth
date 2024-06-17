@@ -690,6 +690,7 @@ where {
             frost_task,
             mut sync_controller,
             pbft_task,
+            mut healthcheck_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),
@@ -825,6 +826,13 @@ where {
             "PoA Block Sync Controller Task",
             Box::pin(async move {
                 sync_controller.start_task().await;
+            }),
+        );
+
+        executor.spawn_critical(
+            "Healthcheck Task",
+            Box::pin(async move {
+                healthcheck_task.start_task().await;
             }),
         );
 
