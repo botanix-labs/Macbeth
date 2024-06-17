@@ -2,7 +2,6 @@ use super::{FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
-use reth_network_api::Peers;
 use reth_rpc_types::PeerId;
 use std::{
     collections::HashMap,

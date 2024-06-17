@@ -543,7 +543,7 @@ where
     pub(crate) async fn check_and_send_commitment(
         &mut self,
         block: &SealedBlock,
-        peer_id: &PeerId,
+        _peer_id: &PeerId,
     ) -> Result<(), Error> {
         let block_hash = block.header.segregated_signature_block_hash()?;
         let signed_authorities = block.header.recovered_signed_authorities()?;

@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc, time::Instant};
+
 use crate::Storage;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
@@ -10,8 +12,13 @@ use reth_network::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
 use tracing::{debug, error, info, warn};
+
+const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 30;
 
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
@@ -22,6 +29,8 @@ pub struct HealthcheckTask<Client, ToFrostMan> {
     pub(crate) storage: Storage<Client>,
     /// Task Executor
     pub(crate) task_executor: TaskExecutor,
+    /// Tracker list for peers healthcheck
+    pub(crate) peers_healthcheck_tracker: Arc<RwLock<HashMap<PeerId, Instant>>>,
 }
 
 impl<Client, ToFrostMan> HealthcheckTask<Client, ToFrostMan>
@@ -43,9 +52,13 @@ where
         storage: Storage<Client>,
         task_executor: TaskExecutor,
     ) -> Self {
-        info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
-
-        Self { network_handle, frost_handle, storage, task_executor }
+        Self {
+            network_handle,
+            frost_handle,
+            storage,
+            task_executor,
+            peers_healthcheck_tracker: Default::default(),
+        }
     }
 
     async fn check_all_peers_initially_connected(&mut self) -> bool {
@@ -69,16 +82,6 @@ where
     }
 
     pub async fn start_task(&mut self) {
-        // get all authority peers
-        let authority_peers: Vec<PeerId> = self
-            .storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
-            .collect();
-
         info!(target: "Healthcheck Task", "Starting Healthcheck Task");
         loop {
             // await all peers to be connected
@@ -93,13 +96,20 @@ where
         // get all connected peers
         let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
         self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx));
-        let mut connected_peers = match connected_peers_rx.await {
+        let connected_peers = match connected_peers_rx.await {
             Ok(connected_peers) => connected_peers,
             Err(e) => {
                 error!(target: "Healthcheck Task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
+
+        // update the tracker for each peer_id and mark its state as healthy at the moment of check
+        let mut guard = self.peers_healthcheck_tracker.write().await;
+        for (peer_id, _) in connected_peers.into_iter() {
+            let _ = guard.insert(peer_id, Instant::now());
+        }
+        drop(guard);
 
         // get all peers rx channels
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -113,6 +123,7 @@ where
         };
 
         let frost_handle = self.frost_handle.clone();
+        let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected peers
             loop {
@@ -120,10 +131,19 @@ where
 
                 // sleep for some time before the next check
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+                // check for any peers whose health checks havent been recently received
+                let none_responding_peers = peers_healthcheck_tracker.read().await.iter().filter(
+                    |(peer_id, &last_check)| {
+                        last_check.elapsed().as_secs().gt(&NONRESPONDING_PEERS_TIMEOUT_SECS)
+                    },
+                );
+
+                // TODO: force reconnection to that peer
             }
         });
 
-        // now
+        let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         loop {
             // receive over a channel message from other peers
             if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
@@ -143,7 +163,12 @@ where
                         // task
                         continue;
                     }
-                    PeerMessageResponse::Healtcheck => {}
+                    PeerMessageResponse::Healtcheck => {
+                        let peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
+
+                        // TODO
+                        drop(peers_healthcheck_tracker);
+                    }
                 }
             }
 
