@@ -11,7 +11,29 @@ use tracing::warn;
 const MESSAGE_VERSION: usize = 0;
 const PBFT_MESSAGE_VERSION: usize = 0;
 
-/// A structured frost DKG message
+/// A structured healthcheck message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HealthcheckRequest {
+    /// healthcheck ping sender
+    pub sender: PeerId,
+    /// healthcheck ping receiver
+    pub receiver: PeerId,
+}
+
+/// Healtcheck message builder
+impl HealthcheckRequest {
+    pub fn new(sender: PeerId, receiver: PeerId) -> Self {
+        Self { sender, receiver }
+    }
+}
+
+impl fmt::Display for HealthcheckRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Healtcheck sender: {:?}. Healthcheck receiver: {:?}", self.sender, self.receiver)
+    }
+}
+
+/// A structured frost PBFT message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PbftRequest {
     /// The version of the request message
@@ -107,8 +129,8 @@ pub enum FrostProtoMessageId {
     PeerPreCommitment = 0x0B,
     /// PBFT message peer commit
     PeerCommit = 0x0C,
-    /// Health
-    Health = 0x0D,
+    /// Healthcheck
+    Healthcheck = 0x0D,
 }
 
 /// Enum defining the frost message kind
@@ -141,7 +163,7 @@ pub enum FrostProtoMessageKind {
     /// PBFT message peer commit
     PeerCommit(PbftRequest),
     /// Health
-    Health,
+    Healthcheck(HealthcheckRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -261,9 +283,12 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Peer health
-    pub fn peer_health_message() -> Self {
-        Self { message_type: FrostProtoMessageId::Health, message: FrostProtoMessageKind::Health }
+    /// Peer healthcheck
+    pub fn peer_health_message(resource: HealthcheckRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::Healthcheck,
+            message: FrostProtoMessageKind::Healthcheck(resource),
+        }
     }
 
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
@@ -373,7 +398,17 @@ impl FrostProtoMessage {
                 buf.put_u32_le(buffer.len() as u32);
                 buf.put_slice(&buffer);
             }
-            FrostProtoMessageKind::Health => {}
+            FrostProtoMessageKind::Healthcheck(resource) => {
+                // Serialize the sender
+                let sender_bytes = resource.sender.as_slice();
+                buf.put_u16_le(sender_bytes.len() as u16); // Length of the sender
+                buf.put_slice(sender_bytes); // Sender bytes
+
+                // Serialize the receiver
+                let receiver_bytes = resource.receiver.as_slice();
+                buf.put_u16_le(receiver_bytes.len() as u16); // Length of the receiver
+                buf.put_slice(receiver_bytes); // Receiver bytes
+            }
         }
         buf
     }
@@ -399,6 +434,7 @@ impl FrostProtoMessage {
             0x0A => FrostProtoMessageId::CoordinatorBlockProposal,
             0x0B => FrostProtoMessageId::PeerPreCommitment,
             0x0C => FrostProtoMessageId::PeerCommit,
+            0x0D => FrostProtoMessageId::Healthcheck,
             _ => return None,
         };
         let message = match message_type {
@@ -606,7 +642,23 @@ impl FrostProtoMessage {
                     return None;
                 }
             }
-            FrostProtoMessageId::Health => FrostProtoMessageKind::Health,
+            FrostProtoMessageId::Healthcheck => {
+                // Deserialize the sender
+                let sender_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let sender_bytes = &buf[..sender_len];
+                let sender = PeerId::from_slice(sender_bytes); // Assuming from_slice can never fail
+                buf.advance(sender_len);
+
+                // Deserialize the receiver
+                let receiver_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let receiver_bytes = &buf[..receiver_len];
+                let receiver = PeerId::from_slice(receiver_bytes); // Assuming from_slice can never fail
+                buf.advance(receiver_len);
+
+                FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
+            }
         };
         Some(Self { message_type, message })
     }
@@ -614,6 +666,7 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::HealthcheckRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
@@ -798,6 +851,39 @@ mod tests {
             assert_eq!(decoded_socket_addr.port(), 8888, "Socket port does not match");
         } else {
             panic!("Decoded message is not a PongMessage");
+        }
+    }
+
+    #[test]
+    fn test_healtcheck_message_encode_decode() {
+        let sender_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
+        let receiver_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::Healthcheck,
+            message: FrostProtoMessageKind::Healthcheck(HealthcheckRequest::new(
+                sender_peer_id,
+                receiver_peer_id,
+            )),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode HealthcheckMessage");
+
+        // Verify that the decoded message matches the original message
+        if let FrostProtoMessageKind::Healthcheck(healthcheck_request) = decoded_message.message {
+            assert_eq!(healthcheck_request.sender, sender_peer_id, "sender_peer_id does not match");
+            assert_eq!(
+                healthcheck_request.receiver, receiver_peer_id,
+                "receiver_peer_id does not match"
+            );
+        } else {
+            panic!("Decoded message is not a Healthcheck Message");
         }
     }
 }

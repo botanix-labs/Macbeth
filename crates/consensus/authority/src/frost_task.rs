@@ -197,7 +197,7 @@ where
             // receive over a channel message from other peers and update our state machine
             if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
-                    PeerMessageResponse::Healtcheck => {
+                    PeerMessageResponse::Healtcheck(_) => {
                         // Nothing to do for healthcheck related messages.
                         continue;
                     }

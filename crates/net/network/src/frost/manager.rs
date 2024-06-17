@@ -1,4 +1,4 @@
-use super::{FrostPeerCommand, NetworkFrostEvent, PeerMessageResponse};
+use super::{FrostPeerCommand, HealthcheckResponse, NetworkFrostEvent, PeerMessageResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
@@ -111,17 +111,17 @@ impl FrostManager {
     }
 
     fn send_healthcheck_to_peers(&self) {
-        for (frost_peer_id, (conn_channel, _)) in self.frost_peers_connections.iter() {
-            match conn_channel.send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healtcheck))
+        for (peer_id, conn_channel) in self.peers_connections.iter() {
+            let resp =
+                HealthcheckResponse { sender: *self.network.peer_id(), receiver: peer_id.clone() };
+            match conn_channel
+                .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healtcheck(resp)))
             {
                 Ok(_) => {
-                    debug!("Healthcheck sent to peer {:?}", frost_peer_id,);
+                    debug!("Healthcheck sent to peer {:?}", peer_id,);
                 }
                 Err(e) => {
-                    error!(
-                        "Failed to send healthcheck to peer {:?}, error: {:?}",
-                        frost_peer_id, e
-                    );
+                    error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
                 }
             }
         }

@@ -50,8 +50,8 @@ pub enum PeerMessageResponse {
     Signing(SigningResponse),
     /// PBFT related responses
     Pbft(PbftResponse),
-    /// Healtcheck
-    Healtcheck,
+    /// Healtcheck response
+    Healtcheck(HealthcheckResponse),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -60,7 +60,9 @@ impl fmt::Display for PeerMessageResponse {
             PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
             PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
             PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
-            PeerMessageResponse::Healtcheck => write!(f, "Health Response: {}", 1),
+            PeerMessageResponse::Healtcheck(response) => {
+                write!(f, "Health Response: {:?}", response)
+            }
         }
     }
 }
@@ -85,6 +87,21 @@ impl fmt::Display for DkgResponse {
             self.identifier.len(),
             self.data.len()
         )
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HealthcheckResponse {
+    /// the ping requester
+    pub sender: PeerId,
+    /// pinged peer
+    pub receiver: PeerId,
+}
+
+impl fmt::Display for HealthcheckResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Sender: {}, Receiver: {}", self.sender, self.receiver,)
     }
 }
 

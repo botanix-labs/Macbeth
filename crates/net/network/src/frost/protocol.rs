@@ -25,9 +25,9 @@ use crate::{
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
-    FrostPeerCommand, FrostProtocolEvent, PbftEventResponseType, PbftResponse, PeerMessageResponse,
-    ProtocolState,
+    messages::{FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest},
+    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PbftEventResponseType, PbftResponse,
+    PeerMessageResponse, ProtocolState,
 };
 
 /// Frost Protocol Handler
@@ -188,8 +188,11 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostPeerCommand::PeerMessage(response) => {
                     match response {
-                        PeerMessageResponse::Healtcheck => {
-                            Poll::Ready(Some(FrostProtoMessage::peer_health_message().encoded()))
+                        PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                            let HealthcheckResponse { sender, receiver } = healthcheck_response;
+                            let req = HealthcheckRequest::new(sender, receiver);
+
+                            Poll::Ready(Some(FrostProtoMessage::peer_health_message(req).encoded()))
                         }
                         PeerMessageResponse::Pbft(pbft_response) => {
                             let PbftResponse { response_type, data } = pbft_response;
@@ -312,8 +315,8 @@ impl Stream for FrostProtoConnection {
 
         // react on message type
         match msg.message {
-            FrostProtoMessageKind::Health => {
-                return Poll::Ready(Some(FrostProtoMessage::peer_health_message().encoded()));
+            FrostProtoMessageKind::Healthcheck(data) => {
+                return Poll::Ready(Some(FrostProtoMessage::peer_health_message(data).encoded()));
             }
             FrostProtoMessageKind::Ping => {
                 //info!(">>>>>>>>> RECEIVED PING FROM PEER. SENDING PONG...");

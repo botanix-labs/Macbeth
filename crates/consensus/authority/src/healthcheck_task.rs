@@ -163,7 +163,7 @@ where
                         // task
                         continue;
                     }
-                    PeerMessageResponse::Healtcheck => {
+                    PeerMessageResponse::Healtcheck(healthcheck_response) => {
                         let peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
 
                         // TODO
