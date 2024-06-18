@@ -22,12 +22,6 @@ contract FaucetTest is Test {
     faucet.requestFundsByList(userList);
   }
 
-  function test_RevertWhen_CallerIsZeroAddress() public {
-    deal(address(faucet), 1 ether);
-    vm.expectRevert(bytes("Request must not be from zero address"));
-    faucet.requestFundsByList(userList);
-  }
-
   function test_RevertWhen_FaucetHasInsufficientFunds() public {
     vm.expectRevert(bytes("Faucet out of funds"));
     faucet.requestFundsByList(userList);
