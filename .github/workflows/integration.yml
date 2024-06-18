@@ -29,6 +29,9 @@ jobs:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
     steps:
+      - name: Delete old test data
+        run: rm -rf /home/runner/actions-runner/_work/Macbeth
+
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
