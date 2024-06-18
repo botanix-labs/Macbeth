@@ -6,12 +6,16 @@ use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
 
-use crate::suite::consensus::{
-    frost::{
-        error::Error,
-        test_dkg::{do_dkg, send_pegin_notification},
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        common::events::BITCOIND_WALLET_NAME,
+        frost::{
+            error::Error,
+            test_dkg::{do_dkg, send_pegin_notification},
+        },
+        ConsensusIntegrationTestSuite,
     },
-    ConsensusIntegrationTestSuite,
 };
 
 const INPUTS_TO_SPEND: usize = 2;
@@ -30,6 +34,17 @@ impl Pegins {
 
 pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     let bitcoind = suite.global_context.bitcoind_rpc();
+    // Load up the bitcoin wallet and generate some blocks
+    for wallet in bitcoind.list_wallets().unwrap() {
+        it_info_print!("#UNLOADING WALLET?", &wallet);
+        let _ = bitcoind.unload_wallet(Some(&wallet));
+    }
+    let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    if create_res.is_err() {
+        // wallet already exists
+        // load wallet
+        let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
+    }
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     // generate a block to the network looks live
     bitcoind.generate_to_address(1, &address).expect("generate to address");
