@@ -1,7 +1,7 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use bitcoin::Address;
-use bitcoincore_rpc::{Auth, RpcApi};
+use bitcoincore_rpc::RpcApi;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use tonic::transport::Channel;
@@ -33,6 +33,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     // generate a block to the network looks live
     bitcoind.generate_to_address(1, &address).expect("generate to address");
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // create pegins container
     let mut pegins = Pegins::new();

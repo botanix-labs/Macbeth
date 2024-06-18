@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! run_test {
-    ($self:ident, $module:ident :: $scope:ident :: $test_name:ident $(, $arg:expr )* $(,)?) => {
+    ($self:ident, $create_test_config:expr, $module:ident :: $scope:ident :: $test_name:ident $(, $arg:expr )* $(,)?) => {{
         let suite = std::any::type_name::<Self>()
             .trim_start_matches(|c: char| !c.is_uppercase());
         let test = [suite, ": ", stringify!($module), "::", stringify!($scope), "::", stringify!($test_name)].concat();
@@ -22,25 +22,29 @@ macro_rules! run_test {
             "FullRun"
         };
 
-        $self.create_new_context().await;
+        $self.create_new_context($create_test_config).await;
 
+        info!("({}) {} {}...", purple(test_type), cyan(test), "Running");
         tokio::select! {
             result = $module::$scope::$test_name($self $(, $arg )*) => match result {
                 Ok(_) => {
                     info!("({}) {} {} ({}ms)", purple(test_type), cyan(test), green("\u{2713} PASSED"), elapsed());
+                    $self.destroy_context().await;
                 }
                 Err(err) => {
                     error!("({}) {} {} ({}ms): {}", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed(), err);
                     $self.outcomes.push(crate::suite::Outcome::Failed);
+                    $self.destroy_context().await;
                 }
             },
 
             _ = &mut timer => {
                 error!("({}) {} {} ({}ms): timeout", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed());
                 $self.outcomes.push(crate::suite::Outcome::Failed);
+                $self.destroy_context().await;
             }
         }
-    };
+    }};
 }
 
 #[macro_export]

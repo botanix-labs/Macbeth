@@ -26,29 +26,7 @@ pub async fn test_rpc_node(
 ) -> Result<(), NonFederationMemberTestConfigError> {
     it_info_print!("Running rpc node test");
 
-    // generate test fed members poa nodes
-    let (mut test_fed_members, mut fed_rx) = create_poa_federation_members(
-        suite.global_context.clone(),
-        suite.local_context.btc_servers.as_ref(),
-    )
-    .await;
-
-    // run all poa nodes in the background
-    let mut chain_spec = ChainSpec::default();
-    for (_index, fed_member_config) in test_fed_members.iter() {
-        let (fed_member_command, spec) = fed_member_config.build_command();
-        chain_spec = spec;
-        let _ = std::thread::spawn(move || {
-            let runner = CliRunner::default();
-            runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
-        });
-        // wait for one second inbetween members start
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
-    // wait for the dkg to finish for each of them
-    await_dkg(&mut test_fed_members, &mut fed_rx).await;
-
+    let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
     for (index, fed_member_config) in test_fed_members.iter() {

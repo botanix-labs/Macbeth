@@ -1,15 +1,11 @@
 use super::error::Error;
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
-use bitcoin::{consensus::Encodable, Address, Amount, FeeRate, TxOut};
+use bitcoin::{consensus::Encodable, Address, Amount, TxOut};
 use client::{self, BtcServerClient};
 use std::{str::FromStr, vec};
 use tonic::transport::Channel;
 
-const _FEE_RATE: FeeRate = FeeRate::from_sat_per_vb_unchecked(30);
-
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
-    let _secp = bitcoin::secp256k1::Secp256k1::new();
-
     // create btc server clients
     let mut clients: Vec<BtcServerClient<Channel>> = vec![];
     for instance in 0..suite.global_context.instances {
@@ -136,7 +132,6 @@ pub async fn send_pegin_notification(
 
     let mut prev_out_bytes = Vec::new();
     prev_out.consensus_encode(&mut prev_out_bytes).unwrap();
-    // Get a random 32 bytes
 
     let res = client
         .notify_pegin(tonic::Request::new(client::NotifyPeginRequest {

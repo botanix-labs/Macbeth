@@ -109,7 +109,6 @@ impl Consensus for AuthorityConsensus {
     }
 
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        validation::validate_block_standalone(block, &self.chain_spec)?;
         reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec)
     }
 
