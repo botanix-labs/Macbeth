@@ -435,6 +435,37 @@ start-test-suite:
 	--min-signers 3 \
 	--max-signers 4
 
+run-test-dkg-flow:
+	TEST_TO_RUN=dkg_flow make start-test-suite
+run-test-many-inputs-signing:
+	TEST_TO_RUN=many_inputs_signing make start-test-suite
+run-test-utxo-commitment:
+	TEST_TO_RUN=utxo_commitment make start-test-suite
+run-test-block-builder:
+	TEST_TO_RUN=block_builder make start-test-suite
+run-test-frost-e2e-stable:
+	TEST_TO_RUN=frost_e2e_stable make start-test-suite
+run-test-frost-e2e-failed-signing-disconnect:
+	TEST_TO_RUN=frost_e2e_failed_signing_disconnect make start-test-suite
+run-test-invalid-pegin:
+	TEST_TO_RUN=invalid_pegin make start-test-suite
+run-test-invalid-pegout:
+	TEST_TO_RUN=invalid_pegout make start-test-suite
+run-test-mempool-gossip:
+	TEST_TO_RUN=test_mempool_gossip make start-test-suite
+
+run-test-all:
+	make run-test-dkg-flow
+	make run-test-many-inputs-signing
+	make run-test-utxo-commitment
+	make run-test-block-builder
+	make run-test-frost-e2e-stable
+	make run-test-frost-e2e-failed-signing-disconnect
+	make run-test-invalid-pegin
+	make run-test-invalid-pegout
+	make run-test-mempool-gossip
+
+
 start-btc-server-1:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
