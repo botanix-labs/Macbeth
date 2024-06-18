@@ -856,7 +856,7 @@ mod tests {
         fn send_command(&self, command: FrostCommand) {
             match command {
                 FrostCommand::CheckConnectedToAll(sender) => sender.send(true).unwrap(),
-                FrostCommand::GetAllConnectedFrostPeers(sender) => {
+                FrostCommand::GetAllConnectedPeers(sender) => {
                     let peers = HashMap::new();
                     sender.send(peers).unwrap();
                 }
@@ -869,6 +869,7 @@ mod tests {
                     sender.send(peers).unwrap();
                 }
                 FrostCommand::SendHealtcheckToPeers => {}
+                FrostCommand::ReconnectPeers(_, _) => {}
             }
         }
     }
