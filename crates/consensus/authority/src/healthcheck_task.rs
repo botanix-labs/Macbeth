@@ -190,32 +190,26 @@ where
             .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
             .collect::<Vec<PeerId>>();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
-        loop {
-            // receive over a channel message from other peers
-            if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
-                match msg {
-                    PeerMessageResponse::Pbft(_) => {
-                        // Nothing to do for pbft related messages. Does are handled by the frost
-                        // task
-                        continue;
-                    }
-                    PeerMessageResponse::Dkg(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost
-                        // task
-                        continue;
-                    }
-                    PeerMessageResponse::Signing(_) => {
-                        // Nothing to do for signing related messages. Does are handled by the frost
-                        // task
-                        continue;
-                    }
-                    PeerMessageResponse::Healtcheck(healthcheck_response) => {
-                        if !authority_peers.contains(&healthcheck_response.sender) ||
-                            !authority_peers.contains(&healthcheck_response.receiver)
-                        {
-                            warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
-                            continue;
-                        }
+
+        // receive over a channel message from other peers
+        if let Some((_peerid, msg)) = peer_messages_rx.recv().await {
+            match msg {
+                PeerMessageResponse::Pbft(_) => {
+                    // Nothing to do for pbft related messages. Does are handled by the frost
+                    // task
+                }
+                PeerMessageResponse::Dkg(_) => {
+                    // Nothing to do for dkg related messages. Does are handled by the frost
+                    // task
+                }
+                PeerMessageResponse::Signing(_) => {
+                    // Nothing to do for signing related messages. Does are handled by the frost
+                    // task
+                }
+                PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                    if authority_peers.contains(&healthcheck_response.sender) &&
+                        authority_peers.contains(&healthcheck_response.receiver)
+                    {
                         let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
                         if healthcheck_response.sender.eq(self.network_handle.peer_id()) {
                             peers_healthcheck_tracker
@@ -224,12 +218,11 @@ where
                             warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                         }
                         drop(peers_healthcheck_tracker);
+                    } else {
+                        warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                     }
                 }
             }
-
-            // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
     }
 }

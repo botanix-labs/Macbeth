@@ -149,8 +149,6 @@ rethNode:
       - --ws.api=admin,debug,eth,net,trace,txpool,web3,rpc
       - -vvv
       - --authrpc.jwtsecret=/reth/botanix_testnet/jwt.hex
-      - --authrpc.addr=127.0.0.1
-      - --authrpc.port=8551
       - --btc-server=botanix-bitcoin-server-testnet-v1-1.testnet.svc.cluster.local:8080
       - --bitcoind.url=http://botanix-bitcoin-core.testnet.svc.cluster.local:38332
       - --bitcoind.username="$(BITCOIND_USERNAME)"

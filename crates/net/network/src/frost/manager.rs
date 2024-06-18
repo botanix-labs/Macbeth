@@ -204,7 +204,7 @@ impl FrostManager {
                 let mut reconnected_peers = 0;
                 for peer in peers.into_iter() {
                     if let Some(peer_data) = self.peers_connections.get(&peer) {
-                        self.network.add_peer(
+                        self.network.add_trusted_peer(
                             peer,
                             peer_data.socket_addr.expect("Socket must be connected"),
                         );

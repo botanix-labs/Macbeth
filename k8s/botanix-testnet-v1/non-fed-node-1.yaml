@@ -140,8 +140,6 @@ rethNode:
       - --ws.port=8546
       - --ws.api=admin,debug,eth,net,trace,txpool,web3,rpc
       - -vvv
-      - --authrpc.addr=127.0.0.1
-      - --authrpc.port=8551
       - --bitcoind.url=http://botanix-bitcoin-core.testnet.svc.cluster.local:38332
       - --bitcoind.username="$(BITCOIND_USERNAME)"
       - --bitcoind.password="$(BITCOIND_PASSWORD)"
