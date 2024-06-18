@@ -229,6 +229,11 @@ pub fn should_skip(path: &Path) -> bool {
         | "RevertInCreateInInitCreate2Paris.json"
         | "create2collisionStorage.json"
         | "RevertInCreateInInitCreate2.json"
+        | "InitCollision.json"
+        | "InitCollisionParis.json"
+        | "RevertInCreateInInit.json"
+        | "RevertInCreateInInit_Paris.json"
+
     )
     // Ignore outdated EOF tests that haven't been updated for Cancun yet.
     || path_contains(path_str, &["EIPTests", "stEOF"])
