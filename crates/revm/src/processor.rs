@@ -307,7 +307,8 @@ where
         Ok(())
     }
 
-    /// Updates state for an account
+    /// Decrement an account by the specified amount and update state
+    /// This should only occur when a pegin reverts based on our custom validation
     fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
         let mut account = state.get(&address).expect("Account to exist").clone();
         // decrement balance by amount
@@ -321,6 +322,8 @@ where
         state.insert(address, account);
     }
 
+    /// Increment an account by the specified amount and update state
+    /// This should only occur when a pegout reverts based on our custom validation
     fn increment_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
         let mut account = state.get(&address).expect("Account to exist").clone();
         // increment balance by amount
