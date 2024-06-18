@@ -56,9 +56,15 @@ jobs:
             echo $(($EPOCHSECONDS - $EPOCHSECONDS % 604800))
           )" >> $GITHUB_ENV
 
-      - name: "Run the tests"
+      - name: "Run the mint tests"
         working-directory: "./contracts"
-        run: "forge test"
+        run: |
+            forge test --match-contract Minting -vvv
+
+      - name: "Run the faucet tests"
+        working-directory: "./contracts"
+        run: |
+            forge test --match-contract Faucet -vvv
 
       - name: "Add test summary"
         working-directory: "./contracts"
