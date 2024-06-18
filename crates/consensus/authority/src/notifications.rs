@@ -77,7 +77,10 @@ impl EventsNotificationClient {
 }
 
 /// Sends a notification using the client
-pub async fn send_notification(slack_client: Option<EventsNotificationClient>, message: &str) {
+pub async fn send_slack_notification(
+    slack_client: Option<EventsNotificationClient>,
+    message: &str,
+) {
     if let Some(slack_client) = slack_client.as_ref() {
         match slack_client.send_message(message).await {
             Ok(_) => info!(">>> Notification fired!"),

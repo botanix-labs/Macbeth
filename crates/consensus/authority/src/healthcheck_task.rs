@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
-use crate::Storage;
+use crate::{notifications::EventsNotificationClient, Storage};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::{
@@ -28,6 +28,8 @@ pub struct HealthcheckTask<Client, ToFrostMan> {
     pub(crate) task_executor: TaskExecutor,
     /// Tracker list for peers healthcheck
     pub(crate) peers_healthcheck_tracker: Arc<RwLock<HashMap<PeerId, Instant>>>,
+    /// Event notifications slack client
+    pub(crate) events_notification_slack_client: Option<EventsNotificationClient>,
 }
 
 impl<Client, ToFrostMan> HealthcheckTask<Client, ToFrostMan>
@@ -48,6 +50,7 @@ where
         config: FrostConfig,
         storage: Storage<Client>,
         task_executor: TaskExecutor,
+        events_notification_slack_client: Option<EventsNotificationClient>,
     ) -> Self {
         Self {
             network_handle,
@@ -55,6 +58,7 @@ where
             storage,
             task_executor,
             peers_healthcheck_tracker: Default::default(),
+            events_notification_slack_client,
         }
     }
 
@@ -122,6 +126,7 @@ where
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
+        let events_notification_slack_client = self.events_notification_slack_client.clone();
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected peers
             loop {
@@ -145,6 +150,24 @@ where
                     .collect::<Vec<PeerId>>();
 
                 // force reconnection to those peers
+                if let Some(ref client) = events_notification_slack_client {
+                    let none_responding_peers_stringified = none_responding_peers
+                        .clone()
+                        .into_iter()
+                        .map(|peer| peer.to_string())
+                        .collect::<Vec<String>>()
+                        .join(",");
+                    if let Err(e) = client
+                        .send_message(&format!(
+                            "Reconnecting to {}",
+                            none_responding_peers_stringified
+                        ))
+                        .await
+                    {
+                        error!(target: "Healthcheck Task", "Error sending slack message {:?}", e);
+                    }
+                }
+
                 let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
                 frost_handle
                     .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender));

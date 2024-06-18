@@ -10,8 +10,8 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
-    AuthorityConsensusBuilder,
+    extended_client::BtcServerExtendedClient, notifications::EventsNotificationClient,
+    utils::retry_exec, AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_network_types::pk2id;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -682,6 +682,15 @@ where {
             network: network_handle.clone(),
         };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
+
+        let events_notification_slack_client = if let Some((frost_config, webhook_url)) =
+            frost_config.clone().zip(node_config.rpc.slack_notifications_webhook_url.clone())
+        {
+            EventsNotificationClient::new(frost_config.authority_pk, webhook_url).ok()
+        } else {
+            None
+        };
+
         // Build authority Consensus
         let (
             _,
@@ -710,6 +719,7 @@ where {
             payload_builder.clone(),
             node_config.rpc.btc_network,
             genesis_authorities,
+            events_notification_slack_client,
         )
         .expect("Failed to create authority consensus builder")
         .build();

@@ -49,8 +49,18 @@ reth-btc-wallet.workspace = true
 btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
 
+# slack
+slack-morphism = { version = "1.11", features = ["hyper"] }
+
+# http/rpc
+hyper = "0.14.25"
+hyper-rustls = "0.24.0"
+
 # hex
 hex = "0.4.3"
+
+## Url
+url = "2.2"
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }

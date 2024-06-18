@@ -4,6 +4,7 @@ use crate::{
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
+    notifications::EventsNotificationClient,
     pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
@@ -66,6 +67,7 @@ pub struct AuthorityConsensusBuilder<
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     btc_network: bitcoin::Network,
+    events_notification_slack_client: Option<EventsNotificationClient>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -115,6 +117,7 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
         genesis_authorities: Vec<secp256k1::PublicKey>,
+        events_notification_slack_client: Option<EventsNotificationClient>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server.is_some();
@@ -202,6 +205,7 @@ where
             frost_config,
             payload_builder,
             btc_network,
+            events_notification_slack_client,
         })
     }
 
@@ -240,6 +244,7 @@ where
             frost_config,
             payload_builder,
             btc_network,
+            events_notification_slack_client,
         } = self;
         let is_fed_node = btc_server.is_some();
 
@@ -268,6 +273,7 @@ where
             frost_config.clone().expect("valid frost config"),
             storage.clone(),
             task_executor.clone(),
+            events_notification_slack_client,
         );
 
         // Set up frost notification message queue
