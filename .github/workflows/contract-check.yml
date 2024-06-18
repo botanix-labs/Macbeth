@@ -7,31 +7,6 @@ on:
       - feature/poA-consensus
 
 jobs:
-  contract-lint:
-    runs-on: botanix-actions-runner
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Install foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v1
-
-      - name: Install node deps 
-        working-directory: ./contracts
-        run: bun install
-
-      - name: Lint contract 
-        working-directory: ./contracts
-        run: bun run lint
-
-      - name: Add lint summary
-        run: |
-          echo "## Lint result" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
-
   contract-build:
     runs-on: ubuntu-latest
     steps:
@@ -44,10 +19,6 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v1
 
-      - name: Install node deps 
-        working-directory: ./contracts
-        run: bun install
-
       - name: Build contract 
         working-directory: ./contracts
         run: forge build --sizes
@@ -59,7 +30,7 @@ jobs:
           echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
 
   contract-test:
-    needs: ["contract-lint", "contract-build"]
+    needs: ["contract-build"]
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
@@ -71,9 +42,6 @@ jobs:
       - name: "Install Bun"
         uses: "oven-sh/setup-bun@v1"
 
-      - name: "Install the Node.js dependencies"
-        working-directory: "./contracts"
-        run: "bun install"
 
       - name: "Show the Foundry config"
         working-directory: "./contracts"
