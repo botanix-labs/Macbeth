@@ -33,7 +33,7 @@ jobs:
     needs: ["contract-build"]
     runs-on: "ubuntu-latest"
     env:
-      MINT_CONTRACT_ADDRESS: "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78"
+      MINTING_CONTRACT_ADDRESS: "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78"
     steps:
       - name: "Check out the repo"
         uses: "actions/checkout@v4"
