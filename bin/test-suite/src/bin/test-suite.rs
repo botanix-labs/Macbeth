@@ -17,6 +17,7 @@ async fn main() -> Result<()> {
     // init config
     dotenv::dotenv().ok();
     let cli_args: CliArgs = argh::from_env();
+    let test_to_run = cli_args.test_to_run.clone();
 
     // set up log filter to be used by tracing
     let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "test_suite=info".to_string());
@@ -45,7 +46,7 @@ async fn main() -> Result<()> {
     // spawn terminate handlers routine
     tokio::spawn(stop_signal(stop_tx, resources_ctx));
 
-    let result = tokio::spawn(async move { suite_test_server.start(stop_rx).await });
+    let result = tokio::spawn(async move { suite_test_server.start(stop_rx, test_to_run).await });
     match result.await.context("Failed to read test server result")? {
         Ok(_) => {
             it_info_print!("Testing complete.");

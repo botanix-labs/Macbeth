@@ -1,4 +1,5 @@
 use crate::context::GlobalContext;
+use reth::consensus_common::utils::unix_timestamp;
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
@@ -90,8 +91,14 @@ pub fn clean_db(tasks: &[SpawnedBtcServer]) {
 pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
     let mut tasks = vec![];
     for i in 0..global_context.instances {
-        let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
+        // let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
+        let temp_db_path = tempfile::TempDir::new()
+            .expect("tempdir is okay")
+            .into_path()
+            .join(format!("_{}", unix_timestamp().to_string()));
+        std::fs::create_dir_all(&temp_db_path).expect("failed to create tempdir subdir");
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
+
         let port = BTC_SERVER_START_PORT + i;
         let child_process = spawn_btc_server(
             global_context.clone(),

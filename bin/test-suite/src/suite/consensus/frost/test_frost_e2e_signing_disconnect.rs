@@ -5,7 +5,7 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
-    types::{NameOrAddress, U256},
+    types::NameOrAddress,
 };
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
@@ -13,7 +13,6 @@ use reth_botanix_lib::{
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 
 use crate::{
@@ -21,10 +20,9 @@ use crate::{
     suite::consensus::{
         common::{
             events::{
-                await_botanix_event, await_dkg, GatewayAddressResponse, BITCOIND_WALLET_NAME,
-                SEND_AMOUNT,
+                await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME, SEND_AMOUNT,
             },
-            poa_node::{create_poa_federation_members, TestSignal},
+            poa_node::TestSignal,
         },
         ConsensusIntegrationTestSuite,
     },
@@ -33,20 +31,7 @@ use crate::{
 pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
-    // Set up regtest connection
-    // config is hardcoded to only work with regtest
-    let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();
-    let port =
-        suite.global_context.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-    let bitcoind_url = format!("{host}:{port}");
-    let bitcoind_rpc = bitcoincore_rpc::Client::new(
-        &bitcoind_url,
-        Auth::UserPass(
-            suite.global_context.bitcoind_user.clone(),
-            suite.global_context.bitcoind_pass.clone(),
-        ),
-    )
-    .expect("bitcoind client");
+    let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind_rpc.list_wallets().unwrap() {
@@ -63,29 +48,16 @@ pub async fn frost_e2e_failed_signing_disconnect(
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
-    // generate test fed members poa nodes
-    let (mut test_fed_members, mut rx) = create_poa_federation_members(
-        suite.global_context.clone(),
-        suite.local_context.btc_servers.as_ref(),
-    )
-    .await;
+    let test_fed_members = suite
+        .local_context
+        .poa_nodes
+        .as_ref()
+        .expect("test federation member configurations")
+        .clone();
 
-    // run all poa nodes in the background
-    for (_index, fed_member_config) in test_fed_members.iter() {
-        let fed_member_config = fed_member_config.clone();
-        let _ = std::thread::spawn(move || {
-            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
-            let runner = CliRunner::default();
-            runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
-        });
-        // wait for one second inbetween members start
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
-    // wait for the dkg to finish for each of them
-    await_dkg(&mut test_fed_members, &mut rx).await;
-
+    let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
     // generate mint contract test instances
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
@@ -105,6 +77,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
@@ -289,6 +262,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
     .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)
     bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Retrieve the last block
     let tip = bitcoind_rpc.get_block_count().expect("valid block count");
