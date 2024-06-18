@@ -482,8 +482,6 @@ start-poa-server-1:
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--authrpc.jwtsecret "${NODE_1_DIR}/jwt.hex" \
-	--authrpc.addr "127.0.0.1" \
-	--authrpc.port 8551 \
 	--btc-server "localhost:8080" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
@@ -507,8 +505,6 @@ start-poa-server-2:
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
-	--authrpc.addr "127.0.0.1" \
-	--authrpc.port 8552 \
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
@@ -541,9 +537,6 @@ start-non-fed-server-1:
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--authrpc.jwtsecret "${NON_FED_1_DIR}/jwt.hex" \
-	--authrpc.addr "127.0.0.1" \
-	--authrpc.port 8553 \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \

@@ -9,7 +9,6 @@ use crate::{
 };
 
 pub const RPC_PORT_BASE: u16 = 8545;
-pub const AUTHRPC_PORT_BASE: u16 = 8551;
 pub const DISCOVERY_PORT_BASE: u16 = 30303;
 
 pub struct GlobalContext {
@@ -26,7 +25,6 @@ pub struct GlobalContext {
     pub bitcoind_user: String,
     pub bitcoind_pass: String,
     pub last_poa_node_rpc_port: Arc<Mutex<u16>>,
-    pub last_poa_node_authrpc_port: Arc<Mutex<u16>>,
     pub last_poa_node_discovery_port: Arc<Mutex<u16>>,
 }
 
@@ -56,7 +54,6 @@ impl GlobalContext {
             bitcoind_url: args.bitcoind_url,
             bitcoind_user: args.bitcoind_user,
             bitcoind_pass: args.bitcoind_pass,
-            last_poa_node_authrpc_port: Arc::new(Mutex::new(AUTHRPC_PORT_BASE)),
             last_poa_node_discovery_port: Arc::new(Mutex::new(DISCOVERY_PORT_BASE)),
             last_poa_node_rpc_port: Arc::new(Mutex::new(RPC_PORT_BASE)),
         })
