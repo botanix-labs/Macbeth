@@ -119,6 +119,9 @@ pub enum BlockValidationError {
     /// Error when witness data is missing for a pegout psbt
     #[error("Missing witness data for pegout psbt")]
     MissingWitnessData,
+    /// Poa specific error when EDH authorities fail validation
+    #[error("Invalid authorities in EDH")]
+    InvalidExtraDataAuthorities,
 }
 
 /// BlockExecutor Errors
