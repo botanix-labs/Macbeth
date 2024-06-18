@@ -29,9 +29,6 @@ jobs:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
     steps:
-      - name: Delete old test data
-        run: rm -rf /home/runner/actions-runner/_work/Macbeth
-
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,8 +66,6 @@ jobs:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
     steps:
-      - name: Delete old test data
-        run: rm -rf /home/runner/actions-runner/_work/Macbeth
       - uses: actions/checkout@v4
       - name: Checkout ethereum/tests
         uses: actions/checkout@v4
@@ -123,8 +118,6 @@ jobs:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
     steps:
-      - name: Delete old test data
-        run: rm -rf /home/runner/actions-runner/_work/Macbeth
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -134,6 +127,7 @@ jobs:
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
+        
 
   unit-success:
     name: unit success
