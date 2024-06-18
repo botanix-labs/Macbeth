@@ -1,16 +1,11 @@
 //! Support for handling notification events for poa
 
 use displaydoc::Display as DisplayDoc;
-use hyper::client::HttpConnector;
+use errors::SlackClientError;
 use hyper_rustls::HttpsConnector;
-use slack_morphism::{
-    errors::SlackClientError,
-    prelude::{
-        SlackApiPostWebhookMessageRequest, SlackApiPostWebhookMessageResponse,
-        SlackClientHyperConnector,
-    },
-    SlackClient, SlackMessageContent,
-};
+
+use hyper_util::client::legacy::connect::HttpConnector;
+use slack_morphism::prelude::*;
 use thiserror::Error;
 use tracing::{error, info};
 use url::Url;
@@ -20,6 +15,8 @@ use url::Url;
 pub enum Error {
     /// Slack client error: `{0}`
     SlackClient(#[from] SlackClientError),
+    /// Io error: `{0}`
+    Io(std::io::Error),
 }
 
 /// Events Notification Client
@@ -33,7 +30,7 @@ pub struct EventsNotificationClient {
 impl EventsNotificationClient {
     /// Client builder
     pub fn new(client_id: secp256k1::PublicKey, webhook_url: Url) -> Result<Self, Error> {
-        let client = SlackClient::new(SlackClientHyperConnector::new());
+        let client = SlackClient::new(SlackClientHyperConnector::new().map_err(Error::Io)?);
         Ok(Self { client_id, client, webhook_url })
     }
 
