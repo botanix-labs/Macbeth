@@ -1,6 +1,6 @@
 use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
-use reth_network::frost::manager::ToFrostManager;
+use reth_network::frost::manager::{PeerData, ToFrostManager};
 
 use frost_secp256k1_tr as frost;
 
@@ -24,10 +24,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{
-    mpsc::{error::SendError, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, warn};
 
 type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
@@ -294,15 +291,12 @@ where
         }
     }
 
-    pub(crate) async fn get_all_peers_handle(
-        &self,
-    ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
+    pub(crate) async fn get_all_peers_handle(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
         // get all frost peers connections
-        let (peers_connections_sender, peers_connections_receiver) = tokio::sync::oneshot::channel::<
-            HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
-        >();
+        let (peers_connections_sender, peers_connections_receiver) =
+            tokio::sync::oneshot::channel::<HashMap<PeerId, PeerData>>();
         self.frost_handle
-            .send_command(FrostCommand::GetAllConnectedFrostPeers(peers_connections_sender));
+            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender));
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
@@ -327,13 +321,17 @@ where
             info!(target: "pbft" ,"Connected peers: {:?}", connected_peers.keys().collect::<Vec<_>>() );
 
             // Broadcast dkg round 1 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
-                    sender
-                        .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Pbft(
-                            pbft_response.clone(),
-                        )))
-                        .map_err(Error::Send)?;
+            for (_peer_id, connected_peer) in connected_peers.iter() {
+                if connected_peer.frost_identifier.as_ref().cloned().unwrap() !=
+                    self.personal_frost_identifier
+                {
+                    if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
+                        peer_commands_tx
+                            .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Pbft(
+                                pbft_response.clone(),
+                            )))
+                            .map_err(Error::Send)?;
+                    }
                 }
             }
             Ok(())

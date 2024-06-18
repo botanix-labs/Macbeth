@@ -132,23 +132,22 @@ where
 
                 // check for any peers whose health checks havent been recently received
                 let none_responding_peers = peers_healthcheck_tracker
-                .read()
-                .await
-                .iter()
-                .filter_map(
-                    |(peer_id, &last_check)| {
+                    .read()
+                    .await
+                    .iter()
+                    .filter_map(|(peer_id, &last_check)| {
                         if last_check.elapsed().as_secs().gt(&NONRESPONDING_PEERS_TIMEOUT_SECS) {
                             Some(*peer_id)
                         } else {
                             None
                         }
-                    }
-                )
-                .collect::<Vec<PeerId>>();
+                    })
+                    .collect::<Vec<PeerId>>();
 
                 // force reconnection to those peers
                 let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-                frost_handle.send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender));
+                frost_handle
+                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender));
                 match receiver.await {
                     Ok(peers_reconnected) => peers_reconnected,
                     Err(e) => {
@@ -159,13 +158,14 @@ where
             }
         });
 
-        let authority_peers = self.storage
-        .read()
-        .await
-        .authorities
-        .iter()
-        .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
-        .collect::<Vec<PeerId>>();
+        let authority_peers = self
+            .storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .collect::<Vec<PeerId>>();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         loop {
             // receive over a channel message from other peers
@@ -187,13 +187,16 @@ where
                         continue;
                     }
                     PeerMessageResponse::Healtcheck(healthcheck_response) => {
-                        if !authority_peers.contains(&healthcheck_response.sender) || !authority_peers.contains(&healthcheck_response.receiver) {
+                        if !authority_peers.contains(&healthcheck_response.sender) ||
+                            !authority_peers.contains(&healthcheck_response.receiver)
+                        {
                             warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                             continue;
                         }
                         let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
                         if healthcheck_response.sender.eq(self.network_handle.peer_id()) {
-                            peers_healthcheck_tracker.insert(healthcheck_response.receiver, Instant::now());
+                            peers_healthcheck_tracker
+                                .insert(healthcheck_response.receiver, Instant::now());
                         } else {
                             warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                         }

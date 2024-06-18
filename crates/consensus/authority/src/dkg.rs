@@ -7,16 +7,17 @@ use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
     time::Duration,
 };
-use tokio::sync::mpsc::{error::SendError, UnboundedSender};
+use tokio::sync::mpsc::error::SendError;
 use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
@@ -369,15 +370,12 @@ where
         Ok(())
     }
 
-    pub(crate) async fn get_all_peers_handle(
-        &self,
-    ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
+    pub(crate) async fn get_all_peers_handle(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
         // get all frost peers connections
-        let (peers_connections_sender, peers_connections_receiver) = tokio::sync::oneshot::channel::<
-            HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
-        >();
+        let (peers_connections_sender, peers_connections_receiver) =
+            tokio::sync::oneshot::channel::<HashMap<PeerId, PeerData>>();
         self.frost_handle
-            .send_command(FrostCommand::GetAllConnectedFrostPeers(peers_connections_sender));
+            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender));
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
@@ -396,14 +394,20 @@ where
             let connected_peers = self.get_all_peers_handle().await?;
 
             // Broadcast dkg round 1 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
+            for (_peer_id, connected_peer) in connected_peers.iter() {
+                if connected_peer.frost_identifier.as_ref().cloned().unwrap() !=
+                    self.personal_frost_identifier
+                {
                     let resp = PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound2,
                         identifier: dkg_payload.identifier.clone(),
                         data: dkg_payload.payload.clone(),
                     });
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                    if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
+                        peer_commands_tx
+                            .send(FrostPeerCommand::PeerMessage(resp))
+                            .map_err(Error::Send)?;
+                    }
                 }
             }
             Ok(())
@@ -426,14 +430,20 @@ where
             let connected_peers = self.get_all_peers_handle().await?;
 
             // Broadcast dkg round 1 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
+            for (_peer_id, connected_peer) in connected_peers.iter() {
+                if connected_peer.frost_identifier.as_ref().cloned().unwrap() !=
+                    self.personal_frost_identifier
+                {
                     let resp = PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1,
                         identifier: dkg1_package.identifier.clone(),
                         data: dkg1_package.payload.clone(),
                     });
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                    if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
+                        peer_commands_tx
+                            .send(FrostPeerCommand::PeerMessage(resp))
+                            .map_err(Error::Send)?;
+                    }
                 }
             }
             Ok(())
