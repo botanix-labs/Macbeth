@@ -127,6 +127,7 @@ jobs:
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
+        
 
   unit-success:
     name: unit success
