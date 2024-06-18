@@ -296,11 +296,6 @@ where
             ommers: vec![],
             withdrawals: None,
         };
-        // print tx ids
-        let tx_ids: Vec<String> =
-            block_to_commit.body.iter().map(|tx| tx.hash().to_string()).collect();
-        info!(target: "consensus::authority", ">>>>>>>>> b4 Block tx ids: {:?}", tx_ids);
-
         // Propose block to network for commitments
         self.pbft_task_tx
             .send(PbftNotificationMessage::ProposeBlock(PbftNotification {
