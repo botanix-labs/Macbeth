@@ -128,7 +128,7 @@ rethNode:
 
     args: 
       - poa
-      - --chain=botanix_testnet
+      - --chain=$(CHAIN)
       - --datadir=/reth/botanix_testnet
       - --http
       - --http.addr=0.0.0.0
@@ -162,6 +162,11 @@ rethNode:
           secretKeyRef:
             name: botanix-poa-v1-bitcoin-secret
             key: BITCOIND_PASSWORD
+      - name: CHAIN
+          valueFrom:
+              configMapKeyRef:
+                  name: botanix-testnet-v1-chain-config
+                  key: chain.toml
 
     service:
       type: LoadBalancer
