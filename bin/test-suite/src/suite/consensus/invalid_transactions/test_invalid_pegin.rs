@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
 use reth_botanix_lib::{peg_contract::PeginMeta, utils::AmountExt};
@@ -184,7 +184,76 @@ pub async fn invalid_pegin(
     let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
     it_info_print!("Nonce before pegin", nonce_before);
 
-    it_info_print!("Sending invalid pegin transaction to mint contract");
+    it_info_print!("Sending invalid pegin with no headers to mint contract");
+    let tx_receipt = botanix_eth_client
+        .mint(
+            eth_destination.clone(),
+            amount,
+            bitcoin_block_height as u32,
+            metadata,
+            ethers::core::types::Address::random(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    // status should be 0 (failure)
+    it_info_print!("Pegin Tx Receipt", tx_receipt);
+    assert!(tx_receipt.status.unwrap().is_zero());
+
+    // pegin address balance after pegin
+    let pegin_address_final_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    it_info_print!("Final pegin address balance", pegin_address_final_balance);
+
+    assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
+
+    // nonce after pegin
+    let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
+    it_info_print!("Nonce after pegin", nonce_after);
+
+    assert!(nonce_after > nonce_before);
+
+    // *************************************************** //
+
+    // create invalid pegin meta with invalid merkle proof
+    // this tests a different logic path in the mint event validation
+    let txid = Txid::all_zeros();
+    let pmt = PartialMerkleTree::from_txids(&[txid], &[true]);
+
+    let bitcoin_block_height = conf_block_info.height;
+    let meta = PeginMeta {
+        version: 0,
+        outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+        address: eth_account.clone(),
+        aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        )
+        .expect("valid public key"),
+        tx: pegin_tx.clone(),
+        merkle_proof: pmt,
+        block_headers: headers,
+    };
+
+    // send the pegin transactions to all fed members
+    let serialized_pegin_meta = meta.serialize();
+    it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
+    let botanix_eth_client = mint_contract_instances.first().cloned().unwrap();
+    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
+
+    // pegin address balance before pegin
+    let eth_pegin_address = eth_account.to_string();
+    let pegin_address_initial_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+
+    // nonce before pegin
+    let sender_address = botanix_eth_client.get_sender_address();
+    it_info_print!("Sender address", sender_address);
+    let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
+    it_info_print!("Nonce before pegin", nonce_before);
+
+    it_info_print!("Sending invalid pegin with invalid pmt to mint contract");
     let tx_receipt = botanix_eth_client
         .mint(
             eth_destination.clone(),
