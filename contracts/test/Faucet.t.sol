@@ -7,6 +7,7 @@ import "../src/Faucet.sol";
 contract FaucetTest is Test {
   Faucet public faucet;
   address[] userList;
+  address[] zeroUserList;
   address payable user; 
 
   function setUp() public {
@@ -14,6 +15,8 @@ contract FaucetTest is Test {
     user = payable(0x7d85b27c2Aa069eE3A4feFbE79F54a3260E3ff9B);
     userList = new address[](1);
     userList[0] = user;
+    zeroUserList = new address[](1);
+    zeroUserList[0] = address(0);
   }
 
   // requestFunds() tests
@@ -25,7 +28,8 @@ contract FaucetTest is Test {
   function test_RevertWhen_CallerIsZeroAddress() public {
     deal(address(faucet), 1 ether);
     vm.expectRevert(bytes("Request must not be from zero address"));
-    faucet.requestFundsByList(userList);
+
+    faucet.requestFundsByList(zeroUserList);
   }
 
   function test_RevertWhen_FaucetHasInsufficientFunds() public {

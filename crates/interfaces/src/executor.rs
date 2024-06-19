@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{provider::ProviderError, trie::StateRootError};
 use ethers::types::U256;
 use reth_primitives::{
@@ -5,6 +7,24 @@ use reth_primitives::{
     PruneSegmentError, B256,
 };
 use thiserror::Error;
+
+/// Mint contract error type
+#[derive(Debug)]
+pub enum MintContractErrorType {
+    /// Pegin error
+    Pegin,
+    /// Pegout error
+    Pegout,
+}
+
+impl fmt::Display for MintContractErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MintContractErrorType::Pegin => write!(f, "Pegin"),
+            MintContractErrorType::Pegout => write!(f, "Pegout"),
+        }
+    }
+}
 
 /// Transaction validation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -80,12 +100,15 @@ pub enum BlockValidationError {
     },
     /// Error when failing to parse pegin/pegout topic
     #[error("Failed to parse topic")]
-    FailedToParseMintTopic,
+    FailedToParseMintTopic {
+        /// Optional pegin/pegout data: destination address, amount, and type (pegin/pegout)
+        event_data: Option<(Address, U256, String)>,
+    },
     /// Error when pegin/pegout fails consenus validation
     #[error("Invalid Mint contract invocation")]
     MintContractViolation {
-        /// The pegin address and amount
-        pegin: (Address, U256),
+        /// The pegin/pegout address and amount
+        event_data: (Address, U256, String),
     },
     /// Poa specific error when Extra data header is invalid
     #[error("Invalid extra header")]

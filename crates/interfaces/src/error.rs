@@ -70,11 +70,11 @@ mod size_asserts {
         };
     }
 
-    static_assert_size!(RethError, 72);
-    static_assert_size!(BlockExecutionError, 64);
+    static_assert_size!(RethError, 96);
+    static_assert_size!(BlockExecutionError, 88);
     static_assert_size!(ConsensusError, 48);
     static_assert_size!(DatabaseError, 40);
     static_assert_size!(ProviderError, 48);
     static_assert_size!(NetworkError, 0);
-    static_assert_size!(CanonicalError, 64);
+    static_assert_size!(CanonicalError, 88);
 }

@@ -1,6 +1,6 @@
 -include .env
 
-SHELL := /bin/bash
+SHELL := /usr/bin/env bash
 .SHELLFLAGS := -o pipefail -e -c
 
 # Heavily inspired by Lighthouse: https://github.com/sigp/lighthouse/blob/693886b94176faa4cb450f024696cb69cda2fe58/Makefile
