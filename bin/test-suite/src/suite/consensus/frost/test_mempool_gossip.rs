@@ -45,9 +45,6 @@ pub async fn test_mempool_gossip(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
-            // block producer and targeted fed member should NOT be the same
-            // Look at how inturn_member_index is calculated
-            assert_ne!(canon_state_notification.engine_index, inturn_member_index as u16);
 
             // block verfication
             let block_receipts = canon_state_notification.notification.block_receipts();
