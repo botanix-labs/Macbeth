@@ -1,7 +1,6 @@
 use bitcoin::Amount;
 use reth_botanix_lib::utils::AmountExt;
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 use std::time::Duration;
 
@@ -11,6 +10,9 @@ use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::InvalidTransactionError> {
+    // wait for everything to spin up otherwise btc_server will hit `Unable to get public key`
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
 
     // subscribe to notifications so channel stays open
