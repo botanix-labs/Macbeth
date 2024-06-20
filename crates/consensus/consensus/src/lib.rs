@@ -100,6 +100,9 @@ pub enum ConsensusError {
     /// PoA specific: missing quorum of authority signatures
     #[error("Missing quorum of authority signatures, expected: {0}, got: {1}")]
     MissingQuorumOfAuthoritySignatures(u16, u16),
+    /// PoA specific: authority list is missing in the extra data header
+    #[error("Missing authority list")]
+    MissingAuthorityList,
     /// PoA specific: authority list does not match the genesis block authority list
     #[error("Invalid authority list")]
     InvalidAuthorityList,
