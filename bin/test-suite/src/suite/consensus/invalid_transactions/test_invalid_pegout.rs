@@ -10,9 +10,6 @@ use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::InvalidTransactionError> {
-    // wait for everything to spin up otherwise btc_server will hit `Unable to get public key`
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
 
     // subscribe to notifications so channel stays open
