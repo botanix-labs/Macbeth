@@ -345,13 +345,19 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         executor.spawn(Box::pin(async move {
             // start waiting for canon event notifications
             while let Some(canon_state_notification) = canon_events.recv().await.ok() {
-                let _ = rx_sender
-                    .send(Notifications::CanonState(CannonStateNofificationPayload {
-                        engine_index,
-                        ts: tokio::time::Instant::now(),
-                        notification: canon_state_notification,
-                    }))
-                    .expect("Failed to send canon state notification");
+                match rx_sender.send(Notifications::CanonState(CannonStateNofificationPayload {
+                    engine_index,
+                    ts: tokio::time::Instant::now(),
+                    notification: canon_state_notification,
+                })) {
+                    Ok(_) => {}
+                    // all receivers have been dropped temporarily here. Just sleep and await new
+                    // ones to be created
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
             }
         }));
 
@@ -441,13 +447,19 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                             );
                             let s = SigningStatus::try_from(status.status).ok();
                             if let Some(status) = s {
-                                let _ = rx_sender
-                                    .send(Notifications::SigningStatusReport((
-                                        engine_index,
-                                        session_id,
-                                        status,
-                                    )))
-                                    .expect("Failed to send signing status report");
+                                match rx_sender.send(Notifications::SigningStatusReport((
+                                    engine_index,
+                                    session_id,
+                                    status,
+                                ))) {
+                                    Ok(_) => {}
+                                    // all receivers have been dropped temporarily here. Just sleep
+                                    // and await new ones to be created
+                                    Err(_) => {
+                                        tokio::time::sleep(Duration::from_secs(1)).await;
+                                        continue;
+                                    }
+                                }
                             }
                         }
                         Err(_) => {
