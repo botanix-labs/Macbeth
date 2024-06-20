@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use crate::{
     dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    signing::SigningStateMachine, Storage,
+    signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
 };
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
@@ -158,6 +160,14 @@ where
         }
 
         loop {
+            // ensure the node is not syncing
+            if is_active_sync_in_progress(&self.network_handle) {
+                warn!(
+                    ">>>>>>>>>>> [FROST_TASK] Node is still syncing, frost task is awaiting fully synced status ..."
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
             // Check if we are in_turn and if we need to run the dkg start process
             // Note this is not enforced in consensus
             let is_inturn = self.epoch_manager.poll().await;
