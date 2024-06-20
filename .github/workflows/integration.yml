@@ -35,7 +35,7 @@ jobs:
         with:
           components: rustfmt, clippy
           toolchain: stable
-      
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
@@ -97,11 +97,3 @@ jobs:
           cargo run --release --bin reth \
             -- db get static-file headers 100000 \
             | grep 0x91c90676cab257a59cd956d7cb0bceb9b1a71d79755c23c7277a0697ccfaf8c4
-
-
-  delete-old-test-data:
-    name: Delete old test data
-    runs-on: botanix-actions-runner-vm-1
-    if: always()
-    steps:
-      - run: rm -rf /home/runner/actions-runner/_work/Macbeth
