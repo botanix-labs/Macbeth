@@ -21,7 +21,7 @@ macro_rules! run_test {
         } else {
             "FullRun"
         };
-
+        $self.destroy_context().await;
         $self.create_new_context($create_test_config).await;
 
         info!("({}) {} {}...", purple(test_type), cyan(test), "Running");
