@@ -212,6 +212,11 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
         }
         it_info_print!("Connected to all btc servers");
+
+        // short delay to prevent btc_server hitting `Unable to get public key`
+        // when starting poa nodes in tests
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
         // generate test fed members poa nodes
         let (mut test_fed_members, tx) = create_poa_federation_members(
             self.global_context.clone(),
@@ -255,6 +260,9 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.local_context.btc_servers = None;
         self.local_context.poa_nodes = None;
         self.local_context.poa_notification = None;
+
+        // allow a few seconds to pass after cleanup
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

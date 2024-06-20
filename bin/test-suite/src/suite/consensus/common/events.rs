@@ -55,7 +55,10 @@ pub async fn await_botanix_event(
     // wait for a few blocks to make sure the tx got included and mined
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
-            it_info_print!("Canon state notification", canon_state_notification);
+            it_info_print!(
+                "Canon state notification for engine index =",
+                canon_state_notification.engine_index
+            );
             let block_receipts = canon_state_notification.notification.block_receipts();
             let non_reverted_block_receipts = block_receipts
                 .into_iter()
@@ -71,7 +74,7 @@ pub async fn await_botanix_event(
                     acc.extend(receipts);
                     acc
                 });
-            it_info_print!("Final block receipts", final_block_receipts);
+            it_info_print!("Final block receipts", final_block_receipts.len());
             for block_receipt in final_block_receipts.into_iter() {
                 for log in block_receipt.logs.into_iter() {
                     for topic in log.topics() {
