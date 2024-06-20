@@ -5,7 +5,7 @@ use crate::{
     frost_task::{FrostNotification, FrostNotificationMessage},
     pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
-    utils::{get_witness_data_from_psbt, is_testnet},
+    utils::{get_witness_data_from_psbt, is_active_sync_in_progress, is_testnet},
 };
 
 use bitcoin::{psbt::Psbt, Witness};
@@ -39,6 +39,13 @@ where
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) async fn try_build_block(&mut self) {
+        // ensure the node is not syncing
+        if is_active_sync_in_progress(&self.network_handle) {
+            warn!(target: "consensus::authority", "Node is still syncing, block builder task is awaiting fully synced status ...");
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            return;
+        }
+
         // Check if we are in_turn
         let is_inturn = self.epoch_manager.poll().await;
 

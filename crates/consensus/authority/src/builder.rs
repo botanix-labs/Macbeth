@@ -258,6 +258,7 @@ where
             evm_config.clone(),
             btc_network,
             network_client.clone(),
+            network_handle.clone(),
         );
 
         // Set up frost notification message queue
@@ -305,6 +306,7 @@ where
                 pbft_task_notifications2_tx,
                 task_executor.clone(),
                 network_client,
+                network_handle.clone(),
             );
             pbft_task = Some(pbft);
 

@@ -1,8 +1,13 @@
-use crate::pbft::PbftStateMachine;
+use std::time::Duration;
+
+use crate::{pbft::PbftStateMachine, utils::is_active_sync_in_progress};
 use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
-use reth_network::frost::{
-    manager::{FrostCommand, FrostConfig, ToFrostManager},
-    PbftEventResponseType, PbftResponse, PeerMessageResponse,
+use reth_network::{
+    frost::{
+        manager::{FrostCommand, FrostConfig, ToFrostManager},
+        PbftEventResponseType, PbftResponse, PeerMessageResponse,
+    },
+    NetworkHandle,
 };
 use reth_network_types::pk2id;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
@@ -53,6 +58,10 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
     secret_key: secp256k1::SecretKey,
     /// config
     config: FrostConfig,
+    /// network client
+    network_client: NetworkClient,
+    /// network handle
+    network_handle: NetworkHandle,
 }
 
 impl<Client, ToFrostMan, NetworkClient> PbftTask<Client, ToFrostMan, NetworkClient>
@@ -77,6 +86,7 @@ where
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         task_executor: TaskExecutor,
         network_client: NetworkClient,
+        network_handle: NetworkHandle,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
@@ -86,7 +96,7 @@ where
             my_peerid,
             secret_key,
             Some(task_executor),
-            network_client,
+            network_client.clone(),
         );
         pbft_state_machine.spawn_cleanup_task();
         Self {
@@ -97,6 +107,8 @@ where
             pbft_task_rx,
             pbft_task_tx,
             config,
+            network_client,
+            network_handle,
         }
     }
 
@@ -114,6 +126,13 @@ where
         };
 
         loop {
+            // ensure the node is not syncing
+            if is_active_sync_in_progress(&self.network_handle) {
+                warn!(target: "consensus::authority", "Node is still syncing, pbft task is awaiting fully synced status ...");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                return;
+            }
+
             // First handle any pbft notifications from the block builder task
             while let Ok(message) = self.pbft_task_rx.try_recv() {
                 match message {
