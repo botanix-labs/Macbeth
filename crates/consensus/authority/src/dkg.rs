@@ -444,7 +444,7 @@ where
 
     pub(crate) async fn start(&mut self) -> Result<(), Error> {
         self.state = DKGState::Round1Start;
-        info!(">>>>>>>>>>> [START] sending round 1 package to all peers");
+        info!(target: "consensus::authority::dkg::start", "sending round 1 package to all peers");
 
         // get round 1 package from db and send it to all peers
         if let Err(e) = self.gossip_round1_to_peers().await {
@@ -453,7 +453,7 @@ where
             return Err(e);
         }
 
-        info!(">>>>>>>>>>> [START] round 1 sent to all peers");
+        info!(target: "consensus::authority::dkg::start", "round 1 sent to all peers");
 
         // Once the round 1 package is sent we are waiting
         self.state = DKGState::Round1Waiting;
@@ -471,7 +471,7 @@ where
             return Ok(());
         }
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND1] identifiers {:?} {:?}",
+            target: "consensus::authority::dkg::process_round1","identifiers {:?} {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -487,11 +487,11 @@ where
             self.state = DKGState::DkgFailed;
             return Err(e);
         }
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] package added successfully");
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] further gossiping round 1 packages to all peers...");
+        info!(target: "consensus::authority::dkg::process_round1","package added successfully");
+        info!(target: "consensus::authority::dkg::process_round1","further gossiping round 1 packages to all peers...");
         // get round 1 package from db and send it to all peers
         if let Err(e) = self.gossip_round1_to_peers().await {
-            error!("Error gossiping round 1 to peers {:?}", e);
+            error!(target: "consensus::authority::dkg::process_round1", "Error gossiping round 1 to peers {:?}", e);
             self.state = DKGState::DkgFailed;
             return Err(e);
         }
@@ -516,9 +516,9 @@ where
             };
 
         if round2_group_packages.len() >= (self.frost_config.max_signers - 1) as usize {
-            info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
+            info!(target: "consensus::authority::dkg::process_round1", "ready to move to round 2");
             if let Err(e) = self.gossip_round2_to_peers(dkg2_package).await {
-                error!("Error gossiping round 2 to peers {:?}", e);
+                error!(target: "consensus::authority::dkg::process_round1","Error gossiping round 2 to peers {:?}", e);
                 self.state = DKGState::DkgFailed;
                 return Err(e);
             }
@@ -540,8 +540,8 @@ where
         if !self.state.is_round2() {
             return Ok(());
         }
-        info!(
-            ">>>>>>>>>>> [PROCESS_ROUND2] identifiers {:?} {:?}",
+        info!(target: "consensus::authority::dkg::process_round2",
+            "identifiers {:?} {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -553,17 +553,17 @@ where
 
         // add the transmitted round 2 package data
         if let Err(e) = self.add_round2_dkg_package(identifier, payload).await {
-            warn!("Error adding round 2 dkg package {:?}", e);
+            warn!(target: "consensus::authority::dkg::process_round2", "Error adding round 2 dkg package {:?}", e);
             // We dont want to fail the whole dkg process if we can't add another's round2
             return Ok(());
         }
-        info!(">>>>>>>>>>> [PROCESS_ROUND2] packages added successfully");
+        info!(target: "consensus::authority::dkg::process_round2", "packages added successfully");
         // By adding this round2 dkg package we could be ready to progress to round 3
         // Check first before gossiping and then gossip regardless
         // Lets try to progress to round 3 (getting the agg pk)
         let public_key_res = self.get_public_key().await;
         if public_key_res.is_ok() {
-            info!(">>>>>>>>>>> [PROCESS_ROUND2] ready to move to round 3");
+            info!(target: "consensus::authority::dkg::process_round2", "ready to move to round 3");
             self.state = DKGState::Round3;
             self.process_round3().await?;
         } else {
@@ -574,12 +574,12 @@ where
             Ok(round2_payload) => round2_payload,
             Err(e) => {
                 // its ok to error here if we don't have enough packages
-                error!("Error getting round2 dkg package {:?}", e);
+                error!(target: "consensus::authority::dkg::process_round2", "Error getting round2 dkg package {:?}", e);
                 return Err(e);
             }
         };
 
-        info!(">>>>>>>>>>> [PROCESS_ROUND2] further gossiping round 2 packages to all peers...");
+        info!(target: "consensus::authority::dkg::process_round2", "further gossiping round 2 packages to all peers...");
         // get round 2 package from db and send it to all peers
         if let Err(e) = self.gossip_round2_to_peers(round2_payload).await {
             error!("Error gossiping round 2 to peers {:?}", e);
@@ -595,7 +595,7 @@ where
             return Ok(());
         }
 
-        info!(">>>>>>>>>>> [PROCESS_ROUND3] Processing...");
+        info!(target: "consensus::authority::dkg::process_round3", "Processing...");
 
         let public_key = match self.get_public_key().await {
             Ok(public_key) => public_key,
@@ -605,13 +605,13 @@ where
                 return Err(e);
             }
         };
-        info!(">>>>>>>>>>> [PROCESS_ROUND3] Got pubkey_package: {:?}", public_key.publickey);
+        info!(target: "consensus::authority::dkg::process_round3", "Got pubkey_package: {:?}", public_key.publickey);
 
         // decode the public key and assign it to the self variable
         self.public_key_package = match secp256k1::PublicKey::from_str(&public_key.publickey) {
             Ok(decoded_pubkey) => Some(decoded_pubkey),
             Err(e) => {
-                error!("Error hex decoding public key {:?}", e);
+                error!(target: "consensus::authority::dkg::process_round3", "Error hex decoding public key {:?}", e);
                 self.state = DKGState::DkgFailed;
                 return Err(Error::PublicKeyParse(e));
             }
@@ -619,7 +619,7 @@ where
         let mut storage = self.storage.write().await;
         storage.aggregate_public_key = self.public_key_package;
         drop(storage);
-        info!(">>>>>>>>>>> [PROCESS_ROUND3] Round 3 finished successfully");
+        info!(target: "consensus::authority::dkg::process_round3", "Round 3 finished successfully");
         Ok(())
     }
 }
