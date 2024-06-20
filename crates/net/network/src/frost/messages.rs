@@ -189,8 +189,8 @@ impl FrostProtoMessage {
         }
     }
 
-     /// Creates a round1 package request message
-     pub fn round1_dkg_request_message(resource: DkgRequest) -> Self {
+    /// Creates a round1 package request message
+    pub fn round1_dkg_request_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round1DkgRequest,
             message: FrostProtoMessageKind::Round1Dkg(resource),
@@ -291,13 +291,13 @@ impl FrostProtoMessage {
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Round1DkgRequest(resource) => {
-                   // identifier
-                   buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                   buf.put_slice(&resource.identifier);
-                   // data
-                   // TODO(armins) data is empty, simplify
-                   buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                   buf.put_slice(&resource.data);
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // data
+                // TODO(armins) data is empty, simplify
+                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Ping => {}
             FrostProtoMessageKind::Pong => {}

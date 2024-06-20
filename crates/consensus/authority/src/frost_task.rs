@@ -161,9 +161,9 @@ where
             let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are in turn + initial state + no public key
-            if is_coordinator
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_coordinator &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
@@ -203,11 +203,7 @@ where
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
                             DkgEventResponseType::DkgRound1Request => {
-                                match self
-                                    .dkg_state_machine
-                                    .process_round1_request()
-                                    .await
-                                {
+                                match self.dkg_state_machine.process_round1_request().await {
                                     Ok(_) => {
                                         info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 1 request dkg package successfully")
                                     }
