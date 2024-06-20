@@ -255,6 +255,9 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.local_context.btc_servers = None;
         self.local_context.poa_nodes = None;
         self.local_context.poa_notification = None;
+
+        // allow a few seconds to pass after cleanup
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
