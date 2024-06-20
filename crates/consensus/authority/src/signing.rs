@@ -545,7 +545,7 @@ where
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
-                error!("Failed to get frost peers connections {:?}", e);
+                error!(target: "consensus::authority::signing", "Failed to get frost peers connections {:?}", e);
                 Err(Error::FailedToGetConnectedPeersHandles)
             }
         }
@@ -650,7 +650,7 @@ where
         // the coordinator is always expected to be us in this case, i.e. None
         let coordinator = self.get_coordinator().await?;
         if coordinator.is_some() {
-            error!(">>>>>>>>>>> A non-coordinator is trying to (re)initiate a signing process!");
+            error!(target: "consensus::authority::signing::initate_signing_session", "A non-coordinator is trying to (re)initiate a signing process!");
             return Ok(());
         }
         let (start, end, time_passed, time_remaining) =
@@ -688,7 +688,7 @@ where
             }
         }
 
-        info!(">>>>>>>>>>> [(RE)START SIGNING SESSION] WITH ID {:?}", session_id);
+        info!(target: "consensus::authority::signing::initate_signing_session", "restarting signing session with id {:?}", session_id);
 
         // As the cord we generate round 1 nonces and save them
         // then we send the psbt to other peers
@@ -711,7 +711,7 @@ where
             )
             .await
         {
-            error!("Error gossiping round 1 to peers {:?}", e);
+            error!(target: "consensus::authority::signing::initate_signing_session", "Error gossiping round 1 to peers {:?}", e);
             self.update_signing_state(session_id, SigningState::Failed).await;
             return Err(e);
         }
@@ -788,20 +788,22 @@ where
 
         // add the transmitted round 1 package data (the original psbt package - there is only 1x of
         // them)
-        let signing_package_round1 =
-            match self.get_round1_signing_package(signing_session_id, psbt).await {
-                Ok(signing_package_round1) => signing_package_round1,
-                Err(e) => {
-                    error!("Error adding round 2 signing package {:?}", e);
-                    self.update_signing_state(session_id, SigningState::Failed).await;
-                    return Err(e);
-                }
-            };
+        let signing_package_round1 = match self
+            .get_round1_signing_package(signing_session_id, psbt)
+            .await
+        {
+            Ok(signing_package_round1) => signing_package_round1,
+            Err(e) => {
+                error!(target: "consensus::authority::signing::signer_process_round1", "Error adding round 2 signing package {:?}", e);
+                self.update_signing_state(session_id, SigningState::Failed).await;
+                return Err(e);
+            }
+        };
         // Update signing state
         self.update_signing_state(session_id, SigningState::Round2).await;
 
         let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
-        info!(">>>>>>>>>>> [SIGNER PROCESS_ROUND1] coordinator {:?}", coordinator_frost_id);
+        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator id {:?}", coordinator_frost_id);
         // Broadcast signing round 1 to the coordinator
         if coordinator_frost_id != self.personal_frost_identifier {
             let resp = PeerMessageResponse::Signing(SigningResponse {
@@ -837,22 +839,20 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] session id {:?}", session_id);
+        info!(target: "consensus::authority::signing::coordinator_process_round1", "signing session id {:?}", session_id);
         // return if we are not in round 1 or not a coordinator
         if !self.is_round1_state(&session_id).await {
-            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] is not in round1");
+            warn!(target: "consensus::authority::signing::coordinator_process_round1", "is not in round1");
             return Ok(());
         }
         if !self.is_coordinator() {
-            warn!(
-                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] we are not the coordinator {:?}",
-                self.is_coordinator()
-            );
+            warn!(target: "consensus::authority::signing::coordinator_process_round1", "we are not the coordinator");
             return Ok(());
         }
 
         info!(
-            ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] identifiers my peer id: {:?}, other peerid {:?}",
+            target: "consensus::authority::signing::coordinator_process_round1",
+            "identifiers my peer id: {:?}, other peerid {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
@@ -867,7 +867,7 @@ where
             .new_round1_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
             .await
         {
-            error!("[COORDINATOR PROCESS_ROUND1] Error adding round 1 signing package {:?}", e);
+            error!(target: "consensus::authority::signing::coordinator_process_round1","Error adding round 1 signing package {:?}", e);
             return Ok(());
         }
 
@@ -898,11 +898,11 @@ where
                 )
                 .await
             {
-                error!("[COORDINATOR PROCESS_ROUND1] Error gossiping round 2 to peers {:?}", e);
+                error!(target: "consensus::authority::signing::coordinator_process_round1", "Error gossiping round 2 to peers {:?}", e);
                 self.update_signing_state(session_id, SigningState::Failed).await;
                 return Err(e);
             }
-            info!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND1] to sign payload send to signers");
+            info!(target: "consensus::authority::signing::coordinator_process_round1", "to sign payload send to signers");
         }
 
         Ok(())
@@ -923,15 +923,15 @@ where
         // return if we are a coordinator
         if self.is_coordinator() {
             warn!(
-                ">>>>>>>>>>> [SIGNER PROCESS_ROUND2] we are the coordinator {:?}",
-                self.is_coordinator()
+                target: "consensus::authority::signing::signer_process_round2",
+                "we are the coordinator",
             );
             return Ok(());
         }
 
         // return if we are not in round 2
         if !self.is_round2_state(&session_id).await {
-            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] is not in round2");
+            warn!(target: "consensus::authority::signing::signer_process_round2", "is not in round2");
             return Ok(());
         }
 
@@ -945,12 +945,12 @@ where
                     return Err(e);
                 }
             };
-        info!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] signing_package_round2");
+
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator, if some, someone else is
         if coordinator.is_none() {
-            warn!(">>>>>>>>>>> [SIGNER PROCESS_ROUND2] No coordinator found");
+            warn!(target: "consensus::authority::signing::signer_process_round2", "No coordinator found");
             return Ok(());
         }
 
@@ -993,28 +993,29 @@ where
 
         // return if we are not in round 2 or not a coordinator
         if !self.is_round2_state(&session_id).await {
-            warn!(">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] is not in round2");
+            warn!(target: "consensus::authority::signing::coordinator_process_round2", "is not in round2");
             return Ok(());
         }
 
         // return if we are not a coordinator
         if !self.is_coordinator() {
             warn!(
-                ">>>>>>>>>>> [COORDINATOR PROCESS_ROUND2] we are not the coordinator {:?}",
-                self.is_coordinator()
+                target: "consensus::authority::signing::coordinator_process_round2",
+                " we are not the coordinator",
             );
             return Ok(());
         }
 
         info!(
-            ">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] identifier {:?} {:?}",
+            target: "consensus::authority::signing::coordinator_process_round2",
+            "My identifier {:?} and the peers identifier {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] identifier is us");
+            info!(target: "consensus::authority::signing::coordinator_process_round2", "identifier is us");
             return Ok(());
         }
 
@@ -1023,18 +1024,18 @@ where
             .new_round2_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
             .await
         {
-            error!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] Error adding round 2 signing package {:?}", e);
+            error!(target: "consensus::authority::signing::coordinator_process_round2", "Error adding round 2 signing package {:?}", e);
             self.update_signing_state(session_id, SigningState::Failed).await;
             return Err(e);
         }
-        info!(">>>>>>>>>>> [PROCESS_ROUND2 Coordinator] round 2 added");
+        info!(target: "consensus::authority::signing::coordinator_process_round2", "round 2 added");
 
         // try to finalize the signing
         if let Ok(sign_payload) = self.finalize_signing(signing_session_id.clone()).await {
             if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
                 FrostNotification { signing_session_id, psbt: sign_payload.psbt },
             )) {
-                error!("Error sending finalized signature {:?}", e);
+                error!(target: "consensus::authority::signing::coordinator_process_round2", "Error sending finalized signature {:?}", e);
             }
             self.update_signing_state(session_id, SigningState::Finalized).await
         }
@@ -1052,8 +1053,8 @@ where
 
         // make sure we are in a failed state
         if !self.is_failed_state(&session_id).await {
-            warn!(
-                ">>>>>>>>>>> [RESTART_SIGNING_PROCESS] Session id {:?} has not failed",
+            warn!(target: "consensus::authority::signing::handle_errored_signing_process",
+                "Session id {:?} has not failed",
                 &session_id
             );
             return Ok(());
@@ -1069,7 +1070,7 @@ where
             // check if we can repeat the session, if not abort and return
             if time_remaining < time_passed {
                 self.abort_signing().await?;
-                warn!("Insuficient time remaining to retry the signing request");
+                warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Insuficient time remaining to retry the signing request");
                 return Ok(());
             }
 
@@ -1077,7 +1078,7 @@ where
             let signing_session = self.get_signing_session(session_id).await;
             if signing_session.is_none() {
                 self.abort_signing().await?;
-                error!("Could not find the the signing session for session id = {:?}", session_id);
+                error!(target: "consensus::authority::signing::handle_errored_signing_process", "Could not find the the signing session for session id = {:?}", session_id);
                 return Ok(());
             }
 
@@ -1091,7 +1092,7 @@ where
                         .expect("Original psbt to be valid and present"),
                 },
             )) {
-                error!("Error trying to re-initialize failed signing session with session id {:?}. Error = {:?}", &session_id, e);
+                error!(target: "consensus::authority::signing::handle_errored_signing_process", "Error trying to re-initialize failed signing session with session id {:?}. Error = {:?}", &session_id, e);
             }
         }
 

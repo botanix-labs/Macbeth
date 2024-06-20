@@ -111,15 +111,8 @@ impl FrostManager {
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                // info!(
-                //     ">>>>>>>>>>> FROST PEER CONNECTION ESTABLISHED.
-                // COUNTER PEER ID: {:?}, MY_PEERID: {:?}",
-                //     peer_id.to_string(),
-                //     self.network.peer_id().to_string()
-                // );
-
                 if !self.is_authority_peer(&peer_id) {
-                    warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
@@ -132,18 +125,16 @@ impl FrostManager {
             }
             NetworkFrostEvent::PeerMessage { peer_id, response } => {
                 if !self.is_authority_peer(&peer_id) {
-                    warn!("Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
-                info!(">>>>>>>>>>> FROST PEER MESSAGE RECEIVED {:?}", response.to_string());
+                info!(target: "network::frost::on_network_event", "FROST PEER MESSAGE RECEIVED {:?}", response.to_string());
                 for task_forwarder in self.task_forwarder_txs.iter() {
                     // TODO:  handle error?
                     let _send_res = task_forwarder.send((peer_id, response.clone()));
                 }
             }
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index) => {
-                //info!(">>>>>>>>>>> FROST PEER CONFIRMATION RECEIVED (PEER_ID = {:?}, AUTH_INDEX =
-                // {:?})", peer_id, authority_index);
                 if !self.is_authority_peer(&peer_id) {
                     return;
                 }
@@ -200,7 +191,7 @@ impl Future for FrostManager {
                 Poll::Ready(None) => {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
-                    error!("Network message channel closed.");
+                    error!(target: "network::frost::poll", "Network message channel closed.");
                     return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_network_event(event),
@@ -213,7 +204,7 @@ impl Future for FrostManager {
                 Poll::Ready(None) => {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
-                    error!("Network message channel closed.");
+                    error!(target: "network::frost::poll", "Network message channel closed.");
                     return Poll::Ready(());
                 }
                 Poll::Ready(Some(cmd)) => this.on_command(cmd),

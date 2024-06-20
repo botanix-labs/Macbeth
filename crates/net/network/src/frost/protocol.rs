@@ -167,123 +167,94 @@ impl Stream for FrostProtoConnection {
                 // if I want to send a ping message, save the response channel to later (below)
                 // answer once the pong is received
                 FrostPeerCommand::PingMessage { msg: _, response } => {
-                    //info!(">>>>>>>>> SENDING PING WITH MY AUTH INDEX {:?}", msg);
                     this.pending_pong = Some(response);
                     Poll::Ready(Some(
                         FrostProtoMessage::ping_message(this.my_peer_id, this.my_authority_index)
                             .encoded(),
                     ))
                 }
-                FrostPeerCommand::PeerMessage(response) => {
-                    match response {
-                        PeerMessageResponse::Pbft(pbft_response) => {
-                            let PbftResponse { response_type, data } = pbft_response;
-                            let req = PbftRequest::new(data);
-                            match response_type {
-                                PbftEventResponseType::CoordinatorBlockProposal => {
-                                    info!(
-                                        ">>>>>>>>> [PROTOCOL] SENDING COORDINATOR BLOCK PROPOSAL"
-                                    );
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::coordinator_block_proposal_message(req)
-                                            .encoded(),
-                                    ))
-                                }
-                                PbftEventResponseType::PeerPreCommitment => {
-                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER PRE COMMITMENT");
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::peer_pre_commitment_message(req)
-                                            .encoded(),
-                                    ))
-                                }
-                                PbftEventResponseType::PeerCommitment => {
-                                    info!(">>>>>>>>> [PROTOCOL] SENDING PEER COMMIT");
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::peer_commit_message(req).encoded(),
-                                    ))
-                                }
+                FrostPeerCommand::PeerMessage(response) => match response {
+                    PeerMessageResponse::Pbft(pbft_response) => {
+                        let PbftResponse { response_type, data } = pbft_response;
+                        let req = PbftRequest::new(data);
+                        match response_type {
+                            PbftEventResponseType::CoordinatorBlockProposal => {
+                                info!(
+                                    target: "network::frost::protocol", "sending PBFT coordinator block proposal"
+                                );
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::coordinator_block_proposal_message(req)
+                                        .encoded(),
+                                ))
                             }
-                        }
-                        PeerMessageResponse::Dkg(dkg_response) => {
-                            let DkgResponse { response_type, identifier, data } = dkg_response;
-                            match response_type {
-                                DkgEventResponseType::DkgRound1 => {
-                                    let req = DkgRequest::new(identifier, data);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 DKG DATA =
-                                    // {:?}", req);
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::round1_dkg_message(req).encoded(),
-                                    ))
-                                }
-                                DkgEventResponseType::DkgRound2 => {
-                                    let req = DkgRequest::new(identifier, data);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 2 DKG DATA =
-                                    // {:?}", req);
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::round2_dkg_message(req).encoded(),
-                                    ))
-                                }
+                            PbftEventResponseType::PeerPreCommitment => {
+                                info!(target: "network::frost::protocol", "sending PBFT peer pre-commitment");
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::peer_pre_commitment_message(req).encoded(),
+                                ))
                             }
-                        }
-                        PeerMessageResponse::Signing(signing_response) => {
-                            let SigningResponse {
-                                response_type,
-                                identifier,
-                                signing_session_id,
-                                psbt,
-                            } = signing_response;
-                            match response_type {
-                                SigningEventResponseType::SignerRound1SigningPackage => {
-                                    let req =
-                                        SignRequest::new(identifier, signing_session_id, psbt);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 SIGNING DATA
-                                    // = {:?}", req);
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::round1_signer_package_message(req)
-                                            .encoded(),
-                                    ))
-                                }
-                                SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                    let req =
-                                        SignRequest::new(identifier, signing_session_id, psbt);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
-                                    // DATA = {:?}",
-                                    // req);
-                                    Poll::Ready(Some(
-                                            FrostProtoMessage::round1_coordinator_signing_package_message(
-                                                req,
-                                            )
-                                            .encoded(),
-                                        ))
-                                }
-                                SigningEventResponseType::SignerRound2SigningPackage => {
-                                    let req =
-                                        SignRequest::new(identifier, signing_session_id, psbt);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
-                                    // DATA = {:?}",
-                                    // req);
-                                    Poll::Ready(Some(
-                                        FrostProtoMessage::round2_signer_package_message(req)
-                                            .encoded(),
-                                    ))
-                                }
-                                SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                    let req =
-                                        SignRequest::new(identifier, signing_session_id, psbt);
-                                    //info!(">>>>>>>>> [PROTOCOL] SENDING ROUND 1 NEW SIGNING
-                                    // DATA = {:?}",
-                                    // req);
-                                    Poll::Ready(Some(
-                                            FrostProtoMessage::round2_coordinator_signing_package_message(
-                                                req,
-                                            )
-                                            .encoded(),
-                                        ))
-                                }
+                            PbftEventResponseType::PeerCommitment => {
+                                info!(target: "network::frost::protocol", "sending PBFT peer commitment");
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::peer_commit_message(req).encoded(),
+                                ))
                             }
                         }
                     }
-                }
+                    PeerMessageResponse::Dkg(dkg_response) => {
+                        let DkgResponse { response_type, identifier, data } = dkg_response;
+                        match response_type {
+                            DkgEventResponseType::DkgRound1 => {
+                                let req = DkgRequest::new(identifier, data);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round1_dkg_message(req).encoded(),
+                                ))
+                            }
+                            DkgEventResponseType::DkgRound2 => {
+                                let req = DkgRequest::new(identifier, data);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round2_dkg_message(req).encoded(),
+                                ))
+                            }
+                        }
+                    }
+                    PeerMessageResponse::Signing(signing_response) => {
+                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
+                            signing_response;
+                        match response_type {
+                            SigningEventResponseType::SignerRound1SigningPackage => {
+                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round1_signer_package_message(req).encoded(),
+                                ))
+                            }
+                            SigningEventResponseType::CoordinatorRound1SigningPackage => {
+                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round1_coordinator_signing_package_message(
+                                        req,
+                                    )
+                                    .encoded(),
+                                ))
+                            }
+                            SigningEventResponseType::SignerRound2SigningPackage => {
+                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round2_signer_package_message(req).encoded(),
+                                ))
+                            }
+                            SigningEventResponseType::CoordinatorRound2SigningPackage => {
+                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round2_coordinator_signing_package_message(
+                                        req,
+                                    )
+                                    .encoded(),
+                                ))
+                            }
+                        }
+                    }
+                },
             };
         }
 
@@ -298,18 +269,10 @@ impl Stream for FrostProtoConnection {
         // react on message type
         match msg.message {
             FrostProtoMessageKind::Ping => {
-                //info!(">>>>>>>>> RECEIVED PING FROM PEER. SENDING PONG...");
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
             }
-            FrostProtoMessageKind::Pong => {
-                //info!(">>>>>>>>> RECEIVED PONG FROM PEER. --.");
-            }
+            FrostProtoMessageKind::Pong => {}
             FrostProtoMessageKind::PingMessage(peer_id, authority_index) => {
-                //info!(
-                //    ">>>>>>>>> RECEIVED PING FROM PEER WITH HIS AUTH INDEX = {}. SENDING PONG
-                // WITH MY AUTH INDEX",    authority_index
-                //);
-
                 let _ = peer_message_forwarder
                     .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
 
@@ -321,14 +284,8 @@ impl Stream for FrostProtoConnection {
             }
             // other peers answers with pong message with a peer id and authority index
             FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
-                //info!(
-                //    ">>>>>>>>> RECEIVED PONG FROM PEER WITH AUTH INDEX {}. CONFIRMING
-                // RECEIVED",    authority_index
-                //);
-
                 let _ = peer_message_forwarder
                     .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
-                //info!(">>>>>>>>> FORWARDED.");
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
@@ -362,7 +319,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 1 PACKAGE FROM PEER. {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1,
@@ -373,7 +329,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::Round2Dkg(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED DKG 2 PACKAGE FROM PEER. {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound2,
@@ -384,8 +339,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 1 PACKAGE FROM PEER.
-                // {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
@@ -397,8 +350,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 1 PACKAGE FROM PEER.
-                // {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
@@ -410,8 +361,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED SIGNING ROUND 2 PACKAGE FROM PEER.
-                // {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
@@ -423,8 +372,6 @@ impl Stream for FrostProtoConnection {
                 });
             }
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
-                //info!(">>>>>>>>> [PROTOCOL] RECEIVED NEW SIGNING ROUND 2 PACKAGE FROM PEER.
-                // {:?}", data);
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,

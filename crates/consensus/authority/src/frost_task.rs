@@ -75,7 +75,7 @@ where
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
     ) -> Self {
-        info!("Frost authority index: {}/{}", config.authority_index, config.authorities.len());
+        info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
         let dkg_state_machine = DKGStateMachine::new(
             btc_server.clone(),
@@ -111,12 +111,12 @@ where
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!("Not yet connected to all frost peers. Waiting ....");
+                    info!(target: "consensus::authority::frost_task::start_dkg", "Not yet connected to all frost peers. Waiting ....");
                     return;
                 }
-                info!(">>>>>>>>>>> [FROST_TASK] Connected to all frost peers {}", is_connected);
+                info!(target: "consensus::authority::frost_task::start_dkg", "Connected to all frost peers {}", is_connected);
                 // start the dkg process
-                info!(">>>>>>>>>>> [FROST_TASK] Starting the DKG state machine...");
+                info!(target: "consensus::authority::frost_task::start_dkg", "Starting the DKG state machine...");
                 let _ = self.dkg_state_machine.start().await;
             }
             Err(e) => {
@@ -132,7 +132,7 @@ where
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
-                error!("Error getting receiver handle = {:?}", e);
+                error!(target: "consensus::authority::frost_task::start_task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
@@ -140,7 +140,7 @@ where
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
         if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
-            info!(">>>>>>>>>>> [FROST_TASK] Got public key {:?}", public_key);
+            info!(target: "consensus::authority::frost_task::start_task", " recieved aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey).unwrap().as_slice(),
             ) {
@@ -150,11 +150,11 @@ where
                 drop(storage);
             } else {
                 warn!(
-                    ">>>>>>>>>>> [FROST_TASK] Error converting public key to secp256k1 public key"
+                    target: "consensus::authority::frost_task::start_task", "converting public key to secp256k1 public key"
                 );
             }
         } else {
-            debug!(">>>>>>>>>>> [FROST_TASK] No public key found, proceeding with DKG");
+            debug!(target: "consensus::authority::frost_task::start_task", "No public key found, proceeding with DKG");
         }
 
         loop {
@@ -181,15 +181,15 @@ where
                         .await
                     {
                         Ok(_) => {
-                            info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Started new signing session successfully")
+                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
                         }
                         Err(e) => {
-                            error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Error starting new signing session {:?}", e);
+                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
                         }
                     }
                 } else {
                     warn!(
-                        ">>>>>>>>>>> [FROST_TASK] Unhandled frost notification message {:?}",
+                        target: "consensus::authority::frost_task::start_task", "Unhandled frost notification message {:?}",
                         message
                     );
                 }
@@ -209,10 +209,10 @@ where
                                 match self.dkg_state_machine.process_round1(identifier, data).await
                                 {
                                     Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 1 dkg package successfully")
+                                        info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::DKG] Error processing round 1 dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 dkg package {:?}", e);
                                     }
                                 }
                             }
@@ -220,10 +220,10 @@ where
                                 match self.dkg_state_machine.process_round2(identifier, data).await
                                 {
                                     Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 2 dkg package successfully")
+                                        info!(target: "consensus::authority::frost_task::start_task", "Processed Round 2 dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::DKG] Error processing round 2 dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 2 dkg package {:?}", e);
                                     }
                                 }
                             }
@@ -244,10 +244,10 @@ where
                                     .await
                                 {
                                     Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Processed Round 1 signing successfully")
+                                        info!(target: "consensus::authority::frost_task::start_task", "Peer Processed Round 1 signing successfully")
                                     }
                                     Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 1 signing {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 1 signing {:?}", e);
                                         let _ = self
                                             .signing_state_machine
                                             .handle_errored_signing_process(signing_session_id)
@@ -265,10 +265,10 @@ where
                                 .await
                             {
                                 Ok(_) => {
-                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 1 signing package successfully")
+                                    info!(target: "consensus::authority::frost_task::start_task", "Coordinator Processed Round 1 signing package successfully")
                                 }
                                 Err(e) => {
-                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 1 signing package {:?}", e);
+                                    error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 1 signing package {:?}", e);
                                     let _ = self
                                         .signing_state_machine
                                         .handle_errored_signing_process(signing_session_id)
@@ -286,10 +286,10 @@ where
                                     .await
                                 {
                                     Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Processed Round 2 signing package successfully")
+                                        info!(target: "consensus::authority::frost_task::start_task", "Peer Processed Round 2 signing package successfully")
                                     }
                                     Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Peer Error processing round 2 signing package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 2 signing package {:?}", e);
                                         let _ = self
                                             .signing_state_machine
                                             .handle_errored_signing_process(signing_session_id)
@@ -307,10 +307,10 @@ where
                                 .await
                             {
                                 Ok(_) => {
-                                    info!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Processed Round 2 signing package successfully")
+                                    info!(target: "consensus::authority::frost_task::start_task", "Coordinator Processed Round 2 signing package successfully")
                                 }
                                 Err(e) => {
-                                    error!(">>>>>>>>>>> [FROST_TASK::SIGNING] Coordinator Error processing round 2 signing package {:?}", e);
+                                    error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 2 signing package {:?}", e);
                                     let _ = self
                                         .signing_state_machine
                                         .handle_errored_signing_process(signing_session_id)
