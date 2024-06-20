@@ -1,7 +1,6 @@
 use bitcoin::Amount;
 use reth_botanix_lib::utils::AmountExt;
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 use std::time::Duration;
 
