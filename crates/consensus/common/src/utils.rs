@@ -1,4 +1,4 @@
-use crate::validation;
+
 use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
@@ -7,7 +7,7 @@ use reth_primitives::{
     keccak256, public_key_to_address, Address, ChainSpec, Header, U256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProvider, StateProviderFactory};
-use reth_tracing::tracing::error;
+
 use secp256k1::{All, Secp256k1};
 use std::{
     sync::Arc,

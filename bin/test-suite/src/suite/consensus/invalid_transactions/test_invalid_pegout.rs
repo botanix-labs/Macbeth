@@ -2,7 +2,7 @@ use bitcoin::Amount;
 use reth_botanix_lib::utils::AmountExt;
 use reth_btc_wallet::address::EthAddress;
 use reth_primitives::Address;
-use std::time::Duration;
+
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 
