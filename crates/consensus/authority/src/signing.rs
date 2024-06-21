@@ -805,8 +805,8 @@ where
         // Update signing state
         self.update_signing_state(session_id, SigningState::Round2).await;
 
-        let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
-        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator id {:?}", coordinator_frost_id);
+        let (coordinator_peer_data, coordinator_authority_index) = coordinator.unwrap();
+        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_authority_index);
         // Broadcast signing round 1 to the coordinator
         if coordinator_peer_data.frost_identifier.as_ref().cloned().unwrap() !=
             self.personal_frost_identifier
