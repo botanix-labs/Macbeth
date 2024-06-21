@@ -207,7 +207,7 @@ where
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn build(
+    pub async fn build(
         self,
     ) -> (
         AuthorityConsensus,
@@ -215,7 +215,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>>,
         HealthcheckTask<ToFrostMan>,
     ) {
         let Self {
@@ -314,7 +314,11 @@ where
                 task_executor.clone(),
                 network_client,
                 network_handle.clone(),
-            );
+                evm_config.clone(),
+                bitcoin_block_header.clone(),
+                consensus.clone(),
+            )
+            .await;
             pbft_task = Some(pbft);
 
             let _bitcoind_client =
