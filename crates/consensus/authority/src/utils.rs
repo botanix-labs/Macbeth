@@ -11,6 +11,8 @@ use reth_botanix_lib::{
     },
     peg_contract::PegoutData,
 };
+use reth_interfaces::sync::SyncStateProvider;
+use reth_network::NetworkHandle;
 use reth_primitives::{
     constants::{
         eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
@@ -26,6 +28,11 @@ use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
 
 use crate::extended_client::BtcServerExtendedClient;
+
+/// Checks if the network is undergoing an active sync or not
+pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
+    network_handle.is_syncing() || network_handle.is_initially_syncing()
+}
 
 /// Function for retrying an async closure with retries and delays
 pub async fn retry_exec<T, E, F, Fut>(

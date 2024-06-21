@@ -183,6 +183,7 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
         info!(
+            target: "consensus::authority::pbft::new",
             "Frost identifier used: {:?} - {:?}",
             config.authority_index, personal_frost_identifier
         );
@@ -300,7 +301,7 @@ where
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
-                error!("Failed to get frost peers connections {:?}", e);
+                error!(target: "consensus::authority::pbft::get_all_peers_handle", "Failed to get frost peers connections {:?}", e);
                 return Err(Error::FailedToGetConnectedPeersHandles);
             }
         }
@@ -317,8 +318,8 @@ where
         let fut = || async {
             // get all connected peers
             let connected_peers = self.get_all_peers_handle().await?;
-            info!(target: "pbft" ,"Broadcasting pbft response to all peers");
-            info!(target: "pbft" ,"Connected peers: {:?}", connected_peers.keys().collect::<Vec<_>>() );
+            info!(target: "consensus::authority::pbft::gossip_to_peers","Broadcasting pbft response to all peers");
+            info!(target: "consensus::authority::pbft::gossip_to_peers" ,"Connected peers: {:?}", connected_peers.keys().collect::<Vec<_>>() );
 
             // Broadcast dkg round 1 package to all peers (excluding ourselves)
             for (_peer_id, connected_peer) in connected_peers.iter() {
@@ -411,7 +412,7 @@ where
                     }
                 }
                 Err(e) => {
-                    error!("Failed to get header for block: {:?}", e);
+                    error!(target: "consensus::authority::pbft::validate_block", "Failed to get header for block: {:?}", e);
                     return Err(ValidateBlockError::ParentBlockNotFound(block_to_sign.parent_hash));
                 }
             }
@@ -428,17 +429,17 @@ where
         let current_state = self.get_state(block_hash);
 
         if current_state.is_running() {
-            warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
+            warn!(target: "consensus::authority::pbft::init_block_proposal" ,"State machine is already running for block {:?}", block_hash);
             return Ok(());
         }
 
         if !self.is_coordinator() {
-            warn!(target: "pbft" ,"Not the coordinator -- ignoring init block proposal request");
+            warn!(target: "consensus::authority::pbft::init_block_proposal" ,"Not the coordinator -- ignoring init block proposal request");
             return Ok(());
         }
 
         if block.header.deserialize_extra_data_header()?.authority_signatures.is_none() {
-            warn!(target: "pbft" ,"Block proposal does not contain any signatures");
+            warn!(target: "consensus::authority::pbft::init_block_proposal" ,"Block proposal does not contain any signatures");
             return Err(Error::MissingSignatures);
         }
 
@@ -471,11 +472,11 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<(), Error> {
-        info!(target: "pbft" ,"Processing block proposal from peer {:?}", peer_id);
+        info!(target: "consensus::authority::pbft::process_block_proposal" ,"Processing block proposal from peer {:?}", peer_id);
         let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if current_state.is_running() {
-            warn!(target: "pbft" ,"State machine is already running for block {:?}", block_hash);
+            warn!(target: "consensus::authority::pbft::process_block_proposal" ,"State machine is already running for block {:?}", block_hash);
             return Ok(());
         }
 
@@ -505,12 +506,12 @@ where
                 )?;
                 let recovered_pk = sigs[0].recover(&msg)?;
                 if recovered_pk != *coordinator {
-                    warn!(target: "pbft" ,"In turn block producer does not have the first signature on the block");
+                    warn!(target: "consensus::authority::pbft::process_block_proposal" ,"In turn block producer does not have the first signature on the block");
                     return Err(Error::MissingInTurnSignature);
                 }
             }
             None => {
-                warn!(target: "pbft" ,"Block proposal does not contain any signatures");
+                warn!(target: "consensus::authority::pbft::process_block_proposal" ,"Block proposal does not contain any signatures");
                 return Err(Error::MissingSignatures);
             }
         }
@@ -549,11 +550,10 @@ where
         let time_slot = block.header.timestamp / 60;
         let coord_pk = signed_authorities.get(0).unwrap();
         let coord_peer_id = pk2id(&coord_pk);
-        println!("time slot: {:?}", self.time_slot_commitment);
+
         if let Some(peer) = self.time_slot_commitment.get(&time_slot) {
-            println!("peer: {:?}", peer);
             if *peer == coord_peer_id {
-                warn!(target: "pbft" ,"Peer has already processed this time slot");
+                warn!(target: "consensus::authority::pbft::check_and_send_commitment" ,"Peer has already processed this time slot");
                 return Err(Error::PeerAlreadyProcessedTimeSlot(time_slot));
             }
         }
@@ -569,7 +569,7 @@ where
         if pre_commits.len() >= self.config.max_signers as usize {
             // Save that we processed this time slot from this peer
             let time_slot = block.header.timestamp / 60;
-            info!(target: "pbft" ,"We have enough pre-commitments moving to next state");
+            info!(target: "consensus::authority::pbft::check_and_send_commitment" ,"We have enough pre-commitments moving to next state");
             let mut mutable_header = block.header().clone();
             mutable_header.sign_block(&self.secret_key)?;
             let signed_block = SealedBlock::new(
@@ -595,13 +595,13 @@ where
         block: SealedBlock,
         peer_id: PeerId,
     ) -> Result<(), Error> {
-        info!(target: "pbft", "Processing pre-commitment from peer {:?}", peer_id);
+        info!(target: "consensus::authority::pbft::process_precommitment", "Processing pre-commitment from peer {:?}", peer_id);
         self.validate_block(&block).await?;
 
         let block_hash = block.header.segregated_signature_block_hash()?;
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_precommitments() {
-            warn!(target: "pbft", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
+            warn!(target: "consensus::authority::pbft::process_precommitment", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
             return Ok(());
         }
 
@@ -614,7 +614,7 @@ where
         let mut write_handle = self.pre_commitments.write().await;
         let pre_commits = write_handle.entry(block_hash).or_insert_with(HashSet::new);
         pre_commits.insert(peer_id);
-        info!(target: "pbft" ,"pre-commitments: {:?}", pre_commits.len());
+        info!(target: "consensus::authority::pbft::process_precommitment" ,"pre-commitments: {:?}", pre_commits.len());
         drop(write_handle);
 
         self.check_and_send_commitment(&block, &peer_id).await?;
@@ -633,7 +633,7 @@ where
         self.validate_block(&block).await?;
         // Only the in turn coordinator should be processing commitments
         if !self.is_coordinator() {
-            warn!(target: "pbft" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
+            warn!(target: "consensus::authority::pbft::process_commitment" ,"Not the coordinator -- ignoring commitment from peer {:?}", peer_id);
             return Ok(None);
         }
         if peer_id == self.peer_id {
@@ -643,7 +643,7 @@ where
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
-            warn!(target: "pbft" ,"State machine is not awaiting commitments for block {:?}", block_hash);
+            warn!(target: "consensus::authority::pbft::process_commitment" ,"State machine is not awaiting commitments for block {:?}", block_hash);
             return Ok(None);
         }
         let lock = self.sealed_blocks.read().await;
@@ -659,7 +659,7 @@ where
         let peer_edh = block.header().deserialize_extra_data_header()?;
 
         if peer_edh.authority_signatures.is_none() {
-            debug!(target: "pbft" ,"Peer did not provide a signature");
+            debug!(target: "consensus::authority::pbft::process_commitment" ,"Peer did not provide a signature");
             return Ok(None);
         }
 
@@ -667,7 +667,7 @@ where
         if current_header.segregated_signature_block_hash()? !=
             block.header.segregated_signature_block_hash()?
         {
-            warn!(target: "pbft" ,"Block hash recieved from peer does not match the block we are tracking");
+            warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
         }
         // Check all the signatures on the commited block from the peer
@@ -692,10 +692,10 @@ where
         info!("max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >= self.config.max_signers {
-            info!(target: "pbft" ,"We have enough commitments, time to produce a block");
+            info!(target: "consensus::authority::pbft::process_commitment" ,"We have enough commitments, time to produce a block");
             let block_witness =
                 new_block.header().get_block_witness()?.expect("set the witness above");
-            info!(target: "pbft" ,"Block witness: {:?}", block_witness);
+            info!(target: "consensus::authority::pbft::process_commitment" ,"Block witness: {:?}", block_witness);
             return Ok(Some(block_witness));
         }
         Ok(None)

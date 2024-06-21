@@ -90,7 +90,7 @@ impl Case for BlockchainTestCase {
                     static_files_dir_path,
                 )?
                 .provider_rw()
-                .unwrap();
+                .expect("to create test provider");
 
                 // Insert initial test state into the provider.
                 provider
@@ -132,7 +132,7 @@ impl Case for BlockchainTestCase {
                     .latest_writer(StaticFileSegment::Headers)
                     .unwrap()
                     .commit_without_sync_all()
-                    .unwrap();
+                    .expect("to commit headers");
 
                 // Execute the execution stage using the EVM processor factory for the test case
                 // network.
@@ -220,6 +220,20 @@ pub fn should_skip(path: &Path) -> bool {
         | "loopMul.json"
         | "CALLBlake2f_MaxRounds.json"
         | "shiftCombinations.json"
+
+        // Botanix: We know these are broken upstream. Fixes will be provided upstream and then we can re-enable.
+        // Tracked here https://github.com/paradigmxyz/reth/issues/8589
+        | "dynamicAccountOverwriteEmpty_Paris.json"
+        | "dynamicAccountOverwriteEmpty.json"
+        | "create2collisionStorageParis.json"
+        | "RevertInCreateInInitCreate2Paris.json"
+        | "create2collisionStorage.json"
+        | "RevertInCreateInInitCreate2.json"
+        | "InitCollision.json"
+        | "InitCollisionParis.json"
+        | "RevertInCreateInInit.json"
+        | "RevertInCreateInInit_Paris.json"
+
     )
     // Ignore outdated EOF tests that haven't been updated for Cancun yet.
     || path_contains(path_str, &["EIPTests", "stEOF"])
