@@ -131,6 +131,35 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
     Ok(())
 }
 
+/// Check authorities in EDH match and are in the same order and the genesis authorities
+pub fn validate_extra_data_header_authorities(
+    header: &Header,
+    genesis_authorities: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    if header.is_poa_epoch() {
+        // Attempt to deserialize the extra data header
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
+            error!("Failed to deserialize extra data header: {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
+
+        // Validate the list of authorities matches the authorities in the genesis block
+        // This check is only for a static federation
+        if let Some(authority_signers) = edh.authority_signers.as_ref() {
+            if genesis_authorities != authority_signers {
+                error!("Genesis authorities: {:?}", genesis_authorities);
+                error!("EDH authorities: {:?}", edh.authority_signers);
+                return Err(ConsensusError::InvalidAuthorityList);
+            }
+        } else {
+            error!("No authority signers in extra data header");
+            return Err(ConsensusError::MissingAuthorityList);
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate poa extra data header
 /// This function will validate the extra data header and check for a quorum of signatures
 /// from authorities memebers.
@@ -147,29 +176,7 @@ pub fn validate_poa_extra_data_header(
     // First run the basic validation
     validation::validate_header_extradata(header)?;
 
-    // Attempt to deserialize the extra data header
-    let edh = header.deserialize_extra_data_header().map_err(|e| {
-        error!("Failed to deserialize extra data header: {:?}", e);
-        ConsensusError::ExtraDataInvalid
-    })?;
-
-    if header.is_poa_epoch() {
-        // Validate the list of authorities matches the authorities in the genesis block
-        // This check is only for a static federation
-        // Use EDH authority list as source of truth and not the list passed in
-        let gensis_hashset = genesis_authorities.iter().collect::<std::collections::HashSet<_>>();
-        let edh_hashset = edh
-            .authority_signers
-            .as_ref()
-            .expect("authority signers to exist")
-            .iter()
-            .collect::<std::collections::HashSet<_>>();
-        if gensis_hashset != edh_hashset {
-            error!("Genesis authorities: {:?}", genesis_authorities);
-            error!("EDH authorities: {:?}", edh.authority_signers);
-            return Err(ConsensusError::InvalidAuthorityList);
-        }
-    }
+    validate_extra_data_header_authorities(header, genesis_authorities)?;
 
     // Validate the authority signature and signature came from one of the authorities
     let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
@@ -451,6 +458,63 @@ mod tests {
         genesis_authorities = authority_signers.clone();
         let result =
             validate_poa_extra_data_header(&header, &authority_signers, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_missing_authorities() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let authority_signers = genesis_authorities.clone();
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        header.extra_data = Bytes::from(edh.serialize());
+        // NOTE: authority signers were not set in the header
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_invalid_authority_list_order() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let mut authority_signers =
+            vec![sk2.public_key(secp256k1::SECP256K1), sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        authority_signers = genesis_authorities.clone();
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
         assert!(result.is_ok());
     }
 

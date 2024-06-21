@@ -134,7 +134,7 @@ rethNode:
 
     args: 
       - poa
-      - --chain=botanix_testnet
+      - --chain=/reth/botanix_testnet/chain.toml
       - --datadir=/reth/botanix_testnet
       - --http
       - --http.addr=0.0.0.0
