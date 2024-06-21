@@ -153,7 +153,7 @@ where
         // Build and execute current block template
         let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
-            self.chain_spec.clone(),
+            self.consensus.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
             &self.sk,
             self.evm_config.clone(),
@@ -168,7 +168,7 @@ where
         drop(storage);
 
         // Process Botanix specific logs and get current block pegouts
-        let is_testnet = is_testnet(self.chain_spec.chain().id());
+        let is_testnet = is_testnet(self.consensus.chain_spec.chain().id());
         let current_block_pegouts = match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
@@ -282,6 +282,7 @@ where
             &authority_signers,
             &epoch_witness,
             &utxo_commitment,
+            &self.consensus,
         ) {
             Ok(ret) => ret,
             Err(err) => {

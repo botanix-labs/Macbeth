@@ -24,7 +24,6 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 
-use reth_primitives::ChainSpec;
 use reth_provider::CanonStateNotificationSender;
 
 use std::{sync::Arc, time::Duration};
@@ -36,8 +35,8 @@ use tokio::sync::{
 use tracing::{debug, error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
-    /// Chain spec
-    chain_spec: Arc<ChainSpec>,
+    /// Authority consensus
+    consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     /// Channel to send new blocks to the engine
@@ -75,7 +74,7 @@ where
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
+        consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
@@ -88,7 +87,7 @@ where
         network_handle: NetworkHandle,
     ) -> Self {
         Self {
-            chain_spec,
+            consensus,
             block_import_rx,
             to_engine,
             canon_state_notification,
@@ -105,8 +104,7 @@ where
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
-        let consensus: Arc<dyn Consensus> =
-            Arc::new(AuthorityConsensus::new(Arc::clone(&self.chain_spec)));
+        let consensus: Arc<dyn Consensus> = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
@@ -190,7 +188,7 @@ where
             }
 
             match storage.execute_imported_block(
-                self.chain_spec.clone(),
+                &self.consensus,
                 sealed_block.clone(),
                 botanix_consensus_pkg.clone(),
                 self.evm_config.clone(),
@@ -202,7 +200,7 @@ where
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
                     // Process Botanix specific logs
-                    let is_testnet = is_testnet(self.chain_spec.chain().id());
+                    let is_testnet = is_testnet(self.consensus.chain_spec.chain().id());
                     // get pegouts if btc_server is available
                     // only federation nodes will have btc_server
                     let mut pegouts = match self.btc_server.as_ref() {

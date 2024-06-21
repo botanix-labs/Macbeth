@@ -36,11 +36,21 @@ impl OptimismBeaconConsensus {
 }
 
 impl Consensus for OptimismBeaconConsensus {
+    fn validate_extra_data_header_single_signer(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    /// Validate header
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validation::validate_header_standalone(header, &self.chain_spec)?;
         Ok(())
     }
 
+    /// Validate header against parent
     fn validate_header_against_parent(
         &self,
         header: &SealedHeader,
@@ -50,6 +60,7 @@ impl Consensus for OptimismBeaconConsensus {
         Ok(())
     }
 
+    /// Validate header with total difficulty
     fn validate_header_with_total_difficulty(
         &self,
         header: &Header,
@@ -96,7 +107,33 @@ impl Consensus for OptimismBeaconConsensus {
         Ok(())
     }
 
+    /// Validate block
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
         validation::validate_block_standalone(block, &self.chain_spec)
+    }
+
+    /// Validate extra data header
+    fn validate_extra_data_header(
+        &self,
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
+        _genesis_authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    /// Validate block beneficiary
+    fn validate_block_beneficiary(&self, _header: &Header) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
+    /// Validates header standalone according to the authority consensus rules.
+    fn validate_header_standalone(
+        &self,
+        _header: &Header,
+        _authority_signers: &[secp256k1::PublicKey],
+        _genesis_authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError> {
+        Ok(())
     }
 }
