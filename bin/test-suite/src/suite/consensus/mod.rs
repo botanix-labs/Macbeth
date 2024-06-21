@@ -218,11 +218,13 @@ impl Suite for ConsensusIntegrationTestSuite {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // generate test fed members poa nodes
-        let (mut test_fed_members, tx) = create_poa_federation_members(
+        let (mut test_fed_members, tx, edh_authorities_list) = create_poa_federation_members(
             self.global_context.clone(),
             self.local_context.btc_servers.as_ref(),
         )
         .await;
+
+        let build_command_authorities_list = Arc::new(edh_authorities_list);
 
         // run all poa nodes in the background
         if create_test_config.should_create_poa_nodes {
@@ -230,9 +232,12 @@ impl Suite for ConsensusIntegrationTestSuite {
             for (_index, fed_member_config) in test_fed_members.iter() {
                 it_info_print!("Starting poa node", _index);
                 let fed_member_config = fed_member_config.clone();
+                let build_command_authorities_list = Arc::clone(&build_command_authorities_list);
+
                 // Need to spawn a seperate thread due to nested runtime issues
                 let _ = std::thread::spawn(move || {
-                    let (fed_member_command, _chain_spec) = fed_member_config.build_command();
+                    let (fed_member_command, _chain_spec) =
+                        fed_member_config.build_command(build_command_authorities_list);
                     let runner = CliRunner::default();
                     runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
                 });

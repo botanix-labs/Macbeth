@@ -170,7 +170,10 @@ impl FederationMemberTestConfig {
         let _ = self.test_signal_tx.send(signal);
     }
 
-    pub fn build_command(&self) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
+    pub fn build_command(
+        &self,
+        edh_authorities_list: Arc<Vec<PublicKey>>,
+    ) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));
         it_info_print!(format!("Building federation member index: {}", self.index));
@@ -214,8 +217,21 @@ impl FederationMemberTestConfig {
         };
         fed_member_pks.push(my_pk);
 
+        // NOTE: fed members have already created their EDH with the correct authorities
+        // but the order may not be the same as fed_member_pks since we added ourselves last
+        // so compare the EDH authorities list and build a new list in the correct order
+        let mut edh_authorities = vec![];
+        for authority in edh_authorities_list.to_vec().iter() {
+            for pk in fed_member_pks.iter() {
+                if pk.key == authority.to_string() {
+                    edh_authorities.push(pk.clone());
+                    break;
+                }
+            }
+        }
+
         let chain_config =
-            GenesisTomlConfig::new("integration test toml".to_string(), fed_member_pks, None);
+            GenesisTomlConfig::new("integration test toml".to_string(), edh_authorities, None);
         it_info_print!("Chain config", chain_config);
         chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
@@ -488,7 +504,11 @@ pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfi
 pub async fn create_poa_federation_members(
     global_context: Arc<GlobalContext>,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
-) -> (HashMap<u16, FederationMemberTestConfig>, tokio::sync::broadcast::Sender<Notifications>) {
+) -> (
+    HashMap<u16, FederationMemberTestConfig>,
+    tokio::sync::broadcast::Sender<Notifications>,
+    Vec<PublicKey>,
+) {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
@@ -547,7 +567,7 @@ pub async fn create_poa_federation_members(
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         None,
-        Some(authorities),
+        Some(authorities.clone()),
         None,
         None,
         bitcoin::hash_types::BlockHash::all_zeros(),
@@ -575,7 +595,7 @@ pub async fn create_poa_federation_members(
         };
     }
 
-    (fed_members, tx)
+    (fed_members, tx, authorities)
 }
 
 #[cfg(test)]
