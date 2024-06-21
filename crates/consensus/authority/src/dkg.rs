@@ -374,8 +374,12 @@ where
         // get all frost peers connections
         let (peers_connections_sender, peers_connections_receiver) =
             tokio::sync::oneshot::channel::<HashMap<PeerId, PeerData>>();
-        self.frost_handle
-            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender));
+        if let Err(e) = self
+            .frost_handle
+            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender))
+        {
+            error!(target: "consensus::authority::dkg::get_all_peers_handle", "Failed to send GetAllConnectedPeers frost command {}", e);
+        }
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {

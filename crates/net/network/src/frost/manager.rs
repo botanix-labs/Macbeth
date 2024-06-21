@@ -10,7 +10,10 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
+use tokio::sync::{
+    mpsc::{self, error::SendError, UnboundedSender},
+    oneshot,
+};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 
@@ -18,7 +21,7 @@ use tracing::{debug, error, info, warn};
 /// Trait was created mainly for the convenience of mocking during testing
 pub trait ToFrostManager {
     /// Sends a command to the Protocol
-    fn send_command(&self, cmd: FrostCommand) -> ();
+    fn send_command(&self, cmd: FrostCommand) -> Result<(), SendError<FrostCommand>>;
 }
 
 /// Frost Handle for communication with the protocol
@@ -30,8 +33,8 @@ pub struct FrostHandle {
 /// Implementations for the [`FrostHandle`]`
 impl ToFrostManager for FrostHandle {
     /// Sends a command to the Protocol
-    fn send_command(&self, cmd: FrostCommand) {
-        let _ = self.manager_tx.send(cmd);
+    fn send_command(&self, cmd: FrostCommand) -> Result<(), SendError<FrostCommand>> {
+        self.manager_tx.send(cmd)
     }
 }
 

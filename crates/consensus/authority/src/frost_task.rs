@@ -109,7 +109,9 @@ where
     async fn start_dkg(&mut self) {
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender));
+        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
+            error!(target: "consensus::authority::frost_task::start_dkg", "Failed to send CheckConnectedToaAll frost command {}", e);
+        }
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
@@ -130,7 +132,11 @@ where
     pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
+        }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {

@@ -15,7 +15,7 @@ use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 5 * 60;
+const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 60;
 
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
@@ -65,7 +65,9 @@ where
     async fn check_all_peers_initially_connected(&mut self) -> bool {
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender));
+        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
+            error!(target: "Healthcheck Task", "Failed to send CheckConnectedToAll frost command {:?}", e);
+        }
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
@@ -96,7 +98,11 @@ where
 
         // get all connected peers
         let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
+        {
+            error!(target: "Healthcheck Task", "Failed to send GetAllConnectedPeers frost command {:?}", e);
+        }
         let connected_peers = match connected_peers_rx.await {
             Ok(connected_peers) => connected_peers,
             Err(e) => {
@@ -114,7 +120,11 @@ where
 
         // get all peers rx channels
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "Healthcheck Task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
+        }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
@@ -130,10 +140,15 @@ where
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected peers
             loop {
-                frost_handle.send_command(FrostCommand::SendHealtcheckToPeers);
+                if let Err(e) = frost_handle.send_command(FrostCommand::SendHealtcheckToPeers) {
+                    error!(target: "Healthcheck Task", "Failed to send SendHealtcheckToPeers frost command {:?}", e);
+                }
 
                 // sleep for some time before the next check
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+                let peers_size = peers_healthcheck_tracker.read().await.len();
+                info!("CHECKINGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG {:?}", peers_size);
 
                 // check for any peers whose health checks havent been recently received
                 let none_responding_peers = peers_healthcheck_tracker
@@ -148,8 +163,9 @@ where
                         }
                     })
                     .collect::<Vec<PeerId>>();
+                info!("NNNNNNNNNNNNNNNNNNNNNNNNNNOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO {:?} ", none_responding_peers);
 
-                // force reconnection to those peers
+                // send to slack alarms about those peers
                 if let Some(ref client) = events_notification_slack_client {
                     let none_responding_peers_stringified = none_responding_peers
                         .clone()
@@ -168,9 +184,12 @@ where
                     }
                 }
 
+                // try to reconnect to the peers
                 let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-                frost_handle
-                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender));
+                if let Err(e) = frost_handle
+                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender)) {
+                        error!(target: "Healthcheck Task", "Failed to send ReconnectPeers frost command {:?}", e);
+                    }
                 match receiver.await {
                     Ok(peers_reconnected) => peers_reconnected,
                     Err(e) => {
@@ -207,6 +226,10 @@ where
                     // task
                 }
                 PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                    info!(
+                        "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH {:?}",
+                        healthcheck_response
+                    );
                     if authority_peers.contains(&healthcheck_response.sender) &&
                         authority_peers.contains(&healthcheck_response.receiver)
                     {

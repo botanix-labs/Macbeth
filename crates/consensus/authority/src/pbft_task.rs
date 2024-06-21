@@ -116,7 +116,11 @@ where
         info!(target: "PBFT Task", "Starting PBFT Task");
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "PBFT Task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
+        }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
