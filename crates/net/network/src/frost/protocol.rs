@@ -294,8 +294,11 @@ impl Stream for FrostProtoConnection {
             }
             FrostProtoMessageKind::Pong => {}
             FrostProtoMessageKind::PingMessage(peer_id, authority_index, peer_socket_addr) => {
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr));
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
 
                 // answer with pong of my_authority_index
                 return Poll::Ready(Some(
@@ -309,8 +312,11 @@ impl Stream for FrostProtoConnection {
             }
             // other peers answers with pong message with a peer id and authority index
             FrostProtoMessageKind::PongMessage(peer_id, authority_index, peer_socket_addr) => {
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr));
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
