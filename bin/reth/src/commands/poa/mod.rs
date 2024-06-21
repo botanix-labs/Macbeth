@@ -63,7 +63,7 @@ use tokio::{
     sync::{mpsc::unbounded_channel, oneshot, RwLock},
     time::Duration,
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use crate::{
     args::{

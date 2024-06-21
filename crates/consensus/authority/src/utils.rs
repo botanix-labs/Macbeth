@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use bitcoin::{
     BlockHash,
-    block::Header,
-    hashes::{sha256, Hash},
+    hashes::{sha256},
     psbt::Psbt,
     witness::Witness,
 };
@@ -19,7 +18,7 @@ use reth_botanix_lib::{
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
 use reth_primitives::{
-    constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt, BOTANIX_TESTNET,
+    constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt,
 };
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
@@ -501,11 +500,8 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::{
-        hash_types::TxMerkleNode,
-        hashes::Hash,
         psbt::{Input, Psbt},
         transaction::Version,
-        BlockHash, CompactTarget,
     };
     use rand::Rng;
     use reth_primitives::{address, b256, bytes, Header, B256, U256};

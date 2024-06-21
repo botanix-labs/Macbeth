@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     engine_util,
     extended_client::BtcServerExtendedClient,
-    utils::{get_witness_data_from_psbt, is_active_sync_in_progress},
+    utils::{is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
 

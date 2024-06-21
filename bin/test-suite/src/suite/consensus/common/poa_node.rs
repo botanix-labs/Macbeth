@@ -5,7 +5,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration},
 };
 
 use askama::Template;
@@ -27,7 +27,6 @@ use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    hex::encode as hex_encode,
     ChainSpec,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
@@ -604,7 +603,7 @@ pub async fn create_poa_federation_members(
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Write, path::Path};
+    
 
     use askama::Template;
     use bitcoin::BlockHash;

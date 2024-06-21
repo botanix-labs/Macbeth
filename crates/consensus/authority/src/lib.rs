@@ -719,7 +719,7 @@ mod tests {
 
     use reth_consensus_common::utils::{
         block_fees_split, current_inturn_index, get_in_turn_interval, is_inturn,
-        validate_against_parent, CoordinatorInterval,
+        validate_against_parent,
     };
     use reth_primitives::BOTANIX_TESTNET;
 
