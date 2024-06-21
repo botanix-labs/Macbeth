@@ -21,8 +21,8 @@
 //! be mined.
 use reth_consensus::{Consensus, ConsensusError};
 use reth_consensus_common::{
-    utils::{get_block_producer_address, unix_timestamp},
-    validation,
+    utils::{get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities},
+    validation::{self},
 };
 use reth_interfaces::{
     executor::{BlockExecutionError, BlockValidationError},
@@ -52,6 +52,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, trace, warn};
 
+use tracing::{error, trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -330,7 +331,9 @@ pub(crate) struct StorageInner<Client> {
     client: Client,
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
-    /// Keep track of the  signers
+    /// Keep track of the signers
+    /// This value is pulled from the latest epoch block EDH
+    /// and should be the same as genesis_authorities as long as the federation is static
     pub(crate) authorities: Vec<secp256k1::PublicKey>,
     /// keep track of my place among the signer
     /// This will change as new signers are removed
@@ -625,6 +628,14 @@ where
             botanix_consensus_pkg.expect("consensus pkg").recent_header.0.block_hash(),
             utxo_commitment,
         )?;
+
+        // Validate EDH authorities match genesis authorities
+        if let Err(e) = validate_extra_data_header_authorities(&header, &self.genesis_authorities) {
+            error!(target: "consensus::authority", "failed to validate EDH authorities: {:?}", e);
+            return Err(BlockExecutionError::Validation(
+                BlockValidationError::InvalidExtraDataAuthorities,
+            ));
+        }
 
         // Redundant check. Lets make sure the header is valid
         consensus.validate_extra_data_header_single_signer(&header, authority_signers).map_err(

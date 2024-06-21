@@ -122,6 +122,108 @@ pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     (botanix_reward, beneficiary_reward)
 }
 
+/// Validate poa block beneficiary
+pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
+    if header.beneficiary != Address::ZERO {
+        return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
+    }
+
+    Ok(())
+}
+
+/// Check authorities in EDH match and are in the same order and the genesis authorities
+pub fn validate_extra_data_header_authorities(
+    header: &Header,
+    genesis_authorities: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    if header.is_poa_epoch() {
+        // Attempt to deserialize the extra data header
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
+            error!("Failed to deserialize extra data header: {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
+
+        // Validate the list of authorities matches the authorities in the genesis block
+        // This check is only for a static federation
+        if let Some(authority_signers) = edh.authority_signers.as_ref() {
+            if genesis_authorities != authority_signers {
+                error!("Genesis authorities: {:?}", genesis_authorities);
+                error!("EDH authorities: {:?}", edh.authority_signers);
+                return Err(ConsensusError::InvalidAuthorityList);
+            }
+        } else {
+            error!("No authority signers in extra data header");
+            return Err(ConsensusError::MissingAuthorityList);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
+pub fn validate_poa_extra_data_header(
+    header: &Header,
+    authority_signers: &[secp256k1::PublicKey],
+    genesis_authorities: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(());
+    }
+    // First run the basic validation
+    validation::validate_header_extradata(header)?;
+
+    validate_extra_data_header_authorities(header, genesis_authorities)?;
+
+    // Validate the authority signature and signature came from one of the authorities
+    let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
+
+    if valid_sigs != authority_signers.len() as u16 {
+        return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
+            authority_signers.len() as u16,
+            valid_sigs,
+        ));
+    }
+    // TODO (armins) in the future this is where we would validate federation votes
+
+    Ok(())
+}
+
+/// Validate poa extra data header
+/// This function will validate the extra data header and check for a quorum of signatures
+/// from authorities memebers.
+/// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
+pub fn validate_poa_extra_data_header_single_signer(
+    header: &Header,
+    authority_signers: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    // Skip over genesis
+    if header.number == 0 {
+        return Ok(());
+    }
+    // First run the basic validation
+    validation::validate_header_extradata(header)?;
+
+    // Attempt to deserialize the extra data header
+    let _edh = header.deserialize_extra_data_header().map_err(|e| {
+        error!("Failed to deserialize extra data header: {:?}", e);
+        ConsensusError::ExtraDataInvalid
+    })?;
+    // Validate the authority signature and signature came from one of the authorities
+    header.validate_first_authority_signature(authority_signers).map_err(|e| {
+        error!("Failed to validate authority signature: {:?}", e);
+        ConsensusError::InvalidAuthoritySignature
+    })?;
+
+    Ok(())
+}
+
 /// Validate against parent header errors
 #[derive(Debug)]
 pub enum ValidateAgainstParentError {
@@ -238,4 +340,314 @@ pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u
 
     // Determine the current signer index based on the position in the cycle
     (position_in_cycle / 60) % authorities_len
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use reth_primitives::{
+        extra_data_header::ExtraDataHeader, genesis, header_ext::HeaderExt, Bytes,
+    };
+
+    use super::*;
+
+    #[allow(dead_code)]
+    const EDH_DEFAULT_SIGHASH: &str =
+        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
+
+    #[allow(dead_code)]
+    const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+    #[allow(dead_code)]
+    const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+
+    #[allow(dead_code)]
+    fn generate_secret_key(hex_string: &str) -> secp256k1::SecretKey {
+        secp256k1::SecretKey::from_str(hex_string).expect("Invalid hex string for SecretKey")
+    }
+    #[allow(dead_code)]
+    fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = generate_secret_key(SK1);
+        let sk2 = generate_secret_key(SK2);
+
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
+        ]);
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+
+        header.number = 1;
+        if let Some(sk_str) = signer_sk {
+            let sk = generate_secret_key(sk_str);
+            header.sign_block(&sk).unwrap();
+        } else {
+            header.sign_block(&sk1).unwrap();
+        }
+    }
+
+    // Tests for validating poa extra data header
+    #[test]
+    fn should_skip_over_genesis() {
+        let mut header = Header::default();
+        header.number = 0;
+        let authority_signers = vec![];
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_invalid_signature() {
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let non_fed = secp256k1::SecretKey::from_str(
+            "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
+        )
+        .unwrap();
+
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&non_fed).expect("valid sign");
+
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
+        assert!(result.is_err());
+
+        // reset header and try again with a
+        let mut header = Header::default();
+        header.number = 1;
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &authority_signers);
+        assert!(result.is_ok())
+    }
+
+    #[test]
+    fn should_fail_on_invalid_authority_list() {
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        // genesis authorities does not contain the authority signers
+        let mut genesis_authorities = vec![sk2.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update genesis authorities to match the authority signers
+        genesis_authorities = authority_signers.clone();
+        let result =
+            validate_poa_extra_data_header(&header, &authority_signers, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_missing_authorities() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let authority_signers = genesis_authorities.clone();
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        header.extra_data = Bytes::from(edh.serialize());
+        // NOTE: authority signers were not set in the header
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_invalid_authority_list_order() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let mut authority_signers =
+            vec![sk2.public_key(secp256k1::SECP256K1), sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        authority_signers = genesis_authorities.clone();
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn unix_timestamp() {
+        let timestamp = super::unix_timestamp();
+        assert!(timestamp > 0);
+    }
+
+    #[test]
+    fn should_validate_poa_block_beneficiary() {
+        // default beneficiary is the burn address
+        let header = Header::default();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_validate_poa_block_beneficiary() {
+        let mut header = Header::default();
+        header.beneficiary =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_against_parent_skip_gensis() {
+        let mut parent = Header::default();
+        parent.number = 0;
+        let current = Header::default();
+        let result = validate_against_parent(parent, current);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_with_same_signer() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+
+        parent.number = 1;
+        current.number = 2;
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, None);
+
+        let result = validate_against_parent(parent, current);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_pass_after_sufficient_time() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+
+        parent.number = 1;
+        parent.timestamp = 1704834442_u64;
+        current.number = 2;
+        current.timestamp = 1704834442_u64 + 60;
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, None);
+
+        let result = validate_against_parent(parent, current);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_pass_with_different_signer() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+        parent.number = 1;
+        current.number = 2;
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, Some(SK2));
+
+        let result = validate_against_parent(parent, current);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_inturn_true() {
+        let authorities_len = 1;
+        let signer_index = 0;
+        assert!(is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn is_inturn_false() {
+        let authorities_len = 1;
+        let signer_index = 1;
+        assert!(!is_inturn(authorities_len, signer_index));
+    }
+
+    #[test]
+    fn should_split_rewards() {
+        let base_block_reward = 100;
+        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
+        assert_eq!(botanix_reward, 20);
+        assert_eq!(beneficiary_reward, 80);
+    }
+
+    #[test]
+    fn should_get_block_producer_address_from_header() {
+        let mut header = Header::default();
+        sign_block_helper(&mut header, None);
+        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
+        let block_producer_address = get_block_producer_address(&header);
+        assert_eq!(
+            block_producer_address,
+            public_key_to_address(edh.authority_signers.unwrap()[0])
+        );
+    }
+
+    #[test]
+    fn get_inturn_interval_secs_based() {
+        let current_ts = super::unix_timestamp();
+        let authorities_len = 10;
+        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
+        let (start, end, time_passed, time_remaining) =
+            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+
+        println!(
+            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
+            current_in_turn_signer,
+            start,
+            end,
+            current_ts,
+            time_passed,
+            time_remaining,
+        );
+        assert!(current_ts >= start);
+        assert!(current_ts <= end);
+    }
 }
