@@ -51,6 +51,7 @@ use reth_revm::{
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, trace, warn};
+
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -244,6 +245,22 @@ impl Consensus for AuthorityConsensus {
         header.validate_first_authority_signature(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
             ConsensusError::InvalidAuthoritySignature
+        })?;
+
+        // Validate fee benificiary
+        self.validate_block_beneficiary(header)?;
+
+        // Validate signer is in turn
+        header
+            .validate_inturn(authority_signers)
+            .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
+        // Place a tigher limit on the timestamp
+        let current_timestamp = unix_timestamp();
+        header.validate_timestamp(current_timestamp).map_err(|_| {
+            ConsensusError::TimestampIsInFuture {
+                timestamp: header.timestamp,
+                present_timestamp: current_timestamp,
+            }
         })?;
 
         Ok(())
@@ -610,13 +627,13 @@ where
         )?;
 
         // Redundant check. Lets make sure the header is valid
-        consensus
-            .validate_header_standalone(&header, authority_signers, authority_signers)
-            .map_err(|e| {
+        consensus.validate_extra_data_header_single_signer(&header, authority_signers).map_err(
+            |e| {
                 warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
                 // TODO(armins) return more expressive error
                 BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            })?;
+            },
+        )?;
 
         trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
         let block_hash = header.hash_slow();
