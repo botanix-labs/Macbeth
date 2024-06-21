@@ -205,7 +205,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub fn build(
+    pub async fn build(
         self,
     ) -> (
         AuthorityConsensus,
@@ -213,7 +213,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>>,
     ) {
         let Self {
             btc_server,
@@ -305,7 +305,11 @@ where
                 task_executor.clone(),
                 network_client,
                 network_handle.clone(),
-            );
+                evm_config.clone(),
+                bitcoin_block_header.clone(),
+                consensus.clone(),
+            )
+            .await;
             pbft_task = Some(pbft);
 
             let _bitcoind_client =
