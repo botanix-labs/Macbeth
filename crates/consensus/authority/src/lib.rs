@@ -52,7 +52,6 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, trace, warn};
 
-use tracing::{error, trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
