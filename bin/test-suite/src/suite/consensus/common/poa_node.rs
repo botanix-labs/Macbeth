@@ -1,5 +1,5 @@
 use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{context::GlobalContext, it_info_print, it_warn_print};
+use crate::{context::GlobalContext, it_error_print, it_info_print, it_warn_print};
 use askama::Template;
 use bitcoin::hashes::Hash;
 use clap::Parser;
@@ -10,7 +10,7 @@ use reth::{
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
-    network::{PeerKind, Peers},
+    network::{PeerInfo, PeerKind, Peers},
     utils::get_or_create_jwt_secret_from_path,
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
@@ -19,7 +19,6 @@ use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    hex::encode as hex_encode,
     ChainSpec,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
@@ -57,6 +56,7 @@ pub enum Notifications {
 pub enum TestSignal {
     DisconnectAll(),
     ReconnectAll(),
+    GetAllPeers(tokio::sync::broadcast::Sender<Vec<PeerInfo>>),
 }
 
 #[derive(Clone, Debug)]
@@ -167,7 +167,9 @@ impl FederationMemberTestConfig {
     }
 
     pub fn send_test_signal(&self, signal: TestSignal) {
-        let _ = self.test_signal_tx.send(signal);
+        if let Err(e) = self.test_signal_tx.send(signal) {
+            it_error_print!("Failed to send test signal: {:?}", e);
+        }
     }
 
     pub fn build_command(&self) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
@@ -402,6 +404,28 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                             );
                             if all_peers.len() == peers_list.len() {
                                 break 'inner;
+                            }
+                        }
+                    }
+                    TestSignal::GetAllPeers(sender) => {
+                        // get all peers
+                        match network_clone.get_all_peers().await {
+                            Ok(all_peers) => {
+                                it_info_print!(
+                                    "Engine got all peers",
+                                    format!(
+                                        "index={}: peers_count={}",
+                                        engine_index,
+                                        all_peers.len()
+                                    )
+                                );
+                                if let Err(e) = sender.send(all_peers) {
+                                    it_error_print!("Failed to send test signal: {:?}", e);
+                                }
+                            }
+                            Err(e) => {
+                                it_error_print!("Failed to get all peers", e);
+                                continue;
                             }
                         }
                     }

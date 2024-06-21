@@ -15,7 +15,7 @@ use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 60;
+const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 30;
 
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
