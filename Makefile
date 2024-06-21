@@ -490,7 +490,8 @@ start-poa-server-1:
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
-	--port 30303
+	--port 30303 \
+	--slack-notifications-webhook-url "https://hooks.slack.com/services/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"
 
 start-poa-server-2:
 	cd ./bin/reth && \
@@ -513,7 +514,8 @@ start-poa-server-2:
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
-	--port 30304
+	--port 30304 \
+	--slack-notifications-webhook-url "https://hooks.slack.com/services/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"
 
 clean-poa-2:
 	cd ${NODE_2_DIR} && \
@@ -542,4 +544,5 @@ start-non-fed-server-1:
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
-	--port 30305
+	--port 30305 \
+	--slack-notifications-webhook-url "https://hooks.slack.com/services/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"
