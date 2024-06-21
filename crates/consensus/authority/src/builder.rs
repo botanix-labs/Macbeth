@@ -43,8 +43,6 @@ pub struct AuthorityConsensusBuilder<
     ToFrostMan,
     NetworkClient,
 > {
-    #[allow(dead_code)]
-    client: Client,
     consensus: AuthorityConsensus,
     storage: Storage<Client>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -183,7 +181,6 @@ where
 
         Ok(Self {
             storage,
-            client,
             consensus: AuthorityConsensus::new(chain_spec),
             to_engine,
             canon_state_notification,
@@ -208,7 +205,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub fn build(
+    pub async fn build(
         self,
     ) -> (
         AuthorityConsensus,
@@ -216,11 +213,10 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>>,
     ) {
         let Self {
             btc_server,
-            client,
             consensus,
             storage,
             to_engine,
@@ -298,7 +294,7 @@ where
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
             let pbft = PbftTask::new(
-                client.clone(),
+                storage.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,
@@ -307,7 +303,11 @@ where
                 task_executor.clone(),
                 network_client,
                 network_handle.clone(),
-            );
+                evm_config.clone(),
+                bitcoin_block_header.clone(),
+                consensus.clone(),
+            )
+            .await;
             pbft_task = Some(pbft);
 
             let _bitcoind_client =

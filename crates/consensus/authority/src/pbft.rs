@@ -1,22 +1,28 @@
-use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
+use crate::{utils::retry_exec, AuthorityConsensus, Storage, BLOCK_TIME_DURATION_SECS};
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::ToFrostManager;
 
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{blockchain_tree::BlockchainTreeViewer, p2p::headers::client::HeadersClient};
+use reth_interfaces::{
+    blockchain_tree::{BlockchainTreeEngine, BlockchainTreeViewer},
+    p2p::headers::client::HeadersClient,
+};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
+use reth_node_api::{error, ConfigureEvmEnv};
 use reth_primitives::{
+    botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, SealedBlock,
 };
-use reth_provider::{BlockReaderIdExt, ProviderError};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ProviderError, StateProviderFactory};
+use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -82,6 +88,8 @@ pub(crate) enum ValidateBlockError {
     ParentHashNotCanonicalTip(BlockHash, BlockHash),
     #[error("Will not sign genesis block")]
     WillNotSignGenesisBlock,
+    #[error("Block failed consensus check")]
+    ConsensusCheckFailed,
 }
 
 impl PartialEq for ValidateBlockError {
@@ -94,12 +102,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -153,8 +161,8 @@ impl PbftState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient> {
-    client: Client,
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig> {
+    storage: Storage<Client>,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -168,20 +176,31 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     network_client: NetworkClient,
     /// Store commitment to time slot
     time_slot_commitment: BTreeMap<u64, PeerId>,
+    /// The type that defines how to configure the EVM.
+    evm_config: EvmConfig,
+    /// latest known bitcoin block header
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    consensus: AuthorityConsensus,
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
+where
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        client: Client,
+        storage: Storage<Client>,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
         task_executor: Option<TaskExecutor>,
         network_client: NetworkClient,
+        evm_config: EvmConfig,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
@@ -192,7 +211,7 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
         );
 
         Self {
-            client,
+            storage,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -204,13 +223,16 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
             secret_key,
             task_executor: task_executor.clone(),
             network_client,
+            evm_config,
+            bitcoin_block_header,
+            consensus,
         }
     }
 
     /// Resets the state machine to its initial state
     pub(crate) fn reset(self) -> Self {
         Self {
-            client: self.client,
+            storage: self.storage,
             personal_frost_identifier: self.personal_frost_identifier,
             frost_handle: self.frost_handle,
             state: BTreeMap::new(),
@@ -222,6 +244,9 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
             task_executor: self.task_executor,
             network_client: self.network_client,
             time_slot_commitment: BTreeMap::new(),
+            evm_config: self.evm_config,
+            bitcoin_block_header: self.bitcoin_block_header,
+            consensus: self.consensus,
         }
     }
 
@@ -237,16 +262,24 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
     }
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
 where
-    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
+    EvmConfig:
+        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
-    pub(crate) fn spawn_cleanup_task(&mut self) {
+    pub(crate) async fn spawn_cleanup_task(&mut self) {
+        let storage = self.storage.read().await;
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
-        let client_clone = self.client.clone();
+        let client_clone = storage.client.clone();
         let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
         let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));
         let sealed_blocks_clone = Arc::clone(&sealed_blocks);
@@ -359,13 +392,16 @@ where
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
         // Or a block building on a fork that is deeper than 1 block deep
-        let tip = self.client.canonical_tip();
-        let best_block =
-            self.client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
+        let storage = self.storage.read().await;
+        let tip = storage.client.canonical_tip();
+        let best_block = storage
+            .client
+            .block_by_number(tip.number)?
+            .ok_or(ValidateBlockError::FailedToFindTip)?;
         let best_block_hash = tip.hash;
 
         // if the suggested block is the canon tip there is no point to signing it again
-        match self.client.is_canonical(block_hash) {
+        match storage.client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
             Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
             // canon
@@ -385,12 +421,13 @@ where
         } else {
             // Somehow we have the parent block but its not the current canon chain?
             // This should not happen
-            if self.client.contains(block_to_sign.parent_hash) {
+            if storage.client.contains(block_to_sign.parent_hash) {
                 return Err(ValidateBlockError::ParentHashNotCanonicalTip(
                     block_to_sign.hash_slow(),
                     block_to_sign.parent_hash,
                 ));
             }
+            drop(storage);
 
             // we could be missing the parent block that is being suggested indicating that there is
             // a fork retrieve the missing block via the network client.
@@ -420,6 +457,37 @@ where
             }
             return Ok(());
         }
+    }
+
+    /// Execute and run poa validation on the block without inserting it into the storage
+    pub(crate) async fn execute_and_validate_poa_consensus(
+        &self,
+        block: SealedBlock,
+    ) -> Result<(), ValidateBlockError> {
+        let storage_read = self.storage.read().await;
+        let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+        let botanix_consensus_pkg = Some(BotanixConsensusPackage {
+            recent_header: recent_bitcoin_block_header.expect("recent header to exist"),
+            aggregate_public_key: storage_read
+                .aggregate_public_key
+                .clone()
+                .expect("aggregate pk is some"),
+            btc_network: storage_read.btc_network,
+        });
+        drop(storage_read);
+
+        let mut storage_write = self.storage.write().await;
+        if let Err(e) = storage_write.execute_imported_block(
+            &self.consensus,
+            block,
+            botanix_consensus_pkg,
+            self.evm_config.clone(),
+        ) {
+            error!(target: "consensus::authority::pbft::validate_poa_consensus", "Failed to build and execute transactions: {:?}", e);
+            return Err(ValidateBlockError::ConsensusCheckFailed);
+        }
+
+        Ok(())
     }
 
     /// Intended to be called by the in turn block producer when a block is ready to be
@@ -517,6 +585,9 @@ where
                 return Err(Error::MissingSignatures);
             }
         }
+
+        // execute block and run poa consensus
+        self.execute_and_validate_poa_consensus(block.clone()).await?;
 
         // Add our own pre-commitment
         let mut pre_commits = HashSet::new();
@@ -666,8 +737,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()? !=
-            block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -718,6 +789,8 @@ mod tests {
     };
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_types::{pk2id, WithPeerId};
+    use reth_node_core::args::GenesisTomlConfig;
+    use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
     use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
     use secp256k1::SECP256K1;
@@ -755,10 +828,9 @@ mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
-                            PeerId::random(),
-                            vec![header],
-                        )));
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
                     }
                 }
                 // Error is caught below
@@ -838,6 +910,9 @@ mod tests {
                     $sks[i],
                     None,
                     $mock_network_client.clone(),
+                    EthEvmConfig::default(),
+                    Arc::new(RwLock::new(None)),
+                    GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -883,7 +958,7 @@ mod tests {
             coord,
             _block_to_propose,
             mock_eth_provider,
-            mock_network_client
+            mock_network_client,
         );
 
         let pbft_state_machine = coord;
@@ -1658,6 +1733,9 @@ mod tests {
             sk.clone(),
             None,
             mock_network_client,
+            EthEvmConfig::default(),
+            Arc::new(RwLock::new(None)),
+            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
         );
 
         let edh = ExtraDataHeader::default();
@@ -1755,6 +1833,9 @@ mod tests {
             sk.clone(),
             None,
             mock_network_client_peers,
+            EthEvmConfig::default(),
+            Arc::new(RwLock::new(None)),
+            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
@@ -1829,6 +1910,9 @@ mod tests {
             sk.clone(),
             None,
             mock_network_client_peers,
+            EthEvmConfig::default(),
+            Arc::new(RwLock::new(None)),
+            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();

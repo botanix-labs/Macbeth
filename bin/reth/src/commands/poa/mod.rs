@@ -699,7 +699,8 @@ where {
             genesis_authorities,
         )
         .expect("Failed to create authority consensus builder")
-        .build();
+        .build()
+        .await;
 
         // TODO do we need this?
         // if let Some(store_path) = self.config.debug.engine_api_store.clone() {

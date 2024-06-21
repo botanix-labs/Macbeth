@@ -140,23 +140,12 @@ impl Consensus for AuthorityConsensus {
         validation::validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
-        let edh = header.deserialize_extra_data_header().map_err(|e| {
+        header.deserialize_extra_data_header().map_err(|e| {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
 
-        if header.is_poa_epoch() {
-            // Validate the list of authorities matches the authorities in the genesis block
-            // This check is only for a static federation
-            // Use EDH authority list as source of truth and not the list passed in
-            if genesis_authorities !=
-                edh.authority_signers.as_ref().expect("authority signers to exist")
-            {
-                error!("Genesis authorities: {:?}", genesis_authorities);
-                error!("EDH authorities: {:?}", edh.authority_signers);
-                return Err(ConsensusError::InvalidAuthorityList);
-            }
-        }
+        validate_extra_data_header_authorities(header, genesis_authorities)?;
 
         // Validate a quorum of authority signatures
         let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
