@@ -66,26 +66,26 @@ where
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
         if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
-            error!(target: "Healthcheck Task", "Failed to send CheckConnectedToAll frost command {:?}", e);
+            error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
         }
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!(target: "Healthcheck Task", "Not yet connected to all frost peers. Waiting ...");
+                    info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
                     return false;
                 }
-                info!(target: "Healthcheck Task", "Connected to all frost peer {:?}", is_connected);
+                info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
                 return true;
             }
             Err(e) => {
-                error!(target: "Healthcheck Task", "Check for connection to other peers failed {:?}", e);
+                error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
                 return false;
             }
         }
     }
 
     pub async fn start_task(&mut self) {
-        info!(target: "Healthcheck Task", "Starting Healthcheck Task");
+        info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
         loop {
             // await all peers to be connected
             if self.check_all_peers_initially_connected().await {
@@ -101,12 +101,12 @@ where
         if let Err(e) =
             self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
         {
-            error!(target: "Healthcheck Task", "Failed to send GetAllConnectedPeers frost command {:?}", e);
+            error!(target: "HealthcheckTask::start_task", "Failed to send GetAllConnectedPeers frost command {:?}", e);
         }
         let connected_peers = match connected_peers_rx.await {
             Ok(connected_peers) => connected_peers,
             Err(e) => {
-                error!(target: "Healthcheck Task", "Error getting receiver handle = {:?}", e);
+                error!(target: "HealthcheckTask::start_task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
@@ -123,7 +123,7 @@ where
         if let Err(e) =
             self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
         {
-            error!(target: "Healthcheck Task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
+            error!(target: "HealthcheckTask::start_task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
         }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
@@ -141,7 +141,7 @@ where
             // start looping and sending healthchecks to all connected peers
             loop {
                 if let Err(e) = frost_handle.send_command(FrostCommand::SendHealtcheckToPeers) {
-                    error!(target: "Healthcheck Task", "Failed to send SendHealtcheckToPeers frost command {:?}", e);
+                    error!(target: "HealthcheckTask::start_task", "Failed to send SendHealtcheckToPeers frost command {:?}", e);
                 }
 
                 // sleep for some time before the next check
@@ -180,7 +180,7 @@ where
                         ))
                         .await
                     {
-                        error!(target: "Healthcheck Task", "Error sending slack message {:?}", e);
+                        error!(target: "HealthcheckTask::start_task", "Error sending slack message {:?}", e);
                     }
                 }
 
@@ -188,12 +188,12 @@ where
                 let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
                 if let Err(e) = frost_handle
                     .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender)) {
-                        error!(target: "Healthcheck Task", "Failed to send ReconnectPeers frost command {:?}", e);
+                        error!(target: "HealthcheckTask", "Failed to send ReconnectPeers frost command {:?}", e);
                     }
                 match receiver.await {
                     Ok(peers_reconnected) => peers_reconnected,
                     Err(e) => {
-                        error!(target: "Healthcheck Task", "Error reconnecting peers = {:?}", e);
+                        error!(target: "HealthcheckTask::start_task", "Error reconnecting peers = {:?}", e);
                         panic!("Error reconnecting peers = {:?}", e);
                     }
                 };
@@ -238,11 +238,11 @@ where
                             peers_healthcheck_tracker
                                 .insert(healthcheck_response.receiver, Instant::now());
                         } else {
-                            warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
+                            warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                         }
                         drop(peers_healthcheck_tracker);
                     } else {
-                        warn!(target: "Healthcheck Task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
+                        warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
                     }
                 }
             }
