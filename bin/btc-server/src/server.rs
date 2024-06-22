@@ -1,8 +1,12 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use base64::decode as base64_decode;
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, BlockHash, Amount, FeeRate, OutPoint, TxOut};
-use bitcoin::hashes::{sha256, Hash};
+use bitcoin::{
+    consensus::encode as btcencode,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    Amount, BlockHash, FeeRate, OutPoint, TxOut,
+};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
@@ -233,11 +237,10 @@ impl rpc::BtcServer for App {
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
-        let psbt = self.make_tx(
-            outputs, fee_rate, change_script, checkpoint, utxo_root,
-        ).await.map_err(|e| {
-            internal!("Failed to make tx: {}", e)
-        })?;
+        let psbt = self
+            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .await
+            .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
         // Save psbt to db
         self.db.update_psbt(&signing_session_id, &psbt)?;
@@ -586,14 +589,12 @@ impl rpc::BtcServer for App {
 
         // Witnesses can be get big. Remove this clone()
         let witnesses = req.witness;
-        let psbt = self.finalize_signer(
-            outputs, fee_rate, witnesses, checkpoint, utxo_root,
-        ).await.map_err(|e| {
-            internal!("Failed to finalize signer: {}", e)
-        })?;
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).map_err(|e| {
-            internal!("Failed to serialize psbt: {}", e)
-        })?;
+        let psbt = self
+            .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
+            .await
+            .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse {
             psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
@@ -623,9 +624,8 @@ impl rpc::BtcServer for App {
         match self.db.get_utxo_merkle_root() {
             Ok(Some(merkle_root)) => {
                 // Successfully found the merkle root, return it
-                let response = rpc::GetUtxoMerkleRootResponse {
-                    merkle_root: merkle_root[..].to_vec(),
-                };
+                let response =
+                    rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root[..].to_vec() };
                 Ok(tonic::Response::new(response))
             }
             Ok(None) => {

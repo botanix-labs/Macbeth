@@ -361,10 +361,7 @@ impl ExtraDataHeader {
 mod tests {
     use super::*;
     use bitcoin::BlockHash;
-    use secp256k1::{
-        rand::{rngs::OsRng},
-        Message, Secp256k1,
-    };
+    use secp256k1::{rand::rngs::OsRng, Message, Secp256k1};
 
     // Test case for creating a new ExtraDataHeader
     #[test]
@@ -451,10 +448,7 @@ mod tests {
         assert_eq!(deserialized_header.version, 0);
         assert_eq!(authority_signers.len(), 1);
         assert_eq!(authority_signers[0], public_key);
-        assert_eq!(
-            deserialized_header.bitcoin_block_hash,
-            BlockHash::hash(&[1]),
-        );
+        assert_eq!(deserialized_header.bitcoin_block_hash, BlockHash::hash(&[1]),);
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
         assert_eq!(deserialized_header.authority_signatures.clone().unwrap(), vec![signature]);
@@ -502,10 +496,7 @@ mod tests {
         assert_eq!(deserialized_header.version, 0);
         assert_eq!(authorities.len(), 1);
         assert_eq!(authorities[0], public_key);
-        assert_eq!(
-            deserialized_header.bitcoin_block_hash,
-            BlockHash::hash(&[1]),
-        );
+        assert_eq!(deserialized_header.bitcoin_block_hash, BlockHash::hash(&[1]),);
         assert_eq!(deserialized_header.authority_vote, Some(pubkey_to_vote));
 
         assert_eq!(deserialized_header.witness_data, Some(witness_data));
@@ -549,10 +540,7 @@ mod tests {
 
         assert_eq!(deserialized_header.version, 0);
         assert_eq!(deserialized_header.authority_signers, None);
-        assert_eq!(
-            deserialized_header.bitcoin_block_hash,
-            BlockHash::hash(&[1]),
-        );
+        assert_eq!(deserialized_header.bitcoin_block_hash, BlockHash::hash(&[1]),);
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
         assert_eq!(deserialized_header.authority_signatures.is_some(), true);
@@ -646,10 +634,7 @@ mod tests {
         assert_eq!(deserialized_header.version, 0);
         assert_eq!(deserialized_header.optional_fields, 0);
         assert_eq!(deserialized_header.authority_signers, None);
-        assert_eq!(
-            deserialized_header.bitcoin_block_hash,
-            BlockHash::hash(&[1]),
-        );
+        assert_eq!(deserialized_header.bitcoin_block_hash, BlockHash::hash(&[1]),);
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.authority_signatures, None);
     }

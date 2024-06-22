@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use bitcoin::{hashes::{sha256, Hash}, psbt::Psbt, Witness};
+use bitcoin::{
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    Witness,
+};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
@@ -220,7 +224,10 @@ where
                     e
                 }).expect("valid signing session id");
 
-                let bitcoin_checkpoint = self.bitcoin_block_header.read().await
+                let bitcoin_checkpoint = self
+                    .bitcoin_block_header
+                    .read()
+                    .await
                     .expect("no bitcoin checkpoint in block creation procedure");
                 match crate::utils::get_psbt(
                     &mut self.btc_server,
@@ -228,7 +235,9 @@ where
                     &signing_session_id,
                     bitcoin_checkpoint.0.block_hash(),
                     utxo_commitment,
-                ).await {
+                )
+                .await
+                {
                     Ok(psbt_payload) => self
                         .frost_task_tx
                         .send(FrostNotificationMessage::InitiateSigning(FrostNotification {

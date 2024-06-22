@@ -1,12 +1,7 @@
 //! Botanix consensus utility functions
 use std::time::Duration;
 
-use bitcoin::{
-    BlockHash,
-    hashes::{sha256},
-    psbt::Psbt,
-    witness::Witness,
-};
+use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -17,18 +12,16 @@ use reth_botanix_lib::{
 };
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
-use reth_primitives::{
-    constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt,
-};
+use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
-use uuid::Uuid;
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use crate::extended_client::BtcServerExtendedClient;
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {

@@ -26,7 +26,11 @@ mod rpc {
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
-use std::{net::SocketAddr, sync::Arc, time::Duration, time::SystemTime};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use bitcoin::{BlockHash, Transaction, TxOut};
 use bitcoincore_rpc::{Auth, RpcApi};
@@ -45,8 +49,8 @@ use crate::{
     dkg::DKGError,
     jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret},
     signer::SigningError,
-    util::ParsingError,
     txindex::TxIndex,
+    util::ParsingError,
 };
 
 #[derive(Debug, Error)]
@@ -169,13 +173,16 @@ impl App {
                 .expect("valid fee rate");
 
         let fallback_checkpoint = {
-            let tip_height = bitcoind_client.get_block_count()
-                .map_err(|e| Error::TxIndexSync(e.into()))?;
-            bitcoind_client.get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
+            let tip_height =
+                bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
+            bitcoind_client
+                .get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
                 .map_err(|e| Error::TxIndexSync(e.into()))?
         };
         let txindex = Mutex::new(Self::load_txindex(
-            &db, fallback_checkpoint, config.pegin_confirmation_depth,
+            &db,
+            fallback_checkpoint,
+            config.pegin_confirmation_depth,
         )?);
         Ok(Self {
             btc_network: config.btc_network,
@@ -423,7 +430,8 @@ mod test {
         let db = database::Db::open(&dbdir).unwrap();
         let txindex = Mutex::new(App::load_txindex(&db, BlockHash::all_zeros(), 6).unwrap());
         let app = App {
-            db, txindex,
+            db,
+            txindex,
             btc_network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_id!(1u16),

@@ -69,7 +69,7 @@ fn spawn_btc_server(
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
         "3",
-	    "--pegin-confirmation-depth",
+        "--pegin-confirmation-depth",
         "6",
     ];
 

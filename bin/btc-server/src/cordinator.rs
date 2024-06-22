@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::time::SystemTime;
+use std::{collections::HashMap, time::SystemTime};
 
 use bdk::{
     miniscript::psbt::Error as PsbtError,
@@ -203,7 +202,9 @@ impl App {
         )?;
         // Filter the ones that are still pending and conflict with pending txs.
         let pending_inputs = self.txindex.lock().await.pending_inputs();
-        let available_utxos = utxos.into_iter().filter(|(p, _u)| !pending_inputs.contains(p))
+        let available_utxos = utxos
+            .into_iter()
+            .filter(|(p, _u)| !pending_inputs.contains(p))
             .collect::<HashMap<_, _>>();
 
         let to_bdk = |u: &Utxo| {
@@ -233,13 +234,15 @@ impl App {
         let target_amount = outputs.iter().map(|o| o.value).sum::<Amount>();
 
         // Try once with finalized, then add pending and try again.
-        let selection = coin_select.coin_select(
-            vec![],
-            bdk_utxos,
-            fee_rate,
-            target_amount.to_sat(),
-            &change_script, // drain_script
-        ).map_err(CoordinatorError::CoinSelection)?;
+        let selection = coin_select
+            .coin_select(
+                vec![],
+                bdk_utxos,
+                fee_rate,
+                target_amount.to_sat(),
+                &change_script, // drain_script
+            )
+            .map_err(CoordinatorError::CoinSelection)?;
 
         let selected = selection
             .selected
@@ -370,9 +373,12 @@ impl App {
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let targets = tx.output.iter()
+        let targets = tx
+            .output
+            .iter()
             .filter(|o| o.script_pubkey != change_script)
-            .cloned().collect::<Vec<_>>();
+            .cloned()
+            .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
         self.add_index_tx(tx, &targets, tx_timestamp).await?;
 

@@ -3,7 +3,6 @@ use reth_botanix_lib::utils::AmountExt;
 use reth_btc_wallet::address::EthAddress;
 use reth_primitives::Address;
 
-
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 
 #[allow(clippy::too_many_lines)]

@@ -1,9 +1,9 @@
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::{Duration, SystemTime},
+};
 
-
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::time::{Duration, SystemTime};
-
-use bitcoin::{Block, BlockHash, OutPoint, Transaction, Txid, TxOut};
+use bitcoin::{Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use thiserror::Error;
 
@@ -12,7 +12,7 @@ use crate::database;
 macro_rules! print_safe {
     ($e:expr) => {
         $e.map(|v| v.to_string()).unwrap_or("ERR".to_owned())
-    }
+    };
 }
 
 trait HeaderExt {
@@ -20,15 +20,20 @@ trait HeaderExt {
 
     fn block_time(&self) -> SystemTime {
         let timestamp = self.block_timestamp();
-        std::time::UNIX_EPOCH.checked_add(Duration::from_secs(timestamp as u64))
+        std::time::UNIX_EPOCH
+            .checked_add(Duration::from_secs(timestamp as u64))
             .expect("u32 can't overflow unix time")
     }
 }
 impl HeaderExt for bitcoin::blockdata::block::Header {
-    fn block_timestamp(&self) -> u32 { self.time }
+    fn block_timestamp(&self) -> u32 {
+        self.time
+    }
 }
 impl HeaderExt for bitcoin::blockdata::block::Block {
-    fn block_timestamp(&self) -> u32 { self.header.time }
+    fn block_timestamp(&self) -> u32 {
+        self.header.time
+    }
 }
 impl HeaderExt for bitcoincore_rpc::json::GetBlockHeaderResult {
     fn block_timestamp(&self) -> u32 {
@@ -52,7 +57,9 @@ impl Tx {
 
     /// Get all the pegouts of this tx. These are the outputs this tx delivers.
     /// I.e. all outputs that are not change outputs.
-    pub fn pegouts<'a>(&'a self) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
+    pub fn pegouts<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
         self.pegout_idxs.iter().map(|i| {
             let point = OutPoint::new(self.txid, *i as u32);
             let output = &self.tx.output[*i];
@@ -62,7 +69,9 @@ impl Tx {
 
     /// Get all change outputs of this tx.
     #[allow(unused)]
-    pub fn change<'a>(&'a self) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
+    pub fn change<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
         self.change_idxs.iter().map(|i| {
             let point = OutPoint::new(self.txid, *i as u32);
             let output = &self.tx.output[*i];
@@ -95,13 +104,13 @@ pub struct TxIndex {
 impl TxIndex {
     pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> TxIndex {
         let mut ret = TxIndex {
-            window: window,
+            window,
             txs: HashMap::with_capacity(txs.len()),
             txs_by_input: HashMap::with_capacity(txs.iter().map(|t| t.tx.input.len()).sum()),
             txs_by_pegout: HashMap::with_capacity(txs.iter().map(|t| t.pegouts().len()).sum()),
             confirmed: HashSet::new(),
             last_blocks: VecDeque::with_capacity(window as usize),
-            last_finalized: last_finalized,
+            last_finalized,
         };
 
         ret.last_blocks.push_back(BlockInfo {
@@ -139,7 +148,9 @@ impl TxIndex {
         let pegout_idxs = {
             let mut ret = Vec::with_capacity(idxs.len());
             for pegout in pegouts {
-                let idx = idxs.iter().find(|i| tx.output[**i] == *pegout)
+                let idx = idxs
+                    .iter()
+                    .find(|i| tx.output[**i] == *pegout)
                     .expect("tx doesn't contain all pegouts");
                 ret.push(*idx);
                 idxs.remove(*idx);
@@ -150,7 +161,9 @@ impl TxIndex {
         self.track_tx(Tx {
             created: timestamp,
             change_idxs: idxs, // leftover not pegouts is change
-            txid, tx, pegout_idxs,
+            txid,
+            tx,
+            pegout_idxs,
         });
         self.txs.get(&txid).expect("just put it in")
     }
@@ -222,7 +235,7 @@ impl TxIndex {
     }
 
     /// Adds a new block to the chain.
-    /// 
+    ///
     /// Updates the [SyncResult] with the data from newly finalized blocks.
     fn add_block(&mut self, block: &Block) {
         let hash = block.block_hash();
@@ -264,7 +277,8 @@ impl TxIndex {
         checkpoint: BlockHash,
         mut finalize_utxo: impl FnMut(database::Utxo) -> Result<(), database::Error>,
     ) -> Result<(), SyncError> {
-        debug!("Syncing TxIndex: last={}:{}, cp={}:{}",
+        debug!(
+            "Syncing TxIndex: last={}:{}, cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
             print_safe!(bitcoind.get_block_header_info(&checkpoint).map(|r| r.height)),
@@ -358,7 +372,10 @@ impl TxIndex {
             let last_info = bitcoind.get_block_header_info(&self.last_finalized);
             let cp_info = bitcoind.get_block_header_info(&checkpoint);
             if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
-                debug!("Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}", last, cp, tip);
+                debug!(
+                    "Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}",
+                    last, cp, tip
+                );
             }
             Err(SyncError::CheckPointNotReached)
         }
@@ -386,5 +403,3 @@ pub enum BlockError {
     #[error("failed to connect block to the index")]
     CantConnectBlock,
 }
-
-

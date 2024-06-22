@@ -1,8 +1,6 @@
-
 use std::time::SystemTime;
 
-use bdk::miniscript::psbt::Error as PsbtError;
-use bdk::psbt::PsbtUtils;
+use bdk::{miniscript::psbt::Error as PsbtError, psbt::PsbtUtils};
 use bitcoin::{
     hashes::sha256,
     psbt::{ExtractTxError, Psbt},
@@ -19,8 +17,8 @@ use reth_btc_wallet::{
 
 use crate::{
     database,
-    util::{ROUND1, ROUND1_TRANSITION, validate_psbt, VerifyingKeyExt},
-    App, Error
+    util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
+    App, Error,
 };
 
 #[derive(Debug)]
@@ -295,9 +293,10 @@ impl App {
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let mut original_psbt = self.make_tx(
-            outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root,
-        ).await.unwrap();
+        let mut original_psbt = self
+            .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
+            .await
+            .unwrap();
 
         let hash_ty = bitcoin::sighash::TapSighashType::All;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
@@ -319,13 +318,18 @@ impl App {
             return Err(SigningFinalizeError::PsbtFinalizationFailed(errs));
         }
 
-        let tx = match miniscript::psbt::PsbtExt::extract(&original_psbt, bitcoin::secp256k1::SECP256K1) {
-            Ok(tx) => tx,
-            Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
-        };
-        let targets = tx.output.iter()
+        let tx =
+            match miniscript::psbt::PsbtExt::extract(&original_psbt, bitcoin::secp256k1::SECP256K1)
+            {
+                Ok(tx) => tx,
+                Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
+            };
+        let targets = tx
+            .output
+            .iter()
             .filter(|o| o.script_pubkey != change_script)
-            .cloned().collect::<Vec<_>>();
+            .cloned()
+            .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
         self.add_index_tx(tx, &targets, tx_timestamp).await?;
 

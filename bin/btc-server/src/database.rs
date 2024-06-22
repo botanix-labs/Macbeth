@@ -13,8 +13,7 @@ use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::txindex;
-use crate::util::OutPointExt;
+use crate::{txindex, util::OutPointExt};
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -423,14 +422,16 @@ impl Db {
     }
 
     pub fn get_txindex_finalized_block(&self) -> Result<Option<BlockHash>, Error> {
-        Ok(self.db.get(KEY_TXINDEX_TIP)?.map(|t| {
-            BlockHash::from_slice(&t).expect("corrupt db: txindex block hash")
-        }))
+        Ok(self
+            .db
+            .get(KEY_TXINDEX_TIP)?
+            .map(|t| BlockHash::from_slice(&t).expect("corrupt db: txindex block hash")))
     }
 
     /// Stores the consensus Merkle root of all spendable UTXOs.
     pub fn update_utxo_merkle_root(&self) -> Result<(), Error> {
-        let mut utxos = self.iter_utxos()
+        let mut utxos = self
+            .iter_utxos()
             .map(|u| {
                 let mut engine = sha256::Hash::engine();
                 u?.outpoint.consensus_encode(&mut engine).expect("engine don't error");
@@ -442,8 +443,7 @@ impl Db {
             return Ok(());
         }
 
-        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
-            .expect("not empty");
+        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter()).expect("not empty");
         self.db.insert(KEY_UTXO_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }

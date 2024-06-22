@@ -1,4 +1,3 @@
-
 use std::{str::FromStr, time::Duration};
 
 use bitcoin::Address;
@@ -127,8 +126,12 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         let tip = bitcoind.get_block_count().unwrap();
         bitcoind.get_block_hash(tip - 5).unwrap()
     };
-    let utxo_merkle = coordinator.get_utxo_merkle_root(tonic::Request::new(client::Empty{})).await
-        .map_err(Error::Request)?.into_inner().merkle_root;
+    let utxo_merkle = coordinator
+        .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
+        .await
+        .map_err(Error::Request)?
+        .into_inner()
+        .merkle_root;
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
             outputs: vec![client::Output {
