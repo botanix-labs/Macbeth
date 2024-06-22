@@ -1,8 +1,8 @@
-
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::{sha256, Hash};
 use client::{FinalizeSignerRequest, Output};
+use reth_beacon_consensus::BeaconEngineMessage;
 use reth_consensus::Consensus;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
@@ -10,15 +10,15 @@ use reth_interfaces::{
         bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
     },
 };
+use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
     botanix::BotanixConsensusPackage, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
     SealedBlockWithSenders, TransactionSigned,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, Chain, StateProviderFactory};
-use reth_beacon_consensus::BeaconEngineMessage;
-use reth_network::{message::NewBlockMessage, NetworkHandle};
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_provider::CanonStateNotificationSender;
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
+};
 use tokio::sync::{
     mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -26,9 +26,7 @@ use tokio::sync::{
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    engine_util,
-    extended_client::BtcServerExtendedClient,
-    utils::{is_active_sync_in_progress},
+    engine_util, extended_client::BtcServerExtendedClient, utils::is_active_sync_in_progress,
     AuthorityConsensus, Storage,
 };
 
@@ -222,8 +220,10 @@ where
                     let header = sealed_block.header.clone();
                     if is_fed_node {
                         let rpc = self.btc_server.as_mut().expect("btc_server exists");
-                        let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await {
-                            Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
+                        let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await
+                        {
+                            Ok(h) => sha256::Hash::from_slice(&h.merkle_root)
+                                .expect("valid utxo commitment"),
                             Err(e) => {
                                 error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
                                 continue;
@@ -251,11 +251,12 @@ where
                             // TODO (armins) deserialize extra data can be implenented on header
                             let extra_data = ExtraDataHeader::deserialize(
                                 &mut header.extra_data.clone().to_vec().as_slice(),
-                            ).expect("extra data is valid");
+                            )
+                            .expect("extra data is valid");
 
                             // finalizing signing if there are pegouts
-                            // at this point this singer or others have provided partial signatures and
-                            // completed the signing session
+                            // at this point this singer or others have provided partial signatures
+                            // and completed the signing session
                             if let Some(witness) = extra_data.witness_data {
                                 let wit = witness
                                     .iter()
@@ -269,9 +270,13 @@ where
                                     })
                                     .collect();
 
-                                let bitcoin_checkpoint = self.bitcoin_block_header.read().await
+                                let bitcoin_checkpoint = self
+                                    .bitcoin_block_header
+                                    .read()
+                                    .await
                                     .expect("should have btc checkpoint")
-                                    .0.block_hash();
+                                    .0
+                                    .block_hash();
                                 let res = self
                                     .btc_server
                                     .clone()
@@ -290,7 +295,8 @@ where
                                 }
                                 info!(target: "consensus::authority", "Witness data valid and finalized");
                             } else {
-                                // if there are pegouts but no witness data in the EDH, fail consensus
+                                // if there are pegouts but no witness data in the EDH, fail
+                                // consensus
                                 if !pegouts.is_empty() {
                                     error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
                                     continue;

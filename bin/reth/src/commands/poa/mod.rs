@@ -423,8 +423,10 @@ where {
                         };
                         let header = or_continue!(bitcoind.get_block_header(finalized.hash));
 
-                        info!("Async bitcoin task setting checkpoint to {}:{}",
-                            finalized.height, header.block_hash(),
+                        info!(
+                            "Async bitcoin task setting checkpoint to {}:{}",
+                            finalized.height,
+                            header.block_hash(),
                         );
                         *bitcoin_block_header.write().await =
                             Some((header, finalized.height as u32));

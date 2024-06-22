@@ -1,15 +1,17 @@
-
 use std::{
     collections::HashMap,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration},
+    time::Duration,
 };
 
 use askama::Template;
-use bitcoin::{BlockHash, hashes::{sha256, Hash}};
+use bitcoin::{
+    hashes::{sha256, Hash},
+    BlockHash,
+};
 use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
@@ -603,11 +605,12 @@ pub async fn create_poa_federation_members(
 
 #[cfg(test)]
 mod tests {
-    
 
     use askama::Template;
-    use bitcoin::BlockHash;
-    use bitcoin::hashes::{sha256, Hash};
+    use bitcoin::{
+        hashes::{sha256, Hash},
+        BlockHash,
+    };
 
     use super::*;
 

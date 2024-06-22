@@ -102,9 +102,7 @@ pub async fn frost_e2e_stable(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc
-        .generate_to_address(2 + pegin_conf_depth, &address)
-        .expect("generate to address");
+    bitcoind_rpc.generate_to_address(2 + pegin_conf_depth, &address).expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
