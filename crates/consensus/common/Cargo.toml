@@ -27,6 +27,7 @@ secp256k1 = { workspace = true, features = [
 
 # misc
 reth-consensus.workspace=true
+tracing.workspace = true
 
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
