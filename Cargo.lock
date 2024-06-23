@@ -8099,6 +8099,7 @@ dependencies = [
  "reth-provider",
  "reth-tracing",
  "secp256k1 0.28.2",
+ "tracing",
 ]
 
 [[package]]
