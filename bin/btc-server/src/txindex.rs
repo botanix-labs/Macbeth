@@ -277,7 +277,7 @@ impl TxIndex {
         checkpoint: BlockHash,
         mut finalize_utxo: impl FnMut(database::Utxo) -> Result<(), database::Error>,
     ) -> Result<(), SyncError> {
-        debug!(
+        info!(
             "Syncing TxIndex: last={}:{}, cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
@@ -285,12 +285,15 @@ impl TxIndex {
             checkpoint,
         );
 
+        // TODO this is commented out. Depending on the ver of bitoin core rpc
+        // The response will be in a different format and the below code will not work
         // If we suspect the node is still syncing, it might have restarted and
         // some of the blocks we already saw might not be in the node's chain.
         // To avoid errors related to this, we'll just ask called to wait.
-        if bitcoind.get_blockchain_info()?.initial_block_download {
-            return Err(SyncError::NodeNotSynced);
-        }
+        // if bitcoind.get_blockchain_info()?.initial_block_download {
+        //     return Err(SyncError::NodeNotSynced);
+        // }
+
         let tip = bitcoind.get_block_header_info(&bitcoind.get_best_block_hash()?)?;
         let elapsed = SystemTime::now().duration_since(tip.block_time()).unwrap_or_default();
         if elapsed > Duration::from_secs(60 * 60) {
