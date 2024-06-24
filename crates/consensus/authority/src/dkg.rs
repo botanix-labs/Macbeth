@@ -33,12 +33,8 @@ pub(crate) enum Error {
     FailedToGenerateRound1Package,
     #[error("Failed to generate Round 2 package")]
     FailedToGenerateRound2Package,
-    #[error("Error when parsing round 1 packages")]
-    Round1PackageParse(serde_json::Error),
     #[error("Error when serializing round 1 packages")]
     Round1PackageSerialize,
-    #[error("Error when parsing round 2 packages")]
-    Round2PackageParse(serde_json::Error),
     #[error("Failed to get public key package")]
     FailedToGetPubKeyPackage,
     #[error("Failed to generate public key package")]
@@ -84,15 +80,7 @@ pub(crate) enum DKGState {
     /// The initial dkg state
     Initial,
     /// Round 1 of dkg has been started
-    Round1Start,
-    /// Round 1 of dkg is running
-    Round1Waiting,
-    /// Round 2 of dkg has been started
-    Round2Start,
-    /// Round 2 of dkg is running
-    Round2Waiting,
-    /// Round 3 of dkg has been started
-    Round3,
+    Running,
     /// The dkg state machine has failed
     DkgFailed,
 }
@@ -101,14 +89,6 @@ impl DKGState {
     /// Returns true if the DKG state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
         !matches!(self, DKGState::Initial)
-    }
-    /// Returns true if we are in round 1 of dkg
-    pub(crate) fn is_round1(&self) -> bool {
-        matches!(self, DKGState::Initial | DKGState::Round1Start | DKGState::Round1Waiting)
-    }
-    /// Returns true if we are in round 2 of dkg
-    pub(crate) fn is_round2(&self) -> bool {
-        matches!(self, DKGState::Round2Start | DKGState::Round2Waiting)
     }
 }
 
@@ -413,7 +393,7 @@ where
         response_type: DkgEventResponseType,
     ) -> Result<(), Error> {
         // TODO retry_exec
-        info!("gossiping message type {:?} to all peers", response_type);
+        info!(target: "consensus::authority::dkg::gossip_to_peers", "gossiping message type {:?} to all peers", response_type);
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
@@ -435,12 +415,13 @@ where
     pub(crate) async fn start_coordinator(&mut self) -> Result<(), Error> {
         // Should only be starting if we are the coordinator
         if self.personal_frost_identifier != self.coordinator_identifier() {
-            warn!(">>>>>>>>>>> [START] Not the coordinator, ignoring start coordinator");
+            warn!(target: "consensus::authority::dkg::start_coordinator", " Not the coordinator, ignoring start coordinator");
             return Ok(());
         }
         // Start by adding our own round 1 package to memory
         let our_round1 = self.get_round1_dkg_package().await?;
         info!(
+            target: "consensus::authority::dkg::start_coordinator",
             "dkg1_package retrieved. Identifier Size:{:?}, Data Size: {:?}",
             our_round1.identifier.len(),
             our_round1.payload.len()
@@ -456,18 +437,9 @@ where
             DkgEventResponseType::DkgRound1Request,
         )
         .await?;
+        info!(target: "consensus::authority::dkg::start_coordinator", "round 1 sent to all peers");
 
-        self.state = DKGState::Round1Start;
-        info!(target: "consensus::authority::dkg::start", "sending round 1 package to all peers");
-
-        // get round 1 package from db and send it to all peers
-        // if let Err(e) = self.gossip_round1_to_peers().await {
-        //     error!("Error gossiping round 1 to peers {:?}", e);
-        //     self.state = DKGState::DkgFailed;
-        //     return Err(e);
-        // }
-
-        info!(target: "consensus::authority::dkg::start", "round 1 sent to all peers");
+        self.state = DKGState::Running;
 
         Ok(())
     }
@@ -479,22 +451,34 @@ where
     ) -> Result<(), Error> {
         // If we are not the coordinator, we should not be processing this round 1 package response
         if self.personal_frost_identifier != self.coordinator_identifier() {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Not the coordinator, ignoring round 1 package");
+            warn!(
+                target: "consensus::authority::dkg::process_round1_coordinator",
+                "Not the coordinator, ignoring round 1 package"
+            );
             return Ok(());
         }
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Received our own round 1 package");
+            warn!(
+                target: "consensus::authority::dkg::process_round1_coordinator",
+                "Received our own round 1 package"
+            );
             return Ok(());
         }
         // add the transmitted round 1 package data
         if let Err(e) = self.add_round1_dkg_package(identifier.clone(), payload.clone()).await {
-            error!("Error adding round 1 dkg package {:?}", e);
+            error!(
+                target: "consensus::authority::dkg::process_round1_coordinator",
+                "Error adding round 1 dkg package {:?}", e
+            );
         }
         self.round1_packages.insert(identifier, payload);
 
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] package added successfully");
+        info!(
+            target: "consensus::authority::dkg::process_round1_coordinator",
+            "round 1 package added successfully"
+        );
         // Check if we are ready to progress to round 2
         let dkg2_package = match self.get_round2_dkg_package().await {
             Ok(dkg2_package) => dkg2_package,
@@ -546,25 +530,15 @@ where
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Received our own round 1 package");
+            warn!(target: "consensus::authority::dkg::process_round1", "Received our own round 1 package");
             return Ok(());
         }
 
         // add the transmitted round 1 package data
         if let Err(e) = self.add_round1_dkg_package(identifier, payload).await {
-            error!("Error adding round 1 dkg package {:?}", e);
-            // self.state = DKGState::DkgFailed;
-            // return Err(e);
+            error!(target: "consensus::authority::dkg::process_round1", "Error adding round 1 dkg package {:?}", e);
         }
         info!(target: "consensus::authority::dkg::process_round1","package added successfully");
-        info!(target: "consensus::authority::dkg::process_round1","further gossiping round 1 packages to all peers...");
-        // get round 1 package from db and send it to all peers
-        if let Err(e) = self.gossip_round1_to_peers().await {
-            error!(target: "consensus::authority::dkg::process_round1", "Error gossiping round 1 to peers {:?}", e);
-            self.state = DKGState::DkgFailed;
-            return Err(e);
-        }
-
         // Check if we are ready to progress to round 2
         let dkg2_package = match self.get_round2_dkg_package().await {
             Ok(dkg2_package) => dkg2_package,
@@ -575,12 +549,11 @@ where
             }
         };
 
-        // if round2_group_packages.len() >= (self.frost_config.max_signers - 1) as usize {
-        info!(">>>>>>>>>>> [PROCESS_ROUND1] ready to move to round 2");
+        info!(target: "consensus::authority::dkg::process_round1", "ready to move to round 2");
         if let Err(e) =
             self.gossip_to_coordinator(dkg2_package, DkgEventResponseType::DkgRound2).await
         {
-            error!("Error gossiping round 2 to peers {:?}", e);
+            error!(target: "consensus::authority::dkg::process_round1", "Error gossiping round 2 to peers {:?}", e);
             self.state = DKGState::DkgFailed;
             return Err(e);
         }
@@ -595,13 +568,13 @@ where
     ) -> Result<(), Error> {
         // If we are not the coordinator, we should not be processing this round 1 package response
         if self.personal_frost_identifier != self.coordinator_identifier() {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Not the coordinator, ignoring round 1 package");
+            warn!(target: "consensus::authority::dkg::process_round2_coordinator", "Not the coordinator, ignoring round 1 package");
             return Ok(());
         }
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Received our own round 1 package");
+            warn!(target: "consensus::authority::dkg::process_round2_coordinator", "Received our own round 1 package");
             return Ok(());
         }
         // Save in btc server
@@ -611,7 +584,7 @@ where
 
         // Once we get the pk we know we are done with round 2
         let agg_public_key = self.get_public_key().await?;
-        info!(">>>>>>>>>>> [PROCESS_ROUND2] Got pubkey_package: {:?}", agg_public_key.publickey);
+        info!(target: "consensus::authority::dkg::process_round2_coordinator", "Got pubkey_package: {:?}", agg_public_key.publickey);
         // gossip all the round 2 packages to all peers
         for (identifier, payload) in self.round2_packages.iter() {
             self.gossip_to_peers(
@@ -620,6 +593,8 @@ where
             )
             .await?;
         }
+
+        self.process_round3().await?;
 
         Ok(())
     }
@@ -635,14 +610,14 @@ where
             return Ok(());
         }
         info!(target: "consensus::authority::dkg::process_round2",
-            "identifiers {:?} {:?}",
+            "our id: {:?},\n peers id:  {:?}",
             self.personal_frost_identifier,
             deserialize_frost_peer_id(identifier.clone())?
         );
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            warn!(">>>>>>>>>>> [PROCESS_ROUND1] Received our own round 1 package");
+            warn!(target: "consensus::authority::dkg::process_round2", "Received our own round 1 package");
             return Ok(());
         }
 
@@ -659,27 +634,19 @@ where
         let public_key_res = self.get_public_key().await;
         if public_key_res.is_ok() {
             info!(target: "consensus::authority::dkg::process_round2", "ready to move to round 3");
-            self.state = DKGState::Round3;
             self.process_round3().await?;
-        } else {
-            self.state = DKGState::Round2Waiting;
         }
 
         Ok(())
     }
 
     async fn process_round3(&mut self) -> Result<(), Error> {
-        if self.state != DKGState::Round3 {
-            return Ok(());
-        }
-
         info!(target: "consensus::authority::dkg::process_round3", "Processing...");
 
         let public_key = match self.get_public_key().await {
             Ok(public_key) => public_key,
             Err(e) => {
                 error!("Error getting public key package {:?}", e);
-                self.state = DKGState::DkgFailed;
                 return Err(e);
             }
         };
