@@ -723,6 +723,7 @@ mod tests {
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
     use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
     use secp256k1::SECP256K1;
+    use tokio::sync::mpsc::error::SendError;
 
     #[derive(Clone, Debug)]
     pub(crate) struct MockNetworkClient {
@@ -857,23 +858,29 @@ mod tests {
     #[derive(Clone)]
     struct FrostHandleMock;
     impl ToFrostManager for FrostHandleMock {
-        fn send_command(&self, command: FrostCommand) {
+        fn send_command(&self, command: FrostCommand) -> Result<(), SendError<FrostCommand>> {
             match command {
-                FrostCommand::CheckConnectedToAll(sender) => sender.send(true).unwrap(),
+                FrostCommand::CheckConnectedToAll(sender) => {
+                    let _ = sender.send(true);
+                    Ok(())
+                }
                 FrostCommand::GetAllConnectedPeers(sender) => {
                     let peers = HashMap::new();
-                    sender.send(peers).unwrap();
+                    let _ = sender.send(peers);
+                    Ok(())
                 }
                 FrostCommand::GetPeerMessagesStream(_sender) => {
                     // let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-                    // sender.send(tx).unwrap();
+                    // let _ = sender.send(tx);
+                    Ok(())
                 }
                 FrostCommand::GetAllConnectedPeers(sender) => {
                     let peers = HashMap::new();
-                    sender.send(peers).unwrap();
+                    let _ = sender.send(peers);
+                    Ok(())
                 }
-                FrostCommand::SendHealtcheckToPeers => {}
-                FrostCommand::ReconnectPeers(_, _) => {}
+                FrostCommand::SendHealtcheckToPeers => Ok(()),
+                FrostCommand::ReconnectPeers(_, _) => Ok(()),
             }
         }
     }
