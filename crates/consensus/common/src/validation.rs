@@ -6,14 +6,11 @@ use reth_consensus::ConsensusError;
 use reth_interfaces::RethResult;
 use reth_primitives::{
     constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
-    header_ext::HeaderExt,
     BlockNumber, ChainSpec, GotExpected, Hardfork, Header, InvalidTransactionError, SealedBlock,
     SealedHeader, Transaction, TransactionSignedEcRecovered, TxEip1559, TxEip2930, TxEip4844,
     TxLegacy, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{AccountReader, HeaderProvider, WithdrawalsProvider};
-
-use crate::utils;
 
 /// Validate header standalone
 pub fn validate_header_standalone(
@@ -341,49 +338,6 @@ pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError>
     // if header.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
     //     Err(ConsensusError::ExtraDataExceedsMax { len: header.extra_data.len() })
     // } else
-
-    Ok(())
-}
-
-/// Validates PoA standalone header according to the authority consensus rules.
-pub fn validate_poa_header_standalone(
-    header: &Header,
-    authority_signers: &[secp256k1::PublicKey],
-    genesis_authorities: &[secp256k1::PublicKey],
-) -> Result<(), ConsensusError> {
-    // Validate EDH serialization and signature on block
-    utils::validate_poa_extra_data_header(header, authority_signers, genesis_authorities)?;
-
-    // Validate fee benificiary
-    utils::validate_poa_block_beneficiary(header)?;
-
-    // Validate signer is in turn
-    header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
-    // Place a tigher limit on the timestamp
-    let current_timestamp = utils::unix_timestamp();
-    header.validate_timestamp(current_timestamp).map_err(|_| {
-        ConsensusError::TimestampIsInFuture {
-            timestamp: header.timestamp,
-            present_timestamp: current_timestamp,
-        }
-    })?;
-
-    Ok(())
-}
-
-/// Validates PoA standalone header template according to the authority consensus rules.
-pub fn validate_poa_header_template_standalone(
-    header: &Header,
-    authority_signers: &Vec<secp256k1::PublicKey>,
-) -> Result<(), ConsensusError> {
-    // Validate EDH serialization and signature on block
-    utils::validate_poa_extra_data_header_single_signer(header, authority_signers)?;
-
-    // Validate fee benificiary
-    utils::validate_poa_block_beneficiary(header)?;
-
-    // Validate signer is in turn
-    header.validate_inturn(authority_signers).map_err(|_| ConsensusError::AuthorityNotInTurn)?;
 
     Ok(())
 }

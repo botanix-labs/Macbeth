@@ -1,9 +1,5 @@
 use std::fmt;
 
-use crate::{
-    database::{Db, Utxo},
-    Error,
-};
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
@@ -13,6 +9,8 @@ use bitcoin::{
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use reth_btc_wallet::psbt::PsbtInputExt;
+
+use crate::{database, Error};
 
 lazy_static! {
     // TODO get a fee max amount
@@ -158,40 +156,6 @@ pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingEr
     Ok(session_id_array)
 }
 
-/// Adds or removes UTXOs (Unspent Transaction Outputs) from the database based on the given PSBT
-/// (Partially Signed Bitcoin Transaction), public key, and associated Bitcoin transaction details.
-///
-/// # Arguments
-///
-/// * `psbt` - A reference to the PSBT (Partially Signed Bitcoin Transaction) containing transaction
-///   details.
-/// * `pk` - A reference to the aggregate secp256k1 public key. This key is NOT tweaked with any
-///   taptweaks or eth addresses.
-///
-/// # Returns
-///
-/// Returns tuple of two vectors containing the UTXOs added and removed from the database.
-pub fn add_remove_utxo_from_psbt(
-    psbt: &Psbt,
-    pk: &bitcoin::secp256k1::PublicKey,
-) -> (Vec<Utxo>, Vec<OutPoint>) {
-    let tx = psbt.clone().extract_tx().expect("valid tx");
-    let selected_inputs = tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>();
-    // For change outputs there will always be a no eth tweak
-    let mut change_outputs: Vec<Utxo> = vec![];
-    let change_spk = reth_btc_wallet::address::generate_taproot_change_scriptpubkey(pk);
-    for (index, output) in tx.output.iter().enumerate() {
-        if output.script_pubkey == change_spk {
-            change_outputs.push(Utxo {
-                outpoint: OutPoint::new(tx.txid(), index as u32),
-                output: output.clone(),
-                eth_address: None,
-            });
-        }
-    }
-    (change_outputs, selected_inputs)
-}
-
 #[derive(Debug, Error)]
 pub enum ValidatePSBTError {
     #[error("inputs cannot be 0")]
@@ -241,7 +205,7 @@ pub fn validate_psbt(
     psbt: &Psbt,
     flags: u8,
     min_signers: u16,
-    db: &Db,
+    db: &database::Db,
 ) -> Result<(), ValidatePSBTError> {
     // Sanity check for # of inputs and outputs
     if psbt.inputs.is_empty() {
@@ -348,13 +312,14 @@ pub fn validate_psbt(
 
 #[cfg(test)]
 mod util_tests {
+    use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
+    use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
+
     use crate::{
         database,
         test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup},
         util::*,
     };
-    use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
-    use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt};
 
     fn db_setup() -> database::Db {
         let tmpdir = tempfile::tempdir().unwrap();
@@ -394,7 +359,7 @@ mod util_tests {
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
-        let utxo = Utxo {
+        let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
@@ -412,7 +377,7 @@ mod util_tests {
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let eth = eth_vector_to_fixed_bytes(vec![0u8; 20]);
-        let utxo = Utxo {
+        let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: Some(eth),
@@ -437,7 +402,7 @@ mod util_tests {
         // use utxo value to avoid absurdly high fee rate error
         let utxo_value = psbt.inputs[0].witness_utxo.clone().unwrap().value;
 
-        let utxo = Utxo {
+        let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
@@ -460,7 +425,7 @@ mod util_tests {
         let db = db_setup();
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx().expect("valid tx");
-        let utxo = Utxo {
+        let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
@@ -508,7 +473,7 @@ mod util_tests {
         let db = db_setup();
         let mut psbt = create_psbt(1);
         let tx = psbt.clone().extract_tx().expect("valid tx");
-        let utxo = Utxo {
+        let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,

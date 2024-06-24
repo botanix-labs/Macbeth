@@ -1,16 +1,19 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use bitcoin::{
+    consensus::encode::Encodable,
+    hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    OutPoint, TxOut,
+    BlockHash, OutPoint, TxOut,
 };
+use ciborium;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::util::OutPointExt;
+use crate::{txindex, util::OutPointExt};
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -19,9 +22,14 @@ const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
+/// sled tree id for the pending txs
+const TREE_PENDING_TXS: &[u8; 10] = b"pendingtxs";
 
 /// sled key for the UTXO merkle tree root
 const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
+
+/// sled key for storing the latest finalized block of the txindex.
+const KEY_TXINDEX_TIP: &[u8; 10] = b"txindextip";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Utxo {
@@ -64,6 +72,11 @@ pub struct Db {
     /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
+
+    /// A tree of pending txs, serialized as the [txindex::Tx] format.
+    ///
+    /// Indexed by txid.
+    pending_txs: sled::Tree,
 }
 
 impl Db {
@@ -74,16 +87,18 @@ impl Db {
             round1_dkg_packages: db.open_tree(TREE_ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
+            pending_txs: db.open_tree(TREE_PENDING_TXS)?,
             db,
         })
     }
 
     pub fn flush(&self) -> Result<(), Error> {
-        self.utxos.flush()?;
         self.db.flush()?;
+        self.utxos.flush()?;
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
+        self.pending_txs.flush()?;
         Ok(())
     }
 
@@ -373,32 +388,6 @@ impl Db {
         }
     }
 
-    /// Add new utxos and remove some utxos in one atomic transaction.
-    pub fn add_remove_utxos(
-        &self,
-        remove: impl Iterator<Item = OutPoint> + Clone,
-        new: impl Iterator<Item = Utxo> + Clone,
-    ) -> Result<(), Error> {
-        // NB the clones on the args is because the closure in the
-        // transaction can be called multiple times in the case where
-        // the transaction is aborted because of a conflict.
-        // But since it's outpoints (small) and references (very small),
-        // the clone operation is really cheap.
-
-        self.utxos.transaction(move |utxos| {
-            for r in remove.clone() {
-                utxos.remove(&r.to_bytes()[..])?;
-            }
-            for n in new.clone() {
-                let mut bytes = Vec::new();
-                ciborium::into_writer(&n, &mut bytes).expect("writing to buffer");
-                utxos.insert(&n.outpoint.to_bytes()[..], &bytes[..])?;
-            }
-            Ok(())
-        })?;
-        Ok(())
-    }
-
     /// Retrieves all utxos from the database.
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
@@ -410,18 +399,60 @@ impl Db {
         Ok(utxos)
     }
 
+    pub fn store_pending_tx(&self, tx: &txindex::Tx) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
+        self.pending_txs.insert(tx.txid, &bytes[..])?;
+        Ok(())
+    }
+
+    pub fn get_pending_txs(&self) -> Result<Vec<txindex::Tx>, Error> {
+        let mut ret = Vec::new();
+        for res in self.pending_txs.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
+    }
+
+    pub fn store_txindex_finalized_block(&self, block_hash: BlockHash) -> Result<(), Error> {
+        self.db.insert(KEY_TXINDEX_TIP, &block_hash.to_byte_array())?;
+        Ok(())
+    }
+
+    pub fn get_txindex_finalized_block(&self) -> Result<Option<BlockHash>, Error> {
+        Ok(self
+            .db
+            .get(KEY_TXINDEX_TIP)?
+            .map(|t| BlockHash::from_slice(&t).expect("corrupt db: txindex block hash")))
+    }
+
     /// Stores the consensus Merkle root of all spendable UTXOs.
-    pub fn store_utxo_merkle_root(&self, merkle_root: &[u8; 32]) -> Result<(), sled::Error> {
-        self.db.insert(KEY_UTXO_MERKLE_ROOT, merkle_root)?;
+    pub fn update_utxo_merkle_root(&self) -> Result<(), Error> {
+        let mut utxos = self
+            .iter_utxos()
+            .map(|u| {
+                let mut engine = sha256::Hash::engine();
+                u?.outpoint.consensus_encode(&mut engine).expect("engine don't error");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        utxos.sort();
+        if utxos.is_empty() {
+            return Ok(());
+        }
+
+        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter()).expect("not empty");
+        self.db.insert(KEY_UTXO_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }
 
     /// Retrieves the consensus Merkle root of all spendable UTXOs.
-    pub fn get_utxo_merkle_root(&self) -> Result<Option<[u8; 32]>, sled::Error> {
-        Ok(self
-            .db
-            .get(KEY_UTXO_MERKLE_ROOT)?
-            .map(|b| b.as_ref().try_into().expect("corrupt db: Merkle root should be 32 bytes")))
+    pub fn get_utxo_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_UTXO_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 }
 
@@ -497,20 +528,6 @@ mod tests {
         let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
         let signing_status = db.get_signing_status(&signing_session_id).unwrap();
         assert!(signing_status == SigningStatus::Running);
-    }
-
-    #[test]
-    fn test_store_and_get_utxo_merkle_root() {
-        let (db, _temp_dir) = setup_db();
-
-        let merkle_root: [u8; 32] = [0; 32]; // Example Merkle root, usually this would be a real hash
-        db.store_utxo_merkle_root(&merkle_root).unwrap();
-
-        let retrieved_merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
-        assert_eq!(
-            merkle_root, retrieved_merkle_root,
-            "The stored and retrieved Merkle roots should be the same."
-        );
     }
 
     #[test]

@@ -17,6 +17,12 @@ reth-consensus-common.workspace = true
 reth-primitives.workspace = true
 reth-consensus.workspace = true
 
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
+
 [features]
 optimism = [
     "reth-primitives/optimism",

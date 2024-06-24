@@ -46,7 +46,6 @@ tracing.workspace = true
 ## Botanix
 reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
-btc-server = { path = "../../../bin/btc-server" }
 client = {path = "../../../bin/btc-server/client"}
 
 # slack

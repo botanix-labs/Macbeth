@@ -1,15 +1,17 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde;
 
 mod config;
 mod cordinator;
 mod database;
 mod dkg;
 mod jwt;
-mod merkle;
 mod server;
 mod shutdown;
 mod signer;
+mod txindex;
 mod util;
 
 mod rpc {
@@ -24,9 +26,14 @@ mod rpc {
     pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
-use bitcoincore_rpc::Auth;
+use bitcoin::{BlockHash, Transaction, TxOut};
+use bitcoincore_rpc::{Auth, RpcApi};
 use config::{load_config, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
@@ -42,6 +49,7 @@ use crate::{
     dkg::DKGError,
     jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret},
     signer::SigningError,
+    txindex::TxIndex,
     util::ParsingError,
 };
 
@@ -63,6 +71,12 @@ pub enum Error {
     Jwt(#[from] JwtError),
     #[error("grpc reflection server error: {0}")]
     ReflectionServer(tonic_reflection::server::Error),
+    #[error("db error: {0}")]
+    Db(#[from] database::Error),
+    #[error("sync error: {0}")]
+    TxIndexSync(#[from] txindex::SyncError),
+    #[error("failed to sync to given checkpoint block: {0}")]
+    FailedToReachCheckPoint(BlockHash),
 }
 
 trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
@@ -70,6 +84,8 @@ trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
 struct App {
     db: database::Db,
     btc_network: bitcoin::Network,
+    txindex: Mutex<TxIndex>,
+
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
     tx_lock: Arc<Mutex<()>>,
@@ -95,6 +111,19 @@ struct App {
 }
 
 impl App {
+    fn load_txindex(
+        db: &database::Db,
+        fallback_checkpoint: BlockHash,
+        pegin_conf_depth: u32,
+    ) -> Result<TxIndex, database::Error> {
+        if let Some(latest) = db.get_txindex_finalized_block()? {
+            let txs = db.get_pending_txs()?;
+            Ok(TxIndex::new(pegin_conf_depth, txs, latest))
+        } else {
+            Ok(TxIndex::new(pegin_conf_depth, vec![], fallback_checkpoint))
+        }
+    }
+
     pub fn new(config: Config) -> Result<Self, Error> {
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
@@ -143,18 +172,31 @@ impl App {
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
                 .expect("valid fee rate");
 
+        let fallback_checkpoint = {
+            let tip_height =
+                bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
+            bitcoind_client
+                .get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
+                .map_err(|e| Error::TxIndexSync(e.into()))?
+        };
+        let txindex = Mutex::new(Self::load_txindex(
+            &db,
+            fallback_checkpoint,
+            config.pegin_confirmation_depth,
+        )?);
         Ok(Self {
-            db,
             btc_network: config.btc_network,
+            db,
+            txindex,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_identifier,
-            max_signers,
-            min_signers,
             frost_round1_dkg: round1_dkg,
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             config,
             jwt_secret,
+            min_signers,
+            max_signers,
             bitcoind_client: Some(bitcoind_client),
             fall_back_fee_rate,
         })
@@ -233,6 +275,34 @@ impl App {
         tokio::spawn(router.serve_with_shutdown(socket_addr, shutdown_recv.map(drop)));
 
         Ok(StopHandle { stop_cmd_sender: shutdown_send })
+    }
+
+    pub async fn sync_txindex(&self, checkpoint: BlockHash) -> Result<(), txindex::SyncError> {
+        let mut lock = self.txindex.lock().await;
+        let bitcoind = self.bitcoind_client.as_ref().expect("should have bitcoind");
+        let db = &self.db;
+        lock.sync_until(bitcoind, checkpoint, move |utxo| {
+            db.store_utxo(&utxo)?;
+            db.flush()?;
+            Ok(())
+        })?;
+        self.db.store_txindex_finalized_block(lock.last_finalized())?;
+        self.db.update_utxo_merkle_root()?;
+        self.db.flush()?;
+        Ok(())
+    }
+
+    pub async fn add_index_tx(
+        &self,
+        tx: Transaction,
+        targets: &[TxOut],
+        timestamp: SystemTime,
+    ) -> Result<(), database::Error> {
+        let mut txindex = self.txindex.lock().await;
+        let tx = txindex.add_tx(tx, targets, timestamp);
+        self.db.store_pending_tx(tx)?;
+        self.db.flush()?;
+        Ok(())
     }
 }
 
@@ -357,8 +427,11 @@ mod test {
         let tmpdir = tempfile::tempdir().unwrap();
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
+        let db = database::Db::open(&dbdir).unwrap();
+        let txindex = Mutex::new(App::load_txindex(&db, BlockHash::all_zeros(), 6).unwrap());
         let app = App {
-            db: database::Db::open(&dbdir).unwrap(),
+            db,
+            txindex,
             btc_network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_id!(1u16),
@@ -387,6 +460,7 @@ mod test {
                 bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
+                pegin_confirmation_depth: 6,
             },
         };
         println!("App setup complete");

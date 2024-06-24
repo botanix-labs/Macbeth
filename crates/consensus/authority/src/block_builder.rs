@@ -1,14 +1,10 @@
 use std::time::Duration;
 
-use crate::{
-    engine_util,
-    frost_task::{FrostNotification, FrostNotificationMessage},
-    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
-    task::BlockProductionTask,
-    utils::{get_witness_data_from_psbt, is_active_sync_in_progress, is_testnet},
+use bitcoin::{
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    Witness,
 };
-
-use bitcoin::{psbt::Psbt, Witness};
 use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
@@ -23,6 +19,14 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
+
+use crate::{
+    engine_util,
+    frost_task::{FrostNotification, FrostNotificationMessage},
+    pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
+    task::BlockProductionTask,
+    utils::{get_witness_data_from_psbt, is_active_sync_in_progress},
+};
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
     BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
@@ -144,7 +148,7 @@ where
             }
         };
         let botanix_consensus_pkg = BotanixConsensusPackage {
-            recent_header: recent_bitcoin_block_header.expect("valid header and height tuple"),
+            bitcoin_checkpoint: recent_bitcoin_block_header.expect("valid header and height tuple"),
             aggregate_public_key: secp_pk,
             btc_network: self.btc_network,
         };
@@ -153,7 +157,7 @@ where
         // Build and execute current block template
         let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
-            self.chain_spec.clone(),
+            self.consensus.chain_spec.clone(),
             Some(botanix_consensus_pkg.clone()),
             &self.sk,
             self.evm_config.clone(),
@@ -168,19 +172,27 @@ where
         drop(storage);
 
         // Process Botanix specific logs and get current block pegouts
-        let is_testnet = is_testnet(self.chain_spec.chain().id());
         let current_block_pegouts = match crate::utils::process_receipts(
             &mut self.btc_server.clone(),
             &bundle_state,
-            botanix_consensus_pkg.recent_header.1,
-            is_testnet,
+            botanix_consensus_pkg.bitcoin_checkpoint.1,
             self.btc_network,
+            self.consensus.chain_spec.parent_confirmation_depth,
         )
         .await
         {
             Ok(pegouts) => pegouts,
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                return;
+            }
+        };
+
+        // Retrieve the current UTXO commitment
+        let utxo_commitment = match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
+            Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
+            Err(e) => {
+                error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
                 return;
             }
         };
@@ -212,8 +224,19 @@ where
                     e
                 }).expect("valid signing session id");
 
-                match crate::utils::get_psbt(&mut self.btc_server, &pegouts, &signing_session_id)
+                let bitcoin_checkpoint = self
+                    .bitcoin_block_header
+                    .read()
                     .await
+                    .expect("no bitcoin checkpoint in block creation procedure");
+                match crate::utils::get_psbt(
+                    &mut self.btc_server,
+                    &pegouts,
+                    &signing_session_id,
+                    bitcoin_checkpoint.0.block_hash(),
+                    utxo_commitment,
+                )
+                .await
                 {
                     Ok(psbt_payload) => self
                         .frost_task_tx
@@ -256,19 +279,6 @@ where
         }
         drop(storage);
 
-        // Retrieve the current UTXO commitment
-        let utxo_commitment: [u8; 32] =
-            match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
-                Ok(utxo_commitment) => utxo_commitment,
-                Err(e) => {
-                    error!(target: "consensus::authority", ?e, "Failed to get utxo commitment");
-                    return;
-                }
-            }
-            .merkle_root
-            .try_into()
-            .expect("valid UTXO commitment");
-
         info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
 
         let mut storage = self.storage.write().await;
@@ -281,7 +291,8 @@ where
             &self.sk,
             &authority_signers,
             &epoch_witness,
-            &utxo_commitment,
+            utxo_commitment,
+            &self.consensus,
         ) {
             Ok(ret) => ret,
             Err(err) => {

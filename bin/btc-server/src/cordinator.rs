@@ -1,22 +1,14 @@
-use crate::{
-    database::{Error as DbError, Utxo},
-    merkle,
-    util::{
-        self, validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
-        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
-    },
-    App, Error,
-};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
 };
 use bitcoin::{
+    hashes::{sha256, Hash},
     psbt::{ExtractTxError, Psbt},
     secp256k1::PublicKey,
-    Address, Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
+    Address, Amount, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
 use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
@@ -25,6 +17,15 @@ use reth_btc_wallet::{
     psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+};
+
+use crate::{
+    database::{Error as DbError, Utxo},
+    util::{
+        validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
+        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
+    },
+    App, Error,
 };
 
 #[derive(Debug, Error)]
@@ -67,32 +68,18 @@ pub enum CoordinatorError {
     FailedToValidatePsbt(#[from] ValidatePSBTError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("txindex sync: {0}")]
+    TxIndexSync(#[from] crate::txindex::SyncError),
+    #[error("utxo merkle root mismatch: expected {expected}, actual {actual:?}")]
+    UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
 }
 
 impl App {
     pub(crate) fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
         if self.db.store_utxo(utxo)? {
+            self.db.update_utxo_merkle_root()?;
             self.db.flush()?;
             debug!("Stored utxo {}", utxo.outpoint);
-
-            // Hash the new UTXO
-            let utxo_hash = merkle::hash_utxo(utxo);
-
-            // Retrieve all UTXOs, hash them
-            let utxos = self.db.get_all_utxos()?;
-            let mut utxo_hashes: Vec<[u8; 32]> = utxos.iter().map(merkle::hash_utxo).collect();
-            utxo_hashes.push(utxo_hash); // Include the new UTXO hash
-
-            // Construct the Merkle tree from hashes
-            let utxo_hashes_vec_u8: Vec<Vec<u8>> =
-                utxo_hashes.iter().map(|hash| hash.to_vec()).collect();
-            let merkle_tree = merkle::construct_merkle_tree(&utxo_hashes_vec_u8);
-
-            // Store the new Merkle root in the database
-            let merkle_root = merkle_tree.root().expect("Merkle tree should have a root");
-            self.db
-                .store_utxo_merkle_root(&merkle_root)
-                .map_err(|e| CoordinatorError::Db(DbError::from(e)))?;
         } else {
             warn!("Duplicate utxo {}", utxo.outpoint);
         }
@@ -180,15 +167,27 @@ impl App {
         Err(CoordinatorError::MissingKeyPackage)
     }
 
-    pub(crate) fn make_tx(
+    pub(crate) async fn make_tx(
         &self,
         outputs: Vec<TxOut>,
         fee_rate: FeeRate,
         change_script: ScriptBuf,
+        checkpoint_block: BlockHash,
+        utxo_merkle_root: sha256::Hash,
     ) -> Result<Psbt, CoordinatorError> {
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
         let _tx_lock = self.tx_lock.lock();
+
+        // Sync the tx index and check we have the same UTXO view.
+        self.sync_txindex(checkpoint_block).await?;
+        let our_utxo_merkle = self.db.get_utxo_merkle_root()?.unwrap_or(sha256::Hash::all_zeros());
+        if utxo_merkle_root != our_utxo_merkle {
+            return Err(CoordinatorError::UtxoMerkleRootMismatch {
+                expected: utxo_merkle_root,
+                actual: our_utxo_merkle,
+            });
+        }
 
         // collect all database utxos in a hashmap
         let utxos = self.db.iter_utxos().fold::<Result<_, DbError>, _>(
@@ -201,46 +200,54 @@ impl App {
                 ret
             },
         )?;
+        // Filter the ones that are still pending and conflict with pending txs.
+        let pending_inputs = self.txindex.lock().await.pending_inputs();
+        let available_utxos = utxos
+            .into_iter()
+            .filter(|(p, _u)| !pending_inputs.contains(p))
+            .collect::<HashMap<_, _>>();
+
+        let to_bdk = |u: &Utxo| {
+            bdk::WeightedUtxo {
+                satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
+                utxo: bdk::Utxo::Local(bdk::LocalOutput {
+                    outpoint: u.outpoint.to_bdk(),
+                    txout: bdk::bitcoin::TxOut {
+                        script_pubkey: u.output.script_pubkey.to_bytes().into(),
+                        value: u.output.value,
+                    },
+                    keychain: bdk::KeychainKind::External,
+                    is_spent: false,
+                    derivation_index: 0, // we're not using this
+                    // Also not used
+                    confirmation_time: bdk::chain::ConfirmationTime::Confirmed {
+                        height: 1,
+                        time: 1,
+                    },
+                }),
+            }
+        };
 
         // Now we're going to hijack BDK coin selection real quick..
-        let bdk_utxos = utxos
-            .values()
-            .map(|u| {
-                bdk::WeightedUtxo {
-                    satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-                    utxo: bdk::Utxo::Local(bdk::LocalOutput {
-                        outpoint: u.outpoint.to_bdk(),
-                        txout: bdk::bitcoin::TxOut {
-                            script_pubkey: u.output.script_pubkey.to_bytes().into(),
-                            value: u.output.value,
-                        },
-                        keychain: bdk::KeychainKind::External,
-                        is_spent: false,
-                        derivation_index: 0, // we're not using this
-                        // Also not used
-                        confirmation_time: bdk::chain::ConfirmationTime::Confirmed {
-                            height: 1,
-                            time: 1,
-                        },
-                    }),
-                }
-            })
-            .collect::<Vec<_>>();
+        let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value.to_sat()).sum();
+        let target_amount = outputs.iter().map(|o| o.value).sum::<Amount>();
+
+        // Try once with finalized, then add pending and try again.
         let selection = coin_select
             .coin_select(
                 vec![],
                 bdk_utxos,
                 fee_rate,
-                target_amount,
-                change_script.clone().as_script(), // drain_script
+                target_amount.to_sat(),
+                &change_script, // drain_script
             )
             .map_err(CoordinatorError::CoinSelection)?;
+
         let selected = selection
             .selected
             .iter()
-            .map(|u| utxos.get(&OutPoint::from_bdk(u.outpoint())))
+            .map(|u| available_utxos.get(&OutPoint::from_bdk(u.outpoint())))
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
@@ -248,7 +255,7 @@ impl App {
                 script_pubkey: change_script.clone(),
                 value: Amount::from_sat(amount),
             }),
-            _ => None,
+            bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
         };
 
         let psbt = reth_btc_wallet::transaction::create_psbt(
@@ -273,7 +280,7 @@ impl App {
 
     /// If no Err is return the orignial psbt served to this function is good to go out to the
     /// signers nothing needs to be added to it as the signers all provided their signing
-    /// commitments already and the coordinator just need to verify them  
+    /// commitments already and the coordinator just need to verify them
     pub(crate) fn get_to_sign(
         &self,
         signing_session_id: &[u8; 32],
@@ -357,6 +364,24 @@ impl App {
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }
 
+        // Finally we should remove the utxos from the db and add the change one
+        let tx = match miniscript::psbt::PsbtExt::extract(&psbt, bitcoin::secp256k1::SECP256K1) {
+            Ok(tx) => tx,
+            Err(e) => return Err(CoordinatorError::PbstFinalizationFailed(vec![e])),
+        };
+
+        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+        let targets = tx
+            .output
+            .iter()
+            .filter(|o| o.script_pubkey != change_script)
+            .cloned()
+            .collect::<Vec<_>>();
+        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
+        self.add_index_tx(tx, &targets, tx_timestamp).await?;
+
         // Lets broadcast the tx
         let tx_id = match self
             .bitcoind_client
@@ -382,11 +407,6 @@ impl App {
             info!("Transaction already broadcasted and in pool");
         }
 
-        // Finally we should remove the utxos from the db and add the change one
-        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let (change_outputs, selected_inputs) = util::add_remove_utxo_from_psbt(&psbt, &secp_pk);
-        self.db.add_remove_utxos(selected_inputs.into_iter(), change_outputs.into_iter())?;
-        self.db.flush()?;
         Ok(psbt)
     }
 

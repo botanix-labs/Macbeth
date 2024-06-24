@@ -7838,7 +7838,6 @@ name = "reth-authority-consensus"
 version = "0.2.0-beta.6"
 dependencies = [
  "bitcoin",
- "btc-server",
  "client",
  "displaydoc",
  "frost-secp256k1-tr",
@@ -7904,6 +7903,7 @@ dependencies = [
  "reth-rpc-types",
  "reth-stages-api",
  "reth-transaction-pool",
+ "secp256k1 0.28.2",
  "serde_json",
  "tempfile",
  "tokio",
@@ -7981,6 +7981,7 @@ dependencies = [
  "reth-consensus",
  "reth-consensus-common",
  "reth-primitives",
+ "secp256k1 0.28.2",
 ]
 
 [[package]]
@@ -8109,6 +8110,7 @@ version = "0.2.0-beta.6"
 dependencies = [
  "auto_impl",
  "reth-primitives",
+ "secp256k1 0.28.2",
  "thiserror",
 ]
 
@@ -8123,6 +8125,7 @@ dependencies = [
  "reth-provider",
  "reth-tracing",
  "secp256k1 0.28.2",
+ "tracing",
 ]
 
 [[package]]
@@ -8954,6 +8957,7 @@ dependencies = [
  "reth-consensus",
  "reth-consensus-common",
  "reth-primitives",
+ "secp256k1 0.28.2",
 ]
 
 [[package]]

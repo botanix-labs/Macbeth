@@ -1,7 +1,16 @@
-use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{context::GlobalContext, it_error_print, it_info_print, it_warn_print};
+use std::{
+    collections::HashMap,
+    io::Write,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use askama::Template;
-use bitcoin::hashes::Hash;
+use bitcoin::{
+    hashes::{sha256, Hash},
+    BlockHash,
+};
 use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
@@ -24,16 +33,11 @@ use reth_primitives::{
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
-use std::{
-    collections::HashMap,
-    io::Write,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
 use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
+
+use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
+use crate::{context::GlobalContext, it_info_print, it_warn_print};
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
@@ -594,8 +598,9 @@ pub async fn create_poa_federation_members(
         Some(authorities.clone()),
         None,
         None,
-        bitcoin::hash_types::BlockHash::all_zeros(),
-        [0u8; 32],
+        // to make sure they're not identical, hash random data
+        BlockHash::hash(&[1]),
+        sha256::Hash::hash(&[2]),
     );
 
     // now insert peers and edh into each federation member
@@ -624,10 +629,14 @@ pub async fn create_poa_federation_members(
 
 #[cfg(test)]
 mod tests {
-    use super::BotanixTestnetGenesisConfig;
+
     use askama::Template;
-    use bitcoin::hashes::Hash;
-    use reth_primitives::extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION};
+    use bitcoin::{
+        hashes::{sha256, Hash},
+        BlockHash,
+    };
+
+    use super::*;
 
     #[test]
     fn test_edh_template() {
@@ -643,8 +652,8 @@ mod tests {
             Some(vec![pk1, pk2]),
             None,
             None,
-            bitcoin::hash_types::BlockHash::all_zeros(),
-            [0u8; 32],
+            BlockHash::all_zeros(),
+            sha256::Hash::all_zeros(),
         );
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };

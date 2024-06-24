@@ -84,6 +84,32 @@ pub trait Consensus: Debug + Send + Sync {
     ///
     /// Note: validating blocks does not include other validations of the Consensus
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError>;
+
+    /// Validates extra data header
+    fn validate_extra_data_header(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError>;
+
+    /// Validates that block has the right beneficiary
+    fn validate_block_beneficiary(&self, header: &Header) -> Result<(), ConsensusError>;
+
+    /// Validates the header standalone
+    fn validate_header_standalone(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+        genesis_authorities: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError>;
+
+    /// Validates the edh single signer check
+    fn validate_extra_data_header_single_signer(
+        &self,
+        header: &Header,
+        authority_signers: &[secp256k1::PublicKey],
+    ) -> Result<(), ConsensusError>;
 }
 
 /// Consensus Errors
@@ -286,6 +312,10 @@ pub enum ConsensusError {
     /// Error type transparently wrapping HeaderValidationError.
     #[error(transparent)]
     HeaderValidationError(#[from] HeaderValidationError),
+
+    /// Inturn Validation Error
+    #[error("in turn validation error")]
+    ValidateInturnError,
 }
 
 impl ConsensusError {

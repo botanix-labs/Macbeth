@@ -22,7 +22,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
-use tracing::{debug, error, event, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
@@ -253,7 +253,7 @@ where
                         }
                     })?;
 
-                let recent_header = consensus_pkg.expect("is some").recent_header;
+                let recent_header = consensus_pkg.expect("is some").bitcoin_checkpoint;
                 let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
 
                 match pegin_data.validate(&recent_header, &aggregate_public_key) {

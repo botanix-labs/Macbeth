@@ -1,8 +1,7 @@
 //! Botanix consensus utility functions
 use std::time::Duration;
 
-use bitcoin::{block::Header, psbt::Psbt, witness::Witness};
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
+use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -13,21 +12,16 @@ use reth_botanix_lib::{
 };
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
-use reth_primitives::{
-    constants::{
-        eip225::EPOCH_LENGTH, MAINNET_PEGIN_CONFIRMATION_DEPTH, SIGNET_PEGIN_CONFIRMATION_DEPTH,
-    },
-    hex, Bloom, BloomInput, Log, Receipt, BOTANIX_TESTNET,
-};
+use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::{
     BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
 };
-use uuid::Uuid;
-
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 use crate::extended_client::BtcServerExtendedClient;
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -149,7 +143,7 @@ pub(crate) fn make_tx_request_for_pegout_in_receipt(
 /// * `btc_server` - The btc server client.
 /// * `bundle_state` - The bundle state with receipts to process.
 /// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
-/// * `is_testnet` - A boolean indicating whether the chain is a testnet or not.
+/// * `pegin_conf_depth` - the number of confirmations required for a pegin
 ///
 /// # Returns
 ///
@@ -159,8 +153,8 @@ pub(crate) async fn process_receipts(
     btc_server: &mut BtcServerExtendedClient,
     bundle_state: &BundleStateWithReceipts,
     recent_bitcoin_block_height: u32,
-    is_testnet: bool,
     btc_network: bitcoin::Network,
+    pegin_conf_depth: u32,
 ) -> Result<Vec<PegoutData>, ProcessBotanixLogError> {
     let mut pegouts: Vec<PegoutData> = Vec::new();
     let receipts_bundle = bundle_state.receipts().iter();
@@ -179,9 +173,9 @@ pub(crate) async fn process_receipts(
                         btc_server,
                         log,
                         recent_bitcoin_block_height,
-                        is_testnet,
                         &receipt.logs,
                         btc_network,
+                        pegin_conf_depth,
                     )
                     .await
                     {
@@ -235,6 +229,8 @@ pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
+    bitcoin_checkpoint: BlockHash,
+    utxo_merkle_root: sha256::Hash,
 ) -> Result<SigningPackage, ProcessBotanixLogError> {
     let req = MakeTxRequest {
         outputs: pegouts
@@ -245,6 +241,8 @@ pub(crate) async fn get_psbt(
             })
             .collect(),
         signing_session_id: signing_session_id.to_vec(),
+        checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
+        utxo_merkle_root: utxo_merkle_root[..].to_vec(),
     };
 
     match btc_server.get_psbt(req).await {
@@ -270,8 +268,8 @@ pub(crate) async fn get_psbt(
 ///
 /// * `btc_server` - The btc server client.
 /// * `log` - The log to process.
-/// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
-/// * `is_testnet` - A boolean indicating whether the chain is a testnet or not.
+/// * `bitcoin_checkpoint_height` - the bitcoin block height deeply confirmed for pegins.
+/// * `pegin_conf_depth` - the number of confirmations required for a pegin
 ///
 /// # Returns
 ///
@@ -280,10 +278,10 @@ pub(crate) async fn get_psbt(
 async fn process_botanix_log(
     btc_server: &mut BtcServerExtendedClient,
     log: &Log,
-    recent_bitcoin_block_height: u32,
-    is_testnet: bool,
+    bitcoin_checkpoint_height: u32,
     receipt_logs: &[Log],
     btc_network: bitcoin::Network,
+    pegin_conf_depth: u32,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics().to_vec() {
@@ -293,10 +291,7 @@ async fn process_botanix_log(
                 let pegin_data = parse_pegin_reth_log_topic(log, receipt_logs)
                     .expect("passed evm check should pass this parse attempt");
                 // enforce required confirmation depth by network
-                let confirmation_depth = get_confirmation_depth(is_testnet);
-                if pegin_data.bitcoin_block_height >
-                    recent_bitcoin_block_height - confirmation_depth
-                {
+                if pegin_data.bitcoin_block_height >= bitcoin_checkpoint_height {
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
                 }
@@ -368,37 +363,6 @@ pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> 
         start_block_number -= 1;
     }
     start_block_number
-}
-
-/// Returns the recent block height from the given recent bitcoin block header.
-///
-/// # Arguments
-///
-/// * `recent_bitcoin_block_header` - The recent bitcoin block header
-///
-/// # Returns
-///
-/// Returns the recent block height or 0 if None.
-pub(crate) fn get_recent_block_height_or_zero(
-    recent_bitcoin_block_header: Option<(Header, u32)>,
-) -> u32 {
-    recent_bitcoin_block_header.map(|(_, height)| height).unwrap_or_else(|| {
-        error!(target: "consensus::authority", "Failed to get recent bitcoin block height");
-        0
-    })
-}
-
-/// Returns the confirmation depth
-pub fn get_confirmation_depth(is_testnet: bool) -> u32 {
-    match is_testnet {
-        true => SIGNET_PEGIN_CONFIRMATION_DEPTH,
-        false => MAINNET_PEGIN_CONFIRMATION_DEPTH,
-    }
-}
-
-/// Returns in we are using testnet or not
-pub fn is_testnet(chain_id: u64) -> bool {
-    chain_id == BOTANIX_TESTNET.chain().id()
 }
 
 pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
@@ -529,11 +493,8 @@ mod test {
     use std::str::FromStr;
 
     use bitcoin::{
-        hash_types::TxMerkleNode,
-        hashes::Hash,
         psbt::{Input, Psbt},
         transaction::Version,
-        BlockHash, CompactTarget,
     };
     use rand::Rng;
     use reth_primitives::{address, b256, bytes, Header, B256, U256};
@@ -655,41 +616,6 @@ mod test {
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
         assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
-    }
-
-    #[test]
-    fn test_get_recent_block_height_or_zero() {
-        let block_height = 100_u32;
-        let recent_bitcoin_block_header = Some((
-            bitcoin::block::Header {
-                version: bitcoin::block::Version::default(),
-                prev_blockhash: BlockHash::all_zeros(),
-                merkle_root: TxMerkleNode::all_zeros(),
-                time: 0,
-                bits: CompactTarget::default(),
-                nonce: 0,
-            },
-            block_height,
-        ));
-        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), block_height);
-
-        let recent_bitcoin_block_header = None;
-        assert_eq!(get_recent_block_height_or_zero(recent_bitcoin_block_header), 0);
-    }
-
-    #[test]
-    fn test_get_confirmation_depth() {
-        assert_eq!(get_confirmation_depth(true), SIGNET_PEGIN_CONFIRMATION_DEPTH);
-        assert_eq!(get_confirmation_depth(false), MAINNET_PEGIN_CONFIRMATION_DEPTH);
-    }
-
-    #[test]
-    fn test_is_testnet() {
-        let chain_id = BOTANIX_TESTNET.chain().id();
-        assert!(is_testnet(chain_id));
-
-        let chain_id = 1;
-        assert!(!is_testnet(chain_id));
     }
 
     #[test]

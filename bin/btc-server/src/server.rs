@@ -1,7 +1,12 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use base64::decode as base64_decode;
-use bitcoin::{consensus::encode as btcencode, psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
+use bitcoin::{
+    consensus::encode as btcencode,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    Amount, BlockHash, FeeRate, OutPoint, TxOut,
+};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
@@ -190,6 +195,10 @@ impl rpc::BtcServer for App {
                 error!("Failed to parse signing session id: {}", e);
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
+        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
+            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
+            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
 
         let bitcoind_rpc = self.bitcoind_client.as_ref().expect("bitcoind client");
         let fee_res = bitcoind_rpc.estimate_smart_fee(1, Some(EstimateMode::Conservative));
@@ -229,7 +238,8 @@ impl rpc::BtcServer for App {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self
-            .make_tx(outputs, fee_rate, change_script)
+            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .await
             .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
         // Save psbt to db
@@ -548,6 +558,11 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         let req = req.into_inner();
         info!("Received finalize signer request");
+        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
+            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
+            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
+
         let fee_res = self
             .bitcoind_client
             .as_ref()
@@ -559,7 +574,7 @@ impl rpc::BtcServer for App {
                 fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
             }
         }
-        let outputs_result: Result<Vec<TxOut>, tonic::Status> = req
+        let outputs = req
             .outputs
             .into_iter()
             .map(|o| {
@@ -570,12 +585,13 @@ impl rpc::BtcServer for App {
 
                 Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
             })
-            .collect();
+            .collect::<Result<Vec<_>, tonic::Status>>()?;
 
         // Witnesses can be get big. Remove this clone()
         let witnesses = req.witness;
         let psbt = self
-            .finalize_signer(outputs_result?, fee_rate, witnesses)
+            .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
+            .await
             .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
@@ -608,7 +624,8 @@ impl rpc::BtcServer for App {
         match self.db.get_utxo_merkle_root() {
             Ok(Some(merkle_root)) => {
                 // Successfully found the merkle root, return it
-                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root.to_vec() };
+                let response =
+                    rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root[..].to_vec() };
                 Ok(tonic::Response::new(response))
             }
             Ok(None) => {
