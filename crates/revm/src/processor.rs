@@ -5,10 +5,7 @@ use revm::{
     db::StateDBBox,
     inspector_handle_register,
     interpreter::Host,
-    primitives::{
-        bitvec::view::BitViewSized, CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState,
-        State as EvmState,
-    },
+    primitives::{CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState, State as EvmState},
     Evm, State,
 };
 use std::{sync::Arc, time::Instant};

@@ -1,11 +1,3 @@
-use std::{
-    collections::HashMap,
-    io::Write,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
 use askama::Template;
 use bitcoin::{
     hashes::{sha256, Hash},
@@ -33,6 +25,14 @@ use reth_primitives::{
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
+use std::{
+    collections::HashMap,
+    io::Write,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 

@@ -281,7 +281,7 @@ async fn process_botanix_log(
     bitcoin_checkpoint_height: u32,
     receipt_logs: &[Log],
     btc_network: bitcoin::Network,
-    pegin_conf_depth: u32,
+    _pegin_conf_depth: u32,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics().to_vec() {
