@@ -284,10 +284,16 @@ impl Stream for FrostProtoConnection {
             return Poll::Ready(None);
         };
 
-        // react on message type
+        // react on message type sent to us by another peer
         match msg.message {
             FrostProtoMessageKind::Healthcheck(data) => {
-                return Poll::Ready(Some(FrostProtoMessage::peer_health_message(data).encoded()));
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    peer_id: this.peer_id,
+                    response: PeerMessageResponse::Healtcheck(HealthcheckResponse {
+                        receiver: data.receiver,
+                        sender: data.sender,
+                    }),
+                });
             }
             FrostProtoMessageKind::Ping => {
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));

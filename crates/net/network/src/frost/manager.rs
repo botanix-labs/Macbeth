@@ -202,28 +202,35 @@ impl FrostManager {
             FrostCommand::SendHealtcheckToPeers => {
                 self.send_healthcheck_to_peers();
             }
-            FrostCommand::ReconnectPeers(peers, tx) => {
+            FrostCommand::ReconnectPeers(peers) => {
                 let peers_to_reconnect = peers.len();
                 let mut reconnected_peers = 0;
                 for peer in peers.into_iter() {
                     if let Some(peer_data) = self.peers_connections.get(&peer) {
-                        self.network.add_trusted_peer(
-                            peer,
-                            peer_data.socket_addr.expect("Socket must be connected"),
-                        );
-                        reconnected_peers += 1;
+                        if let Some(conn_socket) = peer_data.socket_addr {
+                            info!(target: "network::frost::on_command", "Readding peer {:?} with remote address {:?} ...", peer, conn_socket.to_string());
+                            self.network.add_trusted_peer(peer, conn_socket);
+                            reconnected_peers += 1;
+                        } else {
+                            warn!(target: "network::frost::on_command", "Could not find remote socket address for peer {:?}", peer);
+                        }
                     }
                 }
-                info!("Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
-                let _ = tx.send(reconnected_peers == peers_to_reconnect);
+                if reconnected_peers > 0 {
+                    info!(target: "network::frost::on_command", "Readded/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
+                }
             }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller
-                let _ = tx.send(self.all_peers_connected());
+                if let Err(e) = tx.send(self.all_peers_connected()) {
+                    error!(target: "network::frost::on_command", "Error replying to call on CheckConnectedToAll {:?}", e);
+                }
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
                 // reply to caller
-                let _ = tx.send(self.peers_connections.clone());
+                if let Err(e) = tx.send(self.peers_connections.clone()) {
+                    error!(target: "network::frost::on_command", "Error replying to call on GetAllConnectedPeers {:?}", e);
+                }
             }
             FrostCommand::GetPeerMessagesStream(tx) => {
                 // create channel whereby keeping the sender half and sending to the caller the
@@ -232,7 +239,9 @@ impl FrostManager {
                     mpsc::unbounded_channel::<(PeerId, PeerMessageResponse)>();
                 self.task_forwarder_txs.push(task_forwarder_txs);
                 // reply to caller
-                let _ = tx.send(frost_task_forwarder_rx);
+                if let Err(e) = tx.send(frost_task_forwarder_rx) {
+                    error!(target: "network::frost::on_command", "Error replying to call on GetPeerMessagesStream {:?}", e);
+                }
             }
         }
     }
@@ -282,7 +291,7 @@ pub enum FrostCommand {
     /// sends healthcheck messages to all peers
     SendHealtcheckToPeers,
     /// Reconect peers in case their connection got dropped
-    ReconnectPeers(Vec<PeerId>, oneshot::Sender<bool>),
+    ReconnectPeers(Vec<PeerId>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
     /// Get the readily connected peers

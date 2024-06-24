@@ -7855,6 +7855,7 @@ dependencies = [
  "reth-eth-wire",
  "reth-interfaces",
  "reth-network",
+ "reth-network-api",
  "reth-network-types",
  "reth-node-api",
  "reth-node-ethereum",

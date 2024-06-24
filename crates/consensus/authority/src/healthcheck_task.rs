@@ -9,13 +9,14 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_network_api::Peers;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 30;
+const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 45;
 
 pub struct HealthcheckTask<Client, ToFrostMan> {
     /// Network Handler
@@ -137,6 +138,7 @@ where
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         let events_notification_slack_client = self.events_notification_slack_client.clone();
+        let network_handle = self.network_handle.clone();
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected peers
             loop {
@@ -145,13 +147,10 @@ where
                 }
 
                 // sleep for some time before the next check
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-
-                let peers_size = peers_healthcheck_tracker.read().await.len();
-                info!("CHECKINGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG {:?}", peers_size);
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
                 // check for any peers whose health checks havent been recently received
-                let none_responding_peers = peers_healthcheck_tracker
+                let mut none_responding_peers = peers_healthcheck_tracker
                     .read()
                     .await
                     .iter()
@@ -163,7 +162,21 @@ where
                         }
                     })
                     .collect::<Vec<PeerId>>();
-                info!("NNNNNNNNNNNNNNNNNNNNNNNNNNOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO {:?} ", none_responding_peers);
+
+                // get from the network handler all trusted connected peers
+                let all_trusted_connected_peers_ids = network_handle
+                .get_trusted_peers()
+                .await
+                .ok()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|peer| {
+                    peer.remote_id
+                })
+                .collect::<Vec<_>>();
+
+                // check the none responding peers are truly disconnected peers, otherwise they might be just temp unresponsive to healthcheck pings
+                none_responding_peers.retain(|peer| !all_trusted_connected_peers_ids.contains(&peer));
 
                 // send to slack alarms about those peers
                 if let Some(ref client) = events_notification_slack_client {
@@ -175,7 +188,7 @@ where
                         .join(",");
                     if let Err(e) = client
                         .send_message(&format!(
-                            "Reconnecting to {}",
+                            "Connection lost to peers {}. Reconnecting ...",
                             none_responding_peers_stringified
                         ))
                         .await
@@ -184,19 +197,11 @@ where
                     }
                 }
 
-                // try to reconnect to the peers
-                let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+                // try to reconnect to the peers if they are considered fully disconnected
                 if let Err(e) = frost_handle
-                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers, sender)) {
+                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers)) {
                         error!(target: "HealthcheckTask", "Failed to send ReconnectPeers frost command {:?}", e);
                     }
-                match receiver.await {
-                    Ok(peers_reconnected) => peers_reconnected,
-                    Err(e) => {
-                        error!(target: "HealthcheckTask::start_task", "Error reconnecting peers = {:?}", e);
-                        panic!("Error reconnecting peers = {:?}", e);
-                    }
-                };
             }
         });
 
@@ -208,6 +213,7 @@ where
             .iter()
             .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
             .collect::<Vec<PeerId>>();
+
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
 
         // receive over a channel message from other peers
@@ -226,23 +232,18 @@ where
                     // task
                 }
                 PeerMessageResponse::Healtcheck(healthcheck_response) => {
-                    info!(
-                        "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH {:?}",
-                        healthcheck_response
-                    );
+                    // if both sender and receiver are registered authorities and I am the the
+                    // receiver
                     if authority_peers.contains(&healthcheck_response.sender) &&
-                        authority_peers.contains(&healthcheck_response.receiver)
+                        authority_peers.contains(&healthcheck_response.receiver) &&
+                        healthcheck_response.receiver.eq(self.network_handle.peer_id())
                     {
                         let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
-                        if healthcheck_response.sender.eq(self.network_handle.peer_id()) {
-                            peers_healthcheck_tracker
-                                .insert(healthcheck_response.receiver, Instant::now());
-                        } else {
-                            warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
-                        }
+                        peers_healthcheck_tracker
+                            .insert(healthcheck_response.sender, Instant::now());
                         drop(peers_healthcheck_tracker);
                     } else {
-                        warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it {:?}", &healthcheck_response.sender);
+                        warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it. Sender = {:?}. Receiver = {:?}", &healthcheck_response.sender,&healthcheck_response.receiver);
                     }
                 }
             }
