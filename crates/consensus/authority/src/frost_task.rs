@@ -205,10 +205,10 @@ where
                             DkgEventResponseType::DkgRound1Request => {
                                 match self.dkg_state_machine.process_round1_request().await {
                                     Ok(_) => {
-                                        info!(">>>>>>>>>>> [FROST_TASK::DKG] Processed Round 1 request dkg package successfully")
+                                        info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 request dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(">>>>>>>>>>> [FROST_TASK::DKG] Error processing round 1 request dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 request dkg package {:?}", e);
                                     }
                                 }
                             }
