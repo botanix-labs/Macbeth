@@ -285,19 +285,10 @@ impl TxIndex {
             checkpoint,
         );
 
-        // TODO this is commented out. Depending on the ver of bitoin core rpc
-        // The response will be in a different format and the below code will not work
         // If we suspect the node is still syncing, it might have restarted and
         // some of the blocks we already saw might not be in the node's chain.
         // To avoid errors related to this, we'll just ask called to wait.
-        // if bitcoind.get_blockchain_info()?.initial_block_download {
-        //     return Err(SyncError::NodeNotSynced);
-        // }
-
-        let tip = bitcoind.get_block_header_info(&bitcoind.get_best_block_hash()?)?;
-        let elapsed = SystemTime::now().duration_since(tip.block_time()).unwrap_or_default();
-        if elapsed > Duration::from_secs(60 * 60) {
-            // The tip is over an hour old, node is probably still syncing.
+        if is_syncing(bitcoind)? {
             return Err(SyncError::NodeNotSynced);
         }
 
@@ -383,6 +374,27 @@ impl TxIndex {
             Err(SyncError::CheckPointNotReached)
         }
     }
+}
+
+fn is_syncing(bitcoind: &impl RpcApi) -> Result<bool, bitcoincore_rpc::Error> {
+    // NB do a raw call with just the initialblockdownload field because this RPC
+    // response is quite unstable between releases
+    #[derive(Deserialize)]
+    struct Res {
+        initialblockdownload: bool,
+    }
+    if bitcoind.call::<Res>("getblockchaininfo", &[])?.initialblockdownload {
+        return Ok(true);
+    }
+
+    let tip = bitcoind.get_block_header_info(&bitcoind.get_best_block_hash()?)?;
+    let elapsed = SystemTime::now().duration_since(tip.block_time()).unwrap_or_default();
+    if elapsed > Duration::from_secs(60 * 60) {
+        // The tip is over an hour old, node is probably still syncing.
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 #[derive(Debug, Error)]
