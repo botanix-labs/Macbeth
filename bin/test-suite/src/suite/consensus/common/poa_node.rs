@@ -37,7 +37,7 @@ use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 
 use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{context::GlobalContext, it_info_print, it_warn_print};
+use crate::{context::GlobalContext, it_error_print, it_info_print, it_warn_print};
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
@@ -286,7 +286,7 @@ impl FederationMemberTestConfig {
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
-        let botanix_testnet = create_botanix_config_with_genesis(genesis);
+        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
         command.chain = Arc::new(botanix_testnet.clone());
 
         (command, botanix_testnet)
