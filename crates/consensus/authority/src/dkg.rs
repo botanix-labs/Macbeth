@@ -1,16 +1,9 @@
-use crate::{
-    extended_client::BtcServerExtendedClient,
-    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
-    Storage,
-};
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
@@ -18,6 +11,12 @@ use std::{
 };
 use tokio::sync::mpsc::{error::SendError, UnboundedSender};
 use tracing::{error, info, warn};
+
+use crate::{
+    extended_client::BtcServerExtendedClient,
+    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
+    Storage,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -116,9 +115,9 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine<Client, ToFrostMan> {
+pub(crate) struct DKGStateMachine<ToFrostMan> {
     btc_client: BtcServerExtendedClient,
-    storage: Storage<Client>,
+    storage: Storage,
     frost_handle: ToFrostMan,
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
@@ -126,20 +125,14 @@ pub(crate) struct DKGStateMachine<Client, ToFrostMan> {
     frost_config: FrostConfig,
 }
 
-impl<Client, ToFrostMan> DKGStateMachine<Client, ToFrostMan>
+impl<ToFrostMan> DKGStateMachine<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         btc_client: BtcServerExtendedClient,
-        storage: Storage<Client>,
+        storage: Storage,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
     ) -> Self {
@@ -182,15 +175,9 @@ where
     }
 }
 
-impl<Client, ToFrostMan> DKGStateMachine<Client, ToFrostMan>
+impl<ToFrostMan> DKGStateMachine<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     async fn get_round1_dkg_package(&mut self) -> Result<DkgPayload, Error> {
         let round1_payload = self.btc_client.get_round1_dkg_package(client::Empty {}).await;

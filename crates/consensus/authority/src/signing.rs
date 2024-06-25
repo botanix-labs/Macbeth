@@ -5,19 +5,17 @@ use crate::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
         FrostParseError,
     },
-    Storage, BLOCK_TIME_DURATION_SECS,
+    BLOCK_TIME_DURATION_SECS,
 };
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
@@ -134,9 +132,8 @@ pub(crate) struct SigningSession {
 
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
-pub(crate) struct SigningStateMachine<Client, ToFrostMan> {
+pub(crate) struct SigningStateMachine<ToFrostMan> {
     btc_client: BtcServerExtendedClient,
-    storage: Storage<Client>,
     frost_handle: ToFrostMan,
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
     personal_frost_identifier: frost::Identifier,
@@ -144,20 +141,13 @@ pub(crate) struct SigningStateMachine<Client, ToFrostMan> {
     frost_task_tx: UnboundedSender<FrostNotificationMessage>,
 }
 
-impl<Client, ToFrostMan> SigningStateMachine<Client, ToFrostMan>
+impl<ToFrostMan> SigningStateMachine<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         btc_client: BtcServerExtendedClient,
-        storage: Storage<Client>,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
@@ -185,7 +175,6 @@ where
 
         Self {
             btc_client,
-            storage,
             frost_handle,
             signing_states,
             personal_frost_identifier,
@@ -283,15 +272,9 @@ where
     }
 }
 
-impl<Client, ToFrostMan> SigningStateMachine<Client, ToFrostMan>
+impl<ToFrostMan> SigningStateMachine<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     async fn get_round1_signing_package(
         &mut self,
