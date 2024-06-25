@@ -217,7 +217,7 @@ where
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
 
         // receive over a channel message from other peers
-        if let Some((_peerid, msg)) = peer_messages_rx.recv().await {
+        while let Some((_peerid, msg)) = peer_messages_rx.recv().await {
             match msg {
                 PeerMessageResponse::Pbft(_) => {
                     // Nothing to do for pbft related messages. Does are handled by the frost
