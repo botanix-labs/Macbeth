@@ -317,6 +317,34 @@ where
     }
 }
 
+// Subset of StorageInner needed for PBFT
+#[derive(Debug, Clone)]
+pub(crate) struct StoragePBFT {
+    /// The authority list in the genesis block
+    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
+    /// Keep track of the signers
+    /// This value is pulled from the latest epoch block EDH
+    /// and should be the same as genesis_authorities as long as the federation is static
+    pub(crate) authorities: Vec<secp256k1::PublicKey>,
+    /// The aggregate public key of the FROST threshold signature scheme
+    /// Should get populated after DKG
+    pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
+
+    /// Bitcoin network
+    pub(crate) btc_network: bitcoin::Network,
+}
+
+impl StoragePBFT {
+    pub fn new(
+        genesis_authorities: Vec<secp256k1::PublicKey>,
+        authorities: Vec<secp256k1::PublicKey>,
+        aggregate_public_key: Option<secp256k1::PublicKey>,
+        btc_network: bitcoin::Network,
+    ) -> Self {
+        Self { genesis_authorities, authorities, aggregate_public_key, btc_network }
+    }
+}
+
 #[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
 pub(crate) struct StorageInner<Client> {
