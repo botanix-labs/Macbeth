@@ -482,6 +482,7 @@ where
             block,
             botanix_consensus_pkg,
             self.evm_config.clone(),
+            true,
         ) {
             error!(target: "consensus::authority::pbft::validate_poa_consensus", "Failed to build and execute transactions: {:?}", e);
             return Err(ValidateBlockError::ConsensusCheckFailed);
@@ -683,6 +684,9 @@ where
             return Ok(());
         }
 
+        // execute block and run poa consensus
+        self.execute_and_validate_poa_consensus(block.clone()).await?;
+
         // Add the peer's precommitment
         let mut write_handle = self.pre_commitments.write().await;
         let pre_commits = write_handle.entry(block_hash).or_insert_with(HashSet::new);
@@ -712,6 +716,10 @@ where
         if peer_id == self.peer_id {
             return Ok(None);
         }
+
+        // execute block and run poa consensus
+        self.execute_and_validate_poa_consensus(block.clone()).await?;
+
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
@@ -719,6 +727,7 @@ where
             warn!(target: "consensus::authority::pbft::process_commitment" ,"State machine is not awaiting commitments for block {:?}", block_hash);
             return Ok(None);
         }
+
         let lock = self.sealed_blocks.read().await;
         // This block is originally added during init block proposal
         let current_block = lock
@@ -958,7 +967,7 @@ mod tests {
             coord,
             _block_to_propose,
             mock_eth_provider,
-            mock_network_client,
+            mock_network_client
         );
 
         let pbft_state_machine = coord;
