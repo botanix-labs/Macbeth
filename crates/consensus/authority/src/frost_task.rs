@@ -4,7 +4,7 @@ use crate::{
     dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
     signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
 };
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -13,7 +13,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_provider::BlockReaderIdExt;
 use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
@@ -44,11 +44,11 @@ pub struct FrostTask<Client, ToFrostMan> {
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<Client, ToFrostMan>,
+    pub(crate) dkg_state_machine: DKGStateMachine<ToFrostMan>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<Client, ToFrostMan>,
+    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan>,
     /// Shared storage to insert aggregate public key
-    pub(crate) storage: Storage<Client>,
+    pub(crate) storage: Storage,
     /// Channel to receive frost notifications (from the block production task)
     /// We only wait for init signing messages
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
@@ -56,13 +56,8 @@ pub struct FrostTask<Client, ToFrostMan> {
 
 impl<Client, ToFrostMan> FrostTask<Client, ToFrostMan>
 where
+    Client: BlockReaderIdExt + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -72,7 +67,7 @@ where
         frost_handle: ToFrostMan,
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
-        storage: Storage<Client>,
+        storage: Storage,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
@@ -88,7 +83,6 @@ where
 
         let signing_state_machine = SigningStateMachine::new(
             btc_server,
-            storage.clone(),
             frost_handle.clone(),
             config,
             frost_task_tx,
@@ -146,7 +140,8 @@ where
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey).unwrap().as_slice(),
             ) {
-                let mut storage = self.storage.write().await;
+                // TODO replace with setter method
+                let mut storage = self.storage.inner.write().await;
                 storage.aggregate_public_key = Some(secp_pk);
 
                 drop(storage);

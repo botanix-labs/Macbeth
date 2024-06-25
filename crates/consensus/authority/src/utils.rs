@@ -13,9 +13,7 @@ use reth_botanix_lib::{
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
-use reth_provider::{
-    BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, StateProviderFactory,
-};
+use reth_provider::{BlockReaderIdExt, BundleStateWithReceipts};
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -281,7 +279,7 @@ async fn process_botanix_log(
     bitcoin_checkpoint_height: u32,
     receipt_logs: &[Log],
     btc_network: bitcoin::Network,
-    pegin_conf_depth: u32,
+    _pegin_conf_depth: u32,
 ) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
     let mut pegout: Option<PegoutData> = None;
     for topic in &log.topics().to_vec() {
@@ -420,14 +418,11 @@ pub(crate) enum EpochPegoutsError {
 /// # Returns
 ///
 /// A vector of [PegoutData] representing the pegouts in the epoch
-pub(crate) async fn epoch_pegouts<Client>(
+pub(crate) async fn epoch_pegouts(
     best_block: u64,
-    client: &Client,
+    client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
-) -> Result<Vec<PegoutData>, EpochPegoutsError>
-where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
-{
+) -> Result<Vec<PegoutData>, EpochPegoutsError> {
     let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
     let mut pegouts: Vec<PegoutData> = vec![];
     for block in start_block..=best_block {
