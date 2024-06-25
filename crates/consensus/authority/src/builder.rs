@@ -169,7 +169,6 @@ where
             authorities,
             signer_index.expect("valid index"),
             pk,
-            btc_network,
         )
         .map_err(|e| {
             error!("Failed to instantiate storage: {:?}", e);
