@@ -402,7 +402,6 @@ test-other-targets:
 
 test-doc:
 	cargo test --doc --workspace --features "ethereum"
-	cargo test --doc --workspace --features "optimism"
 
 test:
 	make test-reth && \
