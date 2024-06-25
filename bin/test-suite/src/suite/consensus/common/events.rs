@@ -33,6 +33,7 @@ pub async fn await_dkg(
     }
 }
 
+#[allow(dead_code)]
 pub async fn await_signing_completion(
     in_turn_member_index: u16,
     rx: &mut tokio::sync::broadcast::Receiver<Notifications>,

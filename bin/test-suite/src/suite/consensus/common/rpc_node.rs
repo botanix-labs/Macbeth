@@ -103,7 +103,7 @@ impl NonFederationMemberTestConfig {
             .expect("file can be opened");
         file.write_all(&self.secret_key.as_bytes()).expect("secret key written to file");
 
-        let jwt_secret_path = self.jwt_secret_path.display().to_string();
+        let _jwt_secret_path = self.jwt_secret_path.display().to_string();
 
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([

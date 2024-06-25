@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
-
 use crate::{
     it_info_print,
     suite::consensus::{

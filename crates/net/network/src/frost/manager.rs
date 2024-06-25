@@ -99,9 +99,7 @@ impl FrostManager {
             command_rx: UnboundedReceiverStream::new(command_rx),
             network,
             from_network: UnboundedReceiverStream::new(from_network),
-            //peers_directions: HashMap::default(),
             peers_connections: HashMap::default(),
-            //frost_peers_connections: HashMap::default(),
             authority_peerid,
             task_forwarder_txs: Vec::new(),
         }
