@@ -48,8 +48,18 @@ reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
 client = {path = "../../../bin/btc-server/client"}
 
+# compression
+async-compression = {version = "0.4.11", features = ["all"]}
+serde = { version = "1.0", features = ["derive"] }
+strum = { version = "0.26.3", features = ["derive"] }
+strum_macros = "0.26.4"
+
 # hex
 hex = "0.4.3"
+
+# ser/deser
+bincode = "1.3.3"
+postcard = "1.0.8"
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }

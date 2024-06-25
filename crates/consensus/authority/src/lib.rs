@@ -57,6 +57,7 @@ use tracing::{error, trace, warn};
 mod block_builder;
 mod block_fetcher;
 mod builder;
+pub mod compressor;
 mod dkg;
 mod engine_util;
 mod epoch_manager;
@@ -68,7 +69,6 @@ mod signing;
 mod sync;
 mod task;
 pub mod utils;
-
 pub use builder::AuthorityConsensusBuilder;
 
 /// Block time duration (secs)
