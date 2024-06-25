@@ -266,6 +266,22 @@ impl Consensus for AuthorityConsensus {
     }
 }
 
+/// Collection of getters and setters for all things concerned with the authority consensus
+pub(crate) trait AuthorityStorage {
+    /// Get list of authorities
+    fn get_authorities(&self) -> Vec<secp256k1::PublicKey>;
+    /// Set the aggregate key
+    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey);
+    /// Get the aggregate key
+    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey>;
+    /// Get the signer index
+    fn get_signer_index(&self) -> usize;
+    /// Get genesis authorities
+    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey>;
+    /// Get the authority public key
+    fn get_authority(&self) -> secp256k1::PublicKey;
+}
+
 #[derive(Debug)]
 pub(crate) enum StorageCreationError {
     /// empty headers
@@ -336,6 +352,32 @@ pub(crate) struct StorageInner {
 }
 
 // === impl StorageInner ===
+
+impl AuthorityStorage for StorageInner {
+    fn get_authorities(&self) -> Vec<secp256k1::PublicKey> {
+        self.authorities.clone()
+    }
+
+    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey) {
+        self.aggregate_public_key = Some(pk);
+    }
+
+    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey> {
+        self.aggregate_public_key
+    }
+
+    fn get_signer_index(&self) -> usize {
+        self.signer_index
+    }
+
+    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey> {
+        self.genesis_authorities.clone()
+    }
+
+    fn get_authority(&self) -> secp256k1::PublicKey {
+        self.authority
+    }
+}
 
 impl StorageInner {
     /// Fills in pre-execution header fields based on the current best block and given
