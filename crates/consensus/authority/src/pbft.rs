@@ -1,4 +1,7 @@
-use crate::{utils::retry_exec, AuthorityConsensus, Storage, BLOCK_TIME_DURATION_SECS};
+use crate::{
+    utils::retry_exec, AuthorityConsensus, Storage, StoragePBFT, BLOCK_TIME_DURATION_SECS,
+};
+use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::ToFrostManager;
 
@@ -7,6 +10,7 @@ use frost_secp256k1_tr as frost;
 use reth_consensus_common::utils::current_inturn_index;
 use reth_interfaces::{
     blockchain_tree::{BlockchainTreeEngine, BlockchainTreeViewer},
+    executor::{BlockExecutionError, BlockValidationError},
     p2p::headers::client::HeadersClient,
 };
 use reth_network::frost::{
@@ -19,10 +23,10 @@ use reth_primitives::{
     botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
-    BlockBody, BlockHash, SealedBlock,
+    BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ProviderError, StateProviderFactory};
-use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
+use reth_provider::{BlockExecutor, BlockReaderIdExt, ProviderError};
+use reth_revm::processor::EVMProcessor;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -63,6 +67,8 @@ pub(crate) enum Error {
     PeerAlreadyProcessedTimeSlot(u64),
     #[error("Recover authorities error {0}")]
     RecoverAuthoritiesError(#[from] RecoverAuthorityError),
+    #[error("Block execution error: {0}")]
+    BlockExecutionError(#[from] BlockExecutionError),
 }
 
 /// Error when validating a block as a block signer
@@ -160,9 +166,11 @@ impl PbftState {
 }
 
 /// A state machine for transitioning between different DKG states
-#[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig> {
-    storage: Storage<Client>,
+pub(crate) struct PbftStateMachine<'a, ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
+{
+    client: Client,
+    storage: StoragePBFT,
+    executor: Arc<RwLock<EVMProcessor<'a, EvmConfig>>>,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -183,15 +191,17 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     consensus: AuthorityConsensus,
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
+impl<'a, ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<'a, ToFrostMan, Client, NetworkClient, EvmConfig>
 where
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        storage: Storage<Client>,
+        client: Client,
+        storage: StoragePBFT,
+        executor: Arc<RwLock<EVMProcessor<'a, EvmConfig>>>,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
@@ -211,7 +221,9 @@ where
         );
 
         Self {
+            client,
             storage,
+            executor,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -230,24 +242,12 @@ where
     }
 
     /// Resets the state machine to its initial state
-    pub(crate) fn reset(self) -> Self {
-        Self {
-            storage: self.storage,
-            personal_frost_identifier: self.personal_frost_identifier,
-            frost_handle: self.frost_handle,
-            state: BTreeMap::new(),
-            config: self.config,
-            peer_id: self.peer_id,
-            pre_commitments: Arc::new(RwLock::new(BTreeMap::new())),
-            sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
-            secret_key: self.secret_key,
-            task_executor: self.task_executor,
-            network_client: self.network_client,
-            time_slot_commitment: BTreeMap::new(),
-            evm_config: self.evm_config,
-            bitcoin_block_header: self.bitcoin_block_header,
-            consensus: self.consensus,
-        }
+    /// Implicitly retains current state for fields that are not reset
+    pub(crate) fn reset(&mut self) {
+        self.state = BTreeMap::new();
+        self.pre_commitments = Arc::new(RwLock::new(BTreeMap::new()));
+        self.sealed_blocks = Arc::new(RwLock::new(BTreeMap::new()));
+        self.time_slot_commitment = BTreeMap::new()
     }
 
     /// Returns the state machine state
@@ -263,23 +263,17 @@ where
 }
 
 impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<'_, ToFrostMan, Client, NetworkClient, EvmConfig>
 where
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
+    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) async fn spawn_cleanup_task(&mut self) {
-        let storage = self.storage.read().await;
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
-        let client_clone = storage.client.clone();
+        let client_clone = self.client.clone();
         let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
         let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));
         let sealed_blocks_clone = Arc::clone(&sealed_blocks);
@@ -392,16 +386,13 @@ where
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
         // Or a block building on a fork that is deeper than 1 block deep
-        let storage = self.storage.read().await;
-        let tip = storage.client.canonical_tip();
-        let best_block = storage
-            .client
-            .block_by_number(tip.number)?
-            .ok_or(ValidateBlockError::FailedToFindTip)?;
+        let tip = self.client.canonical_tip();
+        let best_block =
+            self.client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
         let best_block_hash = tip.hash;
 
         // if the suggested block is the canon tip there is no point to signing it again
-        match storage.client.is_canonical(block_hash) {
+        match self.client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
             Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
             // canon
@@ -421,13 +412,12 @@ where
         } else {
             // Somehow we have the parent block but its not the current canon chain?
             // This should not happen
-            if storage.client.contains(block_to_sign.parent_hash) {
+            if self.client.contains(block_to_sign.parent_hash) {
                 return Err(ValidateBlockError::ParentHashNotCanonicalTip(
                     block_to_sign.hash_slow(),
                     block_to_sign.parent_hash,
                 ));
             }
-            drop(storage);
 
             // we could be missing the parent block that is being suggested indicating that there is
             // a fork retrieve the missing block via the network client.
@@ -459,34 +449,46 @@ where
         }
     }
 
-    /// Execute and run poa validation on the block without inserting it into the storage
+    /// Execute and run poa validation on the block without updating state or inserting it into the storage
     pub(crate) async fn execute_and_validate_poa_consensus(
-        &self,
+        &mut self,
         block: SealedBlock,
-    ) -> Result<(), ValidateBlockError> {
-        let storage_read = self.storage.read().await;
+    ) -> Result<(), BlockExecutionError> {
         let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
         let botanix_consensus_pkg = Some(BotanixConsensusPackage {
             recent_header: recent_bitcoin_block_header.expect("recent header to exist"),
-            aggregate_public_key: storage_read
+            aggregate_public_key: self
+                .storage
                 .aggregate_public_key
                 .clone()
                 .expect("aggregate pk is some"),
-            btc_network: storage_read.btc_network,
+            btc_network: self.storage.btc_network,
         });
-        drop(storage_read);
 
-        let mut storage_write = self.storage.write().await;
-        if let Err(e) = storage_write.execute_imported_block(
-            &self.consensus,
-            block,
-            botanix_consensus_pkg,
-            self.evm_config.clone(),
-            true,
-        ) {
-            error!(target: "consensus::authority::pbft::validate_poa_consensus", "Failed to build and execute transactions: {:?}", e);
-            return Err(ValidateBlockError::ConsensusCheckFailed);
-        }
+        let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
+            .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
+
+        let block_with_senders = BlockWithSenders::new(block.clone().unseal(), senders.clone())
+            .expect("senders are valid");
+
+        // validate before executing block
+        let authority_signers = self.storage.authorities.clone();
+        let genesis_authorities = self.storage.genesis_authorities.clone();
+        self.consensus
+            .validate_header_standalone(
+                &block.header.clone(),
+                &authority_signers,
+                &genesis_authorities,
+                true,
+            )
+            .map_err(|e| {
+                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+                // TODO(armins) return more expressive error
+                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+            })?;
+
+        let mut executor = self.executor.write().await;
+        executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
 
         Ok(())
     }
