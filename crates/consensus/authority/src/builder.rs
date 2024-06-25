@@ -1,3 +1,5 @@
+use crate::sync::SyncController;
+use crate::StoragePBFT;
 use crate::{
     block_fetcher::BlockFetcherTask,
     epoch_manager::EpochManager,
@@ -8,8 +10,6 @@ use crate::{
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
 };
-
-use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
@@ -28,6 +28,7 @@ use reth_primitives::{header_ext::HeaderExt, ChainSpec};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
+use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_tasks::TaskExecutor;
 use std::sync::Arc;
 use tokio::sync::{
@@ -206,8 +207,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub async fn build(
+    pub async fn build<'a>(
         self,
     ) -> (
         AuthorityConsensus,
@@ -304,8 +304,27 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
+            let storage_read = storage.read().await;
+            let storage_pbft = StoragePBFT::new(
+                storage_read.genesis_authorities.clone(),
+                storage_read.authorities.clone(),
+                storage_read.aggregate_public_key.clone(),
+                storage_read.btc_network.clone(),
+            );
+            drop(storage_read);
+
+            let db = State::builder()
+                .with_database_boxed(Box::new(StateProviderDatabase::new(
+                    self.client.latest().expect("latest state to exist"),
+                )))
+                .with_bundle_update()
+                .build();
+            let executor =
+                EVMProcessor::new_with_state(consensus.chain_spec.clone(), db, evm_config.clone());
             let pbft = PbftTask::new(
                 client.clone(),
+                storage_pbft,
+                Arc::new(RwLock::new(executor)),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,
