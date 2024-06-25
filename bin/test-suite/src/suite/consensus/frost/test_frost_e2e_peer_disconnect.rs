@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-/// test that nodes will propogate txs using mempool gossip
+/// test that disconnected or temporarily unresponsive nodes can re-connect automatically
 pub async fn frost_e2e_peer_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
