@@ -127,6 +127,7 @@ impl Consensus for BeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        _is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
@@ -140,6 +141,7 @@ impl Consensus for BeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        _is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }

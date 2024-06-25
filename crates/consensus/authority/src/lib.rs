@@ -130,6 +130,7 @@ impl Consensus for AuthorityConsensus {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         // Skip over genesis
         if header.number == 0 {
@@ -146,17 +147,19 @@ impl Consensus for AuthorityConsensus {
 
         validate_extra_data_header_authorities(header, genesis_authorities)?;
 
-        // Validate a quorum of authority signatures
-        let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
+        // Validate a quorum of authority signatures except during pbft
+        if !is_pbft {
+            let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
+                error!("Failed to validate authority signature: {:?}", e);
+                ConsensusError::InvalidAuthoritySignature
+            })?;
 
-        if valid_sigs != authority_signers.len() as u16 {
-            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
-                authority_signers.len() as u16,
-                valid_sigs,
-            ));
+            if valid_sigs != authority_signers.len() as u16 {
+                return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
+                    authority_signers.len() as u16,
+                    valid_sigs,
+                ));
+            }
         }
         // TODO (armins) in the future this is where we would validate federation votes
 
@@ -178,6 +181,7 @@ impl Consensus for AuthorityConsensus {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         // run the reth header validation rule
         let sealed_header = header.clone().seal_slow();
@@ -187,7 +191,7 @@ impl Consensus for AuthorityConsensus {
         )?;
 
         // Validate EDH serialization and signature on block
-        self.validate_extra_data_header(header, authority_signers, genesis_authorities)?;
+        self.validate_extra_data_header(header, authority_signers, genesis_authorities, is_pbft)?;
 
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
@@ -651,7 +655,7 @@ impl StorageInner {
         sealed_block: SealedBlock,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         evm_config: EvmConfig,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
+        is_pbft: bool,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -683,6 +687,7 @@ impl StorageInner {
                 &sealed_block.header.clone(),
                 &authority_signers,
                 &genesis_authorities,
+                is_pbft,
             )
             .map_err(|e| {
                 warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
@@ -756,8 +761,12 @@ mod tests {
         let mut header = Header::default();
         header.number = 0;
         let authority_signers = vec![];
-        let result =
-            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
+        let result = consensus.validate_extra_data_header(
+            &header,
+            &authority_signers,
+            &authority_signers,
+            false,
+        );
 
         assert!(result.is_ok());
     }
@@ -779,8 +788,12 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&non_fed).expect("valid sign");
 
-        let result =
-            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
+        let result = consensus.validate_extra_data_header(
+            &header,
+            &authority_signers,
+            &authority_signers,
+            false,
+        );
         assert!(result.is_err());
 
         // reset header and try again with a
@@ -789,8 +802,12 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk1).expect("valid sign");
 
-        let result =
-            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
+        let result = consensus.validate_extra_data_header(
+            &header,
+            &authority_signers,
+            &authority_signers,
+            false,
+        );
         assert!(result.is_ok())
     }
 
