@@ -286,7 +286,6 @@ impl Storage {
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
-        btc_network: bitcoin::Network,
     ) -> Result<Self, StorageCreationError> {
         if headers.is_empty() {
             return Err(StorageCreationError::EmptyHeaders);
@@ -300,7 +299,6 @@ impl Storage {
             signer_index,
             authority: pk,
             aggregate_public_key: None,
-            btc_network,
         };
 
         Ok(Self { inner: Arc::new(RwLock::new(storage)) })
@@ -335,8 +333,6 @@ pub(crate) struct StorageInner {
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
-    /// Bitcoin network
-    pub(crate) btc_network: bitcoin::Network,
 }
 
 // === impl StorageInner ===
