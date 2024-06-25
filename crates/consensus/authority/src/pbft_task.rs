@@ -238,7 +238,7 @@ where
                         // task
                         continue;
                     }
-                    PeerMessageResponse::Healtcheck(_) => {
+                    PeerMessageResponse::Healthcheck(_) => {
                         // Nothing to do for health related messages.
                         continue;
                     }

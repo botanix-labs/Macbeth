@@ -186,7 +186,7 @@ impl Stream for FrostProtoConnection {
                     ))
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
-                    PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                    PeerMessageResponse::Healthcheck(healthcheck_response) => {
                         let HealthcheckResponse { sender, receiver } = healthcheck_response;
                         let req = HealthcheckRequest::new(sender, receiver);
 
@@ -289,7 +289,7 @@ impl Stream for FrostProtoConnection {
             FrostProtoMessageKind::Healthcheck(data) => {
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
-                    response: PeerMessageResponse::Healtcheck(HealthcheckResponse {
+                    response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
                         receiver: data.receiver,
                         sender: data.sender,
                     }),

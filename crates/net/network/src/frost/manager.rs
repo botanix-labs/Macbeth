@@ -124,7 +124,7 @@ impl FrostManager {
             let resp = HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
             if let Some(peer_commands_tx) = peer_data.peer_commands_tx.as_ref() {
                 match peer_commands_tx
-                    .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healtcheck(resp)))
+                    .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
                 {
                     Ok(_) => {
                         debug!("Healthcheck sent to peer {:?}", peer_id,);

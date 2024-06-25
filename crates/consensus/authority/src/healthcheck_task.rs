@@ -178,14 +178,14 @@ where
                 // check the none responding peers are truly disconnected peers, otherwise they might be just temp unresponsive to healthcheck pings
                 none_responding_peers.retain(|peer| !all_trusted_connected_peers_ids.contains(&peer));
 
-                // send to slack alarms about those peers
+                // send to slack/stdout alarms about those peers
+                let none_responding_peers_stringified = none_responding_peers
+                .clone()
+                .into_iter()
+                .map(|peer| peer.to_string())
+                .collect::<Vec<String>>()
+                .join(",");
                 if let Some(ref client) = events_notification_slack_client {
-                    let none_responding_peers_stringified = none_responding_peers
-                        .clone()
-                        .into_iter()
-                        .map(|peer| peer.to_string())
-                        .collect::<Vec<String>>()
-                        .join(",");
                     if let Err(e) = client
                         .send_message(&format!(
                             "Connection lost to peers {}. Reconnecting ...",
@@ -195,6 +195,8 @@ where
                     {
                         error!(target: "HealthcheckTask::start_task", "Error sending slack message {:?}", e);
                     }
+                } else {
+                    warn!(target: "HealthcheckTask::start_task", "Trying to reconnect to none-responding peers {} ...", none_responding_peers_stringified);
                 }
 
                 // try to reconnect to the peers if they are considered fully disconnected
@@ -231,7 +233,7 @@ where
                     // Nothing to do for signing related messages. Does are handled by the frost
                     // task
                 }
-                PeerMessageResponse::Healtcheck(healthcheck_response) => {
+                PeerMessageResponse::Healthcheck(healthcheck_response) => {
                     // if both sender and receiver are registered authorities and I am the the
                     // receiver
                     if authority_peers.contains(&healthcheck_response.sender) &&

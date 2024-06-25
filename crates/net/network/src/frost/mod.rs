@@ -51,7 +51,7 @@ pub enum PeerMessageResponse {
     /// PBFT related responses
     Pbft(PbftResponse),
     /// Healtcheck response
-    Healtcheck(HealthcheckResponse),
+    Healthcheck(HealthcheckResponse),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -60,7 +60,7 @@ impl fmt::Display for PeerMessageResponse {
             PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
             PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
             PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
-            PeerMessageResponse::Healtcheck(response) => {
+            PeerMessageResponse::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
             }
         }
