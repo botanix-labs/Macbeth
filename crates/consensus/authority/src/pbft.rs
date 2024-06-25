@@ -880,7 +880,7 @@ mod tests {
                     Ok(())
                 }
                 FrostCommand::SendHealtcheckToPeers => Ok(()),
-                FrostCommand::ReconnectPeers(_, _) => Ok(()),
+                FrostCommand::ReconnectPeers(_) => Ok(()),
             }
         }
     }
