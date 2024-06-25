@@ -105,9 +105,16 @@ impl FrostManager {
         }
     }
 
-    fn all_peers_connected(&self) -> bool {
+    fn all_authority_peers_connected(&self) -> bool {
         let peers_count = self.peers_connections.keys().cloned().count();
-        peers_count == self.authority_peerid.len() - 1
+        let mut all_peer_connection_peer_ids =
+            self.peers_connections.keys().cloned().collect::<Vec<_>>();
+
+        // retain all peer ids that are not in the autorities list
+        all_peer_connection_peer_ids.retain(|peer_id| !self.authority_peerid.contains(peer_id));
+
+        // check that the connected peers are indeed the authority peers
+        peers_count == self.authority_peerid.len() - 1 && all_peer_connection_peer_ids.is_empty()
     }
 
     /// Returns a new [`FrostHandle`] that can send commands to this type.
@@ -219,7 +226,7 @@ impl FrostManager {
             }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller
-                if let Err(e) = tx.send(self.all_peers_connected()) {
+                if let Err(e) = tx.send(self.all_authority_peers_connected()) {
                     error!(target: "network::frost::on_command", "Error replying to call on CheckConnectedToAll {:?}", e);
                 }
             }
