@@ -208,7 +208,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub async fn build<'a>(
+    pub async fn build(
         self,
     ) -> (
         AuthorityConsensus,
@@ -216,7 +216,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<'a, Client, ToFrostMan, NetworkClient, EvmConfig>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>>,
     ) {
         let Self {
             btc_server,
@@ -306,18 +306,12 @@ where
             );
             drop(storage_read);
 
-            let db = State::builder()
-                .with_database_boxed(Box::new(StateProviderDatabase::new(
-                    self.client.latest().expect("latest state to exist"),
-                )))
-                .with_bundle_update()
-                .build();
-            let executor =
-                EVMProcessor::new_with_state(consensus.chain_spec.clone(), db, evm_config.clone());
+            let db = self.client.latest().expect("latest state to exist");
+
             let pbft = PbftTask::new(
                 client.clone(),
                 storage_pbft,
-                Arc::new(RwLock::new(executor)),
+                db,
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,

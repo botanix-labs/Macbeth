@@ -25,8 +25,8 @@ use reth_primitives::{
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockExecutor, BlockReaderIdExt, ProviderError};
-use reth_revm::processor::EVMProcessor;
+use reth_provider::{BlockExecutor, BlockReaderIdExt, ProviderError, StateProviderBox};
+use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -166,11 +166,10 @@ impl PbftState {
 }
 
 /// A state machine for transitioning between different DKG states
-pub(crate) struct PbftStateMachine<'a, ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-{
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig> {
     client: Client,
     storage: StoragePBFT,
-    executor: Arc<RwLock<EVMProcessor<'a, EvmConfig>>>,
+    db: StateProviderBox,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -191,8 +190,8 @@ pub(crate) struct PbftStateMachine<'a, ToFrostMan: ToFrostManager, Client, Netwo
     consensus: AuthorityConsensus,
 }
 
-impl<'a, ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<'a, ToFrostMan, Client, NetworkClient, EvmConfig>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
 where
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -201,7 +200,7 @@ where
     pub(crate) fn new(
         client: Client,
         storage: StoragePBFT,
-        executor: Arc<RwLock<EVMProcessor<'a, EvmConfig>>>,
+        db: StateProviderBox,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
@@ -223,7 +222,7 @@ where
         Self {
             client,
             storage,
-            executor,
+            db,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -263,7 +262,7 @@ where
 }
 
 impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<'_, ToFrostMan, Client, NetworkClient, EvmConfig>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
 where
     Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
@@ -487,7 +486,17 @@ where
                 BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
             })?;
 
-        let mut executor = self.executor.write().await;
+        let db_provider = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(self.db.as_ref())))
+            .with_bundle_update()
+            .build();
+
+        let mut executor = EVMProcessor::new_with_state(
+            self.consensus.chain_spec.clone(),
+            db_provider,
+            self.evm_config.clone(),
+        );
+
         executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
 
         Ok(())

@@ -4,7 +4,10 @@ use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
     StoragePBFT,
 };
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient,
+    provider::ProviderResult,
+};
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -15,7 +18,7 @@ use reth_network::{
 use reth_network_types::pk2id;
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderBox, StateProviderFactory};
 use reth_revm::processor::EVMProcessor;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
@@ -51,12 +54,11 @@ pub(crate) struct PbftFinalizationNotification {
     pub(crate) block_witness: BlockWitness,
 }
 
-pub struct PbftTask<'a, Client, ToFrostMan: ToFrostManager, NetworkClient, EvmConfig> {
+pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient, EvmConfig> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine:
-        PbftStateMachine<'a, ToFrostMan, Client, NetworkClient, EvmConfig>,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>,
     /// Shared storage to insert aggregate public key and do poa consensus
     pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
@@ -73,8 +75,8 @@ pub struct PbftTask<'a, Client, ToFrostMan: ToFrostManager, NetworkClient, EvmCo
     network_handle: NetworkHandle,
 }
 
-impl<'a, Client, ToFrostMan, NetworkClient, EvmConfig>
-    PbftTask<'a, Client, ToFrostMan, NetworkClient, EvmConfig>
+impl<Client, ToFrostMan, NetworkClient, EvmConfig>
+    PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>
 where
     ToFrostMan: ToFrostManager + Clone + 'static,
     Client: BlockReaderIdExt
@@ -92,7 +94,7 @@ where
     pub(crate) async fn new(
         client: Client,
         storage_pbft: StoragePBFT,
-        executor: Arc<RwLock<EVMProcessor<'a, EvmConfig>>>,
+        db: StateProviderBox,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         secret_key: secp256k1::SecretKey,
@@ -109,7 +111,7 @@ where
         let mut pbft_state_machine = PbftStateMachine::new(
             client.clone(),
             storage_pbft,
-            executor,
+            db,
             frost_handle.clone(),
             config.clone(),
             my_peerid,
@@ -266,7 +268,7 @@ where
 }
 
 impl<Client, F, NetworkClient, EvmConfig> std::fmt::Debug
-    for PbftTask<'_, Client, F, NetworkClient, EvmConfig>
+    for PbftTask<Client, F, NetworkClient, EvmConfig>
 where
     F: ToFrostManager + Clone,
     Client: Clone + 'static,
