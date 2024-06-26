@@ -203,9 +203,16 @@ impl Consensus for AuthorityConsensus {
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
         header.validate_timestamp(current_timestamp).map_err(|_| {
-            ConsensusError::TimestampIsInFuture {
-                timestamp: header.timestamp,
-                present_timestamp: current_timestamp,
+            if header.timestamp > current_timestamp {
+                ConsensusError::TimestampIsInFuture {
+                    timestamp: header.timestamp,
+                    present_timestamp: current_timestamp,
+                }
+            } else {
+                ConsensusError::TimestampIsInPast {
+                    timestamp: header.timestamp,
+                    present_timestamp: current_timestamp,
+                }
             }
         })?;
 
