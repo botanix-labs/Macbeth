@@ -19,7 +19,8 @@ use reth_network_types::pk2id;
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProvider, StateProviderBox, StateProviderFactory
+    BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProvider, StateProviderBox,
+    StateProviderFactory,
 };
 use reth_revm::processor::EVMProcessor;
 use reth_tasks::TaskExecutor;
@@ -160,7 +161,7 @@ where
                 match message {
                     PbftNotificationMessage::Reset => {
                         info!(target: "PBFT Task", "Resetting PBFT State Machine");
-                        self.pbft_state_machine.reset();
+                        self.pbft_state_machine = self.pbft_state_machine.clone().reset();
                     }
                     PbftNotificationMessage::ProposeBlock(pbft_notification) => {
                         info!(target: "PBFT Task", "Received block proposal notification");
