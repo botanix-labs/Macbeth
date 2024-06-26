@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
+    dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient, signing::SigningStateMachine, utils::is_active_sync_in_progress, AuthorityStorage, Storage
 };
 
 use reth_network::{
@@ -36,7 +35,7 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<Client, ToFrostMan> {
+pub struct FrostTask<Client, ToFrostMan, AS> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -46,7 +45,7 @@ pub struct FrostTask<Client, ToFrostMan> {
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<ToFrostMan>,
+    pub(crate) dkg_state_machine: DKGStateMachine<ToFrostMan, AS>,
     /// signing state machine
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan>,
     /// Shared storage to insert aggregate public key
@@ -56,10 +55,11 @@ pub struct FrostTask<Client, ToFrostMan> {
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
-impl<Client, ToFrostMan> FrostTask<Client, ToFrostMan>
+impl<Client, ToFrostMan, AS> FrostTask<Client, ToFrostMan, AS>
 where
     Client: BlockReaderIdExt + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone,
+    AS: AuthorityStorage + Clone,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -69,7 +69,7 @@ where
         frost_handle: ToFrostMan,
         epoch_manager: EpochManager<Client>,
         config: FrostConfig,
-        storage: Storage,
+        storage: AS,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
@@ -335,10 +335,11 @@ where
     }
 }
 
-impl<Client, ToFrostMan> std::fmt::Debug for FrostTask<Client, ToFrostMan>
+impl<Client, ToFrostMan, AS> std::fmt::Debug for FrostTask<Client, ToFrostMan, AS>
 where
     ToFrostMan: ToFrostManager + Clone,
     Client: Clone + 'static,
+    AS: AuthorityStorage + Clone,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FrostTask").finish_non_exhaustive()

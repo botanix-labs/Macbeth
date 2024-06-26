@@ -6,7 +6,7 @@ use revm::{
     inspector_handle_register,
     interpreter::Host,
     primitives::{
-        bitvec::view::BitViewSized, CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState,
+        CfgEnvWithHandlerCfg, ExecutionResult, ResultAndState,
         State as EvmState,
     },
     Evm, State,

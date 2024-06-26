@@ -65,6 +65,7 @@ mod signing;
 mod sync;
 mod task;
 pub mod utils;
+mod execution_utils;
 
 pub use builder::AuthorityConsensusBuilder;
 

@@ -13,8 +13,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     extended_client::BtcServerExtendedClient,
-    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
-    Storage,
+    utils::{deserialize_frost_peer_id, FrostParseError},
+    Storage, AuthorityStorage
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -94,9 +94,9 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine<ToFrostMan> {
+pub(crate) struct DKGStateMachine<ToFrostMan, AS> {
     btc_client: BtcServerExtendedClient,
-    storage: Storage,
+    storage: AS,
     frost_handle: ToFrostMan,
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
@@ -108,9 +108,10 @@ pub(crate) struct DKGStateMachine<ToFrostMan> {
     round2_packages: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
-impl<ToFrostMan> DKGStateMachine<ToFrostMan>
+impl<ToFrostMan, AS> DKGStateMachine<ToFrostMan, AS>
 where
     ToFrostMan: ToFrostManager + Clone,
+    AS: AuthorityStorage + Clone,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
@@ -162,9 +163,10 @@ where
     }
 }
 
-impl<ToFrostMan> DKGStateMachine<ToFrostMan>
+impl<ToFrostMan, AS> DKGStateMachine<ToFrostMan, AS>
 where
     ToFrostMan: ToFrostManager + Clone,
+    AS: AuthorityStorage + Clone,
 {
     async fn get_round1_dkg_package(&mut self) -> Result<DkgPayload, Error> {
         let round1_payload = self.btc_client.get_round1_dkg_package(client::Empty {}).await;
@@ -661,9 +663,8 @@ where
                 return Err(Error::PublicKeyParse(e));
             }
         };
-        let mut storage = self.storage.write().await;
-        storage.aggregate_public_key = self.public_key_package;
-        drop(storage);
+
+        self.storage.set_aggregate_key(self.public_key_package.expect("public key is set"));
         info!(target: "consensus::authority::dkg::process_round3", "Round 3 finished successfully");
         Ok(())
     }

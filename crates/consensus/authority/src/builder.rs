@@ -5,7 +5,7 @@ use crate::{
     frost_task::{FrostNotificationMessage, FrostTask},
     pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
-    AuthorityConsensus, Storage,
+    AuthorityConsensus, AuthorityStorage, Storage,
 };
 
 use crate::sync::SyncController;
@@ -42,10 +42,11 @@ pub struct AuthorityConsensusBuilder<
     Engine: EngineTypes,
     ToFrostMan,
     NetworkClient,
+    AS: AuthorityStorage,
 > {
     client: Client,
     consensus: AuthorityConsensus,
-    storage: Storage,
+    storage: AS,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: Option<BtcServerExtendedClient>,
@@ -76,8 +77,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
-    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
+impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient, AS>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient, AS>
 where
     ToFrostMan: ToFrostManager + Clone + 'static,
     Engine: EngineTypes + 'static,
@@ -90,6 +91,7 @@ where
         + Clone
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
+    AS: AuthorityStorage + Clone,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -211,7 +213,7 @@ where
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
-        Option<FrostTask<Client, ToFrostMan>>,
+        Option<FrostTask<Client, ToFrostMan, AS>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
     ) {
