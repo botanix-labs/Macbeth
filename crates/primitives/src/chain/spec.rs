@@ -299,8 +299,9 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             ),
             (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
         ]),
-        deposit_contract: None, // TODO: do we even have?
-        parent_confirmation_depth: 6,
+        deposit_contract: None, // only relevant for PoS chains
+        // Signet confirmation depth requirment
+        parent_confirmation_depth: 1,
         ..Default::default()
     }
     .into()
