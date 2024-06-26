@@ -25,7 +25,10 @@ use reth_primitives::{
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockExecutor, BlockReaderIdExt, ProviderError, StateProviderBox};
+use reth_provider::StateProvider;
+use reth_provider::{
+    BlockExecutor, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderBox,
+};
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
@@ -166,10 +169,9 @@ impl PbftState {
 }
 
 /// A state machine for transitioning between different DKG states
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig> {
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EF> {
     client: Client,
     storage: StoragePBFT,
-    db: StateProviderBox,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -183,32 +185,30 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     network_client: NetworkClient,
     /// Store commitment to time slot
     time_slot_commitment: BTreeMap<u64, PeerId>,
-    /// The type that defines how to configure the EVM.
-    evm_config: EvmConfig,
     /// latest known bitcoin block header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     consensus: AuthorityConsensus,
+    /// executor factory
+    executor_factory: EF,
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
 where
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
+    EF: ExecutorFactory + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         client: Client,
         storage: StoragePBFT,
-        db: StateProviderBox,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
         task_executor: Option<TaskExecutor>,
         network_client: NetworkClient,
-        evm_config: EvmConfig,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        executor_factory: EF,
         consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
@@ -222,7 +222,6 @@ where
         Self {
             client,
             storage,
-            db,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -234,7 +233,7 @@ where
             secret_key,
             task_executor: task_executor.clone(),
             network_client,
-            evm_config,
+            executor_factory,
             bitcoin_block_header,
             consensus,
         }
@@ -261,14 +260,13 @@ where
     }
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EvmConfig>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
 where
-    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    Client: StateProvider + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
+    EF: ExecutorFactory + Clone + 'static,
 {
     pub(crate) async fn spawn_cleanup_task(&mut self) {
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
@@ -486,16 +484,18 @@ where
                 BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
             })?;
 
-        let db_provider = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(self.db.as_ref())))
-            .with_bundle_update()
-            .build();
+        let mut executor = self.executor_factory.with_state(&self.client);
 
-        let mut executor = EVMProcessor::new_with_state(
-            self.consensus.chain_spec.clone(),
-            db_provider,
-            self.evm_config.clone(),
-        );
+        // let db_provider = State::builder()
+        //     .with_database_boxed(Box::new(StateProviderDatabase::new(self.db.as_ref())))
+        //     .with_bundle_update()
+        //     .build();
+
+        // let mut executor = EVMProcessor::new_with_state(
+        //     self.consensus.chain_spec.clone(),
+        //     db_provider,
+        //     self.evm_config.clone(),
+        // );
 
         executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
 
@@ -812,7 +812,10 @@ mod tests {
     use reth_node_core::args::GenesisTomlConfig;
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
-    use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
+    use reth_provider::{
+        test_utils::{MockEthProvider, TestExecutorFactory},
+        HeaderProvider,
+    };
     use secp256k1::SECP256K1;
 
     #[derive(Clone, Debug)]
@@ -921,18 +924,23 @@ mod tests {
             let mut $block_to_propose = None;
             let mut $coord = None;
 
+            let test_executor_factory = TestExecutorFactory::default();
+            let test_chain_spec =
+                GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None);
+
             for i in 0..$n {
                 let pbft_state_machine = PbftStateMachine::new(
                     $mock_eth_provider.clone(),
+                    StoragePBFT::default(),
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
                     $peer_ids[i],
                     $sks[i],
                     None,
                     $mock_network_client.clone(),
-                    EthEvmConfig::default(),
                     Arc::new(RwLock::new(None)),
-                    GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
+                    test_chain_spec,
+                    test_executor_factory,
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -1753,7 +1761,6 @@ mod tests {
             sk.clone(),
             None,
             mock_network_client,
-            EthEvmConfig::default(),
             Arc::new(RwLock::new(None)),
             GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
         );
