@@ -47,6 +47,8 @@ pub enum PeerMessageResponse {
     Signing(SigningResponse),
     /// PBFT related responses
     Pbft(PbftResponse),
+    /// UTXO related responses
+    Utxo(UtxoResponse),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -55,6 +57,7 @@ impl fmt::Display for PeerMessageResponse {
             PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
             PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
             PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
+            PeerMessageResponse::Utxo(response) => write!(f, "Utxo Response: {}", response),
         }
     }
 }
@@ -143,6 +146,19 @@ impl fmt::Display for SigningResponse {
             self.signing_session_id.len(),
             self.psbt.len()
         )
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UtxoResponse {
+    /// serialized utxo data set
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Utxo Data Size: {} bytes", self.data.len(),)
     }
 }
 

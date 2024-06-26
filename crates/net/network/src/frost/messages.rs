@@ -77,6 +77,28 @@ impl SignRequest {
     }
 }
 
+/// A structured utxo set message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UtxoRequest {
+    /// The version of the request message
+    pub version: u16,
+    /// PBFT data
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Data Size: {} bytes", self.data.len(),)
+    }
+}
+
+impl UtxoRequest {
+    /// Constructs a new PBFT Request using a data payload.
+    pub fn new(data: Vec<u8>) -> Self {
+        UtxoRequest { version: PBFT_MESSAGE_VERSION as u16, data }
+    }
+}
+
 /// Enum defining the frost message type as u8
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +129,8 @@ pub enum FrostProtoMessageId {
     PeerPreCommitment = 0x0B,
     /// PBFT message peer commit
     PeerCommit = 0x0C,
+    /// utxo set
+    Utxo = 0x0D,
 }
 
 /// Enum defining the frost message kind
@@ -138,6 +162,8 @@ pub enum FrostProtoMessageKind {
     PeerPreCommitment(PbftRequest),
     /// PBFT message peer commit
     PeerCommit(PbftRequest),
+    /// Utxo set message
+    Utxo(UtxoRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -257,6 +283,14 @@ impl FrostProtoMessage {
         }
     }
 
+    /// Creates a utxo set message
+    pub fn utxo_message(resource: UtxoRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::Utxo,
+            message: FrostProtoMessageKind::Utxo(resource),
+        }
+    }
+
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -351,6 +385,10 @@ impl FrostProtoMessage {
                 buf.put_u32_le(buffer.len() as u32);
                 buf.put_slice(&buffer);
             }
+            FrostProtoMessageKind::Utxo(resource) => {
+                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.data);
+            }
         }
         buf
     }
@@ -376,6 +414,7 @@ impl FrostProtoMessage {
             0x0A => FrostProtoMessageId::CoordinatorBlockProposal,
             0x0B => FrostProtoMessageId::PeerPreCommitment,
             0x0C => FrostProtoMessageId::PeerCommit,
+            0x0D => FrostProtoMessageId::Utxo,
             _ => return None,
         };
         let message = match message_type {
@@ -571,17 +610,29 @@ impl FrostProtoMessage {
                     return None;
                 }
             }
+            FrostProtoMessageId::Utxo => {
+                // utxo
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let psbt = buf[..psbt_len].to_vec();
+                buf.advance(psbt_len);
+
+                FrostProtoMessageKind::Utxo(UtxoRequest::new(psbt))
+            }
         };
         Some(Self { message_type, message })
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::UtxoRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
         SignRequest,
     };
+    use itertools::Itertools;
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
@@ -740,6 +791,33 @@ mod tests {
             assert_eq!(decoded_authority_index, authority_index, "Authority index does not match");
         } else {
             panic!("Decoded message is not a PongMessage");
+        }
+    }
+
+    #[test]
+    fn test_utxo_encode_decode() {
+        let msg = "Hello world".to_owned();
+        let random_string = msg.bytes().collect_vec();
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::Utxo,
+            message: FrostProtoMessageKind::Utxo(UtxoRequest::new(random_string)),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode UtxoMessage");
+
+        // Verify that the decoded message matches the original message
+        if let FrostProtoMessageKind::Utxo(utxo_request) = decoded_message.message {
+            let decoded_message = String::from_utf8(utxo_request.data).unwrap();
+            assert_eq!(decoded_message, msg, "data does not match");
+        } else {
+            panic!("Decoded message is not a UtxoMessage");
         }
     }
 }

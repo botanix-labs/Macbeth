@@ -24,9 +24,9 @@ use crate::{
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
+    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest, UtxoRequest},
     FrostPeerCommand, FrostProtocolEvent, PbftEventResponseType, PbftResponse, PeerMessageResponse,
-    ProtocolState,
+    ProtocolState, UtxoResponse,
 };
 
 /// Frost Protocol Handler
@@ -254,6 +254,10 @@ impl Stream for FrostProtoConnection {
                             }
                         }
                     }
+                    PeerMessageResponse::Utxo(utxo_response) => Poll::Ready(Some(
+                        FrostProtoMessage::utxo_message(UtxoRequest::new(utxo_response.data))
+                            .encoded(),
+                    )),
                 },
             };
         }
@@ -379,6 +383,12 @@ impl Stream for FrostProtoConnection {
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
+                    peer_id: this.peer_id,
+                });
+            }
+            FrostProtoMessageKind::Utxo(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    response: PeerMessageResponse::Utxo(UtxoResponse { data: data.data }),
                     peer_id: this.peer_id,
                 });
             }

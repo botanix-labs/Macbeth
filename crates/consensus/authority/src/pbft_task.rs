@@ -234,6 +234,11 @@ where
                         // task
                         continue;
                     }
+                    PeerMessageResponse::Utxo(_) => {
+                        // Nothing to do for utxo related messages. Does are handled by the frost
+                        // task
+                        continue;
+                    }
                 }
             }
 

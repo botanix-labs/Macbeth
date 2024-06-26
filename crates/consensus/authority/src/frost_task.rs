@@ -329,6 +329,11 @@ where
                             },
                         }
                     }
+                    PeerMessageResponse::Utxo(_) => {
+                        // Nothing to do for utxo related messages. Does are handled by the pbft
+                        // task
+                        continue;
+                    }
                 }
             }
 
