@@ -41,6 +41,7 @@ use tokio::sync::{
     mpsc::{error::SendError, UnboundedSender},
     RwLock,
 };
+use reth_provider::StateProviderFactory;
 use tracing::{debug, error, info, warn};
 
 type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
@@ -263,7 +264,7 @@ where
 impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
     PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
 where
-    Client: StateProvider + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    Client: StateProviderFactory + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
     EF: ExecutorFactory + Clone + 'static,
@@ -483,19 +484,8 @@ where
                 // TODO(armins) return more expressive error
                 BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
             })?;
-
-        let mut executor = self.executor_factory.with_state(&self.client);
-
-        // let db_provider = State::builder()
-        //     .with_database_boxed(Box::new(StateProviderDatabase::new(self.db.as_ref())))
-        //     .with_bundle_update()
-        //     .build();
-
-        // let mut executor = EVMProcessor::new_with_state(
-        //     self.consensus.chain_spec.clone(),
-        //     db_provider,
-        //     self.evm_config.clone(),
-        // );
+        let db = self.client.latest().expect("get latest");
+        let mut executor = self.executor_factory.with_state(&db);
 
         executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
 
