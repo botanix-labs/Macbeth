@@ -5,7 +5,7 @@ use crate::{
     StoragePBFT,
 };
 use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient,
+    blockchain_tree::BlockchainTreeEngine, executor, p2p::headers::client::HeadersClient,
     provider::ProviderResult,
 };
 use reth_network::{
@@ -18,7 +18,9 @@ use reth_network::{
 use reth_network_types::pk2id;
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderBox, StateProviderFactory};
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProvider, StateProviderBox, StateProviderFactory
+};
 use reth_revm::processor::EVMProcessor;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
@@ -54,11 +56,11 @@ pub(crate) struct PbftFinalizationNotification {
     pub(crate) block_witness: BlockWitness,
 }
 
-pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient, EvmConfig> {
+pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient, EF> {
     /// Frost Handler
     pub(crate) frost_handle: ToFrostMan,
     /// pbft state machine
-    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient, EvmConfig>,
+    pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>,
     /// Shared storage to insert aggregate public key and do poa consensus
     pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
@@ -75,8 +77,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient, EvmConfig
     network_handle: NetworkHandle,
 }
 
-impl<Client, ToFrostMan, NetworkClient, EvmConfig>
-    PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>
+impl<Client, ToFrostMan, NetworkClient, EF> PbftTask<Client, ToFrostMan, NetworkClient, EF>
 where
     ToFrostMan: ToFrostManager + Clone + 'static,
     Client: BlockReaderIdExt
@@ -86,15 +87,13 @@ where
         + Clone
         + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
+    EF: ExecutorFactory + Clone + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(
         client: Client,
         storage_pbft: StoragePBFT,
-        db: StateProviderBox,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         secret_key: secp256k1::SecretKey,
@@ -103,23 +102,22 @@ where
         task_executor: TaskExecutor,
         network_client: NetworkClient,
         network_handle: NetworkHandle,
-        evm_config: EvmConfig,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         consensus: AuthorityConsensus,
+        executor_factory: EF,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
             client.clone(),
             storage_pbft,
-            db,
             frost_handle.clone(),
             config.clone(),
             my_peerid,
             secret_key,
             Some(task_executor),
             network_client.clone(),
-            evm_config,
             bitcoin_block_header,
+            executor_factory,
             consensus,
         );
         pbft_state_machine.spawn_cleanup_task().await;

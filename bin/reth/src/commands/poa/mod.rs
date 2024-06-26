@@ -697,6 +697,7 @@ where {
             payload_builder.clone(),
             node_config.rpc.btc_network,
             genesis_authorities,
+            executor_factory.clone(),
         )
         .expect("Failed to create authority consensus builder")
         .build()
