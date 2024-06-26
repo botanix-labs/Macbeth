@@ -6,12 +6,13 @@ use async_compression::{
     },
     Level,
 };
+use client::{GetAllUtxosResponse, Utxo};
+use displaydoc::Display as DisplayDoc;
+use prost::bytes::Buf;
 use serde::Deserialize;
 use strum::{AsRefStr, EnumIter, EnumString};
-use tokio::io::AsyncWriteExt as _; // for `write_all` and `shutdown`
-
-use displaydoc::Display as DisplayDoc;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt as _; // for `write_all` and `shutdown`
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
@@ -39,6 +40,10 @@ pub enum SerdeError {
     Bincode(#[from] bincode::ErrorKind),
     /// serde postcard error
     Postcard(#[from] postcard::Error),
+    /// serde prost encode error
+    ProstEncode(#[from] prost::EncodeError),
+    /// serde prost decode error
+    ProstDecode(#[from] prost::DecodeError),
 }
 
 /// Password hashing error types.
@@ -80,6 +85,23 @@ pub enum SerializationType {
     Bincode,
     #[strum(serialize = "postcard")]
     Postcard,
+}
+
+pub struct ProstMessageSerdelizer<T: prost::Message>(pub T);
+
+impl<T> ProstMessageSerdelizer<T>
+where
+    T: prost::Message + std::default::Default + Buf,
+{
+    fn serialize(&mut self) -> Result<Vec<u8>, Error> {
+        let mut buf = Vec::new();
+        self.0.encode(&mut buf).map_err(|e| Error::Serde(SerdeError::ProstEncode(e)))?;
+        Ok(buf)
+    }
+
+    fn deserialize(self) -> Result<T, Error> {
+        prost::Message::decode::<T>(self.0).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
+    }
 }
 
 #[derive(Debug)]
@@ -334,7 +356,14 @@ impl Compressor {
 #[cfg(test)]
 pub mod test {
     use crate::compressor::Compressor;
+    use bitcoin::{
+        absolute::LockTime, blockdata::script::Script, hashes::Hash, psbt::Psbt, Address, Amount,
+        FeeRate, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+    };
+    use client::{OutPoint, Utxo};
+    use rand::{thread_rng, Rng, RngCore};
     use serde_json::Value;
+    use std::{collections::BTreeMap, str::FromStr};
 
     #[tokio::test]
     async fn test_compress_decompress_json() {
@@ -382,5 +411,27 @@ pub mod test {
         // check and compare
         let original_data: Value = serde_json::from_slice(deserialized_data.as_slice()).unwrap();
         assert_eq!(data, original_data);
+    }
+
+    #[tokio::test]
+    async fn test_utxo_serde() {
+        let mut rng = thread_rng();
+        // generate utxos
+        for _ in 0..100 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo {
+                outpoint: Some(OutPoint { txid, vout }),
+                output: rng.gen::<u32>(),
+                eth_address: "0x0".to_string(),
+            };
+        }
+
+        // compress and serialize in the same order
+        let compressor = Compressor::new();
     }
 }

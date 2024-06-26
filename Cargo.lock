@@ -7846,6 +7846,7 @@ dependencies = [
  "futures-util",
  "hex",
  "postcard",
+ "prost",
  "rand 0.8.5",
  "reth",
  "reth-beacon-consensus",
