@@ -232,12 +232,25 @@ where
     }
 
     /// Resets the state machine to its initial state
-    /// Implicitly retains current state for fields that are not reset
-    pub(crate) fn reset(&mut self) {
-        self.state = BTreeMap::new();
-        self.pre_commitments = Arc::new(RwLock::new(BTreeMap::new()));
-        self.sealed_blocks = Arc::new(RwLock::new(BTreeMap::new()));
-        self.time_slot_commitment = BTreeMap::new()
+    pub(crate) fn reset(self) -> Self {
+        Self {
+            client: self.client,
+            storage: self.storage,
+            personal_frost_identifier: self.personal_frost_identifier,
+            frost_handle: self.frost_handle,
+            state: BTreeMap::new(),
+            config: self.config,
+            peer_id: self.peer_id,
+            pre_commitments: Arc::new(RwLock::new(BTreeMap::new())),
+            sealed_blocks: Arc::new(RwLock::new(BTreeMap::new())),
+            secret_key: self.secret_key,
+            task_executor: self.task_executor,
+            network_client: self.network_client,
+            time_slot_commitment: BTreeMap::new(),
+            bitcoin_block_header: self.bitcoin_block_header,
+            consensus: self.consensus,
+            executor_factory: self.executor_factory,
+        }
     }
 
     /// Returns the state machine state
@@ -914,14 +927,19 @@ mod tests {
             let mut $block_to_propose = None;
             let mut $coord = None;
 
-            let test_executor_factory = TestExecutorFactory::default();
-            let test_chain_spec =
-                GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None);
+            let storage = StoragePBFT::new(
+                vec![],
+                vec![],
+                Some(pks[0]),
+                bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            );
 
+            // Can't implement Clone for PbftStateMachine so creating it each time needed
             for i in 0..$n {
+                let db = $mock_eth_provider.latest().expect("state provider to exist");
                 let pbft_state_machine = PbftStateMachine::new(
                     $mock_eth_provider.clone(),
-                    StoragePBFT::default(),
+                    storage.clone(),
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
                     $peer_ids[i],
@@ -929,8 +947,8 @@ mod tests {
                     None,
                     $mock_network_client.clone(),
                     Arc::new(RwLock::new(None)),
-                    test_chain_spec,
-                    test_executor_factory,
+                    TestExecutorFactory::default(),
+                    AuthorityConsensus::new(Arc::clone(&$mock_eth_provider.chain_spec)),
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -1741,6 +1759,7 @@ mod tests {
     async fn signing_genisis_block() {
         let mock_eth_provider = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let config = FrostConfig {
             authorities: vec![],
@@ -1750,8 +1769,15 @@ mod tests {
             authority_pk: sk.public_key(SECP256K1),
         };
         let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
+        let storage = StoragePBFT::new(
+            vec![],
+            vec![],
+            Some(secp256k1::PublicKey::from_secret_key(&secp, &sk)),
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+        );
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
@@ -1759,7 +1785,8 @@ mod tests {
             None,
             mock_network_client,
             Arc::new(RwLock::new(None)),
-            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
 
         let edh = ExtraDataHeader::default();
@@ -1845,21 +1872,29 @@ mod tests {
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = coord.secret_key.clone();
         let config = coord.config.clone();
         let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
 
+        let storage = StoragePBFT::new(
+            vec![],
+            vec![],
+            Some(secp256k1::PublicKey::from_secret_key(&secp, &sk)),
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+        );
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider_mine.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
             None,
             mock_network_client_peers,
-            EthEvmConfig::default(),
             Arc::new(RwLock::new(None)),
-            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
@@ -1922,21 +1957,29 @@ mod tests {
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = coord.secret_key.clone();
         let config = coord.config.clone();
         let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
 
+        let storage = StoragePBFT::new(
+            vec![],
+            vec![],
+            Some(secp256k1::PublicKey::from_secret_key(&secp, &sk)),
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+        );
         let pbft_state_machine = PbftStateMachine::new(
             mock_eth_provider_mine.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
             None,
             mock_network_client_peers,
-            EthEvmConfig::default(),
             Arc::new(RwLock::new(None)),
-            GenesisTomlConfig::new("pbft unit test toml".to_string(), vec![], None),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
