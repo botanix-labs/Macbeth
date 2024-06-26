@@ -6,9 +6,8 @@ use async_compression::{
     },
     Level,
 };
-use client::{GetAllUtxosResponse, Utxo};
+use bytes::Bytes;
 use displaydoc::Display as DisplayDoc;
-use prost::bytes::Buf;
 use serde::Deserialize;
 use strum::{AsRefStr, EnumIter, EnumString};
 use thiserror::Error;
@@ -91,16 +90,17 @@ pub struct ProstMessageSerdelizer<T: prost::Message>(pub T);
 
 impl<T> ProstMessageSerdelizer<T>
 where
-    T: prost::Message + std::default::Default + Buf,
+    T: prost::Message + std::default::Default,
 {
-    fn serialize(&mut self) -> Result<Vec<u8>, Error> {
+    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buf = Vec::new();
         self.0.encode(&mut buf).map_err(|e| Error::Serde(SerdeError::ProstEncode(e)))?;
         Ok(buf)
     }
 
-    fn deserialize(self) -> Result<T, Error> {
-        prost::Message::decode::<T>(self.0).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
+    pub fn deserialize(buf: Vec<u8>) -> Result<T, Error> {
+        //let x = Bytes::from(buf);
+        T::decode(Bytes::from(buf)).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
     }
 }
 
@@ -355,12 +355,13 @@ impl Compressor {
 
 #[cfg(test)]
 pub mod test {
-    use crate::compressor::Compressor;
+    use crate::compressor::{Compressor, ProstMessageSerdelizer};
     use bitcoin::{
         absolute::LockTime, blockdata::script::Script, hashes::Hash, psbt::Psbt, Address, Amount,
         FeeRate, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
-    use client::{OutPoint, Utxo};
+    use bytes::Bytes;
+    use client::{GetAllUtxosResponse, OutPoint, Utxo};
     use rand::{thread_rng, Rng, RngCore};
     use serde_json::Value;
     use std::{collections::BTreeMap, str::FromStr};
@@ -416,22 +417,76 @@ pub mod test {
     #[tokio::test]
     async fn test_utxo_serde() {
         let mut rng = thread_rng();
+        let mut utxos = vec![];
         // generate utxos
         for _ in 0..100 {
             let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
-            let value = rng.gen_range(1..1_000_000);
-            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
-            let script = Script::from_bytes(script_bytes.as_slice());
-
             let utxo = Utxo {
                 outpoint: Some(OutPoint { txid, vout }),
                 output: rng.gen::<u32>(),
                 eth_address: "0x0".to_string(),
             };
+            utxos.push(utxo);
         }
 
-        // compress and serialize in the same order
+        // create a prost message
+        let prost_utxos = GetAllUtxosResponse { utxos };
+
+        // serialize the prost message
+        let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos.clone());
+        let prost_serialized = prost_message_wrapper.serialize().unwrap();
+        println!("Serialized to bytes: {:?}", prost_serialized);
+
+        // now decompress the prost message
+        let prost_deserialized =
+            ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(prost_serialized.into())
+                .unwrap();
+        println!("Deserialized to bytes: {:?}", prost_deserialized);
+
+        assert!(prost_utxos == prost_deserialized);
+    }
+
+    #[tokio::test]
+    async fn test_utxo_serde_compress_decompress() {
+        let mut rng = thread_rng();
+        let mut utxos = vec![];
+        // generate utxos
+        for _ in 0..100 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let utxo = Utxo {
+                outpoint: Some(OutPoint { txid, vout }),
+                output: rng.gen::<u32>(),
+                eth_address: "0x0".to_string(),
+            };
+            utxos.push(utxo);
+        }
+
+        // create a prost message
+        let prost_utxos = GetAllUtxosResponse { utxos };
+
+        // serialize the prost message
+        let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos.clone());
+        let prost_serialized = prost_message_wrapper.serialize().unwrap();
+
+        // now compress the prost message
         let compressor = Compressor::new();
+        let prost_serialized_compressed = compressor.compress(&prost_serialized).await.unwrap();
+        println!("Compressed to bytes: {:?}", prost_serialized_compressed);
+
+        // now decompress the prost message
+        let prost_serialized_decompressed =
+            compressor.decompress(&prost_serialized_compressed).await.unwrap();
+        println!("Decompressed to bytes: {:?}", prost_serialized_decompressed);
+
+        let prost_deserialized = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
+            prost_serialized_decompressed,
+        )
+        .unwrap();
+        println!("Deserialized to bytes: {:?}", prost_deserialized);
+
+        assert!(prost_utxos == prost_deserialized);
     }
 }

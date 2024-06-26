@@ -7840,6 +7840,7 @@ dependencies = [
  "async-compression",
  "bincode",
  "bitcoin",
+ "bytes",
  "client",
  "displaydoc",
  "frost-secp256k1-tr",
