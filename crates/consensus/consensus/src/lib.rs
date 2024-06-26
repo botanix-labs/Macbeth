@@ -209,6 +209,17 @@ pub enum ConsensusError {
         present_timestamp: u64,
     },
 
+    /// Error when the block timestamp is in the past compared to our clock time.
+    #[error(
+        "block timestamp {timestamp} is in the past compared to our clock time {present_timestamp}"
+    )]
+    TimestampIsInPast {
+        /// The block's timestamp.
+        timestamp: u64,
+        /// The current timestamp.
+        present_timestamp: u64,
+    },
+
     /// Error when the base fee is missing.
     #[error("base fee missing")]
     BaseFeeMissing,
