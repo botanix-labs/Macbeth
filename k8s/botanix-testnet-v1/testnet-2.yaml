@@ -27,7 +27,7 @@ bitcoinServer:
     labels:
       app: botanix-bitcoin-server-testnet-v1-2
 
-    command: [ "/usr/local/bin/server", "--btc-network", "signet", "--identifier", "1", "--address", "0.0.0.0:8080", "--db", "/bitcoin-server/db", "--min-signers", "2", "--max-signers", "2", "--toml", "/bitcoin-server/config.toml", "--fee-rate-diff-percentage", "30", "--jwt-secret", "/bitcoin-server/jwt.hex", "--fall-back-fee-rate-sat-per-vbyte", "5", "--bitcoind-url", "http://botanix-bitcoin-core.testnet.svc.cluster.local:38332", "--bitcoind-user", "$(BITCOIND_USERNAME)", "--bitcoind-pass", "$(BITCOIND_PASSWORD)"]
+    command: [ "/usr/local/bin/server", "--btc-network", "signet", "--identifier", "1", "--address", "0.0.0.0:8080", "--db", "/bitcoin-server/db", "--min-signers", "2", "--max-signers", "2", "--toml", "/bitcoin-server/config.toml", "--fee-rate-diff-percentage", "30", "--jwt-secret", "/bitcoin-server/jwt.hex", "--fall-back-fee-rate-sat-per-vbyte", "5", "--bitcoind-url", "http://botanix-bitcoin-core.testnet.svc.cluster.local:38332", "--bitcoind-user", "$(BITCOIND_USERNAME)", "--bitcoind-pass", "$(BITCOIND_PASSWORD)", "--pegin-confirmation-depth", "1"]
 
     env:
       - name: BITCOIND_USERNAME

@@ -58,9 +58,13 @@ where
             return;
         }
 
-        let storage = self.storage.write().await;
-        let (best_block, best_hash) = storage.get_best_block_and_hash().expect("best block exists");
-        drop(storage);
+        let best_block = self.client.best_block_number().expect("best block number exists");
+        let best_hash =
+            self.client.block_hash(best_block).expect("best block hash exists").unwrap_or_else(
+                || {
+                    panic!("best block hash is valid");
+                },
+            );
 
         // use authority address as suggested fee recipient
         let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
@@ -138,7 +142,7 @@ where
             return;
         }
 
-        let mut storage = self.storage.write().await;
+        let mut storage = self.storage.inner.write().await;
         // retrieve aggregate key
         let secp_pk = match storage.aggregate_public_key {
             Some(pk) => pk,
@@ -161,6 +165,7 @@ where
             Some(botanix_consensus_pkg.clone()),
             &self.sk,
             self.evm_config.clone(),
+            &self.client,
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -197,14 +202,13 @@ where
             }
         };
 
-        let storage = self.storage.read().await;
+        let storage = self.storage.inner.read().await;
         // If end of epoch, process pegouts
         let mut epoch_witness: Option<Vec<Witness>> = None;
         if block.header.is_poa_epoch() {
             // get pegouts up to best block
             let mut pegouts =
-                match crate::utils::epoch_pegouts(best_block, &storage.client, self.btc_network)
-                    .await
+                match crate::utils::epoch_pegouts(best_block, &self.client, self.btc_network).await
                 {
                     Ok(epoch_pegouts) => epoch_pegouts,
                     Err(e) => {
@@ -281,7 +285,7 @@ where
 
         info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
 
-        let mut storage = self.storage.write().await;
+        let mut storage = self.storage.inner.write().await;
         let new_header = match storage.build_and_validate_header(
             &bundle_state,
             block,
@@ -293,6 +297,7 @@ where
             &epoch_witness,
             utxo_commitment,
             &self.consensus,
+            &self.client,
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -339,13 +344,12 @@ where
         let commited_header = sealed_block.header();
 
         // TODO(armins) assert that block hash has not changed after adding witness
-
         let sealed_block_with_senders =
             SealedBlockWithSenders::new(sealed_block.clone(), senders.clone())
                 .expect("senders are valid");
 
-        // update canon chain for rpc
-        match storage.client.insert_block_with_botanix_consensus_package(
+        // update canon chain
+        match self.client.insert_block_with_botanix_consensus_package(
             sealed_block_with_senders.clone(),
             Exhaustive,
             Some(botanix_consensus_pkg),
@@ -356,9 +360,9 @@ where
                 return;
             }
         }
-        storage.client.set_canonical_head(sealed_block.header.clone());
-        storage.client.set_safe(sealed_block.header.clone());
-        storage.client.set_finalized(sealed_block.header.clone());
+        self.client.set_canonical_head(sealed_block.header.clone());
+        self.client.set_safe(sealed_block.header.clone());
+        self.client.set_finalized(sealed_block.header.clone());
 
         match engine_util::send_fork_choice_update_payload(
             commited_header.hash_slow(),
@@ -373,7 +377,6 @@ where
                 return;
             }
         }
-        drop(storage);
 
         // Notify peers
         let new_block = NewBlock { block: block_to_commit.clone(), td: Uint::ZERO };

@@ -402,7 +402,6 @@ test-other-targets:
 
 test-doc:
 	cargo test --doc --workspace --features "ethereum"
-	cargo test --doc --workspace --features "optimism"
 
 test:
 	make test-reth && \
@@ -451,7 +450,7 @@ start-btc-server-1:
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--jwt-secret "${NODE_1_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
-	--pegin-confirmation-depth 6
+	--pegin-confirmation-depth 1
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
@@ -469,7 +468,7 @@ start-btc-server-2:
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
-	--pegin-confirmation-depth 6
+	--pegin-confirmation-depth 1
 
 start-poa-server-1:
 	cd ./bin/reth && \

@@ -43,10 +43,9 @@ pub struct AuthorityConsensusBuilder<
     ToFrostMan,
     NetworkClient,
 > {
-    #[allow(dead_code)]
     client: Client,
     consensus: AuthorityConsensus,
-    storage: Storage<Client>,
+    storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server: Option<BtcServerExtendedClient>,
@@ -165,13 +164,11 @@ where
 
         // Try to instantiate storage
         let storage = Storage::try_new(
-            client.clone(),
             &mut headers,
             genesis_authorities,
             authorities,
             signer_index.expect("valid index"),
             pk,
-            btc_network,
         )
         .map_err(|e| {
             error!("Failed to instantiate storage: {:?}", e);
@@ -179,7 +176,7 @@ where
         })?;
 
         // Instantiate epoch manager
-        let epoch_manager = EpochManager::<Client>::new(storage.clone());
+        let epoch_manager = EpochManager::<Client>::new(storage.clone(), client.clone());
 
         Ok(Self {
             storage,
@@ -259,6 +256,7 @@ where
             btc_network,
             network_client.clone(),
             network_handle.clone(),
+            client.clone(),
         );
 
         // Set up frost notification message queue
@@ -331,6 +329,7 @@ where
                 pbft_task_notifications2_rx,
                 pbft_task_notifications1_tx,
                 btc_network,
+                client.clone(),
             );
 
             block_production_task = Some(block_production);
