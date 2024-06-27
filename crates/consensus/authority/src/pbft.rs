@@ -1257,7 +1257,6 @@ mod tests {
         assert_eq!(res.err().unwrap().to_string(), "Proposed block has too many signatures");
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_two_party_block_propose_flow() {
         // Note: set up test signs with the first authorities key
@@ -1329,7 +1328,6 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_three_party_block_propose_flow() {
         // Note: set up test signs with the first authorities key
@@ -1379,7 +1377,6 @@ mod tests {
         assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
     }
 
-    #[ignore]
     #[tokio::test]
     async fn pre_commitments_flow() {
         // Note: set up test signs with the first authorities key
@@ -1469,7 +1466,6 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
     }
 
-    #[ignore]
     #[tokio::test]
     async fn commitments_flow() {
         // Note: set up test signs with the first authorities key
@@ -1629,7 +1625,6 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[tokio::test]
     async fn cannot_suggest_the_same_block_twice() {
         // Note: set up test signs with the first authorities key
