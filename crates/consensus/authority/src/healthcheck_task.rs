@@ -1,9 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
 
-use crate::{notifications::EventsNotificationClient, Storage};
+use crate::Storage;
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, ToFrostManager},
+        manager::{FrostCommand, ToFrostManager},
         PeerMessageResponse,
     },
     NetworkHandle,
@@ -27,8 +31,6 @@ pub struct HealthcheckTask<ToFrostMan> {
     pub(crate) task_executor: TaskExecutor,
     /// Tracker list for peers healthcheck
     pub(crate) peers_healthcheck_tracker: Arc<RwLock<HashMap<PeerId, Instant>>>,
-    /// Event notifications slack client
-    pub(crate) events_notification_slack_client: Option<EventsNotificationClient>,
 }
 
 impl<ToFrostMan> HealthcheckTask<ToFrostMan>
@@ -40,10 +42,8 @@ where
     pub(crate) fn new(
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
-        config: FrostConfig,
         storage: Storage,
         task_executor: TaskExecutor,
-        events_notification_slack_client: Option<EventsNotificationClient>,
     ) -> Self {
         Self {
             network_handle,
@@ -51,7 +51,6 @@ where
             storage,
             task_executor,
             peers_healthcheck_tracker: Default::default(),
-            events_notification_slack_client,
         }
     }
 
@@ -139,11 +138,12 @@ where
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
-        let events_notification_slack_client = self.events_notification_slack_client.clone();
         let network_handle = self.network_handle.clone();
+        let authority_peers_clone = authority_peers.clone();
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected authority peers
             loop {
+                // send healthcheck to all connected authority peers
                 if let Err(e) = frost_handle.send_command(FrostCommand::SendHealtcheckToPeers) {
                     error!(target: "HealthcheckTask::start_task", "Failed to send SendHealtcheckToPeers frost command {:?}", e);
                 }
@@ -177,33 +177,34 @@ where
                 })
                 .collect::<Vec<_>>();
 
-                // check the none responding peers are truly disconnected peers, otherwise they might be just temp unresponsive to healthcheck pings
-                none_responding_authority_peers.retain(|peer| !all_trusted_connected_peers_ids.contains(&peer));
+                // check for any physically disconnected authority peers
+                let disconnected_authority_peers = authority_peers_clone
+                .iter()
+                .filter(|peer| !all_trusted_connected_peers_ids.contains(peer))
+                .cloned()
+                .collect::<Vec<_>>();
+
+                // merge physically disconnected and frost non-responsive peers
+                none_responding_authority_peers.extend(disconnected_authority_peers);
+                let peers_to_reconnect: HashSet<PeerId> = HashSet::from_iter(none_responding_authority_peers.into_iter());
+
+                // if no peers to reconnect to, skip
+                if peers_to_reconnect.is_empty() {
+                    continue;
+                }
 
                 // send to slack/stdout alarms about those peers
-                let none_responding_peers_stringified = none_responding_authority_peers
+                let peers_to_reconnect_stringified = peers_to_reconnect
                 .clone()
-                .into_iter()
+                .iter()
                 .map(|peer| peer.to_string())
                 .collect::<Vec<String>>()
                 .join(",");
-                if let Some(ref client) = events_notification_slack_client {
-                    if let Err(e) = client
-                        .send_message(&format!(
-                            "Connection lost to peers {}. Reconnecting ...",
-                            none_responding_peers_stringified
-                        ))
-                        .await
-                    {
-                        error!(target: "HealthcheckTask::start_task", "Error sending slack message {:?}", e);
-                    }
-                } else {
-                    warn!(target: "HealthcheckTask::start_task", "Trying to reconnect to none-responding peers {} ...", none_responding_peers_stringified);
-                }
+                warn!(target: "HealthcheckTask::start_task", "Trying to reconnect to peers {} ...", peers_to_reconnect_stringified);
 
-                // try to reconnect to the peers if they are considered fully disconnected
+                // try to reconnect to the peers whose frost subprotocol connection or physical connection has been lost to
                 if let Err(e) = frost_handle
-                    .send_command(FrostCommand::ReconnectPeers(none_responding_authority_peers)) {
+                    .send_command(FrostCommand::ReconnectPeers(peers_to_reconnect.into_iter().collect())) {
                         error!(target: "HealthcheckTask", "Failed to send ReconnectPeers frost command {:?}", e);
                     }
             }
