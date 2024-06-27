@@ -1,7 +1,7 @@
 use crate::Storage;
 use reth_consensus_common::utils;
 use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, HeaderProvider, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug)]
@@ -14,15 +14,17 @@ use tracing::{debug, info, warn};
 pub(crate) struct EpochManager<Client> {
     /// Access to storage to fetch headers.
     // TODO (armins) this should be protected by an Arc.
-    pub(crate) storage: Storage<Client>,
+    pub(crate) storage: Storage,
+
+    pub(crate) client: Client,
 }
 
 impl<Client: HeaderProvider> EpochManager<Client>
 where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
+    Client: BlockReaderIdExt + Clone + 'static,
 {
-    pub(crate) fn new(storage: Storage<Client>) -> Self {
-        Self { storage }
+    pub(crate) fn new(storage: Storage, client: Client) -> Self {
+        Self { storage, client }
     }
 
     pub(crate) async fn poll(&mut self) -> bool {
@@ -30,27 +32,25 @@ where
         let signer_index = storage.signer_index;
         let signer_pk = storage.authority;
         let authority_len = storage.authorities.len() as u64;
-
+        drop(storage);
         // get best block
-        let best_block_number = match storage.client.best_block_number() {
+        let best_block_number = match self.client.best_block_number() {
             Ok(best_block_number) => best_block_number,
             Err(_) => {
-                drop(storage);
                 return false;
             }
         };
 
         // Check if the last signer was us
         // If so nothing to do anymore until the next timeslot
-        let latest_header = storage
+        let latest_header = self
             .client
             .header_by_hash_or_number(BlockHashOrNumber::Number(best_block_number))
             .ok()
             .flatten();
 
         if latest_header.is_none() {
-            drop(storage);
-            warn!("No latest header found");
+            warn!("No latest header found -- This should not happen please report ASAP.");
             return false;
         }
 
@@ -71,15 +71,12 @@ where
             if is_inturn && current_last_signer_validation.is_err() {
                 // made info instead of warn since this prints as soon as
                 // a block is produced and the node is still in turn
-                drop(storage);
                 debug!("Already produced the block for this turn.");
                 return false;
             }
         }
 
-        drop(storage);
         info!("Epoch manager. Member index = {}. Inturn?: {}", signer_index, is_inturn);
-
         is_inturn
     }
 }

@@ -42,7 +42,7 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     /// Btc Server client
     btc_server: Option<BtcServerExtendedClient>,
     /// Consensus cache
-    storage: Storage<Client>,
+    storage: Storage,
     /// Recent finalize bitcoin block checkpoint.
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     /// The type that defines how to configure the EVM.
@@ -53,6 +53,8 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     network_client: NetworkClient,
     /// Network Handle, used to create [FullBlockClient]
     network_handle: NetworkHandle,
+    /// Database provider
+    client: Client,
 }
 
 impl<Client, EvmConfig, Engine, NetworkClient>
@@ -75,12 +77,13 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
-        storage: Storage<Client>,
+        storage: Storage,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         evm_config: EvmConfig,
         btc_network: bitcoin::Network,
         network_client: NetworkClient,
         network_handle: NetworkHandle,
+        client: Client,
     ) -> Self {
         Self {
             consensus,
@@ -94,6 +97,7 @@ where
             btc_network,
             network_client,
             network_handle,
+            client,
         }
     }
 
@@ -126,14 +130,19 @@ where
             };
 
             let block = new_block.block.block.clone();
-            let storage = self.storage.read().await;
             info!(target: "consensus::authority", "Recieved new block from peer {:?}", block.header.hash_slow());
-            let best_hash = storage.get_best_block_and_hash().expect("best block exists").1;
+
+            let best_block = self.client.best_block_number().expect("best block number exists");
+            let best_hash =
+                self.client.block_hash(best_block).expect("best block hash exists").unwrap_or_else(
+                    || {
+                        panic!("best block hash is valid");
+                    },
+                );
             if block.header.hash_slow() == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
                 continue;
             }
-            drop(storage);
             // Seal the block
             let sealed_block = block.clone().seal_slow();
 
@@ -183,6 +192,7 @@ where
                 sealed_block.clone(),
                 botanix_consensus_pkg.clone(),
                 self.evm_config.clone(),
+                &self.client,
             ) {
                 Ok(bundle_state) => {
                     let senders =
@@ -237,15 +247,16 @@ where
                             continue;
                         }
 
-                        let (best_block, _best_hash) =
-                            storage.get_best_block_and_hash().expect("best block exists");
+                        let best_block =
+                            self.client.best_block_number().expect("best block number exists");
                         if header.is_poa_epoch() {
                             // get the pegouts from during the epoch
                             let past_pegouts = crate::utils::epoch_pegouts(
-                                best_block, &storage.client, self.btc_network
+                                best_block, &self.client, self.btc_network,
                             ).await.map_err(|e| {
                                 error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
                                 e
+                                // TODO (armins) remove unwrap()
                             }).unwrap();
                             pegouts.extend(past_pegouts);
                             // TODO (armins) deserialize extra data can be implenented on header
@@ -308,8 +319,8 @@ where
 
                     // Need to decide if we accepting a forked block or not
                     // There is a garuntee a quorum of signers will not sign an invalid fork
-                    let tip = storage.client.best_block_number().expect("best block exists");
-                    let best_block = storage
+                    let tip = self.client.best_block_number().expect("best block exists");
+                    let best_block = self
                         .client
                         .block_by_number(tip)
                         .expect("best block exists")
@@ -319,7 +330,8 @@ where
                         // need to retrieve this missing block from a peer
                         let missing_block =
                             full_block_client.get_full_block(header.parent_hash.clone()).await;
-                        if let Err(e) = storage.client.insert_block_without_senders(
+                        // TODO (armins) should be using the insert with botanix consensus package
+                        if let Err(e) = self.client.insert_block_without_senders(
                             missing_block.clone(),
                             BlockValidationKind::Exhaustive,
                             botanix_consensus_pkg,
@@ -327,9 +339,9 @@ where
                             error!(target: "consensus::authority", ?e, "Failed to insert forked block");
                             continue;
                         }
-                        storage.client.set_canonical_head(missing_block.header.clone());
-                        storage.client.set_safe(missing_block.header.clone());
-                        storage.client.set_finalized(missing_block.header.clone());
+                        self.client.set_canonical_head(missing_block.header.clone());
+                        self.client.set_safe(missing_block.header.clone());
+                        self.client.set_finalized(missing_block.header.clone());
                         if let Err(e) = engine_util::send_fork_choice_update_payload(
                             sealed_block.clone().hash(),
                             self.to_engine.clone(),
@@ -351,9 +363,9 @@ where
                     .unwrap();
 
                     // update canon chain for rpc
-                    storage.client.set_canonical_head(header);
-                    storage.client.set_safe(sealed_block.header.clone());
-                    storage.client.set_finalized(sealed_block.header.clone());
+                    self.client.set_canonical_head(header);
+                    self.client.set_safe(sealed_block.header.clone());
+                    self.client.set_finalized(sealed_block.header.clone());
                     drop(storage);
 
                     // TODO(armins) trie updates here are non. is that correct?

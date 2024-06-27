@@ -36,15 +36,12 @@ use reth_primitives::{
     constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     extra_data_header::ExtraDataHeader,
     header_ext::HeaderExt,
-    proofs, public_key_to_address,
-    revm_primitives::FixedBytes,
-    Address, Block, BlockBody, BlockHash, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-    ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader, TransactionSigned, B256,
-    EMPTY_OMMER_ROOT_HASH, U256,
+    proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders,
+    Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
+    TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use reth_provider::{
-    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker,
-    StateProviderFactory,
+    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, StateProviderFactory,
 };
 use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
@@ -270,6 +267,22 @@ impl Consensus for AuthorityConsensus {
     }
 }
 
+/// Collection of getters and setters for all things concerned with the authority consensus
+pub(crate) trait AuthorityStorage {
+    /// Get list of authorities
+    fn get_authorities(&self) -> Vec<secp256k1::PublicKey>;
+    /// Set the aggregate key
+    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey);
+    /// Get the aggregate key
+    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey>;
+    /// Get the signer index
+    fn get_signer_index(&self) -> usize;
+    /// Get genesis authorities
+    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey>;
+    /// Get the authority public key
+    fn get_authority(&self) -> secp256k1::PublicKey;
+}
+
 #[derive(Debug)]
 pub(crate) enum StorageCreationError {
     /// empty headers
@@ -278,23 +291,18 @@ pub(crate) enum StorageCreationError {
 
 /// In memory storage
 #[derive(Clone, Debug)]
-pub(crate) struct Storage<Client> {
-    pub(crate) inner: Arc<RwLock<StorageInner<Client>>>,
+pub(crate) struct Storage {
+    pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
 // == impl Storage ===
-impl<Client> Storage<Client>
-where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
-{
+impl Storage {
     fn try_new(
-        client: Client,
         headers: &mut [SealedHeader],
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
-        btc_network: bitcoin::Network,
     ) -> Result<Self, StorageCreationError> {
         if headers.is_empty() {
             return Err(StorageCreationError::EmptyHeaders);
@@ -303,34 +311,31 @@ where
         headers.sort_by(|a, b| a.number.cmp(&b.number));
 
         let storage = StorageInner {
-            client: client.clone(),
             genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
             aggregate_public_key: None,
-            btc_network,
         };
 
         Ok(Self { inner: Arc::new(RwLock::new(storage)) })
     }
 
     /// Returns the write lock of the storage
-    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner<Client>> {
+    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner> {
         self.inner.write().await
     }
 
     #[allow(dead_code)]
     /// Returns the read lock of the storage
-    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner<Client>> {
+    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
         self.inner.read().await
     }
 }
 
 #[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
-pub(crate) struct StorageInner<Client> {
-    client: Client,
+pub(crate) struct StorageInner {
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// Keep track of the signers
@@ -342,62 +347,61 @@ pub(crate) struct StorageInner<Client> {
     pub(crate) signer_index: usize,
     /// Authority Signer public key
     pub(crate) authority: secp256k1::PublicKey,
-
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
-
-    /// Bitcoin network
-    pub(crate) btc_network: bitcoin::Network,
 }
 
 // === impl StorageInner ===
 
-impl<Client> StorageInner<Client>
-where
-    Client: BlockReaderIdExt + StateProviderFactory + CanonChainTracker + Clone + 'static,
-{
-    /// Returns the block hash for the given block number if it exists.
-    #[allow(dead_code)]
-    pub(crate) fn block_hash(&self, num: u64) -> Option<BlockHash> {
-        self.client.block_hash(num).ok().flatten()
+impl AuthorityStorage for StorageInner {
+    fn get_authorities(&self) -> Vec<secp256k1::PublicKey> {
+        self.authorities.clone()
     }
 
-    pub(crate) fn get_best_block_and_hash(
-        &self,
-    ) -> Result<(u64, FixedBytes<32>), BlockExecutionError> {
-        let best_block = self
-            .client
-            .best_block_number()
-            .map_err(|_| BlockExecutionError::LatestBlock(ProviderError::BestBlockNotFound))?;
-
-        let best_hash = self
-            .client
-            .block_hash(best_block)
-            .map_err(|_| {
-                // can't pass block number only hash
-                BlockExecutionError::LatestBlock(ProviderError::BlockHashNotFound(B256::ZERO))
-            })?
-            .unwrap_or_else(|| {
-                panic!("{}", format!("Missing block hash for best block {:?}", best_block))
-            });
-
-        Ok((best_block, best_hash))
+    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey) {
+        self.aggregate_public_key = Some(pk);
     }
 
+    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey> {
+        self.aggregate_public_key
+    }
+
+    fn get_signer_index(&self) -> usize {
+        self.signer_index
+    }
+
+    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey> {
+        self.genesis_authorities.clone()
+    }
+
+    fn get_authority(&self) -> secp256k1::PublicKey {
+        self.authority
+    }
+}
+
+impl StorageInner {
     /// Fills in pre-execution header fields based on the current best block and given
     /// transactions.
     pub(crate) fn build_header_template(
         &self,
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
+        client: &impl BlockReaderIdExt,
     ) -> Result<Header, BlockExecutionError> {
-        let (best_block, best_hash) = self.get_best_block_and_hash()?;
+        // let (best_block, best_hash) = self.get_best_block_and_hash()?;
+        let best_block =
+            client.best_block_number().map_err(|e| BlockExecutionError::LatestBlock(e))?;
+        let best_hash = client
+            .block_hash(best_block)
+            .map_err(|e| BlockExecutionError::LatestBlock(e))?
+            .unwrap_or_else(|| {
+                panic!("best block hash not found for block number: {}", best_block);
+            });
         let timestamp = unix_timestamp();
 
         // check previous block for base fee
-        let base_fee_per_gas = self
-            .client
+        let base_fee_per_gas = client
             .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
             .expect("header to exist")
             .and_then(|parent| {
@@ -443,7 +447,6 @@ where
         &mut self,
         block: &BlockWithSenders,
         executor: &mut EVMProcessor<'_, EvmConfig>,
-        _senders: Vec<Address>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         block_builder_address: Option<Address>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
@@ -487,6 +490,7 @@ where
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
         utxo_commitment: sha256::Hash,
+        client: &(impl BlockReaderIdExt + StateProviderFactory),
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -501,10 +505,8 @@ where
             proofs::calculate_receipt_root(&receipts_with_bloom)
         };
         header.gas_used = gas_used;
-
         // calculate the state root
-        let state_root = self
-            .client
+        let state_root = client
             .latest()
             .map_err(|_| {
                 BlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
@@ -554,6 +556,7 @@ where
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
         evm_config: EvmConfig,
+        client: &(impl BlockReaderIdExt + StateProviderFactory),
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -565,7 +568,7 @@ where
         }
 
         // Construct block and header
-        let header = self.build_header_template(&transactions, &chain_spec.clone())?;
+        let header = self.build_header_template(&transactions, &chain_spec.clone(), client)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -578,9 +581,7 @@ where
 
         // Now execute the block
         let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(
-                self.client.latest().unwrap(),
-            )))
+            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
 
@@ -592,7 +593,6 @@ where
         let (bundle_state, gas_used) = self.execute(
             &block_with_senders,
             &mut executor,
-            senders,
             botanix_consensus_pkg.clone(),
             Some(block_builder_address),
         )?;
@@ -614,6 +614,7 @@ where
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         utxo_commitment: sha256::Hash,
         consensus: &AuthorityConsensus,
+        client: &(impl BlockReaderIdExt + StateProviderFactory),
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
@@ -629,6 +630,7 @@ where
             // This is checked to be Some above
             botanix_consensus_pkg.expect("consensus pkg").bitcoin_checkpoint.0.block_hash(),
             utxo_commitment,
+            client,
         )?;
 
         // Validate EDH authorities match genesis authorities
@@ -661,6 +663,7 @@ where
         sealed_block: SealedBlock,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         evm_config: EvmConfig,
+        client: &(impl BlockReaderIdExt + StateProviderFactory),
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -669,9 +672,7 @@ where
 
         // Now execute the block
         let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(
-                self.client.latest().unwrap(),
-            )))
+            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
         let mut executor =
@@ -705,7 +706,6 @@ where
         let (bundle_state, _gas_used) = self.execute(
             &block_with_senders,
             &mut executor,
-            senders,
             botanix_consensus_pkg,
             Some(block_builder_address),
         )?;

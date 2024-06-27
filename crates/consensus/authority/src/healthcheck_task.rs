@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use crate::{notifications::EventsNotificationClient, Storage};
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -10,7 +9,6 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_network_api::Peers;
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
@@ -18,13 +16,13 @@ use tracing::{error, info, warn};
 
 const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 45;
 
-pub struct HealthcheckTask<Client, ToFrostMan> {
+pub struct HealthcheckTask<ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
     pub(crate) frost_handle: ToFrostMan,
     /// Shared storage to insert aggregate public key
-    pub(crate) storage: Storage<Client>,
+    pub(crate) storage: Storage,
     /// Task Executor
     pub(crate) task_executor: TaskExecutor,
     /// Tracker list for peers healthcheck
@@ -33,15 +31,9 @@ pub struct HealthcheckTask<Client, ToFrostMan> {
     pub(crate) events_notification_slack_client: Option<EventsNotificationClient>,
 }
 
-impl<Client, ToFrostMan> HealthcheckTask<Client, ToFrostMan>
+impl<ToFrostMan> HealthcheckTask<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone + Send + 'static,
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -49,7 +41,7 @@ where
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         config: FrostConfig,
-        storage: Storage<Client>,
+        storage: Storage,
         task_executor: TaskExecutor,
         events_notification_slack_client: Option<EventsNotificationClient>,
     ) -> Self {
@@ -253,10 +245,9 @@ where
     }
 }
 
-impl<Client, ToFrostMan> std::fmt::Debug for HealthcheckTask<Client, ToFrostMan>
+impl<ToFrostMan> std::fmt::Debug for HealthcheckTask<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: Clone + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HealthcheckTask").finish_non_exhaustive()

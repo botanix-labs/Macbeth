@@ -30,7 +30,7 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     /// The active epoch
     pub(crate) epoch_manager: EpochManager<Client>,
     /// Shared storage to insert new blocks
-    pub(crate) storage: Storage<Client>,
+    pub(crate) storage: Storage,
     /// TODO: ideally this would just be a sender of hashes
     pub(crate) to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// The pipeline events to listen on
@@ -63,6 +63,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     /// Bitcoin Network
     pub(crate) btc_network: bitcoin::Network,
+    /// Database provider
+    pub(crate) client: Client,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
     BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
@@ -84,7 +86,7 @@ where
         consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         _canon_state_notification: CanonStateNotificationSender,
-        storage: Storage<Client>,
+        storage: Storage,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         sk: secp256k1::SecretKey,
@@ -99,6 +101,7 @@ where
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         btc_network: bitcoin::Network,
+        client: Client,
     ) -> Self {
         Self {
             consensus,
@@ -119,6 +122,7 @@ where
             pbft_task_rx,
             pbft_task_tx,
             btc_network,
+            client,
         }
     }
 
