@@ -317,7 +317,7 @@ where
                 storage_read.genesis_authorities.clone(),
                 storage_read.authorities.clone(),
                 storage_read.aggregate_public_key.clone(),
-                storage_read.btc_network.clone(),
+                btc_network,
             );
             drop(storage_read);
 

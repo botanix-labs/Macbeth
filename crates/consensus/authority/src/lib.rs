@@ -692,6 +692,7 @@ impl StorageInner {
         sealed_block: SealedBlock,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         evm_config: EvmConfig,
+        client: &(impl BlockReaderIdExt + StateProviderFactory),
         is_pbft: bool,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
