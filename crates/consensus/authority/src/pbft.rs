@@ -112,7 +112,7 @@ impl PartialEq for ValidateBlockError {
 /// Defines the states of the state machine
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PbftState {
-    /// The initial dkg state
+    /// The initial pbft state
     Initial,
     /// Block proposed, now we are waiting for k pre-commitments from peers
     AwaitingPreCommitments,
@@ -125,7 +125,7 @@ pub(crate) enum PbftState {
 }
 
 impl PbftState {
-    /// Returns true if the DKG state machine is in a running state
+    /// Returns true if the pbft state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
         match self {
             PbftState::Initial => false,
@@ -148,7 +148,7 @@ impl PbftState {
     }
 }
 
-/// A state machine for transitioning between different DKG states
+/// A state machine for transitioning between different pbft states
 #[derive(Debug, Clone)]
 pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient> {
     client: Client,
@@ -325,10 +325,13 @@ where
             info!(target: "consensus::authority::pbft::gossip_to_peers","Broadcasting pbft response to all peers");
             info!(target: "consensus::authority::pbft::gossip_to_peers" ,"Connected peers: {:?}", connected_peers.keys().collect::<Vec<_>>() );
 
-            // Broadcast dkg round 1 package to all peers (excluding ourselves)
+            // Broadcast pbft package to all peers (excluding ourselves)
             for (_peer_id, connected_peer) in connected_peers.iter() {
-                if connected_peer.frost_identifier.as_ref().cloned().unwrap() !=
-                    self.personal_frost_identifier
+                if connected_peer
+                    .frost_identifier
+                    .as_ref()
+                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .unwrap_or_default()
                 {
                     if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
                         peer_commands_tx

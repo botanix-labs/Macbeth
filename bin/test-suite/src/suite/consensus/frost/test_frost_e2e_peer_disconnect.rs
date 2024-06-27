@@ -24,7 +24,7 @@ pub async fn frost_e2e_peer_disconnect(
     }
 
     // wait for the disconnected peer to be re-connected again
-    tokio::time::sleep(Duration::from_secs(90)).await;
+    tokio::time::sleep(Duration::from_secs(45)).await;
 
     // assign targeted fed memeber
     let targeted_fed_member = test_fed_members.get(&(0u16)).cloned().unwrap();

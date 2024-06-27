@@ -13,6 +13,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_network_api::Peers;
+use reth_network_types::pk2id;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
@@ -25,7 +26,7 @@ pub struct HealthcheckTask<ToFrostMan> {
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
     pub(crate) frost_handle: ToFrostMan,
-    /// Shared storage to insert aggregate public key
+    /// Shared authority storage
     pub(crate) storage: Storage,
     /// Task Executor
     pub(crate) task_executor: TaskExecutor,
@@ -126,14 +127,8 @@ where
         };
 
         // get all authority peers
-        let authority_peers = self
-            .storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
-            .collect::<Vec<PeerId>>();
+        let authority_peers =
+            self.storage.read().await.authorities.iter().map(pk2id).collect::<Vec<PeerId>>();
 
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
