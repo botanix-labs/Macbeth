@@ -54,56 +54,72 @@ pub enum Error {
     Serde(#[from] SerdeError),
 }
 
+/// Compression types
 #[derive(
     Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
 )]
 pub enum CompressionType {
+    /// No compression to be applied
     #[strum(serialize = "none")]
     None,
+    /// Zlib compression
     #[strum(serialize = "zlib")]
     Zlib,
+    /// Gzip compression
     #[strum(serialize = "gzip")]
     Gzip,
+    /// Brotli compression
     #[strum(serialize = "brotli")]
     Brotli,
+    /// Bz compression
     #[strum(serialize = "bz")]
     Bz,
     #[strum(serialize = "lzma")]
+    /// Lzma compression
     Lzma,
     #[strum(serialize = "deflate")]
+    /// Deflate compression
     Deflate,
     #[strum(serialize = "zstd")]
+    /// Zstd compression
     Zstd,
 }
 
+/// Serialization types
 #[derive(
     Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
 )]
 pub enum SerializationType {
+    /// Bincode serialization
     #[strum(serialize = "bincode")]
     Bincode,
+    /// Postcard serialization
     #[strum(serialize = "postcard")]
     Postcard,
 }
 
+/// Prost Message Wrapper allowing serialization/deserialization
 pub struct ProstMessageSerdelizer<T: prost::Message>(pub T);
 
 impl<T> ProstMessageSerdelizer<T>
 where
     T: prost::Message + std::default::Default,
 {
+    /// Method to serialize
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buf = Vec::new();
         self.0.encode(&mut buf).map_err(|e| Error::Serde(SerdeError::ProstEncode(e)))?;
         Ok(buf)
     }
 
+    /// Method to deserialize
     pub fn deserialize(buf: Vec<u8>) -> Result<T, Error> {
         //let x = Bytes::from(buf);
         T::decode(Bytes::from(buf)).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
     }
 }
 
+/// Compressor implementation
 #[derive(Debug)]
 pub struct Compressor {
     compression_type: CompressionType,
@@ -112,6 +128,7 @@ pub struct Compressor {
 }
 
 impl Compressor {
+    /// Constructor for a new compressor
     pub fn new() -> Self {
         Self {
             compression_type: CompressionType::Zlib,
@@ -120,18 +137,22 @@ impl Compressor {
         }
     }
 
+    /// Sets the compression type
     pub fn set_compression_type(&mut self, compression_type: CompressionType) {
         self.compression_type = compression_type;
     }
 
+    /// Sets the compression level
     pub fn set_compression_level(&mut self, compression_level: Level) {
         self.compression_level = compression_level;
     }
 
+    /// Sets the serialization type
     pub fn set_serialization_type(&mut self, serialization_type: SerializationType) {
         self.serialization_type = serialization_type;
     }
 
+    /// Serializes and compresses the data
     pub async fn serialize_and_compress(
         &self,
         in_data: &[u8],
@@ -141,6 +162,7 @@ impl Compressor {
         Ok(compressed_data)
     }
 
+    /// Decompresses and deserializes the data
     pub async fn decompress_and_deserialize(
         &self,
         in_data: &[u8],
@@ -150,6 +172,7 @@ impl Compressor {
         Ok(deserialized_data)
     }
 
+    /// Serializes the data
     pub async fn serialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.serialization_type {
             SerializationType::Bincode => {
@@ -161,6 +184,7 @@ impl Compressor {
         }
     }
 
+    /// Deserializes the data
     pub async fn deserialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.serialization_type {
             SerializationType::Bincode => {
@@ -172,6 +196,7 @@ impl Compressor {
         }
     }
 
+    /// Compresses the data
     pub async fn compress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
@@ -262,6 +287,7 @@ impl Compressor {
         }
     }
 
+    /// Decompresses the data
     pub async fn decompress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
@@ -356,15 +382,10 @@ impl Compressor {
 #[cfg(test)]
 pub mod test {
     use crate::compressor::{Compressor, ProstMessageSerdelizer};
-    use bitcoin::{
-        absolute::LockTime, blockdata::script::Script, hashes::Hash, psbt::Psbt, Address, Amount,
-        FeeRate, ScriptBuf, Sequence, Transaction, TxIn, Txid,
-    };
-    use bytes::Bytes;
+    use bitcoin::{hashes::Hash, Txid};
     use client::{GetAllUtxosResponse, OutPoint, Utxo};
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{thread_rng, Rng};
     use serde_json::Value;
-    use std::{collections::BTreeMap, str::FromStr};
 
     #[tokio::test]
     async fn test_compress_decompress_json() {
@@ -455,7 +476,6 @@ pub mod test {
         for _ in 0..100 {
             let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
-            let value = rng.gen_range(1..1_000_000);
             let utxo = Utxo {
                 outpoint: Some(OutPoint { txid, vout }),
                 output: rng.gen::<u32>(),
