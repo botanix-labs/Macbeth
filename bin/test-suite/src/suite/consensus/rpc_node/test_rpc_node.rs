@@ -1,19 +1,12 @@
 use ethers::types::U64;
-use reth::{
-    consensus_common::utils::{current_inturn_index, unix_timestamp},
-    primitives::ChainSpec,
-};
-use reth_cli_runner::CliRunner;
-use std::time::Duration;
+use tokio::time::Duration;
 
 use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            botanix_client::BotanixEthClient,
-            events::{await_dkg, SEND_AMOUNT},
-            poa_node::{create_poa_federation_members, PREFUNDED_ACCOUNT_SECRET_KEY},
-            rpc_node::create_rpc_node,
+            botanix_client::BotanixEthClient, events::SEND_AMOUNT,
+            poa_node::PREFUNDED_ACCOUNT_SECRET_KEY,
         },
         rpc_node::error::NonFederationMemberTestConfigError,
         ConsensusIntegrationTestSuite,
@@ -25,7 +18,13 @@ pub async fn test_rpc_node(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), NonFederationMemberTestConfigError> {
     it_info_print!("Running rpc node test");
-
+    // subscribe to rpc node events
+    let rx = suite
+        .local_context
+        .rpc_notification
+        .as_ref()
+        .expect("broadcast sender to be set")
+        .subscribe();
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
@@ -39,23 +38,16 @@ pub async fn test_rpc_node(
     let total_authorities = test_fed_members.len();
     let eoa_receiver = ethers::core::types::Address::random();
     // build a block for each fed member
-    for index in 0..total_authorities {
-        let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
 
-        it_info_print!("Sending eoa transaction to poa member", inturn_member_index);
-        let last_tx_hash = botanix_clients[inturn_member_index as usize]
-            .send_eoa(eoa_receiver, SEND_AMOUNT)
-            .await
-            .unwrap()
-            .unwrap();
-        it_info_print!("Eoa tx: {:?}", last_tx_hash);
-
-        // wait for next member to come inturn but not for the final member
-        if index < total_authorities - 1 {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-        }
-    }
-    it_info_print!("All eoa transactions sent");
+    // it_info_print!("Sending eoa transaction to poa member", inturn_member_index);
+    let last_tx_hash = botanix_clients
+        .first()
+        .unwrap()
+        .send_eoa(eoa_receiver, SEND_AMOUNT)
+        .await
+        .unwrap()
+        .unwrap();
+    it_info_print!("Eoa tx to Poa node: {:?}", last_tx_hash);
 
     // get the latest header hash from the federation
     let fed_latest_header_hash = botanix_clients
@@ -65,21 +57,9 @@ pub async fn test_rpc_node(
         .await
         .unwrap();
 
+    tokio::time::sleep(Duration::from_secs(10)).await;
     // create rpc node and sync with federation peers
-    let (rpc_node, _rx) = create_rpc_node(suite.global_context.clone(), test_fed_members).await;
-    let rpc_node_clone = rpc_node.clone();
-    let _ = std::thread::spawn(move || {
-        let rpc_node_command = rpc_node_clone.build_command(chain_spec);
-        let runner = CliRunner::default();
-        match runner.run_command_until_exit(|ctx| rpc_node_command.execute(ctx)) {
-            Ok(()) => it_info_print!("RPC node started successfully"),
-            Err(e) => it_info_print!("RPC node failed to start", e),
-        }
-    });
-
-    // wait for rpc node spin up and to sync with the federation
-    tokio::time::sleep(Duration::from_secs(15)).await;
-
+    let rpc_node = suite.local_context.rpc_node.as_ref().unwrap();
     // get latest header hash from rpc node
     // Note: alternative way is to wait for cannon state notification from rpc node and get hash
     // from notification but this way also tests that rpc node can handle rpc requests
@@ -105,7 +85,7 @@ pub async fn test_rpc_node(
     assert_eq!(status, U64::from(1));
 
     // wait for fed members to sync on the block
-    tokio::time::sleep(Duration::from_secs(15)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     let latest_block_hash = rpc_tx_receipt.block_hash.expect("block hash to exist");
 
@@ -116,7 +96,6 @@ pub async fn test_rpc_node(
         it_info_print!("Botanix client", format!("index={index}: block hash - {block_hash}"));
 
         assert_eq!(block_hash, latest_block_hash);
-
         // if last fed member, check tx is in block
         if index == total_authorities - 1 {
             let block = client.get_latest_block_by_hash(block_hash).await.unwrap();

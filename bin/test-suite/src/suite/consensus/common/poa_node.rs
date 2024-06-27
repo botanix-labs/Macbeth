@@ -158,6 +158,10 @@ impl FederationMemberTestConfig {
         self.peers_list = peers;
     }
 
+    pub fn peers_list(&self) -> Vec<FederationMemberTestConfig> {
+        self.peers_list.clone()
+    }
+
     pub fn insert_edh(&mut self, edh: ExtraDataHeader) {
         self.edh = Some(edh);
     }
