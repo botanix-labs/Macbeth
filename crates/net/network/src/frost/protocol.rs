@@ -222,6 +222,12 @@ impl Stream for FrostProtoConnection {
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
+                            DkgEventResponseType::DkgRound1Request => {
+                                let req = DkgRequest::new(identifier, data);
+                                Poll::Ready(Some(
+                                    FrostProtoMessage::round1_dkg_request_message(req).encoded(),
+                                ))
+                            }
                             DkgEventResponseType::DkgRound1 => {
                                 let req = DkgRequest::new(identifier, data);
                                 Poll::Ready(Some(
@@ -359,6 +365,16 @@ impl Stream for FrostProtoConnection {
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1,
+                        identifier: data.identifier,
+                        data: data.data,
+                    }),
+                    peer_id: this.peer_id,
+                });
+            }
+            FrostProtoMessageKind::Round1DkgRequest(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    response: PeerMessageResponse::Dkg(DkgResponse {
+                        response_type: DkgEventResponseType::DkgRound1Request,
                         identifier: data.identifier,
                         data: data.data,
                     }),

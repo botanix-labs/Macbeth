@@ -15,7 +15,7 @@ pub async fn await_dkg(
     rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
 ) {
     let mut pub_keys = vec![];
-    it_info_print!(">>>>>>> Awaiting DKG");
+    it_info_print!("Awaiting DKG");
     while let Ok(notification) = rx.recv().await {
         if let Notifications::DkgFinished(dkg_notification) = notification {
             if let Some(fed_member) = fed_members.get_mut(&dkg_notification.engine_index) {
@@ -23,7 +23,7 @@ pub async fn await_dkg(
                 pub_keys.push(dkg_notification.public_key)
             }
             if is_dkg_ready(&fed_members) {
-                it_info_print!("FED MEMBERS DKG KEYS ------->", &pub_keys);
+                it_info_print!("Federation members public keys:", &pub_keys);
                 assert!(pub_keys.len() == fed_members.len());
                 pub_keys.dedup();
                 assert!(pub_keys.len() == 1);

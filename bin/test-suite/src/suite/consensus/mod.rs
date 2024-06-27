@@ -15,7 +15,12 @@ use port_killer::kill;
 use reth::CliRunner;
 use reth_tracing::tracing::error;
 use std::{
-    collections::HashMap, panic, path::PathBuf, process::Command, sync::Arc, time::Duration,
+    collections::{HashMap, HashSet},
+    panic,
+    path::PathBuf,
+    process::Command,
+    sync::Arc,
+    time::Duration,
 };
 use tracing::{info, warn};
 // scopes
@@ -251,6 +256,28 @@ impl Suite for ConsensusIntegrationTestSuite {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
             await_dkg(&mut test_fed_members, &mut rx).await;
+
+            // Every btc server should have an aggregate key
+            let mut keys = HashSet::new();
+            for instance in 0..self.global_context.instances {
+                let port = self
+                    .local_context
+                    .btc_servers
+                    .as_ref()
+                    .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+                    .expect("btc server port");
+                let mut client =
+                    client::BtcServerClient::connect(format!("http://localhost:{}", port))
+                        .await
+                        .unwrap();
+
+                let key =
+                    client.get_public_key(client::Empty {}).await.unwrap().into_inner().publickey;
+                keys.insert(key);
+            }
+
+            // All keys should be the same
+            assert_eq!(keys.len(), 1);
 
             self.local_context.poa_nodes = Some(test_fed_members);
             self.local_context.poa_notification = Some(tx);
