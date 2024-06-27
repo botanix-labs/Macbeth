@@ -26,7 +26,8 @@ use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::{header_ext::HeaderExt, ChainSpec};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory, StateProviderFactory
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
+    StateProviderFactory,
 };
 use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
 use reth_tasks::TaskExecutor;
@@ -308,7 +309,7 @@ where
                 storage_read.genesis_authorities.clone(),
                 storage_read.authorities.clone(),
                 storage_read.aggregate_public_key.clone(),
-                storage_read.btc_network.clone(),
+                btc_network,
             );
             drop(storage_read);
 

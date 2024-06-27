@@ -468,7 +468,7 @@ where
     ) -> Result<(), BlockExecutionError> {
         let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
         let botanix_consensus_pkg = Some(BotanixConsensusPackage {
-            recent_header: recent_bitcoin_block_header.expect("recent header to exist"),
+            bitcoin_checkpoint: recent_bitcoin_block_header.expect("recent header to exist"),
             aggregate_public_key: self
                 .storage
                 .aggregate_public_key
