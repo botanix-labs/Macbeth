@@ -118,8 +118,10 @@ where
             let new_block = match self.block_import_rx.recv().await {
                 Some(b) => b,
                 None => {
-                    debug!(target: "consensus::authority", "Block import channel disconnected");
-                    continue;
+                    info!(target: "consensus::authority",
+                        "block fetcher task shutting down (channel closed)",
+                    );
+                    return;
                 }
             };
 
