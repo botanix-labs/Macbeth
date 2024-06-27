@@ -12,6 +12,7 @@ use reth_network::{
 use reth_network_types::pk2id;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, warn};
@@ -112,7 +113,108 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) -> () {
+    async fn handle_notification(&mut self, message: PbftNotificationMessage) {
+        match message {
+            PbftNotificationMessage::Reset => {
+                info!(target: "PBFT Task", "Resetting PBFT State Machine");
+                self.pbft_state_machine = self.pbft_state_machine.clone().reset();
+            }
+            PbftNotificationMessage::ProposeBlock(pbft_notification) => {
+                info!(target: "PBFT Task", "Received block proposal notification");
+                // we are the in turn block producer proposing a block
+                match self
+                    .pbft_state_machine
+                    .init_block_proposal(pbft_notification.block)
+                    .await
+                {
+                    Ok(()) => {
+                        info!(target: "PBFT Task", "Block proposal Init processed successfully");
+                    }
+                    Err(e) => {
+                        error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);
+                    }
+                }
+            }
+            msg => {
+                warn!(
+                    target: "PBFT Task",
+                    "uncovered pbft notification message {:?}",
+                    msg
+                );
+            }
+        }
+    }
+
+    async fn handle_peer_msg(&mut self, (peer_id, msg): (PeerId, PeerMessageResponse)) {
+        match msg {
+            PeerMessageResponse::Pbft(pbft_response) => {
+                let PbftResponse { response_type, data } = pbft_response;
+                match response_type {
+                    PbftEventResponseType::CoordinatorBlockProposal => {
+                        match self
+                            .pbft_state_machine
+                            .process_block_proposal(data, peer_id)
+                            .await
+                        {
+                            Ok(()) => {
+                                info!(target: "PBFT Task", "Block proposal processed successfully");
+                            }
+                            Err(e) => {
+                                error!(target: "PBFT Task", "Error processing block proposal {:?}", e);
+                            }
+                        }
+                    }
+                    PbftEventResponseType::PeerPreCommitment => {
+                        match self
+                            .pbft_state_machine
+                            .process_precommitment(data, peer_id)
+                            .await
+                        {
+                            Ok(()) => {
+                                info!(target: "PBFT Task", "Peer pre-commitment processed successfully");
+                            }
+                            Err(e) => {
+                                error!(target: "PBFT Task", "Error processing peer pre-commitment {:?}", e);
+                            }
+                        }
+                    }
+                    PbftEventResponseType::PeerCommitment => {
+                        match self
+                            .pbft_state_machine
+                            .process_commitment(data, peer_id)
+                            .await
+                        {
+                            Ok(None) => {
+                                info!(target: "PBFT Task", "Peer commitment processed successfully, still waiting for other commits");
+                            }
+                            Ok(Some(block_witness)) => {
+                                info!(target: "PBFT Task", "Peer commitment processed successfully, quorum reached");
+                                self.pbft_task_tx
+                                    .send(PbftNotificationMessage::CommitmentsReceived(
+                                        PbftFinalizationNotification { block_witness },
+                                    ))
+                                    // TODO remove unwrap()
+                                    .unwrap();
+                            }
+                            Err(e) => {
+                                error!(target: "PBFT Task", "Error processing peer commitment {:?}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            PeerMessageResponse::Dkg(_) => {
+                // Nothing to do for dkg related messages. Does are handled by the frost
+                // task
+            }
+            PeerMessageResponse::Signing(_) => {
+                // Nothing to do for dkg related messages. Does are handled by the frost
+                // task
+            }
+        }
+    }
+
+    pub async fn start_task(&mut self) {
         info!(target: "PBFT Task", "Starting PBFT Task");
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -133,112 +235,15 @@ where
                 return;
             }
 
-            // First handle any pbft notifications from the block builder task
-            while let Ok(message) = self.pbft_task_rx.try_recv() {
-                match message {
-                    PbftNotificationMessage::Reset => {
-                        info!(target: "PBFT Task", "Resetting PBFT State Machine");
-                        self.pbft_state_machine = self.pbft_state_machine.clone().reset();
-                    }
-                    PbftNotificationMessage::ProposeBlock(pbft_notification) => {
-                        info!(target: "PBFT Task", "Received block proposal notification");
-                        // we are the in turn block producer proposing a block
-                        match self
-                            .pbft_state_machine
-                            .init_block_proposal(pbft_notification.block)
-                            .await
-                        {
-                            Ok(()) => {
-                                info!(target: "PBFT Task", "Block proposal Init processed successfully");
-                            }
-                            Err(e) => {
-                                error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);
-                            }
-                        }
-                    }
-                    msg => {
-                        warn!(
-                            target: "PBFT Task",
-                            "uncovered pbft notification message {:?}",
-                            msg
-                        );
-                    }
-                }
-            }
-            // receive over a channel message from other peers and update our state machine
-            while let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
-                match msg {
-                    PeerMessageResponse::Pbft(pbft_response) => {
-                        let PbftResponse { response_type, data } = pbft_response;
-                        match response_type {
-                            PbftEventResponseType::CoordinatorBlockProposal => {
-                                match self
-                                    .pbft_state_machine
-                                    .process_block_proposal(data, peer_id)
-                                    .await
-                                {
-                                    Ok(()) => {
-                                        info!(target: "PBFT Task", "Block proposal processed successfully");
-                                    }
-                                    Err(e) => {
-                                        error!(target: "PBFT Task", "Error processing block proposal {:?}", e);
-                                    }
-                                }
-                            }
-                            PbftEventResponseType::PeerPreCommitment => {
-                                match self
-                                    .pbft_state_machine
-                                    .process_precommitment(data, peer_id)
-                                    .await
-                                {
-                                    Ok(()) => {
-                                        info!(target: "PBFT Task", "Peer pre-commitment processed successfully");
-                                    }
-                                    Err(e) => {
-                                        error!(target: "PBFT Task", "Error processing peer pre-commitment {:?}", e);
-                                    }
-                                }
-                            }
-                            PbftEventResponseType::PeerCommitment => {
-                                match self
-                                    .pbft_state_machine
-                                    .process_commitment(data, peer_id)
-                                    .await
-                                {
-                                    Ok(None) => {
-                                        info!(target: "PBFT Task", "Peer commitment processed successfully, still waiting for other commits");
-                                    }
-                                    Ok(Some(block_witness)) => {
-                                        info!(target: "PBFT Task", "Peer commitment processed successfully, quorum reached");
-                                        self.pbft_task_tx
-                                            .send(PbftNotificationMessage::CommitmentsReceived(
-                                                PbftFinalizationNotification { block_witness },
-                                            ))
-                                            // TODO remove unwrap()
-                                            .unwrap();
-                                    }
-                                    Err(e) => {
-                                        error!(target: "PBFT Task", "Error processing peer commitment {:?}", e);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    PeerMessageResponse::Dkg(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost
-                        // task
-                        continue;
-                    }
-                    PeerMessageResponse::Signing(_) => {
-                        // Nothing to do for dkg related messages. Does are handled by the frost
-                        // task
-                        continue;
-                    }
-                }
-            }
+            tokio::select! {
+                Some(msg) = self.pbft_task_rx.recv() => self.handle_notification(msg).await,
+                Some(msg) = peer_messages_rx.recv() => self.handle_peer_msg(msg).await,
+            };
 
-            // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            if self.pbft_task_rx.is_closed() && peer_messages_rx.is_closed() {
+                info!(target: "consensus::authority", "pbft task shutting down");
+                return;
+            }
         }
     }
 }
