@@ -89,7 +89,7 @@ where
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
 
-        // get all connected peers
+        // get all connected authority peers
         let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
         if let Err(e) =
             self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
@@ -104,14 +104,14 @@ where
             }
         };
 
-        // update the tracker for each peer_id and mark its state as healthy at the moment of check
+        // update the tracker for each authority peer_id and mark its state as healthy initially
         let mut guard = self.peers_healthcheck_tracker.write().await;
         for (peer_id, _) in connected_peers.into_iter() {
             let _ = guard.insert(peer_id, Instant::now());
         }
         drop(guard);
 
-        // get all peers rx channels
+        // get all authority peers rx channels
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
         if let Err(e) =
             self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
@@ -126,13 +126,23 @@ where
             }
         };
 
+        // get all authority peers
+        let authority_peers = self
+            .storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .collect::<Vec<PeerId>>();
+
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         let events_notification_slack_client = self.events_notification_slack_client.clone();
         let network_handle = self.network_handle.clone();
         self.task_executor.spawn(async move {
-            // start looping and sending healthchecks to all connected peers
+            // start looping and sending healthchecks to all connected authority peers
             loop {
                 if let Err(e) = frost_handle.send_command(FrostCommand::SendHealtcheckToPeers) {
                     error!(target: "HealthcheckTask::start_task", "Failed to send SendHealtcheckToPeers frost command {:?}", e);
@@ -141,8 +151,8 @@ where
                 // sleep for some time before the next check
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-                // check for any peers whose health checks havent been recently received
-                let mut none_responding_peers = peers_healthcheck_tracker
+                // check for any authority peers whose health checks havent been recently received
+                let mut none_responding_authority_peers = peers_healthcheck_tracker
                     .read()
                     .await
                     .iter()
@@ -155,7 +165,7 @@ where
                     })
                     .collect::<Vec<PeerId>>();
 
-                // get from the network handler all trusted connected peers
+                // get from the network handler all trusted connected peers (could be authority but also none-authority ones)
                 let all_trusted_connected_peers_ids = network_handle
                 .get_trusted_peers()
                 .await
@@ -168,10 +178,10 @@ where
                 .collect::<Vec<_>>();
 
                 // check the none responding peers are truly disconnected peers, otherwise they might be just temp unresponsive to healthcheck pings
-                none_responding_peers.retain(|peer| !all_trusted_connected_peers_ids.contains(&peer));
+                none_responding_authority_peers.retain(|peer| !all_trusted_connected_peers_ids.contains(&peer));
 
                 // send to slack/stdout alarms about those peers
-                let none_responding_peers_stringified = none_responding_peers
+                let none_responding_peers_stringified = none_responding_authority_peers
                 .clone()
                 .into_iter()
                 .map(|peer| peer.to_string())
@@ -193,20 +203,11 @@ where
 
                 // try to reconnect to the peers if they are considered fully disconnected
                 if let Err(e) = frost_handle
-                    .send_command(FrostCommand::ReconnectPeers(none_responding_peers)) {
+                    .send_command(FrostCommand::ReconnectPeers(none_responding_authority_peers)) {
                         error!(target: "HealthcheckTask", "Failed to send ReconnectPeers frost command {:?}", e);
                     }
             }
         });
-
-        let authority_peers = self
-            .storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
-            .collect::<Vec<PeerId>>();
 
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
 

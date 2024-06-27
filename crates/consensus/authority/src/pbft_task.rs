@@ -112,7 +112,7 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) -> () {
+    pub async fn start_task(&mut self) {
         info!(target: "PBFT Task", "Starting PBFT Task");
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
