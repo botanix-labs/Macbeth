@@ -874,11 +874,6 @@ mod tests {
                     // let _ = sender.send(tx);
                     Ok(())
                 }
-                FrostCommand::GetAllConnectedPeers(sender) => {
-                    let peers = HashMap::new();
-                    let _ = sender.send(peers);
-                    Ok(())
-                }
                 FrostCommand::SendHealtcheckToPeers => Ok(()),
                 FrostCommand::ReconnectPeers(_) => Ok(()),
             }

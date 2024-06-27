@@ -18,17 +18,16 @@ pub async fn frost_e2e_peer_disconnect(
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
+    // now disconnect the peers of all federation members
+    for (_, fed_member) in test_fed_members.iter() {
+        fed_member.send_test_signal(TestSignal::DisconnectAll());
+    }
+
+    // wait for the disconnected peer to be re-connected again
+    tokio::time::sleep(Duration::from_secs(90)).await;
+
     // assign targeted fed memeber
     let targeted_fed_member = test_fed_members.get(&(0u16)).cloned().unwrap();
-
-    // now disconnect the peers of fed member
-    targeted_fed_member.send_test_signal(TestSignal::DisconnectAll());
-
-    // wait for the disconnected peer to be seen
-    tokio::time::sleep(Duration::from_secs(30)).await;
-
-    // now reconnect the peers of fed member
-    targeted_fed_member.send_test_signal(TestSignal::ReconnectAll());
 
     // create eth client
     let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
