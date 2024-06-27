@@ -104,7 +104,7 @@ where
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
-        let consensus: Arc<dyn Consensus> = Arc::new(self.consensus.clone());
+        let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
@@ -115,18 +115,12 @@ where
                 return;
             }
 
-            let new_block = match self.block_import_rx.try_recv() {
-                Ok(b) => b,
-                Err(error) => match error {
-                    TryRecvError::Empty => {
-                        debug!(target: "consensus::authority", "No new blocks from peers");
-                        continue;
-                    }
-                    TryRecvError::Disconnected => {
-                        debug!(target: "consensus::authority", "Block import channel disconnected");
-                        continue;
-                    }
-                },
+            let new_block = match self.block_import_rx.recv().await {
+                Some(b) => b,
+                None => {
+                    debug!(target: "consensus::authority", "Block import channel disconnected");
+                    continue;
+                }
             };
 
             let block = new_block.block.block.clone();
