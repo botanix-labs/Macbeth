@@ -166,7 +166,7 @@ where
                 }
             }
             // receive over a channel message from other peers and update our state machine
-            if let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
+            while let Ok((peer_id, msg)) = peer_messages_rx.try_recv() {
                 match msg {
                     PeerMessageResponse::Pbft(pbft_response) => {
                         let PbftResponse { response_type, data } = pbft_response;
