@@ -1,17 +1,15 @@
-use crate::sync::SyncController;
-use crate::StoragePBFT;
 use crate::{
     block_fetcher::BlockFetcherTask,
     epoch_manager::EpochManager,
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
     pbft_task::{PbftNotificationMessage, PbftTask},
+    sync::SyncController,
     task::BlockProductionTask,
-    AuthorityConsensus, Storage,
+    AuthorityConsensus, AuthorityStorage, Storage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
-use reth_interfaces::executor;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -29,7 +27,7 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
     StateProviderFactory,
 };
-use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
+
 use reth_tasks::TaskExecutor;
 use std::sync::Arc;
 use tokio::sync::{
@@ -170,17 +168,14 @@ where
         let pk = sk.public_key(&secp256k1::SECP256K1);
 
         // Try to instantiate storage
-        let storage = Storage::try_new(
-            &mut headers,
+        let storage = Storage::new(
             genesis_authorities,
             authorities,
             signer_index.expect("valid index"),
             pk,
-        )
-        .map_err(|e| {
-            error!("Failed to instantiate storage: {:?}", e);
-            AuthorityConsensusBuilderError::InvalidStorage
-        })?;
+            btc_network,
+            None, // Aggregate pk to be filled out by the dkg state machine
+        );
 
         // Instantiate epoch manager
         let epoch_manager = EpochManager::<Client>::new(storage.clone(), client.clone());
@@ -304,18 +299,9 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
-            let storage_read = storage.read().await;
-            let storage_pbft = StoragePBFT::new(
-                storage_read.genesis_authorities.clone(),
-                storage_read.authorities.clone(),
-                storage_read.aggregate_public_key.clone(),
-                btc_network,
-            );
-            drop(storage_read);
-
             let pbft = PbftTask::new(
                 client.clone(),
-                storage_pbft,
+                storage.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,

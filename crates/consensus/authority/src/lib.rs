@@ -280,12 +280,8 @@ pub(crate) trait AuthorityStorage {
     fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey>;
     /// Get the authority public key
     fn get_authority(&self) -> secp256k1::PublicKey;
-}
-
-#[derive(Debug)]
-pub(crate) enum StorageCreationError {
-    /// empty headers
-    EmptyHeaders,
+    /// Get btc network
+    fn get_btc_network(&self) -> bitcoin::Network;
 }
 
 /// In memory storage
@@ -294,30 +290,25 @@ pub(crate) struct Storage {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-// == impl Storage ===
 impl Storage {
-    fn try_new(
-        headers: &mut [SealedHeader],
+    fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
-    ) -> Result<Self, StorageCreationError> {
-        if headers.is_empty() {
-            return Err(StorageCreationError::EmptyHeaders);
-        }
-        // sort the headers by block numbers
-        headers.sort_by(|a, b| a.number.cmp(&b.number));
-
+        btc_network: bitcoin::Network,
+        aggregate_public_key: Option<secp256k1::PublicKey>,
+    ) -> Self {
         let storage = StorageInner {
             genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
-            aggregate_public_key: None,
+            aggregate_public_key,
+            btc_network,
         };
 
-        Ok(Self { inner: Arc::new(RwLock::new(storage)) })
+        Self { inner: Arc::new(RwLock::new(storage)) }
     }
 
     /// Returns the write lock of the storage
@@ -329,34 +320,6 @@ impl Storage {
     /// Returns the read lock of the storage
     pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
         self.inner.read().await
-    }
-}
-
-// Subset of StorageInner needed for PBFT
-#[derive(Debug, Clone)]
-pub(crate) struct StoragePBFT {
-    /// The authority list in the genesis block
-    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
-    /// Keep track of the signers
-    /// This value is pulled from the latest epoch block EDH
-    /// and should be the same as genesis_authorities as long as the federation is static
-    pub(crate) authorities: Vec<secp256k1::PublicKey>,
-    /// The aggregate public key of the FROST threshold signature scheme
-    /// Should get populated after DKG
-    pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
-
-    /// Bitcoin network
-    pub(crate) btc_network: bitcoin::Network,
-}
-
-impl StoragePBFT {
-    pub fn new(
-        genesis_authorities: Vec<secp256k1::PublicKey>,
-        authorities: Vec<secp256k1::PublicKey>,
-        aggregate_public_key: Option<secp256k1::PublicKey>,
-        btc_network: bitcoin::Network,
-    ) -> Self {
-        Self { genesis_authorities, authorities, aggregate_public_key, btc_network }
     }
 }
 
@@ -377,6 +340,8 @@ pub(crate) struct StorageInner {
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
+    /// Bitcoin network
+    btc_network: bitcoin::Network,
 }
 
 // === impl StorageInner ===
@@ -404,6 +369,10 @@ impl AuthorityStorage for StorageInner {
 
     fn get_authority(&self) -> secp256k1::PublicKey {
         self.authority
+    }
+
+    fn get_btc_network(&self) -> bitcoin::Network {
+        self.btc_network
     }
 }
 

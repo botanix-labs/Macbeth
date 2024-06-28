@@ -204,8 +204,8 @@ where
                             .expect("senders are valid");
                     let header = sealed_block.header.clone();
 
-                    // Consensus checks were run during PBFT so don't need to validate pegouts again unless
-                    // it's an epoch block to collect pegouts for psbt.
+                    // Consensus checks were run during PBFT so don't need to validate pegouts again
+                    // unless it's an epoch block to collect pegouts for psbt.
                     // We always need to process pegins to update UTXO set
                     let should_process_receipts =
                         header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);

@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
-    StoragePBFT,
 };
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine, executor, p2p::headers::client::HeadersClient,
@@ -94,7 +93,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(
         client: Client,
-        storage_pbft: StoragePBFT,
+        storage: Storage,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         secret_key: secp256k1::SecretKey,
@@ -110,7 +109,7 @@ where
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
             client.clone(),
-            storage_pbft,
+            storage,
             frost_handle.clone(),
             config.clone(),
             my_peerid,
