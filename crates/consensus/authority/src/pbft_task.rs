@@ -3,10 +3,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
 };
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine, executor, p2p::headers::client::HeadersClient,
-    provider::ProviderResult,
-};
+use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -17,11 +14,8 @@ use reth_network::{
 use reth_network_types::pk2id;
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
-use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProvider, StateProviderBox,
-    StateProviderFactory,
-};
-use reth_revm::processor::EVMProcessor;
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},

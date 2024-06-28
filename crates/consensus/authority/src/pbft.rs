@@ -9,7 +9,7 @@ use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
 use reth_interfaces::{
-    blockchain_tree::{BlockchainTreeEngine, BlockchainTreeViewer},
+    blockchain_tree::BlockchainTreeViewer,
     executor::{BlockExecutionError, BlockValidationError},
     p2p::headers::client::HeadersClient,
 };
@@ -18,7 +18,7 @@ use reth_network::frost::{
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
-use reth_node_api::{error, ConfigureEvmEnv};
+
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
@@ -27,9 +27,9 @@ use reth_primitives::{
 };
 use reth_provider::{
     BlockExecutor, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProvider,
-    StateProviderBox, StateProviderFactory,
+    StateProviderFactory,
 };
-use reth_revm::{database::StateProviderDatabase, processor::EVMProcessor, State};
+
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
