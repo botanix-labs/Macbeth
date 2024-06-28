@@ -131,6 +131,8 @@ pub enum FrostProtoMessageId {
     PeerCommit = 0x0C,
     /// utxo set
     Utxo = 0x0D,
+    /// Round 1 Dkg request message
+    Round1DkgRequest = 0x0E,
 }
 
 /// Enum defining the frost message kind
@@ -140,6 +142,8 @@ pub enum FrostProtoMessageKind {
     Round1Dkg(DkgRequest),
     /// Round 2 package
     Round2Dkg(DkgRequest),
+    /// Round 1 Dkg request
+    Round1DkgRequest(DkgRequest),
     /// Ping
     Ping,
     /// Pong
@@ -208,6 +212,14 @@ impl FrostProtoMessage {
         Self {
             message_type: FrostProtoMessageId::PongMessage,
             message: FrostProtoMessageKind::PongMessage(peer_id, authority_index),
+        }
+    }
+
+    /// Creates a round1 package request message
+    pub fn round1_dkg_request_message(resource: DkgRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::Round1DkgRequest,
+            message: FrostProtoMessageKind::Round1Dkg(resource),
         }
     }
 
@@ -292,6 +304,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
+    /// Creates a new Frost protocol with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
         buf.put_u8(self.message_type as u8);
@@ -309,6 +322,15 @@ impl FrostProtoMessage {
                 buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
                 buf.put_slice(&resource.identifier);
                 // data
+                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.data);
+            }
+            FrostProtoMessageKind::Round1DkgRequest(resource) => {
+                // identifier
+                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
+                buf.put_slice(&resource.identifier);
+                // data
+                // TODO(armins) data is empty, simplify
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
@@ -393,7 +415,7 @@ impl FrostProtoMessage {
         buf
     }
 
-    /// Decodes a `TestProtoMessage` from the given message buffer.
+    /// Decodes a Frost protocol message from the given message buffer.
     pub fn decode_message(buf: &mut &[u8]) -> Option<Self> {
         if buf.is_empty() {
             return None;
@@ -415,6 +437,7 @@ impl FrostProtoMessage {
             0x0B => FrostProtoMessageId::PeerPreCommitment,
             0x0C => FrostProtoMessageId::PeerCommit,
             0x0D => FrostProtoMessageId::Utxo,
+            0x0E => FrostProtoMessageId::Round1DkgRequest,
             _ => return None,
         };
         let message = match message_type {
@@ -445,6 +468,20 @@ impl FrostProtoMessage {
 
                 FrostProtoMessageKind::Round2Dkg(DkgRequest::new(identifier, data))
             }
+            FrostProtoMessageId::Round1DkgRequest => {
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let identifier = buf[..id_len].to_vec();
+                buf.advance(id_len);
+
+                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let data = buf[..data_len].to_vec();
+                buf.advance(data_len);
+
+                FrostProtoMessageKind::Round1DkgRequest(DkgRequest::new(identifier, data))
+            }
+
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
             FrostProtoMessageId::PingMessage => {

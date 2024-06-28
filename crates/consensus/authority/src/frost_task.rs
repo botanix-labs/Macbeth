@@ -7,7 +7,7 @@ use crate::{
 
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, ToFrostManager},
+        manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, PeerMessageResponse, SigningEventResponseType,
         SigningResponse,
     },
@@ -41,6 +41,8 @@ pub struct FrostTask<Client, ToFrostMan> {
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
     pub(crate) frost_handle: ToFrostMan,
+    /// Frost configuration
+    pub(crate) frost_config: FrostConfig,
     /// Epoch manager
     pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
@@ -84,7 +86,7 @@ where
         let signing_state_machine = SigningStateMachine::new(
             btc_server,
             frost_handle.clone(),
-            config,
+            config.clone(),
             frost_task_tx,
             task_executor,
         );
@@ -92,6 +94,7 @@ where
         Self {
             network_handle,
             frost_handle,
+            frost_config: config,
             epoch_manager,
             dkg_state_machine,
             signing_state_machine,
@@ -113,7 +116,7 @@ where
                 info!(target: "consensus::authority::frost_task::start_dkg", "Connected to all frost peers {}", is_connected);
                 // start the dkg process
                 info!(target: "consensus::authority::frost_task::start_dkg", "Starting the DKG state machine...");
-                let _ = self.dkg_state_machine.start().await;
+                let _ = self.dkg_state_machine.start_coordinator().await;
             }
             Err(e) => {
                 error!("Check for connection to other peers failed {:?}", e);
@@ -155,21 +158,10 @@ where
         }
 
         loop {
-            // ensure the node is not syncing
-            if is_active_sync_in_progress(&self.network_handle) {
-                warn!(
-                    ">>>>>>>>>>> [FROST_TASK] Node is still syncing, frost task is awaiting fully synced status ..."
-                );
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                continue;
-            }
-            // Check if we are in_turn and if we need to run the dkg start process
-            // Note this is not enforced in consensus
-            let is_inturn = self.epoch_manager.poll().await;
-
+            let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
+            let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are in turn + initial state + no public key
-            // TODO this logic is wrong you only need dkg if there is no public key
-            if is_inturn &&
+            if is_coordinator &&
                 !self.dkg_state_machine.get_dkg_state().is_running() &&
                 self.dkg_state_machine.get_public_key().await.is_err()
             {
@@ -203,13 +195,23 @@ where
             if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
                     PeerMessageResponse::Pbft(_) => {
-                        // Nothing to do for pbft related messages. Does are handled by the pbft
+                        // Nothing to do for pbft related messages. Those are handled by the pbft
                         // task
                         continue;
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
+                            DkgEventResponseType::DkgRound1Request => {
+                                match self.dkg_state_machine.process_round1_request().await {
+                                    Ok(_) => {
+                                        info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 request dkg package successfully")
+                                    }
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 request dkg package {:?}", e);
+                                    }
+                                }
+                            }
                             DkgEventResponseType::DkgRound1 => {
                                 match self.dkg_state_machine.process_round1(identifier, data).await
                                 {

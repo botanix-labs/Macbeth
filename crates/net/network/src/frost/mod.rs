@@ -165,6 +165,8 @@ impl fmt::Display for UtxoResponse {
 /// Event Response Variants indicating the type of response
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum DkgEventResponseType {
+    /// DKG round 1 request
+    DkgRound1Request,
     /// DKG round 1
     DkgRound1,
     /// DKG round 2
@@ -176,6 +178,7 @@ impl fmt::Display for DkgEventResponseType {
         match self {
             DkgEventResponseType::DkgRound1 => write!(f, "dkground 1"),
             DkgEventResponseType::DkgRound2 => write!(f, "dkground 2"),
+            DkgEventResponseType::DkgRound1Request => write!(f, "dkground 1 request"),
         }
     }
 }
