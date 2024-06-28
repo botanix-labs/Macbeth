@@ -41,6 +41,7 @@ pub async fn frost_e2e_peer_disconnect(
     it_info_print!("Eoa tx: {:?}", last_tx_hash);
 
     // wait for canonical chain updates reported by the node, then send new tx
+    let mut received_notifications_engine_indexes: Vec<u16> = vec![];
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
@@ -57,7 +58,13 @@ pub async fn frost_e2e_peer_disconnect(
             assert_eq!(block_payload.0.tx_receipts.len(), 1);
             assert!(block_payload.0.block.number > 0);
 
-            return Ok(());
+            // add the engine index
+            received_notifications_engine_indexes.push(canon_state_notification.engine_index);
+            received_notifications_engine_indexes.dedup();
+
+            if received_notifications_engine_indexes.len() == test_fed_members.len() {
+                return Ok(());
+            }
         }
     }
 
