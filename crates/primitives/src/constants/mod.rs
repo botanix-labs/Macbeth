@@ -1,5 +1,7 @@
 //! Ethereum protocol-related constants
 
+use secp256k1::Secp256k1;
+
 #[cfg(feature = "optimism")]
 use crate::BaseFeeParams;
 use crate::{
@@ -225,7 +227,14 @@ pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e0845
 pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u64 = 1u64;
 
 /// The address that receives the botanix block fees which is a federation member.
+/// TODO this should be defined in chainspec
 pub const BOTANIX_FEES_RECIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
+
+/// "nothing up my sleve" NUMS point for the secp256k1 curve.
+/// Used as the first aggregate key for the botanix gensis block
+/// consensus should check that this key is being used in genesis and post genesis block is not being used
+// Pulled from secp256k1 crate secp256k1::constants::GENERATOR_X. Prefixed with an 02 byte.
+pub const NUMS_POINT_SECP256K1: [u8; 32] = [121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252, 219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152];
 
 #[cfg(test)]
 mod tests {
