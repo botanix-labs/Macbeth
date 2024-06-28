@@ -6,7 +6,7 @@ use crate::{
     pbft_task::{PbftNotificationMessage, PbftTask},
     sync::SyncController,
     task::BlockProductionTask,
-    AuthorityConsensus, AuthorityStorage, Storage,
+    AuthorityConsensus, Storage,
 };
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};

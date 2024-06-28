@@ -13,7 +13,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     extended_client::BtcServerExtendedClient,
-    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
+    utils::{deserialize_frost_peer_id, FrostParseError},
     Storage,
 };
 
@@ -343,7 +343,7 @@ where
         Ok(())
     }
 
-    pub fn coordinator_identifier(&self) -> frost::Identifier {
+    pub(crate) fn coordinator_identifier(&self) -> frost::Identifier {
         // the 0th peer is always the coordinator
         peer_id_to_identifier(0)
     }
