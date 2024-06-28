@@ -608,8 +608,11 @@ where
 
             // Broadcast signing round 2 package to all peers (excluding ourselves)
             for (_peer_id, connected_peer) in connected_peers.iter() {
-                if connected_peer.frost_identifier.as_ref().cloned().unwrap() !=
-                    self.personal_frost_identifier
+                if connected_peer
+                    .frost_identifier
+                    .as_ref()
+                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .unwrap_or_default()
                 {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
                         response_type,
@@ -795,8 +798,11 @@ where
         let (coordinator_peer_data, coordinator_authority_index) = coordinator.unwrap();
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_authority_index);
         // Broadcast signing round 1 to the coordinator
-        if coordinator_peer_data.frost_identifier.as_ref().cloned().unwrap() !=
-            self.personal_frost_identifier
+        if coordinator_peer_data
+            .frost_identifier
+            .as_ref()
+            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .unwrap_or_default()
         {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
@@ -954,8 +960,11 @@ where
         let (coordinator_peer_data, _coordinator_authority_index) = coordinator.unwrap();
 
         // Broadcast signing round 2 to the coordinator
-        if coordinator_peer_data.frost_identifier.as_ref().cloned().unwrap() !=
-            self.personal_frost_identifier
+        if coordinator_peer_data
+            .frost_identifier
+            .as_ref()
+            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .unwrap_or_default()
         {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,

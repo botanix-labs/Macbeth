@@ -127,8 +127,22 @@ where
         };
 
         // get all authority peers
-        let authority_peers =
-            self.storage.read().await.authorities.iter().map(pk2id).collect::<Vec<PeerId>>();
+        let authority_peers = self
+            .storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .filter_map(|authority_pk| {
+                let authority_peer_id = pk2id(authority_pk);
+                if authority_peer_id != *self.network_handle.peer_id() {
+                    // excluse our own peer_id
+                    Some(authority_peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<PeerId>>();
 
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
@@ -223,10 +237,9 @@ where
                     // task
                 }
                 PeerMessageResponse::Healthcheck(healthcheck_response) => {
-                    // if both sender and receiver are registered authorities and I am the the
-                    // receiver
-                    if authority_peers.contains(&healthcheck_response.sender) &&
-                        authority_peers.contains(&healthcheck_response.receiver) &&
+                    // check receiver must be us, sender must be another authority member
+                    if healthcheck_response.receiver == *self.network_handle.peer_id() &&
+                        authority_peers.contains(&healthcheck_response.sender) &&
                         healthcheck_response.receiver.eq(self.network_handle.peer_id())
                     {
                         let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;

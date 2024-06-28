@@ -408,7 +408,12 @@ where
 
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         for (_, peer_data) in connected_peers.iter() {
-            if peer_data.frost_identifier.unwrap() != coord_id {
+            if peer_data
+                .frost_identifier
+                .as_ref()
+                .and_then(|id| Some(*id != coord_id))
+                .unwrap_or_default()
+            {
                 let resp = PeerMessageResponse::Dkg(DkgResponse {
                     response_type: response_type.clone(),
                     identifier: dkg_payload.identifier.clone(),
