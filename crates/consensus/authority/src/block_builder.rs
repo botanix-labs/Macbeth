@@ -305,6 +305,7 @@ where
                 return;
             }
         };
+        drop(storage);
         // Seal the block
         let mut block_to_commit = Block {
             header: new_header.clone().unseal(),
