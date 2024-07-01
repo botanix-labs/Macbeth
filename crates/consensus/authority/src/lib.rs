@@ -162,16 +162,7 @@ impl Consensus for AuthorityConsensus {
 
         // Past genesis NUMS point should never be used as the aggregated public key
         if edh.aggregated_public_key == nums_secp256k1_pk() {
-            return Err(ConsensusError::InvalidAggregatedPublicKey(
-                InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,
-            ));
-        }
-
-        // Validate public key placed in the extra data header
-        if edh.aggregated_public_key != *aggregate_public_key.expect("aggregated public key") {
-            return Err(ConsensusError::InvalidAggregatedPublicKey(
-                InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey,
-            ));
+            return Err(ConsensusError::InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis));
         }
 
         // Validate a quorum of authority signatures except during pbft
