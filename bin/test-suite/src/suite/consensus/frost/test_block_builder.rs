@@ -3,8 +3,9 @@ use reth::{
     consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp},
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
 };
+use reth_primitives::header_ext::HeaderExt;
 
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, str::FromStr, time::Duration};
 
 use crate::{
     it_info_print,
@@ -106,6 +107,17 @@ pub async fn block_builder(
     it_info_print!("Eoa tx: {:?}", last_tx_hash);
     tx_hashes_set.insert(last_tx_hash.transaction_hash);
 
+    // retrieve the current aggreate public key
+    let aggregate_public_key_str =
+        suite.local_context.btc_server_clients.clone().expect("btc server clients")[0]
+            .get_public_key(client::Empty {})
+            .await
+            .unwrap()
+            .into_inner()
+            .publickey;
+
+    let aggregate_public_key = secp256k1::PublicKey::from_str(&aggregate_public_key_str).unwrap();
+
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
@@ -116,6 +128,10 @@ pub async fn block_builder(
 
             // block verfication
             if canon_state_notification.engine_index == targeted_fed_member.index {
+                let header = canon_state_notification.notification.tip().header();
+                let edh = header.deserialize_extra_data_header().unwrap();
+                assert_eq!(edh.aggregated_public_key, aggregate_public_key);
+
                 let block_receipts = canon_state_notification.notification.block_receipts();
                 it_info_print!("Block receipts ?", block_receipts);
                 assert_eq!(block_receipts.len(), 1);
