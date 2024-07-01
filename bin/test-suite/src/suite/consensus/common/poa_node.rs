@@ -27,6 +27,7 @@ use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
 use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
+    constants::NUMS_POINT_SECP256K1,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     ChainSpec,
@@ -568,6 +569,9 @@ pub async fn create_poa_federation_members(
     }
 
     // now create the edh
+    let nums_pk = secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
+        .unwrap()
+        .public_key(secp256k1::Parity::Even);
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         None,
@@ -577,6 +581,7 @@ pub async fn create_poa_federation_members(
         // to make sure they're not identical, hash random data
         BlockHash::hash(&[1]),
         sha256::Hash::hash(&[2]),
+        nums_pk,
     );
 
     // now insert peers and edh into each federation member
@@ -606,13 +611,8 @@ pub async fn create_poa_federation_members(
 #[cfg(test)]
 mod tests {
 
-    use askama::Template;
-    use bitcoin::{
-        hashes::{sha256, Hash},
-        BlockHash,
-    };
-
     use super::*;
+    use askama::Template;
 
     #[test]
     fn test_edh_template() {
@@ -622,15 +622,9 @@ mod tests {
         let secret_key2 = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
 
-        let extra_data_header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            None,
-            Some(vec![pk1, pk2]),
-            None,
-            None,
-            BlockHash::all_zeros(),
-            sha256::Hash::all_zeros(),
-        );
+        let mut extra_data_header = ExtraDataHeader::default();
+        extra_data_header.add_authority_signers(vec![pk1, pk2]);
+
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();
