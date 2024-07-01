@@ -117,10 +117,13 @@ pub trait Consensus: Debug + Send + Sync {
 /// Invalid Aggregated Public Key Error
 #[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
 pub enum InvalidAggregatedPublicKeyError {
+    /// Aggregated public key does not match expected key
     #[error("Aggregated public key does not match expected key")]
     InvalidAggregatedPublicKey,
+    /// Aggregated public key is missing
     #[error("Aggregated public key is missing")]
     MissingAggregatedPublicKey,
+    /// Aggregated public key should not be NUMS point past genesis block
     #[error("Aggregated public key should not be NUMS point past genesis block")]
     NumsAggregatePublicKeyPastGenesis,
 }
