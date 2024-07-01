@@ -118,6 +118,7 @@ impl Consensus for OptimismBeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        _aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
@@ -133,6 +134,7 @@ impl Consensus for OptimismBeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }

@@ -91,6 +91,7 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;
 
     /// Validates that block has the right beneficiary
@@ -102,6 +103,7 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;
 
     /// Validates the edh single signer check
@@ -110,6 +112,17 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError>;
+}
+
+/// Invalid Aggregated Public Key Error
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+pub enum InvalidAggregatedPublicKeyError {
+    #[error("Aggregated public key does not match expected key")]
+    InvalidAggregatedPublicKey,
+    #[error("Aggregated public key is missing")]
+    MissingAggregatedPublicKey,
+    #[error("Aggregated public key should not be NUMS point past genesis block")]
+    NumsAggregatePublicKeyPastGenesis,
 }
 
 /// Consensus Errors
@@ -319,7 +332,7 @@ pub enum ConsensusError {
 
     /// Invalid Aggregated Public key
     #[error("invalid aggregated public key")]
-    InvalidAggregatedPublicKey,
+    InvalidAggregatedPublicKey(#[from] InvalidAggregatedPublicKeyError),
 }
 
 impl ConsensusError {
