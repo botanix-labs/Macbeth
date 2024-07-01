@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use async_trait::async_trait;
+use client::BtcServerClient;
 use port_killer::kill;
 use reth::CliRunner;
 use reth_tracing::tracing::error;
@@ -22,6 +23,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tonic::transport::Channel;
 use tracing::{info, warn};
 // scopes
 mod common;
@@ -56,6 +58,7 @@ pub struct LocalContext {
     pub btc_servers: Option<Vec<SpawnedBtcServer>>,
     pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
+    pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
 }
 
 pub struct CreateTestConfig {
@@ -258,6 +261,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             await_dkg(&mut test_fed_members, &mut rx).await;
 
             // Every btc server should have an aggregate key
+            let mut btc_server_clients = vec![];
             let mut keys = HashSet::new();
             for instance in 0..self.global_context.instances {
                 let port = self
@@ -271,6 +275,8 @@ impl Suite for ConsensusIntegrationTestSuite {
                         .await
                         .unwrap();
 
+                btc_server_clients.push(client.clone());
+
                 let key =
                     client.get_public_key(client::Empty {}).await.unwrap().into_inner().publickey;
                 keys.insert(key);
@@ -279,6 +285,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             // All keys should be the same
             assert_eq!(keys.len(), 1);
 
+            self.local_context.btc_server_clients = Some(btc_server_clients);
             self.local_context.poa_nodes = Some(test_fed_members);
             self.local_context.poa_notification = Some(tx);
         }
@@ -297,6 +304,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.local_context.btc_servers = None;
         self.local_context.poa_nodes = None;
         self.local_context.poa_notification = None;
+        self.local_context.btc_server_clients = None;
 
         // allow a few seconds to pass after cleanup
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -313,6 +321,7 @@ impl ConsensusIntegrationTestSuite {
                 btc_servers: None,
                 poa_nodes: None,
                 poa_notification: None,
+                btc_server_clients: None,
             },
         }
     }
