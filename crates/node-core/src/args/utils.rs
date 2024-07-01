@@ -12,6 +12,7 @@ use askama::Template;
 use bitcoin::hashes::{sha256, Hash};
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
+    constants::NUMS_POINT_SECP256K1,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
@@ -164,6 +165,10 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                         None,
                         bitcoin::hash_types::BlockHash::all_zeros(),
                         sha256::Hash::all_zeros(),
+                        // Agg key in genesis should always be NUMS point
+                        secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
+                            .expect("valid agg pk")
+                            .public_key(secp256k1::Parity::Even),
                     );
                     let edh = hex::encode(extra_data_header.serialize());
                     let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };

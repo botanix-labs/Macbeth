@@ -33,7 +33,9 @@ use reth_interfaces::{
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
-    constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+    constants::{
+        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, NUMS_POINT_SECP256K1,
+    },
     extra_data_header::ExtraDataHeader,
     header_ext::HeaderExt,
     proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders,
@@ -144,6 +146,18 @@ impl Consensus for AuthorityConsensus {
             ConsensusError::ExtraDataInvalid
         })?;
 
+        // Past genesis NUMS point should never be used as the aggregated public key
+        if edh.aggregated_public_key ==
+            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
+                .map_err(|e| {
+                    error!("Failed to deserialize aggregated public key: {:?}", e);
+                    ConsensusError::ExtraDataInvalid
+                })?
+                .public_key(secp256k1::Parity::Even)
+        {
+            return Err(ConsensusError::InvalidAggregatedPublicKey);
+        }
+
         if header.is_poa_epoch() {
             // Validate the list of authorities matches the authorities in the genesis block
             // This check is only for a static federation
@@ -236,10 +250,22 @@ impl Consensus for AuthorityConsensus {
         validation::validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
-        let _edh = header.deserialize_extra_data_header().map_err(|e| {
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
+
+        if edh.aggregated_public_key ==
+            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
+                .map_err(|e| {
+                    error!("Failed to deserialize aggregated public key: {:?}", e);
+                    ConsensusError::ExtraDataInvalid
+                })?
+                .public_key(secp256k1::Parity::Even)
+        {
+            return Err(ConsensusError::InvalidAggregatedPublicKey);
+        }
+
         // Validate the authority signature and signature came from one of the authorities
         header.validate_first_authority_signature(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
@@ -490,6 +516,7 @@ impl StorageInner {
         recent_block_hash: bitcoin::BlockHash,
         utxo_commitment: sha256::Hash,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
+        aggregated_public_key: &secp256k1::PublicKey,
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
@@ -535,6 +562,7 @@ impl StorageInner {
             witness_data.clone(),
             recent_block_hash,
             utxo_commitment,
+            aggregated_public_key.clone(),
         );
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk).map_err(|e| {
@@ -617,6 +645,7 @@ impl StorageInner {
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
+        let consensus_pkg = botanix_consensus_pkg.as_ref().expect("consensus pkg");
 
         // fill in the rest of the fields
         let header = self.complete_header(
@@ -627,9 +656,10 @@ impl StorageInner {
             authority_signers,
             witness_data,
             // This is checked to be Some above
-            botanix_consensus_pkg.expect("consensus pkg").bitcoin_checkpoint.0.block_hash(),
+            consensus_pkg.bitcoin_checkpoint.0.block_hash(),
             utxo_commitment,
             client,
+            &consensus_pkg.aggregate_public_key,
         )?;
 
         // Validate EDH authorities match genesis authorities
@@ -803,6 +833,24 @@ mod tests {
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn should_not_accept_edh_with_nums_point() {
+        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
+        // By default edh will use the nums point
+        let edh = ExtraDataHeader::default();
+
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, &authority_signers);
+        assert_eq!(result.err().unwrap(), ConsensusError::InvalidAggregatedPublicKey);
     }
 
     #[test]
