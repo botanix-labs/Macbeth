@@ -327,6 +327,10 @@ pub enum ConsensusError {
     /// Inturn Validation Error
     #[error("in turn validation error")]
     ValidateInturnError,
+
+    /// Invalid Aggregated Public key
+    #[error("invalid aggregated public key")]
+    InvalidAggregatedPublicKey,
 }
 
 impl ConsensusError {
