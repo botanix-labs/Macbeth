@@ -112,11 +112,15 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) -> () {
+    pub async fn start_task(&mut self) {
         info!(target: "PBFT Task", "Starting PBFT Task");
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "PBFT Task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
+        }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
@@ -128,7 +132,7 @@ where
         loop {
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
-                warn!(target: "consensus::authority", "Node is still syncing, pbft task is awaiting fully synced status ...");
+                warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 return;
             }
@@ -232,6 +236,10 @@ where
                     PeerMessageResponse::Signing(_) => {
                         // Nothing to do for dkg related messages. Does are handled by the frost
                         // task
+                        continue;
+                    }
+                    PeerMessageResponse::Healthcheck(_) => {
+                        // Nothing to do for health related messages.
                         continue;
                     }
                 }

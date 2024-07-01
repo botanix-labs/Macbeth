@@ -13,9 +13,10 @@ use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
+use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
@@ -516,15 +517,16 @@ where
         Ok(())
     }
 
-    pub(crate) async fn get_all_peers_handle(
-        &self,
-    ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
+    pub(crate) async fn get_all_peers_handle(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
         // get all frost peers connections
-        let (peers_connections_sender, peers_connections_receiver) = tokio::sync::oneshot::channel::<
-            HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
-        >();
-        self.frost_handle
-            .send_command(FrostCommand::GetAllConnectedFrostPeers(peers_connections_sender));
+        let (peers_connections_sender, peers_connections_receiver) =
+            tokio::sync::oneshot::channel::<HashMap<PeerId, PeerData>>();
+        if let Err(e) = self
+            .frost_handle
+            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender))
+        {
+            error!(target: "consensus::authority::signing", "Failed to send GetAllConnectedPeers frost message {:?}", e);
+        }
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
@@ -536,9 +538,7 @@ where
 
     /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
     /// else is
-    pub(crate) async fn get_coordinator(
-        &self,
-    ) -> Result<Option<(frost::Identifier, UnboundedSender<FrostPeerCommand>, u64)>, Error> {
+    pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
         let is_inturn = is_inturn(
             self.frost_config.authorities.len() as u64,
@@ -558,14 +558,17 @@ where
                 );
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
-                let sender_channel = all_connected_frost_peers
-                    .get(&current_inturn_authority_frost_identifier)
-                    .cloned();
+                let coord = all_connected_frost_peers.iter().find_map(|(_peer_id, peer_data)| {
+                    if peer_data.frost_identifier.as_ref().cloned().unwrap() ==
+                        current_inturn_authority_frost_identifier
+                    {
+                        Some(peer_data.clone())
+                    } else {
+                        None
+                    }
+                });
 
-                Ok(Some(current_inturn_authority_frost_identifier)
-                    .zip(sender_channel)
-                    .zip(Some(current_inturn_authority_index))
-                    .map(|((a, b), c)| (a, b, c)))
+                Ok(coord.zip(Some(current_inturn_authority_index)))
             }
         }
     }
@@ -604,15 +607,24 @@ where
             let connected_peers = self.get_all_peers_handle().await?;
 
             // Broadcast signing round 2 package to all peers (excluding ourselves)
-            for (frost_id, sender) in connected_peers.iter() {
-                if *frost_id != self.personal_frost_identifier {
+            for (_peer_id, connected_peer) in connected_peers.iter() {
+                if connected_peer
+                    .frost_identifier
+                    .as_ref()
+                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .unwrap_or_default()
+                {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
                         response_type,
                         identifier: frost_identifier.clone(),
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
                     });
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                    if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
+                        peer_commands_tx
+                            .send(FrostPeerCommand::PeerMessage(resp))
+                            .map_err(Error::Send)?;
+                    }
                 }
             }
             Ok(())
@@ -720,10 +732,8 @@ where
         let coordinator = self.get_coordinator().await?;
 
         // get coordinator id
-        let coordinator_id = coordinator
-            .as_ref()
-            .map(|(_, _, authority_index)| *authority_index)
-            .unwrap_or_default();
+        let coordinator_id =
+            coordinator.as_ref().map(|(_, authority_index)| *authority_index).unwrap_or_default();
 
         // get coordinator time interval validity
         let (start, end, _time_passed, _time_remaining) =
@@ -785,10 +795,15 @@ where
         // Update signing state
         self.update_signing_state(session_id, SigningState::Round2).await;
 
-        let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
-        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator id {:?}", coordinator_frost_id);
+        let (coordinator_peer_data, coordinator_authority_index) = coordinator.unwrap();
+        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_authority_index);
         // Broadcast signing round 1 to the coordinator
-        if coordinator_frost_id != self.personal_frost_identifier {
+        if coordinator_peer_data
+            .frost_identifier
+            .as_ref()
+            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .unwrap_or_default()
+        {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 identifier: signing_package_round1.identifier.clone(),
@@ -798,10 +813,15 @@ where
 
             retry_future(
                 || {
-                    let sender = coordinator_sender.clone();
+                    let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
+                        if let Some(sender) = sender.as_ref() {
+                            return sender
+                                .send(FrostPeerCommand::PeerMessage(message))
+                                .map_err(Error::Send)
+                        }
+                        Ok(())
                     }
                 },
                 3,
@@ -937,10 +957,15 @@ where
             return Ok(());
         }
 
-        let (coordinator_frost_id, coordinator_sender, _) = coordinator.unwrap();
+        let (coordinator_peer_data, _coordinator_authority_index) = coordinator.unwrap();
 
         // Broadcast signing round 2 to the coordinator
-        if coordinator_frost_id != self.personal_frost_identifier {
+        if coordinator_peer_data
+            .frost_identifier
+            .as_ref()
+            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .unwrap_or_default()
+        {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                 identifier: signing_package_round2.identifier.clone(),
@@ -950,10 +975,15 @@ where
 
             retry_future(
                 || {
-                    let sender = coordinator_sender.clone();
+                    let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
+                        if let Some(sender) = sender.as_ref() {
+                            return sender
+                                .send(FrostPeerCommand::PeerMessage(message))
+                                .map_err(Error::Send)
+                        }
+                        Ok(())
                     }
                 },
                 3,

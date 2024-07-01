@@ -1,6 +1,6 @@
 #![allow(unreachable_pub)]
 use core::fmt;
-use std::str::FromStr;
+use std::{net::SocketAddr, str::FromStr};
 
 use alloy_rlp::{Decodable, Encodable};
 use reth_eth_wire::{capability::Capability, protocol::Protocol};
@@ -11,7 +11,30 @@ use tracing::warn;
 const MESSAGE_VERSION: usize = 0;
 const PBFT_MESSAGE_VERSION: usize = 0;
 
-/// A structured frost DKG message
+/// A structured healthcheck message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HealthcheckRequest {
+    /// healthcheck ping sender
+    pub sender: PeerId,
+    /// healthcheck ping receiver
+    pub receiver: PeerId,
+}
+
+/// Healtcheck message builder
+impl HealthcheckRequest {
+    /// Constructs a new healthcheck request
+    pub fn new(sender: PeerId, receiver: PeerId) -> Self {
+        Self { sender, receiver }
+    }
+}
+
+impl fmt::Display for HealthcheckRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Healtcheck sender: {:?}. Healthcheck receiver: {:?}", self.sender, self.receiver)
+    }
+}
+
+/// A structured frost PBFT message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PbftRequest {
     /// The version of the request message
@@ -107,8 +130,10 @@ pub enum FrostProtoMessageId {
     PeerPreCommitment = 0x0B,
     /// PBFT message peer commit
     PeerCommit = 0x0C,
+    /// Healthcheck
+    Healthcheck = 0x0D,
     /// Round 1 Dkg request message
-    Round1DkgRequest = 0x0D,
+    Round1DkgRequest = 0x0E,
 }
 
 /// Enum defining the frost message kind
@@ -125,9 +150,9 @@ pub enum FrostProtoMessageKind {
     /// Pong
     Pong,
     /// Ping message with a user-defined message
-    PingMessage(PeerId, u16),
-    /// Pong message with a user peer id and an authority index
-    PongMessage(PeerId, u16),
+    PingMessage(PeerId, u16, SocketAddr),
+    /// Pong message with a user String id and an authority index
+    PongMessage(PeerId, u16, SocketAddr),
     /// Signers will add their signing commitments to the psbt
     SignerRound1SigningPackage(SignRequest),
     /// Coordinating node will collect the PSBTs with the signing commitments
@@ -142,6 +167,8 @@ pub enum FrostProtoMessageKind {
     PeerPreCommitment(PbftRequest),
     /// PBFT message peer commit
     PeerCommit(PbftRequest),
+    /// Health
+    Healthcheck(HealthcheckRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -175,17 +202,17 @@ impl FrostProtoMessage {
     }
 
     /// Creates a ping message
-    pub fn ping_message(peer_id: PeerId, authority_index: u16) -> Self {
+    pub fn ping_message(peer_id: PeerId, authority_index: u16, addr: SocketAddr) -> Self {
         Self {
             message_type: FrostProtoMessageId::PingMessage,
-            message: FrostProtoMessageKind::PingMessage(peer_id, authority_index),
+            message: FrostProtoMessageKind::PingMessage(peer_id, authority_index, addr),
         }
     }
     /// Creates a ping message
-    pub fn pong_message(peer_id: PeerId, authority_index: u16) -> Self {
+    pub fn pong_message(peer_id: PeerId, authority_index: u16, addr: SocketAddr) -> Self {
         Self {
             message_type: FrostProtoMessageId::PongMessage,
-            message: FrostProtoMessageKind::PongMessage(peer_id, authority_index),
+            message: FrostProtoMessageKind::PongMessage(peer_id, authority_index, addr),
         }
     }
 
@@ -269,6 +296,15 @@ impl FrostProtoMessage {
         }
     }
 
+    /// Peer healthcheck
+    pub fn peer_health_message(resource: HealthcheckRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::Healthcheck,
+            message: FrostProtoMessageKind::Healthcheck(resource),
+        }
+    }
+
+    /// Creates a new `TestProtoMessage` with the given message ID and payload.
     /// Creates a new Frost protocol with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
@@ -301,16 +337,23 @@ impl FrostProtoMessage {
             }
             FrostProtoMessageKind::Ping => {}
             FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id, authority_index) => {
+            FrostProtoMessageKind::PingMessage(peer_id, authority_index, socket_addr) => {
                 // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
-                                              // authority index
+
+                // authority index
                 buf.put_u16_le(*authority_index); // Store the authority_index
+
+                // socket address
+                let socket_addr_str = socket_addr.to_string();
+                let socket_addr_bytes = socket_addr_str.as_bytes();
+                buf.put_u16_le(socket_addr_bytes.len() as u16); // Store the length of the socket address string
+                buf.put_slice(socket_addr_bytes); // Store the socket address string itself
             }
-            FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
+            FrostProtoMessageKind::PongMessage(peer_id, authority_index, socket_addr) => {
                 // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
@@ -318,6 +361,12 @@ impl FrostProtoMessage {
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
                                               // authority index
                 buf.put_u16_le(*authority_index); // Store the authority_index
+
+                // socket address
+                let socket_addr_str = socket_addr.to_string();
+                let socket_addr_bytes = socket_addr_str.as_bytes();
+                buf.put_u16_le(socket_addr_bytes.len() as u16); // Store the length of the socket address string
+                buf.put_slice(socket_addr_bytes); // Store the socket address string itself
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(resource) => {
                 // identifier
@@ -372,6 +421,17 @@ impl FrostProtoMessage {
                 buf.put_u32_le(buffer.len() as u32);
                 buf.put_slice(&buffer);
             }
+            FrostProtoMessageKind::Healthcheck(resource) => {
+                // Serialize the sender
+                let sender_bytes = resource.sender.as_slice();
+                buf.put_u16_le(sender_bytes.len() as u16); // Length of the sender
+                buf.put_slice(sender_bytes); // Sender bytes
+
+                // Serialize the receiver
+                let receiver_bytes = resource.receiver.as_slice();
+                buf.put_u16_le(receiver_bytes.len() as u16); // Length of the receiver
+                buf.put_slice(receiver_bytes); // Receiver bytes
+            }
         }
         buf
     }
@@ -397,7 +457,8 @@ impl FrostProtoMessage {
             0x0A => FrostProtoMessageId::CoordinatorBlockProposal,
             0x0B => FrostProtoMessageId::PeerPreCommitment,
             0x0C => FrostProtoMessageId::PeerCommit,
-            0x0D => FrostProtoMessageId::Round1DkgRequest,
+            0x0D => FrostProtoMessageId::Healthcheck,
+            0x0E => FrostProtoMessageId::Round1DkgRequest,
             _ => return None,
         };
         let message = match message_type {
@@ -454,7 +515,13 @@ impl FrostProtoMessage {
                 let authority_index = u16::from_le_bytes(buf[..2].try_into().unwrap());
                 buf.advance(2);
 
-                FrostProtoMessageKind::PingMessage(peer_id, authority_index)
+                let socket_addr_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let socket_addr_str = std::str::from_utf8(&buf[..socket_addr_len]).unwrap();
+                let socket_addr = SocketAddr::from_str(socket_addr_str).unwrap(); // Assuming from_str can never fail
+                buf.advance(socket_addr_len);
+
+                FrostProtoMessageKind::PingMessage(peer_id, authority_index, socket_addr)
             }
             FrostProtoMessageId::PongMessage => {
                 let peer_id_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
@@ -466,7 +533,13 @@ impl FrostProtoMessage {
                 let authority_index = u16::from_le_bytes(buf[..2].try_into().unwrap());
                 buf.advance(2);
 
-                FrostProtoMessageKind::PongMessage(peer_id, authority_index)
+                let socket_addr_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let socket_addr_str = std::str::from_utf8(&buf[..socket_addr_len]).unwrap();
+                let socket_addr = SocketAddr::from_str(socket_addr_str).unwrap(); // Assuming from_str can never fail
+                buf.advance(socket_addr_len);
+
+                FrostProtoMessageKind::PongMessage(peer_id, authority_index, socket_addr)
             }
             FrostProtoMessageId::SignerRound1SigningPackage => {
                 // id
@@ -607,12 +680,31 @@ impl FrostProtoMessage {
                     return None;
                 }
             }
+            FrostProtoMessageId::Healthcheck => {
+                // Deserialize the sender
+                let sender_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let sender_bytes = &buf[..sender_len];
+                let sender = PeerId::from_slice(sender_bytes); // Assuming from_slice can never fail
+                buf.advance(sender_len);
+
+                // Deserialize the receiver
+                let receiver_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+                buf.advance(2);
+                let receiver_bytes = &buf[..receiver_len];
+                let receiver = PeerId::from_slice(receiver_bytes); // Assuming from_slice can never fail
+                buf.advance(receiver_len);
+
+                FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
+            }
         };
         Some(Self { message_type, message })
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::HealthcheckRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
@@ -622,6 +714,7 @@ mod tests {
     use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
     use reth_rpc_types::PeerId;
+    use std::net::{Ipv4Addr, SocketAddr};
     #[allow(unused_imports)]
     use std::str::FromStr;
 
@@ -725,10 +818,11 @@ mod tests {
     fn test_ping_message_encode_decode() {
         let peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
         let authority_index = 2u16;
+        let socket_addr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8888);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::PingMessage,
-            message: FrostProtoMessageKind::PingMessage(peer_id, authority_index),
+            message: FrostProtoMessageKind::PingMessage(peer_id, authority_index, socket_addr),
         };
 
         // Encode the message
@@ -740,11 +834,20 @@ mod tests {
             .expect("Failed to decode PingMessage");
 
         // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PingMessage(decoded_peer_id, decoded_authority_index) =
-            decoded_message.message
+        if let FrostProtoMessageKind::PingMessage(
+            decoded_peer_id,
+            decoded_authority_index,
+            decoded_socket_addr,
+        ) = decoded_message.message
         {
             assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
             assert_eq!(decoded_authority_index, authority_index, "Authority index does not match");
+            assert_eq!(
+                decoded_socket_addr.ip(),
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                "Socket addr does not match"
+            );
+            assert_eq!(decoded_socket_addr.port(), 8888, "Socket port does not match");
         } else {
             panic!("Decoded message is not a PingMessage");
         }
@@ -754,10 +857,11 @@ mod tests {
     fn test_pong_message_encode_decode() {
         let peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
         let authority_index = 20u16;
+        let socket_addr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8888);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::PongMessage,
-            message: FrostProtoMessageKind::PongMessage(peer_id, authority_index),
+            message: FrostProtoMessageKind::PongMessage(peer_id, authority_index, socket_addr),
         };
 
         // Encode the message
@@ -769,13 +873,55 @@ mod tests {
             .expect("Failed to decode PongMessage");
 
         // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PongMessage(decoded_peer_id, decoded_authority_index) =
-            decoded_message.message
+        if let FrostProtoMessageKind::PongMessage(
+            decoded_peer_id,
+            decoded_authority_index,
+            decoded_socket_addr,
+        ) = decoded_message.message
         {
             assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
             assert_eq!(decoded_authority_index, authority_index, "Authority index does not match");
+            assert_eq!(
+                decoded_socket_addr.ip(),
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                "Socket addr does not match"
+            );
+            assert_eq!(decoded_socket_addr.port(), 8888, "Socket port does not match");
         } else {
             panic!("Decoded message is not a PongMessage");
+        }
+    }
+
+    #[test]
+    fn test_healtcheck_message_encode_decode() {
+        let sender_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
+        let receiver_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::Healthcheck,
+            message: FrostProtoMessageKind::Healthcheck(HealthcheckRequest::new(
+                sender_peer_id,
+                receiver_peer_id,
+            )),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode HealthcheckMessage");
+
+        // Verify that the decoded message matches the original message
+        if let FrostProtoMessageKind::Healthcheck(healthcheck_request) = decoded_message.message {
+            assert_eq!(healthcheck_request.sender, sender_peer_id, "sender_peer_id does not match");
+            assert_eq!(
+                healthcheck_request.receiver, receiver_peer_id,
+                "receiver_peer_id does not match"
+            );
+        } else {
+            panic!("Decoded message is not a Healthcheck Message");
         }
     }
 }

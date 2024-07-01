@@ -25,14 +25,13 @@ reth-payload-builder.workspace = true
 # reth-beacon-imports
 reth-tasks.workspace = true
 reth-rpc.workspace = true
-reth-db.workspace = true
+reth-network-api.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 serde_json = { workspace = true }
-reth-ecies.workspace = true
 reth-network-types.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
@@ -48,8 +47,18 @@ reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
 client = {path = "../../../bin/btc-server/client"}
 
+# slack
+slack-morphism = { version = "2.3.2", features = ["hyper"] }
+
+# http/rpc
+hyper-rustls = "0.26"
+hyper-util = "0.1"
+
 # hex
 hex = "0.4.3"
+
+## Url
+url = "2.2"
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }

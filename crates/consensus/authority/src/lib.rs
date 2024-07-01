@@ -59,13 +59,14 @@ mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
+mod healthcheck_task;
+pub mod notifications;
 mod pbft;
 mod pbft_task;
 mod signing;
 mod sync;
 mod task;
 pub mod utils;
-
 pub use builder::AuthorityConsensusBuilder;
 
 /// Block time duration (secs)
