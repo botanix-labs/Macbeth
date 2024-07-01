@@ -176,6 +176,12 @@ impl ExtraDataHeader {
         self.set_optional_fields_bitmask();
     }
 
+    /// Add authority signers to the extra data header
+    pub fn add_authority_signers(&mut self, signers: Vec<secp256k1::PublicKey>) {
+        self.authority_signers = Some(signers);
+        self.set_optional_fields_bitmask();
+    }
+
     /// Add multiple signatures to the extra data header
     /// Will not add duplicates
     pub fn add_signatures(&mut self, signatures: Vec<RecoverableSignature>) {
@@ -754,6 +760,21 @@ mod tests {
         edh4.merge_signature(&edh3);
         let edh_signature = edh4.clone().authority_signatures.unwrap();
         assert_eq!(edh_signature.len(), 2);
+    }
+
+    #[test]
+    fn can_add_authority_signers() {
+        let mut edh = ExtraDataHeader::default();
+        let secp = Secp256k1::new();
+        let (_secret_key, public_key) = secp.generate_keypair(&mut OsRng);
+
+        edh.add_authority_signers(vec![public_key]);
+        assert_eq!(edh.authority_signers.is_some(), true);
+        let edh_signers = edh.authority_signers.clone().unwrap();
+        assert_eq!(edh_signers.len(), 1);
+        assert_eq!(edh_signers.get(0).expect("valid signer"), &public_key);
+
+        assert_eq!(edh.optional_fields, 1 << HAS_AUTHORTIES_POS);
     }
 
     #[test]
