@@ -193,6 +193,7 @@ impl HeaderExt for Header {
 
     /// Adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
+        // TODO check if NUMS point is not aggregate key
         self.extra_data = Bytes::from(edh.serialize());
     }
 
@@ -409,7 +410,7 @@ mod tests {
 
     #[allow(dead_code)]
     const EDH_DEFAULT_SIGHASH: &str =
-        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
+        "0x31cf69ba61773aa5a36330d397007f7ae90726f98e507e7638abd99bb091c142";
 
     #[allow(dead_code)]
     const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
