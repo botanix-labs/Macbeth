@@ -1,19 +1,20 @@
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
 };
+use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
 };
-use tokio::sync::mpsc::{error::SendError, UnboundedSender};
+use tokio::sync::mpsc::error::SendError;
 use tracing::{error, info, warn};
 
 use crate::{
     extended_client::BtcServerExtendedClient,
-    utils::{deserialize_frost_peer_id, retry_exec, FrostParseError},
+    utils::{deserialize_frost_peer_id, FrostParseError},
     Storage,
 };
 
@@ -343,20 +344,21 @@ where
         Ok(())
     }
 
-    pub fn coordinator_identifier(&self) -> frost::Identifier {
+    pub(crate) fn coordinator_identifier(&self) -> frost::Identifier {
         // the 0th peer is always the coordinator
         peer_id_to_identifier(0)
     }
 
-    pub(crate) async fn get_all_peers_handle(
-        &self,
-    ) -> Result<HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>, Error> {
+    pub(crate) async fn get_all_peers_handle(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
         // get all frost peers connections
-        let (peers_connections_sender, peers_connections_receiver) = tokio::sync::oneshot::channel::<
-            HashMap<frost::Identifier, UnboundedSender<FrostPeerCommand>>,
-        >();
-        self.frost_handle
-            .send_command(FrostCommand::GetAllConnectedFrostPeers(peers_connections_sender));
+        let (peers_connections_sender, peers_connections_receiver) =
+            tokio::sync::oneshot::channel::<HashMap<PeerId, PeerData>>();
+        if let Err(e) = self
+            .frost_handle
+            .send_command(FrostCommand::GetAllConnectedPeers(peers_connections_sender))
+        {
+            error!(target: "consensus::authority::dkg::get_all_peers_handle", "Failed to send GetAllConnectedPeers frost command {}", e);
+        }
         match peers_connections_receiver.await {
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
@@ -375,14 +377,20 @@ where
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
+        let coordinator_peer = connected_peers.iter().find(|(_, peer_data)| {
+            peer_data.frost_identifier.and_then(|id| Some(id == coord_id)).unwrap_or_default()
+        });
+
         // Find the coord and send the message
-        if let Some(sender) = connected_peers.get(&coord_id) {
+        if let Some((_, coord_data)) = coordinator_peer {
             let resp = PeerMessageResponse::Dkg(DkgResponse {
                 response_type: response_type.clone(),
                 identifier: dkg_payload.identifier.clone(),
                 data: dkg_payload.payload.clone(),
             });
-            sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+            if let Some(sender) = coord_data.peer_commands_tx.as_ref() {
+                sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+            }
         }
         Ok(())
     }
@@ -399,14 +407,21 @@ where
         let coord_id = self.coordinator_identifier();
 
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
-        for (frost_id, sender) in connected_peers.iter() {
-            if *frost_id != coord_id {
+        for (_, peer_data) in connected_peers.iter() {
+            if peer_data
+                .frost_identifier
+                .as_ref()
+                .and_then(|id| Some(*id != coord_id))
+                .unwrap_or_default()
+            {
                 let resp = PeerMessageResponse::Dkg(DkgResponse {
                     response_type: response_type.clone(),
                     identifier: dkg_payload.identifier.clone(),
                     data: dkg_payload.payload.clone(),
                 });
-                sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                if let Some(sender) = peer_data.peer_commands_tx.as_ref() {
+                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
+                }
             }
         }
         Ok(())

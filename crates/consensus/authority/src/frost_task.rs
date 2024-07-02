@@ -106,7 +106,9 @@ where
     async fn start_dkg(&mut self) {
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender));
+        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
+            error!(target: "consensus::authority::frost_task::start_dkg", "Failed to send CheckConnectedToaAll frost command {}", e);
+        }
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
@@ -127,7 +129,11 @@ where
     pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx));
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
+        }
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
@@ -158,6 +164,13 @@ where
         }
 
         loop {
+            // ensure the node is not syncing
+            if is_active_sync_in_progress(&self.network_handle) {
+                info!(target: "consensus::authority::frost_task::start_task", " Node is still syncing, frost task is awaiting fully synced status ...");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+
             let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are in turn + initial state + no public key
@@ -192,8 +205,12 @@ where
                 }
             }
             // receive over a channel message from other peers and update our state machine
-            if let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
+            while let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
+                    PeerMessageResponse::Healthcheck(_) => {
+                        // Nothing to do for healthcheck related messages.
+                        continue;
+                    }
                     PeerMessageResponse::Pbft(_) => {
                         // Nothing to do for pbft related messages. Those are handled by the pbft
                         // task

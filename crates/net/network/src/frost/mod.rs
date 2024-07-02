@@ -1,12 +1,15 @@
 #![allow(unreachable_pub)]
 //! Testing gossiping of transactions.
 use core::fmt;
+use std::net::SocketAddr;
 
 use reth_network_api::Direction;
 use reth_primitives::SealedBlock;
 use reth_rpc_types::PeerId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+
+use crate::NetworkHandle;
 
 /// Manager implementation
 pub mod manager;
@@ -21,7 +24,7 @@ pub struct ProtocolState {
     events: mpsc::UnboundedSender<FrostProtocolEvent>,
     peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
     authority_index: u16,
-    peer_id: PeerId,
+    network_handle: NetworkHandle,
     authorities: Vec<PeerId>,
 }
 
@@ -31,10 +34,10 @@ impl ProtocolState {
         events: mpsc::UnboundedSender<FrostProtocolEvent>,
         peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
         authority_index: u16,
-        peer_id: PeerId,
+        network_handle: NetworkHandle,
         authorities: Vec<PeerId>,
     ) -> Self {
-        Self { events, peer_message_forwarder, authority_index, peer_id, authorities }
+        Self { events, peer_message_forwarder, authority_index, network_handle, authorities }
     }
 }
 
@@ -49,6 +52,8 @@ pub enum PeerMessageResponse {
     Pbft(PbftResponse),
     /// UTXO related responses
     Utxo(UtxoResponse),
+    /// Healtcheck response
+    Healthcheck(HealthcheckResponse),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -58,6 +63,9 @@ impl fmt::Display for PeerMessageResponse {
             PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
             PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
             PeerMessageResponse::Utxo(response) => write!(f, "Utxo Response: {}", response),
+            PeerMessageResponse::Healthcheck(response) => {
+                write!(f, "Health Response: {:?}", response)
+            }
         }
     }
 }
@@ -82,6 +90,21 @@ impl fmt::Display for DkgResponse {
             self.identifier.len(),
             self.data.len()
         )
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HealthcheckResponse {
+    /// the ping requester
+    pub sender: PeerId,
+    /// pinged peer
+    pub receiver: PeerId,
+}
+
+impl fmt::Display for HealthcheckResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Sender: {}, Receiver: {}", self.sender, self.receiver,)
     }
 }
 
@@ -236,7 +259,7 @@ pub enum FrostProtocolEvent {
         response: PeerMessageResponse,
     },
     /// Peer confirmation
-    PeerConfirmed(PeerId, u16),
+    PeerConfirmed(PeerId, u16, SocketAddr),
 }
 
 /// All events related to frost events emitted by the network.
@@ -264,7 +287,7 @@ pub enum NetworkFrostEvent {
         response: PeerMessageResponse,
     },
     /// Peer Confirmation
-    PeerConfirmed(PeerId, u16),
+    PeerConfirmed(PeerId, u16, SocketAddr),
 }
 
 /// Commands sent by us to a peer.

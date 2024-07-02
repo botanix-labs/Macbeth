@@ -3,7 +3,7 @@ use futures::{Stream, StreamExt};
 use reth_eth_wire::{
     capability::SharedCapabilities, multiplex::ProtocolConnection, protocol::Protocol,
 };
-use reth_network_api::Direction;
+use reth_network_api::{Direction, NetworkInfo};
 use reth_primitives::BytesMut;
 use reth_rpc_types::PeerId;
 use std::{
@@ -21,12 +21,15 @@ use crate::{
         DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
+    NetworkHandle,
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest, UtxoRequest},
-    FrostPeerCommand, FrostProtocolEvent, PbftEventResponseType, PbftResponse, PeerMessageResponse,
-    ProtocolState, UtxoResponse,
+    messages::{
+        FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
+    },
+    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PbftEventResponseType, PbftResponse,
+    PeerMessageResponse, ProtocolState, UtxoResponse,
 };
 
 /// Frost Protocol Handler
@@ -45,7 +48,7 @@ impl ProtocolHandler for FrostProtoHandler {
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(&self.state.peer_id) {
+        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
             return None;
         }
         // once the other side establishes conn with us, clone and send the sender half to them
@@ -62,7 +65,7 @@ impl ProtocolHandler for FrostProtoHandler {
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(&self.state.peer_id) {
+        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
             return None;
         }
         // once I establish conn with the other peer, clone and send the sender half to them
@@ -125,14 +128,19 @@ impl ConnectionHandler for FrostConnectionHandler {
             // incoming - another peer is connecting with me (set the ping message to Some),
             // outgoing - I am connecting with a peer
             initial_ping: direction.is_outgoing().then(|| {
-                FrostProtoMessage::ping_message(self.state.peer_id, self.state.authority_index)
+                FrostProtoMessage::ping_message(
+                    *self.state.network_handle.peer_id(),
+                    self.state.authority_index,
+                    self.state.network_handle.local_addr(),
+                )
             }),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
             pending_pong: None, // when the conn. is just established, there is no pending pong
             my_authority_index: self.state.authority_index,
-            my_peer_id: self.state.peer_id,
+            my_peer_id: *self.state.network_handle.peer_id(),
             peer_id,
+            network_handle: self.state.network_handle.clone(),
         }
     }
 }
@@ -148,6 +156,7 @@ pub struct FrostProtoConnection {
     my_authority_index: u16,
     my_peer_id: PeerId,
     peer_id: PeerId,
+    network_handle: NetworkHandle,
 }
 
 impl Stream for FrostProtoConnection {
@@ -168,12 +177,23 @@ impl Stream for FrostProtoConnection {
                 // answer once the pong is received
                 FrostPeerCommand::PingMessage { msg: _, response } => {
                     this.pending_pong = Some(response);
+                    let my_socket_addr = this.network_handle.local_addr();
                     Poll::Ready(Some(
-                        FrostProtoMessage::ping_message(this.my_peer_id, this.my_authority_index)
-                            .encoded(),
+                        FrostProtoMessage::ping_message(
+                            this.my_peer_id,
+                            this.my_authority_index,
+                            my_socket_addr,
+                        )
+                        .encoded(),
                     ))
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
+                    PeerMessageResponse::Healthcheck(healthcheck_response) => {
+                        let HealthcheckResponse { sender, receiver } = healthcheck_response;
+                        let req = HealthcheckRequest::new(sender, receiver);
+
+                        Poll::Ready(Some(FrostProtoMessage::peer_health_message(req).encoded()))
+                    }
                     PeerMessageResponse::Pbft(pbft_response) => {
                         let PbftResponse { response_type, data } = pbft_response;
                         let req = PbftRequest::new(data);
@@ -276,26 +296,45 @@ impl Stream for FrostProtoConnection {
             return Poll::Ready(None);
         };
 
-        // react on message type
+        // react on message type sent to us by another peer
         match msg.message {
+            FrostProtoMessageKind::Healthcheck(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    peer_id: this.peer_id,
+                    response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
+                        receiver: data.receiver,
+                        sender: data.sender,
+                    }),
+                });
+            }
             FrostProtoMessageKind::Ping => {
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
             }
             FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id, authority_index) => {
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
+            FrostProtoMessageKind::PingMessage(peer_id, authority_index, peer_socket_addr) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
 
                 // answer with pong of my_authority_index
                 return Poll::Ready(Some(
-                    FrostProtoMessage::pong_message(this.my_peer_id, this.my_authority_index)
-                        .encoded(),
+                    FrostProtoMessage::pong_message(
+                        this.my_peer_id,
+                        this.my_authority_index,
+                        this.network_handle.local_addr(),
+                    )
+                    .encoded(),
                 ));
             }
             // other peers answers with pong message with a peer id and authority index
-            FrostProtoMessageKind::PongMessage(peer_id, authority_index) => {
-                let _ = peer_message_forwarder
-                    .send(FrostProtocolEvent::PeerConfirmed(peer_id, authority_index));
+            FrostProtoMessageKind::PongMessage(peer_id, authority_index, peer_socket_addr) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
+                    peer_id,
+                    authority_index,
+                    peer_socket_addr,
+                ));
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();

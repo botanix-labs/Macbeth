@@ -3,6 +3,7 @@ use crate::{
     epoch_manager::EpochManager,
     extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
+    healthcheck_task::HealthcheckTask,
     pbft_task::{PbftNotificationMessage, PbftTask},
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
@@ -79,7 +80,7 @@ pub enum AuthorityConsensusBuilderError {
 impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
     AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
 where
-    ToFrostMan: ToFrostManager + Clone + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static + Send,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -214,6 +215,7 @@ where
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        HealthcheckTask<ToFrostMan>,
     ) {
         let Self {
             btc_server,
@@ -257,6 +259,13 @@ where
             network_client.clone(),
             network_handle.clone(),
             client.clone(),
+        );
+
+        let healthcheck_task = HealthcheckTask::new(
+            network_handle.clone(),
+            frost_handle.clone().expect("Requires frost handle"),
+            storage.clone(),
+            task_executor.clone(),
         );
 
         // Set up frost notification message queue
@@ -335,6 +344,14 @@ where
             block_production_task = Some(block_production);
         }
 
-        (consensus, block_production_task, block_fetcher_task, frost_task, sync_task, pbft_task)
+        (
+            consensus,
+            block_production_task,
+            block_fetcher_task,
+            frost_task,
+            sync_task,
+            pbft_task,
+            healthcheck_task,
+        )
     }
 }

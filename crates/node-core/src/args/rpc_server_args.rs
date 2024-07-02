@@ -47,7 +47,7 @@ use url::Url;
 
 use super::{
     bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
-    utils::{parse_grpc_address, parse_url},
+    utils::parse_grpc_address,
     BitcoindArgs,
 };
 
@@ -225,12 +225,6 @@ pub struct RpcServerArgs {
     /// The maximum number required for frost signing.
     #[arg(long = "frost.max_signers", name = "frost.max_signers", value_name = "MAX_SIGNERS")]
     pub max_signers: Option<u16>,
-
-    /// Notifications Webhook Url
-    ///
-    /// Notifications webhook to send various reports to
-    #[arg(long, value_name = "SLACK_NOTIFICATIONS_WEBHOOK_URL", value_parser = parse_url, help_heading = "Notifications Webhook url", required = false)]
-    pub slack_notifications_webhook_url: Option<Url>,
 }
 
 impl RpcServerArgs {
@@ -599,7 +593,6 @@ impl Default for RpcServerArgs {
             btc_network: bitcoin::Network::Regtest,
             min_signers: Some(2),
             max_signers: Some(2),
-            slack_notifications_webhook_url: None,
         }
     }
 }

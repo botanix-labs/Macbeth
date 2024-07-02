@@ -103,6 +103,11 @@ impl Suite for ConsensusIntegrationTestSuite {
                 Default::default(),
                 frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
             ),
+            "frost_e2e_peer_disconnect" => run_test!(
+                self,
+                Default::default(),
+                frost::test_frost_e2e_peer_disconnect::frost_e2e_peer_disconnect
+            ),
             // TODO
             // "rpc_node" => run_test!(self, Default::default(),
             // rpc_node::test_rpc_node::test_rpc_node),

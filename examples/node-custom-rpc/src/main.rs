@@ -60,7 +60,7 @@ struct RethCliTxpoolExt {
 }
 
 impl PoaNodeCommandConfig for RethCliTxpoolExt {
-    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+    fn on_node_started(&self, _components: RethNodeComponents) -> eyre::Result<()> {
         Ok(())
     }
 }

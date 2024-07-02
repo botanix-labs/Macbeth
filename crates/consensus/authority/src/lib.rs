@@ -60,6 +60,8 @@ mod engine_util;
 mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
+mod healthcheck_task;
+pub mod notifications;
 mod pbft;
 mod pbft_task;
 mod signing;

@@ -59,6 +59,7 @@ reth-node-core.workspace = true
 reth-node-builder.workspace = true
 reth-node-events.workspace = true
 reth-consensus.workspace = true
+thiserror.workspace = true
 
 # crypto
 alloy-rlp.workspace = true
@@ -99,13 +100,6 @@ tokio = { workspace = true, features = [
 futures.workspace = true
 
 pin-project.workspace = true
-
-# slack
-slack-morphism = { version = "1.11", features = ["hyper"] }
-
-# http/rpc
-hyper = "0.14.25"
-hyper-rustls = "0.24.0"
 
 # Botanix
 client = {path = "../btc-server/client"}

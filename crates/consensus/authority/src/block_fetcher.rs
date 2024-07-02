@@ -3,7 +3,6 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::hashes::{sha256, Hash};
 use client::{FinalizeSignerRequest, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_consensus::Consensus;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
     p2p::{
@@ -20,7 +19,7 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
 use tokio::sync::{
-    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
 use tracing::{debug, error, info, warn};
@@ -104,7 +103,7 @@ where
     pub async fn start_task(&mut self) {
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
-        let consensus: Arc<dyn Consensus> = Arc::new(self.consensus.clone());
+        let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
@@ -115,18 +114,14 @@ where
                 return;
             }
 
-            let new_block = match self.block_import_rx.try_recv() {
-                Ok(b) => b,
-                Err(error) => match error {
-                    TryRecvError::Empty => {
-                        debug!(target: "consensus::authority", "No new blocks from peers");
-                        continue;
-                    }
-                    TryRecvError::Disconnected => {
-                        debug!(target: "consensus::authority", "Block import channel disconnected");
-                        continue;
-                    }
-                },
+            let new_block = match self.block_import_rx.recv().await {
+                Some(b) => b,
+                None => {
+                    info!(target: "consensus::authority",
+                        "block fetcher task shutting down (channel closed)",
+                    );
+                    return;
+                }
             };
 
             let block = new_block.block.block.clone();
