@@ -3,7 +3,9 @@ use reth::{
     consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp},
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
 };
-use reth_primitives::header_ext::HeaderExt;
+use reth_authority_consensus::AuthorityConsensus;
+use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
+use reth_primitives::{header_ext::HeaderExt, BOTANIX_TESTNET};
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
@@ -21,6 +23,7 @@ use crate::{
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
+    let consensus = AuthorityConsensus::new(BOTANIX_TESTNET.clone());
     it_info_print!("Running block builder test...");
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
@@ -117,6 +120,17 @@ pub async fn block_builder(
             .publickey;
 
     let aggregate_public_key = secp256k1::PublicKey::from_str(&aggregate_public_key_str).unwrap();
+    // Oof this is nasty, lets just put authorities in a vec in local context
+    let authority_signers = &suite
+        .local_context
+        .poa_nodes
+        .as_ref()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .authorities
+        .clone();
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
@@ -125,13 +139,22 @@ pub async fn block_builder(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
+            // Run consensus checks
+            let header = canon_state_notification.notification.tip().header();
+            let edh = header.deserialize_extra_data_header().unwrap();
+            assert_eq!(edh.aggregated_public_key, aggregate_public_key);
+            let header = canon_state_notification.notification.tip().header();
+            consensus
+                .validate_header_standalone(
+                    header,
+                    &authority_signers,
+                    &authority_signers,
+                    Some(&aggregate_public_key),
+                )
+                .unwrap();
 
             // block verfication
             if canon_state_notification.engine_index == targeted_fed_member.index {
-                let header = canon_state_notification.notification.tip().header();
-                let edh = header.deserialize_extra_data_header().unwrap();
-                assert_eq!(edh.aggregated_public_key, aggregate_public_key);
-
                 let block_receipts = canon_state_notification.notification.block_receipts();
                 it_info_print!("Block receipts ?", block_receipts);
                 assert_eq!(block_receipts.len(), 1);
