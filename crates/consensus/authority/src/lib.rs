@@ -21,6 +21,7 @@
 //! be mined.
 
 use bitcoin::hashes::sha256;
+use pbft::min_commitments;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities},
@@ -183,7 +184,7 @@ impl Consensus for AuthorityConsensus {
             ConsensusError::InvalidAuthoritySignature
         })?;
 
-        if valid_sigs != authority_signers.len() as u16 {
+        if valid_sigs < min_commitments(authority_signers.len() as u16) {
             return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
                 authority_signers.len() as u16,
                 valid_sigs,

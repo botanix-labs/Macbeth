@@ -43,6 +43,26 @@ use tokio::sync::{
 };
 use tracing::{debug, error, info, warn};
 
+pub struct PbftCommitmentCriteria {}
+
+impl PbftCommitmentCriteria {
+    /// Returns the minimum number of pre-commitments required for a block
+    /// This is not consenusus critical but will prevent the number of forked blocks
+    /// n being the number of authorities
+    #[inline]
+    pub fn min_pre_commitments(n: u16) -> u16 {
+        n - 2
+    }
+
+    /// Returns the minimum number of commitments required for a block
+    /// Should be two thirds of the total number of authorities
+    /// n being the number of authorities
+    #[inline]
+    pub fn min_commitments(n: u16) -> u16 {
+        (2 * n / 3) + 1
+    }
+}
+
 type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
 type PreCommitmentsMap = Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>;
 
@@ -649,7 +669,9 @@ where
             .cloned()
             .unwrap_or_else(HashSet::new);
         // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() >= self.config.max_signers as usize {
+        if pre_commits.len() as u16 >=
+            PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
+        {
             // Save that we processed this time slot from this peer
             let time_slot = block.header.timestamp / 60;
             info!(target: "consensus::authority::pbft::check_and_send_commitment" ,"We have enough pre-commitments moving to next state");
@@ -778,8 +800,10 @@ where
             new_block.header().check_authority_sig_add(&self.config.authorities)?;
         info!("number of valid sigs: {}", number_of_valid_sigs);
         info!("max signers: {}", self.config.max_signers);
-        // if we have enough commitments, we can move to the next state
-        if number_of_valid_sigs >= self.config.max_signers {
+        // if we have enough commitments, we can move to the next st#[inline]
+        if number_of_valid_sigs >=
+            PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+        {
             info!(target: "consensus::authority::pbft::process_commitment" ,"We have enough commitments, time to produce a block");
             let block_witness =
                 new_block.header().get_block_witness()?.expect("set the witness above");
@@ -1363,7 +1387,7 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
@@ -1371,7 +1395,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Test that the other non-coord responds the same way
         non_coords[1]
@@ -1380,7 +1404,7 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[1].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
     }
 
     #[tokio::test]
@@ -1412,7 +1436,8 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        // only need one more pre-commitment but we have two which is enough
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
@@ -1420,7 +1445,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         let other_peer_id = non_coords[1].peer_id.clone();
         // Process other peers pre-commitment
@@ -1431,26 +1456,10 @@ mod tests {
 
         // There should be three pre-commitments, non_coord[0], coord which was added at the block
         // proposal stage And non_coord[1] which we just added
-        let pre_commitments =
-            non_coords[0].pre_commitments.read().await.get(&block_hash).cloned().unwrap();
-        assert_eq!(pre_commitments.len(), 3);
-        for i in 0..pre_commitments.len() {
-            assert!(pre_commitments.contains(&peer_ids[i]));
-        }
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
-
-        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await
-        // for commitments
-        non_coords[0]
-            .process_precommitment(block_to_propose.clone(), other_peer_id)
-            .await
-            .expect("valid precommitment");
         let mut pre_commitments =
-            non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
-        assert_eq!(pre_commitments.len(), 3);
-        for i in 0..pre_commitments.len() {
-            assert!(pre_commitments.contains(&peer_ids[i]));
-        }
+            non_coords[0].pre_commitments.read().await.get(&block_hash).cloned().unwrap();
+        assert_eq!(pre_commitments.len(), 2);
+        // Still awaiting for commitments
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Remove the coord's pre-commits
