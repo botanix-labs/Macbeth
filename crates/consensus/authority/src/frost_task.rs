@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use crate::{
     dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    signing::SigningStateMachine, Storage,
+    signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
 };
 
 use reth_network::{

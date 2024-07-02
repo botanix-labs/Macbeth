@@ -217,7 +217,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan, NetworkClient, EvmConfig>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EF>>,
         HealthcheckTask<ToFrostMan>,
     ) {
         let Self {
