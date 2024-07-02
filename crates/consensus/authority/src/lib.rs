@@ -84,7 +84,6 @@ pub struct AuthorityConsensus {
 impl AuthorityConsensus {
     /// Create a new instance of [AuthorityConsensus]
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        // TODO(armins) most likely we need to pass storage here
         Self { chain_spec }
     }
 }
@@ -100,9 +99,12 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
+        let block_times =
+            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
         reth_consensus_common::utils::validate_against_parent(
             parent.header().clone(),
             header.header().clone(),
+            block_times,
         )?;
         // TODO(armins) this was removed do we still need it?
         // validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
@@ -224,8 +226,11 @@ impl Consensus for AuthorityConsensus {
         self.validate_block_beneficiary(header)?;
 
         // Validate signer is in turn
+        // TODO just for simplicity lets pull block time from botanix testnet chainsepc
+        let block_times =
+            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
         header
-            .validate_inturn(authority_signers)
+            .validate_inturn(authority_signers, block_times)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
@@ -283,9 +288,12 @@ impl Consensus for AuthorityConsensus {
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
 
+        let block_times =
+            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+
         // Validate signer is in turn
         header
-            .validate_inturn(authority_signers)
+            .validate_inturn(authority_signers, block_times)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();

@@ -13,9 +13,8 @@ use reth_network::{
 };
 use reth_network_types::pk2id;
 use reth_node_api::ConfigureEvmEnv;
-use reth_primitives::{header_ext::BlockWitness, SealedBlock};
+use reth_primitives::{header_ext::BlockWitness, ChainSpec, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
-
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -89,7 +88,8 @@ where
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn new(
+    pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         client: Client,
         storage: Storage,
         frost_handle: ToFrostMan,
@@ -106,6 +106,7 @@ where
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
         let mut pbft_state_machine = PbftStateMachine::new(
+            chain_spec,
             client.clone(),
             storage,
             frost_handle.clone(),
