@@ -82,29 +82,29 @@ struct BlockInfo {
     relevant_inputs: Vec<OutPoint>,
 }
 
-pub struct TxIndex {
+pub struct PegoutManager {
     /// The number of blocks to track txs for.
-    window: u32,
+    conf_window: u32,
 
     /// The set of txs we are tracking.
     txs: HashMap<Txid, Tx>,
     txs_by_input: HashMap<OutPoint, Vec<Txid>>,
     txs_by_pegout: HashMap<TxOut, Vec<Txid>>,
     /// The txs that are confirmed but not finalized yet.
-    confirmed: HashSet<Txid>,
+    confirmed_txs: HashSet<Txid>,
 
     last_blocks: VecDeque<BlockInfo>,
     last_finalized: BlockHash,
 }
 
-impl TxIndex {
-    pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> TxIndex {
-        let mut ret = TxIndex {
-            window,
+impl PegoutManager {
+    pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> PegoutManager {
+        let mut ret = PegoutManager {
+            conf_window: window,
             txs: HashMap::with_capacity(txs.len()),
             txs_by_input: HashMap::with_capacity(txs.iter().map(|t| t.tx.input.len()).sum()),
             txs_by_pegout: HashMap::with_capacity(txs.iter().map(|t| t.pegouts().len()).sum()),
-            confirmed: HashSet::new(),
+            confirmed_txs: HashSet::new(),
             last_blocks: VecDeque::with_capacity(window as usize),
             last_finalized,
         };
@@ -179,7 +179,7 @@ impl TxIndex {
     pub fn pending_confirmed_utxos(&self) -> HashSet<OutPoint> {
         let mut ret = HashSet::with_capacity(self.txs.len() * 3);
         for tx in self.txs.values() {
-            if self.confirmed.contains(&tx.txid) {
+            if self.confirmed_txs.contains(&tx.txid) {
                 for vout in 0..tx.tx.output.len() {
                     ret.insert(OutPoint::new(tx.txid, vout as u32));
                 }
@@ -193,7 +193,7 @@ impl TxIndex {
         assert!(!self.last_blocks.is_empty());
         let drop = self.last_blocks.pop_back().unwrap();
         for tx in drop.relevant_txs {
-            self.confirmed.remove(&tx);
+            self.confirmed_txs.remove(&tx);
         }
     }
 
@@ -247,7 +247,7 @@ impl TxIndex {
             if self.txs.contains_key(&txid) {
                 debug!("Indexed tx {} confirmed in block {}:{}", txid, height, hash);
                 relevant_txs.push(txid);
-                self.confirmed.insert(txid);
+                self.confirmed_txs.insert(txid);
             } else {
                 for input in &tx.input {
                     if let Some(conflicts) = self.txs_by_input.get(&input.previous_output) {
@@ -275,7 +275,7 @@ impl TxIndex {
         mut finalize_utxo: impl FnMut(database::Utxo) -> Result<(), database::Error>,
     ) -> Result<(), SyncError> {
         info!(
-            "Syncing TxIndex: last={}:{}, cp={}:{}",
+            "Syncing PegoutMgr: last={}:{}, cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
             print_safe!(bitcoind.get_block_header_info(&checkpoint).map(|r| r.height)),
@@ -350,7 +350,7 @@ impl TxIndex {
             let block = bitcoind.get_block(&hash)?;
             self.add_block(&block);
 
-            if self.last_blocks.len() == self.window as usize {
+            if self.last_blocks.len() == self.conf_window as usize {
                 let deep = self.last_blocks.pop_front().unwrap();
                 self.finalize_block(&mut finalize_utxo, &deep)?;
                 self.last_finalized = deep.hash;

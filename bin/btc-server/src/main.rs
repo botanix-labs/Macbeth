@@ -7,10 +7,10 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod pegouts;
 mod server;
 mod shutdown;
 mod signer;
-mod txindex;
 mod util;
 
 mod rpc {
@@ -48,7 +48,7 @@ use crate::{
     config::{GrpcConfig, TomlConfig},
     dkg::DKGError,
     signer::SigningError,
-    txindex::TxIndex,
+    pegouts::PegoutManager,
     util::ParsingError,
 };
 
@@ -73,7 +73,7 @@ pub enum Error {
     #[error("db error: {0}")]
     Db(#[from] database::Error),
     #[error("sync error: {0}")]
-    TxIndexSync(#[from] txindex::SyncError),
+    PegoutMgrSync(#[from] pegouts::SyncError),
     #[error("failed to sync to given checkpoint block: {0}")]
     FailedToReachCheckPoint(BlockHash),
 }
@@ -87,7 +87,7 @@ type SigningNoncesCommitmentsMap =
 struct App {
     db: database::Db,
     btc_network: bitcoin::Network,
-    txindex: Mutex<TxIndex>,
+    pegouts: Mutex<PegoutManager>,
 
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
@@ -113,16 +113,16 @@ struct App {
 }
 
 impl App {
-    fn load_txindex(
+    fn load_pegout_mgr(
         db: &database::Db,
         fallback_checkpoint: BlockHash,
         pegin_conf_depth: u32,
-    ) -> Result<TxIndex, database::Error> {
-        if let Some(latest) = db.get_txindex_finalized_block()? {
+    ) -> Result<PegoutManager, database::Error> {
+        if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
             let txs = db.get_pending_txs()?;
-            Ok(TxIndex::new(pegin_conf_depth, txs, latest))
+            Ok(PegoutManager::new(pegin_conf_depth, txs, latest))
         } else {
-            Ok(TxIndex::new(pegin_conf_depth, vec![], fallback_checkpoint))
+            Ok(PegoutManager::new(pegin_conf_depth, vec![], fallback_checkpoint))
         }
     }
 
@@ -179,12 +179,12 @@ impl App {
 
         let fallback_checkpoint = {
             let tip_height =
-                bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
+                bitcoind_client.get_block_count().map_err(|e| Error::PegoutMgrSync(e.into()))?;
             bitcoind_client
                 .get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
-                .map_err(|e| Error::TxIndexSync(e.into()))?
+                .map_err(|e| Error::PegoutMgrSync(e.into()))?
         };
-        let txindex = Mutex::new(Self::load_txindex(
+        let pegout_mgr = Mutex::new(Self::load_pegout_mgr(
             &db,
             fallback_checkpoint,
             config.pegin_confirmation_depth,
@@ -192,7 +192,7 @@ impl App {
         Ok(Self {
             btc_network: config.btc_network,
             db,
-            txindex,
+            pegouts: pegout_mgr,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_identifier,
             frost_round1_dkg: round1_dkg,
@@ -282,8 +282,8 @@ impl App {
         Ok(StopHandle { stop_cmd_sender: shutdown_send })
     }
 
-    pub async fn sync_txindex(&self, checkpoint: BlockHash) -> Result<(), txindex::SyncError> {
-        let mut lock = self.txindex.lock().await;
+    pub async fn sync_pegout_mgr(&self, checkpoint: BlockHash) -> Result<(), pegouts::SyncError> {
+        let mut lock = self.pegouts.lock().await;
         let bitcoind = self.bitcoind_client.as_ref().expect("should have bitcoind");
         let db = &self.db;
         lock.sync_until(bitcoind, checkpoint, move |utxo| {
@@ -291,7 +291,7 @@ impl App {
             db.flush()?;
             Ok(())
         })?;
-        self.db.store_txindex_finalized_block(lock.last_finalized())?;
+        self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;
         Ok(())
@@ -303,8 +303,8 @@ impl App {
         targets: &[TxOut],
         timestamp: SystemTime,
     ) -> Result<(), database::Error> {
-        let mut txindex = self.txindex.lock().await;
-        let tx = txindex.add_tx(tx, targets, timestamp);
+        let mut pegouts = self.pegouts.lock().await;
+        let tx = pegouts.add_tx(tx, targets, timestamp);
         self.db.store_pending_tx(tx)?;
         self.db.flush()?;
         Ok(())
@@ -434,10 +434,10 @@ mod test {
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
         let db = database::Db::open(&dbdir).unwrap();
-        let txindex = Mutex::new(App::load_txindex(&db, BlockHash::all_zeros(), 6).unwrap());
+        let pegouts = Mutex::new(App::load_pegout_mgr(&db, BlockHash::all_zeros(), 6).unwrap());
         let app = App {
             db,
-            txindex,
+            pegouts,
             btc_network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_id!(1u16),

@@ -68,8 +68,8 @@ pub enum CoordinatorError {
     FailedToValidatePsbt(#[from] ValidatePSBTError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
-    #[error("txindex sync: {0}")]
-    TxIndexSync(#[from] crate::txindex::SyncError),
+    #[error("pegout mgr sync: {0}")]
+    PegoutMgrSync(#[from] crate::pegouts::SyncError),
     #[error("utxo merkle root mismatch: expected {expected}, actual {actual:?}")]
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
 }
@@ -179,8 +179,8 @@ impl App {
         // process while we're doing it.
         let _tx_lock = self.tx_lock.lock();
 
-        // Sync the tx index and check we have the same UTXO view.
-        self.sync_txindex(checkpoint_block).await?;
+        // Sync the pegout mgr and check we have the same UTXO view.
+        self.sync_pegout_mgr(checkpoint_block).await?;
         let our_utxo_merkle = self.db.get_utxo_merkle_root()?.unwrap_or(sha256::Hash::all_zeros());
         if utxo_merkle_root != our_utxo_merkle {
             return Err(CoordinatorError::UtxoMerkleRootMismatch {
@@ -197,7 +197,7 @@ impl App {
                 Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
             })?;
         // Filter the ones that are still pending and conflict with pending txs.
-        let pending_inputs = self.txindex.lock().await.pending_inputs();
+        let pending_inputs = self.pegouts.lock().await.pending_inputs();
         let available_utxos = utxos
             .into_iter()
             .filter(|(p, _u)| !pending_inputs.contains(p))
