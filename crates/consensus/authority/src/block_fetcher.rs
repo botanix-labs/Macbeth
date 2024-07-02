@@ -231,6 +231,25 @@ where
                                 .expect("valid utxo commitment"),
                     let header = sealed_block.header.clone();
 
+                    // process pegins
+                    // must be done before getting utxo commitment
+                    let rpc = self.btc_server.as_mut().expect("btc_server exists");
+                    let mut pegouts = match crate::utils::process_receipts(
+                        &mut rpc.clone(),
+                        &bundle_state,
+                        bitcoin_block_header.1,
+                        self.btc_network,
+                        self.consensus.chain_spec.parent_confirmation_depth,
+                    )
+                    .await
+                    {
+                        Ok(pegouts) => pegouts,
+                        Err(e) => {
+                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                            continue;
+                        }
+                    };
+
                     // Consensus checks were run during PBFT so don't need to validate pegouts again
                     // unless it's an epoch block to collect pegouts for psbt.
                     // We always need to process pegins to update UTXO set
@@ -238,7 +257,6 @@ where
                         header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
                     if is_fed_node && should_process_receipts {
                         // Validate utxo commitment
-                        let rpc = self.btc_server.as_mut().expect("btc_server exists");
                         let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await
                         {
                             Ok(h) => sha256::Hash::from_slice(&h.merkle_root)
@@ -254,23 +272,6 @@ where
                             error!(target: "consensus::authority", "UTXO commitment mismatch");
                             continue;
                         }
-
-                        // process pegins and pegouts
-                        let mut pegouts = match crate::utils::process_receipts(
-                            &mut rpc.clone(),
-                            &bundle_state,
-                            bitcoin_block_header.1,
-                            self.btc_network,
-                            self.consensus.chain_spec.parent_confirmation_depth,
-                        )
-                        .await
-                        {
-                            Ok(pegouts) => pegouts,
-                            Err(e) => {
-                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                continue;
-                            }
-                        };
 
                         let best_block =
                             self.client.best_block_number().expect("best block number exists");
