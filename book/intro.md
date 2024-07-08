@@ -1,5 +1,5 @@
-# Reth Book
-_Documentation for Reth users and developers._ 
+# Botanix Protocol Book
+_Documentation for Botanix Protocol users and developers._ 
 
 [![Telegram Chat][tg-badge]][tg-url]
 
@@ -91,5 +91,5 @@ Here are some useful sections to jump to:
 > You can contribute to this book on [GitHub][gh-book].
 
 [tg-badge]: https://img.shields.io/endpoint?color=neon&logo=telegram&label=chat&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fparadigm%5Freth
-[tg-url]: https://t.me/paradigm_reth
-[gh-book]: https://github.com/paradigmxyz/reth/tree/main/book
+[tg-url]: https://t.me/botanix_labs
+[gh-book]: https://github.com/botanix-labs/Macbeth/tree/feature/poA-consensus/book
