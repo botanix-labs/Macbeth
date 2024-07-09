@@ -56,13 +56,22 @@ pub struct FedMemberPubKey {
     pub socket_addr: String,
 }
 
+/// Federation member public key and socket address
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct GenesisNetworkConfig {
+    /// Network name
+    pub name: String,
+    /// Indicates whether it is a test network
+    pub is_testnet: bool,
+}
+
 /// Configuration for the genesis block (toml)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct GenesisTomlConfig {
-    /// Network name
-    #[allow(dead_code)]
-    pub name: String,
+    /// Network configuration
+    pub network: GenesisNetworkConfig,
     /// federation members public keys
     pub federation_member_public_key: Vec<FedMemberPubKey>,
     /// genesis addresses initial account state
@@ -79,11 +88,11 @@ impl GenesisTomlConfig {
 
     /// Create a new genesis config
     pub fn new(
-        name: String,
+        network: GenesisNetworkConfig,
         federation_member_public_key: Vec<FedMemberPubKey>,
         initial_account_state: Option<Vec<GenesisAddressBalance>>,
     ) -> Self {
-        Self { name, federation_member_public_key, initial_account_state }
+        Self { network, federation_member_public_key, initial_account_state }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {

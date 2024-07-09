@@ -1,4 +1,6 @@
+[network]
 name="botanix_testnet"
+is_testnet=true
 
 # >>>>>>>>>>> federation members public keys
 [[federation-member-public-key]]

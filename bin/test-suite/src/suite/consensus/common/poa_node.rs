@@ -15,7 +15,7 @@ use reth::{
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
-use reth_node_core::args::GenesisTomlConfig;
+use reth_node_core::args::{GenesisNetworkConfig, GenesisTomlConfig};
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
@@ -234,8 +234,11 @@ impl FederationMemberTestConfig {
             }
         }
 
-        let chain_config =
-            GenesisTomlConfig::new("integration test toml".to_string(), edh_authorities, None);
+        let chain_config = GenesisTomlConfig::new(
+            GenesisNetworkConfig { name: "integration test toml".to_string(), is_testnet: true },
+            edh_authorities,
+            None,
+        );
         it_info_print!("Chain config", chain_config);
         chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
