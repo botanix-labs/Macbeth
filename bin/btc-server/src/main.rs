@@ -79,8 +79,6 @@ pub enum Error {
     FailedToReachCheckPoint(BlockHash),
 }
 
-trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
-
 struct App {
     db: database::Db,
     btc_network: bitcoin::Network,

@@ -71,9 +71,6 @@ pub struct CliArgs {
     /// dry run to perform (default: false)
     #[argh(option, short = 'd', default = "false")]
     pub dry_run: bool,
-    /// jwt directory
-    #[argh(option, short = 'j')]
-    pub jwt_dir: PathBuf,
     /// min frost signers
     #[argh(option, default = "2")]
     pub min_signers: u16,

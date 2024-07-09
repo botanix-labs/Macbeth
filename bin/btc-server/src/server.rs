@@ -54,23 +54,43 @@ impl<T> ToStatus<T> for Result<T, crate::Error> {
 
 impl App {
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
-        if let Some(jwt_secret) = self.jwt_secret.as_ref() {
-            let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
-            if let Some(metadata_value) = request.metadata().get_bin(key) {
-                let jwt_request_token_received = metadata_value.as_encoded_bytes();
-                let jwt_token_base64_decoded =
-                    base64_decode(jwt_request_token_received).map_err(|e| {
-                        error!("Failed to base64 decode request metadata: {}", e);
-                        badarg!("Failed to base64 decode request metadata: {}", e)
-                    })?;
-                let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).map_err(|e| {
-                    error!("Failed to utf8 decode jwt value: {}", e);
-                    badarg!("Failed to utf8 decode jwt value: {}", e)
-                })?;
-
-                if jwt_secret.validate(jwt_stringified).is_err() {
-                    error!("Request authentication failed");
-                    unauthenticated!("Request authentication failed");
+        let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+        match (request.metadata().get_bin(key), self.jwt_secret.as_ref()) {
+            (None, None) => {
+                // we are in test mode, user has deliberately switched off authentication and is
+                // making direct requests without jwt
+                debug!("Missing JWT in request metadata and no supplied jwt secret. This is a test mode!");
+                return Ok(())
+            }
+            (metadata_value, jwt_secret) => {
+                match jwt_secret {
+                    Some(jwt_secret) => {
+                        // we have activated verification
+                        if let Some(metadata_value) = metadata_value {
+                            let jwt_request_token_received = metadata_value.as_encoded_bytes();
+                            let jwt_token_base64_decoded =
+                                base64_decode(jwt_request_token_received).map_err(|e| {
+                                    error!("Failed to base64 decode request metadata: {}", e);
+                                    badarg!("Failed to base64 decode request metadata: {}", e)
+                                })?;
+                            let jwt_stringified = String::from_utf8(jwt_token_base64_decoded)
+                                .map_err(|e| {
+                                    error!("Failed to utf8 decode jwt value: {}", e);
+                                    badarg!("Failed to utf8 decode jwt value: {}", e)
+                                })?;
+                            jwt_secret.validate(jwt_stringified).map_err(|e| {
+                                error!("Request authentication failed {}", e);
+                                unauthenticated!("Request authentication failed")
+                            })?;
+                        } else {
+                            error!("Missing JWT in request metadata. Warning: Btc-server cannot authenticate request!");
+                            return Err(unauthenticated!("Missing JWT in request metadata. Warning: Btc-server cannot authenticate request!"));
+                        }
+                    }
+                    None => {
+                        warn!("Warning: btc server has no authentication activated. Request will be executed");
+                        return Ok(());
+                    }
                 }
             }
         }

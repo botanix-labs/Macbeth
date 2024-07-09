@@ -37,6 +37,7 @@ use reth_node_builder::{
 };
 use reth_node_core::{
     args::{get_secret_key, BitcoindArgs},
+    cli::config::BtcServerConfig,
     init::init_genesis,
     node_config::NodeConfig,
     version,
@@ -326,9 +327,8 @@ where {
                 }
             }),
         );
-        // extract the jwt secret from the args if possible
-        let default_jwt_path = data_dir.jwt_path();
-        let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
+        // extract the btc server jwt secret from the args
+        let btc_server_jwt_secret = node_config.rpc.btc_server_jwt_secret()?;
 
         // This determines which tasks are spawned. For example, the block production and
         // frost tasks are only spawned for a federation node.
@@ -339,7 +339,7 @@ where {
             let fut = || async {
                 let client = BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    Some(jwt_secret.clone()),
+                    btc_server_jwt_secret.clone(),
                 )
                 .await;
                 client
@@ -842,6 +842,11 @@ where {
             payload_builder.into(),
             Box::new(executor.clone()),
         );
+
+        // generate deault jwt for the rpc server (as required by reth)
+        let default_jwt_path = data_dir.jwt_path();
+        let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
+
         let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
             &rpc,
             &node_config,
