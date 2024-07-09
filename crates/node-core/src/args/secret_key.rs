@@ -37,7 +37,9 @@ pub fn get_secret_key(secret_key_path: &Path) -> Result<SecretKey, SecretKeyErro
     match exists {
         Ok(true) => {
             let contents = fs::read_to_string(secret_key_path)?;
-            Ok(contents
+            let sanitized_key =
+                contents.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>();
+            Ok(sanitized_key
                 .as_str()
                 .parse::<SecretKey>()
                 .map_err(SecretKeyError::SecretKeyDecodeError)?)
