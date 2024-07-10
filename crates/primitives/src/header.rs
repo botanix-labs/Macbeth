@@ -213,14 +213,11 @@ impl Header {
             // This has the following effects:
             // 1. block signers will all sign the same sighash regardless of who adds new signatures
             // 2. signatures can be re-ordered without affecting the blockhash
-            match this.deserialize_extra_data_header() {
-                Ok(mut extra_data) => {
-                    extra_data.clear_signatures();
+            if let Ok(mut extra_data) = this.deserialize_extra_data_header() {
+                extra_data.clear_signatures();
 
-                    // Update extra data without the signatures present in edh
-                    this.add_extra_data_header(&extra_data);
-                }
-                Err(_) => {}
+                // Update extra data without the signatures present in edh
+                this.add_extra_data_header(&extra_data);
             }
         }
         let mut out = BytesMut::new();

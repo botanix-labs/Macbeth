@@ -68,11 +68,11 @@ where
                     return false;
                 }
                 info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
-                return true;
+                true
             }
             Err(e) => {
                 error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
-                return false;
+                false
             }
         }
     }

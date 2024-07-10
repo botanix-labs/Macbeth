@@ -67,6 +67,7 @@ impl AppendableChain {
     ///
     /// if [BlockValidationKind::Exhaustive] is specified, the method will verify the state root of
     /// the block.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_canonical_fork<DB, EF>(
         block: SealedBlockWithSenders,
         parent_header: &SealedHeader,

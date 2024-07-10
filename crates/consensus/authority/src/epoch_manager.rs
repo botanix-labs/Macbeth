@@ -62,7 +62,7 @@ where
         if latest_header.number != 0 {
             let latest_signers = latest_header.recovered_signed_authorities().unwrap();
             let latest_inturn_signer =
-                latest_signers.get(0).expect("should have at least one signer");
+                latest_signers.first().expect("should have at least one signer");
             let current_ts = utils::unix_timestamp();
             let current_last_signer_validation = utils::validate_current_signer_against_last(
                 (*latest_inturn_signer, latest_header.timestamp as f64 / 60.0),

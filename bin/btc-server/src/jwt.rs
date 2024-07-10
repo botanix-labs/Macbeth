@@ -165,6 +165,7 @@ impl JwtSecret {
     /// let secret = JwtSecret::random();
     /// let token = secret.encode(&my_claims).unwrap();
     /// ```
+    #[allow(dead_code)]
     pub fn encode(&self, claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
         let bytes = &self.0;
         let key = jsonwebtoken::EncodingKey::from_secret(bytes);

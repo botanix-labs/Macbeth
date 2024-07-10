@@ -88,7 +88,7 @@ pub(crate) enum SigningState {
 }
 
 impl SigningState {
-    #[warn(dead_code)]
+    #[allow(dead_code)]
     /// Returns true if the signing state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
         !matches!(self, SigningState::Initial | SigningState::Finalized | SigningState::Failed)
@@ -102,7 +102,7 @@ impl SigningState {
         matches!(self, SigningState::Round2)
     }
 
-    #[warn(dead_code)]
+    #[allow(dead_code)]
     /// Returns true if we are in a finalized signing state
     pub(crate) fn is_finalized(&self) -> bool {
         matches!(self, SigningState::Finalized)
@@ -117,6 +117,7 @@ impl SigningState {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SigningSession {
+    #[allow(dead_code)]
     /// The id of the signing session
     session_id: [u8; 32],
     /// The state of the session
@@ -589,7 +590,7 @@ where
     ) -> CoordinatorInterval {
         get_in_turn_interval(
             self.frost_config.authorities.len() as u64,
-            coordinator_index.unwrap_or_else(|| self.frost_config.authority_index as u64),
+            coordinator_index.unwrap_or(self.frost_config.authority_index as u64),
             unix_timestamp(),
         )
     }
@@ -611,7 +612,7 @@ where
                 if connected_peer
                     .frost_identifier
                     .as_ref()
-                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .map(|id| *id != self.personal_frost_identifier)
                     .unwrap_or_default()
                 {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
@@ -801,7 +802,7 @@ where
         if coordinator_peer_data
             .frost_identifier
             .as_ref()
-            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .map(|id| *id != self.personal_frost_identifier)
             .unwrap_or_default()
         {
             let resp = PeerMessageResponse::Signing(SigningResponse {
@@ -963,7 +964,7 @@ where
         if coordinator_peer_data
             .frost_identifier
             .as_ref()
-            .and_then(|id| Some(*id != self.personal_frost_identifier))
+            .map(|id| *id != self.personal_frost_identifier)
             .unwrap_or_default()
         {
             let resp = PeerMessageResponse::Signing(SigningResponse {

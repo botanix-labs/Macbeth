@@ -60,7 +60,6 @@ mod epoch_manager;
 pub mod extended_client;
 mod frost_task;
 mod healthcheck_task;
-pub mod notifications;
 mod pbft;
 mod pbft_task;
 mod signing;
@@ -70,7 +69,7 @@ pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 
 /// Block time duration (secs)
-pub const BLOCK_TIME_DURATION_SECS: u64 = 1 * 60;
+pub const BLOCK_TIME_DURATION_SECS: u64 = 60;
 
 /// Ethereum authority consensus
 ///
@@ -268,6 +267,7 @@ impl Consensus for AuthorityConsensus {
 }
 
 /// Collection of getters and setters for all things concerned with the authority consensus
+#[allow(dead_code)]
 pub(crate) trait AuthorityStorage {
     /// Get list of authorities
     fn get_authorities(&self) -> Vec<secp256k1::PublicKey>;
@@ -353,7 +353,7 @@ pub(crate) struct StorageInner {
 }
 
 // === impl StorageInner ===
-
+#[allow(dead_code)]
 impl AuthorityStorage for StorageInner {
     fn get_authorities(&self) -> Vec<secp256k1::PublicKey> {
         self.authorities.clone()
@@ -390,11 +390,10 @@ impl StorageInner {
         client: &impl BlockReaderIdExt,
     ) -> Result<Header, BlockExecutionError> {
         // let (best_block, best_hash) = self.get_best_block_and_hash()?;
-        let best_block =
-            client.best_block_number().map_err(|e| BlockExecutionError::LatestBlock(e))?;
+        let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
         let best_hash = client
             .block_hash(best_block)
-            .map_err(|e| BlockExecutionError::LatestBlock(e))?
+            .map_err(BlockExecutionError::LatestBlock)?
             .unwrap_or_else(|| {
                 panic!("best block hash not found for block number: {}", best_block);
             });
@@ -480,6 +479,7 @@ impl StorageInner {
 
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn complete_header(
         &self,
         mut header: Header,
@@ -538,7 +538,7 @@ impl StorageInner {
             utxo_commitment,
         );
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk).map_err(|e| {
+        header.sign_block(sk).map_err(|e| {
             warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
             BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
         })?;
@@ -603,6 +603,7 @@ impl StorageInner {
     /// [Executor].
     ///
     /// This returns the current block header.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_validate_header(
         &mut self,
         bundle_state: &BundleStateWithReceipts,
@@ -610,7 +611,7 @@ impl StorageInner {
         gas_used: u64,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         sk: &secp256k1::SecretKey,
-        authority_signers: &Vec<secp256k1::PublicKey>,
+        authority_signers: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         utxo_commitment: sha256::Hash,
         consensus: &AuthorityConsensus,

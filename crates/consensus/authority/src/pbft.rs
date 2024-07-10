@@ -35,7 +35,7 @@ pub(crate) enum Error {
     #[error("Failed to validate signatures on block: {0}")]
     InvalidSignature(#[from] ValidateAuthoritySignatureError),
     #[error("Failed to deserialize extra data header: {0}")]
-    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
+    ExtraDataHeaderDeserialize(#[from] ExtraDataHeaderDeserializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
     #[error("Missing signatures on block")]
@@ -45,7 +45,7 @@ pub(crate) enum Error {
     #[error("Proposed block has too many signatures")]
     TooManySignaturesOnProposedBlock,
     #[error("Failed to recover signature: {0}")]
-    RecoverSignatureError(#[from] secp256k1::Error),
+    RecoverSignature(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
     #[error("Recieved block is not valid: {0}")]
@@ -53,7 +53,7 @@ pub(crate) enum Error {
     #[error("Peer for time slot {0} already processed")]
     PeerAlreadyProcessedTimeSlot(u64),
     #[error("Recover authorities error {0}")]
-    RecoverAuthoritiesError(#[from] RecoverAuthorityError),
+    RecoverAuthorities(#[from] RecoverAuthorityError),
 }
 
 /// Error when validating a block as a block signer
@@ -127,24 +127,15 @@ pub(crate) enum PbftState {
 impl PbftState {
     /// Returns true if the pbft state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
-        match self {
-            PbftState::Initial => false,
-            _ => true,
-        }
+        !matches!(self, PbftState::Initial)
     }
     /// Returns true if we are waiting for a number of pre-commitments
     pub(crate) fn is_awaiting_precommitments(&self) -> bool {
-        match self {
-            PbftState::AwaitingPreCommitments => true,
-            _ => false,
-        }
+        matches!(self, PbftState::AwaitingPreCommitments)
     }
     /// Returns true if we are waiting for a number of pre-commitments
     pub(crate) fn is_awaiting_commitments(&self) -> bool {
-        match self {
-            PbftState::AwaitingCommitments => true,
-            _ => false,
-        }
+        matches!(self, PbftState::AwaitingCommitments)
     }
 }
 
@@ -224,7 +215,7 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
 
     /// Returns the state machine state
     pub(crate) fn get_state(&self, block_hash: BlockHash) -> PbftState {
-        self.state.get(&block_hash).unwrap_or(&PbftState::Initial).clone()
+        *self.state.get(&block_hash).unwrap_or(&PbftState::Initial)
     }
 
     /// Sets state machine state
@@ -306,7 +297,7 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!(target: "consensus::authority::pbft::get_all_peers_handle", "Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                Err(Error::FailedToGetConnectedPeersHandles)
             }
         }
     }
@@ -330,7 +321,7 @@ where
                 if connected_peer
                     .frost_identifier
                     .as_ref()
-                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .map(|id| *id != self.personal_frost_identifier)
                     .unwrap_or_default()
                 {
                     if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
@@ -380,7 +371,7 @@ where
         // Check if we are building on a block that is in the canonical chain
         // or a fork
         if block_to_sign.parent_hash == best_block_hash {
-            return Ok(());
+            Ok(())
         }
         // TODO re-consider if this is possible
         else if best_block.header.number == 0 {
@@ -509,7 +500,7 @@ where
                     return Err(Error::TooManySignaturesOnProposedBlock);
                 }
                 let msg = secp256k1::Message::from_digest_slice(
-                    &block.header.create_sighash()?.0.as_slice(),
+                    block.header.create_sighash()?.0.as_slice(),
                 )?;
                 let recovered_pk = sigs[0].recover(&msg)?;
                 if recovered_pk != *coordinator {
@@ -555,8 +546,8 @@ where
         let signed_authorities = block.header.recovered_signed_authorities()?;
         // Check if we have already signed for this time slot
         let time_slot = block.header.timestamp / 60;
-        let coord_pk = signed_authorities.get(0).unwrap();
-        let coord_peer_id = pk2id(&coord_pk);
+        let coord_pk = signed_authorities.first().unwrap();
+        let coord_peer_id = pk2id(coord_pk);
 
         if let Some(peer) = self.time_slot_commitment.get(&time_slot) {
             if *peer == coord_peer_id {

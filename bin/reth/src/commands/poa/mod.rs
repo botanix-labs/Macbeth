@@ -257,13 +257,13 @@ where {
             config: network_config_path.clone(),
             chain: chain.clone(),
             federation_mode: *federation_mode,
-            metrics: metrics.clone(),
-            instance: instance.clone(),
+            metrics: *metrics,
+            instance: *instance,
             network: network.clone(),
             rpc: rpc.clone(),
             txpool: txpool.clone(),
             debug: debug.clone(),
-            db: db.clone(),
+            db: *db,
             dev: Default::default(),
             pruning: Default::default(),
             builder: PayloadBuilderArgs::default(),
@@ -337,12 +337,11 @@ where {
         // Connect to btc signining server if in federation mode
         let btc_server_client = if is_fed_node {
             let fut = || async {
-                let client = BtcServerExtendedClient::new(
+                BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
                     Some(jwt_secret.clone()),
                 )
-                .await;
-                client
+                .await
             };
 
             let client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
@@ -500,7 +499,7 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config.clone());
+        let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config);
 
         // Authority consensus
         let consensus = self.consensus();
@@ -590,12 +589,7 @@ where {
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
             .network
-            .network_config(
-                &reth_config,
-                self.chain.clone(),
-                secret_key.clone(),
-                default_peers_path,
-            )
+            .network_config(&reth_config, self.chain.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .listener_addr(SocketAddr::new(
@@ -843,13 +837,13 @@ where {
             Box::new(executor.clone()),
         );
         let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
-            &rpc,
+            rpc,
             &node_config,
             blockchain_db,
             transaction_pool,
             network_handle.clone(),
             executor.clone(),
-            evm_config.clone(),
+            evm_config,
             engine_api,
             jwt_secret,
         )
@@ -893,9 +887,9 @@ where {
                         config.peers.trusted_nodes.insert(*peer);
                     });
                 }
-                return Ok(config);
+                Ok(config)
             }
-            None => return Ok(Config::default()),
+            None => Ok(Config::default()),
         }
     }
 

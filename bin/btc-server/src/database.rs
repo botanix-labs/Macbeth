@@ -6,7 +6,6 @@ use bitcoin::{
     psbt::{self, Psbt},
     BlockHash, OutPoint, TxOut,
 };
-use ciborium;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;

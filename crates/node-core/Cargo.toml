@@ -34,7 +34,6 @@ reth-engine-primitives.workspace = true
 reth-tasks.workspace = true
 reth-trie.workspace = true
 reth-consensus-common.workspace = true
-reth-auto-seal-consensus.workspace = true
 reth-beacon-consensus.workspace = true
 reth-btc-wallet.workspace = true
 

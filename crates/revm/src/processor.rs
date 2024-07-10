@@ -224,12 +224,11 @@ where
         sender_address: Address, // used for reverted pegouts
         sender_value: U256,      // used for reverted pegouts
     ) -> Result<(), BlockExecutionError> {
-        let binding = botanix_consensus_pkg.clone();
-        let consensus_pkg = binding.as_ref();
+        let consensus_pkg = botanix_consensus_pkg.as_ref();
         for log in result.logs() {
             if log.topics().first() == Some(&MINT_TOPIC) && botanix_consensus_pkg.is_some() {
                 let pegin_data =
-                    parse_pegin_topic(&log, &result.clone().into_logs()).map_err(|e| {
+                    parse_pegin_topic(log, &result.clone().into_logs()).map_err(|e| {
                         error!("Failed to parse pegin topic! {:?}", e);
                         let pegin_data_error = match e {
                             MintConsensusError::LogParsingBlockHeightError(pegin) => Some(pegin),
@@ -240,8 +239,9 @@ where
                             MintConsensusError::FailedtoDeserialiseMetadata(pegin) => Some(pegin),
                             _ => None,
                         };
-                        let mint_topic_pegin_data = if pegin_data_error.is_some() {
-                            Some(pegin_data_error.expect("pegin data error to exist").pegin)
+                        let mint_topic_pegin_data = if let Some(pegin_data_error) = pegin_data_error
+                        {
+                            Some(pegin_data_error.pegin)
                         } else {
                             None
                         };
@@ -287,7 +287,7 @@ where
                 let btc_network = consensus_pkg
                     .map(|package| package.btc_network)
                     .unwrap_or_else(|| bitcoin::Network::Regtest);
-                if let Err(e) = parse_pegout_topic(&log, btc_network) {
+                if let Err(e) = parse_pegout_topic(log, btc_network) {
                     error!("Failed to parse pegout topic! {:?}", e);
                     return Err(BlockValidationError::FailedToParseMintTopic {
                         event_data: Some((

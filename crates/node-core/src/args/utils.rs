@@ -150,9 +150,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                         .federation_member_public_key
                         .iter()
                         .map(|key| {
-                            let public_key = secp256k1::PublicKey::from_str(&key.key)
-                                .expect("Invalid hex string for PublicKey");
-                            public_key
+                            secp256k1::PublicKey::from_str(&key.key)
+                                .expect("Invalid hex string for PublicKey")
                         })
                         .collect::<Vec<secp256k1::PublicKey>>();
 

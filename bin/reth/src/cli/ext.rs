@@ -5,7 +5,10 @@ use reth_db::DatabaseEnv;
 use reth_network::NetworkHandle;
 use reth_provider::providers::BlockchainProvider;
 use reth_tasks::TaskExecutor;
-use std::{fmt, sync::Arc};
+use std::{
+    fmt::{self, Debug},
+    sync::Arc,
+};
 use tracing::info;
 
 /// A trait that allows for extending parts of the CLI with additional functionality.
@@ -36,6 +39,11 @@ pub struct RethNodeComponents {
     pub network: NetworkHandle,
 }
 
+impl Debug for RethNodeComponents {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RethNodeComponents").finish()
+    }
+}
 /// A trait that allows for extending and customizing parts of the node command
 /// Currently only used by the PoaNodeCommand
 /// [on_node_started](PoaNodeCommandConfig::on_node_started)

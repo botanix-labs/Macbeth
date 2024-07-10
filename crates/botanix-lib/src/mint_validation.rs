@@ -104,13 +104,13 @@ pub fn parse_pegin_reth_log_topic(
     log: &reth_primitives::Log,
     logs: &[Log],
 ) -> Result<PeginData, MintConsensusError> {
-    let revm_log = <reth_primitives::Log as Clone>::clone(&(*log)).into();
+    let revm_log = <reth_primitives::Log as Clone>::clone(log);
 
     parse_pegin_topic(
         &revm_log,
         &logs
             .iter()
-            .map(|log| <reth_primitives::Log as Clone>::clone(&(*log)).into())
+            .map(<reth_primitives::Log as Clone>::clone)
             .collect::<Vec<revm::primitives::Log>>(),
     )
 }
@@ -119,7 +119,7 @@ pub fn parse_pegout_reth_log_topic(
     log: &reth_primitives::Log,
     btc_network: bitcoin::Network,
 ) -> Result<PegoutData, MintConsensusError> {
-    let revm_log = <reth_primitives::Log as Clone>::clone(&(*log)).into();
+    let revm_log = <reth_primitives::Log as Clone>::clone(log);
 
     parse_pegout_topic(&revm_log, btc_network)
 }

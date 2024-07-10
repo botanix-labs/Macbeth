@@ -378,7 +378,7 @@ where
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
         let coordinator_peer = connected_peers.iter().find(|(_, peer_data)| {
-            peer_data.frost_identifier.and_then(|id| Some(id == coord_id)).unwrap_or_default()
+            peer_data.frost_identifier.map(|id| id == coord_id).unwrap_or_default()
         });
 
         // Find the coord and send the message
@@ -408,12 +408,7 @@ where
 
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         for (_, peer_data) in connected_peers.iter() {
-            if peer_data
-                .frost_identifier
-                .as_ref()
-                .and_then(|id| Some(*id != coord_id))
-                .unwrap_or_default()
-            {
+            if peer_data.frost_identifier.as_ref().map(|id| *id != coord_id).unwrap_or_default() {
                 let resp = PeerMessageResponse::Dkg(DkgResponse {
                     response_type: response_type.clone(),
                     identifier: dkg_payload.identifier.clone(),

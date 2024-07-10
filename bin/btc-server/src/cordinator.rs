@@ -190,16 +190,12 @@ impl App {
         }
 
         // collect all database utxos in a hashmap
-        let utxos = self.db.iter_utxos().fold::<Result<_, DbError>, _>(
-            Ok(HashMap::new()),
-            |mut ret, r| {
-                if let Ok(ref mut map) = ret {
-                    let utxo = r?;
-                    map.insert(utxo.outpoint, utxo);
-                }
-                ret
-            },
-        )?;
+        let utxos: HashMap<OutPoint, Utxo> =
+            self.db.iter_utxos().try_fold(HashMap::new(), |mut map, r| {
+                let utxo = r?; // Directly propagate the error with `?`
+                map.insert(utxo.outpoint, utxo);
+                Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
+            })?;
         // Filter the ones that are still pending and conflict with pending txs.
         let pending_inputs = self.txindex.lock().await.pending_inputs();
         let available_utxos = utxos
