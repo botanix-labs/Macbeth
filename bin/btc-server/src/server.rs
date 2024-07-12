@@ -55,7 +55,7 @@ impl<T> ToStatus<T> for Result<T, crate::Error> {
 impl App {
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
         let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
-        match (request.metadata().get_bin(key), self.jwt_secret.as_ref()) {
+        match (request.metadata().get_bin(key), self.btc_signing_server_jwt_secret.as_ref()) {
             (None, None) => {
                 // we are in test mode, user has deliberately switched off authentication and is
                 // making direct requests without jwt

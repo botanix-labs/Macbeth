@@ -328,7 +328,7 @@ where {
             }),
         );
         // extract the btc server jwt secret from the args
-        let btc_server_jwt_secret = node_config.rpc.btc_server_jwt_secret()?;
+        let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
 
         // This determines which tasks are spawned. For example, the block production and
         // frost tasks are only spawned for a federation node.
@@ -339,7 +339,7 @@ where {
             let fut = || async {
                 let client = BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    btc_server_jwt_secret.clone(),
+                    btc_signing_server_jwt_secret.clone(),
                 )
                 .await;
                 client

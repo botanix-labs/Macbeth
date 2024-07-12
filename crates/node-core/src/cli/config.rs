@@ -81,7 +81,7 @@ pub trait RethRpcConfig {
 /// A trait that provides a settings for a btc server.
 pub trait BtcServerConfig {
     /// JWT secret key used for the communication between the server and the client
-    fn btc_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError>;
+    fn btc_signing_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError>;
 }
 
 /// A trait that provides payload builder settings.

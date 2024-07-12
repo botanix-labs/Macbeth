@@ -211,8 +211,12 @@ pub struct RpcServerArgs {
     /// Btc server JWT secret
     ///
     /// JWT secret for jwt-encrypted communication between the client and the btc server
-    #[arg(long, value_name = "BTC_SERVER_JWT", help_heading = "btc_server_jwt")]
-    pub btc_server_jwt: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "BTC_SIGNING_SERVER_JWT_SECRET",
+        help_heading = "btc_signing_server_jwt_secret"
+    )]
+    pub btc_signing_server_jwt_secret: Option<PathBuf>,
 
     /// Btc signing service
     ///
@@ -415,11 +419,11 @@ impl RpcServerArgs {
 }
 
 impl BtcServerConfig for RpcServerArgs {
-    fn btc_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError> {
-        self.btc_server_jwt
+    fn btc_signing_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError> {
+        self.btc_signing_server_jwt_secret
             .as_ref()
             .map(|jwt| {
-                info!(target: "reth::cli", user_path=?jwt, "Reading btc server JWT secret file");
+                info!(target: "reth::cli", user_path=?jwt, "Reading btc signing server JWT secret file");
                 JwtSecret::from_file(jwt)
             })
             .transpose()
@@ -603,7 +607,7 @@ impl Default for RpcServerArgs {
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
             btc_server: Some(DEFAULT_BTC_SERVER.to_owned()),
-            btc_server_jwt: None,
+            btc_signing_server_jwt_secret: None,
             bitcoind: BitcoindArgs {
                 url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
                 username: DEFAULT_BITCOIND_USERNAME.to_string(),
