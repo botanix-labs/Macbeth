@@ -211,7 +211,7 @@ where
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
-        BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
+        BlockFetcherTask<Client, ToFrostMan, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<Client, ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
@@ -259,6 +259,7 @@ where
             network_client.clone(),
             network_handle.clone(),
             client.clone(),
+            frost_handle.clone().expect("Requires frost handle"),
         );
 
         let healthcheck_task = HealthcheckTask::new(

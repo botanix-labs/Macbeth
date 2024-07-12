@@ -1,7 +1,10 @@
-use super::{FrostPeerCommand, HealthcheckResponse, NetworkFrostEvent, PeerMessageResponse};
+use super::{
+    FrostPeerCommand, HealthcheckResponse, NetworkFrostEvent, PeerMessageResponse, UtxoSetResponse,
+};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
+use rand::Rng;
 use reth_network_api::Peers;
 use reth_rpc_types::PeerId;
 use std::{
@@ -203,6 +206,35 @@ impl FrostManager {
     /// Handles a command received from a detached [`FrostHandle`]
     fn on_command(&mut self, cmd: FrostCommand) {
         match cmd {
+            FrostCommand::GetUtxoSetFromPeer => {
+                // choose a random peer
+                let random_authority_index =
+                    rand::thread_rng().gen_range(0..self.peers_connections.len() - 1);
+                let random_peer_id = self.peers_connections.keys().nth(random_authority_index);
+                match random_peer_id.map(|peer_id| self.peers_connections.get(peer_id)).flatten() {
+                    Some(peer_data) => {
+                        if let Some(peer_commands_tx) = peer_data.peer_commands_tx.as_ref() {
+                            match peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                                PeerMessageResponse::Utxo(UtxoSetResponse {
+                                    sender: *self.network.peer_id(),
+                                    target: peer_data.peer_id,
+                                    data: vec![],
+                                }),
+                            )) {
+                                Ok(_) => {
+                                    debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);
+                                }
+                                Err(e) => {
+                                    error!(target: "network::frost::on_command", "Failed to send UtxoSet to peer {:?}, error: {:?}", peer_data.peer_id, e);
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        warn!(target: "network::frost::on_command", "Could not find peer or a connection with random authority index {}", random_authority_index);
+                    }
+                }
+            }
             FrostCommand::SendHealtcheckToPeers => {
                 self.send_healthcheck_to_peers();
             }
@@ -302,6 +334,8 @@ pub enum FrostCommand {
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
+    /// Get Utxo set from a random peer
+    GetUtxoSetFromPeer,
 }
 
 /// Config type for initiating a [`FrostManager`] instance.

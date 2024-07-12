@@ -51,7 +51,7 @@ pub enum PeerMessageResponse {
     /// PBFT related responses
     Pbft(PbftResponse),
     /// UTXO related responses
-    Utxo(UtxoResponse),
+    Utxo(UtxoSetResponse),
     /// Healtcheck response
     Healthcheck(HealthcheckResponse),
 }
@@ -88,6 +88,29 @@ impl fmt::Display for DkgResponse {
             "{} - Identifier Size: {} bytes, Data Size: {} bytes",
             self.response_type,
             self.identifier.len(),
+            self.data.len()
+        )
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UtxoSetResponse {
+    /// the utxo set request sender
+    pub sender: PeerId,
+    /// the utxo set target
+    pub target: PeerId,
+    /// Utxo Set Data (Compressed and Serialized)
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoSetResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Utxo Set Requester: {}, Utxo Set Sender {}, Data Size: {} bytes",
+            self.sender,
+            self.target,
             self.data.len()
         )
     }

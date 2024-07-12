@@ -1,7 +1,5 @@
-use std::{sync::Arc, time::Duration};
-
 use bitcoin::hashes::{sha256, Hash};
-use client::{FinalizeSignerRequest, Output};
+use client::{FinalizeSignerRequest, GetAllUtxosResponse, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
@@ -9,27 +7,59 @@ use reth_interfaces::{
         bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
     },
 };
-use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_network::{
+    frost::{
+        manager::{FrostCommand, ToFrostManager},
+        PeerMessageResponse,
+    },
+    message::NewBlockMessage,
+    NetworkHandle,
+};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
+    botanix::BotanixConsensusPackage,
+    extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
+    header_ext::HeaderExt,
     SealedBlockWithSenders, TransactionSigned,
 };
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, ProviderError,
+    StateProviderFactory,
 };
+use reth_rpc_types::PeerId;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
+    mpsc::{error::SendError, UnboundedReceiver, UnboundedSender},
+    oneshot::error::RecvError,
     RwLock,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
-    engine_util, extended_client::BtcServerExtendedClient, utils::is_active_sync_in_progress,
-    AuthorityConsensus, Storage,
+    compressor::ProstMessageSerdelizer, engine_util, extended_client::BtcServerExtendedClient, frost_task::FrostNotificationMessage, utils::is_active_sync_in_progress, AuthorityConsensus, Storage
 };
 
-pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Error {
+    #[error("Got a provider error {0}")]
+    Provider(ProviderError),
+    #[error("Edh deserialize error {0}")]
+    Edh(ExtraDataHeaderDeserializeError),
+    #[error("Failed to get utxo set from peer {0}")]
+    FailedToGetUtxoSetFromPeer(tokio::sync::oneshot::error::RecvError),
+    #[error("Failed to send a frost command {0}")]
+    FrostSend(SendError<FrostCommand>),
+    #[error("Failed to receive a frost message from a peer {0}")]
+    FrostRecv(RecvError),
+}
+
+pub struct BlockFetcherTask<
+    Client,
+    ToFrostMan: ToFrostManager,
+    EvmConfig,
+    Engine: EngineTypes,
+    NetworkClient,
+> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
@@ -54,10 +84,12 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     network_handle: NetworkHandle,
     /// Database provider
     client: Client,
+    /// Frost Handler
+    frost_handle: ToFrostMan,
 }
 
-impl<Client, EvmConfig, Engine, NetworkClient>
-    BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>
+impl<Client, ToFrostMan, EvmConfig, Engine, NetworkClient>
+    BlockFetcherTask<Client, ToFrostMan, EvmConfig, Engine, NetworkClient>
 where
     Client: BlockReaderIdExt
         + StateProviderFactory
@@ -65,6 +97,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static,
     Engine: EngineTypes + 'static,
     EvmConfig:
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
@@ -83,6 +116,7 @@ where
         network_client: NetworkClient,
         network_handle: NetworkHandle,
         client: Client,
+        frost_handle: ToFrostMan,
     ) -> Self {
         Self {
             consensus,
@@ -97,7 +131,47 @@ where
             network_client,
             network_handle,
             client,
+            frost_handle,
         }
+    }
+
+    fn get_best_block_edh_from_peers(&self) -> Result<Option<ExtraDataHeader>, Error> {
+        let best_block_number = self.client.best_block_number().map_err(Error::Provider)?;
+        let best_block_header =
+            self.client.block_by_number(best_block_number).map_err(Error::Provider)?;
+        let sealed_best_block_edh_from_peers = best_block_header
+            .map(|block| {
+                let header = block.seal_slow().header;
+                header.deserialize_extra_data_header()
+            })
+            .transpose()
+            .map_err(Error::Edh)?;
+        Ok(sealed_best_block_edh_from_peers)
+    }
+
+    pub(crate) async fn get_peer_messages_rx(
+        &self,
+    ) -> Result<UnboundedReceiver<(PeerId, PeerMessageResponse)>, Error> {
+        // get a proper event receiver
+        let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+        {
+            error!(target: "consensus::authority::block_fetcher::get_peer_messages_rx", "Failed to send GetPeerMessagesStream frost command {}", e);
+        }
+        let peer_messages_rx = peer_messages_rx.await.map_err(|e| {
+            error!(target: "consensus::authority::block_fetcher::get_peer_messages_rx", "Error getting receiver handle = {:?}", e);
+            Error::FrostRecv(e)
+        })?;
+        Ok(peer_messages_rx)
+    }
+
+    pub(crate) fn send_get_utxo_set_request_to_peer(&self) -> Result<(), Error> {
+        if let Err(e) = self.frost_handle.send_command(FrostCommand::GetUtxoSetFromPeer) {
+            error!(target: "consensus::authority::block_fetcher::get_utxo_set_from_peer", "Failed to send GetUtxoSetFromPeer frost message {:?}", e);
+            return Err(Error::FrostSend(e));
+        }
+        Ok(())
     }
 
     pub async fn start_task(&mut self) {
@@ -106,6 +180,102 @@ where
         let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
+        loop {
+            // ensure the node is not syncing
+            if !is_active_sync_in_progress(&self.network_handle) {
+                break;
+            }
+        }
+
+        // get peer messages receiver
+        let mut peer_messages_rx = match self.get_peer_messages_rx().await {
+            Ok(peer_messages_rx) => peer_messages_rx,
+            Err(e) => {
+                error!(target: "consensus::authority::block_fetcher::start_task", "Error getting peer messages receiver = {:?}", e);
+                panic!("Error getting peer messages receiver = {:?}", e);
+            }
+        };
+
+        // now that we are first time done syncing, here we can sync the utxo set from the peers if
+        // necessary
+        loop {
+            // get edh from peers
+            let edh = match self.get_best_block_edh_from_peers() {
+                Ok(edh) => match edh {
+                    Some(edh) => edh,
+                    None => {
+                        warn!(target: "consensus::authority::block_fetcher::start_task", "Got empty edh from peers, continuing to fetch...");
+                        // sleep for a few secs
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get sealed best block extra data header from peers");
+                    // sleep for a few secs
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            // get utxo merkle root from db
+            let rpc = self.btc_server.as_mut().expect("btc_server exists");
+            let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await {
+                Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
+                Err(e) => {
+                    error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get utxo commitment");
+                    // sleep for a few secs
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+            info!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment: {:?}", utxo_commitment);
+
+            // check for matching utxo set
+            if edh.utxo_commitment == utxo_commitment {
+                info!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment matched. Utxo set fully synced");
+                break;
+            }
+
+            // if not, start syncing utxo set
+            warn!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment mismatch. Need to sync utxo set over network ...");
+
+            // send get utxo set request to a randomly connected peer
+            if let Err(e) = self.send_get_utxo_set_request_to_peer() {
+                error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to send get utxo set to a peer");
+                // sleep for a few secs
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            };
+
+            // try getting the utxo set from the random peer we pinged
+            match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
+                Ok(peer_message) => {
+                    if let Some((_peer_id, peer_message)) = peer_message {
+                        match peer_message {
+                            PeerMessageResponse::Utxo(msg) => {
+                                // now decompress the prost message
+                                let _prost_deserialized = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(msg.data).unwrap();
+                                // TODO: finish it
+                            },
+                            _ => {
+                                // sleep for a few secs
+                                tokio::time::sleep(Duration::from_secs(2)).await;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get get utxo set rom a peer within 60 secs");
+                    // sleep for a few secs
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            }
+        }
+
+        // run the main block fetcher loop
         loop {
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {

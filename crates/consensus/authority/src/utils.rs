@@ -1,7 +1,7 @@
 //! Botanix consensus utility functions
 use std::time::Duration;
 
-use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
+use bitcoin::{hashes::{sha256, Hash}, psbt::Psbt, witness::Witness, BlockHash};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -19,7 +19,26 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::extended_client::BtcServerExtendedClient;
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage, Utxo};
+
+
+pub fn compute_utxo_merkle_root(utxos: &[Utxo]) -> Result<(), Error> {
+    let mut utxos = utxos
+        .iter()
+        .map(|u| {
+            let mut engine = sha256::Hash::engine();
+            u.outpoint.consensus_encode(&mut engine).expect("engine don't error");
+            Ok(sha256::Hash::from_engine(engine))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    utxos.sort();
+    if utxos.is_empty() {
+        return Ok(());
+    }
+
+    let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter()).expect("not empty");
+    Ok(root)
+}
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
