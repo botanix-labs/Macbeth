@@ -15,7 +15,7 @@ use reth::{
 };
 use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
-use reth_node_core::args::{GenesisNetworkConfig, GenesisTomlConfig};
+use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
@@ -203,8 +203,6 @@ impl FederationMemberTestConfig {
             panic!("Edh data missing. Cannot create botanix testnet config genesis file");
         };
 
-        // Need to create a chain.toml in the data dir
-
         // Need to zip together the soc address and pk
         let mut fed_member_pks = vec![];
         for peer in self.peers_list.iter() {
@@ -234,19 +232,18 @@ impl FederationMemberTestConfig {
             }
         }
 
-        let chain_config = GenesisTomlConfig::new(
-            GenesisNetworkConfig { name: "integration test toml".to_string(), is_testnet: true },
-            edh_authorities,
-            None,
-        );
-        it_info_print!("Chain config", chain_config);
-        chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
+        // Need to create a federation.toml in the data dir
+        let federation_config = FederationTomlConfig::new(edh_authorities);
+        it_info_print!("Federation config", federation_config);
+        let federation_config_path = Path::new(datadir).join("federation.toml");
+        federation_config.write_to_path(&federation_config_path).unwrap();
 
         let no_args = NoArgs::with(self.clone());
-        let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
-            "--chain",
-            "botanix_testnet",
+            "--is-testnet",
+            "--federation-config-path",
+            format!("{}", federation_config_path.display().to_string()).as_str(),
             "--federation-mode",
             "--ipcdisable",
             "--datadir",
@@ -286,7 +283,6 @@ impl FederationMemberTestConfig {
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
         let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
-        command.chain = Arc::new(botanix_testnet.clone());
 
         (command, botanix_testnet)
     }

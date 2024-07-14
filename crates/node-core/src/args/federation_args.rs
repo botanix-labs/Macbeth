@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Read, Write},
+    net::SocketAddr,
     path::Path,
     str::FromStr,
 };
@@ -29,23 +30,6 @@ pub enum Error {
     ReadMeta(std::io::Error),
 }
 
-/// Genesis balance and optional code for a given address
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct GenesisAddressBalance {
-    /// The address that is to be preallocated a balance
-    #[allow(dead_code)]
-    pub(crate) address: String,
-    /// The assigned address balance
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[allow(dead_code)]
-    pub(crate) balance: Option<String>,
-    /// The account code (if any)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[allow(dead_code)]
-    pub(crate) code: Option<String>,
-}
-
 /// Federation member public key and socket address
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
@@ -56,43 +40,23 @@ pub struct FedMemberPubKey {
     pub socket_addr: String,
 }
 
-/// Federation member public key and socket address
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct GenesisNetworkConfig {
-    /// Network name
-    pub name: String,
-    /// Indicates whether it is a test network
-    pub is_testnet: bool,
-}
-
 /// Configuration for the genesis block (toml)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct GenesisTomlConfig {
-    /// Network configuration
-    pub network: GenesisNetworkConfig,
+pub struct FederationTomlConfig {
     /// federation members public keys
     pub federation_member_public_key: Vec<FedMemberPubKey>,
-    /// genesis addresses initial account state
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[allow(dead_code)]
-    pub initial_account_state: Option<Vec<GenesisAddressBalance>>,
 }
 
-impl GenesisTomlConfig {
+impl FederationTomlConfig {
     #[allow(dead_code)]
     pub(crate) async fn new_from_path(path: impl AsRef<Path> + Send) -> Result<Self, Error> {
         read_to_string(path)?.parse()
     }
 
     /// Create a new genesis config
-    pub fn new(
-        network: GenesisNetworkConfig,
-        federation_member_public_key: Vec<FedMemberPubKey>,
-        initial_account_state: Option<Vec<GenesisAddressBalance>>,
-    ) -> Self {
-        Self { network, federation_member_public_key, initial_account_state }
+    pub fn new(federation_member_public_key: Vec<FedMemberPubKey>) -> Self {
+        Self { federation_member_public_key }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
@@ -100,9 +64,27 @@ impl GenesisTomlConfig {
         let mut file = File::create(path).map_err(Error::OpenConfig)?;
         file.write_all(toml.as_bytes()).map_err(Error::ReadConfig)
     }
+
+    /// Extracts federation public keys and socket addresses from the config
+    pub fn get_federation_pks_from_path(
+        &self,
+    ) -> Result<Vec<(secp256k1::PublicKey, SocketAddr)>, Error> {
+        let federation_members = self
+            .federation_member_public_key
+            .iter()
+            .map(|key| {
+                let public_key = secp256k1::PublicKey::from_str(&key.key)
+                    .expect("Invalid hex string for PublicKey");
+
+                let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
+                (public_key, soc_addr)
+            })
+            .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
+        Ok(federation_members)
+    }
 }
 
-impl FromStr for GenesisTomlConfig {
+impl FromStr for FederationTomlConfig {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

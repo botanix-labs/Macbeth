@@ -25,7 +25,7 @@ use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
 
-use super::genesis_args::GenesisTomlConfig;
+use super::federation_args::FederationTomlConfig;
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
@@ -77,26 +77,22 @@ pub fn chain_help() -> String {
     format!("The chain this node is running.\nPossible values are either a built-in chain or the path to a chain specification file.\n\nBuilt-in chains:\n    {}", SUPPORTED_CHAINS.join(", "))
 }
 
-/// Get the public keys from the genesis toml config
-pub fn get_federation_pks_from_path(
-    path: &PathBuf,
-) -> eyre::Result<Vec<(secp256k1::PublicKey, SocketAddr)>> {
+/// Load the federation setup toml
+pub fn load_federation_config_toml(path: &PathBuf) -> eyre::Result<FederationTomlConfig> {
+    let _ = fs::metadata(path)?;
     let raw = fs::read_to_string(path)?;
-    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+    Ok(genesis_toml_config)
+}
 
-    let federation_members = genesis_toml_config
-        .federation_member_public_key
-        .iter()
-        .map(|key| {
-            let public_key =
-                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey");
-
-            let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
-            (public_key, soc_addr)
-        })
-        .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
-
-    Ok(federation_members)
+/// Returns the botanix network chain spec based on a flag
+pub fn get_botanix_chain(is_testnet: bool) -> Arc<ChainSpec> {
+    if is_testnet {
+        BOTANIX_TESTNET.clone()
+    } else {
+        // TODO: to be fixed once the MAINNET has been activated
+        panic!("Requested Botanix MAINNET which is currently not supported");
+    }
 }
 
 /// Clap value parser for [ChainSpec]s.
@@ -145,7 +141,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 Ok(genesis) => Arc::new(genesis.into()),
                 Err(_) => {
                     // our own toml format
-                    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+                    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
 
                     let public_keys = genesis_toml_config
                         .federation_member_public_key

@@ -165,10 +165,9 @@ impl NonFederationMemberTestConfig {
         chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
 
         let no_args = NoArgs::with(self.clone());
-        let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
-            "--chain",
-            "botanix_testnet",
+            "--is-testnet",
             "--datadir",
             datadir,
             "--debug.terminate",

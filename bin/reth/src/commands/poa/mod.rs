@@ -36,8 +36,11 @@ use reth_node_builder::{
     RethTransactionPoolConfig,
 };
 use reth_node_core::{
-    args::{get_secret_key, BitcoindArgs},
-    cli::config::BtcServerConfig,
+    args::{
+        get_secret_key,
+        utils::{get_botanix_chain, load_federation_config_toml},
+        BitcoindArgs,
+    },
     init::init_genesis,
     node_config::NodeConfig,
     version,
@@ -48,7 +51,7 @@ use reth_primitives::{
     constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
     kzg::KzgSettings,
     stage::StageId,
-    Bytes, ChainSpec, Head, PruneModes,
+    Bytes, Head, PruneModes,
 };
 use reth_provider::{
     providers::{BlockchainProvider, StaticFileProvider},
@@ -68,18 +71,14 @@ use tracing::{debug, error, info};
 
 use crate::{
     args::{
-        utils::{
-            chain_help, genesis_value_parser, get_federation_pks_from_path, parse_socket_address,
-            SUPPORTED_CHAINS,
-        },
-        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs,
+        utils::parse_socket_address, DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
+        RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
     rpc::types::NodeRecord,
 };
-use std::str::FromStr;
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -95,22 +94,16 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub datadir: MaybePlatformPath<DataDirPath>,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "FILE", verbatim_doc_comment)]
+    #[arg(long, value_name = "NETWORK_CONFIG_FILE", verbatim_doc_comment)]
     pub network_config_path: Option<PathBuf>,
 
-    /// The chain this node is running.
-    ///
-    /// Possible values are either a built-in chain or the path to a chain specification file.
-    #[arg(
-        long,
-        value_name = "CHAIN_OR_PATH",
-        long_help = chain_help(),
-        default_value = SUPPORTED_CHAINS[0],
-        default_value_if("dev", "true", "dev"),
-        value_parser = genesis_value_parser,
-        required = false,
-    )]
-    pub chain: Arc<ChainSpec>,
+    /// Indicates whether we are running in testnet or not.
+    #[arg(long, value_name = "IS_TESTNET", default_value = "true")]
+    pub is_testnet: bool,
+
+    /// The path to the configuration file for the federation setup.
+    #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
+    pub federation_config_path: PathBuf,
 
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
     #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
@@ -166,7 +159,7 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub db: DatabaseArgs,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "FILE", verbatim_doc_comment)]
+    #[arg(long, value_name = "BITCOIND_CONFIG_FILE", verbatim_doc_comment)]
     pub bitcoind_config_path: Option<PathBuf>,
 
     /// Additional cli arguments
@@ -196,7 +189,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         let Self {
             datadir,
             network_config_path,
-            chain,
+            is_testnet,
+            federation_config_path,
             federation_mode,
             metrics,
             instance,
@@ -212,7 +206,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         PoaNodeCommand {
             datadir,
             network_config_path,
-            chain,
+            is_testnet,
+            federation_config_path,
             federation_mode,
             metrics,
             instance,
@@ -235,7 +230,8 @@ where {
         let Self {
             datadir,
             network_config_path,
-            chain,
+            is_testnet,
+            federation_config_path: _,
             federation_mode,
             metrics,
             instance,
@@ -251,6 +247,9 @@ where {
 
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
+
+        // get the botanix chain spec
+        let chain = get_botanix_chain(*is_testnet);
 
         // set up node config
         // TODO should set up PoaConfig
@@ -382,7 +381,7 @@ where {
         }
 
         let bitcoind_config_clone = bitcoind_config.clone();
-        let pegin_conf_depth = self.chain.parent_confirmation_depth;
+        let pegin_conf_depth = chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
             "async bitcoin task for block headers",
@@ -475,20 +474,22 @@ where {
             });
         }
 
-        // add trusted nodes (federation members) with chain.toml
-        // assumes chain.toml is present at data_dir
-        let chain_path = match PathBuf::from_str(format!("{}/chain.toml", data_dir).as_str()) {
-            Ok(path) => path,
+        // add trusted nodes (federation members) with federation.toml
+        let federation_config = match load_federation_config_toml(&self.federation_config_path) {
+            Ok(federation_config) => federation_config,
             Err(_) => {
-                error!(target: "reth::cli", "Failed to create path to chain.toml");
-                return Err(eyre::eyre!("Failed to create path to chain.toml"));
+                error!(target: "reth::cli", "Failed to read federation config file");
+                return Err(eyre::eyre!("Failed to read federation config file"));
             }
         };
-        let authorities =
-            get_federation_pks_from_path(&chain_path).expect("federation keys to exist");
-        self.add_trusted_peers_from_authorities(secret_key, authorities.clone(), &mut reth_config);
+        let federation_authorities = federation_config.get_federation_pks_from_path()?;
+        self.add_trusted_peers_from_authorities(
+            secret_key,
+            federation_authorities.clone(),
+            &mut reth_config,
+        );
         let genesis_authorities =
-            authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
+            federation_authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -499,7 +500,7 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config);
+        let executor_factory = EvmProcessorFactory::new(chain.clone(), evm_config.clone());
 
         // Authority consensus
         let consensus = self.consensus();
@@ -529,7 +530,7 @@ where {
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
 
         let blob_store = InMemoryBlobStore::default();
-        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&self.chain))
+        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain))
             .with_head_timestamp(head.timestamp)
             .kzg_settings(self.kzg_settings()?)
             .with_additional_tasks(1)
@@ -560,14 +561,14 @@ where {
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
-        let block_import = ProofOfAuthorityBlockImport::new(self.chain.clone(), block_import_tx);
+        let block_import = ProofOfAuthorityBlockImport::new(chain.clone(), block_import_tx);
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
             // create authority config
             let (authority_index, authorities, authority_pk) = get_authority_signer_index(
                 blockchain_db.clone(),
-                Arc::clone(&self.chain),
+                Arc::clone(&chain),
                 secp256k1::Secp256k1::new(),
                 secret_key,
             )
@@ -589,7 +590,7 @@ where {
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
             .network
-            .network_config(&reth_config, self.chain.clone(), secret_key, default_peers_path)
+            .network_config(&reth_config, chain.clone(), secret_key.clone(), default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .listener_addr(SocketAddr::new(
@@ -678,7 +679,7 @@ where {
             pbft_task,
             mut healthcheck_task,
         ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&self.chain),
+            Arc::clone(&chain),
             blockchain_db.clone(),
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
@@ -835,7 +836,7 @@ where {
         // Start RPC servers
         let engine_api = EngineApi::new(
             blockchain_db.clone(),
-            self.chain.clone(),
+            chain.clone(),
             beacon_engine_handle,
             payload_builder.into(),
             Box::new(executor.clone()),
@@ -943,9 +944,11 @@ where {
             timestamp: header.timestamp,
         }
     }
+
     /// Returns the [Consensus] instance to use.
     pub fn consensus(&self) -> Arc<dyn Consensus> {
-        Arc::new(AuthorityConsensus::new(self.chain.clone()))
+        let chain = get_botanix_chain(self.is_testnet);
+        Arc::new(AuthorityConsensus::new(chain))
     }
 
     fn add_trusted_peers_from_authorities(
@@ -1022,6 +1025,7 @@ mod tests {
 
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
+    use reth_node_core::args::utils::SUPPORTED_CHAINS;
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
@@ -1103,15 +1107,16 @@ mod tests {
             "my/path/to/reth.toml",
         ])
         .unwrap();
+        let chain = get_botanix_chain(cmd.is_testnet);
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
         let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
 
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let config_path = cmd.network_config_path.clone().unwrap_or_else(|| data_dir.config_path());
         let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
         assert!(config_path.ends_with(end), "{:?}", cmd.network_config_path);
@@ -1120,14 +1125,16 @@ mod tests {
     #[test]
     fn parse_db_path() {
         let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+        let chain = get_botanix_chain(cmd.is_testnet);
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let db_path = data_dir.db_path();
         let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
         assert!(db_path.ends_with(end), "{:?}", cmd.network_config_path);
 
         let cmd =
             PoaNodeCommand::try_parse_args_from(["reth", "--datadir", "my/custom/path"]).unwrap();
-        let data_dir = cmd.datadir.unwrap_or_chain_default(cmd.chain.chain);
+        let chain = get_botanix_chain(cmd.is_testnet);
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let db_path = data_dir.db_path();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }
