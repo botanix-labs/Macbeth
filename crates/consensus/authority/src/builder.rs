@@ -5,11 +5,10 @@ use crate::{
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
     pbft_task::{PbftNotificationMessage, PbftTask},
+    sync::SyncController,
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
 };
-
-use crate::sync::SyncController;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
@@ -26,8 +25,10 @@ use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::{header_ext::HeaderExt, ChainSpec};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
+    StateProviderFactory,
 };
+
 use reth_tasks::TaskExecutor;
 use std::sync::Arc;
 use tokio::sync::{
@@ -43,6 +44,7 @@ pub struct AuthorityConsensusBuilder<
     Engine: EngineTypes,
     ToFrostMan,
     NetworkClient,
+    EF,
 > {
     client: Client,
     consensus: AuthorityConsensus,
@@ -65,6 +67,7 @@ pub struct AuthorityConsensusBuilder<
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     btc_network: bitcoin::Network,
+    executor_factory: EF,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -77,8 +80,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
-    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient>
+impl<Client, EvmConfig, Engine, ToFrostMan, NetworkClient, EF>
+    AuthorityConsensusBuilder<Client, EvmConfig, Engine, ToFrostMan, NetworkClient, EF>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     Engine: EngineTypes + 'static,
@@ -91,6 +94,7 @@ where
         + Clone
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
+    EF: ExecutorFactory + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -114,6 +118,7 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
         genesis_authorities: Vec<secp256k1::PublicKey>,
+        executor_factory: EF,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server.is_some();
@@ -164,17 +169,14 @@ where
         let pk = sk.public_key(secp256k1::SECP256K1);
 
         // Try to instantiate storage
-        let storage = Storage::try_new(
-            &mut headers,
+        let storage = Storage::new(
             genesis_authorities,
             authorities,
             signer_index.expect("valid index"),
             pk,
-        )
-        .map_err(|e| {
-            error!("Failed to instantiate storage: {:?}", e);
-            AuthorityConsensusBuilderError::InvalidStorage
-        })?;
+            btc_network,
+            None, // Aggregate pk to be filled out by the dkg state machine
+        );
 
         // Instantiate epoch manager
         let epoch_manager = EpochManager::<Client>::new(storage.clone(), client.clone());
@@ -199,6 +201,7 @@ where
             frost_config,
             payload_builder,
             btc_network,
+            executor_factory,
         })
     }
 
@@ -206,8 +209,7 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn build(
+    pub async fn build(
         self,
     ) -> (
         AuthorityConsensus,
@@ -215,7 +217,7 @@ where
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
         Option<FrostTask<ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
+        Option<PbftTask<Client, ToFrostMan, NetworkClient, EF>>,
         HealthcheckTask<ToFrostMan>,
     ) {
         let Self {
@@ -238,6 +240,7 @@ where
             frost_config,
             payload_builder,
             btc_network,
+            executor_factory,
         } = self;
         let is_fed_node = btc_server.is_some();
 
@@ -306,6 +309,7 @@ where
 
             let pbft = PbftTask::new(
                 client.clone(),
+                storage.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.expect("valid frost config"),
                 sk,
@@ -314,7 +318,11 @@ where
                 task_executor.clone(),
                 network_client,
                 network_handle.clone(),
-            );
+                bitcoin_block_header.clone(),
+                consensus.clone(),
+                executor_factory.clone(),
+            )
+            .await;
             pbft_task = Some(pbft);
 
             let _bitcoind_client =

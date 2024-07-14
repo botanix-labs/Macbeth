@@ -2,6 +2,7 @@ use core::fmt;
 
 use crate::{provider::ProviderError, trie::StateRootError};
 use ethers::types::U256;
+use reth_consensus::ConsensusError;
 use reth_primitives::{
     revm_primitives::EVMError, Address, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
     PruneSegmentError, B256,
@@ -175,6 +176,10 @@ pub enum BlockExecutionError {
     /// Bitcoin recent header is not available
     #[error("Bitcoin recent header is not available")]
     BitcoinRecentHeaderNotAvailable,
+
+    /// Consensus error during PBFT
+    #[error("PBFT Consensus error: {0}")]
+    PBFTConsensusError(#[from] ConsensusError),
 
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]

@@ -298,6 +298,10 @@ impl InsertBlockErrorKind {
                     &BlockExecutionError::CannotAddExistingFederationMember { .. } => true,
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
+                    BlockExecutionError::CannotAddExistingFederationMember => todo!(),
+                    BlockExecutionError::FailedToDeserializePreviousBlockHeader => todo!(),
+                    BlockExecutionError::BitcoinRecentHeaderNotAvailable => todo!(),
+                    BlockExecutionError::PBFTConsensusError(_) => todo!(),
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

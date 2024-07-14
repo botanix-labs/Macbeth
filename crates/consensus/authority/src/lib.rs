@@ -139,25 +139,14 @@ impl Consensus for AuthorityConsensus {
         validation::validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
-        let edh = header.deserialize_extra_data_header().map_err(|e| {
+        header.deserialize_extra_data_header().map_err(|e| {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
 
-        if header.is_poa_epoch() {
-            // Validate the list of authorities matches the authorities in the genesis block
-            // This check is only for a static federation
-            // Use EDH authority list as source of truth and not the list passed in
-            if genesis_authorities !=
-                edh.authority_signers.as_ref().expect("authority signers to exist")
-            {
-                error!("Genesis authorities: {:?}", genesis_authorities);
-                error!("EDH authorities: {:?}", edh.authority_signers);
-                return Err(ConsensusError::InvalidAuthorityList);
-            }
-        }
+        validate_extra_data_header_authorities(header, genesis_authorities)?;
 
-        // Validate a quorum of authority signatures
+        // Validate a quorum of authority signatures except during pbft
         let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
             ConsensusError::InvalidAuthoritySignature
@@ -210,9 +199,16 @@ impl Consensus for AuthorityConsensus {
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
         header.validate_timestamp(current_timestamp).map_err(|_| {
-            ConsensusError::TimestampIsInFuture {
-                timestamp: header.timestamp,
-                present_timestamp: current_timestamp,
+            if header.timestamp > current_timestamp {
+                ConsensusError::TimestampIsInFuture {
+                    timestamp: header.timestamp,
+                    present_timestamp: current_timestamp,
+                }
+            } else {
+                ConsensusError::TimestampIsInPast {
+                    timestamp: header.timestamp,
+                    present_timestamp: current_timestamp,
+                }
             }
         })?;
 
@@ -281,12 +277,8 @@ pub(crate) trait AuthorityStorage {
     fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey>;
     /// Get the authority public key
     fn get_authority(&self) -> secp256k1::PublicKey;
-}
-
-#[derive(Debug)]
-pub(crate) enum StorageCreationError {
-    /// empty headers
-    EmptyHeaders,
+    /// Get btc network
+    fn get_btc_network(&self) -> bitcoin::Network;
 }
 
 /// In memory storage
@@ -295,30 +287,25 @@ pub(crate) struct Storage {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-// == impl Storage ===
 impl Storage {
-    fn try_new(
-        headers: &mut [SealedHeader],
+    fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         pk: secp256k1::PublicKey,
-    ) -> Result<Self, StorageCreationError> {
-        if headers.is_empty() {
-            return Err(StorageCreationError::EmptyHeaders);
-        }
-        // sort the headers by block numbers
-        headers.sort_by(|a, b| a.number.cmp(&b.number));
-
+        btc_network: bitcoin::Network,
+        aggregate_public_key: Option<secp256k1::PublicKey>,
+    ) -> Self {
         let storage = StorageInner {
             genesis_authorities,
             authorities,
             signer_index,
             authority: pk,
-            aggregate_public_key: None,
+            aggregate_public_key,
+            btc_network,
         };
 
-        Ok(Self { inner: Arc::new(RwLock::new(storage)) })
+        Self { inner: Arc::new(RwLock::new(storage)) }
     }
 
     /// Returns the write lock of the storage
@@ -350,6 +337,8 @@ pub(crate) struct StorageInner {
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
+    /// Bitcoin network
+    btc_network: bitcoin::Network,
 }
 
 // === impl StorageInner ===
@@ -377,6 +366,10 @@ impl AuthorityStorage for StorageInner {
 
     fn get_authority(&self) -> secp256k1::PublicKey {
         self.authority
+    }
+
+    fn get_btc_network(&self) -> bitcoin::Network {
+        self.btc_network
     }
 }
 
