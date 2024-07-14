@@ -42,7 +42,6 @@ pub struct NonFederationMemberTestConfig {
     pub bitcoind_password: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::mpsc::Sender<Notifications>,
-    pub jwt_secret_path: PathBuf,
     pub peer_id: PeerId,
 }
 
@@ -55,12 +54,10 @@ impl NonFederationMemberTestConfig {
         bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
-        jwt_secrets_dir: PathBuf,
         peer_id: PeerId,
     ) -> Self {
         let rpc_port = RPC_PORT_BASE + index;
         let discovery_port = DISCOVERY_PORT_BASE + index;
-        let jwt_secret_path = jwt_secrets_dir.join(format!("{index}.hex"));
         Self {
             index,
             temp_path: {
@@ -79,7 +76,6 @@ impl NonFederationMemberTestConfig {
             bitcoind_password,
             peers_list: vec![],
             sender,
-            jwt_secret_path,
             peer_id,
         }
     }
@@ -102,8 +98,6 @@ impl NonFederationMemberTestConfig {
             .open(discovery_secret_path.clone())
             .expect("file can be opened");
         file.write_all(&self.secret_key.as_bytes()).expect("secret key written to file");
-
-        let _jwt_secret_path = self.jwt_secret_path.display().to_string();
 
         let no_args = NoArgs::with(self.clone());
         let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
@@ -217,7 +211,6 @@ pub async fn create_rpc_node(
         global_context.bitcoind_url.clone(),
         global_context.bitcoind_user.clone(),
         global_context.bitcoind_pass.clone(),
-        global_context.jwt_dir.clone(),
         rpc_peer_id,
     );
 

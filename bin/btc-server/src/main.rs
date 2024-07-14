@@ -105,8 +105,8 @@ struct App {
     frost_round1_nonces: SigningNoncesCommitmentsMap,
     /// configuration
     config: Config,
-    /// Jwt Secret
-    jwt_secret: Option<JwtSecret>,
+    /// Btc signing server jwt secret
+    btc_signing_server_jwt_secret: Option<JwtSecret>,
     /// bitcoind client
     bitcoind_client: Option<bitcoincore_rpc::Client>,
     /// Fall back fee rate
@@ -145,9 +145,12 @@ impl App {
             panic!("min_signers should be at least 2");
         }
 
-        let mut jwt_secret = None;
-        if let Some(jwt_path) = config.jwt_secret.as_ref() {
-            jwt_secret = Some(get_or_create_jwt_secret_from_path(jwt_path).map_err(Error::Jwt)?)
+        let mut btc_signing_server_jwt_secret = None;
+        if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
+            btc_signing_server_jwt_secret = Some(
+                get_or_create_jwt_secret_from_path(btc_signing_server_jwt_path)
+                    .map_err(Error::Jwt)?,
+            )
         };
 
         let mut round1_dkg = None;
@@ -197,7 +200,7 @@ impl App {
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             config,
-            jwt_secret,
+            btc_signing_server_jwt_secret,
             min_signers,
             max_signers,
             bitcoind_client: Some(bitcoind_client),
@@ -443,7 +446,7 @@ mod test {
             frost_round1_dkg: None,
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
-            jwt_secret: None,
+            btc_signing_server_jwt_secret: None,
             bitcoind_client: None,
             fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
             // This config doesnt matter since we are setting app up manually
@@ -456,7 +459,7 @@ mod test {
                 max_signers: 3,
                 min_signers: 3,
                 toml: None,
-                jwt_secret: None,
+                btc_signing_server_jwt_secret: None,
                 bitcoind_url: Url::parse("http://localhost:18443")
                     .expect("Bitcoind url to be valid"),
                 bitcoind_user: "foo".to_string(),

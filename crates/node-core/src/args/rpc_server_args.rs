@@ -5,7 +5,7 @@ use crate::{
         types::{MaxU32, ZeroAsNoneU64},
         GasPriceOracleArgs, RpcStateCacheArgs,
     },
-    cli::config::RethRpcConfig,
+    cli::config::{BtcServerConfig, RethRpcConfig},
     utils::get_or_create_jwt_secret_from_path,
 };
 use clap::{
@@ -42,7 +42,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use tracing::debug;
+use tracing::{debug, info};
 use url::Url;
 
 use super::{
@@ -207,6 +207,16 @@ pub struct RpcServerArgs {
     /// The metrics will be served at the given interface and port.
     #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
     pub btc_server: Option<String>,
+
+    /// Btc server JWT secret
+    ///
+    /// JWT secret for jwt-encrypted communication between the client and the btc server
+    #[arg(
+        long,
+        value_name = "BTC_SIGNING_SERVER_JWT_SECRET",
+        help_heading = "btc_signing_server_jwt_secret"
+    )]
+    pub btc_signing_server_jwt_secret: Option<PathBuf>,
 
     /// Btc signing service
     ///
@@ -408,6 +418,18 @@ impl RpcServerArgs {
     }
 }
 
+impl BtcServerConfig for RpcServerArgs {
+    fn btc_signing_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError> {
+        self.btc_signing_server_jwt_secret
+            .as_ref()
+            .map(|jwt| {
+                info!(target: "reth::cli", user_path=?jwt, "Reading btc signing server JWT secret file");
+                JwtSecret::from_file(jwt)
+            })
+            .transpose()
+    }
+}
+
 impl RethRpcConfig for RpcServerArgs {
     fn is_ipc_enabled(&self) -> bool {
         // By default IPC is enabled therefore it is enabled if the `ipcdisable` is false.
@@ -585,6 +607,7 @@ impl Default for RpcServerArgs {
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
             btc_server: Some(DEFAULT_BTC_SERVER.to_owned()),
+            btc_signing_server_jwt_secret: None,
             bitcoind: BitcoindArgs {
                 url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
                 username: DEFAULT_BITCOIND_USERNAME.to_string(),

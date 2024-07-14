@@ -32,9 +32,6 @@ fn spawn_btc_server(
     working_directory.push("bin");
     working_directory.push("btc-server");
 
-    let jwt_secret_file =
-        global_context.jwt_dir.join(format!("{}.hex", id + 1)).display().to_string();
-
     let identifier = id.to_string();
     let frost_max_signers = global_context.max_signers.to_string();
     let frost_min_signers = global_context.min_signers.to_string();
@@ -57,8 +54,6 @@ fn spawn_btc_server(
         frost_max_signers.as_str(),
         "--toml",
         "./config.toml",
-        "--jwt-secret",
-        jwt_secret_file.as_str(),
         "--bitcoind-url",
         global_context.bitcoind_url.as_str(),
         "--bitcoind-user",
