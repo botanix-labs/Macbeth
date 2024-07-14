@@ -1,5 +1,5 @@
 use anyhow::{Context as AnyhowContext, Result};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub const RPC_PORT_BASE: u16 = 8545;
-pub const DISCOVERY_PORT_BASE: u16 = 30303;
+pub const DISCOVERY_PORT_BASE: u16 = 30305;
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
