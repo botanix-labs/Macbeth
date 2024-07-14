@@ -97,8 +97,6 @@ pub(crate) enum ValidateBlockError {
     ParentHashNotCanonicalTip(BlockHash, BlockHash),
     #[error("Will not sign genesis block")]
     WillNotSignGenesisBlock,
-    #[error("Block failed consensus check")]
-    ConsensusCheckFailed,
 }
 
 impl PartialEq for ValidateBlockError {
@@ -727,9 +725,6 @@ where
         if peer_id == self.peer_id {
             return Ok(None);
         }
-
-        // execute block and run poa consensus
-        self.execute_and_validate_poa_consensus(block.clone()).await?;
 
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature

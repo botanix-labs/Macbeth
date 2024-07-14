@@ -25,10 +25,10 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
 use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
+    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus
@@ -71,7 +71,6 @@ where
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
@@ -155,6 +154,7 @@ where
                         bitcoin_checkpoint: bitcoin_block_header.expect("recent header is some"),
                         aggregate_public_key: storage
                             .aggregate_public_key
+                            .clone()
                             .expect("aggregate pk is some"),
                         btc_network: self.btc_network,
                     });
@@ -196,38 +196,6 @@ where
                     let sealed_block_with_senders =
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
-                    // Process Botanix specific logs
-                    // get pegouts if btc_server is available
-                    // only federation nodes will have btc_server
-                    let mut pegouts = match self.btc_server.as_ref() {
-                        Some(btc_server) => {
-                            match crate::utils::process_receipts(
-                                &mut btc_server.clone(),
-                                &bundle_state,
-                                bitcoin_block_header.1,
-                                self.btc_network,
-                                self.consensus.chain_spec.parent_confirmation_depth,
-                            )
-                            .await
-                            {
-                                Ok(pegouts) => pegouts,
-                                Err(e) => {
-                                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                    continue;
-                                }
-                            }
-                        }
-                        None => vec![],
-                    };
-
-                    // Validate utxo commitment
-                    let header = sealed_block.header.clone();
-                    if is_fed_node {
-                        let rpc = self.btc_server.as_mut().expect("btc_server exists");
-                        let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await
-                        {
-                            Ok(h) => sha256::Hash::from_slice(&h.merkle_root)
-                                .expect("valid utxo commitment"),
                     let header = sealed_block.header.clone();
 
                     // process pegins
@@ -354,7 +322,7 @@ where
                         warn!(target: "consensus::authority", "Recieved block is not a direct child of the best block");
                         // need to retrieve this missing block from a peer
                         let missing_block =
-                            full_block_client.get_full_block(header.parent_hash).await;
+                            full_block_client.get_full_block(header.parent_hash.clone()).await;
                         // TODO (armins) should be using the insert with botanix consensus package
                         if let Err(e) = self.client.insert_block_without_senders(
                             missing_block.clone(),
