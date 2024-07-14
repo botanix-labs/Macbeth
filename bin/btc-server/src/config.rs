@@ -185,26 +185,29 @@ pub(crate) struct CliConfig {
 pub(crate) struct Config {
     /// The path to the database.
     pub(crate) db: PathBuf,
-    /// The bitcoin network to operate on.
+    /// The bitcoin L1 network 
     pub(crate) btc_network: bitcoin::Network,
-    /// Frost participant identifier
+    /// Frost participant identifier. Should be your index into the chain.toml federation pk list
+    /// for exmaple if you are the first signer in the chain.toml you should use 0
     pub(crate) identifier: u16,
+    /// Address to bind to. 
     pub(crate) address: String,
-    /// max signers
+    /// multisig max signers
     pub(crate) max_signers: u16,
-    /// min signers
+    /// multisig min signers
     pub(crate) min_signers: u16,
-    /// toml configuration path
+    /// toml configuration path. Leave blank to use defaults
     pub(crate) toml: Option<PathBuf>,
     /// jwt secret path
     pub(crate) btc_signing_server_jwt_secret: Option<PathBuf>,
     /// bitcoind url
     pub(crate) bitcoind_url: Url,
-    /// bitcoind user
+    /// bitcoind RPC user
     pub(crate) bitcoind_user: String,
-    /// bitcoind pass
+    /// bitcoind RPC pass
     pub(crate) bitcoind_pass: String,
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
+    /// signing will refuse to sign if the fee rate is more than this percentage off from the
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
     pub(crate) fall_back_fee_rate_sat_per_vbyte: u64,
