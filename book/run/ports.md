@@ -30,9 +30,10 @@ This section provides essential information about the ports used by the system, 
 - **Purpose:** Port 8546 offers a WebSocket-based Remote Procedure Call (RPC) interface. It allows real-time communication between external applications and the blockchain.
 - **Exposure Recommendation:** As with the HTTP RPC port, the WS RPC port should not be exposed by default for security reasons.
 
-## Engine API Port
+<!-- Not used in botanix PoA -->
+<!-- ## Engine API Port
 
 - **Port:** 8551
 - **Protocol:** TCP
 - **Purpose:** Port 8551 facilitates communication between specific components, such as "reth" and "CL" (assuming their definitions are understood within the context of the system). It enables essential internal processes.
-- **Exposure Recommendation:** This port is not meant to be exposed to the public by default. It should be reserved for internal communication between vital components of the system.
+- **Exposure Recommendation:** This port is not meant to be exposed to the public by default. It should be reserved for internal communication between vital components of the system. -->

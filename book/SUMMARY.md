@@ -1,4 +1,8 @@
-# Reth Book
+# Botanix Federation Book
+
+**Note: this book is copied over from The [Reth book](https://reth.rs/) modified to fit the requirments needed for the Botanix federation.
+
+<!-- Commented out sections are not used in Botanix PoA  -->
 
 - [Introduction](./intro.md)
 - [Installation](./installation/installation.md)
@@ -6,15 +10,15 @@
    - [Docker](./installation/docker.md)
    - [Build from Source](./installation/source.md)
    - [Build for ARM devices](./installation/build-for-arm-devices.md)
-   - [Update Priorities](./installation/priorities.md)
+   <!-- - [Update Priorities](./installation/priorities.md) -->
 - [Run a Node](./run/run-a-node.md)
    - [Mainnet or official testnets](./run/mainnet.md)
-   - [OP Stack](./run/optimism.md)
-   - [Private testnet](./run/private-testnet.md)
+   <!-- - [OP Stack](./run/optimism.md) -->
+   <!-- - [Private testnet](./run/private-testnet.md) -->
    - [Metrics](./run/observability.md)
    - [Configuring Reth](./run/config.md)
    - [Transaction types](./run/transactions.md)
-   - [Pruning & Full Node](./run/pruning.md)
+   <!-- - [Pruning & Full Node](./run/pruning.md) -->
    - [Ports](./run/ports.md)
    - [Troubleshooting](./run/troubleshooting.md)
 - [Interacting with Reth over JSON-RPC](./jsonrpc/intro.md)
@@ -26,7 +30,8 @@
    - [trace](./jsonrpc/trace.md)
    - [admin](./jsonrpc/admin.md)
    - [rpc](./jsonrpc/rpc.md)
-- [CLI Reference](./cli/cli.md) <!-- CLI_REFERENCE START -->
+- [CLI Reference](./cli/poa.md) <!-- CLI_REFERENCE START -->
+<!-- - [CLI Reference](./cli/cli.md)
   - [`reth`](./cli/reth.md)
     - [`reth node`](./cli/reth/node.md)
     - [`reth init`](./cli/reth/init.md)
@@ -70,6 +75,6 @@
       - [`reth debug build-block`](./cli/reth/debug/build-block.md)
       - [`reth debug replay-engine`](./cli/reth/debug/replay-engine.md)
     - [`reth recover`](./cli/reth/recover.md)
-      - [`reth recover storage-tries`](./cli/reth/recover/storage-tries.md)
+      - [`reth recover storage-tries`](./cli/reth/recover/storage-tries.md) -->
 - [Developers](./developers/developers.md) <!-- CLI_REFERENCE END -->
    - [Contribute](./developers/contribute.md)
