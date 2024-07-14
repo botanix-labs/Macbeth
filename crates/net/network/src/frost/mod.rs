@@ -170,7 +170,7 @@ impl fmt::Display for SigningResponse {
 }
 
 /// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub enum DkgEventResponseType {
     /// DKG round 1 request
     DkgRound1Request,
@@ -191,7 +191,7 @@ impl fmt::Display for DkgEventResponseType {
 }
 
 /// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone, Copy)]
 pub enum SigningEventResponseType {
     /// Signers will add their signing commitments to the psbt
     SignerRound1SigningPackage,

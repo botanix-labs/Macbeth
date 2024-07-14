@@ -106,7 +106,7 @@ pub fn get_block_producer_address(header: &Header) -> Address {
     if let Ok(authorities) = header.recovered_signed_authorities() {
         // TODO remove this unwrap
         let block_builder_public_key =
-            authorities.get(0).expect("block producer authority to be present");
+            authorities.first().expect("block producer authority to be present");
         return public_key_to_address(*block_builder_public_key);
     }
 
@@ -192,7 +192,7 @@ pub fn validate_against_parent(
     }
     let parent_signer = parent
         .recovered_signed_authorities()
-        .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?[0];
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
     let current_signer = current
         .recovered_signed_authorities()
         .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];

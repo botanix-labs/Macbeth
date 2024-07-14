@@ -120,11 +120,11 @@ pub enum ValidateInturnError {
 
 impl PartialEq for ValidateInturnError {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
-            (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_)) => true,
-            _ => false,
-        }
+                (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
+        )
     }
 }
 
@@ -158,16 +158,16 @@ pub enum ValidateAuthoritySignatureError {
 
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::InvalidAuthority, Self::InvalidAuthority) |
-            (Self::InvalidMessage, Self::InvalidMessage) |
-            (Self::InvalidSignature, Self::InvalidSignature) |
-            (Self::MissingSignature, Self::MissingSignature) |
-            (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
-            (Self::RecoverFailed, Self::RecoverFailed) |
-            (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
-            _ => false,
-        }
+                (Self::InvalidMessage, Self::InvalidMessage) |
+                (Self::InvalidSignature, Self::InvalidSignature) |
+                (Self::MissingSignature, Self::MissingSignature) |
+                (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
+                (Self::RecoverFailed, Self::RecoverFailed) |
+                (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
+        )
     }
 }
 
@@ -220,7 +220,7 @@ impl HeaderExt for Header {
         authorities: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateInturnError> {
         let signers = self.recovered_signed_authorities()?;
-        let in_turn_signer = signers.get(0).expect("at least one signer");
+        let in_turn_signer = signers.first().expect("at least one signer");
         let signer_index = authorities
             .iter()
             .position(|pk| pk == in_turn_signer)
@@ -288,7 +288,7 @@ impl HeaderExt for Header {
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError> {
         let binding = self.extra_data.to_vec();
         let mut extra_data = binding.as_slice();
-        Ok(ExtraDataHeader::deserialize(&mut extra_data)?)
+        ExtraDataHeader::deserialize(&mut extra_data)
     }
 
     /// Create signable sighash from header + edh content
@@ -315,7 +315,7 @@ impl HeaderExt for Header {
         let sighash = self.create_sighash()?;
         let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .expect("Valid message to sign");
-        let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, &sk);
+        let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, sk);
 
         let mut edh = self.deserialize_extra_data_header()?;
         edh.add_signature(signature);

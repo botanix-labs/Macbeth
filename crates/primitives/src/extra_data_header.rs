@@ -21,7 +21,7 @@ const HAS_WITNESS_DATA_POS: u8 = 3;
 /// authority_vote || bitcoin_block_hash ... )` This sighash excludes the authority signature field.
 /// Use `encode_into_without_signature` to serialize the extradata header with out the signature
 /// field Note: the order of the struct properties is important for serialization/deserialization
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ExtraDataHeader {
     /// The version of the extra data header
     pub version: u32,
@@ -74,7 +74,7 @@ pub enum ExtraDataHeaderDeserializeError {
 }
 
 /// Errors that can occur when validating the authority signature
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum ValidateAuthoritySignatureError {
     #[error("invalid signature")]
     /// Invalid signature
@@ -154,7 +154,7 @@ impl ExtraDataHeader {
 
     /// Add a signature to the extra data header
     pub fn add_signature(&mut self, signature: RecoverableSignature) {
-        let mut current_signatures = self.authority_signatures.clone().unwrap_or(vec![]);
+        let mut current_signatures = self.authority_signatures.clone().unwrap_or_default();
 
         // Check if this signature already exists in the list
         if current_signatures.contains(&signature) {
@@ -361,6 +361,7 @@ impl ExtraDataHeader {
 mod tests {
     use super::*;
     use bitcoin::BlockHash;
+    use revm_primitives::hex;
     use secp256k1::{rand::rngs::OsRng, Message, Secp256k1};
 
     // Test case for creating a new ExtraDataHeader

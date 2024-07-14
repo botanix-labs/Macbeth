@@ -706,20 +706,12 @@ impl BlockchainTreeViewer for MockEthProvider {
 
     fn header_by_hash(&self, hash: BlockHash) -> Option<SealedHeader> {
         let header = self.headers.lock().get(&hash).cloned();
-        if let Some(h) = header {
-            Some(h.seal(hash))
-        } else {
-            None
-        }
+        header.map(|h| h.seal(hash))
     }
 
     fn block_by_hash(&self, hash: BlockHash) -> Option<SealedBlock> {
         let block = self.blocks.lock().get(&hash).cloned();
-        if let Some(b) = block {
-            Some(b.seal(hash))
-        } else {
-            None
-        }
+        block.map(|b| b.seal(hash))
     }
 
     fn block_with_senders_by_hash(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
@@ -756,7 +748,7 @@ impl BlockchainTreeViewer for MockEthProvider {
             let tip = sorted_blocks.last().expect("at least one block").hash_slow();
             return Ok(*tip == block_hash);
         }
-        return Err(ProviderError::BlockHashNotFound(block_hash));
+        Err(ProviderError::BlockHashNotFound(block_hash))
     }
 
     fn canonical_tip(&self) -> BlockNumHash {

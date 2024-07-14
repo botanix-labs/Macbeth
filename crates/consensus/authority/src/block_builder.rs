@@ -320,8 +320,7 @@ where
             .expect("send pbft task message");
         // Wait for commitments before we can commit to this block
         info!(target: "consensus::authority", "Waiting for commitments...");
-        let _ = match tokio::time::timeout(Duration::from_secs(60), self.pbft_task_rx.recv()).await
-        {
+        match tokio::time::timeout(Duration::from_secs(60), self.pbft_task_rx.recv()).await {
             Ok(Some(PbftNotificationMessage::CommitmentsReceived(notif))) => {
                 info!(target: "consensus::authority", "Commitments received");
                 let PbftFinalizationNotification { block_witness } = notif;
