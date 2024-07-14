@@ -646,7 +646,7 @@ impl StorageInner {
         bundle_state: &BundleStateWithReceipts,
         block: Block,
         gas_used: u64,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        botanix_consensus_pkg: &BotanixConsensusPackage,
         sk: &secp256k1::SecretKey,
         authority_signers: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
@@ -656,7 +656,6 @@ impl StorageInner {
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
         let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
-        let consensus_pkg = botanix_consensus_pkg.as_ref().expect("consensus pkg");
 
         // fill in the rest of the fields
         let header = self.complete_header(
@@ -667,10 +666,10 @@ impl StorageInner {
             authority_signers,
             witness_data,
             // This is checked to be Some above
-            consensus_pkg.bitcoin_checkpoint.0.block_hash(),
+            botanix_consensus_pkg.bitcoin_checkpoint.0.block_hash(),
             utxo_commitment,
             client,
-            &consensus_pkg.aggregate_public_key,
+            &botanix_consensus_pkg.aggregate_public_key,
         )?;
 
         // Validate EDH authorities match genesis authorities
