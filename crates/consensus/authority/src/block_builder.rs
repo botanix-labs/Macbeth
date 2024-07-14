@@ -290,7 +290,7 @@ where
             &bundle_state,
             block,
             gas_used,
-            Some(botanix_consensus_pkg.clone()),
+            &botanix_consensus_pkg,
             // TODO(armins) read vote in as param
             &self.sk,
             &authority_signers,
