@@ -6,17 +6,33 @@ contract Minting {
     uint constant GAS_SIMPLE_TRANSFER = 21000;
     uint constant GAS_AMOUNT_UPDATE = 2003;
     uint constant GAS_REVERT_TRUE = 3;
-    uint constant GAS_MINT_AMOUNT_EVENT = 1133;
+
+    // The base gas cost to emit the [Mint] event.
+    //
+    // Additionally the cost for the [metadata] variable length field
+    // shoudl be added.
+    //
+    // 375 + 2 * 375 (topics) + 8 * 4 (account, amount, mintAmount, height)
+    //
+    // Source: https://www.rareskills.io/post/ethereum-events
+    // > 375 + 375 * num_topics + 8 * data_size + mem_expansion cost
+    // >
+    // > Each event costs at least 375 gas. An additional 375 is paid for each
+    // > indexed parameter. A non-anonymous event has the event selector as an
+    // > indexed parameter, so that cost is included most of the time. Then we
+    // > pay 8 times the number of 32 byte words written to the chain. Because
+    // > this region is stored in memory before being emitted, the memory
+    // > expansion cost must be accounted for also.
+    uint constant BASE_GAS_MINT_EVENT = 1157;
 
     /// Some new coins have been minted.
     event Mint(
         address indexed account,
         uint256 amount,
         uint32 bitcoinBlockHeight,
-        bytes metadata
+        bytes metadata,
+        uint256 mintAmount
     );
-
-    event MintAmount(uint256 indexed amount);
 
     /// Some existing coins have been burned.
     event Burn(address indexed account, uint256 amount, bytes destination, bytes metadata);
@@ -41,25 +57,30 @@ contract Minting {
         );
         peginBitcoinBlockHeight[destination] = bitcoinBlockHeight;
 
-        // emit here so gas is included in gasUsed
-        emit Mint(destination, amount, bitcoinBlockHeight, metadata);
-
-        // account for gas needed for the transfers, amount update, and require statement if true
-        uint256 txCost = (gasStart - gasleft() + GAS_SIMPLE_TRANSFER + GAS_SIMPLE_TRANSFER + GAS_AMOUNT_UPDATE + GAS_REVERT_TRUE + GAS_MINT_AMOUNT_EVENT ) * tx.gasprice;
+        // To estimate the entire tx cost we take the gas used until this point
+        // (using gaslest), then add the gas cost for all individual parts below
+        // this calculation manually accounted for.
+        uint256 metadataGas = metadata.length / 4 + 1;
+        uint256 txGas = gasStart - gasleft()
+            + GAS_SIMPLE_TRANSFER
+            + GAS_SIMPLE_TRANSFER
+            + GAS_AMOUNT_UPDATE
+            + GAS_REVERT_TRUE
+            + BASE_GAS_MINT_EVENT
+            + metadataGas;
+        uint256 txCost = txGas * tx.gasprice;
 
         // 3 gas for comparison if true
         require(txCost <= amount, "Tx cost exceeds pegin amount");
 
         // 3 gas for subtraction and 2000 to update the local variable
-        amount -= txCost;
+        uint256 mintAmount = amount - txCost;
 
         // 21000 gas for each transfer
-        payable(destination).transfer(amount);
+        payable(destination).transfer(mintAmount);
         payable(refundAddress).transfer(txCost);
 
-        // 375 + 375 * num_topics + 8 * data_size + mem_expansion cost
-        // 375 + 375 * 2 + 8 * 1 + 0 = 1133
-        emit MintAmount(amount);
+        emit Mint(destination, amount, bitcoinBlockHeight, metadata, mintAmount);
     }
 
     /// Burn coins by sending money to this function.
