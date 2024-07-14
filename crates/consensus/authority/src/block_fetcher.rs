@@ -25,10 +25,10 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
 use tokio::sync::{
-    mpsc::{error::TryRecvError, UnboundedReceiver, UnboundedSender},
+    mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus

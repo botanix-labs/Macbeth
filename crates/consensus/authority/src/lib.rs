@@ -155,6 +155,11 @@ impl Consensus for AuthorityConsensus {
 
         validate_extra_data_header_authorities(header, genesis_authorities)?;
 
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
+            error!("Failed to deserialize extra data header: {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
+
         // Past genesis NUMS point should never be used as the aggregated public key
         if edh.aggregated_public_key == nums_secp256k1_pk() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(

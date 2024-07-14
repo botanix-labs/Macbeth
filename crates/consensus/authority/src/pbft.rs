@@ -25,10 +25,7 @@ use reth_primitives::{
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{
-    BlockExecutor, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProvider,
-    StateProviderFactory,
-};
+use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory};
 
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
@@ -37,20 +34,17 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{
-    mpsc::{error::SendError, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, warn};
 
-pub struct PbftCommitmentCriteria {}
+pub(crate) struct PbftCommitmentCriteria {}
 
 impl PbftCommitmentCriteria {
     /// Returns the minimum number of pre-commitments required for a block
     /// This is not consenusus critical but will prevent the number of forked blocks
     /// n being the number of authorities
     #[inline]
-    pub fn min_pre_commitments(n: u16) -> u16 {
+    pub(crate) fn min_pre_commitments(n: u16) -> u16 {
         n - 2
     }
 
@@ -58,7 +52,7 @@ impl PbftCommitmentCriteria {
     /// Should be two thirds of the total number of authorities
     /// n being the number of authorities
     #[inline]
-    pub fn min_commitments(n: u16) -> u16 {
+    pub(crate) fn min_commitments(n: u16) -> u16 {
         (2 * n / 3) + 1
     }
 }

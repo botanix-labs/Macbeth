@@ -56,6 +56,7 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient, EF> {
     /// pbft state machine
     pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>,
     /// Shared storage to insert aggregate public key and do poa consensus
+    #[allow(dead_code)]
     pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
     pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
