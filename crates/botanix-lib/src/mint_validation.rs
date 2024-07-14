@@ -1,284 +1,240 @@
 use std::str::FromStr;
 
 use ethers::abi::decode;
-use reth_primitives::{keccak256, Address, Log, B256};
+use reth_primitives::{keccak256, Address, B256};
 use secp256k1::{self, PublicKey};
+use thiserror::Error;
 
 use crate::{
-    peg_contract::{PeginData, PeginError, PeginMeta, PegoutData, PegoutError},
+    peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
     utils::AmountExt,
 };
 
 use tracing::error;
 
 lazy_static::lazy_static! {
-    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
+    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes,uint256)");
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
-    pub static ref MINT_AMOUNT_TOPIC: B256 = keccak256("MintAmount(uint256)");
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
     static ref FROST_PUB_KEY: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
 }
 
 #[derive(Debug)]
-pub enum GenesisContractEvents {
+pub enum GenesisContractEventType {
     MintingEvent,
     BurnEvent,
 }
 
-impl TryFrom<B256> for GenesisContractEvents {
+impl TryFrom<B256> for GenesisContractEventType {
     type Error = &'static str;
     fn try_from(value: B256) -> Result<Self, Self::Error> {
         if value == *MINT_TOPIC {
-            return Ok(GenesisContractEvents::MintingEvent);
+            return Ok(GenesisContractEventType::MintingEvent);
         } else if value == *BURN_TOPIC {
-            return Ok(GenesisContractEvents::BurnEvent);
+            return Ok(GenesisContractEventType::BurnEvent);
         }
         Err("Invalid topic")
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PeginDataError {
-    // Pegin address, amount, and type (pegin/pegout)
-    pub pegin: (Address, ethers::types::U256, String),
+#[derive(Debug, Error)]
+pub enum ParseMintEventError {
+    #[error("error parsing Mint log from Minting contract")]
+    InvalidLog(&'static str),
+    #[error("invalid pegin metadata")]
+    InvalidPeginData {
+        #[source]
+        error: PeginDataError,
+        revert_address: Address,
+        revert_amount: ethers::types::U256,
+    },
 }
 
-#[derive(Debug)]
-pub enum MintConsensusError {
-    UnexpectedLog(&'static str),
-    InvalidMetadata(PeginError),
-    MintContractDidNotEmitRelevantTopic(),
-    ValidationFailed(PeginError),
-    PegoutValidationFailed(PegoutError),
-    RecentBlocksCannotBeEmpty(),
-    LogParsingError(&'static str),
-    LogParsingBlockHeightError(PeginDataError),
-    LogParsingMetaDataError(PeginDataError),
-    LogParsingMintAmountError(&'static str),
-    UintParsingError(&'static str),
-    FailedToConvertMetadataToBytes(PeginDataError),
-    FailedtoDeserialiseMetadata(PeginDataError),
-    MintContractDidNotEmitMintTopic(),
-    PegoutAmountIsInvalid(),
-    InvalidPayloadFromLog(),
+#[derive(Debug, Error)]
+pub enum ParseBurnEventError {
+    #[error("error parsing Burn log from Minting contract")]
+    InvalidLog(&'static str),
+    #[error("invalid pegout metadata")]
+    InvalidPegoutData(#[from] PegoutDataError),
 }
 
-fn topic_to_address(t: B256) -> Result<Address, MintConsensusError> {
+/// Combined type of [ParseMintEventError] and [ParseBurnEventError].
+#[derive(Debug, Error)]
+pub enum MintContractError {
+    #[error("error parsing event log from Minting contract")]
+    InvalidLog {
+        event: &'static str,
+        error: String,
+    },
+    #[error("invalid pegin metadata")]
+    InvalidPeginData {
+        error: String,
+        revert_address: Address,
+        revert_amount: ethers::types::U256,
+    },
+    #[error("invalid pegout metadata")]
+    InvalidPegoutData(#[from] PegoutDataError),
+}
+
+impl From<ParseMintEventError> for MintContractError {
+    fn from(e: ParseMintEventError) -> Self {
+        match e {
+            ParseMintEventError::InvalidLog(e) => Self::InvalidLog { event: "Mint", error: e.into() },
+            ParseMintEventError::InvalidPeginData { error, revert_address, revert_amount } => {
+                Self::InvalidPeginData { error: error.to_string(), revert_address, revert_amount }
+            }
+        }
+    }
+}
+
+impl From<ParseBurnEventError> for MintContractError {
+    fn from(e: ParseBurnEventError) -> Self {
+        match e {
+            ParseBurnEventError::InvalidLog(e) => Self::InvalidLog { event: "Burn", error: e.into() },
+            ParseBurnEventError::InvalidPegoutData(e) => Self::InvalidPegoutData(e),
+        }
+    }
+}
+
+fn topic_to_address(t: B256) -> Option<Address> {
     // topics are 32 byte values that padd the actual value within,
     // so for addresses we have 12 zero bytes of padding in front
-    let decoded_params: Vec<ethers::abi::Token> =
-        decode(&[ethers::abi::param_type::ParamType::Address], &t.0)
-            // TODO (armins) this should be a custom error
-            .unwrap();
-
-    let word = decoded_params
-        .first()
-        .ok_or(MintConsensusError::LogParsingError("Failed to parse destination address"))?
-        .clone()
-        .into_address()
-        .ok_or(MintConsensusError::LogParsingError("Failed to parse destination address"))?;
-
-    let address_slice = word.0.as_slice();
-    let address = Address::from_slice(address_slice);
-
-    // Convert ethers address to reth address
-    Ok(address)
+    let tokens = decode(&[ethers::abi::param_type::ParamType::Address], &t.0).ok()?;
+    let bytes = tokens.first()?.clone().into_address()?;
+    Some(Address::from_slice(bytes.0.as_slice()))
 }
 
-fn topic_to_amount(t: B256) -> Result<ethers::types::U256, MintConsensusError> {
-    let decoded_params: Vec<ethers::abi::Token> =
-        decode(&[ethers::abi::param_type::ParamType::Uint(256_usize)], &t.0)
-            .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
-
-    let amount = decoded_params
-        .first()
-        .ok_or(MintConsensusError::LogParsingError("Failed to parse amount"))?
-        .clone()
-        .into_uint()
-        .ok_or(MintConsensusError::UintParsingError("Failed to parse amount"))?;
-
-    Ok(amount)
-}
-
-pub fn parse_pegin_reth_log_topic(
-    log: &reth_primitives::Log,
-    logs: &[Log],
-) -> Result<PeginData, MintConsensusError> {
-    let revm_log = <reth_primitives::Log as Clone>::clone(log);
-
-    parse_pegin_topic(
-        &revm_log,
-        &logs
-            .iter()
-            .map(<reth_primitives::Log as Clone>::clone)
-            .collect::<Vec<revm::primitives::Log>>(),
-    )
-}
-
-pub fn parse_pegout_reth_log_topic(
-    log: &reth_primitives::Log,
-    btc_network: bitcoin::Network,
-) -> Result<PegoutData, MintConsensusError> {
-    let revm_log = <reth_primitives::Log as Clone>::clone(log);
-
-    parse_pegout_topic(&revm_log, btc_network)
-}
-
-pub fn parse_pegin_mint_amount_topic(
+/// Parse the given log for a [Mint] event.
+///
+/// It returns an error if it's a mint event with problems, but
+/// returns [Ok(None)] if it's not a [Mint] event.
+pub fn try_parse_mint_event(
     log: &revm::primitives::Log,
-) -> Result<ethers::types::U256, MintConsensusError> {
-    for topic in log.topics() {
-        if *topic == *MINT_AMOUNT_TOPIC {
-            // first topic is the event signature, second topic is the indexed amount
-            if log.topics().len() != 2 {
-                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
-            }
-
-            let amount = topic_to_amount(log.topics()[1])?;
-            return Ok(amount);
-        }
-    }
-    Err(MintConsensusError::MintContractDidNotEmitMintTopic())
-}
-
-pub fn parse_pegin_topic(
-    log: &revm::primitives::Log,
-    logs: &Vec<revm::primitives::Log>,
-) -> Result<PeginData, MintConsensusError> {
+) -> Result<Option<PeginData>, ParseMintEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
-        return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
+        return Ok(None);
     }
 
-    // get mint amount from MintAmount event
-    let mut amount: ethers::types::U256 = ethers::types::U256::zero();
-    for log in logs {
-        if let Ok(mint_amount) = parse_pegin_mint_amount_topic(log) {
-            amount = mint_amount;
-        } else {
-            continue;
+    let topics = log.topics();
+    if topics.is_empty() {
+        // NB I don't think this is possible but just be safe.
+        return Ok(None);
+    }
+    if topics[0] != *MINT_TOPIC {
+        return Ok(None);
+    }
+
+    // So we have a mint event
+    if topics.len() != 2 {
+        return Err(ParseMintEventError::InvalidLog("wrong number of topics"));
+    }
+
+    let destination = topic_to_address(log.topics()[1])
+        .ok_or(ParseMintEventError::InvalidLog("invalid destination encoding"))?;
+
+    let params = decode(
+        &[
+            ethers::abi::param_type::ParamType::Uint(256_usize),
+            ethers::abi::param_type::ParamType::Uint(32_usize),
+            ethers::abi::param_type::ParamType::Bytes,
+            ethers::abi::param_type::ParamType::Uint(256_usize),
+        ],
+        &log.data.data,
+    ).map_err(|_| ParseMintEventError::InvalidLog("invalid payload"))?;
+
+    if params.len() != 4 {
+        return Err(ParseMintEventError::InvalidLog("wrong number of params"));
+    }
+
+    let bitcoin_block_height = params[1].clone().into_uint()
+        .ok_or(ParseMintEventError::InvalidLog(
+            "parsing bitcoin block height param",
+        ))?
+        .as_u32();
+
+    let meta_bytes = params[2].clone().into_bytes()
+        .ok_or(ParseMintEventError::InvalidLog(
+            "converting metadata param to bytes"
+        ))?;
+
+    let mint_amount = params[3].clone().into_uint()
+        .ok_or(ParseMintEventError::InvalidLog("invalid mint amount params"))?;
+
+    let meta = {
+        let mut proofs = Vec::new();
+        let mut offset = 0;
+        while offset < meta_bytes.len() {
+            let (proof, proof_size) = PeginMeta::deserialize(&meta_bytes[offset..])
+                .map_err(|e| {
+                    let err = ParseMintEventError::InvalidPeginData {
+                        error: e,
+                        revert_address: destination,
+                        revert_amount: mint_amount,
+                    };
+                    error!("Failed to parse pegin meta: {:?}", err);
+                    err
+                })?;
+            proofs.push(proof);
+            offset += proof_size;
         }
-    }
+        proofs
+    };
 
-    for topic in log.topics() {
-        if *topic == *MINT_TOPIC {
-            if log.topics().len() != 2 {
-                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
-            }
-
-            let destination = topic_to_address(log.topics()[1])?;
-            let data = &log.data;
-
-            let pegin_data_error =
-                PeginDataError { pegin: (destination, amount, String::from("Pegin")) };
-
-            let decoded_params: Vec<ethers::abi::Token> = decode(
-                &[
-                    ethers::abi::param_type::ParamType::Uint(256_usize),
-                    ethers::abi::param_type::ParamType::Uint(32_usize),
-                    ethers::abi::param_type::ParamType::Bytes,
-                ],
-                &data.data,
-            )
-            .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
-
-            let bitcoin_block_height = decoded_params
-                .get(1)
-                .ok_or(MintConsensusError::LogParsingBlockHeightError(pegin_data_error.clone()))?
-                .clone()
-                .into_uint()
-                .ok_or(MintConsensusError::UintParsingError(
-                    "Failed to parse bitcoin block height",
-                ))?
-                .as_u32();
-
-            let meta_bytes = decoded_params
-                .get(2)
-                .ok_or(MintConsensusError::LogParsingMetaDataError(pegin_data_error.clone()))?
-                .clone()
-                .into_bytes()
-                .ok_or(MintConsensusError::FailedToConvertMetadataToBytes(
-                    pegin_data_error.clone(),
-                ))?;
-
-            let meta = {
-                let mut proofs = Vec::new();
-                let mut offset = 0;
-                while offset < meta_bytes.len() {
-                    let (proof, proof_size) = PeginMeta::deserialize(&meta_bytes[offset..])
-                        .map_err(|e| {
-                            error!(
-                                "Failed to parse pegin meta: {:?}",
-                                MintConsensusError::InvalidMetadata(e)
-                            );
-                            MintConsensusError::FailedtoDeserialiseMetadata(
-                                pegin_data_error.clone(),
-                            )
-                        })?;
-                    proofs.push(proof);
-                    offset += proof_size;
-                }
-                proofs
-            };
-
-            let pegin = PeginData { account: destination, amount, bitcoin_block_height, meta };
-            return Ok(pegin);
-        }
-    }
-    Err(MintConsensusError::MintContractDidNotEmitRelevantTopic())
+    Ok(Some(PeginData {
+        account: destination,
+        amount: mint_amount,
+        bitcoin_block_height,
+        meta,
+    }))
 }
 
-pub fn parse_pegout_topic(
+/// Parse the given log for a [Burn] event.
+///
+/// It returns an error if it's a burn event with problems, but
+/// returns [Ok(None)] if it's not a [Burn] event.
+pub fn try_parse_burn_event(
     log: &revm::primitives::Log,
     btc_network: bitcoin::Network,
-) -> Result<PegoutData, MintConsensusError> {
+) -> Result<Option<PegoutData>, ParseBurnEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
-        return Err(MintConsensusError::MintContractDidNotEmitMintTopic());
+        return Ok(None);
     }
 
-    for topic in log.topics() {
-        if *topic == *BURN_TOPIC {
-            if log.topics().len() != 2 {
-                return Err(MintConsensusError::UnexpectedLog("wrong number of topics"));
-            }
-
-            let data = &log.data;
-
-            let decoded_params: Vec<ethers::abi::Token> = decode(
-                &[
-                    ethers::abi::param_type::ParamType::Uint(256_usize),
-                    ethers::abi::param_type::ParamType::String,
-                ],
-                &data.data,
-            )
-            .map_err(|_e| MintConsensusError::InvalidPayloadFromLog())?;
-
-            let amount = decoded_params
-                .first()
-                .ok_or(MintConsensusError::LogParsingError("Failed to parse pegout amount"))?
-                .clone()
-                .into_uint()
-                .ok_or(MintConsensusError::UintParsingError("Failed to pegout amount"))?;
-
-            let destination = decoded_params
-                .get(1)
-                .ok_or(MintConsensusError::LogParsingError("Failed to parse pegout destination"))?
-                .clone()
-                .into_string()
-                .ok_or(MintConsensusError::UintParsingError("Failed to parse pegout destination"))?
-                .as_str()
-                .to_string();
-
-            let btc_amount = bitcoin::Amount::from_wei_floor(amount)
-                .ok_or(MintConsensusError::PegoutAmountIsInvalid())?;
-
-            let pegout = PegoutData::new(btc_amount, destination, btc_network)
-                .map_err(MintConsensusError::PegoutValidationFailed)?;
-
-            return Ok(pegout);
-        }
+    let topics = log.topics();
+    if topics.is_empty() {
+        // NB I don't think this is possible but just be safe.
+        return Ok(None);
+    }
+    if topics[0] != *BURN_TOPIC {
+        return Ok(None);
     }
 
-    Err(MintConsensusError::MintContractDidNotEmitRelevantTopic())
+    if topics.len() != 2 {
+        return Err(ParseBurnEventError::InvalidLog("wrong number of topics"));
+    }
+
+    let params = decode(
+        &[
+            ethers::abi::param_type::ParamType::Uint(256_usize),
+            ethers::abi::param_type::ParamType::String,
+            ethers::abi::param_type::ParamType::Bytes,
+        ],
+        &log.data.data,
+    ).map_err(|_| ParseBurnEventError::InvalidLog("invalid payload"))?;
+
+    if params.len() != 3 {
+        return Err(ParseBurnEventError::InvalidLog("wrong number of params"));
+    }
+    let amount = params[0].clone().into_uint()
+        .ok_or(ParseBurnEventError::InvalidLog("pegout amount"))?;
+    let btc_amount = bitcoin::Amount::from_wei_floor(amount)
+        .ok_or(ParseBurnEventError::InvalidLog("invalid amount"))?;
+
+    let destination = params[1].clone().into_string()
+        .ok_or(ParseBurnEventError::InvalidLog("pegout destination"))?;
+
+    Ok(Some(PegoutData::new(btc_amount, destination, btc_network)
+        .map_err(ParseBurnEventError::InvalidPegoutData)?))
 }
 
 #[cfg(test)]
@@ -288,18 +244,9 @@ mod test {
     #[test]
     fn mint_topic() {
         let topic =
-            B256::from_str("0x922344dc04648c0ce028ecdf9b2c9eed9a6794dbb47b777b54b0cfe069f128aa")
+            B256::from_str("0xdb6e7fd0f90daf31ba2e38073e487e3aad2df96224424a80b69dd799d4dec0f5")
                 .unwrap();
-        assert!(topic == *MINT_TOPIC);
-    }
-
-    #[test]
-    fn mint_amount_topic() {
-        let topic =
-            B256::from_str("0x8e37eb2ee3a6f3c8b13b8973588daad75a4ce752de14c00006bd8247f4e212e8")
-                .unwrap();
-
-        assert!(topic == *MINT_AMOUNT_TOPIC);
+        assert_eq!(topic, *MINT_TOPIC);
     }
 
     #[test]
@@ -307,7 +254,7 @@ mod test {
         let topic =
             B256::from_str("0x17f87987da8ca71c697791dcfd190d07630cf17bf09c65c5a59b8277d9fe1715")
                 .unwrap();
-        assert!(topic == *BURN_TOPIC);
+        assert_eq!(topic, *BURN_TOPIC);
     }
 
     #[test]
@@ -341,19 +288,10 @@ mod test {
         let topic = "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a";
         let decoded = topic_to_address(B256::from_str(topic).unwrap());
 
-        assert!(decoded.is_ok());
+        assert!(decoded.is_some());
         assert_eq!(
             decoded.unwrap(),
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap()
         );
-    }
-
-    #[test]
-    fn decode_amount_topic() {
-        let topic = "0x000000000000000000000000000000000000000000000000000000000000002a"; // 42
-        let decoded = topic_to_amount(B256::from_str(topic).unwrap());
-
-        assert!(decoded.is_ok());
-        assert_eq!(decoded.unwrap(), ethers::types::U256::one() * 42);
     }
 }

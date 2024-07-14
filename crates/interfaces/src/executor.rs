@@ -99,18 +99,6 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
-    /// Error when failing to parse pegin/pegout topic
-    #[error("Failed to parse topic")]
-    FailedToParseMintTopic {
-        /// Optional pegin/pegout data: destination address, amount, and type (pegin/pegout)
-        event_data: Option<(Address, U256, String)>,
-    },
-    /// Error when pegin/pegout fails consenus validation
-    #[error("Invalid Mint contract invocation")]
-    MintContractViolation {
-        /// The pegin/pegout address and amount
-        event_data: (Address, U256, String),
-    },
     /// Poa specific error when Extra data header is invalid
     #[error("Invalid extra header")]
     InvalidExtraData,
