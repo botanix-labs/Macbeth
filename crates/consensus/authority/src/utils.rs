@@ -1,19 +1,14 @@
 //! Botanix consensus utility functions
 use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
-use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 use futures_util::Future;
 use reth_botanix_lib::{
-    mint_validation::{
-        parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
-        MINT_CONTRACT_ADDRESS, MINT_TOPIC,
-    },
-    peg_contract::PegoutData,
+    mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
+    peg_contract::{PeginMeta, PegoutData},
 };
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
-use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
-use reth_provider::{BlockReaderIdExt, BundleStateWithReceipts};
+use reth_primitives::{constants::eip225::EPOCH_LENGTH, Bloom, BloomInput};
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{
     fs::read_to_string,
@@ -22,6 +17,9 @@ use std::{
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -81,18 +79,6 @@ where
 /// not consensus critical
 pub type SigningSessionId = [u8; 32];
 
-/// Repersents an error while processing a botanix log
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ProcessBotanixLogError {
-    /// Failed to notify btc server about pegin
-    #[error("Failed to notify btc server about pegin")]
-    NotifyPeginFailure(tonic::Status),
-    #[error("Failed to make pegout tx: {0}")]
-    MakePegoutTxFailure(tonic::Status),
-    #[error("Failed to parse pegout data")]
-    FailedToParsePegout,
-}
-
 /// Repersents an error related to frost operations
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FrostParseError {
@@ -103,135 +89,15 @@ pub(crate) enum FrostParseError {
     InvalidSigningSessionId,
 }
 
-/// Search a receipt for a pegout and return a MakeTxRequest for the pegout
-///
-/// # Arguments
-///
-/// * `receipt` - The receipt to search for a pegout.
-///
-/// # Returns
-///
-/// Returns `Some(PegoutData)` if a pegout is found in the receipt, otherwise returns `None`.
-pub(crate) fn make_tx_request_for_pegout_in_receipt(
-    receipt: Receipt,
-    btc_network: bitcoin::Network,
-) -> Option<PegoutData> {
-    if !receipt.success {
-        info!(target: "consensus::authority", "Receipt status code is not success {:?}", receipt);
-        return None;
-    }
-
-    for log in receipt.logs {
-        if let Some(pegout_data) = get_pegout_data(log, btc_network) {
-            return Some(pegout_data);
-        }
-    }
-
-    None
-}
-
-/// Processes the receipts in the given `bundle_state` and performs actions based on the receipt
-/// logs.
-///
-/// This function iterates over the receipts in the bundle and for each receipt, it checks if it is
-/// a prunning block or if it is successful. If the receipt is successful, it processes each log in
-/// the receipt and calls the `process_botanix_log` function. Finally, it logs the receipt
-/// information and returns a list of pegins if they exist.
-///
-/// # Arguments
-///
-/// * `btc_server` - The btc server client.
-/// * `bundle_state` - The bundle state with receipts to process.
-/// * `recent_bitcoin_block_height` - The most recent known bitcoin block height.
-/// * `pegin_conf_depth` - the number of confirmations required for a pegin
-///
-/// # Returns
-///
-/// Returns `Ok(Vec<PegoutData>)` if the processing is successful, otherwise returns an error of
-/// type `ProcessBotanixLogError`.
-pub(crate) async fn process_receipts(
-    btc_server: &mut BtcServerExtendedClient,
-    bundle_state: &BundleStateWithReceipts,
-    recent_bitcoin_block_height: u32,
-    btc_network: bitcoin::Network,
-    pegin_conf_depth: u32,
-) -> Result<Vec<PegoutData>, ProcessBotanixLogError> {
-    let mut pegouts: Vec<PegoutData> = Vec::new();
-    let receipts_bundle = bundle_state.receipts().iter();
-    for (index, receipts) in receipts_bundle.enumerate() {
-        for receipt in receipts {
-            if index == 0 && receipt.is_none() {
-                // Prunning block, skip
-                break;
-            }
-            if let Some(receipt) = receipt {
-                if !receipt.success {
-                    continue;
-                }
-                for log in &receipt.logs {
-                    match process_botanix_log(
-                        btc_server,
-                        log,
-                        recent_bitcoin_block_height,
-                        &receipt.logs,
-                        btc_network,
-                        pegin_conf_depth,
-                    )
-                    .await
-                    {
-                        Ok(Some(pegout)) => {
-                            pegouts.push(pegout);
-                        }
-                        Ok(None) => continue,
-                        Err(e) => {
-                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                            return Err(e);
-                        }
-                    }
-                }
-            }
-            info!(target: "consensus::authority", "Receipt {:?}", receipt);
-        }
-    }
-    Ok(pegouts)
-}
-
-/// Search a log for a pegout and return [PegoutData] for a burn request
-///
-/// # Arguments
-///
-/// * `log` - The log to search for a pegout.
-///
-/// # Returns
-///
-/// Returns `Some(PegoutData)` if a pegout is found in the log, otherwise returns `None`.
-fn get_pegout_data(log: Log, btc_network: bitcoin::Network) -> Option<PegoutData> {
-    for topic in &log.topics().to_vec() {
-        match GenesisContractEvents::try_from(*topic) {
-            Ok(GenesisContractEvents::MintingEvent) => continue,
-            Ok(GenesisContractEvents::BurnEvent) => {
-                return Some(
-                    parse_pegout_reth_log_topic(&log, btc_network).expect("valid pegout request"),
-                );
-            }
-            Err(e) => {
-                debug!(target: "consensus::authority", ?e, "Non burn event");
-                continue;
-            }
-        }
-    }
-    None
-}
-
 // send pegouts to the btc server and recieve a psbt
 // TODO better name for this function
-pub(crate) async fn get_psbt(
+pub(crate) async fn call_get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
     utxo_merkle_root: sha256::Hash,
-) -> Result<SigningPackage, ProcessBotanixLogError> {
+) -> Result<SigningPackage, GrpcClientError> {
     let req = MakeTxRequest {
         outputs: pegouts
             .iter()
@@ -245,91 +111,21 @@ pub(crate) async fn get_psbt(
         utxo_merkle_root: utxo_merkle_root[..].to_vec(),
     };
 
-    match btc_server.get_psbt(req).await {
-        Ok(response) => {
-            // start the frost signing session
-            Ok(response)
-        }
-        Err(e) => {
-            error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-            Err(ProcessBotanixLogError::MakePegoutTxFailure(e.to_tonic_status()))
-        }
-    }
+    btc_server.get_psbt(req).await
 }
 
-/// Processes a single botanix log and performs actions based on the log's topics.
-///
-/// This function checks the topics of the log and performs different actions based on the topic.
-/// If the topic is `GenesisContractEvents::MintingEvent`, it parses and sends the minting event to
-/// the `btc_server`. If the topic is `GenesisContractEvents::BurnEvent`, it validates the pegout
-/// and returns it.
-///
-/// # Arguments
-///
-/// * `btc_server` - The btc server client.
-/// * `log` - The log to process.
-/// * `bitcoin_checkpoint_height` - the bitcoin block height deeply confirmed for pegins.
-/// * `pegin_conf_depth` - the number of confirmations required for a pegin
-///
-/// # Returns
-///
-/// Returns `Ok(Option<PegoutData>)` if the processing is successful, otherwise returns an error
-/// of type `ProcessBotanixLogError`.
-async fn process_botanix_log(
+pub(crate) async fn call_notify_pegin(
     btc_server: &mut BtcServerExtendedClient,
-    log: &Log,
-    bitcoin_checkpoint_height: u32,
-    receipt_logs: &[Log],
-    btc_network: bitcoin::Network,
-    _pegin_conf_depth: u32,
-) -> Result<Option<PegoutData>, ProcessBotanixLogError> {
-    let mut pegout: Option<PegoutData> = None;
-    for topic in &log.topics().to_vec() {
-        match GenesisContractEvents::try_from(*topic) {
-            Ok(GenesisContractEvents::MintingEvent) => {
-                info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                let pegin_data = parse_pegin_reth_log_topic(log, receipt_logs)
-                    .expect("passed evm check should pass this parse attempt");
-                // enforce required confirmation depth by network
-                if pegin_data.bitcoin_block_height >= bitcoin_checkpoint_height {
-                    warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
-                    continue;
-                }
-                for pegin in &pegin_data.meta {
-                    let request = NotifyPeginRequest {
-                        utxo_txid: pegin.outpoint.txid.to_string(),
-                        utxo_vout: pegin.outpoint.vout,
-                        eth_address: hex::encode(pegin.address),
-                        output: bitcoin::consensus::serialize(
-                            pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
-                        ),
-                    };
-                    btc_server.notify_pegin(request).await.map_err(|e| {
-                        ProcessBotanixLogError::NotifyPeginFailure(e.to_tonic_status())
-                    })?;
-                    info!(target: "consensus::authority", "notifying btc server about pegin utxo");
-                }
-            }
-            Ok(GenesisContractEvents::BurnEvent) => {
-                // validate pegout
-                info!(target: "consensus::authority", "Validating pegout");
-                match parse_pegout_reth_log_topic(log, btc_network) {
-                    Ok(parsed_pegout) => {
-                        pegout = Some(parsed_pegout);
-                    }
-                    Err(e) => {
-                        error!(target: "consensus::authority", ?e, "Failed to parse pegout");
-                        return Err(ProcessBotanixLogError::FailedToParsePegout);
-                    }
-                }
-            }
-            Err(e) => {
-                debug!(target: "consensus::authority", ?e, "Non-genesis contract event");
-                continue;
-            }
-        }
-    }
-    Ok(pegout)
+    pegin: &PeginMeta,
+) -> Result<(), GrpcClientError> {
+    let request = NotifyPeginRequest {
+        utxo_txid: pegin.outpoint.txid.to_string(),
+        utxo_vout: pegin.outpoint.vout,
+        eth_address: hex::encode(pegin.address),
+        output: bitcoin::consensus::serialize(pegin.txout()),
+    };
+    let _ = btc_server.notify_pegin(request).await?;
+    Ok(())
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
@@ -426,17 +222,20 @@ pub(crate) async fn epoch_pegouts(
     btc_network: bitcoin::Network,
 ) -> Result<Vec<PegoutData>, EpochPegoutsError> {
     let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
-    let mut pegouts: Vec<PegoutData> = vec![];
+    let mut pegouts = Vec::new();
     for block in start_block..=best_block {
         match client.block_by_number(block) {
             Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
                 match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
                     Ok(Some(receipts)) => {
                         for receipt in receipts {
-                            if let Some(p) =
-                                make_tx_request_for_pegout_in_receipt(receipt, btc_network)
-                            {
-                                pegouts.push(p);
+                            if !receipt.success {
+                                continue;
+                            }
+                            for log in receipt.logs {
+                                if let Ok(Some(p)) = try_parse_burn_event(&log, btc_network) {
+                                    pegouts.push(p);
+                                }
                             }
                         }
                     }
@@ -450,10 +249,7 @@ pub(crate) async fn epoch_pegouts(
                     }
                 }
             }
-            Ok(Some(_)) => {
-                info!("No pegouts found in block {}", block);
-                continue;
-            }
+            Ok(Some(_)) => continue,
             Ok(None) => {
                 error!("Block {} not found", block);
                 return Err(EpochPegoutsError::FailedToFetchPegouts);

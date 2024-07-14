@@ -1,14 +1,8 @@
-use crate::{
-    engine_util,
-    utils::{bloom_contains_pegin, is_active_sync_in_progress},
-    AuthorityConsensus, Storage,
-};
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::{sha256, Hash};
-use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{FinalizeSignerRequest, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
     p2p::{
@@ -29,6 +23,14 @@ use tokio::sync::{
     RwLock,
 };
 use tracing::{error, info, warn};
+
+use crate::{
+    engine_util,
+    utils::{bloom_contains_pegin, is_active_sync_in_progress, call_notify_pegin},
+    AuthorityConsensus, Storage,
+};
+use btcserverlib::extended_client::BtcServerExtendedClient;
+use client::{FinalizeSignerRequest, Output};
 
 pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus
@@ -144,6 +146,7 @@ where
             let sealed_block = block.clone().seal_slow();
 
             let bitcoin_block_header = *self.bitcoin_block_header.read().await;
+            let bitcoin_checkpoint = bitcoin_block_header.expect("recent header is some");
             let mut botanix_consensus_pkg = None;
             let mut storage = self.storage.write().await;
             if is_fed_node {
@@ -152,7 +155,7 @@ where
                     continue;
                 } else {
                     botanix_consensus_pkg = Some(BotanixConsensusPackage {
-                        bitcoin_checkpoint: bitcoin_block_header.expect("recent header is some"),
+                        bitcoin_checkpoint: bitcoin_checkpoint,
                         aggregate_public_key: storage
                             .aggregate_public_key
                             .expect("aggregate pk is some"),
@@ -181,7 +184,6 @@ where
                     "Do not have recent block header in memory, skipping block import");
                 continue;
             }
-            let bitcoin_block_header = bitcoin_block_header.unwrap();
 
             match storage.execute_imported_block(
                 &self.consensus,
@@ -206,26 +208,43 @@ where
                     if is_fed_node && should_process_receipts {
                         // process pegins
                         // must be done before getting utxo commitment
-                        let btc_signing_server =
-                            self.btc_server.as_mut().expect("btc_server exists");
-                        let mut pegouts = match crate::utils::process_receipts(
-                            &mut btc_signing_server.clone(),
-                            &bundle_state,
-                            bitcoin_block_header.1,
-                            self.btc_network,
-                            self.consensus.chain_spec.parent_confirmation_depth,
-                        )
-                        .await
-                        {
-                            Ok(pegouts) => pegouts,
-                            Err(e) => {
-                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                continue;
+                        let btc_server = self.btc_server.as_mut().expect("have btc_server");
+                        let mut pegouts = Vec::new();
+                        for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
+                            for receipt in receipts {
+                                if idx == 0 && receipt.is_none() {
+                                    break; // Prunning block, skip
+                                }
+                                if let Some(receipt) = receipt {
+                                    if !receipt.success {
+                                        continue;
+                                    }
+                                    for log in &receipt.logs {
+                                        let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
+                                        if let Some(pegin_data) = pegin_match {
+                                            info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
+                                            for pegin in &pegin_data.meta {
+                                                //TODO(stevenroose) should this happen here?
+                                                if let Err(e) = call_notify_pegin(btc_server, &pegin).await {
+                                                    error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
+                                                    return;
+                                                }
+                                                info!(target: "consensus::authority", "notifying btc server about pegin utxo");
+                                            }
+                                        }
+
+                                        let pegout_match = try_parse_burn_event(log, self.btc_network)
+                                            .expect("passed EVM check");
+                                        if let Some(pegout) = pegout_match {
+                                            pegouts.push(pegout);
+                                        }
+                                    }
+                                }
                             }
-                        };
+                        }
 
                         // Validate utxo commitment
-                        let utxo_commitment = match btc_signing_server
+                        let utxo_commitment = match btc_server
                             .get_utxo_merkle_root(client::Empty {})
                             .await
                         {
@@ -247,7 +266,7 @@ where
                             self.client.best_block_number().expect("best block number exists");
 
                         // get the pegouts from during the epoch
-                        let past_pegouts = match crate::utils::epoch_pegouts(
+                        let epoch_pegouts = match crate::utils::epoch_pegouts(
                             best_block,
                             &self.client,
                             self.btc_network,
@@ -260,7 +279,7 @@ where
                                 continue;
                             }
                         };
-                        pegouts.extend(past_pegouts);
+                        pegouts.extend(epoch_pegouts);
 
                         // finalizing signing if there are pegouts
                         // at this point this singer or others have provided partial signatures and

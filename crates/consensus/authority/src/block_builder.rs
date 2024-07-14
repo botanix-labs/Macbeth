@@ -5,7 +5,9 @@ use bitcoin::{
     psbt::Psbt,
     Witness,
 };
-use reth_consensus_common::utils::{self};
+use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
+use reth_consensus_common::utils;
+
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 use reth_network::frost::manager::ToFrostManager;
@@ -25,7 +27,7 @@ use crate::{
     frost_task::{FrostNotification, FrostNotificationMessage},
     pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
-    utils::{get_witness_data_from_psbt, is_active_sync_in_progress},
+    utils::{call_notify_pegin, get_witness_data_from_psbt, is_active_sync_in_progress},
 };
 
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
@@ -148,8 +150,10 @@ where
                 return;
             }
         };
+        let bitcoin_checkpoint =
+            recent_bitcoin_block_header.expect("valid header and height tuple");
         let botanix_consensus_pkg = BotanixConsensusPackage {
-            bitcoin_checkpoint: recent_bitcoin_block_header.expect("valid header and height tuple"),
+            bitcoin_checkpoint,
             aggregate_public_key: secp_pk,
             btc_network: self.btc_network,
         };
@@ -173,22 +177,41 @@ where
         };
         drop(storage);
 
-        // Process Botanix specific logs and get current block pegouts
-        let current_block_pegouts = match crate::utils::process_receipts(
-            &mut self.btc_server.clone(),
-            &bundle_state,
-            botanix_consensus_pkg.bitcoin_checkpoint.1,
-            self.btc_network,
-            self.consensus.chain_spec.parent_confirmation_depth,
-        )
-        .await
-        {
-            Ok(pegouts) => pegouts,
-            Err(e) => {
-                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                return;
+        // Process pegins and pegouts from the [Minting] contract.
+        let mut block_pegouts = Vec::new();
+        for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
+            for receipt in receipts {
+                if idx == 0 && receipt.is_none() {
+                    break; // Prunning block, skip
+                }
+                if let Some(receipt) = receipt {
+                    if !receipt.success {
+                        continue;
+                    }
+                    for log in &receipt.logs {
+                        let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
+                        if let Some(pegin_data) = pegin_match {
+                            info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
+                            for pegin in &pegin_data.meta {
+                                //TODO(stevenroose) should this happen here?
+                                if let Err(e) = call_notify_pegin(&mut self.btc_server, pegin).await
+                                {
+                                    error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
+                                    return;
+                                }
+                                info!(target: "consensus::authority", "notifying btc server about pegin utxo");
+                            }
+                        }
+
+                        let pegout_match =
+                            try_parse_burn_event(log, self.btc_network).expect("passed EVM check");
+                        if let Some(pegout) = pegout_match {
+                            block_pegouts.push(pegout);
+                        }
+                    }
+                }
             }
-        };
+        }
 
         // Retrieve the current UTXO commitment
         let utxo_commitment = match self.btc_server.get_utxo_merkle_root(client::Empty {}).await {
@@ -214,7 +237,7 @@ where
                     }
                 };
             // add current block pegouts
-            pegouts.extend(current_block_pegouts);
+            pegouts.extend(block_pegouts);
 
             // send pegouts
             if !pegouts.is_empty() {
@@ -230,7 +253,7 @@ where
                     .read()
                     .await
                     .expect("no bitcoin checkpoint in block creation procedure");
-                match crate::utils::get_psbt(
+                match crate::utils::call_get_psbt(
                     &mut self.btc_server,
                     &pegouts,
                     &signing_session_id,
@@ -257,8 +280,8 @@ where
                     Duration::from_secs(
                         self.chain_spec
                             .leader_selection_window
-                            .expect("to be defined for poa consensus") /
-                            3,
+                            .expect("to be defined for poa consensus")
+                            / 3,
                     ),
                     self.frost_task_rx.recv(),
                 )
@@ -331,8 +354,8 @@ where
         match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
-                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /
-                    3,
+                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus")
+                    / 3,
             ),
             self.pbft_task_rx.recv(),
         )
