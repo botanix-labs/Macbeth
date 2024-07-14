@@ -110,7 +110,7 @@ pub async fn block_builder(
     it_info_print!("Eoa tx: {:?}", last_tx_hash);
     tx_hashes_set.insert(last_tx_hash.transaction_hash);
 
-    // retrieve the current aggreate public key
+    // retrieve the current aggregate public key
     let aggregate_public_key_str =
         suite.local_context.btc_server_clients.clone().expect("btc server clients")[0]
             .get_public_key(client::Empty {})

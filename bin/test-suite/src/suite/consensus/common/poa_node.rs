@@ -17,7 +17,7 @@ use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
 use reth_node_core::args::GenesisTomlConfig;
 use reth_primitives::{
-    constants::NUMS_POINT_SECP256K1,
+    constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     ChainSpec,
@@ -575,9 +575,6 @@ pub async fn create_poa_federation_members(
     }
 
     // now create the edh
-    let nums_pk = secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-        .unwrap()
-        .public_key(secp256k1::Parity::Even);
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         None,
@@ -587,7 +584,7 @@ pub async fn create_poa_federation_members(
         // to make sure they're not identical, hash random data
         BlockHash::hash(&[1]),
         sha256::Hash::hash(&[2]),
-        nums_pk,
+        nums_secp256k1_pk(),
     );
 
     // now insert peers and edh into each federation member

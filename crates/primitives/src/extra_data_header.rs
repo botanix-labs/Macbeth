@@ -8,7 +8,7 @@ use bitcoin::{
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
-use crate::constants::NUMS_POINT_SECP256K1;
+use crate::constants::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;
@@ -57,9 +57,7 @@ impl Default for ExtraDataHeader {
             bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
             utxo_commitment: sha256::Hash::all_zeros(),
             authority_signatures: None,
-            aggregated_public_key: secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            aggregated_public_key: nums_secp256k1_pk(),
         }
     }
 }
@@ -383,7 +381,7 @@ impl ExtraDataHeader {
 
 #[cfg(test)]
 mod tests {
-    use crate::constants::NUMS_POINT_SECP256K1;
+    use crate::constants::nums_secp256k1_pk;
 
     use super::*;
     use bitcoin::BlockHash;
@@ -407,9 +405,7 @@ mod tests {
             Some(witness_data.clone()),
             mainchain,
             utxo,
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
         assert_eq!(header.authority_signatures, None);
@@ -438,9 +434,7 @@ mod tests {
             Some(witness_data),
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
@@ -472,9 +466,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
         let serialized = header.serialize();
 
@@ -513,10 +505,7 @@ mod tests {
         let (_, pubkey_to_vote) = secp.generate_keypair(&mut OsRng);
         let witness_data = vec![witness::Witness::default()];
 
-        let key = secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-            .expect("valid nums point")
-            .public_key(secp256k1::Parity::Even);
-        println!("key: {:?}", key);
+        let key = nums_secp256k1_pk();
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
@@ -574,9 +563,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
 
         let serialized = header.serialize();
@@ -620,9 +607,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
 
         let serialized = header.serialize();
@@ -654,9 +639,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
 
         let optional_fields = header.optional_fields;
@@ -676,9 +659,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid nums point")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
 
         let serialized = header.serialize();
@@ -801,9 +782,7 @@ mod tests {
             None,
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .expect("valid agg pk")
-                .public_key(secp256k1::Parity::Even),
+            nums_secp256k1_pk(),
         );
 
         println!("serialized header: {}", hex::encode(extra_data_header.serialize()));

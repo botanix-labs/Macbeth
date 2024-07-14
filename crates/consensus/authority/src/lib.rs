@@ -34,9 +34,7 @@ use reth_interfaces::{
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
-    constants::{
-        EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT, NUMS_POINT_SECP256K1,
-    },
+    constants::{nums_secp256k1_pk, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     extra_data_header::ExtraDataHeader,
     header_ext::HeaderExt,
     proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders,
@@ -158,14 +156,7 @@ impl Consensus for AuthorityConsensus {
         validate_extra_data_header_authorities(header, genesis_authorities)?;
 
         // Past genesis NUMS point should never be used as the aggregated public key
-        if edh.aggregated_public_key ==
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .map_err(|e| {
-                    error!("Failed to deserialize aggregated public key: {:?}", e);
-                    ConsensusError::ExtraDataInvalid
-                })?
-                .public_key(secp256k1::Parity::Even)
-        {
+        if edh.aggregated_public_key == nums_secp256k1_pk() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
                 InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,
             ));
@@ -281,14 +272,7 @@ impl Consensus for AuthorityConsensus {
             ConsensusError::ExtraDataInvalid
         })?;
 
-        if edh.aggregated_public_key ==
-            secp256k1::XOnlyPublicKey::from_slice(&NUMS_POINT_SECP256K1)
-                .map_err(|e| {
-                    error!("Failed to deserialize aggregated public key: {:?}", e);
-                    ConsensusError::ExtraDataInvalid
-                })?
-                .public_key(secp256k1::Parity::Even)
-        {
+        if edh.aggregated_public_key == nums_secp256k1_pk() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
                 InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,
             ));
