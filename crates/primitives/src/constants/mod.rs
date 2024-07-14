@@ -235,10 +235,18 @@ pub const BOTANIX_FEES_RECIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C134521
 /// consensus should check that this key is being used in genesis and post genesis block is not
 /// being used
 // Pulled from secp256k1 crate `secp256k1::constants::GENERATOR_X`
-pub const NUMS_POINT_SECP256K1: [u8; 32] = [
-    121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252, 219,
-    45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
-];
+#[inline]
+pub fn nums_secp256k1_pk() -> secp256k1::PublicKey {
+    let nums_point = [
+        121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252,
+        219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
+    ];
+    let pk = secp256k1::XOnlyPublicKey::from_slice(&nums_point)
+        .expect("valid nums point")
+        .public_key(secp256k1::Parity::Even);
+
+    pk
+}
 
 #[cfg(test)]
 mod tests {
