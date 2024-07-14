@@ -79,7 +79,11 @@ pub enum Error {
     FailedToReachCheckPoint(BlockHash),
 }
 
+#[allow(dead_code)]
 trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
+
+type SigningNoncesCommitmentsMap =
+    Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>;
 
 struct App {
     db: database::Db,
@@ -98,8 +102,7 @@ struct App {
     frost_round2_dkg: Arc<Mutex<Option<frost::keys::dkg::round2::SecretPackage>>>,
     /// The signing nonces for the current signing session
     /// We will replace this value in the case of a new signing session
-    frost_round1_nonces:
-        Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>,
+    frost_round1_nonces: SigningNoncesCommitmentsMap,
     /// configuration
     config: Config,
     /// Jwt Secret

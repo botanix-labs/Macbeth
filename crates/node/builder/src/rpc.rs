@@ -338,6 +338,7 @@ where
 }
 
 /// Launch the poa rpc servers.
+#[allow(clippy::too_many_arguments)]
 pub async fn launch_poa_rpc_servers<Provider, Pool, Network, Tasks, EvmConfig, EngineT>(
     rpc: &RpcServerArgs,
     node_config: &NodeConfig,

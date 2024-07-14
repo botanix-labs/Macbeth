@@ -121,7 +121,7 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
         let txid = pegins.txids.get(input).cloned().unwrap();
         let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
         let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-        let _ = send_pegin_notification(
+        let () = send_pegin_notification(
             &mut clients[0],
             btc_address.clone(),
             hex_encode(eth_address),

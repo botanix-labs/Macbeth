@@ -49,16 +49,20 @@ pub struct PbftTask<Client, ToFrostMan: ToFrostManager, NetworkClient> {
     /// pbft state machine
     pub(crate) pbft_state_machine: PbftStateMachine<ToFrostMan, Client, NetworkClient>,
     /// Shared storage to insert aggregate public key
+    #[allow(dead_code)]
     pub(crate) client: Client,
     /// Channel to receive pbft notifications (from the block production task)
     pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
     /// Channel to send pbft notifications (to the block production task)
     pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
     /// authority / network secret key
+    #[allow(dead_code)]
     secret_key: secp256k1::SecretKey,
     /// config
+    #[allow(dead_code)]
     config: FrostConfig,
     /// network client
+    #[allow(dead_code)]
     network_client: NetworkClient,
     /// network handle
     network_handle: NetworkHandle,

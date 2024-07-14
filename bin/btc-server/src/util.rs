@@ -35,6 +35,7 @@ pub trait OutPointExt: Into<OutPoint> {
         ret
     }
 
+    #[allow(dead_code)]
     fn from_bytes(b: [u8; 36]) -> OutPoint {
         btcencode::deserialize(&b).expect("always deserializes")
     }
@@ -92,11 +93,11 @@ impl VerifyingKeyExt for frost::VerifyingKey {}
 #[derive(Debug, Error)]
 pub enum ParsingError {
     #[error("invalid frost id")]
-    InvalidFrostPeerId,
+    FrostPeerId,
     #[error("invalid signing session id")]
-    InvalidSigningSessionId,
+    SigningSessionId,
     #[error("invalid eth address: {0}")]
-    InvalidEthAddress(&'static str),
+    EthAddress(&'static str),
 }
 
 // Deserializes a Frost peer ID.
@@ -111,13 +112,13 @@ pub enum ParsingError {
 /// the peer ID is invalid.
 pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, ParsingError> {
     if id.len() != 32 {
-        return Err(ParsingError::InvalidFrostPeerId);
+        return Err(ParsingError::FrostPeerId);
     }
     let peer_id_bytes: &[u8; 32] =
-        id.as_slice().try_into().map_err(|_e| ParsingError::InvalidFrostPeerId)?;
+        id.as_slice().try_into().map_err(|_e| ParsingError::FrostPeerId)?;
 
-    let frost_id = frost::Identifier::deserialize(peer_id_bytes)
-        .map_err(|_e| ParsingError::InvalidFrostPeerId)?;
+    let frost_id =
+        frost::Identifier::deserialize(peer_id_bytes).map_err(|_e| ParsingError::FrostPeerId)?;
 
     Ok(frost_id)
 }
@@ -134,22 +135,22 @@ pub fn deserialize_frost_peer_id(id: Vec<u8>) -> Result<frost::Identifier, Parsi
 /// successful, or an Error if the parsing fails.
 pub fn parse_eth_address(eth_address: String) -> Result<[u8; 20], ParsingError> {
     let eth_address = eth_address.trim_start_matches("0x").to_ascii_lowercase();
-    let eth_addr_vec = hex::decode(eth_address)
-        .map_err(|_e| ParsingError::InvalidEthAddress("Failed to decode hex"))?;
+    let eth_addr_vec =
+        hex::decode(eth_address).map_err(|_e| ParsingError::EthAddress("Failed to decode hex"))?;
     if eth_addr_vec.len() != 20 {
-        return Err(ParsingError::InvalidEthAddress("Eth address must be 20 bytes"));
+        return Err(ParsingError::EthAddress("Eth address must be 20 bytes"));
     }
 
     let eth_addr: [u8; 20] = eth_addr_vec
         .try_into()
-        .map_err(|_e| ParsingError::InvalidEthAddress("Failed to map eth address to 20 bytes"))?;
+        .map_err(|_e| ParsingError::EthAddress("Failed to map eth address to 20 bytes"))?;
 
     Ok(eth_addr)
 }
 
 pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingError> {
     if session_id.len() != 32 {
-        return Err(ParsingError::InvalidSigningSessionId);
+        return Err(ParsingError::SigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
     session_id_array.copy_from_slice(session_id);
@@ -794,7 +795,7 @@ mod util_tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            ParsingError::InvalidEthAddress("Eth address must be 20 bytes").to_string()
+            ParsingError::EthAddress("Eth address must be 20 bytes").to_string()
         );
 
         // Invalid Ethereum address (failed to decode hex)
@@ -803,7 +804,7 @@ mod util_tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            ParsingError::InvalidEthAddress("Failed to decode hex").to_string()
+            ParsingError::EthAddress("Failed to decode hex").to_string()
         );
     }
 }

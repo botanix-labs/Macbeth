@@ -161,7 +161,7 @@ where
             }
         }
 
-        let pk = sk.public_key(&secp256k1::SECP256K1);
+        let pk = sk.public_key(secp256k1::SECP256K1);
 
         // Try to instantiate storage
         let storage = Storage::try_new(
@@ -206,13 +206,14 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn build(
         self,
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>>,
         BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>,
-        Option<FrostTask<Client, ToFrostMan>>,
+        Option<FrostTask<ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient>>,
         HealthcheckTask<ToFrostMan>,
@@ -286,7 +287,6 @@ where
                 btc_server.clone().expect("btc_server is available"),
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
-                epoch_manager.clone(),
                 frost_config.clone().expect("frost config exists"),
                 storage.clone(),
                 frost_task_notifications1_rx,

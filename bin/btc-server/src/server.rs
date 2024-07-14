@@ -1,6 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr};
-
-use base64::decode as base64_decode;
+use base64::{engine::general_purpose, Engine as _};
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::{sha256, Hash},
@@ -9,6 +7,7 @@ use bitcoin::{
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
+use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
@@ -42,6 +41,7 @@ macro_rules! unauthenticated {
     }};
 }
 
+#[allow(dead_code)]
 trait ToStatus<T> {
     fn to_status(self) -> Result<T, tonic::Status>;
 }
@@ -59,7 +59,7 @@ impl App {
             if let Some(metadata_value) = request.metadata().get_bin(key) {
                 let jwt_request_token_received = metadata_value.as_encoded_bytes();
                 let jwt_token_base64_decoded =
-                    base64_decode(jwt_request_token_received).map_err(|e| {
+                    general_purpose::STANDARD.decode(jwt_request_token_received).map_err(|e| {
                         error!("Failed to base64 decode request metadata: {}", e);
                         badarg!("Failed to base64 decode request metadata: {}", e)
                     })?;
