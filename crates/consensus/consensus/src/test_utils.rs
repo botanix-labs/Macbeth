@@ -73,7 +73,6 @@ impl Consensus for TestConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
-        _is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         if self.fail_validation() {
             Err(ConsensusError::BaseFeeMissing)
@@ -95,7 +94,6 @@ impl Consensus for TestConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
-        _is_pbft: bool,
     ) -> Result<(), ConsensusError> {
         if self.fail_validation() {
             Err(ConsensusError::BaseFeeMissing)

@@ -483,14 +483,10 @@ where
             .expect("senders are valid");
 
         // validate before executing block
-        let authority_signers = storage.get_authorities();
-        let genesis_authorities = storage.get_genesis_authorities();
         self.consensus
-            .validate_header_standalone(
+            .validate_extra_data_header_single_signer(
                 &block.header.clone(),
-                &authority_signers,
-                &genesis_authorities,
-                true,
+                &storage.get_authorities(),
             )
             .map_err(|e| {
                 warn!(target: "consensus::authority", "failed to validate POA header during PBFT: {:?}", e);

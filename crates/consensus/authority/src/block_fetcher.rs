@@ -189,7 +189,6 @@ where
                 botanix_consensus_pkg.clone(),
                 self.evm_config.clone(),
                 &self.client,
-                false,
             ) {
                 Ok(bundle_state) => {
                     let senders =
@@ -233,9 +232,9 @@ where
 
                     // process pegins
                     // must be done before getting utxo commitment
-                    let rpc = self.btc_server.as_mut().expect("btc_server exists");
+                    let btc_signing_server = self.btc_server.as_mut().expect("btc_server exists");
                     let mut pegouts = match crate::utils::process_receipts(
-                        &mut rpc.clone(),
+                        &mut btc_signing_server.clone(),
                         &bundle_state,
                         bitcoin_block_header.1,
                         self.btc_network,
@@ -257,7 +256,9 @@ where
                         header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
                     if is_fed_node && should_process_receipts {
                         // Validate utxo commitment
-                        let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await
+                        let utxo_commitment = match btc_signing_server
+                            .get_utxo_merkle_root(client::Empty {})
+                            .await
                         {
                             Ok(h) => sha256::Hash::from_slice(&h.merkle_root)
                                 .expect("valid utxo commitment"),

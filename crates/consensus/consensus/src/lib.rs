@@ -91,7 +91,6 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
-        is_pbft: bool,
     ) -> Result<(), ConsensusError>;
 
     /// Validates that block has the right beneficiary
@@ -103,7 +102,6 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
-        is_pbft: bool,
     ) -> Result<(), ConsensusError>;
 
     /// Validates the edh single signer check
