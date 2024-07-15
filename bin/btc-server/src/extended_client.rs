@@ -1,11 +1,12 @@
 //! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
-use reth_rpc::{Claims, JwtSecret};
+//use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 
 use client::{
+    jwt::{Claims, JwtSecret},
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
     GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
@@ -120,6 +121,7 @@ impl BtcServerExtendedClient {
 
 #[cfg(test)]
 mod tests {
+    use client::jwt::{Claims, JwtSecret};
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
@@ -127,7 +129,6 @@ mod tests {
         use crate::extended_client::to_u64;
         use bitcoin::base64::{engine::general_purpose, Engine as _};
         use client::Empty;
-        use reth_rpc::{Claims, JwtSecret};
         use std::time::SystemTime;
         use tonic::metadata::{BinaryMetadataKey, MetadataValue};
         // create a random jwt secret

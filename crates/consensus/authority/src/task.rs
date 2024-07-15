@@ -1,8 +1,8 @@
 use crate::{
-    epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, pbft_task::PbftNotificationMessage, AuthorityConsensus,
-    Storage,
+    epoch_manager::EpochManager, frost_task::FrostNotificationMessage,
+    pbft_task::PbftNotificationMessage, AuthorityConsensus, Storage,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;

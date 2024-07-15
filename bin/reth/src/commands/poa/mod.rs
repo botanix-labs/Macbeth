@@ -3,14 +3,12 @@
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use bitcoin::hashes::Hash;
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
-use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
-    AuthorityConsensusBuilder,
-};
+use reth_authority_consensus::{utils::retry_exec, AuthorityConsensus, AuthorityConsensusBuilder};
 use reth_network_types::pk2id;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 
@@ -339,7 +337,7 @@ where {
             let fut = || async {
                 BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    btc_signing_server_jwt_secret.clone(),
+                    btc_signing_server_jwt_secret.clone().map(|jwt_secret| jwt_secret.into()),
                 )
                 .await
             };
@@ -676,7 +674,7 @@ where {
             frost_task,
             mut sync_controller,
             pbft_task,
-            mut healthcheck_task,
+            healthcheck_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&self.chain),
             blockchain_db.clone(),

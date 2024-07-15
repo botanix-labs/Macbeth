@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    dkg::DKGStateMachine, extended_client::BtcServerExtendedClient, signing::SigningStateMachine,
-    utils::is_active_sync_in_progress, Storage,
+    dkg::DKGStateMachine, signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
 };
 
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_network::{
     frost::{
         manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},

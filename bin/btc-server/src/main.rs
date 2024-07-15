@@ -7,7 +7,6 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
-mod jwt;
 mod server;
 mod shutdown;
 mod signer;
@@ -34,6 +33,7 @@ use std::{
 
 use bitcoin::{BlockHash, Transaction, TxOut};
 use bitcoincore_rpc::{Auth, RpcApi};
+use client::jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret};
 use config::{load_config, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
@@ -47,7 +47,6 @@ use tonic::{codegen::CompressionEncoding, transport::Server};
 use crate::{
     config::{GrpcConfig, TomlConfig},
     dkg::DKGError,
-    jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret},
     signer::SigningError,
     txindex::TxIndex,
     util::ParsingError,

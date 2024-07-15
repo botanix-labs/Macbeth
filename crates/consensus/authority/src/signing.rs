@@ -1,5 +1,4 @@
 use crate::{
-    extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotification, FrostNotificationMessage},
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
@@ -7,6 +6,7 @@ use crate::{
     },
     BLOCK_TIME_DURATION_SECS,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 use reth_consensus_common::utils::{

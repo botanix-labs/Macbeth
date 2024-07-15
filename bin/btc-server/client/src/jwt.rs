@@ -61,7 +61,7 @@ const JWT_MAX_IAT_DIFF: Duration = Duration::from_secs(60);
 /// The execution layer client MUST support at least the following alg HMAC + SHA256 (HS256)
 const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JwtSecret(pub [u8; 32]);
 
 /// Attempts to retrieve or create a JWT secret from the specified path.

@@ -1,7 +1,6 @@
 use crate::{
     block_fetcher::BlockFetcherTask,
     epoch_manager::EpochManager,
-    extended_client::BtcServerExtendedClient,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
     pbft_task::{PbftNotificationMessage, PbftTask},
@@ -9,6 +8,7 @@ use crate::{
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
@@ -208,7 +208,6 @@ where
         })
     }
 
-    #[track_caller]
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
