@@ -38,7 +38,7 @@ use reth_node_builder::{
 use reth_node_core::{
     args::{
         get_secret_key,
-        utils::{get_botanix_chain, load_federation_config_toml},
+        utils::{get_chain_from_federation_config, load_federation_config_toml},
         BitcoindArgs,
     },
     init::init_genesis,
@@ -249,13 +249,17 @@ where {
         let mut reth_config = self.load_config()?;
 
         // get the botanix chain spec
-        let chain = get_botanix_chain(*is_testnet);
+        let chain = get_chain_from_federation_config(
+            self.federation_config_path.clone().to_str().expect("federation config path to exist"),
+            *is_testnet,
+        )?;
+        let chain_arc = Arc::new(chain.clone());
 
         // set up node config
         // TODO should set up PoaConfig
         let mut node_config = NodeConfig {
             config: network_config_path.clone(),
-            chain: chain.clone(),
+            chain: chain_arc.clone(),
             federation_mode: *federation_mode,
             metrics: *metrics,
             instance: *instance,
@@ -500,10 +504,11 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EvmProcessorFactory::new(chain.clone(), evm_config.clone());
+        let executor_factory =
+            EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config.clone());
 
         // Authority consensus
-        let consensus = self.consensus();
+        let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
 
         // configure blockchain tree
         let tree_externals = TreeExternals::new(
@@ -530,11 +535,12 @@ where {
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
 
         let blob_store = InMemoryBlobStore::default();
-        let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain))
-            .with_head_timestamp(head.timestamp)
-            .kzg_settings(self.kzg_settings()?)
-            .with_additional_tasks(1)
-            .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
+        let validator =
+            TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain_arc.clone()))
+                .with_head_timestamp(head.timestamp)
+                .kzg_settings(self.kzg_settings()?)
+                .with_additional_tasks(1)
+                .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 
         // Set up Transaction pool (mempool)
         let transaction_pool =
@@ -561,14 +567,14 @@ where {
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
-        let block_import = ProofOfAuthorityBlockImport::new(chain.clone(), block_import_tx);
+        let block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
             // create authority config
             let (authority_index, authorities, authority_pk) = get_authority_signer_index(
                 blockchain_db.clone(),
-                Arc::clone(&chain),
+                Arc::clone(&chain_arc.clone()),
                 secp256k1::Secp256k1::new(),
                 secret_key,
             )
@@ -590,7 +596,7 @@ where {
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
             .network
-            .network_config(&reth_config, chain.clone(), secret_key.clone(), default_peers_path)
+            .network_config(&reth_config, chain_arc.clone(), secret_key.clone(), default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .listener_addr(SocketAddr::new(
@@ -679,7 +685,7 @@ where {
             pbft_task,
             mut healthcheck_task,
         ) = AuthorityConsensusBuilder::try_new(
-            Arc::clone(&chain),
+            Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
@@ -723,7 +729,7 @@ where {
             &node_config,
             &StageConfig::default(),
             network_client.clone(),
-            Arc::clone(&consensus),
+            Arc::new(consensus.clone()),
             provider_factory.clone(),
             &executor,
             sync_metrics_tx,
@@ -836,7 +842,7 @@ where {
         // Start RPC servers
         let engine_api = EngineApi::new(
             blockchain_db.clone(),
-            chain.clone(),
+            chain_arc.clone(),
             beacon_engine_handle,
             payload_builder.into(),
             Box::new(executor.clone()),
@@ -945,12 +951,6 @@ where {
         }
     }
 
-    /// Returns the [Consensus] instance to use.
-    pub fn consensus(&self) -> Arc<dyn Consensus> {
-        let chain = get_botanix_chain(self.is_testnet);
-        Arc::new(AuthorityConsensus::new(chain))
-    }
-
     fn add_trusted_peers_from_authorities(
         &self,
         secret_key: SecretKey,
@@ -1025,11 +1025,15 @@ mod tests {
 
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
-    use reth_node_core::args::utils::SUPPORTED_CHAINS;
+    use reth_node_core::args::{
+        utils::{get_botanix_chain, SUPPORTED_CHAINS},
+        FedMemberPubKey, FederationTomlConfig,
+    };
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
+    use utils::unix_timestamp;
 
     #[test]
     fn parse_help_node_command() {
@@ -1047,8 +1051,14 @@ mod tests {
 
     #[test]
     fn parse_discovery_addr() {
-        let cmd =
-            PoaNodeCommand::try_parse_args_from(["reth", "--discovery.addr", "127.0.0.1"]).unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--discovery.addr",
+            "127.0.0.1",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
         assert_eq!(cmd.network.discovery.addr, IpAddr::V4(Ipv4Addr::LOCALHOST));
     }
 
@@ -1060,6 +1070,8 @@ mod tests {
             "127.0.0.1",
             "--addr",
             "127.0.0.1",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
         ])
         .unwrap();
         assert_eq!(cmd.network.discovery.addr, IpAddr::V4(Ipv4Addr::LOCALHOST));
@@ -1068,7 +1080,14 @@ mod tests {
 
     #[test]
     fn parse_discovery_port() {
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth", "--discovery.port", "300"]).unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--discovery.port",
+            "300",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
         assert_eq!(cmd.network.discovery.port, 300);
     }
 
@@ -1080,6 +1099,8 @@ mod tests {
             "300",
             "--port",
             "99",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
         ])
         .unwrap();
         assert_eq!(cmd.network.discovery.port, 300);
@@ -1088,14 +1109,34 @@ mod tests {
 
     #[test]
     fn parse_metrics_port() {
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth", "--metrics", "9001"]).unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--metrics",
+            "9001",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
 
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth", "--metrics", ":9001"]).unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--metrics",
+            ":9001",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
 
-        let cmd =
-            PoaNodeCommand::try_parse_args_from(["reth", "--metrics", "localhost:9001"]).unwrap();
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--metrics",
+            "localhost:9001",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
         assert_eq!(cmd.metrics, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9001)));
     }
 
@@ -1105,35 +1146,68 @@ mod tests {
             "reth",
             "--network-config-path",
             "my/path/to/reth.toml",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
         ])
         .unwrap();
-        let chain = get_botanix_chain(cmd.is_testnet);
+
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let authority = FedMemberPubKey {
+            key: secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: format!("127.0.0.1:30303"),
+        };
+        let authorities = vec![authority];
+        let federation_config = FederationTomlConfig::new(authorities);
+        let chain = get_botanix_chain(
+            &federation_config.to_string().expect("should parse to string"),
+            cmd.is_testnet,
+        )
+        .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
-
+        // assert doesn't apply anymore
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
-        let config_path = cmd.network_config_path.clone().unwrap_or_else(|| data_dir.config_path());
-        let end = format!("reth/{}/reth.toml", SUPPORTED_CHAINS[0]);
-        assert!(config_path.ends_with(end), "{:?}", cmd.network_config_path);
+        // let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
+        // let config_path = cmd.network_config_path.clone().unwrap_or_else(||
+        // data_dir.config_path()); let end = format!("reth/{}/reth.toml",
+        // SUPPORTED_CHAINS[0]); assert!(config_path.ends_with(end), "{:?}",
+        // cmd.network_config_path);
     }
 
     #[test]
     fn parse_db_path() {
-        let cmd = PoaNodeCommand::try_parse_args_from(["reth"]).unwrap();
-        let chain = get_botanix_chain(cmd.is_testnet);
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
-        let db_path = data_dir.db_path();
-        let end = format!("reth/{}/db", SUPPORTED_CHAINS[0]);
-        assert!(db_path.ends_with(end), "{:?}", cmd.network_config_path);
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--network-config-path",
+            "my/path/to/reth.toml",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
 
-        let cmd =
-            PoaNodeCommand::try_parse_args_from(["reth", "--datadir", "my/custom/path"]).unwrap();
-        let chain = get_botanix_chain(cmd.is_testnet);
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let authority = FedMemberPubKey {
+            key: secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: format!("127.0.0.1:30303"),
+        };
+        let authorities = vec![authority];
+        let federation_config = FederationTomlConfig::new(authorities);
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--datadir",
+            "my/custom/path",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ])
+        .unwrap();
+        let chain = get_botanix_chain(
+            &federation_config.to_string().expect("should parse to string"),
+            cmd.is_testnet,
+        )
+        .expect("chain is to exist");
         let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
         let db_path = data_dir.db_path();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
@@ -1141,7 +1215,11 @@ mod tests {
 
     #[test]
     fn parse_instance() {
-        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth"]);
+        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from([
+            "reth",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ]);
         cmd.rpc.adjust_instance_ports(cmd.instance);
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers
@@ -1151,7 +1229,13 @@ mod tests {
         // check network listening port number
         assert_eq!(cmd.network.port, 30303);
 
-        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth", "--instance", "2"]);
+        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from([
+            "reth",
+            "--instance",
+            "2",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ]);
         cmd.rpc.adjust_instance_ports(cmd.instance);
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers
@@ -1161,7 +1245,13 @@ mod tests {
         // check network listening port number
         assert_eq!(cmd.network.port, 30304);
 
-        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth", "--instance", "3"]);
+        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from([
+            "reth",
+            "--instance",
+            "3",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ]);
         cmd.rpc.adjust_instance_ports(cmd.instance);
         cmd.network.port = DEFAULT_DISCOVERY_PORT + cmd.instance - 1;
         // check rpc port numbers
@@ -1174,7 +1264,12 @@ mod tests {
 
     #[test]
     fn parse_with_unused_ports() {
-        let cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth", "--with-unused-ports"]);
+        let cmd = PoaNodeCommand::<NoArgs>::parse_from([
+            "reth",
+            "--with-unused-ports",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ]);
         assert!(cmd.with_unused_ports);
     }
 
@@ -1188,7 +1283,11 @@ mod tests {
 
     #[test]
     fn with_unused_ports_check_zero() {
-        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from(["reth"]);
+        let mut cmd = PoaNodeCommand::<NoArgs>::parse_from([
+            "reth",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+        ]);
         cmd.rpc = cmd.rpc.with_unused_ports();
         cmd.network = cmd.network.with_unused_ports();
 

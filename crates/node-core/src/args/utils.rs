@@ -86,13 +86,59 @@ pub fn load_federation_config_toml(path: &PathBuf) -> eyre::Result<FederationTom
 }
 
 /// Returns the botanix network chain spec based on a flag
-pub fn get_botanix_chain(is_testnet: bool) -> Arc<ChainSpec> {
+pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec> {
     if is_testnet {
-        BOTANIX_TESTNET.clone()
+        // our own toml format
+        let genesis_toml_config = FederationTomlConfig::from_str(raw)?;
+
+        let public_keys = genesis_toml_config
+            .federation_member_public_key
+            .iter()
+            .map(|key| {
+                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey")
+            })
+            .collect::<Vec<secp256k1::PublicKey>>();
+
+        let extra_data_header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            None,
+            Some(public_keys),
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+            sha256::Hash::all_zeros(),
+        );
+        let edh = hex::encode(extra_data_header.serialize());
+        let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+        let rendered_json = botanix_testnet_config_genesis.render()?;
+        let genesis = serde_json::from_str(&rendered_json)?;
+        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
+        Ok(botanix_testnet)
     } else {
         // TODO: to be fixed once the MAINNET has been activated
         panic!("Requested Botanix MAINNET which is currently not supported");
     }
+}
+
+/// Returns the botanix network chain spec using the config at the passed path
+pub fn get_chain_from_federation_config(
+    s: &str,
+    is_testnet: bool,
+) -> eyre::Result<ChainSpec, eyre::Error> {
+    // try to read json from path first
+    let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+        Ok(raw) => raw,
+        Err(io_err) => {
+            // valid json may start with "\n", but must contain "{"
+            if s.contains('{') {
+                s.to_string()
+            } else {
+                return Err(io_err.into()); // assume invalid path
+            }
+        }
+    };
+
+    get_botanix_chain(&raw, is_testnet)
 }
 
 /// Clap value parser for [ChainSpec]s.
