@@ -56,6 +56,12 @@ pub struct GetAllUtxosResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetAllUtxosRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotifyPeginRequest {
     /// The txid of the utxo in hex.
     #[prost(string, tag = "1")]
@@ -641,6 +647,22 @@ pub mod btc_server_client {
             let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetAllUtxos");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "GetAllUtxos"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn reset_all_utxos(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ResetAllUtxosRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/ResetAllUtxos");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "ResetAllUtxos"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_utxo_merkle_root(

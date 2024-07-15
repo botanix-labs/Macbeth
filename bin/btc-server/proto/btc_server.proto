@@ -48,6 +48,8 @@ service BtcServer {
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
+    rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
+
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
 
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
@@ -87,6 +89,10 @@ message Utxo {
 }
 
 message GetAllUtxosResponse {
+    repeated Utxo utxos = 1;
+}
+
+message ResetAllUtxosRequest {
     repeated Utxo utxos = 1;
 }
 

@@ -10,7 +10,7 @@ use client::{
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
     GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
     GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
-    SigningPackage, SigningPackageRequest, ToSignRequest,
+    ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
@@ -116,11 +116,11 @@ impl BtcServerExtendedClient {
     generate_method!(abort_signing, Empty, Empty);
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
+    generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
 }
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_metadata_jwt_decode_encode() {
         use super::JWT_HEADER_KEY;

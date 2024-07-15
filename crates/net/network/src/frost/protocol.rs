@@ -29,7 +29,7 @@ use super::{
         FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
     },
     FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PbftEventResponseType, PbftResponse,
-    PeerMessageResponse, ProtocolState, UtxoResponse, UtxoSetResponse,
+    PeerMessageResponse, ProtocolState, UtxoSetResponse,
 };
 
 /// Frost Protocol Handler

@@ -1,5 +1,5 @@
 use bitcoin::hashes::{sha256, Hash};
-use client::{FinalizeSignerRequest, GetAllUtxosResponse, Output};
+use client::{FinalizeSignerRequest, GetAllUtxosResponse, Output, ResetAllUtxosRequest};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
@@ -36,7 +36,12 @@ use tokio::sync::{
 use tracing::{error, info, warn};
 
 use crate::{
-    compressor::ProstMessageSerdelizer, engine_util, extended_client::BtcServerExtendedClient, frost_task::FrostNotificationMessage, utils::is_active_sync_in_progress, AuthorityConsensus, Storage
+    compressor::{Compressor, ProstMessageSerdelizer},
+    engine_util,
+    extended_client::BtcServerExtendedClient,
+    frost_task::FrostNotificationMessage,
+    utils::{compute_utxo_merkle_root, is_active_sync_in_progress},
+    AuthorityConsensus, Storage,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -86,6 +91,8 @@ pub struct BlockFetcherTask<
     client: Client,
     /// Frost Handler
     frost_handle: ToFrostMan,
+    /// Compressor to serialize/deserialize data
+    compressor: Compressor,
 }
 
 impl<Client, ToFrostMan, EvmConfig, Engine, NetworkClient>
@@ -132,6 +139,7 @@ where
             network_handle,
             client,
             frost_handle,
+            compressor: Compressor::new(),
         }
     }
 
@@ -174,19 +182,7 @@ where
         Ok(())
     }
 
-    pub async fn start_task(&mut self) {
-        // only a federation node has a btc_server
-        let is_fed_node = self.btc_server.is_some();
-        let consensus = Arc::new(self.consensus.clone());
-        let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
-
-        loop {
-            // ensure the node is not syncing
-            if !is_active_sync_in_progress(&self.network_handle) {
-                break;
-            }
-        }
-
+    pub(crate) async fn sync_utxo_set(&self) {
         // get peer messages receiver
         let mut peer_messages_rx = match self.get_peer_messages_rx().await {
             Ok(peer_messages_rx) => peer_messages_rx,
@@ -196,8 +192,6 @@ where
             }
         };
 
-        // now that we are first time done syncing, here we can sync the utxo set from the peers if
-        // necessary
         loop {
             // get edh from peers
             let edh = match self.get_best_block_edh_from_peers() {
@@ -219,7 +213,7 @@ where
             };
 
             // get utxo merkle root from db
-            let rpc = self.btc_server.as_mut().expect("btc_server exists");
+            let mut rpc = self.btc_server.clone().expect("btc_server exists");
             let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await {
                 Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
                 Err(e) => {
@@ -252,16 +246,69 @@ where
             match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
                 Ok(peer_message) => {
                     if let Some((_peer_id, peer_message)) = peer_message {
-                        match peer_message {
-                            PeerMessageResponse::Utxo(msg) => {
-                                // now decompress the prost message
-                                let _prost_deserialized = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(msg.data).unwrap();
-                                // TODO: finish it
-                            },
-                            _ => {
-                                // sleep for a few secs
-                                tokio::time::sleep(Duration::from_secs(2)).await;
-                                continue;
+                        if let PeerMessageResponse::Utxo(msg) = peer_message {
+                            // decompress the serialized utxo data set
+                            let prost_deserialized_decompressed = match self
+                                .compressor
+                                .decompress(&msg.data)
+                                .await
+                            {
+                                Ok(prost_deserialized_decompressed) => {
+                                    prost_deserialized_decompressed
+                                }
+                                Err(e) => {
+                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to decompress the utxo set response");
+                                    continue;
+                                }
+                            };
+
+                            // now deserialize back to the original prost message
+                            let prost_deserialized = match ProstMessageSerdelizer::<
+                                GetAllUtxosResponse,
+                            >::deserialize(
+                                prost_deserialized_decompressed
+                            ) {
+                                Ok(prost_deserialized) => prost_deserialized,
+                                Err(e) => {
+                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to deserialize get utxo set response");
+                                    continue;
+                                }
+                            };
+
+                            // now try to compute the merkle root of the received utxo set
+                            let merkle_root = match compute_utxo_merkle_root(
+                                &prost_deserialized.utxos,
+                            ) {
+                                Ok(Some(merkle_root)) => merkle_root,
+                                Ok(None) => {
+                                    error!(target: "consensus::authority::block_fetcher::start_task", "UTXO set is empty");
+                                    continue;
+                                }
+                                Err(e) => {
+                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to compute utxo merkle root");
+                                    continue;
+                                }
+                            };
+
+                            // check if we received the correct merkle root
+                            if edh.utxo_commitment == merkle_root {
+                                info!(target: "consensus::authority::block_fetcher::start_task", "Matching merkle root!");
+                                // update utxo set in the db
+                                match rpc
+                                    .reset_all_utxos(ResetAllUtxosRequest {
+                                        utxos: prost_deserialized.utxos,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        info!(target: "consensus::authority::block_fetcher::start_task", "Successfully reset all utxos")
+                                    }
+                                    Err(e) => {
+                                        // TODO: add retry, this should always work at this point
+                                        error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to reset all utxos")
+                                    }
+                                }
+                                break;
                             }
                         }
                     }
@@ -274,6 +321,24 @@ where
                 }
             }
         }
+    }
+
+    pub async fn start_task(&mut self) {
+        // only a federation node has a btc_server
+        let is_fed_node = self.btc_server.is_some();
+        let consensus = Arc::new(self.consensus.clone());
+        let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
+
+        loop {
+            // ensure the node is not syncing
+            if !is_active_sync_in_progress(&self.network_handle) {
+                break;
+            }
+        }
+
+        // now that we are first time done syncing, here we can sync the utxo set from the peers if
+        // necessary
+        self.sync_utxo_set().await;
 
         // run the main block fetcher loop
         loop {

@@ -1,10 +1,15 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
+use crate::{
+    rpc::Utxo as RpcUtxo,
+    txindex,
+    util::{parse_eth_address, OutPointExt},
+};
 use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    BlockHash, OutPoint, TxOut,
+    Amount, BlockHash, OutPoint, Script, TxOut, Txid,
 };
 use ciborium;
 use client::SigningStatus;
@@ -12,8 +17,6 @@ use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use crate::{txindex, util::OutPointExt};
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -45,6 +48,29 @@ impl Utxo {
         Utxo { outpoint, output, eth_address }
     }
 }
+
+impl From<RpcUtxo> for Utxo {
+    fn from(value: RpcUtxo) -> Self {
+        // FIXME: remove unwraps
+        let outpoint = value.outpoint.unwrap();
+        let txid = outpoint.txid;
+        let vout = outpoint.vout;
+
+        let txid = Txid::from_slice(&txid).unwrap();
+        let script = Script::new();
+
+        Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value: Amount::from_sat(value.output as u64), script_pubkey: script.into() },
+            if value.eth_address.is_empty() {
+                None
+            } else {
+                Some(parse_eth_address(value.eth_address).unwrap())
+            },
+        )
+    }
+}
+
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -388,14 +414,33 @@ impl Db {
         }
     }
 
+    /// Resetting all utxos
+    pub fn reset_utxos(&self, utxos: &[Utxo]) -> Result<(), Error> {
+        self.clear_utxos()?;
+        for utxo in utxos.iter() {
+            self.store_utxo(utxo)?;
+        }
+        Ok(())
+    }
+
+    /// Clears all utxos from the database.
+    pub fn clear_utxos(&self) -> Result<(), Error> {
+        Ok(self.utxos.clear()?)
+    }
+
     /// Retrieves all utxos from the database.
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
-        let mut utxos = vec![];
-        for res in self.utxos.iter() {
-            let (_k, v) = res?;
-            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
-            utxos.push(utxo);
-        }
+        let utxos = self
+            .utxos
+            .iter()
+            .map(|res| {
+                let (k, v) = res.unwrap();
+                let mut ret = ciborium::from_reader::<Utxo, _>(v.as_ref()).unwrap();
+                ret.outpoint = OutPoint::from_slice(&k).expect("db very broken");
+                ret
+            })
+            .collect();
+
         Ok(utxos)
     }
 

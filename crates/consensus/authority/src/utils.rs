@@ -1,7 +1,13 @@
 //! Botanix consensus utility functions
 use std::time::Duration;
 
-use bitcoin::{hashes::{sha256, Hash}, psbt::Psbt, witness::Witness, BlockHash};
+use bitcoin::{
+    consensus::Encodable,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    witness::Witness,
+    BlockHash,
+};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -21,23 +27,54 @@ use uuid::Uuid;
 use crate::extended_client::BtcServerExtendedClient;
 use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage, Utxo};
 
+/// Repersents an error related to utxo operations
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum UtxoError {
+    #[error("Unparsable tx id")]
+    UnparsableTxId,
+    #[error("Outpoint encoding")]
+    OutpointEncoding,
+    #[error("Error calculating merkle root")]
+    BadMerkleRoot,
+}
 
-pub fn compute_utxo_merkle_root(utxos: &[Utxo]) -> Result<(), Error> {
-    let mut utxos = utxos
+pub(crate) fn compute_utxo_merkle_root(
+    peer_utxos: &[Utxo],
+) -> Result<Option<bitcoin::hashes::sha256::Hash>, UtxoError> {
+    let mut utxos = peer_utxos
         .iter()
         .map(|u| {
             let mut engine = sha256::Hash::engine();
-            u.outpoint.consensus_encode(&mut engine).expect("engine don't error");
+            let (tx_id, vout) = u
+                .outpoint
+                .as_ref()
+                .map(|outpoint| {
+                    bitcoin::hash_types::Txid::from_slice(&outpoint.txid)
+                        .ok()
+                        .zip(Some(outpoint.vout))
+                })
+                .flatten()
+                .unzip();
+            let tx_id = tx_id.ok_or_else(|| UtxoError::UnparsableTxId)?;
+            let vout = vout.ok_or_else(|| UtxoError::UnparsableTxId)?;
+            let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, vout);
+            btc_outpoint.consensus_encode(&mut engine).map_err(|_| UtxoError::OutpointEncoding)?;
             Ok(sha256::Hash::from_engine(engine))
         })
-        .collect::<Result<Vec<_>, Error>>()?;
+        .collect::<Result<Vec<_>, UtxoError>>()?;
+
+    // sort the utxos
     utxos.sort();
+
+    // check for empty utxos set
     if utxos.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
-    let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter()).expect("not empty");
-    Ok(root)
+    // compute the utxo set hash root
+    let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
+        .ok_or_else(|| UtxoError::BadMerkleRoot)?;
+    Ok(Some(root))
 }
 
 /// Checks if the network is undergoing an active sync or not

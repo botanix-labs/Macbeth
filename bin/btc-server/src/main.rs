@@ -1048,6 +1048,85 @@ mod test {
 
         assert!(response.is_ok());
         let response = response.unwrap().into_inner();
+
         assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
+    }
+
+    #[tokio::test]
+    async fn test_reset_all_utxos_with_data() {
+        let app = setup();
+        let mut rng = thread_rng();
+
+        // add 100 utxos
+        let initial_num_utxos = 100;
+        for _ in 0..initial_num_utxos {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+        }
+
+        // make sure the 100 are in the db
+        let request = Request::new(rpc::Empty {});
+        let response = app.get_all_utxos(request).await;
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert_eq!(response.utxos.len(), initial_num_utxos, "Expected 100 UTXOs in the database");
+
+        // add 100 more utxos
+        let additional_number_utxos = 100;
+        for _ in 0..additional_number_utxos {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+        }
+
+        // now we read again all 200
+        let request = Request::new(rpc::Empty {});
+        let response = app.get_all_utxos(request).await;
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert_eq!(
+            response.utxos.len(),
+            initial_num_utxos + additional_number_utxos,
+            "Expected additional_utxos UTXOs in the database"
+        );
+
+        // now we delete the 200 old and re-add only 100 of the old ones (the reset)
+        let utxos_to_readd = (initial_num_utxos + additional_number_utxos) / 2;
+        let (first, _) = response.utxos.split_at(utxos_to_readd);
+
+        let request = Request::new(rpc::ResetAllUtxosRequest {
+            utxos: first.into_iter().map(ToOwned::to_owned).collect::<Vec<_>>(),
+        });
+        app.reset_all_utxos(request).await.unwrap();
+
+        // get all utxos and assert we only have the
+        let request = Request::new(rpc::Empty {});
+        let response = app.get_all_utxos(request).await;
+        assert!(response.is_ok());
+        let response = response.unwrap().into_inner();
+        assert_eq!(
+            response.utxos.len(),
+            first.len(),
+            "Expected additional_utxos UTXOs in the database"
+        );
     }
 }

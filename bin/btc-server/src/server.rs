@@ -12,7 +12,10 @@ use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, rpc, util, App};
+use crate::{
+    database::{self, Utxo},
+    rpc, util, App,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -609,10 +612,23 @@ impl rpc::BtcServer for App {
         self.validate_jwt(&req)?;
         let db_utxos =
             self.db.get_all_utxos().map_err(|e| internal!("Failed to get utxos: {}", e))?;
-        let utxos = db_utxos.into_iter().map(|utxo| utxo.into()).collect::<Vec<rpc::Utxo>>();
+        let utxos = db_utxos.into_iter().map(Into::into).collect::<Vec<rpc::Utxo>>();
         let res = rpc::GetAllUtxosResponse { utxos };
 
         Ok(tonic::Response::new(res))
+    }
+
+    /// Resets all utxos in the database
+    async fn reset_all_utxos(
+        &self,
+        req: tonic::Request<rpc::ResetAllUtxosRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset all utxos request");
+        let utxos = req.utxos.into_iter().map(Into::into).collect::<Vec<database::Utxo>>();
+        self.db.reset_utxos(&utxos).map_err(|e| internal!("Failed to reset utxos: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     // Gets the merkle root of the utxo set
