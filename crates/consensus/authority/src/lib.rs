@@ -977,7 +977,7 @@ mod tests {
         let mut parent = Header::default();
         parent.number = 0;
         let current = Header::default();
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -992,7 +992,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_err());
     }
 
@@ -1009,7 +1009,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -1023,7 +1023,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, Some(SK2));
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -1031,14 +1031,14 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index));
+        assert!(is_inturn(authorities_len, signer_index, 5));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index));
+        assert!(!is_inturn(authorities_len, signer_index, 5));
     }
 
     #[test]
@@ -1065,9 +1065,9 @@ mod tests {
     fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
         let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
+        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
         let (start, end, time_passed, time_remaining) =
-            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts, 5);
 
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",

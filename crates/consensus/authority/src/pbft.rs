@@ -851,7 +851,10 @@ mod tests {
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_types::{pk2id, WithPeerId};
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256, BOTANIX_TESTNET};
-    use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
+    use reth_provider::{
+        test_utils::{MockEthProvider, TestExecutorFactory},
+        HeaderProvider,
+    };
     use secp256k1::SECP256K1;
     use tokio::sync::mpsc::error::SendError;
 
@@ -947,9 +950,12 @@ mod tests {
 
             let ts = unix_timestamp();
             let authorities = pks.clone();
+            let dummy_agg_pk = pks[0];
+
             for i in 0..$n {
                 let mut edh = ExtraDataHeader::default();
                 edh.authority_signers = Some(authorities.clone());
+                edh.aggregated_public_key = dummy_agg_pk;
                 let mut header = Header::default();
                 header.number = 1;
                 header.parent_hash = parent_block.hash_slow();
@@ -974,9 +980,6 @@ mod tests {
                 nonce: 0,
             };
 
-            // Dummy agg key setup
-            let agg_key = pks[0];
-
             let bitcoin_block_header = Arc::new(RwLock::new(Some((header, 0))));
             let chain_spec = BOTANIX_TESTNET.clone();
 
@@ -987,7 +990,7 @@ mod tests {
                     i,
                     pks[i],
                     bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
-                    Some(agg_key),
+                    Some(dummy_agg_pk),
                 );
                 let pbft_state_machine = PbftStateMachine::new(
                     chain_spec.clone(),
@@ -1819,6 +1822,7 @@ mod tests {
         );
 
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider.clone(),
             storage,
             FrostHandleMock {},
@@ -1931,6 +1935,7 @@ mod tests {
             Some(pk),
         );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
             storage,
             FrostHandleMock {},
@@ -2020,6 +2025,7 @@ mod tests {
             Some(pk),
         );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
             storage,
             FrostHandleMock {},
