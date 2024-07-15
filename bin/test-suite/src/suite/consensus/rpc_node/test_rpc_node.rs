@@ -37,9 +37,7 @@ pub async fn test_rpc_node(
     // send eoa messages from all botanix clients
     let total_authorities = test_fed_members.len();
     let eoa_receiver = ethers::core::types::Address::random();
-    // build a block for each fed member
 
-    // it_info_print!("Sending eoa transaction to poa member", inturn_member_index);
     let last_tx_hash = botanix_clients
         .first()
         .unwrap()
