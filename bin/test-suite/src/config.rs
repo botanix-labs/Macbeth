@@ -2,7 +2,7 @@ use argh::FromArgs;
 use displaydoc::Display as DisplayDoc;
 use serde::Deserialize;
 use std::{
-    path::{Path, PathBuf},
+    path::{Path},
     str::FromStr,
 };
 use thiserror::Error;

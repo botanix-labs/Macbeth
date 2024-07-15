@@ -19,7 +19,7 @@ pub async fn test_rpc_node(
 ) -> Result<(), NonFederationMemberTestConfigError> {
     it_info_print!("Running rpc node test");
     // subscribe to rpc node events
-    let rx = suite
+    let _rx = suite
         .local_context
         .rpc_notification
         .as_ref()

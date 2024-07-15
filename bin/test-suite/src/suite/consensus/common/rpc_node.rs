@@ -23,6 +23,7 @@ use reth::{
 use reth_network_types::pk2id;
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
+    constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
@@ -123,6 +124,7 @@ impl NonFederationMemberTestConfig {
             // to make sure they're not identical, hash random data
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
+            nums_secp256k1_pk(),
         );
 
         // update genesis config with edh and render file
@@ -272,7 +274,7 @@ pub async fn create_rpc_node(
     // set index as federation_members length + 1:
     // this will ensure the correct ports are used
     let index = federation_members.len() as u16 + 1;
-    let mut rpc_node = NonFederationMemberTestConfig::new(
+    let rpc_node = NonFederationMemberTestConfig::new(
         index,
         rpc_secret_key,
         tx.clone(),
