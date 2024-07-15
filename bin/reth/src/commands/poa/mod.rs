@@ -116,6 +116,7 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub federation_config_path: PathBuf,
 
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
+    /// Only nodes defined in chain.toml can enable this flag
     #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
     pub federation_mode: bool,
 
