@@ -362,12 +362,14 @@ where
     }
 
     pub(crate) fn is_coordinator(&self) -> bool {
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         is_inturn(
             self.config.authorities.len() as u64,
             self.config.authority_index as u64,
-            block_times,
+            leader_selection_window,
         )
     }
 
@@ -410,12 +412,14 @@ where
             return Err(ValidateBlockError::WillNotSignGenesisBlock);
         }
 
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         block_to_sign
             .header
-            .validate_inturn(&self.config.authorities, block_times)
+            .validate_inturn(&self.config.authorities, leader_selection_window)
             .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
 
         // Blocks should only be signed if they are building on the best block
@@ -595,15 +599,17 @@ where
         // validate block
         self.validate_block(&block).await?;
 
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let coordinator = self
             .config
             .authorities
             .get(current_inturn_index(
                 self.config.authorities.len() as u64,
                 unix_timestamp(),
-                block_times,
+                leader_selection_window,
             ) as usize)
             .expect("should be valid index");
 

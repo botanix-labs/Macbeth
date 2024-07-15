@@ -16,8 +16,8 @@ use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
-use reth_rpc_types::PeerId;
 use reth_primitives::ChainSpec;
+use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
@@ -545,12 +545,14 @@ where
     /// else is
     pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let is_inturn = is_inturn(
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
-            block_times,
+            leader_selection_window,
         );
         match is_inturn {
             true => {
@@ -563,7 +565,7 @@ where
                 let current_inturn_authority_index = current_inturn_index(
                     self.frost_config.authorities.len() as u64,
                     unix_timestamp(),
-                    block_times,
+                    leader_selection_window,
                 );
                 let current_inturn_authority_frost_identifier =
                     peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
@@ -584,12 +586,14 @@ where
 
     /// Returns if we are a coordinator or not
     pub(crate) fn is_coordinator(&self) -> bool {
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         is_inturn(
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
-            block_times,
+            leader_selection_window,
         )
     }
 
@@ -599,13 +603,15 @@ where
         &self,
         coordinator_index: Option<u64>,
     ) -> CoordinatorInterval {
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         get_in_turn_interval(
             self.frost_config.authorities.len() as u64,
             coordinator_index.unwrap_or(self.frost_config.authority_index as u64),
             unix_timestamp(),
-            block_times,
+            leader_selection_window,
         )
     }
 

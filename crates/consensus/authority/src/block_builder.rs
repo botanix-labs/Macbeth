@@ -70,8 +70,10 @@ where
         let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
 
         let payload_attributes = PayloadAttributes {
             timestamp: utils::unix_timestamp(),
@@ -262,8 +264,9 @@ where
                 // wait until the psbt is finalized
                 let witness_data = match tokio::time::timeout(
                     Duration::from_secs(
-                        block_times / 3, /* Lets wait a third of the block time for frost
-                                          * signing to finish */
+                        leader_selection_window / 3, /* Lets wait a third of the block time for
+                                                      * frost
+                                                      * signing to finish */
                     ),
                     self.frost_task_rx.recv(),
                 )
@@ -329,7 +332,7 @@ where
         info!(target: "consensus::authority", "Waiting for commitments...");
         let _ = match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
-            Duration::from_secs(block_times / 3),
+            Duration::from_secs(leader_selection_window / 3),
             self.pbft_task_rx.recv(),
         )
         .await

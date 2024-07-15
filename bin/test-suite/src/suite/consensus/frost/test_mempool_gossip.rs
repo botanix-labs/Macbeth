@@ -13,7 +13,8 @@ use crate::{
 pub async fn test_mempool_gossip(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
-    let block_times = BOTANIX_TESTNET.block_times.clone().expect("block times");
+    let leader_selection_window =
+        BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
     // get total authorities number
@@ -21,9 +22,12 @@ pub async fn test_mempool_gossip(
 
     // Pick an authority member that is not inturn
     // Send the eoa to them and they should propogate it to the inturn member
-    let inturn_member_index =
-        (current_inturn_index(total_authorities as u64, unix_timestamp(), block_times) + 1) %
-            total_authorities as u64;
+    let inturn_member_index = (current_inturn_index(
+        total_authorities as u64,
+        unix_timestamp(),
+        leader_selection_window,
+    ) + 1) %
+        total_authorities as u64;
     it_info_print!("Inturn member index", inturn_member_index);
 
     // assign targeted fed memeber

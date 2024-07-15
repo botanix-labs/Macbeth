@@ -81,7 +81,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 3500,
         parent_confirmation_depth: 0,
-        block_times: None,
+        leader_selection_window: None,
     }
     .into()
 });
@@ -125,7 +125,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
-        block_times: None,
+        leader_selection_window: None,
     }
     .into()
 });
@@ -173,7 +173,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
-        block_times: None,
+        leader_selection_window: None,
     }
     .into()
 });
@@ -216,7 +216,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
-        block_times: None,
+        leader_selection_window: None,
     }
     .into()
 });
@@ -306,7 +306,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         deposit_contract: None, // only relevant for PoS chains
         // Signet confirmation depth requirment
         parent_confirmation_depth: 1,
-        block_times: Some(5),
+        leader_selection_window: Some(5),
         // TODO (armins) do we need this?
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
@@ -343,7 +343,7 @@ pub fn create_botanix_config_with_genesis(genesis: Genesis, pegin_conf_depth: u3
         ]),
         deposit_contract: None, // TODO: do we even have?
         parent_confirmation_depth: pegin_conf_depth,
-        block_times: Some(5),
+        leader_selection_window: Some(5),
         ..Default::default()
     }
 }
@@ -625,7 +625,7 @@ pub struct ChainSpec {
     pub parent_confirmation_depth: u32,
 
     /// Block times in seconds
-    pub block_times: Option<u64>,
+    pub leader_selection_window: Option<u64>,
 }
 
 impl Default for ChainSpec {
@@ -640,7 +640,7 @@ impl Default for ChainSpec {
             base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
             prune_delete_limit: MAINNET.prune_delete_limit,
             parent_confirmation_depth: 0,
-            block_times: None,
+            leader_selection_window: None,
         }
     }
 }

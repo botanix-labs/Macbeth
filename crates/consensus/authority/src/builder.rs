@@ -327,8 +327,7 @@ where
                 bitcoin_block_header.clone(),
                 consensus.clone(),
                 executor_factory.clone(),
-            )
-            .await;
+            );
             pbft_task = Some(pbft);
 
             let _bitcoind_client =

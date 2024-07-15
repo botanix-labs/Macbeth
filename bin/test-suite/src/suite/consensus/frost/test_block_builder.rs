@@ -25,7 +25,8 @@ pub async fn block_builder(
 ) -> Result<(), super::error::Error> {
     let consensus = AuthorityConsensus::new(BOTANIX_TESTNET.clone());
     it_info_print!("Running block builder test...");
-    let block_times = BOTANIX_TESTNET.block_times.clone().expect("block times");
+    let leader_selection_window =
+        BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
@@ -59,7 +60,7 @@ pub async fn block_builder(
 
     // find out who is in turn
     let inturn_member_index =
-        current_inturn_index(total_authorities as u64, unix_timestamp(), block_times);
+        current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window);
 
     // assign targeted fed memeber
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
@@ -92,8 +93,11 @@ pub async fn block_builder(
 
     // wait until the preselected fed member becomes inturn
     'inner: loop {
-        let is_test_fed_member_inturn =
-            is_inturn(total_authorities as u64, targeted_fed_member.index.into(), block_times);
+        let is_test_fed_member_inturn = is_inturn(
+            total_authorities as u64,
+            targeted_fed_member.index.into(),
+            leader_selection_window,
+        );
         it_info_print!("Is in turn?", is_test_fed_member_inturn);
         if is_test_fed_member_inturn {
             break 'inner;

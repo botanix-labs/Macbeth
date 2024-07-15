@@ -105,7 +105,7 @@ where
         executor_factory: EF,
     ) -> Self {
         let my_peerid = pk2id(&config.authority_pk);
-        let mut pbft_state_machine = PbftStateMachine::new(
+        let pbft_state_machine = PbftStateMachine::new(
             chain_spec,
             client.clone(),
             storage,
@@ -119,7 +119,7 @@ where
             executor_factory,
             consensus,
         );
-        pbft_state_machine.spawn_cleanup_task().await;
+
         Self {
             client,
             frost_handle,
@@ -149,6 +149,8 @@ where
                 panic!("Error getting receiver handle");
             }
         };
+
+        self.pbft_state_machine.spawn_cleanup_task().await;
 
         loop {
             // ensure the node is not syncing

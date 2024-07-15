@@ -99,12 +99,14 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         reth_consensus_common::utils::validate_against_parent(
             parent.header().clone(),
             header.header().clone(),
-            block_times,
+            leader_selection_window,
         )?;
         // TODO(armins) this was removed do we still need it?
         // validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
@@ -164,7 +166,9 @@ impl Consensus for AuthorityConsensus {
 
         // Past genesis NUMS point should never be used as the aggregated public key
         if edh.aggregated_public_key == nums_secp256k1_pk() {
-            return Err(ConsensusError::InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis));
+            return Err(ConsensusError::InvalidAggregatedPublicKey(
+                InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,
+            ));
         }
 
         // Validate a quorum of authority signatures except during pbft
@@ -227,10 +231,12 @@ impl Consensus for AuthorityConsensus {
 
         // Validate signer is in turn
         // TODO just for simplicity lets pull block time from botanix testnet chainsepc
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         header
-            .validate_inturn(authority_signers, block_times)
+            .validate_inturn(authority_signers, leader_selection_window)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
@@ -288,12 +294,14 @@ impl Consensus for AuthorityConsensus {
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
 
-        let block_times =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
 
         // Validate signer is in turn
         header
-            .validate_inturn(authority_signers, block_times)
+            .validate_inturn(authority_signers, leader_selection_window)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();

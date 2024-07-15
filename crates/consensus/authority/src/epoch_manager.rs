@@ -59,8 +59,10 @@ where
 
         // Checked above
         let latest_header = latest_header.expect("latest header should be present");
-        let block_time =
-            self.chain_spec.block_times.expect("block times to be set for PoA consensus");
+        let block_time = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
 
         let is_inturn = utils::is_inturn(authority_len, signer_index as u64, block_time);
 
