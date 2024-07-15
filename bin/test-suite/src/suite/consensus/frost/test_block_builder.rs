@@ -4,7 +4,7 @@ use reth::{
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
 };
 use reth_authority_consensus::AuthorityConsensus;
-use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
+use reth_consensus::{Consensus};
 use reth_primitives::{header_ext::HeaderExt, BOTANIX_TESTNET};
 
 use std::{collections::HashSet, str::FromStr, time::Duration};

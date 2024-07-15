@@ -308,7 +308,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         if create_test_config.should_create_rpc_node {
             it_info_print!("Starting rpc node");
             let federation_members = self.local_context.poa_nodes.as_ref().unwrap();
-            let (mut rpc_node, tx) =
+            let (rpc_node, tx) =
                 create_rpc_node(self.global_context.clone(), federation_members.clone()).await;
 
             let mut rpc_node_clone = rpc_node.clone();
