@@ -1,10 +1,7 @@
 use argh::FromArgs;
 use displaydoc::Display as DisplayDoc;
 use serde::Deserialize;
-use std::{
-    path::{Path},
-    str::FromStr,
-};
+use std::{path::Path, str::FromStr};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use url::Url;
