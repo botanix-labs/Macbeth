@@ -645,6 +645,7 @@ impl StorageInner {
         // derive block builder address to receive block fees
         let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
         let block_builder_address = public_key_to_address(block_builder_pub_key);
+        error!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
         let (bundle_state, gas_used) = self.execute(
             &block_with_senders,
             &mut executor,

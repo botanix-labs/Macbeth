@@ -65,6 +65,7 @@ pub struct LocalContext {
     pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
     pub rpc_node: Option<NonFederationMemberTestConfig>,
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
+    pub authorities: Vec<secp256k1::PublicKey>,
 }
 
 pub struct CreateTestConfig {
@@ -251,6 +252,8 @@ impl Suite for ConsensusIntegrationTestSuite {
         )
         .await;
 
+        self.local_context.authorities = edh_authorities_list.clone();
+
         let build_command_authorities_list = Arc::new(edh_authorities_list);
 
         // run all poa nodes in the background
@@ -364,6 +367,7 @@ impl ConsensusIntegrationTestSuite {
                 btc_server_clients: None,
                 rpc_node: None,
                 rpc_notification: None,
+                authorities: vec![],
             },
         }
     }
