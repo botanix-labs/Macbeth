@@ -198,31 +198,32 @@ where
                             .expect("senders are valid");
                     let header = sealed_block.header.clone();
 
-                    // process pegins
-                    // must be done before getting utxo commitment
-                    let btc_signing_server = self.btc_server.as_mut().expect("btc_server exists");
-                    let mut pegouts = match crate::utils::process_receipts(
-                        &mut btc_signing_server.clone(),
-                        &bundle_state,
-                        bitcoin_block_header.1,
-                        self.btc_network,
-                        self.consensus.chain_spec.parent_confirmation_depth,
-                    )
-                    .await
-                    {
-                        Ok(pegouts) => pegouts,
-                        Err(e) => {
-                            error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                            continue;
-                        }
-                    };
-
                     // Consensus checks were run during PBFT so don't need to validate pegouts again
                     // unless it's an epoch block to collect pegouts for psbt.
                     // We always need to process pegins to update UTXO set
                     let should_process_receipts =
                         header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
                     if is_fed_node && should_process_receipts {
+                        // process pegins
+                        // must be done before getting utxo commitment
+                        let btc_signing_server =
+                            self.btc_server.as_mut().expect("btc_server exists");
+                        let mut pegouts = match crate::utils::process_receipts(
+                            &mut btc_signing_server.clone(),
+                            &bundle_state,
+                            bitcoin_block_header.1,
+                            self.btc_network,
+                            self.consensus.chain_spec.parent_confirmation_depth,
+                        )
+                        .await
+                        {
+                            Ok(pegouts) => pegouts,
+                            Err(e) => {
+                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                continue;
+                            }
+                        };
+
                         // Validate utxo commitment
                         let utxo_commitment = match btc_signing_server
                             .get_utxo_merkle_root(client::Empty {})
