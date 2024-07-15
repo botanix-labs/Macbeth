@@ -373,7 +373,6 @@ where
         dkg_payload: DkgPayload,
         response_type: DkgEventResponseType,
     ) -> Result<(), Error> {
-        // TODO retry_exec
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
@@ -392,6 +391,7 @@ where
                 sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
             }
         }
+
         Ok(())
     }
 
@@ -400,7 +400,6 @@ where
         dkg_payload: DkgPayload,
         response_type: DkgEventResponseType,
     ) -> Result<(), Error> {
-        // TODO retry_exec
         info!(target: "consensus::authority::dkg::gossip_to_peers", "gossiping message type {:?} to all peers", response_type);
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;

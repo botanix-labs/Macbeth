@@ -1,7 +1,5 @@
 //! Ethereum protocol-related constants
 
-use secp256k1::Secp256k1;
-
 #[cfg(feature = "optimism")]
 use crate::BaseFeeParams;
 use crate::{

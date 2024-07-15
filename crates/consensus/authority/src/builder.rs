@@ -46,6 +46,7 @@ pub struct AuthorityConsensusBuilder<
     NetworkClient,
     EF,
 > {
+    chain_spec: Arc<ChainSpec>,
     client: Client,
     consensus: AuthorityConsensus,
     storage: Storage,
@@ -179,9 +180,11 @@ where
         );
 
         // Instantiate epoch manager
-        let epoch_manager = EpochManager::<Client>::new(storage.clone(), client.clone());
+        let epoch_manager =
+            EpochManager::<Client>::new(storage.clone(), client.clone(), chain_spec.clone());
 
         Ok(Self {
+            chain_spec: chain_spec.clone(),
             storage,
             client,
             consensus: AuthorityConsensus::new(chain_spec),
@@ -221,6 +224,7 @@ where
         HealthcheckTask<ToFrostMan>,
     ) {
         let Self {
+            chain_spec,
             btc_server,
             client,
             consensus,
@@ -287,6 +291,7 @@ where
         if is_fed_node {
             // frost task
             let task = FrostTask::new(
+                chain_spec.clone(),
                 btc_server.clone().expect("btc_server is available"),
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
@@ -308,6 +313,7 @@ where
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
             let pbft = PbftTask::new(
+                chain_spec.clone(),
                 client.clone(),
                 storage.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
@@ -321,13 +327,13 @@ where
                 bitcoin_block_header.clone(),
                 consensus.clone(),
                 executor_factory.clone(),
-            )
-            .await;
+            );
             pbft_task = Some(pbft);
 
             let _bitcoind_client =
                 BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let block_production = BlockProductionTask::new(
+                chain_spec.clone(),
                 consensus.clone(),
                 to_engine,
                 canon_state_notification,

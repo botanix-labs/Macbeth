@@ -84,7 +84,6 @@ pub struct AuthorityConsensus {
 impl AuthorityConsensus {
     /// Create a new instance of [AuthorityConsensus]
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
-        // TODO(armins) most likely we need to pass storage here
         Self { chain_spec }
     }
 }
@@ -100,9 +99,14 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         reth_consensus_common::utils::validate_against_parent(
             parent.header().clone(),
             header.header().clone(),
+            leader_selection_window,
         )?;
         // TODO(armins) this was removed do we still need it?
         // validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
@@ -167,8 +171,7 @@ impl Consensus for AuthorityConsensus {
             ));
         }
 
-        // Validate public key placed in the extra data header
-        if edh.aggregated_public_key != *aggregate_public_key.expect("aggregated public key") {
+        if edh.aggregated_public_key != *aggregate_public_key.unwrap() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
                 InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey,
             ));
@@ -233,8 +236,13 @@ impl Consensus for AuthorityConsensus {
         self.validate_block_beneficiary(header)?;
 
         // Validate signer is in turn
+        // TODO just for simplicity lets pull block time from botanix testnet chainsepc
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         header
-            .validate_inturn(authority_signers)
+            .validate_inturn(authority_signers, leader_selection_window)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
@@ -292,9 +300,14 @@ impl Consensus for AuthorityConsensus {
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
 
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
+
         // Validate signer is in turn
         header
-            .validate_inturn(authority_signers)
+            .validate_inturn(authority_signers, leader_selection_window)
             .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
         // Place a tigher limit on the timestamp
         let current_timestamp = unix_timestamp();
@@ -970,7 +983,7 @@ mod tests {
         let mut parent = Header::default();
         parent.number = 0;
         let current = Header::default();
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -985,7 +998,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_err());
     }
 
@@ -1002,7 +1015,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -1016,7 +1029,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, Some(SK2));
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, 5);
         assert!(result.is_ok());
     }
 
@@ -1024,14 +1037,14 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index));
+        assert!(is_inturn(authorities_len, signer_index, 5));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index));
+        assert!(!is_inturn(authorities_len, signer_index, 5));
     }
 
     #[test]
@@ -1058,9 +1071,9 @@ mod tests {
     fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
         let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
+        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
         let (start, end, time_passed, time_remaining) =
-            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts, 5);
 
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",

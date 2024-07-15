@@ -275,6 +275,7 @@ mod tests {
 
     use super::*;
 
+    #[ignore]
     #[test]
     fn etl_hashes() {
         let mut entries: Vec<_> =

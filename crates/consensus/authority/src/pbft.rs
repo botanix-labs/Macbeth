@@ -23,7 +23,7 @@ use reth_primitives::{
     botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
-    BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
+    BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
 };
 use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory};
 
@@ -86,6 +86,8 @@ pub(crate) enum Error {
     RecoverAuthoritiesError(#[from] RecoverAuthorityError),
     #[error("Block execution error: {0}")]
     BlockExecutionError(#[from] BlockExecutionError),
+    #[error("Failed to find block with hash {0}")]
+    BlockHashNotFound(BlockHash),
 }
 
 /// Error when validating a block as a block signer
@@ -174,6 +176,7 @@ impl PbftState {
 /// A state machine for transitioning between different pbft states
 #[derive(Debug, Clone)]
 pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EF> {
+    chain_spec: Arc<ChainSpec>,
     client: Client,
     storage: Storage,
     frost_handle: ToFrostMan,
@@ -203,6 +206,7 @@ where
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         client: Client,
         storage: Storage,
         frost_handle: ToFrostMan,
@@ -224,6 +228,7 @@ where
         );
 
         Self {
+            chain_spec,
             client,
             storage,
             personal_frost_identifier,
@@ -246,6 +251,7 @@ where
     /// Resets the state machine to its initial state
     pub(crate) fn reset(self) -> Self {
         Self {
+            chain_spec: self.chain_spec,
             client: self.client,
             storage: self.storage,
             personal_frost_identifier: self.personal_frost_identifier,
@@ -356,7 +362,15 @@ where
     }
 
     pub(crate) fn is_coordinator(&self) -> bool {
-        is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64)
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
+        is_inturn(
+            self.config.authorities.len() as u64,
+            self.config.authority_index as u64,
+            leader_selection_window,
+        )
     }
 
     pub(crate) async fn gossip_to_peers(
@@ -398,10 +412,14 @@ where
             return Err(ValidateBlockError::WillNotSignGenesisBlock);
         }
 
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         block_to_sign
             .header
-            .validate_inturn(&self.config.authorities)
+            .validate_inturn(&self.config.authorities, leader_selection_window)
             .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
 
         // Blocks should only be signed if they are building on the best block
@@ -581,11 +599,18 @@ where
         // validate block
         self.validate_block(&block).await?;
 
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let coordinator = self
             .config
             .authorities
-            .get(current_inturn_index(self.config.authorities.len() as u64, unix_timestamp())
-                as usize)
+            .get(current_inturn_index(
+                self.config.authorities.len() as u64,
+                unix_timestamp(),
+                leader_selection_window,
+            ) as usize)
             .expect("should be valid index");
 
         // Check if the inturn block producer has the first signature on the block
@@ -752,11 +777,8 @@ where
 
         let lock = self.sealed_blocks.read().await;
         // This block is originally added during init block proposal
-        let current_block = lock
-            .get(&block_hash)
-            // TODO should we be error'ing here instead
-            .expect("block should exist")
-            .clone();
+        let current_block =
+            lock.get(&block_hash).ok_or(Error::BlockHashNotFound(block_hash))?.clone();
         drop(lock);
         let mut current_header = current_block.header().clone();
         let mut edh = current_header.deserialize_extra_data_header()?;
@@ -928,9 +950,12 @@ mod tests {
 
             let ts = unix_timestamp();
             let authorities = pks.clone();
+            let dummy_agg_pk = pks[0];
+
             for i in 0..$n {
                 let mut edh = ExtraDataHeader::default();
                 edh.authority_signers = Some(authorities.clone());
+                edh.aggregated_public_key = dummy_agg_pk;
                 let mut header = Header::default();
                 header.number = 1;
                 header.parent_hash = parent_block.hash_slow();
@@ -955,10 +980,9 @@ mod tests {
                 nonce: 0,
             };
 
-            // Dummy agg key setup
-            let agg_key = pks[0];
-
             let bitcoin_block_header = Arc::new(RwLock::new(Some((header, 0))));
+            let chain_spec = BOTANIX_TESTNET.clone();
+
             for i in 0..$n {
                 let mut storage = Storage::new(
                     authorities.clone(),
@@ -966,9 +990,10 @@ mod tests {
                     i,
                     pks[i],
                     bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
-                    Some(agg_key),
+                    Some(dummy_agg_pk),
                 );
                 let pbft_state_machine = PbftStateMachine::new(
+                    chain_spec.clone(),
                     $mock_eth_provider.clone(),
                     storage,
                     $frost_handle_mock.clone(),
@@ -1797,6 +1822,7 @@ mod tests {
         );
 
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider.clone(),
             storage,
             FrostHandleMock {},
@@ -1909,6 +1935,7 @@ mod tests {
             Some(pk),
         );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
             storage,
             FrostHandleMock {},
@@ -1998,6 +2025,7 @@ mod tests {
             Some(pk),
         );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
             storage,
             FrostHandleMock {},

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     dkg::DKGStateMachine, extended_client::BtcServerExtendedClient, signing::SigningStateMachine,
@@ -13,6 +13,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_primitives::ChainSpec;
 use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
@@ -60,6 +61,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         btc_server: BtcServerExtendedClient,
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
@@ -79,6 +81,7 @@ where
         );
 
         let signing_state_machine = SigningStateMachine::new(
+            chain_spec,
             btc_server,
             frost_handle.clone(),
             config.clone(),

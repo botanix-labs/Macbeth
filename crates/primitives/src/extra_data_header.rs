@@ -506,7 +506,6 @@ mod tests {
         let witness_data = vec![witness::Witness::default()];
 
         let key = nums_secp256k1_pk();
-
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             Some(vec![signature]),

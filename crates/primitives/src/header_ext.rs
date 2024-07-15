@@ -52,6 +52,7 @@ pub trait HeaderExt {
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
+        block_time: u64,
     ) -> Result<(), ValidateInturnError>;
 
     /// Validate the header timestamp against current timestamp
@@ -219,6 +220,7 @@ impl HeaderExt for Header {
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
+        block_time: u64,
     ) -> Result<(), ValidateInturnError> {
         let signers = self.recovered_signed_authorities()?;
         let in_turn_signer = signers.first().expect("at least one signer");
@@ -228,12 +230,12 @@ impl HeaderExt for Header {
             .ok_or(ValidateInturnError::AuthorityNotInTurn)?;
 
         let authorities_len = authorities.len() as u64;
-        let cycle_length = authorities_len * 60; // Define the cycle length in seconds
+        let cycle_length = authorities_len * block_time; // Define the cycle length in seconds
         let block_timestamp_sec = self.timestamp; // Use the block timestamp in seconds
 
         // Calculate the current cycle's position and determine the current in-turn signer
         let current_cycle_position = block_timestamp_sec % cycle_length;
-        let current_in_turn_index = (current_cycle_position / 60) % authorities_len;
+        let current_in_turn_index = (current_cycle_position / block_time) % authorities_len;
 
         // Check if the calculated index matches the signer index
         if current_in_turn_index != (signer_index as u64) {
@@ -407,6 +409,9 @@ mod tests {
     use super::*;
     use crate::{Bytes, Header};
     use std::str::FromStr;
+
+    #[allow(dead_code)]
+    const BLOCK_TIMES: u64 = 5;
 
     #[allow(dead_code)]
     const EDH_DEFAULT_SIGHASH: &str =
@@ -591,7 +596,7 @@ mod tests {
 
     #[test]
     fn should_recover_signed_authority() {
-        let header = Header::default();
+        let _header = Header::default();
         let mut edh = ExtraDataHeader::default();
         let sk1 = generate_secret_key(SK1);
         let sk2 = generate_secret_key(SK2);
@@ -629,11 +634,11 @@ mod tests {
         let pks = [sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.timestamp = 1705621229;
-        sign_block_helper(&mut header, Some(SK1));
-        assert!(header.validate_inturn(&pks).is_ok());
-        // Sign the same header with a different key should fail
         sign_block_helper(&mut header, Some(SK2));
-        assert!(header.validate_inturn(&pks).is_err());
+        assert!(header.validate_inturn(&pks, BLOCK_TIMES).is_ok());
+        // Sign the same header with a different key should fail
+        sign_block_helper(&mut header, Some(SK1));
+        assert!(header.validate_inturn(&pks, BLOCK_TIMES).is_err());
     }
 
     // Test case for validating with a signature
