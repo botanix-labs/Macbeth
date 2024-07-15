@@ -107,6 +107,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
             None,
             bitcoin::hash_types::BlockHash::all_zeros(),
             sha256::Hash::all_zeros(),
+            nums_secp256k1_pk(),
         );
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
