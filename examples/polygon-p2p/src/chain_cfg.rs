@@ -27,6 +27,7 @@ pub(crate) fn polygon_chain_spec() -> Arc<ChainSpec> {
         base_fee_params: reth_primitives::BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 0,
         parent_confirmation_depth: 0,
+        leader_selection_window: None,
     }
     .into()
 }
