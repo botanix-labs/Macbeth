@@ -221,7 +221,7 @@ where
         Option<FrostTask<ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient, EF>>,
-        HealthcheckTask<ToFrostMan>,
+        Option<HealthcheckTask<ToFrostMan>>,
     ) {
         let Self {
             chain_spec,
@@ -269,13 +269,6 @@ where
             client.clone(),
         );
 
-        let healthcheck_task = HealthcheckTask::new(
-            network_handle.clone(),
-            frost_handle.clone().expect("Requires frost handle"),
-            storage.clone(),
-            task_executor.clone(),
-        );
-
         // Set up frost notification message queue
         // these are two mpsc channels that are used to communicate between the frost task and the
         // block production task
@@ -288,7 +281,15 @@ where
         let mut frost_task = None;
         let mut block_production_task = None;
         let mut pbft_task = None;
+        let mut healthcheck_task = None;
         if is_fed_node {
+            let task = HealthcheckTask::new(
+                network_handle.clone(),
+                frost_handle.clone().expect("Requires frost handle"),
+                storage.clone(),
+                task_executor.clone(),
+            );
+            healthcheck_task = Some(task);
             // frost task
             let task = FrostTask::new(
                 chain_spec.clone(),

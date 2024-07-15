@@ -738,6 +738,8 @@ where {
 
         // Spawn authority consensus specific tasks
         // federation mode tasks
+        // TODO  we should structure which tasks are spawned based on the node type using two
+        // different structs
         if is_fed_node {
             executor.spawn_critical(
                 "PoA Block Production Task",
@@ -759,6 +761,13 @@ where {
                     pbft_task.expect("pbft task exists").start_task().await;
                 }),
             );
+
+            executor.spawn_critical(
+                "Healthcheck Task",
+                Box::pin(async move {
+                    healthcheck_task.expect("health check task exists").start_task().await;
+                }),
+            );
         }
 
         executor.spawn_critical(
@@ -771,13 +780,6 @@ where {
             "PoA Block Sync Controller Task",
             Box::pin(async move {
                 sync_controller.start_task().await;
-            }),
-        );
-
-        executor.spawn_critical(
-            "Healthcheck Task",
-            Box::pin(async move {
-                healthcheck_task.start_task().await;
             }),
         );
 
