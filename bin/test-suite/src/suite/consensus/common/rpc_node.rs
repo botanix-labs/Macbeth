@@ -7,6 +7,8 @@ use crate::{
         GlobalContext,
     },
 };
+use reth_node_core::args::FederationTomlConfig;
+
 use askama::Template;
 use bitcoin::{
     hashes::{sha256, Hash},
@@ -14,7 +16,7 @@ use bitcoin::{
 };
 use clap::Parser;
 use reth::{
-    args::{FedMemberPubKey, GenesisTomlConfig},
+    args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
@@ -159,15 +161,17 @@ impl NonFederationMemberTestConfig {
             }
         }
 
-        let chain_config =
-            GenesisTomlConfig::new("integration test toml".to_string(), edh_authorities, None);
-        it_info_print!("Chain config", chain_config);
-        chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
+        let federation_config = FederationTomlConfig::new(edh_authorities);
+        it_info_print!("Federation config", federation_config);
+        let federation_config_path = Path::new(datadir).join("federation.toml");
+        federation_config.write_to_path(&federation_config_path).unwrap();
 
         let no_args = NoArgs::with(self.clone());
         let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--is-testnet",
+            "--federation-config-path",
+            format!("{}", federation_config_path.display().to_string()).as_str(),
             "--datadir",
             datadir,
             "--debug.terminate",
@@ -194,12 +198,6 @@ impl NonFederationMemberTestConfig {
             discovery_secret_path.to_str().expect("discovery secret path to exist"),
         ])
         .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
-        // use botanix chain spec
-        let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
-            .expect("Can't deserialize Botanix Testnet genesis json");
-        // use 6 as the pegin confirmation depth
-        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
-        command.chain = Arc::new(botanix_testnet.clone());
 
         command
     }
