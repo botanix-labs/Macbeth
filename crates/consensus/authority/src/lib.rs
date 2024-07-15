@@ -171,6 +171,12 @@ impl Consensus for AuthorityConsensus {
             ));
         }
 
+        if edh.aggregated_public_key != *aggregate_public_key.unwrap() {
+            return Err(ConsensusError::InvalidAggregatedPublicKey(
+                InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey,
+            ));
+        }
+
         // Validate a quorum of authority signatures except during pbft
         let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
             error!("Failed to validate authority signature: {:?}", e);
