@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// test that disconnected or temporarily unresponsive nodes can re-connect automatically
-pub async fn frost_e2e_peer_disconnect(
+pub async fn e2e_peer_disconnect(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
