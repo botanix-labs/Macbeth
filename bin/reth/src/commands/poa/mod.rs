@@ -1,14 +1,12 @@
 //! Main node command
 
 use bitcoin::hashes::Hash;
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::{value_parser, Parser};
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
-use reth_authority_consensus::{
-    extended_client::BtcServerExtendedClient, utils::retry_exec, AuthorityConsensus,
-    AuthorityConsensusBuilder,
-};
+use reth_authority_consensus::{utils::retry_exec, AuthorityConsensus, AuthorityConsensusBuilder};
 use reth_network_types::pk2id;
 use reth_node_core::cli::config::BtcServerConfig;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -24,7 +22,6 @@ use reth_blockchain_tree::{
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
-use reth_consensus::Consensus;
 use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
@@ -342,7 +339,7 @@ where {
             let fut = || async {
                 BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    btc_signing_server_jwt_secret.clone(),
+                    btc_signing_server_jwt_secret.clone().map(Into::into),
                 )
                 .await
             };
@@ -683,7 +680,7 @@ where {
             frost_task,
             mut sync_controller,
             pbft_task,
-            mut healthcheck_task,
+            healthcheck_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
@@ -850,7 +847,7 @@ where {
 
         // generate deault jwt for the rpc server (as required by reth)
         let default_jwt_path = data_dir.jwt_path();
-        let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
+        let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
         let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
             rpc,
@@ -861,7 +858,7 @@ where {
             executor.clone(),
             evm_config,
             engine_api,
-            jwt_secret,
+            reth_auth_jwt_secret,
         )
         .await?;
 

@@ -26,7 +26,6 @@ use reth_network_types::pk2id;
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
     constants::nums_secp256k1_pk,
-    create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
 };
@@ -130,7 +129,7 @@ impl NonFederationMemberTestConfig {
         );
 
         // update genesis config with edh and render file
-        let botanix_testnet_config_genesis = {
+        let _botanix_testnet_config_genesis = {
             let edh = hex::encode(edh.serialize());
             let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
             let rendered_json = botanix_testnet_config_genesis.render().unwrap();

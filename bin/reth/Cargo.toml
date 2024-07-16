@@ -103,6 +103,7 @@ pin-project.workspace = true
 
 # Botanix
 client = {path = "../btc-server/client"}
+btc-server = {path = "../btc-server"}
 
 # Grpc
 tonic = "0.11.0"

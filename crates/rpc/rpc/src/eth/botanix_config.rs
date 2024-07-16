@@ -3,6 +3,8 @@
 use std::{fmt, str::FromStr};
 
 use alloy_primitives::hex;
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use client::jwt::JwtSecret;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
 use reth_primitives::U256;
 use serde::{Deserialize, Serialize};
@@ -21,6 +23,9 @@ pub struct BotanixConfig {
 
     /// bitcoind configuration
     pub bitcoind_config: BitcoindConfig,
+
+    /// Jwt btc-server authentication secret
+    pub btc_server_jwt_secret: Option<JwtSecret>,
 }
 
 impl Default for BotanixConfig {
@@ -34,6 +39,7 @@ impl Default for BotanixConfig {
                 "foo".to_string(),
                 "bar".to_string(),
             ),
+            btc_server_jwt_secret: None,
         }
     }
 }
@@ -46,6 +52,7 @@ impl BotanixConfig {
         btc_server: Option<String>,
         bitcoind_username: String,
         bitcoind_password: String,
+        btc_server_jwt_secret: Option<JwtSecret>,
     ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
@@ -65,12 +72,19 @@ impl BotanixConfig {
                 bitcoind_username,
                 bitcoind_password,
             ),
+            btc_server_jwt_secret,
         }
     }
 
     /// Set btc server Grpc Url
     pub fn btc_server(mut self, btc_server: Option<String>) -> Self {
         self.btc_server = btc_server;
+        self
+    }
+
+    /// Set btc server jwt secret
+    pub fn btc_server_jwt_secret(mut self, btc_server_jwt_secret: Option<JwtSecret>) -> Self {
+        self.btc_server_jwt_secret = btc_server_jwt_secret;
         self
     }
 
@@ -93,13 +107,15 @@ pub enum GatewayAddressRPCError {
     /// Failed to decode value recieved from `btc_server`
     FailedToDecodeAggregatePublicKey(hex::FromHexError),
     /// Invalid param recieved from client
-    InvalidParam(tonic::Status),
+    Client(GrpcClientError),
     /// Address generation failed
     FailedToGenerateGatewayAddress,
     /// Secp key conversion failed
     FailedToConvertPublicKey(secp256k1::Error),
     /// Address is generated for incorrect Network
     InvalidNetwork,
+    /// Missing btc server connection information
+    MissingBtcServerUrl,
 }
 
 impl fmt::Display for GatewayAddressRPCError {
@@ -108,7 +124,9 @@ impl fmt::Display for GatewayAddressRPCError {
             GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e) => {
                 write!(f, "Failed to decode aggregate public key: {}", e)
             }
-            GatewayAddressRPCError::InvalidParam(e) => write!(f, "Invalid param: {}", e),
+            GatewayAddressRPCError::MissingBtcServerUrl => {
+                write!(f, "Missing Btc Server Connection Url")
+            }
             GatewayAddressRPCError::FailedToGenerateGatewayAddress => {
                 write!(f, "Failed to generate gateway address")
             }
@@ -116,6 +134,7 @@ impl fmt::Display for GatewayAddressRPCError {
                 write!(f, "Failed to convert public key: {}", e)
             }
             GatewayAddressRPCError::InvalidNetwork => write!(f, "Invalid network"),
+            GatewayAddressRPCError::Client(e) => write!(f, "Grpc client error: {}", e),
         }
     }
 }
@@ -191,7 +210,7 @@ impl fmt::Display for BtcFeeRateRPCError {
 #[derive(Debug)]
 pub struct Botanix {
     /// Botanix config
-    botanix_rpc_config: BotanixConfig,
+    pub botanix_rpc_config: BotanixConfig,
 }
 
 impl Botanix {
@@ -212,26 +231,25 @@ impl Botanix {
         eth_address: reth_primitives::Address,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         // Non-federation nodes will not have btc_server set
-        if self.botanix_rpc_config.btc_server.clone().is_none() {
-            return Err(GatewayAddressRPCError::InvalidParam(tonic::Status::invalid_argument(
-                "btc_server is not set",
-            )));
-        }
+        let btc_server_address = self
+            .botanix_rpc_config
+            .btc_server
+            .clone()
+            .ok_or_else(|| GatewayAddressRPCError::MissingBtcServerUrl)?;
 
-        let mut client = client::BtcServerClient::connect(
-            self.botanix_rpc_config.btc_server.clone().expect("to be non-empty string").clone(),
+        let mut btc_server_client = BtcServerExtendedClient::new(
+            btc_server_address,
+            self.botanix_rpc_config.btc_server_jwt_secret.clone(),
         )
         .await
-        .unwrap();
-        let request = tonic::Request::new(client::GetGatewayAddressRequest {
-            eth_address: eth_address.to_string(),
-        });
+        .map_err(GatewayAddressRPCError::Client)?;
 
-        let response = client
+        let request = client::GetGatewayAddressRequest { eth_address: eth_address.to_string() };
+
+        let response = btc_server_client
             .get_gateway_address(request)
             .await
-            .map_err(GatewayAddressRPCError::InvalidParam)?
-            .into_inner();
+            .map_err(GatewayAddressRPCError::Client)?;
 
         let address = bitcoin::Address::from_str(response.gateway_address.as_str())
             .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?

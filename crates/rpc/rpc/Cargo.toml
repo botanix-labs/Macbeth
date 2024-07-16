@@ -82,14 +82,12 @@ reth-btc-wallet.workspace = true
 bitcoin.workspace = true
 bitcoincore-rpc = "0.18.0"
 
-### Grpc
-tonic = "0.11.0"
-
 ## url
 url = "2.2"
 
 # Botanix Btc server gRPC client
 client = {path = "../../../bin/btc-server/client"}
+btc-server = {path = "../../../bin/btc-server"}
 
 [dev-dependencies]
 reth-evm-ethereum.workspace = true

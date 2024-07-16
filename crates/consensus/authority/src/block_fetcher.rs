@@ -1,12 +1,12 @@
 use crate::{
     engine_util,
-    extended_client::BtcServerExtendedClient,
     utils::{bloom_contains_pegin, is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::{sha256, Hash};
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{

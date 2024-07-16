@@ -1,3 +1,4 @@
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
@@ -13,7 +14,6 @@ use tokio::sync::mpsc::error::SendError;
 use tracing::{error, info, warn};
 
 use crate::{
-    extended_client::BtcServerExtendedClient,
     utils::{deserialize_frost_peer_id, FrostParseError},
     Storage,
 };

@@ -3,6 +3,7 @@ use bitcoin::{
     hashes::{sha256, Hash},
     BlockHash,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
@@ -13,7 +14,6 @@ use reth::{
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, PeerKind, Peers},
 };
-use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
