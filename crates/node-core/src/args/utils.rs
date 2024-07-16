@@ -25,7 +25,7 @@ use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
 
-use super::genesis_args::GenesisTomlConfig;
+use super::federation_args::FederationTomlConfig;
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
@@ -77,26 +77,69 @@ pub fn chain_help() -> String {
     format!("The chain this node is running.\nPossible values are either a built-in chain or the path to a chain specification file.\n\nBuilt-in chains:\n    {}", SUPPORTED_CHAINS.join(", "))
 }
 
-/// Get the public keys from the genesis toml config
-pub fn get_federation_pks_from_path(
-    path: &PathBuf,
-) -> eyre::Result<Vec<(secp256k1::PublicKey, SocketAddr)>> {
+/// Load the federation setup toml
+pub fn load_federation_config_toml(path: &PathBuf) -> eyre::Result<FederationTomlConfig> {
+    let _ = fs::metadata(path)?;
     let raw = fs::read_to_string(path)?;
-    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+    Ok(genesis_toml_config)
+}
 
-    let federation_members = genesis_toml_config
-        .federation_member_public_key
-        .iter()
-        .map(|key| {
-            let public_key =
-                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey");
+/// Returns the botanix network chain spec based on a flag
+pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec> {
+    if is_testnet {
+        // our own toml format
+        let genesis_toml_config = FederationTomlConfig::from_str(raw)?;
 
-            let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
-            (public_key, soc_addr)
-        })
-        .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
+        let public_keys = genesis_toml_config
+            .federation_member_public_key
+            .iter()
+            .map(|key| {
+                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey")
+            })
+            .collect::<Vec<secp256k1::PublicKey>>();
 
-    Ok(federation_members)
+        let extra_data_header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            None,
+            Some(public_keys),
+            None,
+            None,
+            bitcoin::hash_types::BlockHash::all_zeros(),
+            sha256::Hash::all_zeros(),
+            nums_secp256k1_pk(),
+        );
+        let edh = hex::encode(extra_data_header.serialize());
+        let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+        let rendered_json = botanix_testnet_config_genesis.render()?;
+        let genesis = serde_json::from_str(&rendered_json)?;
+        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
+        Ok(botanix_testnet)
+    } else {
+        // TODO: to be fixed once the MAINNET has been activated
+        panic!("Requested Botanix MAINNET which is currently not supported");
+    }
+}
+
+/// Returns the botanix network chain spec using the config at the passed path
+pub fn get_chain_from_federation_config(
+    s: &str,
+    is_testnet: bool,
+) -> eyre::Result<ChainSpec, eyre::Error> {
+    // try to read json from path first
+    let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+        Ok(raw) => raw,
+        Err(io_err) => {
+            // valid json may start with "\n", but must contain "{"
+            if s.contains('{') {
+                s.to_string()
+            } else {
+                return Err(io_err.into()); // assume invalid path
+            }
+        }
+    };
+
+    get_botanix_chain(&raw, is_testnet)
 }
 
 /// Clap value parser for [ChainSpec]s.
@@ -145,7 +188,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 Ok(genesis) => Arc::new(genesis.into()),
                 Err(_) => {
                     // our own toml format
-                    let genesis_toml_config = GenesisTomlConfig::from_str(&raw)?;
+                    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
 
                     let public_keys = genesis_toml_config
                         .federation_member_public_key
