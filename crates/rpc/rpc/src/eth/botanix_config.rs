@@ -25,7 +25,7 @@ pub struct BotanixConfig {
     pub bitcoind_config: BitcoindConfig,
 
     /// Jwt btc-server authentication secret
-    pub jwt_secret: Option<JwtSecret>,
+    pub btc_server_jwt_secret: Option<JwtSecret>,
 }
 
 impl Default for BotanixConfig {
@@ -39,7 +39,7 @@ impl Default for BotanixConfig {
                 "foo".to_string(),
                 "bar".to_string(),
             ),
-            jwt_secret: None,
+            btc_server_jwt_secret: None,
         }
     }
 }
@@ -52,7 +52,7 @@ impl BotanixConfig {
         btc_server: Option<String>,
         bitcoind_username: String,
         bitcoind_password: String,
-        jwt_secret: Option<JwtSecret>,
+        btc_server_jwt_secret: Option<JwtSecret>,
     ) -> Self {
         // TODO(armins) Update these to point to botanix mempool instances
         let bitcoind_url = match bitcoin_network {
@@ -72,13 +72,19 @@ impl BotanixConfig {
                 bitcoind_username,
                 bitcoind_password,
             ),
-            jwt_secret,
+            btc_server_jwt_secret,
         }
     }
 
     /// Set btc server Grpc Url
     pub fn btc_server(mut self, btc_server: Option<String>) -> Self {
         self.btc_server = btc_server;
+        self
+    }
+
+    /// Set btc server jwt secret
+    pub fn btc_server_jwt_secret(mut self, btc_server_jwt_secret: Option<JwtSecret>) -> Self {
+        self.btc_server_jwt_secret = btc_server_jwt_secret;
         self
     }
 
@@ -233,7 +239,7 @@ impl Botanix {
 
         let mut btc_server_client = BtcServerExtendedClient::new(
             format!("http://{}", btc_server_address),
-            self.botanix_rpc_config.jwt_secret.clone(),
+            self.botanix_rpc_config.btc_server_jwt_secret.clone(),
         )
         .await
         .map_err(GatewayAddressRPCError::Client)?;

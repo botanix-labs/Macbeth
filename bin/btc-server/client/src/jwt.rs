@@ -159,7 +159,7 @@ impl JwtSecret {
     /// and the key.
     ///
     /// ```rust
-    /// use reth_rpc::{Claims, JwtSecret};
+    /// use client::jwt::{Claims, JwtSecret};
     ///
     /// let my_claims = Claims { iat: 0, exp: None };
     /// let secret = JwtSecret::random();

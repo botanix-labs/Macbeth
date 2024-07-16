@@ -378,6 +378,7 @@ impl RpcServerArgs {
         executor: Tasks,
         engine_api: EngineApi<Provider, EngineT>,
         jwt_secret: JwtSecret,
+        btc_server_jwt_secret: Option<JwtSecret>,
         evm_config: EvmConfig,
     ) -> Result<AuthServerHandle, RpcError>
     where
@@ -397,11 +398,14 @@ impl RpcServerArgs {
     {
         let socket_address = SocketAddr::new(self.auth_addr, self.auth_port);
         let mut botanix_config = BotanixConfig::default();
-        botanix_config = botanix_config.btc_server(self.btc_server.clone()).bitcoind(
-            self.bitcoind.url.clone(),
-            self.bitcoind.username.clone(),
-            self.bitcoind.password.clone(),
-        );
+        botanix_config = botanix_config
+            .btc_server(self.btc_server.clone())
+            .bitcoind(
+                self.bitcoind.url.clone(),
+                self.bitcoind.username.clone(),
+                self.bitcoind.password.clone(),
+            )
+            .btc_server_jwt_secret(btc_server_jwt_secret.map(Into::into));
 
         reth_rpc_builder::auth::launch(
             provider,

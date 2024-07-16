@@ -841,7 +841,7 @@ where {
 
         // generate deault jwt for the rpc server (as required by reth)
         let default_jwt_path = data_dir.jwt_path();
-        let jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
+        let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
         let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
             rpc,
@@ -852,7 +852,8 @@ where {
             executor.clone(),
             evm_config,
             engine_api,
-            jwt_secret,
+            reth_auth_jwt_secret,
+            btc_signing_server_jwt_secret,
         )
         .await?;
 
