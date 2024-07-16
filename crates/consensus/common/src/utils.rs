@@ -223,8 +223,6 @@ pub fn validate_current_signer_against_last(
     // Last block should be greater that `block_time` in the worst case
     // Even in the case of > 2 federation members the worst case time between blocks for the same
     // signer is 2 * block_time
-    println!("current.1 - last.1 = {:?}", current.1 - last.1);
-    println!("block_time * 2 = {:?}", block_time * 2);
     if last.0 == current.0 && (current.1 - last.1) < (block_time * 2) as f64 {
         return Err(ValidateAgainstParentError::SignerLimitExceeded);
     }
@@ -255,6 +253,7 @@ pub fn get_in_turn_interval(
     reference_timestamp: u64,
     block_time: u64,
 ) -> CoordinatorInterval {
+    assert!(block_time > 0, "block_time must be greater than 0");
     // Calculate the length of one complete cycle
     let cycle_length = authorities_len * block_time;
 
@@ -268,7 +267,7 @@ pub fn get_in_turn_interval(
     let start_of_current_turn = current_cycle_start + (signer_index * block_time);
 
     // End time of the current turn, ensuring full `block_time` seconds
-    let end_of_current_turn = start_of_current_turn + 59;
+    let end_of_current_turn = start_of_current_turn + block_time - 1;
 
     (
         start_of_current_turn,
