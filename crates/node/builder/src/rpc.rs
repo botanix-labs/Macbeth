@@ -349,7 +349,6 @@ pub async fn launch_poa_rpc_servers<Provider, Pool, Network, Tasks, EvmConfig, E
     evm_config: EvmConfig,
     engine_api: EngineApi<Provider, EngineT>,
     jwt_secret: JwtSecret,
-    btc_server_jwt_secret: Option<JwtSecret>,
 ) -> eyre::Result<(RpcServerHandle, Option<AuthServerHandle>)>
 where
     Provider: BlockReaderIdExt
@@ -408,7 +407,7 @@ where
             });
 
         // in case of not botanix networks build engine api and auth server
-        let auth_server = rpc.start_auth_server(provider.clone(), pool.clone(), network.clone(), executor.clone(), engine_api, jwt_secret, btc_server_jwt_secret, evm_config.clone()).map_ok(|handle| {
+        let auth_server = rpc.start_auth_server(provider.clone(), pool.clone(), network.clone(), executor.clone(), engine_api, jwt_secret, evm_config.clone()).map_ok(|handle| {
             let addr = handle.local_addr();
             if let Some(ipc_endpoint) = handle.ipc_endpoint() {
                 info!(target: "reth::cli", url=%addr, ipc_endpoint=%ipc_endpoint,"RPC auth server started");

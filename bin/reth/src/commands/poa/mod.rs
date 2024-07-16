@@ -22,7 +22,6 @@ use reth_blockchain_tree::{
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
-use reth_consensus::Consensus;
 use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
@@ -340,7 +339,7 @@ where {
             let fut = || async {
                 BtcServerExtendedClient::new(
                     node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    btc_signing_server_jwt_secret.clone().map(|jwt_secret| jwt_secret.into()),
+                    btc_signing_server_jwt_secret.clone().map(Into::into),
                 )
                 .await
             };
@@ -860,7 +859,6 @@ where {
             evm_config,
             engine_api,
             reth_auth_jwt_secret,
-            btc_signing_server_jwt_secret,
         )
         .await?;
 

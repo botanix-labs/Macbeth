@@ -1,6 +1,5 @@
 //! Extended bitcoin server client with authentication
 use displaydoc::Display as DisplayDoc;
-//use reth_rpc::{Claims, JwtSecret};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tonic::metadata::{BinaryMetadataKey, MetadataValue};

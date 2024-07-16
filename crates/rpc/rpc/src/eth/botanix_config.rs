@@ -238,7 +238,7 @@ impl Botanix {
             .ok_or_else(|| GatewayAddressRPCError::MissingBtcServerUrl)?;
 
         let mut btc_server_client = BtcServerExtendedClient::new(
-            format!("http://{}", btc_server_address),
+            btc_server_address,
             self.botanix_rpc_config.btc_server_jwt_secret.clone(),
         )
         .await

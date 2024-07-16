@@ -378,7 +378,6 @@ impl RpcServerArgs {
         executor: Tasks,
         engine_api: EngineApi<Provider, EngineT>,
         jwt_secret: JwtSecret,
-        btc_server_jwt_secret: Option<JwtSecret>,
         evm_config: EvmConfig,
     ) -> Result<AuthServerHandle, RpcError>
     where
@@ -405,7 +404,9 @@ impl RpcServerArgs {
                 self.bitcoind.username.clone(),
                 self.bitcoind.password.clone(),
             )
-            .btc_server_jwt_secret(btc_server_jwt_secret.map(Into::into));
+            .btc_server_jwt_secret(
+                self.btc_signing_server_jwt_secret().ok().flatten().map(Into::into),
+            );
 
         reth_rpc_builder::auth::launch(
             provider,
@@ -453,6 +454,9 @@ impl RethRpcConfig for RpcServerArgs {
                 self.bitcoind.url.clone(),
                 self.bitcoind.username.clone(),
                 self.bitcoind.password.clone(),
+            )
+            .btc_server_jwt_secret(
+                self.btc_signing_server_jwt_secret().ok().flatten().map(Into::into),
             );
 
         EthConfig::default()
@@ -530,7 +534,11 @@ impl RethRpcConfig for RpcServerArgs {
     }
 
     fn rpc_server_config(&self) -> RpcServerConfig {
-        let mut config = RpcServerConfig::default().with_jwt_secret(self.rpc_secret_key());
+        let mut config = RpcServerConfig::default()
+            .with_jwt_secret(self.rpc_secret_key())
+            .with_btc_signing_server_jwt_secret(
+                self.btc_signing_server_jwt_secret().ok().flatten(),
+            );
 
         if self.http {
             let socket_address = SocketAddr::new(self.http_addr, self.http_port);

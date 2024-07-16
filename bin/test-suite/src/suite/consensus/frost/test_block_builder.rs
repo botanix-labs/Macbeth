@@ -1,6 +1,6 @@
 use bitcoincore_rpc::RpcApi;
 use reth::{
-    consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp},
+    consensus_common::utils::{current_inturn_index, unix_timestamp},
     primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
 };
 use reth_authority_consensus::AuthorityConsensus;
