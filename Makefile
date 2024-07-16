@@ -472,7 +472,8 @@ start-btc-server-2:
 start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NODE_1_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
@@ -495,7 +496,8 @@ start-poa-server-1:
 start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NODE_2_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
@@ -528,7 +530,8 @@ clean-poa-1:
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NON_FED_1_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
 	--datadir ${NON_FED_1_DIR} \
 	--http \
 	--http.corsdomain "*" \
