@@ -279,6 +279,10 @@ where
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
+                        // Attempt to abort the current signing session
+                        // We should panic if we cannot abort the signing session and be as loud as
+                        // possible
+                        self.btc_server.abort_signing(client::Empty {}).await.expect("valid abort");
                         return;
                     }
                     _ => {
