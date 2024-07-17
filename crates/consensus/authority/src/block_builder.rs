@@ -12,7 +12,7 @@ use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, header_ext::HeaderExt, public_key_to_address, Block,
+    botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block,
     SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -66,14 +66,11 @@ where
                 },
             );
 
-        // use authority address as suggested fee recipient
-        let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
-        let suggested_fee_recipient = public_key_to_address(authority_pub_key);
-
         let payload_attributes = PayloadAttributes {
             timestamp: utils::unix_timestamp(),
             prev_randao: B256::ZERO, // only relevant for PoS
-            suggested_fee_recipient,
+            suggested_fee_recipient: Address::ZERO, /* fees are handled in processor.rs before
+                                      * the bundle state is created */
             withdrawals: None,              // only relevant for PoS
             parent_beacon_block_root: None, // only relevant for PoS
         };
