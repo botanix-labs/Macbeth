@@ -66,6 +66,7 @@ pub struct LocalContext {
     pub rpc_node: Option<NonFederationMemberTestConfig>,
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
     pub authorities: Vec<secp256k1::PublicKey>,
+    pub botanix_fee_recipient: String,
 }
 
 pub struct CreateTestConfig {
@@ -249,10 +250,13 @@ impl Suite for ConsensusIntegrationTestSuite {
         let (mut test_fed_members, tx, edh_authorities_list) = create_poa_federation_members(
             self.global_context.clone(),
             self.local_context.btc_servers.as_ref(),
+            self.local_context.botanix_fee_recipient.clone(),
         )
         .await;
 
         self.local_context.authorities = edh_authorities_list.clone();
+        self.local_context.botanix_fee_recipient =
+            "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5".to_string();
 
         let build_command_authorities_list = Arc::new(edh_authorities_list);
 
@@ -311,8 +315,12 @@ impl Suite for ConsensusIntegrationTestSuite {
         if create_test_config.should_create_rpc_node {
             it_info_print!("Starting rpc node");
             let federation_members = self.local_context.poa_nodes.as_ref().unwrap();
-            let (rpc_node, tx) =
-                create_rpc_node(self.global_context.clone(), federation_members.clone()).await;
+            let (rpc_node, tx) = create_rpc_node(
+                self.global_context.clone(),
+                federation_members.clone(),
+                self.local_context.botanix_fee_recipient.clone(),
+            )
+            .await;
 
             let mut rpc_node_clone = rpc_node.clone();
             let rpc_node_command = rpc_node_clone.build_command(
@@ -368,6 +376,7 @@ impl ConsensusIntegrationTestSuite {
                 rpc_node: None,
                 rpc_notification: None,
                 authorities: vec![],
+                botanix_fee_recipient: "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5".to_string(),
             },
         }
     }

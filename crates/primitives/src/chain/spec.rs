@@ -82,6 +82,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 3500,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
+        botanix_fee_recipient: None,
     }
     .into()
 });
@@ -126,6 +127,7 @@ pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
+        botanix_fee_recipient: None,
     }
     .into()
 });
@@ -174,6 +176,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
+        botanix_fee_recipient: None,
     }
     .into()
 });
@@ -217,6 +220,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 1700,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
+        botanix_fee_recipient: None,
     }
     .into()
 });
@@ -310,12 +314,17 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         // TODO (armins) do we need this?
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
+        botanix_fee_recipient: None,
     }
     .into()
 });
 
 /// Creates a new botanix chain spec using a custom genesis block
-pub fn create_botanix_config_with_genesis(genesis: Genesis, pegin_conf_depth: u32) -> ChainSpec {
+pub fn create_botanix_config_with_genesis(
+    genesis: Genesis,
+    pegin_conf_depth: u32,
+    botanix_fee_recipient: String,
+) -> ChainSpec {
     ChainSpec {
         chain: Chain::from_id(3636),
         genesis,
@@ -344,6 +353,7 @@ pub fn create_botanix_config_with_genesis(genesis: Genesis, pegin_conf_depth: u3
         deposit_contract: None, // TODO: do we even have?
         parent_confirmation_depth: pegin_conf_depth,
         leader_selection_window: Some(5),
+        botanix_fee_recipient: Some(botanix_fee_recipient),
         ..Default::default()
     }
 }
@@ -626,6 +636,9 @@ pub struct ChainSpec {
 
     /// Block times in seconds
     pub leader_selection_window: Option<u64>,
+
+    /// Botanix fee recipient
+    pub botanix_fee_recipient: Option<String>,
 }
 
 impl Default for ChainSpec {
@@ -641,6 +654,7 @@ impl Default for ChainSpec {
             prune_delete_limit: MAINNET.prune_delete_limit,
             parent_confirmation_depth: 0,
             leader_selection_window: None,
+            botanix_fee_recipient: None,
         }
     }
 }

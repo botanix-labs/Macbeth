@@ -57,6 +57,7 @@ pub struct NonFederationMemberTestConfig {
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub peer_id: PeerId,
+    pub botanix_fee_recipient: String,
 }
 
 impl NonFederationMemberTestConfig {
@@ -69,6 +70,7 @@ impl NonFederationMemberTestConfig {
         bitcoind_username: String,
         bitcoind_password: String,
         peer_id: PeerId,
+        botanix_fee_recipient: String,
     ) -> Self {
         let rpc_port = RPC_PORT_BASE + index;
         let discovery_port = DISCOVERY_PORT_BASE + index;
@@ -91,6 +93,7 @@ impl NonFederationMemberTestConfig {
             peers_list: vec![],
             sender,
             peer_id,
+            botanix_fee_recipient,
         }
     }
 
@@ -160,7 +163,8 @@ impl NonFederationMemberTestConfig {
             }
         }
 
-        let federation_config = FederationTomlConfig::new(edh_authorities);
+        let federation_config =
+            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
@@ -258,6 +262,7 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
 pub async fn create_rpc_node(
     global_context: Arc<GlobalContext>,
     federation_members: HashMap<u16, FederationMemberTestConfig>,
+    botanix_fee_recipeint: String,
 ) -> (NonFederationMemberTestConfig, tokio::sync::broadcast::Sender<Notifications>) {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
@@ -278,6 +283,7 @@ pub async fn create_rpc_node(
         global_context.bitcoind_user.clone(),
         global_context.bitcoind_pass.clone(),
         rpc_peer_id,
+        botanix_fee_recipeint,
     );
 
     // Note: before we create the chain.toml edh and authorities list need to be set

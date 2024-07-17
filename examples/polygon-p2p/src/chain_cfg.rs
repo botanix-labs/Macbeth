@@ -28,6 +28,7 @@ pub(crate) fn polygon_chain_spec() -> Arc<ChainSpec> {
         prune_delete_limit: 0,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
+        botanix_fee_recipient: None,
     }
     .into()
 }

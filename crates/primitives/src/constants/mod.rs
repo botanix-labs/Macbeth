@@ -224,10 +224,6 @@ pub const STAKING_CONTRACT_ADDRESS: &str = "0xA107e8549eB97f420a1D3b93Bd202e0845
 /// Storage slot index of list of stakers
 pub const STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX: u64 = 1u64;
 
-/// The address that receives the botanix block fees which is a federation member.
-/// TODO this should be defined in chainspec
-pub const BOTANIX_FEES_RECIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
-
 /// "nothing up my sleve" NUMS point for the secp256k1 curve.
 /// Used as the first aggregate key for the botanix gensis block
 /// consensus should check that this key is being used in genesis and post genesis block is not

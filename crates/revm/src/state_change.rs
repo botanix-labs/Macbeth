@@ -1,9 +1,8 @@
 use reth_consensus_common::{calc, utils};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
-    constants::{BOTANIX_FEES_RECIPIENT, SYSTEM_ADDRESS},
-    revm::env::fill_tx_env_with_beacon_root_contract_call,
-    Address, ChainSpec, Header, Withdrawal, B256, U256,
+    constants::SYSTEM_ADDRESS, revm::env::fill_tx_env_with_beacon_root_contract_call, Address,
+    ChainSpec, Header, Withdrawal, B256, U256,
 };
 use revm::{interpreter::Host, Database, DatabaseCommit, Evm};
 use std::{collections::HashMap, str::FromStr};
@@ -52,11 +51,23 @@ pub fn post_block_balance_increments(
     // will be an authority address
     let fees = total_block_fees.unwrap_or(0);
     let address = block_builder_address.unwrap_or(Address::ZERO);
-    if fees > 0 && address != Address::ZERO {
+
+    println!("********CHAIN SPEC FEE ADDRESS: {:?}", chain_spec.botanix_fee_recipient);
+
+    if fees > 0 && address != Address::ZERO && chain_spec.botanix_fee_recipient.is_some() {
         let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
 
         *balance_increments
-            .entry(Address::from_str(BOTANIX_FEES_RECIPIENT).expect("Recipient to exist"))
+            .entry(
+                Address::from_str(
+                    chain_spec
+                        .botanix_fee_recipient
+                        .clone()
+                        .expect("botanix fee recipient to exist")
+                        .as_str(),
+                )
+                .expect("Recipient to exist"),
+            )
             .or_default() += botanix_fees;
         *balance_increments.entry(address).or_default() += builder_fees;
     }
