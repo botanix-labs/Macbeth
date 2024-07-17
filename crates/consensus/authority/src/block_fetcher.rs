@@ -203,11 +203,8 @@ where
                     // Consensus checks were run during PBFT so don't need to validate pegouts again
                     // unless it's an epoch block to collect pegouts for psbt.
                     // We always need to process pegins to update UTXO set
-                    let should_process_receipts =
-                        header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
-                    if is_fed_node && should_process_receipts {
-                        info!("EPOCH BLOCK FETCHING STARTING...");
 
+                    if bloom_contains_pegin(block.header.logs_bloom) {
                         // process pegins
                         // must be done before getting utxo commitment
                         let btc_server = self.btc_server.as_mut().expect("have btc_server");
@@ -240,6 +237,11 @@ where
                                 }
                             }
                         }
+                    }
+
+                    if is_fed_node && header.is_poa_epoch() {
+                        info!("EPOCH BLOCK FETCHING STARTING...");
+                        let btc_server = self.btc_server.as_mut().expect("have btc_server");
 
                         // Validate utxo commitment
                         let utxo_commitment = match btc_server
