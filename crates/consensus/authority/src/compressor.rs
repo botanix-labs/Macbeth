@@ -1,3 +1,6 @@
+/// The api provides utilities for serializing and deserializing, as well as compression and
+/// decompression of messages. It is being used by the utxo set syncing mechanism as well as
+/// inside the blockcfetcher.
 use async_compression::{
     tokio::write::{
         BrotliDecoder, BrotliEncoder, BzDecoder, BzEncoder, DeflateDecoder, DeflateEncoder,
@@ -15,7 +18,7 @@ use tokio::io::AsyncWriteExt as _; // for `write_all` and `shutdown`
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub enum CompressionError {
+pub(crate) enum CompressionError {
     /// Compression/Decompression zlib error
     Zlib(std::io::Error),
     /// Compression/Decompression gzip error
@@ -34,7 +37,7 @@ pub enum CompressionError {
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub enum SerdeError {
+pub(crate) enum SerdeError {
     /// serde bincode error
     Bincode(#[from] bincode::ErrorKind),
     /// serde postcard error
@@ -47,7 +50,7 @@ pub enum SerdeError {
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// compression error: {0}
     Compression(#[from] CompressionError),
     /// serde error: {0}
@@ -58,7 +61,7 @@ pub enum Error {
 #[derive(
     Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
 )]
-pub enum CompressionType {
+pub(crate) enum CompressionType {
     /// No compression to be applied
     #[strum(serialize = "none")]
     None,
@@ -89,7 +92,7 @@ pub enum CompressionType {
 #[derive(
     Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
 )]
-pub enum SerializationType {
+pub(crate) enum SerializationType {
     /// Bincode serialization
     #[strum(serialize = "bincode")]
     Bincode,
@@ -99,21 +102,21 @@ pub enum SerializationType {
 }
 
 /// Prost Message Wrapper allowing serialization/deserialization
-pub struct ProstMessageSerdelizer<T: prost::Message>(pub T);
+pub(crate) struct ProstMessageSerdelizer<T: prost::Message>(pub(crate) T);
 
 impl<T> ProstMessageSerdelizer<T>
 where
     T: prost::Message + std::default::Default,
 {
     /// Method to serialize
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
         let mut buf = Vec::new();
         self.0.encode(&mut buf).map_err(|e| Error::Serde(SerdeError::ProstEncode(e)))?;
         Ok(buf)
     }
 
     /// Method to deserialize
-    pub fn deserialize(buf: Vec<u8>) -> Result<T, Error> {
+    pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, Error> {
         //let x = Bytes::from(buf);
         T::decode(Bytes::from(buf)).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
     }
@@ -121,7 +124,7 @@ where
 
 /// Compressor implementation
 #[derive(Debug)]
-pub struct Compressor {
+pub(crate) struct Compressor {
     compression_type: CompressionType,
     compression_level: Level,
     serialization_type: SerializationType,
@@ -129,7 +132,7 @@ pub struct Compressor {
 
 impl Compressor {
     /// Constructor for a new compressor
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             compression_type: CompressionType::Zlib,
             compression_level: Level::Best,
@@ -138,22 +141,22 @@ impl Compressor {
     }
 
     /// Sets the compression type
-    pub fn set_compression_type(&mut self, compression_type: CompressionType) {
+    pub(crate) fn set_compression_type(&mut self, compression_type: CompressionType) {
         self.compression_type = compression_type;
     }
 
     /// Sets the compression level
-    pub fn set_compression_level(&mut self, compression_level: Level) {
+    pub(crate) fn set_compression_level(&mut self, compression_level: Level) {
         self.compression_level = compression_level;
     }
 
     /// Sets the serialization type
-    pub fn set_serialization_type(&mut self, serialization_type: SerializationType) {
+    pub(crate) fn set_serialization_type(&mut self, serialization_type: SerializationType) {
         self.serialization_type = serialization_type;
     }
 
     /// Serializes and compresses the data
-    pub async fn serialize_and_compress(
+    pub(crate) async fn serialize_and_compress(
         &self,
         in_data: &[u8],
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -163,7 +166,7 @@ impl Compressor {
     }
 
     /// Decompresses and deserializes the data
-    pub async fn decompress_and_deserialize(
+    pub(crate) async fn decompress_and_deserialize(
         &self,
         in_data: &[u8],
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -173,7 +176,7 @@ impl Compressor {
     }
 
     /// Serializes the data
-    pub async fn serialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+    pub(crate) async fn serialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.serialization_type {
             SerializationType::Bincode => {
                 bincode::serialize(in_data).map_err(|e| Error::Serde(SerdeError::Bincode(*e)))
@@ -185,7 +188,7 @@ impl Compressor {
     }
 
     /// Deserializes the data
-    pub async fn deserialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+    pub(crate) async fn deserialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.serialization_type {
             SerializationType::Bincode => {
                 bincode::deserialize(in_data).map_err(|e| Error::Serde(SerdeError::Bincode(*e)))
@@ -197,7 +200,7 @@ impl Compressor {
     }
 
     /// Compresses the data
-    pub async fn compress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+    pub(crate) async fn compress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
             CompressionType::Zlib => {
@@ -288,7 +291,7 @@ impl Compressor {
     }
 
     /// Decompresses the data
-    pub async fn decompress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+    pub(crate) async fn decompress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
             CompressionType::Zlib => {
@@ -380,7 +383,7 @@ impl Compressor {
 }
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use crate::compressor::{Compressor, ProstMessageSerdelizer};
     use bitcoin::{hashes::Hash, Txid};
     use client::{GetAllUtxosResponse, OutPoint, Utxo};

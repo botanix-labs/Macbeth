@@ -6,6 +6,7 @@ use crate::{
     pbft_task::{PbftNotificationMessage, PbftTask},
     sync::SyncController,
     task::BlockProductionTask,
+    utxo_syncer::UtxoSyncTask,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
@@ -221,6 +222,7 @@ where
         SyncController<Engine>,
         Option<PbftTask<Client, ToFrostMan, NetworkClient, EF>>,
         Option<HealthcheckTask<ToFrostMan>>,
+        Option<UtxoSyncTask<ToFrostMan>>,
     ) {
         let Self {
             chain_spec,
@@ -282,16 +284,28 @@ where
         let mut block_production_task = None;
         let mut pbft_task = None;
         let mut healthcheck_task = None;
+        let mut utxo_sync_task = None;
         if is_fed_node {
-            let task = HealthcheckTask::new(
+            // healthcheck task
+            let healthcheck = HealthcheckTask::new(
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 storage.clone(),
                 task_executor.clone(),
             );
-            healthcheck_task = Some(task);
+            healthcheck_task = Some(healthcheck);
+
+            // utxo sync task
+            let utxo_sync = UtxoSyncTask::new(
+                network_handle.clone(),
+                frost_handle.clone().expect("Requires frost handle"),
+                storage.clone(),
+                task_executor.clone(),
+            );
+            utxo_sync_task = Some(utxo_sync);
+
             // frost task
-            let task = FrostTask::new(
+            let frost = FrostTask::new(
                 chain_spec.clone(),
                 btc_server.clone().expect("btc_server is available"),
                 network_handle.clone(),
@@ -302,8 +316,7 @@ where
                 frost_task_notifications2_tx,
                 task_executor.clone(),
             );
-
-            frost_task = Some(task);
+            frost_task = Some(frost);
 
             // Set up pbft notification message queue
             // these are two mpsc channels that are used to communicate between the pbft task and
@@ -313,6 +326,7 @@ where
             let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
 
+            // pbft task
             let pbft = PbftTask::new(
                 chain_spec.clone(),
                 client.clone(),
@@ -331,6 +345,7 @@ where
             );
             pbft_task = Some(pbft);
 
+            // block production task
             let _bitcoind_client =
                 BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let block_production = BlockProductionTask::new(
@@ -355,10 +370,8 @@ where
                 btc_network,
                 client.clone(),
             );
-
             block_production_task = Some(block_production);
         }
-
         (
             consensus,
             block_production_task,
@@ -367,6 +380,7 @@ where
             sync_task,
             pbft_task,
             healthcheck_task,
+            utxo_sync_task,
         )
     }
 }

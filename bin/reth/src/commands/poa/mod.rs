@@ -681,6 +681,7 @@ where {
             mut sync_controller,
             pbft_task,
             healthcheck_task,
+            utxo_sync_task,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
@@ -770,6 +771,13 @@ where {
                 "Healthcheck Task",
                 Box::pin(async move {
                     healthcheck_task.expect("health check task exists").start_task().await;
+                }),
+            );
+
+            executor.spawn_critical(
+                "Utxo Sync Task",
+                Box::pin(async move {
+                    utxo_sync_task.expect("utxo sync task exists").start_task().await;
                 }),
             );
         }

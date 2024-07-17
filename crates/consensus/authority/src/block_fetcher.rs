@@ -23,6 +23,7 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkHandle,
 };
+use reth_network_api::Peers;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
@@ -189,6 +190,16 @@ where
             }
         };
 
+        let all_trusted_connected_peers_ids = self
+            .network_handle
+            .get_trusted_peers()
+            .await
+            .ok()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|peer| peer.remote_id)
+            .collect::<Vec<_>>();
+
         loop {
             // get edh from peers
             let edh = match self.get_best_block_edh_from_peers() {
@@ -244,6 +255,18 @@ where
                 Ok(peer_message) => {
                     if let Some((_peer_id, peer_message)) = peer_message {
                         if let PeerMessageResponse::Utxo(msg) = peer_message {
+                            // check message sender
+                            if msg.sender != *self.network_handle.peer_id() {
+                                warn!(target: "consensus::authority::block_fetcher::start_task", "Received a message whose sender is not us. Ignoring ...");
+                                continue;
+                            }
+
+                            // check message target (the one that message was initially sent out to)
+                            if !all_trusted_connected_peers_ids.contains(&msg.target) {
+                                warn!(target: "consensus::authority::block_fetcher::start_task", "Received a message whose target is not in the authorities list. Ignoring ...");
+                                continue;
+                            }
+
                             // decompress the serialized utxo data set
                             let prost_deserialized_decompressed = match self
                                 .compressor
