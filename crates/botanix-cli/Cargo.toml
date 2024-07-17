@@ -9,7 +9,7 @@ name = "btx"
 path = "src/main.rs"
 
 [dependencies]
-botanix-lib = { path = "../botanix-lib" }
+reth-botanix-lib = { path = "../botanix-lib" }
 hex = "0.4.3"
 
 # CLI
