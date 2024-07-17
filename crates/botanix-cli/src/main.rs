@@ -1,9 +1,7 @@
-
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 use reth_botanix_lib::peg_contract::PeginMeta;
-
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -13,7 +11,6 @@ enum App {
     PeginProof(PeginProof),
 }
 
-
 #[derive(Subcommand)]
 enum PeginProof {
     /// Inspect a pegin proof.
@@ -21,7 +18,7 @@ enum PeginProof {
     Inspect {
         /// The pegin proof in hex.
         proof: String,
-    }
+    },
 }
 
 fn inner_main() -> Result<(), anyhow::Error> {
@@ -32,13 +29,13 @@ fn inner_main() -> Result<(), anyhow::Error> {
                 let meta = PeginMeta::deserialize(&bytes).context("invalid proof format")?;
                 println!("{:#?}", meta);
             }
-        }
+        },
     }
     Ok(())
 }
 
 fn main() {
-	if let Err(e) = inner_main() {
-		eprintln!("ERROR: {}", e);
-	}
+    if let Err(e) = inner_main() {
+        eprintln!("ERROR: {}", e);
+    }
 }
