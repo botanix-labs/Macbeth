@@ -5,9 +5,7 @@ use bitcoin::{
     psbt::Psbt,
     Witness,
 };
-use reth_botanix_lib::mint_validation::{
-    try_parse_burn_event, try_parse_mint_event,
-};
+use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_consensus_common::utils;
 
 use reth_eth_wire::NewBlock;
@@ -160,9 +158,10 @@ where
                 return;
             }
         };
-        let bitcoin_checkpoint = recent_bitcoin_block_header.expect("valid header and height tuple");
+        let bitcoin_checkpoint =
+            recent_bitcoin_block_header.expect("valid header and height tuple");
         let botanix_consensus_pkg = BotanixConsensusPackage {
-            bitcoin_checkpoint: bitcoin_checkpoint,
+            bitcoin_checkpoint,
             aggregate_public_key: secp_pk,
             btc_network: self.btc_network,
         };
@@ -203,7 +202,8 @@ where
                             info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
                             for pegin in &pegin_data.meta {
                                 //TODO(stevenroose) should this happen here?
-                                if let Err(e) = call_notify_pegin(&mut self.btc_server, pegin).await {
+                                if let Err(e) = call_notify_pegin(&mut self.btc_server, pegin).await
+                                {
                                     error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
                                     return;
                                 }
@@ -211,8 +211,8 @@ where
                             }
                         }
 
-                        let pegout_match = try_parse_burn_event(log, self.btc_network)
-                            .expect("passed EVM check");
+                        let pegout_match =
+                            try_parse_burn_event(log, self.btc_network).expect("passed EVM check");
                         if let Some(pegout) = pegout_match {
                             block_pegouts.push(pegout);
                         }
@@ -262,7 +262,6 @@ where
                     .await
                     .expect("no bitcoin checkpoint in block creation procedure");
                 match crate::utils::call_get_psbt(
-
                     &mut self.btc_server,
                     &pegouts,
                     &signing_session_id,

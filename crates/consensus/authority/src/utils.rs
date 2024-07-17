@@ -4,10 +4,7 @@ use std::time::Duration;
 use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
 use futures_util::Future;
 use reth_botanix_lib::{
-    mint_validation::{
-        try_parse_burn_event, BURN_TOPIC,
-        MINT_CONTRACT_ADDRESS, MINT_TOPIC,
-    },
+    mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
     peg_contract::{PeginMeta, PegoutData},
 };
 use reth_interfaces::sync::SyncStateProvider;
