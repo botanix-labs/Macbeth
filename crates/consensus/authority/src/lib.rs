@@ -68,6 +68,12 @@ mod task;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 
+/// Max EDH size, assuming max inputs spent are 100 and the only spends are keyspends
+/// This was calulated with the following formula
+/// version + optional_fields bitmask + signers pk + witness (vec of sigs) + blockhash +
+/// utxo_commit + block_witness + agg_pk For specific details see [ExtraDataHeader]
+pub const MAX_EDH_SIZE: usize = 8005;
+
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.
@@ -142,6 +148,11 @@ impl Consensus for AuthorityConsensus {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
                 InvalidAggregatedPublicKeyError::MissingAggregatedPublicKey,
             ));
+        }
+
+        // Check total size of the extra data header
+        if header.extra_data.len() > MAX_EDH_SIZE {
+            return Err(ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE });
         }
 
         // First run the basic validation
@@ -837,6 +848,45 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn fails_when_edh_exceeds_max_size() {
+        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = bitcoin::secp256k1::SecretKey::from_str(SK1).unwrap();
+        let msg = [0u8; 64];
+        let mut wit = bitcoin::witness::Witness::default();
+        wit.push(msg.clone());
+        let mut witnesses = vec![];
+        for _ in 0..1000 {
+            witnesses.push(wit.clone());
+        }
+        edh.witness_data = Some(witnesses);
+        edh.set_optional_fields_bitmask();
+
+        // Just use the first key as the dummy agg key
+        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
+        edh.aggregated_public_key = dummy_agg_key;
+
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        header.extra_data = Bytes::from(edh.serialize());
+        header.sign_block(&sk1).expect("valid sign");
+
+        let result = consensus.validate_extra_data_header(
+            &header,
+            &authority_signers,
+            &authority_signers,
+            Some(&dummy_agg_key),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap(),
+            ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
+        );
     }
 
     #[test]
