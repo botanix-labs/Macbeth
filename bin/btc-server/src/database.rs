@@ -50,17 +50,17 @@ impl Utxo {
 
 impl From<RpcUtxo> for Utxo {
     fn from(value: RpcUtxo) -> Self {
-        // FIXME: remove unwraps
-        let outpoint = value.outpoint.unwrap();
-        let txid = outpoint.txid;
-        let vout = outpoint.vout;
-
+        let txid = value.utxo_txid;
+        // FIXME: remove the unwrap
         let txid = Txid::from_slice(&txid).unwrap();
-        let script = Script::new();
-
+        let vout = value.utxo_vout;
+        let script = Script::from_bytes(&value.output_pubkey);
         Utxo::new(
             OutPoint::new(txid, vout),
-            TxOut { value: Amount::from_sat(value.output as u64), script_pubkey: script.into() },
+            TxOut {
+                value: Amount::from_sat(value.output_value as u64),
+                script_pubkey: script.into(),
+            },
             if value.eth_address.is_empty() {
                 None
             } else {

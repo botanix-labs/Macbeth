@@ -77,15 +77,17 @@ message TxOut {
     ScriptBuf script_pubkey = 2;
 }
 
-message OutPoint {
-    bytes txid = 1;
-    uint32 vout = 2;
-}
-
 message Utxo {
-    OutPoint outpoint = 1; 
-    uint32 output = 2;
+    // The txid of the utxo in hex.
+    bytes utxo_txid = 1;
+    // The output index of the utxo.
+    uint32 utxo_vout = 2;
+    // The user's ethereum address.
     string eth_address = 3;
+    // The txout pubkey of the utxo.
+    bytes output_pubkey = 4;
+    // The txout value of the utxo.
+    uint32 output_value = 5;
 }
 
 message GetAllUtxosResponse {

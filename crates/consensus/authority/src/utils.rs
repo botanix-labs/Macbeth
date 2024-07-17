@@ -43,20 +43,12 @@ pub(crate) fn compute_utxo_merkle_root(
     let mut utxos = peer_utxos
         .iter()
         .map(|u| {
+            // TODO: do we need to consider the other components of the utxo
             let mut engine = sha256::Hash::engine();
-            let (tx_id, vout) = u
-                .outpoint
-                .as_ref()
-                .map(|outpoint| {
-                    bitcoin::hash_types::Txid::from_slice(&outpoint.txid)
-                        .ok()
-                        .zip(Some(outpoint.vout))
-                })
-                .flatten()
-                .unzip();
-            let tx_id = tx_id.ok_or_else(|| UtxoError::UnparsableTxId)?;
-            let vout = vout.ok_or_else(|| UtxoError::UnparsableTxId)?;
-            let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, vout);
+            let tx_id = bitcoin::hash_types::Txid::from_slice(&u.utxo_txid)
+                .ok()
+                .ok_or_else(|| UtxoError::UnparsableTxId)?;
+            let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, u.utxo_vout);
             btc_outpoint.consensus_encode(&mut engine).map_err(|_| UtxoError::OutpointEncoding)?;
             Ok(sha256::Hash::from_engine(engine))
         })
