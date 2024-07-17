@@ -1,7 +1,7 @@
 use bitcoincore_rpc::RpcApi;
 use reth::{
     consensus_common::utils::{current_inturn_index, unix_timestamp},
-    primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
+    primitives::public_key_to_address,
 };
 use reth_authority_consensus::AuthorityConsensus;
 use reth_consensus::Consensus;
@@ -69,8 +69,10 @@ pub async fn block_builder(
     // create a minting contract instance
     let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
 
-    let botanix_block_reward_address_balance_before =
-        botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+    let botanix_block_reward_address_balance_before = botanix_eth_client
+        .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+        .await
+        .unwrap();
     it_info_print!(
         "Botanix block fee recipient balance before",
         botanix_block_reward_address_balance_before
@@ -140,7 +142,7 @@ pub async fn block_builder(
             assert!(block_payload.0.block.number > 0);
 
             // get fed member and botanix block reward address balances
-            it_info_print!("Botanix block fee recipient", BOTANIX_FEES_RECIPIENT);
+            it_info_print!("Botanix block fee recipient");
 
             info!("authority signer length: {}", authority_signers.len());
             let fed_member_pub_key = suite
@@ -159,8 +161,10 @@ pub async fn block_builder(
 
             if fed_member_balance > U256::ZERO.into() {
                 // verify 80/20 block reward split is correct
-                let botanix_block_reward_address_balance_after =
-                    botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+                let botanix_block_reward_address_balance_after = botanix_eth_client
+                    .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+                    .await
+                    .unwrap();
                 it_info_print!(
                     "Botanix block reward address balance after",
                     botanix_block_reward_address_balance_after

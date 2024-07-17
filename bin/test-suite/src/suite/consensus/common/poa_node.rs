@@ -97,6 +97,7 @@ pub struct FederationMemberTestConfig {
     pub is_dkg_ready: bool,
     pub edh: Option<ExtraDataHeader>,
     pub test_signal_tx: Sender<TestSignal>,
+    pub botanix_fee_recipient: String,
 }
 
 impl FederationMemberTestConfig {
@@ -115,6 +116,7 @@ impl FederationMemberTestConfig {
         rpc_port_base: u16,
         discovery_port_base: u16,
         test_signal_tx: Sender<TestSignal>,
+        botanix_fee_recipient: String,
     ) -> Self {
         let rpc_port = rpc_port_base + index;
         let discovery_port = discovery_port_base + index;
@@ -144,6 +146,7 @@ impl FederationMemberTestConfig {
             is_dkg_ready: false,
             edh: None,
             test_signal_tx,
+            botanix_fee_recipient,
         }
     }
 
@@ -233,7 +236,8 @@ impl FederationMemberTestConfig {
         }
 
         // Need to create a federation.toml in the data dir
-        let federation_config = FederationTomlConfig::new(edh_authorities);
+        let federation_config =
+            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
@@ -282,7 +286,8 @@ impl FederationMemberTestConfig {
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
-        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
+        let botanix_testnet =
+            create_botanix_config_with_genesis(genesis, 6, self.botanix_fee_recipient.clone());
 
         (command, botanix_testnet)
     }
@@ -519,6 +524,7 @@ pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfi
 pub async fn create_poa_federation_members(
     global_context: Arc<GlobalContext>,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
+    botanix_fee_recipient: String,
 ) -> (
     HashMap<u16, FederationMemberTestConfig>,
     tokio::sync::broadcast::Sender<Notifications>,
@@ -572,6 +578,7 @@ pub async fn create_poa_federation_members(
             rpc_port_base,
             discovery_port_base,
             test_signal_tx,
+            botanix_fee_recipient.clone(),
         )
         .await;
         fed_members.insert(member_index, fed_member_config);

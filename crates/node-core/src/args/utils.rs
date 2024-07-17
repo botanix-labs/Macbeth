@@ -19,6 +19,8 @@ use reth_primitives::{
 };
 use url::Url;
 
+use tracing::info;
+
 #[cfg(feature = "optimism")]
 use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
 
@@ -90,6 +92,8 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
     if is_testnet {
         // our own toml format
         let genesis_toml_config = FederationTomlConfig::from_str(raw)?;
+        let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
+        info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
         let public_keys = genesis_toml_config
             .federation_member_public_key
@@ -113,7 +117,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render()?;
         let genesis = serde_json::from_str(&rendered_json)?;
-        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
+        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6, botanix_fee_recipient);
         Ok(botanix_testnet)
     } else {
         // TODO: to be fixed once the MAINNET has been activated
@@ -189,6 +193,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 Err(_) => {
                     // our own toml format
                     let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+                    let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
 
                     let public_keys = genesis_toml_config
                         .federation_member_public_key
@@ -214,7 +219,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
                     let rendered_json = botanix_testnet_config_genesis.render()?;
                     let genesis = serde_json::from_str(&rendered_json)?;
-                    let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
+                    let botanix_testnet =
+                        create_botanix_config_with_genesis(genesis, 6, botanix_fee_recipient);
                     Arc::new(botanix_testnet)
                 }
             }
