@@ -327,8 +327,9 @@ impl From<database::Utxo> for rpc::Utxo {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
-        .filter_module("sled::", log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Info)
+        .filter_module("btc_server::", log::LevelFilter::Trace)
+        .filter_module("bitcoincore_rpc::", log::LevelFilter::Trace)
         .init();
 
     let config = load_config()?;
