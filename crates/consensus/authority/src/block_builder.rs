@@ -70,11 +70,6 @@ where
         let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
         let suggested_fee_recipient = public_key_to_address(authority_pub_key);
 
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-
         let payload_attributes = PayloadAttributes {
             timestamp: utils::unix_timestamp(),
             prev_randao: B256::ZERO, // only relevant for PoS
