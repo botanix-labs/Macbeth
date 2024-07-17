@@ -277,7 +277,7 @@ where
                                     prost_deserialized_decompressed
                                 }
                                 Err(e) => {
-                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to decompress the utxo set response");
+                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to decompress the utxo set response. Please check");
                                     continue;
                                 }
                             };
