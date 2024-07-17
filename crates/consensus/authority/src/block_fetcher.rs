@@ -24,6 +24,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_network_api::Peers;
+use reth_network_types::pk2id;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
@@ -55,7 +56,6 @@ pub(crate) enum Error {
     #[error("Failed to receive a frost message from a peer {0}")]
     FrostRecv(RecvError),
 }
-
 pub struct BlockFetcherTask<
     Client,
     ToFrostMan: ToFrostManager,
@@ -180,6 +180,25 @@ where
         Ok(())
     }
 
+    async fn get_authority_peers(&self) -> Vec<PeerId> {
+        // get all authority peers
+        self.storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .filter_map(|authority_pk| {
+                let authority_peer_id = pk2id(authority_pk);
+                if authority_peer_id != *self.network_handle.peer_id() {
+                    // excluse our own peer_id
+                    Some(authority_peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<PeerId>>()
+    }
+
     pub(crate) async fn sync_utxo_set(&self) {
         // get peer messages receiver
         let mut peer_messages_rx = match self.get_peer_messages_rx().await {
@@ -190,15 +209,8 @@ where
             }
         };
 
-        let all_trusted_connected_peers_ids = self
-            .network_handle
-            .get_trusted_peers()
-            .await
-            .ok()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|peer| peer.remote_id)
-            .collect::<Vec<_>>();
+        // get all connected peer ids
+        let all_trusted_connected_peers_ids = self.get_authority_peers().await;
 
         loop {
             // get edh from peers
@@ -349,9 +361,11 @@ where
         let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
+        // ensure the node is not syncing
         loop {
-            // ensure the node is not syncing
             if !is_active_sync_in_progress(&self.network_handle) {
+                // short sleep
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 break;
             }
         }
