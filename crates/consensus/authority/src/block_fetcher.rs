@@ -1,7 +1,6 @@
 use crate::{
     compressor::{Compressor, ProstMessageSerdelizer},
     engine_util,
-    frost_task::FrostNotificationMessage,
     utils::{bloom_contains_pegin, compute_utxo_merkle_root, is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
@@ -155,7 +154,7 @@ where
         Ok(sealed_best_block_edh_from_peers)
     }
 
-    pub(crate) async fn get_peer_messages_rx(
+    async fn get_peer_messages_rx(
         &self,
     ) -> Result<UnboundedReceiver<(PeerId, PeerMessageResponse)>, Error> {
         // get a proper event receiver
@@ -172,7 +171,7 @@ where
         Ok(peer_messages_rx)
     }
 
-    pub(crate) fn send_get_utxo_set_request_to_peer(&self) -> Result<(), Error> {
+    fn send_get_utxo_set_request_to_peer(&self) -> Result<(), Error> {
         if let Err(e) = self.frost_handle.send_command(FrostCommand::GetUtxoSetFromPeer) {
             error!(target: "consensus::authority::block_fetcher::get_utxo_set_from_peer", "Failed to send GetUtxoSetFromPeer frost message {:?}", e);
             return Err(Error::FrostSend(e));
@@ -199,12 +198,34 @@ where
             .collect::<Vec<PeerId>>()
     }
 
-    pub(crate) async fn sync_utxo_set(&self) {
+    async fn check_all_peers_initially_connected(&mut self) -> bool {
+        // check if we are connected to all frost peers when in turn
+        let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
+            error!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
+        }
+        match receiver.await {
+            Ok(is_connected) => {
+                if !is_connected {
+                    info!(target: "UtxoSyncTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
+                    return false;
+                }
+                info!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
+                true
+            }
+            Err(e) => {
+                error!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
+                false
+            }
+        }
+    }
+
+    async fn sync_utxo_set(&self) {
         // get peer messages receiver
         let mut peer_messages_rx = match self.get_peer_messages_rx().await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
-                error!(target: "consensus::authority::block_fetcher::start_task", "Error getting peer messages receiver = {:?}", e);
+                error!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Error getting peer messages receiver = {:?}", e);
                 panic!("Error getting peer messages receiver = {:?}", e);
             }
         };
@@ -218,14 +239,14 @@ where
                 Ok(edh) => match edh {
                     Some(edh) => edh,
                     None => {
-                        warn!(target: "consensus::authority::block_fetcher::start_task", "Got empty edh from peers, continuing to fetch...");
+                        warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Got empty edh from peers, continuing to fetch...");
                         // sleep for a few secs
                         tokio::time::sleep(Duration::from_secs(2)).await;
                         continue;
                     }
                 },
                 Err(e) => {
-                    error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get sealed best block extra data header from peers");
+                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to get sealed best block extra data header from peers");
                     // sleep for a few secs
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
@@ -237,26 +258,26 @@ where
             let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await {
                 Ok(h) => sha256::Hash::from_slice(&h.merkle_root).expect("valid utxo commitment"),
                 Err(e) => {
-                    error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get utxo commitment");
+                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to get utxo commitment");
                     // sleep for a few secs
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
             };
-            info!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment: {:?}", utxo_commitment);
+            info!(target: "consensus::authority::block_fetcher::sync_utxo_set", "UTXO commitment: {:?}", utxo_commitment);
 
             // check for matching utxo set
             if edh.utxo_commitment == utxo_commitment {
-                info!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment matched. Utxo set fully synced");
+                info!(target: "consensus::authority::block_fetcher::sync_utxo_set", "UTXO commitment matched. Utxo set fully synced");
                 break;
             }
 
             // if not, start syncing utxo set
-            warn!(target: "consensus::authority::block_fetcher::start_task", "UTXO commitment mismatch. Need to sync utxo set over network ...");
+            warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "UTXO commitment mismatch. Need to sync utxo set over network ...");
 
             // send get utxo set request to a randomly connected peer
             if let Err(e) = self.send_get_utxo_set_request_to_peer() {
-                error!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to send get utxo set to a peer");
+                error!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to send get utxo set to a peer");
                 // sleep for a few secs
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 continue;
@@ -269,13 +290,13 @@ where
                         if let PeerMessageResponse::Utxo(msg) = peer_message {
                             // check message sender
                             if msg.sender != *self.network_handle.peer_id() {
-                                warn!(target: "consensus::authority::block_fetcher::start_task", "Received a message whose sender is not us. Ignoring ...");
+                                warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Received a message whose sender is not us. Ignoring ...");
                                 continue;
                             }
 
                             // check message target (the one that message was initially sent out to)
                             if !all_trusted_connected_peers_ids.contains(&msg.target) {
-                                warn!(target: "consensus::authority::block_fetcher::start_task", "Received a message whose target is not in the authorities list. Ignoring ...");
+                                warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Received a message whose target is not in the authorities list. Ignoring ...");
                                 continue;
                             }
 
@@ -289,7 +310,7 @@ where
                                     prost_deserialized_decompressed
                                 }
                                 Err(e) => {
-                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to decompress the utxos set response. Please check");
+                                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set",?e, "Failed to decompress the utxos set response. Please check");
                                     continue;
                                 }
                             };
@@ -302,7 +323,7 @@ where
                             ) {
                                 Ok(prost_deserialized) => prost_deserialized,
                                 Err(e) => {
-                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to deserialize get utxo set response");
+                                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set",?e, "Failed to deserialize get utxo set response");
                                     continue;
                                 }
                             };
@@ -313,18 +334,18 @@ where
                             ) {
                                 Ok(Some(merkle_root)) => merkle_root,
                                 Ok(None) => {
-                                    error!(target: "consensus::authority::block_fetcher::start_task", "UTXO set is empty");
+                                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set", "UTXO set is empty");
                                     continue;
                                 }
                                 Err(e) => {
-                                    error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to compute utxo merkle root");
+                                    error!(target: "consensus::authority::block_fetcher::sync_utxo_set",?e, "Failed to compute utxo merkle root");
                                     continue;
                                 }
                             };
 
                             // check if we received the correct merkle root
                             if edh.utxo_commitment == merkle_root {
-                                info!(target: "consensus::authority::block_fetcher::start_task", "Matching merkle root!");
+                                info!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Matching merkle root!");
                                 // update utxo set in the db
                                 match rpc
                                     .reset_all_utxos(ResetAllUtxosRequest {
@@ -333,11 +354,11 @@ where
                                     .await
                                 {
                                     Ok(_) => {
-                                        info!(target: "consensus::authority::block_fetcher::start_task", "Successfully reset all utxos")
+                                        info!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Successfully reset all utxos")
                                     }
                                     Err(e) => {
                                         // TODO: add retry, this should always work at this point
-                                        error!(target: "consensus::authority::block_fetcher::start_task",?e, "Failed to reset all utxos")
+                                        error!(target: "consensus::authority::block_fetcher::sync_utxo_set",?e, "Failed to reset all utxos")
                                     }
                                 }
                                 break;
@@ -346,7 +367,7 @@ where
                     }
                 }
                 Err(e) => {
-                    warn!(target: "consensus::authority::block_fetcher::start_task", ?e, "Failed to get get utxo set rom a peer within 60 secs");
+                    warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to get get utxo set rom a peer within 60 secs");
                     // sleep for a few secs
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
@@ -360,6 +381,15 @@ where
         let is_fed_node = self.btc_server.is_some();
         let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
+
+        // await all peers to be connected
+        loop {
+            if self.check_all_peers_initially_connected().await {
+                break;
+            }
+            // short sleep
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
 
         // ensure the node is not syncing
         loop {
@@ -380,7 +410,7 @@ where
             if is_active_sync_in_progress(&self.network_handle) {
                 warn!(target: "consensus::authority", "Node is still syncing, block fetcher task is awaiting fully synced status ...");
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                return;
+                continue;
             }
 
             let new_block = match self.block_import_rx.recv().await {

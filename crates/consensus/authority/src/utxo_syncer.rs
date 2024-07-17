@@ -1,25 +1,18 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Instant,
-};
+use std::collections::HashMap;
 
 use crate::{utils::is_active_sync_in_progress, Storage};
 use reth_network::{
     frost::{
-        manager::{FrostCommand, ToFrostManager},
-        PeerMessageResponse,
+        manager::{FrostCommand, PeerData, ToFrostManager},
+        FrostPeerCommand, PeerMessageResponse, UtxoSetResponse,
     },
     NetworkHandle,
 };
-use reth_network_api::Peers;
 use reth_network_types::pk2id;
 use reth_rpc_types::PeerId;
-use reth_tasks::TaskExecutor;
 use tokio::sync::{
-    mpsc::{error::SendError, UnboundedReceiver, UnboundedSender},
+    mpsc::{error::SendError, UnboundedReceiver},
     oneshot::error::RecvError,
-    RwLock,
 };
 use tracing::{error, info, warn};
 
@@ -38,8 +31,6 @@ pub struct UtxoSyncTask<ToFrostMan> {
     pub(crate) frost_handle: ToFrostMan,
     /// Shared authority storage
     pub(crate) storage: Storage,
-    /// Task Executor
-    pub(crate) task_executor: TaskExecutor,
 }
 
 impl<ToFrostMan> UtxoSyncTask<ToFrostMan>
@@ -52,28 +43,27 @@ where
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         storage: Storage,
-        task_executor: TaskExecutor,
     ) -> Self {
-        Self { network_handle, frost_handle, storage, task_executor }
+        Self { network_handle, frost_handle, storage }
     }
 
     async fn check_all_peers_initially_connected(&mut self) -> bool {
         // check if we are connected to all frost peers when in turn
         let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
         if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
-            error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
+            error!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
         }
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!(target: "UtxoSyncTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
+                    info!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
                     return false;
                 }
-                info!(target: "UtxoSyncTask::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
+                info!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
                 true
             }
             Err(e) => {
-                error!(target: "UtxoSyncTask::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
+                error!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
                 false
             }
         }
@@ -115,8 +105,22 @@ where
             .collect::<Vec<PeerId>>()
     }
 
+    async fn get_all_connected_authority_peers(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
+        let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
+        if let Err(e) =
+            self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
+        {
+            error!(target: "consensus::authority::utxo_syncer::get_all_connected_authority_peers", "Failed to send GetAllConnectedPeers frost command {:?}", e);
+        }
+        let connected_peers = connected_peers_rx.await.map_err(|e| {
+            error!(target: "consensus::authority::utxo_syncer::get_all_connected_authority_peers", "Error getting receiver handle = {:?}", e);
+            Error::FrostRecv(e)
+        })?;
+        Ok(connected_peers)
+    }
+
     pub async fn start_task(&mut self) {
-        info!(target: "Utxo Sync Task::start_task", "Starting Utxo Sync Task");
+        info!(target: "consensus::authority::utxo_syncer::start_task", "Starting Utxo Sync Task");
 
         // await all peers to be connected
         loop {
@@ -137,31 +141,10 @@ where
         }
 
         // get all connected authority peers
-        let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
-        if let Err(e) =
-            self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
-        {
-            error!(target: "HealthcheckTask::start_task", "Failed to send GetAllConnectedPeers frost command {:?}", e);
-        }
-        let connected_peers = match connected_peers_rx.await {
+        let connected_peers = match self.get_all_connected_authority_peers().await {
             Ok(connected_peers) => connected_peers,
             Err(e) => {
-                error!(target: "UtxoSyncTask::start_task", "Error getting receiver handle = {:?}", e);
-                panic!("Error getting receiver handle");
-            }
-        };
-
-        // get all authority peers rx channels
-        let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        if let Err(e) =
-            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
-        {
-            error!(target: "HealthcheckTask::start_task", "Failed to send GetPeerMessagesStream frost command {:?}", e);
-        }
-        let mut peer_messages_rx = match peer_messages_rx.await {
-            Ok(peer_messages_rx) => peer_messages_rx,
-            Err(e) => {
-                error!("Error getting receiver handle = {:?}", e);
+                error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
@@ -170,7 +153,7 @@ where
         let mut peer_messages_rx = match self.get_peer_messages_rx().await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
-                error!(target: "consensus::authority::block_fetcher::start_task", "Error getting peer messages receiver = {:?}", e);
+                error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting peer messages receiver = {:?}", e);
                 panic!("Error getting peer messages receiver = {:?}", e);
             }
         };
@@ -202,8 +185,33 @@ where
                     if response.target == *self.network_handle.peer_id() &&
                         authority_peers.contains(&response.sender)
                     {
+                        match connected_peers
+                            .get(&response.sender)
+                            .as_ref()
+                            .map(|&peer| peer.peer_commands_tx.as_ref())
+                            .flatten()
+                        {
+                            Some(peer_sender_handle) => {
+                                if let Err(e) =
+                                    peer_sender_handle.send(FrostPeerCommand::PeerMessage(
+                                        PeerMessageResponse::Utxo(UtxoSetResponse {
+                                            sender: response.sender,
+                                            target: response.target,
+                                            data: vec![],
+                                        }),
+                                    ))
+                                {
+                                    error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
+                                    continue;
+                                }
+                            }
+                            None => {
+                                warn!(target: "consensus::authority::utxo_syncer::start_task", "Error getting peer sender handle");
+                                continue;
+                            }
+                        }
                     } else {
-                        warn!(target: "UtxoSyncTask::start_task", "Received utxo request from a peer who is not in the federation. Sender = {:?}. Target = {:?}", &response.sender, &response.target);
+                        warn!(target: "consensus::authority::utxo_syncer::start_task", "Received utxo request from a peer who is not in the federation. Sender = {:?}. Target = {:?}", &response.sender, &response.target);
                     }
                 }
             }

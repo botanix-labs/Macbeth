@@ -300,7 +300,6 @@ where
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 storage.clone(),
-                task_executor.clone(),
             );
             utxo_sync_task = Some(utxo_sync);
 
