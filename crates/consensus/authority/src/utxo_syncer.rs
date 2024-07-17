@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{utils::is_active_sync_in_progress, Storage};
+use crate::{
+    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
+    utils::is_active_sync_in_progress,
+    Storage,
+};
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use reth_network::{
     frost::{
         manager::{FrostCommand, PeerData, ToFrostManager},
@@ -10,18 +15,17 @@ use reth_network::{
 };
 use reth_network_types::pk2id;
 use reth_rpc_types::PeerId;
-use tokio::sync::{
-    mpsc::{error::SendError, UnboundedReceiver},
-    oneshot::error::RecvError,
-};
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot::error::RecvError};
 use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("Failed to send a frost command {0}")]
-    FrostSend(SendError<FrostCommand>),
     #[error("Failed to receive a frost message from a peer {0}")]
     FrostRecv(RecvError),
+    #[error("Received a grpc client error {0}")]
+    Grpc(GrpcClientError),
+    #[error("compressor error {0}")]
+    Compressor(CompressorError),
 }
 
 pub struct UtxoSyncTask<ToFrostMan> {
@@ -31,6 +35,10 @@ pub struct UtxoSyncTask<ToFrostMan> {
     pub(crate) frost_handle: ToFrostMan,
     /// Shared authority storage
     pub(crate) storage: Storage,
+    /// Btc Server client
+    pub(crate) btc_server: BtcServerExtendedClient,
+    /// compressor
+    pub(crate) compressor: Compressor,
 }
 
 impl<ToFrostMan> UtxoSyncTask<ToFrostMan>
@@ -43,8 +51,9 @@ where
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         storage: Storage,
+        btc_server: BtcServerExtendedClient,
     ) -> Self {
-        Self { network_handle, frost_handle, storage }
+        Self { network_handle, frost_handle, storage, btc_server, compressor: Compressor::new() }
     }
 
     async fn check_all_peers_initially_connected(&mut self) -> bool {
@@ -67,6 +76,27 @@ where
                 false
             }
         }
+    }
+
+    async fn get_serialized_compressed_utxo_set(&mut self) -> Result<Vec<u8>, Error> {
+        let prost_utxos = self.btc_server.get_all_utxos(client::Empty {}).await.map_err(|e| {
+            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got grpc error {:?}", e);
+            Error::Grpc(e)
+        })?;
+
+        // serialize the prost message
+        let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos);
+        let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
+            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got compressor error {:?}", e);
+            Error::Compressor(e)
+        })?;
+
+        // now compress the prost message
+        let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
+            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got compressor error {:?}", e);
+            Error::Compressor(e)
+        })?;
+        Ok(prost_serialized_compressed)
     }
 
     async fn get_peer_messages_rx(
@@ -192,12 +222,28 @@ where
                             .flatten()
                         {
                             Some(peer_sender_handle) => {
+                                let serialized_compressed_utxo_set = match self
+                                    .get_serialized_compressed_utxo_set()
+                                    .await
+                                {
+                                    Ok(serialized_compressed_utxo_set) => {
+                                        serialized_compressed_utxo_set
+                                    }
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting serialized compressed utxo set: {:?}", e);
+                                        continue;
+                                    }
+                                };
+                                if serialized_compressed_utxo_set.is_empty() {
+                                    warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
+                                    continue;
+                                }
                                 if let Err(e) =
                                     peer_sender_handle.send(FrostPeerCommand::PeerMessage(
                                         PeerMessageResponse::Utxo(UtxoSetResponse {
                                             sender: response.sender,
                                             target: response.target,
-                                            data: vec![],
+                                            data: serialized_compressed_utxo_set,
                                         }),
                                     ))
                                 {
@@ -206,7 +252,7 @@ where
                                 }
                             }
                             None => {
-                                warn!(target: "consensus::authority::utxo_syncer::start_task", "Error getting peer sender handle");
+                                warn!(target: "consensus::authority::utxo_syncer::start_task", "Unable to get peer sender handle");
                                 continue;
                             }
                         }

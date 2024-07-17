@@ -477,7 +477,7 @@ impl FrostProtoMessage {
                 buf.put_slice(target_bytes); // Receiver bytes
 
                 // serialize the data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
+                buf.put_u64_le(resource.data.len() as u64); // Use u64 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Healthcheck(resource) => {
@@ -756,8 +756,8 @@ impl FrostProtoMessage {
                 buf.advance(target_len);
 
                 // utxo
-                let utxo_set_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
+                let utxo_set_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                buf.advance(8);
                 let utxo = buf[..utxo_set_len].to_vec();
                 buf.advance(utxo_set_len);
 

@@ -22,7 +22,6 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkHandle,
 };
-use reth_network_api::Peers;
 use reth_network_types::pk2id;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{

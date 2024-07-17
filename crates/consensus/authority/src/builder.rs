@@ -300,6 +300,7 @@ where
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 storage.clone(),
+                btc_server.clone().expect("btc_server is available"),
             );
             utxo_sync_task = Some(utxo_sync);
 

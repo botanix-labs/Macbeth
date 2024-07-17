@@ -7,10 +7,10 @@ use tonic::metadata::{BinaryMetadataKey, MetadataValue};
 use client::{
     jwt::{Claims, JwtSecret},
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
-    FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
-    ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
+    FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
+    GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
+    GetSigningStatusRequest, GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest,
+    NotifyPeginRequest, ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
@@ -117,6 +117,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
     generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
+    generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
 }
 
 #[cfg(test)]
