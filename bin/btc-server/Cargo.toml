@@ -3,6 +3,8 @@ name = "btc-server"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "btcserverlib"
 
 [dependencies]
 miniscript = "11.0.0"

@@ -52,6 +52,7 @@ pub trait HeaderExt {
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
+        block_time: u64,
     ) -> Result<(), ValidateInturnError>;
 
     /// Validate the header timestamp against current timestamp
@@ -120,11 +121,11 @@ pub enum ValidateInturnError {
 
 impl PartialEq for ValidateInturnError {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
-            (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_)) => true,
-            _ => false,
-        }
+                (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
+        )
     }
 }
 
@@ -158,16 +159,16 @@ pub enum ValidateAuthoritySignatureError {
 
 impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        matches!(
+            (self, other),
             (Self::InvalidAuthority, Self::InvalidAuthority) |
-            (Self::InvalidMessage, Self::InvalidMessage) |
-            (Self::InvalidSignature, Self::InvalidSignature) |
-            (Self::MissingSignature, Self::MissingSignature) |
-            (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
-            (Self::RecoverFailed, Self::RecoverFailed) |
-            (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_)) => true,
-            _ => false,
-        }
+                (Self::InvalidMessage, Self::InvalidMessage) |
+                (Self::InvalidSignature, Self::InvalidSignature) |
+                (Self::MissingSignature, Self::MissingSignature) |
+                (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
+                (Self::RecoverFailed, Self::RecoverFailed) |
+                (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
+        )
     }
 }
 
@@ -193,6 +194,7 @@ impl HeaderExt for Header {
 
     /// Adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
+        // TODO check if NUMS point is not aggregate key
         self.extra_data = Bytes::from(edh.serialize());
     }
 
@@ -218,21 +220,22 @@ impl HeaderExt for Header {
     fn validate_inturn(
         &self,
         authorities: &[secp256k1::PublicKey],
+        block_time: u64,
     ) -> Result<(), ValidateInturnError> {
         let signers = self.recovered_signed_authorities()?;
-        let in_turn_signer = signers.get(0).expect("at least one signer");
+        let in_turn_signer = signers.first().expect("at least one signer");
         let signer_index = authorities
             .iter()
             .position(|pk| pk == in_turn_signer)
             .ok_or(ValidateInturnError::AuthorityNotInTurn)?;
 
         let authorities_len = authorities.len() as u64;
-        let cycle_length = authorities_len * 60; // Define the cycle length in seconds
+        let cycle_length = authorities_len * block_time; // Define the cycle length in seconds
         let block_timestamp_sec = self.timestamp; // Use the block timestamp in seconds
 
         // Calculate the current cycle's position and determine the current in-turn signer
         let current_cycle_position = block_timestamp_sec % cycle_length;
-        let current_in_turn_index = (current_cycle_position / 60) % authorities_len;
+        let current_in_turn_index = (current_cycle_position / block_time) % authorities_len;
 
         // Check if the calculated index matches the signer index
         if current_in_turn_index != (signer_index as u64) {
@@ -288,7 +291,7 @@ impl HeaderExt for Header {
     ) -> Result<ExtraDataHeader, ExtraDataHeaderDeserializeError> {
         let binding = self.extra_data.to_vec();
         let mut extra_data = binding.as_slice();
-        Ok(ExtraDataHeader::deserialize(&mut extra_data)?)
+        ExtraDataHeader::deserialize(&mut extra_data)
     }
 
     /// Create signable sighash from header + edh content
@@ -315,7 +318,7 @@ impl HeaderExt for Header {
         let sighash = self.create_sighash()?;
         let message = secp256k1::Message::from_digest_slice(sighash.as_slice())
             .expect("Valid message to sign");
-        let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, &sk);
+        let signature = secp256k1::SECP256K1.sign_ecdsa_recoverable(&message, sk);
 
         let mut edh = self.deserialize_extra_data_header()?;
         edh.add_signature(signature);
@@ -408,8 +411,11 @@ mod tests {
     use std::str::FromStr;
 
     #[allow(dead_code)]
+    const BLOCK_TIMES: u64 = 5;
+
+    #[allow(dead_code)]
     const EDH_DEFAULT_SIGHASH: &str =
-        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
+        "0x31cf69ba61773aa5a36330d397007f7ae90726f98e507e7638abd99bb091c142";
 
     #[allow(dead_code)]
     const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
@@ -590,7 +596,7 @@ mod tests {
 
     #[test]
     fn should_recover_signed_authority() {
-        let header = Header::default();
+        let _header = Header::default();
         let mut edh = ExtraDataHeader::default();
         let sk1 = generate_secret_key(SK1);
         let sk2 = generate_secret_key(SK2);
@@ -628,11 +634,11 @@ mod tests {
         let pks = [sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.timestamp = 1705621229;
-        sign_block_helper(&mut header, Some(SK1));
-        assert!(header.validate_inturn(&pks).is_ok());
-        // Sign the same header with a different key should fail
         sign_block_helper(&mut header, Some(SK2));
-        assert!(header.validate_inturn(&pks).is_err());
+        assert!(header.validate_inturn(&pks, BLOCK_TIMES).is_ok());
+        // Sign the same header with a different key should fail
+        sign_block_helper(&mut header, Some(SK1));
+        assert!(header.validate_inturn(&pks, BLOCK_TIMES).is_err());
     }
 
     // Test case for validating with a signature

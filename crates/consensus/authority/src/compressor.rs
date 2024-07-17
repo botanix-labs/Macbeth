@@ -494,18 +494,35 @@ pub mod test {
         // now compress the prost message
         let compressor = Compressor::new();
         let prost_serialized_compressed = compressor.compress(&prost_serialized).await.unwrap();
-        println!("Compressed to bytes: {:?}", prost_serialized_compressed);
+        println!(
+            "Compressed to bytes: serialized: {:?} bytes, ser+compressed {:?} bytes",
+            prost_serialized.len(),
+            prost_serialized_compressed.len()
+        );
+
+        assert!(
+            prost_serialized.len() > prost_serialized_compressed.len(),
+            "serialzied message length is greater than the compressed length"
+        );
 
         // now decompress the prost message
         let prost_serialized_decompressed =
             compressor.decompress(&prost_serialized_compressed).await.unwrap();
-        println!("Decompressed to bytes: {:?}", prost_serialized_decompressed);
-
+        let prost_serialized_decompressed_clone = prost_serialized_decompressed.clone();
         let prost_deserialized = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
             prost_serialized_decompressed,
         )
         .unwrap();
-        println!("Deserialized to bytes: {:?}", prost_deserialized);
+        println!(
+            "Serialized + decompressed: {:?} bytes, Deserialized {:?} bytes",
+            prost_serialized_decompressed_clone.len(),
+            prost_deserialized
+        );
+
+        assert!(
+            prost_deserialized.utxos.len() > 0,
+            "deserialized message length is greater than 0"
+        );
 
         assert!(prost_utxos == prost_deserialized);
     }

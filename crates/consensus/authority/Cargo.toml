@@ -24,14 +24,12 @@ reth-revm = { path = "../../revm" }
 reth-payload-builder.workspace = true
 # reth-beacon-imports
 reth-tasks.workspace = true
-reth-rpc.workspace = true
 reth-network-api.workspace = true
 reth-rpc-types.workspace = true
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
-serde_json = { workspace = true }
 reth-network-types.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
@@ -46,10 +44,12 @@ tracing.workspace = true
 reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
 client = {path = "../../../bin/btc-server/client"}
+btc-server = {path = "../../../bin/btc-server"}
 
 # compression
 async-compression = {version = "0.4.11", features = ["all"]}
 serde = { version = "1.0", features = ["derive"] }
+serde_json.workspace = true
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 
@@ -58,21 +58,16 @@ prost = "0.12.6"
 
 # bytes
 bytes = "1.6.0"
-# slack
-slack-morphism = { version = "2.3.2", features = ["hyper"] }
-
-# http/rpc
-hyper-rustls = "0.26"
-hyper-util = "0.1"
 
 # hex
 hex = "0.4.3"
 
+# displaydoc
+displaydoc = "0.2"
+
 # ser/deser
 bincode = "1.3.3"
 postcard = "1.0.8"
-## Url
-url = "2.2"
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }
@@ -94,15 +89,11 @@ secp256k1 = { workspace = true, features = [
 ### Grpc
 tonic = "0.11.0"
 
-displaydoc = "0.2"
-
 ## this error
 thiserror.workspace = true
 
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
-reth.workspace = true
-serde_json.workspace = true
 
 rand = "0.8.5"
 

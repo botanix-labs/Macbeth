@@ -1,5 +1,5 @@
 use anyhow::{Context as AnyhowContext, Result};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -9,13 +9,12 @@ use crate::{
 };
 
 pub const RPC_PORT_BASE: u16 = 8545;
-pub const DISCOVERY_PORT_BASE: u16 = 30303;
+pub const DISCOVERY_PORT_BASE: u16 = 30305;
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
     pub dry_run: bool,
     pub instances: u16,
-    pub jwt_dir: PathBuf,
     pub run_suite: RunSuite,
     pub timeout: u64,
     pub min_signers: u16,
@@ -45,7 +44,6 @@ impl GlobalContext {
             test_suite_id: uuid::Uuid::new_v4(),
             dry_run: args.dry_run,
             instances,
-            jwt_dir: args.jwt_dir.clone(),
             run_suite: args.run_suite,
             timeout: args.timeout,
             min_signers: frost_min_signers,

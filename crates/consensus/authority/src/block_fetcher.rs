@@ -1,4 +1,12 @@
+use crate::{
+    compressor::{Compressor, ProstMessageSerdelizer},
+    engine_util,
+    frost_task::FrostNotificationMessage,
+    utils::{bloom_contains_pegin, compute_utxo_merkle_root, is_active_sync_in_progress},
+    AuthorityConsensus, Storage,
+};
 use bitcoin::hashes::{sha256, Hash};
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, GetAllUtxosResponse, Output, ResetAllUtxosRequest};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_interfaces::{
@@ -35,23 +43,12 @@ use tokio::sync::{
 };
 use tracing::{error, info, warn};
 
-use crate::{
-    compressor::{Compressor, ProstMessageSerdelizer},
-    engine_util,
-    extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage,
-    utils::{compute_utxo_merkle_root, is_active_sync_in_progress},
-    AuthorityConsensus, Storage,
-};
-
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("Got a provider error {0}")]
     Provider(ProviderError),
     #[error("Edh deserialize error {0}")]
     Edh(ExtraDataHeaderDeserializeError),
-    #[error("Failed to get utxo set from peer {0}")]
-    FailedToGetUtxoSetFromPeer(tokio::sync::oneshot::error::RecvError),
     #[error("Failed to send a frost command {0}")]
     FrostSend(SendError<FrostCommand>),
     #[error("Failed to receive a frost message from a peer {0}")]
@@ -430,37 +427,38 @@ where
                     let sealed_block_with_senders =
                         SealedBlockWithSenders::new(sealed_block.clone(), senders)
                             .expect("senders are valid");
-                    // Process Botanix specific logs
-                    // get pegouts if btc_server is available
-                    // only federation nodes will have btc_server
-                    let mut pegouts = match self.btc_server.as_ref() {
-                        Some(btc_server) => {
-                            let pegouts = match crate::utils::process_receipts(
-                                &mut btc_server.clone(),
-                                &bundle_state,
-                                bitcoin_block_header.1,
-                                self.btc_network,
-                                self.consensus.chain_spec.parent_confirmation_depth,
-                            )
-                            .await
-                            {
-                                Ok(pegouts) => pegouts,
-                                Err(e) => {
-                                    error!(target: "consensus::authority", ?e, "Failed to process botanix log");
-                                    continue;
-                                }
-                            };
-
-                            pegouts
-                        }
-                        None => vec![],
-                    };
-
-                    // Validate utxo commitment
                     let header = sealed_block.header.clone();
-                    if is_fed_node {
-                        let rpc = self.btc_server.as_mut().expect("btc_server exists");
-                        let utxo_commitment = match rpc.get_utxo_merkle_root(client::Empty {}).await
+
+                    // Consensus checks were run during PBFT so don't need to validate pegouts again
+                    // unless it's an epoch block to collect pegouts for psbt.
+                    // We always need to process pegins to update UTXO set
+                    let should_process_receipts =
+                        header.is_poa_epoch() || bloom_contains_pegin(block.header.logs_bloom);
+                    if is_fed_node && should_process_receipts {
+                        // process pegins
+                        // must be done before getting utxo commitment
+                        let btc_signing_server =
+                            self.btc_server.as_mut().expect("btc_server exists");
+                        let mut pegouts = match crate::utils::process_receipts(
+                            &mut btc_signing_server.clone(),
+                            &bundle_state,
+                            bitcoin_block_header.1,
+                            self.btc_network,
+                            self.consensus.chain_spec.parent_confirmation_depth,
+                        )
+                        .await
+                        {
+                            Ok(pegouts) => pegouts,
+                            Err(e) => {
+                                error!(target: "consensus::authority", ?e, "Failed to process botanix log");
+                                continue;
+                            }
+                        };
+
+                        // Validate utxo commitment
+                        let utxo_commitment = match btc_signing_server
+                            .get_utxo_merkle_root(client::Empty {})
+                            .await
                         {
                             Ok(h) => sha256::Hash::from_slice(&h.merkle_root)
                                 .expect("valid utxo commitment"),
@@ -469,7 +467,6 @@ where
                                 continue;
                             }
                         };
-
                         info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
                         let edh = header.deserialize_extra_data_header().expect("valid extra data");
                         if edh.utxo_commitment != utxo_commitment {
@@ -479,71 +476,69 @@ where
 
                         let best_block =
                             self.client.best_block_number().expect("best block number exists");
-                        if header.is_poa_epoch() {
-                            // get the pegouts from during the epoch
-                            let past_pegouts = crate::utils::epoch_pegouts(
-                                best_block, &self.client, self.btc_network,
-                            ).await.map_err(|e| {
+
+                        // get the pegouts from during the epoch
+                        let past_pegouts = match crate::utils::epoch_pegouts(
+                            best_block,
+                            &self.client,
+                            self.btc_network,
+                        )
+                        .await
+                        {
+                            Ok(pegouts) => pegouts,
+                            Err(e) => {
                                 error!(target: "consensus::authority", ?e, "Failed to get epoch pegouts");
-                                e
-                                // TODO (armins) remove unwrap()
-                            }).unwrap();
-                            pegouts.extend(past_pegouts);
-                            // TODO (armins) deserialize extra data can be implenented on header
-                            let extra_data = ExtraDataHeader::deserialize(
-                                &mut header.extra_data.clone().to_vec().as_slice(),
-                            )
-                            .expect("extra data is valid");
+                                continue;
+                            }
+                        };
+                        pegouts.extend(past_pegouts);
 
-                            // finalizing signing if there are pegouts
-                            // at this point this singer or others have provided partial signatures
-                            // and completed the signing session
-                            if let Some(witness) = extra_data.witness_data {
-                                let wit = witness
-                                    .iter()
-                                    .map(|witness| witness.to_vec()[0].clone())
-                                    .collect::<Vec<Vec<u8>>>();
-                                let outputs = pegouts
-                                    .iter()
-                                    .map(|pegout| Output {
-                                        address: pegout.destination.to_string(),
-                                        value: pegout.amount.to_sat(),
-                                    })
-                                    .collect();
+                        // finalizing signing if there are pegouts
+                        // at this point this singer or others have provided partial signatures and
+                        // completed the signing session
+                        if let Some(witness) = edh.witness_data {
+                            let wit = witness
+                                .iter()
+                                .map(|witness| witness.to_vec()[0].clone())
+                                .collect::<Vec<Vec<u8>>>();
+                            let outputs = pegouts
+                                .iter()
+                                .map(|pegout| Output {
+                                    address: pegout.destination.to_string(),
+                                    value: pegout.amount.to_sat(),
+                                })
+                                .collect();
 
-                                let bitcoin_checkpoint = self
-                                    .bitcoin_block_header
-                                    .read()
-                                    .await
-                                    .expect("should have btc checkpoint")
-                                    .0
-                                    .block_hash();
-                                let res = self
-                                    .btc_server
-                                    .clone()
-                                    .expect("btc_server exists")
-                                    .signer_finalize(FinalizeSignerRequest {
-                                        witness: wit,
-                                        outputs,
-                                        checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
-                                        utxo_merkle_root: utxo_commitment[..].to_vec(),
-                                    })
-                                    .await;
+                            let bitcoin_checkpoint = self
+                                .bitcoin_block_header
+                                .read()
+                                .await
+                                .expect("should have btc checkpoint")
+                                .0
+                                .block_hash();
+                            let res = self
+                                .btc_server
+                                .clone()
+                                .expect("btc_server exists")
+                                .signer_finalize(FinalizeSignerRequest {
+                                    witness: wit,
+                                    outputs,
+                                    checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
+                                    utxo_merkle_root: utxo_commitment[..].to_vec(),
+                                })
+                                .await;
 
-                                if let Err(e) = res {
-                                    error!(target: "consensus::authority", ?e, "Failed to finalize signer");
-                                    continue;
-                                }
-                                info!(target: "consensus::authority", "Witness data valid and finalized");
-                            } else {
-                                // if there are pegouts but no witness data in the EDH, fail
-                                // consensus
-                                if !pegouts.is_empty() {
-                                    error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
-                                    continue;
-                                }
+                            if let Err(e) = res {
+                                error!(target: "consensus::authority", ?e, "Failed to finalize signer");
+                                continue;
                             }
                             info!(target: "consensus::authority", "Witness data valid and finalized");
+                        } else {
+                            // if there are pegouts but no witness data in the EDH, fail consensus
+                            if !pegouts.is_empty() {
+                                error!(target: "consensus::authority", "Pegouts exist but no witness data in the EDH");
+                                continue;
+                            }
                         }
                     }
 

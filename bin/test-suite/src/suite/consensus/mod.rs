@@ -1,4 +1,7 @@
-use self::common::poa_node::{FederationMemberTestConfig, Notifications};
+use self::common::{
+    poa_node::{FederationMemberTestConfig, Notifications},
+    rpc_node::NonFederationMemberTestConfig,
+};
 
 use super::{Outcome, Suite};
 use crate::{
@@ -8,9 +11,11 @@ use crate::{
         btc_server::{clean_db, spawn_n_btc_servers, SpawnedBtcServer, BTC_SERVER_START_PORT},
         events::await_dkg,
         poa_node::create_poa_federation_members,
+        rpc_node::create_rpc_node,
     },
 };
 use async_trait::async_trait;
+use client::BtcServerClient;
 use port_killer::kill;
 use reth::CliRunner;
 use reth_tracing::tracing::error;
@@ -22,6 +27,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tonic::transport::Channel;
 use tracing::{info, warn};
 // scopes
 mod common;
@@ -56,15 +62,20 @@ pub struct LocalContext {
     pub btc_servers: Option<Vec<SpawnedBtcServer>>,
     pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
+    pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
+    pub rpc_node: Option<NonFederationMemberTestConfig>,
+    pub rpc_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
+    pub authorities: Vec<secp256k1::PublicKey>,
 }
 
 pub struct CreateTestConfig {
     pub should_create_poa_nodes: bool,
+    pub should_create_rpc_node: bool,
 }
 
 impl Default for CreateTestConfig {
     fn default() -> Self {
-        Self { should_create_poa_nodes: true }
+        Self { should_create_poa_nodes: true, should_create_rpc_node: false }
     }
 }
 
@@ -79,17 +90,17 @@ impl Suite for ConsensusIntegrationTestSuite {
         match test_to_run.as_str() {
             "dkg_flow" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false },
+                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
                 frost::test_dkg::dkg_flow
             ),
             "many_inputs_signing" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false },
+                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
                 frost::test_signing::test_many_inputs_signing
             ),
             "utxo_commitment" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false },
+                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
                 frost::test_utxo_commitment::test_utxo_commitment
             ),
             "block_builder" => {
@@ -108,9 +119,16 @@ impl Suite for ConsensusIntegrationTestSuite {
                 Default::default(),
                 frost::test_frost_e2e_peer_disconnect::frost_e2e_peer_disconnect
             ),
-            // TODO
-            // "rpc_node" => run_test!(self, Default::default(),
-            // rpc_node::test_rpc_node::test_rpc_node),
+            "rpc_node" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        should_create_poa_nodes: true,
+                        should_create_rpc_node: true
+                    },
+                    rpc_node::test_rpc_node::test_rpc_node
+                )
+            }
             "invalid_pegin" => {
                 run_test!(
                     self,
@@ -234,10 +252,13 @@ impl Suite for ConsensusIntegrationTestSuite {
         )
         .await;
 
+        self.local_context.authorities = edh_authorities_list.clone();
+
         let build_command_authorities_list = Arc::new(edh_authorities_list);
 
         // run all poa nodes in the background
         if create_test_config.should_create_poa_nodes {
+            it_info_print!("Starting poa nodes");
             let mut rx = tx.subscribe();
             for (_index, fed_member_config) in test_fed_members.iter() {
                 it_info_print!("Starting poa node", _index);
@@ -258,6 +279,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             await_dkg(&mut test_fed_members, &mut rx).await;
 
             // Every btc server should have an aggregate key
+            let mut btc_server_clients = vec![];
             let mut keys = HashSet::new();
             for instance in 0..self.global_context.instances {
                 let port = self
@@ -271,6 +293,8 @@ impl Suite for ConsensusIntegrationTestSuite {
                         .await
                         .unwrap();
 
+                btc_server_clients.push(client.clone());
+
                 let key =
                     client.get_public_key(client::Empty {}).await.unwrap().into_inner().publickey;
                 keys.insert(key);
@@ -279,8 +303,32 @@ impl Suite for ConsensusIntegrationTestSuite {
             // All keys should be the same
             assert_eq!(keys.len(), 1);
 
+            self.local_context.btc_server_clients = Some(btc_server_clients);
             self.local_context.poa_nodes = Some(test_fed_members);
             self.local_context.poa_notification = Some(tx);
+        }
+
+        if create_test_config.should_create_rpc_node {
+            it_info_print!("Starting rpc node");
+            let federation_members = self.local_context.poa_nodes.as_ref().unwrap();
+            let (rpc_node, tx) =
+                create_rpc_node(self.global_context.clone(), federation_members.clone()).await;
+
+            let mut rpc_node_clone = rpc_node.clone();
+            let rpc_node_command = rpc_node_clone.build_command(
+                build_command_authorities_list,
+                federation_members.clone().into_values().collect::<Vec<_>>(),
+            );
+            let _ = std::thread::spawn(move || {
+                let runner = CliRunner::default();
+                runner.run_command_until_exit(|ctx| rpc_node_command.execute(ctx)).unwrap();
+            });
+
+            self.local_context.rpc_notification = Some(tx);
+            self.local_context.rpc_node = Some(rpc_node);
+
+            // wait for rpc node to start on thread
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
 
@@ -297,6 +345,9 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.local_context.btc_servers = None;
         self.local_context.poa_nodes = None;
         self.local_context.poa_notification = None;
+        self.local_context.btc_server_clients = None;
+        self.local_context.rpc_node = None;
+        self.local_context.rpc_notification = None;
 
         // allow a few seconds to pass after cleanup
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -313,6 +364,10 @@ impl ConsensusIntegrationTestSuite {
                 btc_servers: None,
                 poa_nodes: None,
                 poa_notification: None,
+                btc_server_clients: None,
+                rpc_node: None,
+                rpc_notification: None,
+                authorities: vec![],
             },
         }
     }

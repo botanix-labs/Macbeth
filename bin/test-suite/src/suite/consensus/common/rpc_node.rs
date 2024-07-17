@@ -7,17 +7,31 @@ use crate::{
         GlobalContext,
     },
 };
+use reth_node_core::args::FederationTomlConfig;
+
+use askama::Template;
+use bitcoin::{
+    hashes::{sha256, Hash},
+    BlockHash,
+};
 use clap::Parser;
 use reth::{
+    args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
     network::Peers,
 };
 use reth_network_types::pk2id;
-use reth_primitives::{hex::encode as hex_encode, ChainSpec};
+use reth_primitives::{
+    chain::spec::BotanixTestnetGenesisConfig,
+    constants::nums_secp256k1_pk,
+    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    hex::encode as hex_encode,
+};
 use reth_provider::CanonStateSubscriptions;
 use reth_rpc_types::PeerId;
+use secp256k1::{PublicKey, SECP256K1};
 use std::{
     collections::HashMap,
     io::Write,
@@ -41,8 +55,7 @@ pub struct NonFederationMemberTestConfig {
     pub bitcoind_username: String,
     pub bitcoind_password: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
-    pub sender: tokio::sync::mpsc::Sender<Notifications>,
-    pub jwt_secret_path: PathBuf,
+    pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub peer_id: PeerId,
 }
 
@@ -51,16 +64,14 @@ impl NonFederationMemberTestConfig {
     pub fn new(
         index: u16,
         secret_key: String,
-        sender: tokio::sync::mpsc::Sender<Notifications>,
+        sender: tokio::sync::broadcast::Sender<Notifications>,
         bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
-        jwt_secrets_dir: PathBuf,
         peer_id: PeerId,
     ) -> Self {
         let rpc_port = RPC_PORT_BASE + index;
         let discovery_port = DISCOVERY_PORT_BASE + index;
-        let jwt_secret_path = jwt_secrets_dir.join(format!("{index}.hex"));
         Self {
             index,
             temp_path: {
@@ -79,7 +90,6 @@ impl NonFederationMemberTestConfig {
             bitcoind_password,
             peers_list: vec![],
             sender,
-            jwt_secret_path,
             peer_id,
         }
     }
@@ -89,10 +99,12 @@ impl NonFederationMemberTestConfig {
     }
 
     pub fn build_command(
-        &self,
-        chain_spec: ChainSpec,
+        &mut self,
+        edh_authorities_list: Arc<Vec<PublicKey>>,
+        fed_member_peers_list: Vec<FederationMemberTestConfig>,
     ) -> PoaNodeCommand<NoArgs<NonFederationMemberTestConfig>> {
         it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
+        self.insert_peers_list(fed_member_peers_list.clone());
 
         let datadir = self.temp_path.to_str().expect("temp path is okay");
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -103,13 +115,62 @@ impl NonFederationMemberTestConfig {
             .expect("file can be opened");
         file.write_all(&self.secret_key.as_bytes()).expect("secret key written to file");
 
-        let _jwt_secret_path = self.jwt_secret_path.display().to_string();
+        // now create the edh
+        let edh = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            None,
+            Some(edh_authorities_list.to_vec()),
+            None,
+            None,
+            // to make sure they're not identical, hash random data
+            BlockHash::hash(&[1]),
+            sha256::Hash::hash(&[2]),
+            nums_secp256k1_pk(),
+        );
+
+        // update genesis config with edh and render file
+        let _botanix_testnet_config_genesis = {
+            let edh = hex::encode(edh.serialize());
+            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+            let rendered_json = botanix_testnet_config_genesis.render().unwrap();
+            rendered_json
+        };
+
+        // Need to create a chain.toml in the data dir
+        // Need to zip together the soc address and pk
+        let mut fed_member_pks = vec![];
+        for peer in fed_member_peers_list.iter() {
+            let pk = FedMemberPubKey {
+                key: peer.secret_key.public_key(SECP256K1).to_string(),
+                socket_addr: format!("127.0.0.1:{}", peer.discovery_port),
+            };
+            fed_member_pks.push(pk);
+        }
+
+        // NOTE: fed members have already created their EDH with the correct authorities
+        // but the order may not be the same as fed_member_pks since we added ourselves last
+        // so compare the EDH authorities list and build a new list in the correct order
+        let mut edh_authorities = vec![];
+        for authority in edh_authorities_list.to_vec().iter() {
+            for pk in fed_member_pks.iter() {
+                if pk.key == authority.to_string() {
+                    edh_authorities.push(pk.clone());
+                    break;
+                }
+            }
+        }
+
+        let federation_config = FederationTomlConfig::new(edh_authorities);
+        it_info_print!("Federation config", federation_config);
+        let federation_config_path = Path::new(datadir).join("federation.toml");
+        federation_config.write_to_path(&federation_config_path).unwrap();
 
         let no_args = NoArgs::with(self.clone());
-        let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
-            "--chain",
-            "botanix_testnet",
+            "--is-testnet",
+            "--federation-config-path",
+            format!("{}", federation_config_path.display().to_string()).as_str(),
             "--datadir",
             datadir,
             "--debug.terminate",
@@ -136,7 +197,6 @@ impl NonFederationMemberTestConfig {
             discovery_secret_path.to_str().expect("discovery secret path to exist"),
         ])
         .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
-        command.chain = Arc::new(chain_spec);
 
         command
     }
@@ -186,7 +246,7 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
                         ts: tokio::time::Instant::now(),
                         notification: canon_state_notification,
                     }))
-                    .await;
+                    .unwrap();
             }
         }));
 
@@ -198,8 +258,8 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
 pub async fn create_rpc_node(
     global_context: Arc<GlobalContext>,
     federation_members: HashMap<u16, FederationMemberTestConfig>,
-) -> (NonFederationMemberTestConfig, tokio::sync::mpsc::Receiver<Notifications>) {
-    let (tx, rx) = tokio::sync::mpsc::channel::<Notifications>(100);
+) -> (NonFederationMemberTestConfig, tokio::sync::broadcast::Sender<Notifications>) {
+    let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let secp = secp256k1::Secp256k1::new();
     let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
@@ -210,19 +270,17 @@ pub async fn create_rpc_node(
     // set index as federation_members length + 1:
     // this will ensure the correct ports are used
     let index = federation_members.len() as u16 + 1;
-    let mut rpc_node = NonFederationMemberTestConfig::new(
+    let rpc_node = NonFederationMemberTestConfig::new(
         index,
         rpc_secret_key,
-        tx,
+        tx.clone(),
         global_context.bitcoind_url.clone(),
         global_context.bitcoind_user.clone(),
         global_context.bitcoind_pass.clone(),
-        global_context.jwt_dir.clone(),
         rpc_peer_id,
     );
 
-    // insert federation members as peers
-    rpc_node.insert_peers_list(federation_members.values().cloned().collect::<Vec<_>>());
+    // Note: before we create the chain.toml edh and authorities list need to be set
 
-    (rpc_node, rx)
+    (rpc_node, tx)
 }

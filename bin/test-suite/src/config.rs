@@ -1,10 +1,7 @@
 use argh::FromArgs;
 use displaydoc::Display as DisplayDoc;
 use serde::Deserialize;
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{path::Path, str::FromStr};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use url::Url;
@@ -71,9 +68,6 @@ pub struct CliArgs {
     /// dry run to perform (default: false)
     #[argh(option, short = 'd', default = "false")]
     pub dry_run: bool,
-    /// jwt directory
-    #[argh(option, short = 'j')]
-    pub jwt_dir: PathBuf,
     /// min frost signers
     #[argh(option, default = "2")]
     pub min_signers: u16,

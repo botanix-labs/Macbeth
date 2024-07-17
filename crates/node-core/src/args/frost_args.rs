@@ -9,7 +9,6 @@ pub(crate) const DEFAULT_MAX_SIGNERS: u16 = 2;
 /// Parameters to configure Frost.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 #[clap(next_help_heading = "Frost")]
-
 pub struct FrostArgs {
     /// Coordinator
 

@@ -426,7 +426,6 @@ start-test-suite:
 	--run-suite all \
 	--timeout 400000 \
 	--dry-run false \
-	--jwt-dir "${JWT_DIR}" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
 	--bitcoind-user "${BITCOIND_USER}" \
@@ -448,7 +447,7 @@ start-btc-server-1:
 	--bitcoind-url "${BITCOIND_URL}" \
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
-	--jwt-secret "${NODE_1_DIR}/jwt.hex" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
 	--pegin-confirmation-depth 1
 
@@ -466,14 +465,15 @@ start-btc-server-2:
 	--bitcoind-url "${BITCOIND_URL}" \
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
-	--jwt-secret "${NODE_2_DIR}/jwt.hex" \
+	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
 	--pegin-confirmation-depth 1
 
 start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NODE_1_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
@@ -482,9 +482,9 @@ start-poa-server-1:
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--authrpc.jwtsecret "${NODE_1_DIR}/jwt.hex" \
 	--btc-server "localhost:8080" \
 	--btc-network "${BITCOIND_NETWORK}" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
@@ -496,7 +496,8 @@ start-poa-server-1:
 start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NODE_2_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
@@ -505,9 +506,9 @@ start-poa-server-2:
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--authrpc.jwtsecret "${NODE_2_DIR}/jwt.hex" \
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
@@ -529,9 +530,9 @@ clean-poa-1:
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
-	--chain "${NON_FED_1_DIR}/chain.toml" \
+	--is-testnet \
+	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
 	--datadir ${NON_FED_1_DIR} \
-	--trusted-peers ${TRUSTED_PEER_1},${TRUSTED_PEER_2} \
 	--http \
 	--http.corsdomain "*" \
 	--http.port 8547 \
@@ -540,6 +541,7 @@ start-non-fed-server-1:
 	-vvv \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \

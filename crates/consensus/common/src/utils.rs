@@ -106,7 +106,7 @@ pub fn get_block_producer_address(header: &Header) -> Address {
     if let Ok(authorities) = header.recovered_signed_authorities() {
         // TODO remove this unwrap
         let block_builder_public_key =
-            authorities.get(0).expect("block producer authority to be present");
+            authorities.first().expect("block producer authority to be present");
         return public_key_to_address(*block_builder_public_key);
     }
 
@@ -185,6 +185,7 @@ impl From<ValidateAgainstParentError> for ConsensusError {
 pub fn validate_against_parent(
     parent: Header,
     current: Header,
+    block_time: u64,
 ) -> Result<(), ValidateAgainstParentError> {
     // Gensis block does not have a federation signature, skip
     if parent.number == 0 {
@@ -192,29 +193,39 @@ pub fn validate_against_parent(
     }
     let parent_signer = parent
         .recovered_signed_authorities()
-        .map_err(|e| ValidateAgainstParentError::FailedToDerserializeExtraData(e))?[0];
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
     let current_signer = current
         .recovered_signed_authorities()
         .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
     // Check if the parent block was mined in a different turn
-    let parent_ts = parent.timestamp as f64 / 60.0;
-    let current_ts = current.timestamp as f64 / 60.0;
 
-    validate_current_signer_against_last((parent_signer, parent_ts), (current_signer, current_ts))?;
+    // Convert timestamps to seconds
+    let parent_ts = parent.timestamp as f64;
+    let current_ts = current.timestamp as f64;
+
+    validate_current_signer_against_last(
+        (parent_signer, parent_ts),
+        (current_signer, current_ts),
+        block_time,
+    )?;
 
     Ok(())
 }
 
 /// Validate current signer and its last block timestamp against the last signer and its last block
 /// timestamp Used to prevent a signer from signing multiple blocks in the same turn
+/// Assuming sane timestamps
 pub fn validate_current_signer_against_last(
     last: (secp256k1::PublicKey, f64),
     current: (secp256k1::PublicKey, f64),
+    block_time: u64,
 ) -> Result<(), ValidateAgainstParentError> {
-    // Last block should be greater that 1 minute in the worst cast
+    // Last block should be greater that `block_time` in the worst case
     // Even in the case of > 2 federation members the worst case time between blocks for the same
-    // Signer should be 1 minute. Assuming 1 minute block times
-    if last.0 == current.0 && current.1 - last.1 < 1.0 {
+    // signer is 2 * block_time
+    println!("current.1 - last.1 = {:?}", current.1 - last.1);
+    println!("block_time * 2 = {:?}", block_time * 2);
+    if last.0 == current.0 && (current.1 - last.1) < (block_time * 2) as f64 {
         return Err(ValidateAgainstParentError::SignerLimitExceeded);
     }
 
@@ -222,16 +233,16 @@ pub fn validate_current_signer_against_last(
 }
 
 /// Returns true if the authority is in turn
-pub fn is_inturn(authorities_len: u64, signer_index: u64) -> bool {
+pub fn is_inturn(authorities_len: u64, signer_index: u64, block_time: u64) -> bool {
     let timestamp = unix_timestamp(); // Keep the timestamp in seconds
-    let cycle_length = authorities_len * 60; // Full cycle length in seconds
+    let cycle_length = authorities_len * block_time; // Full cycle length in seconds
 
     // Calculate the position in the current cycle
     let position_in_cycle = timestamp % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
-    // Each signer's turn lasts for 60 seconds
-    (position_in_cycle / 60) % authorities_len == signer_index
+    // Each signer's turn lasts for `block_time` seconds
+    (position_in_cycle / block_time) % authorities_len == signer_index
 }
 
 /// Typedef for (start of current turn, end of current turn, time taken, time remaining)
@@ -242,9 +253,10 @@ pub fn get_in_turn_interval(
     authorities_len: u64,
     signer_index: u64,
     reference_timestamp: u64,
+    block_time: u64,
 ) -> CoordinatorInterval {
     // Calculate the length of one complete cycle
-    let cycle_length = authorities_len * 60;
+    let cycle_length = authorities_len * block_time;
 
     // Calculate how many complete cycles have passed since the epoch
     let cycles_since_epoch = reference_timestamp / cycle_length;
@@ -253,9 +265,9 @@ pub fn get_in_turn_interval(
     let current_cycle_start = cycles_since_epoch * cycle_length;
 
     // Calculate the start time of the current turn for the given signer_index
-    let start_of_current_turn = current_cycle_start + (signer_index * 60);
+    let start_of_current_turn = current_cycle_start + (signer_index * block_time);
 
-    // End time of the current turn, ensuring full 60 seconds
+    // End time of the current turn, ensuring full `block_time` seconds
     let end_of_current_turn = start_of_current_turn + 59;
 
     (
@@ -267,15 +279,19 @@ pub fn get_in_turn_interval(
 }
 
 /// Returns the index of the authority which is currently in turn based on the seconds passed
-pub fn current_inturn_index(authorities_len: u64, reference_timestamp: u64) -> u64 {
+pub fn current_inturn_index(
+    authorities_len: u64,
+    reference_timestamp: u64,
+    block_time: u64,
+) -> u64 {
     // Calculate the length of one complete cycle
-    let cycle_length = authorities_len * 60;
+    let cycle_length = authorities_len * block_time;
 
     // Calculate the position in the current cycle
     let position_in_cycle = reference_timestamp % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
-    (position_in_cycle / 60) % authorities_len
+    (position_in_cycle / block_time) % authorities_len
 }
 
 #[cfg(test)]
@@ -294,6 +310,9 @@ mod tests {
     const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
     #[allow(dead_code)]
     const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+
+    #[allow(dead_code)]
+    const BLOCK_TIME_SECONDS: u64 = 5;
 
     #[allow(dead_code)]
     fn generate_secret_key(hex_string: &str) -> secp256k1::SecretKey {
@@ -406,7 +425,7 @@ mod tests {
         let mut parent = Header::default();
         parent.number = 0;
         let current = Header::default();
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
         assert!(result.is_ok());
     }
 
@@ -421,7 +440,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
         assert!(result.is_err());
     }
 
@@ -433,12 +452,14 @@ mod tests {
         parent.number = 1;
         parent.timestamp = 1704834442_u64;
         current.number = 2;
-        current.timestamp = 1704834442_u64 + 60;
+        current.timestamp = 1704834442_u64 + (BLOCK_TIME_SECONDS * 2);
+        println!("parent ts = {:?}, current ts = {:?}", parent.timestamp, current.timestamp);
 
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, None);
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
+        println!("{:?}", result);
         assert!(result.is_ok());
     }
 
@@ -452,7 +473,7 @@ mod tests {
         sign_block_helper(&mut parent, None);
         sign_block_helper(&mut current, Some(SK2));
 
-        let result = validate_against_parent(parent, current);
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
         assert!(result.is_ok());
     }
 
@@ -460,14 +481,14 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index));
+        assert!(is_inturn(authorities_len, signer_index, BLOCK_TIME_SECONDS));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index));
+        assert!(!is_inturn(authorities_len, signer_index, BLOCK_TIME_SECONDS));
     }
 
     #[test]
@@ -494,9 +515,14 @@ mod tests {
     fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
         let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts);
-        let (start, end, time_passed, time_remaining) =
-            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts);
+        let current_in_turn_signer =
+            current_inturn_index(authorities_len, current_ts, BLOCK_TIME_SECONDS);
+        let (start, end, time_passed, time_remaining) = get_in_turn_interval(
+            authorities_len,
+            current_in_turn_signer,
+            current_ts,
+            BLOCK_TIME_SECONDS,
+        );
 
         println!(
             "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",

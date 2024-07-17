@@ -1,3 +1,4 @@
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
@@ -13,7 +14,6 @@ use tokio::sync::mpsc::error::SendError;
 use tracing::{error, info, warn};
 
 use crate::{
-    extended_client::BtcServerExtendedClient,
     utils::{deserialize_frost_peer_id, FrostParseError},
     Storage,
 };
@@ -373,12 +373,11 @@ where
         dkg_payload: DkgPayload,
         response_type: DkgEventResponseType,
     ) -> Result<(), Error> {
-        // TODO retry_exec
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
         let coordinator_peer = connected_peers.iter().find(|(_, peer_data)| {
-            peer_data.frost_identifier.and_then(|id| Some(id == coord_id)).unwrap_or_default()
+            peer_data.frost_identifier.map(|id| id == coord_id).unwrap_or_default()
         });
 
         // Find the coord and send the message
@@ -392,6 +391,7 @@ where
                 sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
             }
         }
+
         Ok(())
     }
 
@@ -400,7 +400,6 @@ where
         dkg_payload: DkgPayload,
         response_type: DkgEventResponseType,
     ) -> Result<(), Error> {
-        // TODO retry_exec
         info!(target: "consensus::authority::dkg::gossip_to_peers", "gossiping message type {:?} to all peers", response_type);
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
@@ -408,12 +407,7 @@ where
 
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         for (_, peer_data) in connected_peers.iter() {
-            if peer_data
-                .frost_identifier
-                .as_ref()
-                .and_then(|id| Some(*id != coord_id))
-                .unwrap_or_default()
-            {
+            if peer_data.frost_identifier.as_ref().map(|id| *id != coord_id).unwrap_or_default() {
                 let resp = PeerMessageResponse::Dkg(DkgResponse {
                     response_type: response_type.clone(),
                     identifier: dkg_payload.identifier.clone(),

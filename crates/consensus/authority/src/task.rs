@@ -1,8 +1,8 @@
 use crate::{
-    epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    frost_task::FrostNotificationMessage, pbft_task::PbftNotificationMessage, AuthorityConsensus,
-    Storage,
+    epoch_manager::EpochManager, frost_task::FrostNotificationMessage,
+    pbft_task::PbftNotificationMessage, AuthorityConsensus, Storage,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
@@ -10,6 +10,7 @@ use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
+use reth_primitives::ChainSpec;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
@@ -25,6 +26,8 @@ use tokio::sync::{
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
+    /// Chainspec
+    pub(crate) chain_spec: Arc<ChainSpec>,
     /// The authority consensus wrapper
     pub(crate) consensus: AuthorityConsensus,
     /// The active epoch
@@ -83,6 +86,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         _canon_state_notification: CanonStateNotificationSender,
@@ -104,6 +108,7 @@ where
         client: Client,
     ) -> Self {
         Self {
+            chain_spec,
             consensus,
             storage,
             to_engine,

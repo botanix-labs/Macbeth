@@ -17,7 +17,6 @@ pub(crate) const DEFAULT_BITCOIND_PASSWORD: &str = "bar";
 /// Parameters to configure Bitcoind.
 #[derive(Debug, Clone, Args, PartialEq, Eq, Serialize, Deserialize)]
 #[clap(next_help_heading = "Bitcoind")]
-
 pub struct BitcoindArgs {
     /// bitcoind RPC url
     ///
@@ -60,6 +59,6 @@ impl Default for BitcoindArgs {
 
 impl From<BitcoindArgs> for BitcoindConfig {
     fn from(args: BitcoindArgs) -> Self {
-        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password.clone())
+        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password)
     }
 }

@@ -127,6 +127,7 @@ impl Consensus for BeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        _aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
@@ -140,6 +141,7 @@ impl Consensus for BeaconConsensus {
         _header: &Header,
         _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
+        _aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
@@ -157,6 +159,7 @@ impl Consensus for BeaconConsensus {
 ///
 /// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
 /// This must be 32 bytes or fewer; formally Hx.
+#[allow(dead_code)]
 fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError> {
     // Botanix consensus rules allows for large extra data returning ok here till we have an upper
     // bound for v1

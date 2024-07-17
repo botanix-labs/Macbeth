@@ -276,6 +276,7 @@ impl InsertBlockErrorKind {
     /// Returns true if the error is caused by an invalid block
     ///
     /// This is intended to be used to determine if the block should be marked as invalid.
+    #[allow(unreachable_patterns)]
     pub fn is_invalid_block(&self) -> bool {
         match self {
             InsertBlockErrorKind::SenderRecovery | InsertBlockErrorKind::Consensus(_) => true,
@@ -298,6 +299,10 @@ impl InsertBlockErrorKind {
                     &BlockExecutionError::CannotAddExistingFederationMember { .. } => true,
                     #[cfg(feature = "optimism")]
                     BlockExecutionError::OptimismBlockExecution(_) => false,
+                    BlockExecutionError::CannotAddExistingFederationMember => true,
+                    BlockExecutionError::FailedToDeserializePreviousBlockHeader => true,
+                    BlockExecutionError::BitcoinRecentHeaderNotAvailable => true,
+                    BlockExecutionError::PBFTConsensusError(_) => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

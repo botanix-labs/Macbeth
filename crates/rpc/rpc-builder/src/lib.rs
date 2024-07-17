@@ -1484,6 +1484,8 @@ pub struct RpcServerConfig {
     ipc_endpoint: Option<String>,
     /// JWT secret for authentication
     jwt_secret: Option<JwtSecret>,
+    /// btc signing server JWT secret
+    btc_signing_server_jwt_secret: Option<JwtSecret>,
 }
 
 /// === impl RpcServerConfig ===
@@ -1596,6 +1598,15 @@ impl RpcServerConfig {
     /// Configures the JWT secret for authentication.
     pub fn with_jwt_secret(mut self, secret: Option<JwtSecret>) -> Self {
         self.jwt_secret = secret;
+        self
+    }
+
+    /// Configures the btc-server JWT secret.
+    pub fn with_btc_signing_server_jwt_secret(
+        mut self,
+        btc_signing_server_jwt_secret: Option<JwtSecret>,
+    ) -> Self {
+        self.btc_signing_server_jwt_secret = btc_signing_server_jwt_secret;
         self
     }
 

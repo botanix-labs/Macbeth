@@ -1,3 +1,4 @@
+use client::jwt::JwtSecret as ClientJwtSecret;
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use rand::Rng;
 use reth_primitives::{
@@ -66,6 +67,12 @@ const JWT_MAX_IAT_DIFF: Duration = Duration::from_secs(60);
 
 /// The execution layer client MUST support at least the following alg HMAC + SHA256 (HS256)
 const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
+
+impl From<JwtSecret> for ClientJwtSecret {
+    fn from(jwt_secret: JwtSecret) -> Self {
+        ClientJwtSecret(jwt_secret.0)
+    }
+}
 
 /// Value-object holding a reference to a hex-encoded 256-bit secret key.
 /// A JWT secret key is used to secure JWT-based authentication. The secret key is

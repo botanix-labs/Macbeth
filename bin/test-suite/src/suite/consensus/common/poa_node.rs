@@ -3,6 +3,7 @@ use bitcoin::{
     hashes::{sha256, Hash},
     BlockHash,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
@@ -12,12 +13,11 @@ use reth::{
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, PeerKind, Peers},
-    utils::get_or_create_jwt_secret_from_path,
 };
-use reth_authority_consensus::extended_client::BtcServerExtendedClient;
 use reth_network_types::pk2id;
-use reth_node_core::args::GenesisTomlConfig;
+use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
+    constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
     ChainSpec,
@@ -91,7 +91,6 @@ pub struct FederationMemberTestConfig {
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
-    pub jwt_secret_path: PathBuf,
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
     pub peer_id: PeerId,
@@ -110,7 +109,6 @@ impl FederationMemberTestConfig {
         bitcoind_username: String,
         bitcoind_password: String,
         bitcoin_server_url: String,
-        jwt_secrets_dir: PathBuf,
         frost_min_signers: u16,
         frost_max_signers: u16,
         peer_id: PeerId,
@@ -120,7 +118,6 @@ impl FederationMemberTestConfig {
     ) -> Self {
         let rpc_port = rpc_port_base + index;
         let discovery_port = discovery_port_base + index;
-        let jwt_secret_path = jwt_secrets_dir.join(format!("{}.hex", index + 1));
         Self {
             index,
             temp_path: {
@@ -141,7 +138,6 @@ impl FederationMemberTestConfig {
             bitcoin_server_url,
             peers_list: vec![],
             sender,
-            jwt_secret_path,
             frost_min_signers,
             frost_max_signers,
             peer_id,
@@ -160,6 +156,10 @@ impl FederationMemberTestConfig {
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
         self.peers_list = peers;
+    }
+
+    pub fn peers_list(&self) -> Vec<FederationMemberTestConfig> {
+        self.peers_list.clone()
     }
 
     pub fn insert_edh(&mut self, edh: ExtraDataHeader) {
@@ -193,8 +193,6 @@ impl FederationMemberTestConfig {
             .unwrap();
         file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
 
-        let jwt_secret_path = self.jwt_secret_path.display().to_string();
-
         // update genesis config with edh and render file
         let botanix_testnet_config_genesis = if let Some(edh) = self.edh.as_ref() {
             let edh = hex::encode(edh.serialize());
@@ -204,8 +202,6 @@ impl FederationMemberTestConfig {
         } else {
             panic!("Edh data missing. Cannot create botanix testnet config genesis file");
         };
-
-        // Need to create a chain.toml in the data dir
 
         // Need to zip together the soc address and pk
         let mut fed_member_pks = vec![];
@@ -236,16 +232,18 @@ impl FederationMemberTestConfig {
             }
         }
 
-        let chain_config =
-            GenesisTomlConfig::new("integration test toml".to_string(), edh_authorities, None);
-        it_info_print!("Chain config", chain_config);
-        chain_config.write_to_path(Path::new(datadir).join("chain.toml")).unwrap();
+        // Need to create a federation.toml in the data dir
+        let federation_config = FederationTomlConfig::new(edh_authorities);
+        it_info_print!("Federation config", federation_config);
+        let federation_config_path = Path::new(datadir).join("federation.toml");
+        federation_config.write_to_path(&federation_config_path).unwrap();
 
         let no_args = NoArgs::with(self.clone());
-        let mut command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
-            "--chain",
-            "botanix_testnet",
+            "--is-testnet",
+            "--federation-config-path",
+            format!("{}", federation_config_path.display().to_string()).as_str(),
             "--federation-mode",
             "--ipcdisable",
             "--datadir",
@@ -262,8 +260,6 @@ impl FederationMemberTestConfig {
             "eth,net,trace,txpool,web3,rpc,admin",
             "--btc-network",
             "regtest",
-            "--authrpc.jwtsecret",
-            jwt_secret_path.as_str(),
             "--btc-server",
             self.bitcoin_server_url.as_str(),
             "--bitcoind.url",
@@ -287,7 +283,6 @@ impl FederationMemberTestConfig {
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
         let botanix_testnet = create_botanix_config_with_genesis(genesis, 6);
-        command.chain = Arc::new(botanix_testnet.clone());
 
         (command, botanix_testnet)
     }
@@ -304,7 +299,6 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         let engine_index = self.index;
         let rx_sender = self.sender.clone();
         let bitcoin_server_url = self.bitcoin_server_url.clone();
-        let jwt_secret_path = self.jwt_secret_path.clone();
         let peers_list = self.peers_list.clone();
 
         // ~~~~~~~~~~ spawn initial task that adds peers and awaits dkg to finish ~~~~~~~~~~~
@@ -330,13 +324,10 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
             }
 
             // create a btc client
-            let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
-            let mut btc_server_client = BtcServerExtendedClient::new(
-                format!("http://{}", bitcoin_server_url),
-                Some(jwt_secret),
-            )
-            .await
-            .unwrap();
+            let mut btc_server_client =
+                BtcServerExtendedClient::new(format!("http://{}", bitcoin_server_url), None)
+                    .await
+                    .unwrap();
 
             // wait for the dkg to finish
             let pub_key = loop {
@@ -455,17 +446,13 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
 
         // ~~~~~~~~~~~ spawn signing finished notification task ~~~~~~~~~~~
         let bitcoin_server_url = self.bitcoin_server_url.clone();
-        let jwt_secret_path = self.jwt_secret_path.clone();
         let rx_sender = self.sender.clone();
         executor.spawn(Box::pin(async move {
             // create a btc client
-            let jwt_secret = get_or_create_jwt_secret_from_path(&jwt_secret_path).unwrap();
-            let mut btc_server_client = BtcServerExtendedClient::new(
-                format!("http://{}", bitcoin_server_url),
-                Some(jwt_secret),
-            )
-            .await
-            .unwrap();
+            let mut btc_server_client =
+                BtcServerExtendedClient::new(format!("http://{}", bitcoin_server_url), None)
+                    .await
+                    .unwrap();
             loop {
                 // get all session ids
                 let session_ids = btc_server_client
@@ -579,7 +566,6 @@ pub async fn create_poa_federation_members(
             global_context.bitcoind_user.clone(),
             global_context.bitcoind_pass.clone(),
             format!("localhost:{}", port),
-            global_context.jwt_dir.clone(),
             global_context.min_signers,
             global_context.max_signers,
             member_peer_id,
@@ -601,6 +587,7 @@ pub async fn create_poa_federation_members(
         // to make sure they're not identical, hash random data
         BlockHash::hash(&[1]),
         sha256::Hash::hash(&[2]),
+        nums_secp256k1_pk(),
     );
 
     // now insert peers and edh into each federation member
@@ -630,13 +617,8 @@ pub async fn create_poa_federation_members(
 #[cfg(test)]
 mod tests {
 
-    use askama::Template;
-    use bitcoin::{
-        hashes::{sha256, Hash},
-        BlockHash,
-    };
-
     use super::*;
+    use askama::Template;
 
     #[test]
     fn test_edh_template() {
@@ -646,15 +628,9 @@ mod tests {
         let secret_key2 = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
 
-        let extra_data_header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            None,
-            Some(vec![pk1, pk2]),
-            None,
-            None,
-            BlockHash::all_zeros(),
-            sha256::Hash::all_zeros(),
-        );
+        let mut extra_data_header = ExtraDataHeader::default();
+        extra_data_header.add_authority_signers(vec![pk1, pk2]);
+
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render().unwrap();

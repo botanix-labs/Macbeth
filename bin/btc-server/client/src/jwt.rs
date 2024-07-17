@@ -61,7 +61,7 @@ const JWT_MAX_IAT_DIFF: Duration = Duration::from_secs(60);
 /// The execution layer client MUST support at least the following alg HMAC + SHA256 (HS256)
 const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JwtSecret(pub [u8; 32]);
 
 /// Attempts to retrieve or create a JWT secret from the specified path.
@@ -159,12 +159,13 @@ impl JwtSecret {
     /// and the key.
     ///
     /// ```rust
-    /// use reth_rpc::{Claims, JwtSecret};
+    /// use client::jwt::{Claims, JwtSecret};
     ///
     /// let my_claims = Claims { iat: 0, exp: None };
     /// let secret = JwtSecret::random();
     /// let token = secret.encode(&my_claims).unwrap();
     /// ```
+    #[allow(dead_code)]
     pub fn encode(&self, claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
         let bytes = &self.0;
         let key = jsonwebtoken::EncodingKey::from_secret(bytes);

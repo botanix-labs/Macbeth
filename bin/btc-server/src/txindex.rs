@@ -51,15 +51,13 @@ pub struct Tx {
 }
 
 impl Tx {
-    pub fn inputs<'a>(&'a self) -> impl Iterator<Item = OutPoint> + 'a {
+    pub fn inputs(&self) -> impl Iterator<Item = OutPoint> + '_ {
         self.tx.input.iter().map(|i| i.previous_output)
     }
 
     /// Get all the pegouts of this tx. These are the outputs this tx delivers.
     /// I.e. all outputs that are not change outputs.
-    pub fn pegouts<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
+    pub fn pegouts(&self) -> impl ExactSizeIterator<Item = (OutPoint, &TxOut)> + '_ {
         self.pegout_idxs.iter().map(|i| {
             let point = OutPoint::new(self.txid, *i as u32);
             let output = &self.tx.output[*i];
@@ -69,9 +67,7 @@ impl Tx {
 
     /// Get all change outputs of this tx.
     #[allow(unused)]
-    pub fn change<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (OutPoint, &'a TxOut)> + ExactSizeIterator + 'a {
+    pub fn change(&self) -> impl ExactSizeIterator<Item = (OutPoint, &TxOut)> + '_ {
         self.change_idxs.iter().map(|i| {
             let point = OutPoint::new(self.txid, *i as u32);
             let output = &self.tx.output[*i];
@@ -179,6 +175,7 @@ impl TxIndex {
     }
 
     /// Get all utxos that are created by pending txs but are already confirmed.
+    #[allow(dead_code)]
     pub fn pending_confirmed_utxos(&self) -> HashSet<OutPoint> {
         let mut ret = HashSet::with_capacity(self.txs.len() * 3);
         for tx in self.txs.values() {

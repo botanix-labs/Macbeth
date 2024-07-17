@@ -91,6 +91,7 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;
 
     /// Validates that block has the right beneficiary
@@ -102,6 +103,7 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
+        aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;
 
     /// Validates the edh single signer check
@@ -110,6 +112,20 @@ pub trait Consensus: Debug + Send + Sync {
         header: &Header,
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ConsensusError>;
+}
+
+/// Invalid Aggregated Public Key Error
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+pub enum InvalidAggregatedPublicKeyError {
+    /// Aggregated public key does not match expected key
+    #[error("Aggregated public key does not match expected key")]
+    InvalidAggregatedPublicKey,
+    /// Aggregated public key is missing
+    #[error("Aggregated public key is missing")]
+    MissingAggregatedPublicKey,
+    /// Aggregated public key should not be NUMS point past genesis block
+    #[error("Aggregated public key should not be NUMS point past genesis block")]
+    NumsAggregatePublicKeyPastGenesis,
 }
 
 /// Consensus Errors
@@ -201,6 +217,17 @@ pub enum ConsensusError {
     /// Error when the block timestamp is in the future compared to our clock time.
     #[error("block timestamp {timestamp} is in the future compared to our clock time {present_timestamp}")]
     TimestampIsInFuture {
+        /// The block's timestamp.
+        timestamp: u64,
+        /// The current timestamp.
+        present_timestamp: u64,
+    },
+
+    /// Error when the block timestamp is in the past compared to our clock time.
+    #[error(
+        "block timestamp {timestamp} is in the past compared to our clock time {present_timestamp}"
+    )]
+    TimestampIsInPast {
         /// The block's timestamp.
         timestamp: u64,
         /// The current timestamp.
@@ -316,6 +343,10 @@ pub enum ConsensusError {
     /// Inturn Validation Error
     #[error("in turn validation error")]
     ValidateInturnError,
+
+    /// Invalid Aggregated Public key
+    #[error("invalid aggregated public key")]
+    InvalidAggregatedPublicKey(#[from] InvalidAggregatedPublicKeyError),
 }
 
 impl ConsensusError {

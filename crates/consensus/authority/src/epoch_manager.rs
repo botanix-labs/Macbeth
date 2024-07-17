@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use crate::Storage;
 use reth_consensus_common::utils;
-use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
+use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber, ChainSpec};
 use reth_provider::{BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
@@ -13,18 +15,19 @@ use tracing::{debug, info, warn};
 /// 3. block fails common consensus checks
 pub(crate) struct EpochManager<Client> {
     /// Access to storage to fetch headers.
-    // TODO (armins) this should be protected by an Arc.
     pub(crate) storage: Storage,
-
+    /// Database provider
     pub(crate) client: Client,
+    /// chain spec
+    pub(crate) chain_spec: Arc<ChainSpec>,
 }
 
 impl<Client: HeaderProvider> EpochManager<Client>
 where
     Client: BlockReaderIdExt + Clone + 'static,
 {
-    pub(crate) fn new(storage: Storage, client: Client) -> Self {
-        Self { storage, client }
+    pub(crate) fn new(storage: Storage, client: Client, chain_spec: Arc<ChainSpec>) -> Self {
+        Self { storage, client, chain_spec }
     }
 
     pub(crate) async fn poll(&mut self) -> bool {
@@ -54,19 +57,25 @@ where
             return false;
         }
 
-        let latest_header = latest_header.unwrap();
+        // Checked above
+        let latest_header = latest_header.expect("latest header should be present");
+        let block_time = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
 
-        let is_inturn = utils::is_inturn(authority_len, signer_index as u64);
+        let is_inturn = utils::is_inturn(authority_len, signer_index as u64, block_time);
 
         // Skip over genesis
         if latest_header.number != 0 {
             let latest_signers = latest_header.recovered_signed_authorities().unwrap();
             let latest_inturn_signer =
-                latest_signers.get(0).expect("should have at least one signer");
+                latest_signers.first().expect("should have at least one signer");
             let current_ts = utils::unix_timestamp();
             let current_last_signer_validation = utils::validate_current_signer_against_last(
                 (*latest_inturn_signer, latest_header.timestamp as f64 / 60.0),
                 (signer_pk, current_ts as f64 / 60.0),
+                block_time,
             );
             if is_inturn && current_last_signer_validation.is_err() {
                 // made info instead of warn since this prints as soon as

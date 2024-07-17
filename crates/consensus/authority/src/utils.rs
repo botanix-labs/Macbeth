@@ -8,6 +8,8 @@ use bitcoin::{
     witness::Witness,
     BlockHash,
 };
+use btcserverlib::extended_client::BtcServerExtendedClient;
+use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage, Utxo};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -23,9 +25,6 @@ use reth_provider::{BlockReaderIdExt, BundleStateWithReceipts};
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-
-use crate::extended_client::BtcServerExtendedClient;
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage, Utxo};
 
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
@@ -140,9 +139,9 @@ pub type SigningSessionId = [u8; 32];
 pub(crate) enum ProcessBotanixLogError {
     /// Failed to notify btc server about pegin
     #[error("Failed to notify btc server about pegin")]
-    FailedToNotifyPegin(tonic::Status),
+    NotifyPeginFailure(tonic::Status),
     #[error("Failed to make pegout tx: {0}")]
-    FailedToMakePegoutTx(tonic::Status),
+    MakePegoutTxFailure(tonic::Status),
     #[error("Failed to parse pegout data")]
     FailedToParsePegout,
 }
@@ -306,7 +305,7 @@ pub(crate) async fn get_psbt(
         }
         Err(e) => {
             error!(target: "consensus::authority", ?e, "Failed to make pegout tx");
-            Err(ProcessBotanixLogError::FailedToMakePegoutTx(e.to_tonic_status()))
+            Err(ProcessBotanixLogError::MakePegoutTxFailure(e.to_tonic_status()))
         }
     }
 }
@@ -359,7 +358,7 @@ async fn process_botanix_log(
                         ),
                     };
                     btc_server.notify_pegin(request).await.map_err(|e| {
-                        ProcessBotanixLogError::FailedToNotifyPegin(e.to_tonic_status())
+                        ProcessBotanixLogError::NotifyPeginFailure(e.to_tonic_status())
                     })?;
                     info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                 }
@@ -395,7 +394,7 @@ pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
         bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
-#[warn(dead_code)]
+#[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
     bloom_contains_minting_contract_address(bloom) &&
         bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))

@@ -65,17 +65,18 @@ fn payload_validation() {
 
     assert_matches!(try_into_sealed_block(block_with_valid_extra_data, None), Ok(_));
 
+    // Botanix exception test commented out as we have removed the extra data max byte check
     // Invalid extra data
-    let block_with_invalid_extra_data: Bytes = BytesMut::zeroed(33).freeze();
-    let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
-        b.header.extra_data = block_with_invalid_extra_data.clone().into();
-        b
-    });
-    assert_matches!(
+    // let block_with_invalid_extra_data: Bytes = BytesMut::zeroed(33).freeze();
+    // let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
+    //     b.header.extra_data = block_with_invalid_extra_data.clone().into();
+    //     b
+    // });
+    // assert_matches!(
 
-        try_into_sealed_block(invalid_extra_data_block,None),
-        Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
-    );
+    //     try_into_sealed_block(invalid_extra_data_block,None),
+    //     Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
+    // );
 
     // Zero base fee
     let block_with_zero_base_fee = transform_block(block.clone(), |mut b| {

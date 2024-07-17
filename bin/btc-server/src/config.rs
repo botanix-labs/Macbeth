@@ -163,7 +163,7 @@ pub(crate) struct CliConfig {
     toml: Option<PathBuf>,
     /// jwt secret path
     #[arg(long)]
-    jwt_secret: Option<PathBuf>,
+    btc_signing_server_jwt_secret: Option<PathBuf>,
     #[arg(long)]
     /// bitcoind url
     bitcoind_url: Option<Url>,
@@ -200,7 +200,7 @@ pub(crate) struct Config {
     /// toml configuration path
     pub(crate) toml: Option<PathBuf>,
     /// jwt secret path
-    pub(crate) jwt_secret: Option<PathBuf>,
+    pub(crate) btc_signing_server_jwt_secret: Option<PathBuf>,
     /// bitcoind url
     pub(crate) bitcoind_url: Url,
     /// bitcoind user
@@ -245,7 +245,9 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
             .min_signers
             .or(file_config.min_signers)
             .expect("min_signers is required"),
-        jwt_secret: cli_config.jwt_secret.or(file_config.jwt_secret),
+        btc_signing_server_jwt_secret: cli_config
+            .btc_signing_server_jwt_secret
+            .or(file_config.btc_signing_server_jwt_secret),
         bitcoind_url: cli_config
             .bitcoind_url
             .or(file_config.bitcoind_url)

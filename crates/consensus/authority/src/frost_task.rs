@@ -1,10 +1,10 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
-    dkg::DKGStateMachine, epoch_manager::EpochManager, extended_client::BtcServerExtendedClient,
-    signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
+    dkg::DKGStateMachine, signing::SigningStateMachine, utils::is_active_sync_in_progress, Storage,
 };
 
+use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_network::{
     frost::{
         manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
@@ -13,7 +13,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_primitives::ChainSpec;
 use reth_tasks::TaskExecutor;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
@@ -36,15 +36,13 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<Client, ToFrostMan> {
+pub struct FrostTask<ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
     pub(crate) frost_handle: ToFrostMan,
     /// Frost configuration
     pub(crate) frost_config: FrostConfig,
-    /// Epoch manager
-    pub(crate) epoch_manager: EpochManager<Client>,
     /// dkg state machine
     pub(crate) dkg_state_machine: DKGStateMachine<ToFrostMan>,
     /// signing state machine
@@ -56,18 +54,17 @@ pub struct FrostTask<Client, ToFrostMan> {
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
-impl<Client, ToFrostMan> FrostTask<Client, ToFrostMan>
+impl<ToFrostMan> FrostTask<ToFrostMan>
 where
-    Client: BlockReaderIdExt + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         btc_server: BtcServerExtendedClient,
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
-        epoch_manager: EpochManager<Client>,
         config: FrostConfig,
         storage: Storage,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
@@ -84,6 +81,7 @@ where
         );
 
         let signing_state_machine = SigningStateMachine::new(
+            chain_spec,
             btc_server,
             frost_handle.clone(),
             config.clone(),
@@ -95,7 +93,6 @@ where
             network_handle,
             frost_handle,
             frost_config: config,
-            epoch_manager,
             dkg_state_machine,
             signing_state_machine,
             storage,
@@ -357,10 +354,9 @@ where
     }
 }
 
-impl<Client, ToFrostMan> std::fmt::Debug for FrostTask<Client, ToFrostMan>
+impl<ToFrostMan> std::fmt::Debug for FrostTask<ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Client: Clone + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FrostTask").finish_non_exhaustive()

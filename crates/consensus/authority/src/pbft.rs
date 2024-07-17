@@ -1,22 +1,32 @@
-use crate::{utils::retry_exec, BLOCK_TIME_DURATION_SECS};
+use crate::{
+    utils::retry_exec, AuthorityConsensus, AuthorityStorage, Storage, BLOCK_TIME_DURATION_SECS,
+};
+use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
 
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{blockchain_tree::BlockchainTreeViewer, p2p::headers::client::HeadersClient};
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeViewer,
+    executor::{BlockExecutionError, BlockValidationError},
+    p2p::headers::client::HeadersClient,
+};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_types::pk2id;
+
 use reth_primitives::{
+    botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
-    BlockBody, BlockHash, SealedBlock,
+    BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockReaderIdExt, ProviderError};
+use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory};
+
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -27,6 +37,26 @@ use std::{
 use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, warn};
 
+pub(crate) struct PbftCommitmentCriteria {}
+
+impl PbftCommitmentCriteria {
+    /// Returns the minimum number of pre-commitments required for a block
+    /// This is not consenusus critical but will prevent the number of forked blocks
+    /// n being the number of authorities
+    #[inline]
+    pub(crate) fn min_pre_commitments(n: u16) -> u16 {
+        n - 2
+    }
+
+    /// Returns the minimum number of commitments required for a block
+    /// Should be two thirds of the total number of authorities
+    /// n being the number of authorities
+    #[inline]
+    pub(crate) fn min_commitments(n: u16) -> u16 {
+        (2 * n / 3) + 1
+    }
+}
+
 type SealedBlocksMap = Arc<RwLock<BTreeMap<BlockHash, SealedBlock>>>;
 type PreCommitmentsMap = Arc<RwLock<BTreeMap<BlockHash, HashSet<PeerId>>>>;
 
@@ -35,7 +65,7 @@ pub(crate) enum Error {
     #[error("Failed to validate signatures on block: {0}")]
     InvalidSignature(#[from] ValidateAuthoritySignatureError),
     #[error("Failed to deserialize extra data header: {0}")]
-    ExtraDataHeaderDeserializeError(#[from] ExtraDataHeaderDeserializeError),
+    ExtraDataHeaderDeserialize(#[from] ExtraDataHeaderDeserializeError),
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
     #[error("Missing signatures on block")]
@@ -45,7 +75,7 @@ pub(crate) enum Error {
     #[error("Proposed block has too many signatures")]
     TooManySignaturesOnProposedBlock,
     #[error("Failed to recover signature: {0}")]
-    RecoverSignatureError(#[from] secp256k1::Error),
+    RecoverSignature(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
     #[error("Recieved block is not valid: {0}")]
@@ -54,6 +84,10 @@ pub(crate) enum Error {
     PeerAlreadyProcessedTimeSlot(u64),
     #[error("Recover authorities error {0}")]
     RecoverAuthoritiesError(#[from] RecoverAuthorityError),
+    #[error("Block execution error: {0}")]
+    BlockExecutionError(#[from] BlockExecutionError),
+    #[error("Failed to find block with hash {0}")]
+    BlockHashNotFound(BlockHash),
 }
 
 /// Error when validating a block as a block signer
@@ -127,31 +161,24 @@ pub(crate) enum PbftState {
 impl PbftState {
     /// Returns true if the pbft state machine is in a running state
     pub(crate) fn is_running(&self) -> bool {
-        match self {
-            PbftState::Initial => false,
-            _ => true,
-        }
+        !matches!(self, PbftState::Initial)
     }
     /// Returns true if we are waiting for a number of pre-commitments
     pub(crate) fn is_awaiting_precommitments(&self) -> bool {
-        match self {
-            PbftState::AwaitingPreCommitments => true,
-            _ => false,
-        }
+        matches!(self, PbftState::AwaitingPreCommitments)
     }
     /// Returns true if we are waiting for a number of pre-commitments
     pub(crate) fn is_awaiting_commitments(&self) -> bool {
-        match self {
-            PbftState::AwaitingCommitments => true,
-            _ => false,
-        }
+        matches!(self, PbftState::AwaitingCommitments)
     }
 }
 
 /// A state machine for transitioning between different pbft states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient> {
+pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EF> {
+    chain_spec: Arc<ChainSpec>,
     client: Client,
+    storage: Storage,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -165,20 +192,32 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     network_client: NetworkClient,
     /// Store commitment to time slot
     time_slot_commitment: BTreeMap<u64, PeerId>,
+    /// latest known bitcoin block header
+    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    consensus: AuthorityConsensus,
+    /// executor factory
+    executor_factory: EF,
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
+where
+    EF: ExecutorFactory + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
+        chain_spec: Arc<ChainSpec>,
         client: Client,
+        storage: Storage,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
         secret_key: secp256k1::SecretKey,
         task_executor: Option<TaskExecutor>,
         network_client: NetworkClient,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        executor_factory: EF,
+        consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             peer_id_to_identifier(config.authority_index as u16);
@@ -189,7 +228,9 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
         );
 
         Self {
+            chain_spec,
             client,
+            storage,
             personal_frost_identifier,
             frost_handle,
             state: BTreeMap::new(),
@@ -201,13 +242,18 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
             secret_key,
             task_executor: task_executor.clone(),
             network_client,
+            executor_factory,
+            bitcoin_block_header,
+            consensus,
         }
     }
 
     /// Resets the state machine to its initial state
     pub(crate) fn reset(self) -> Self {
         Self {
+            chain_spec: self.chain_spec,
             client: self.client,
+            storage: self.storage,
             personal_frost_identifier: self.personal_frost_identifier,
             frost_handle: self.frost_handle,
             state: BTreeMap::new(),
@@ -219,12 +265,15 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
             task_executor: self.task_executor,
             network_client: self.network_client,
             time_slot_commitment: BTreeMap::new(),
+            bitcoin_block_header: self.bitcoin_block_header,
+            consensus: self.consensus,
+            executor_factory: self.executor_factory,
         }
     }
 
     /// Returns the state machine state
     pub(crate) fn get_state(&self, block_hash: BlockHash) -> PbftState {
-        self.state.get(&block_hash).unwrap_or(&PbftState::Initial).clone()
+        *self.state.get(&block_hash).unwrap_or(&PbftState::Initial)
     }
 
     /// Sets state machine state
@@ -234,14 +283,15 @@ impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
     }
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient>
+impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
+    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
 where
-    Client: BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    Client: StateProviderFactory + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
+    EF: ExecutorFactory + Clone + 'static,
 {
-    pub(crate) fn spawn_cleanup_task(&mut self) {
+    pub(crate) async fn spawn_cleanup_task(&mut self) {
         let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
         let client_clone = self.client.clone();
         let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
@@ -306,13 +356,21 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!(target: "consensus::authority::pbft::get_all_peers_handle", "Failed to get frost peers connections {:?}", e);
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                Err(Error::FailedToGetConnectedPeersHandles)
             }
         }
     }
 
     pub(crate) fn is_coordinator(&self) -> bool {
-        is_inturn(self.config.authorities.len() as u64, self.config.authority_index as u64)
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
+        is_inturn(
+            self.config.authorities.len() as u64,
+            self.config.authority_index as u64,
+            leader_selection_window,
+        )
     }
 
     pub(crate) async fn gossip_to_peers(
@@ -330,7 +388,7 @@ where
                 if connected_peer
                     .frost_identifier
                     .as_ref()
-                    .and_then(|id| Some(*id != self.personal_frost_identifier))
+                    .map(|id| *id != self.personal_frost_identifier)
                     .unwrap_or_default()
                 {
                     if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
@@ -354,10 +412,14 @@ where
             return Err(ValidateBlockError::WillNotSignGenesisBlock);
         }
 
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         block_to_sign
             .header
-            .validate_inturn(&self.config.authorities)
+            .validate_inturn(&self.config.authorities, leader_selection_window)
             .map_err(|_| ValidateBlockError::TimecheckViolated(block_hash))?;
 
         // Blocks should only be signed if they are building on the best block
@@ -380,7 +442,7 @@ where
         // Check if we are building on a block that is in the canonical chain
         // or a fork
         if block_to_sign.parent_hash == best_block_hash {
-            return Ok(());
+            Ok(())
         }
         // TODO re-consider if this is possible
         else if best_block.header.number == 0 {
@@ -425,6 +487,49 @@ where
             }
             return Ok(());
         }
+    }
+
+    /// Execute and run poa validation on the block without updating state or inserting it into the
+    /// storage
+    pub(crate) async fn execute_and_validate_poa_consensus(
+        &mut self,
+        block: SealedBlock,
+    ) -> Result<(), BlockExecutionError> {
+        let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+        let storage = self.storage.read().await;
+        let botanix_consensus_pkg = Some(BotanixConsensusPackage {
+            bitcoin_checkpoint: recent_bitcoin_block_header.expect("recent header to exist"),
+            aggregate_public_key: storage
+                .get_aggregate_key()
+                // we should have an aggregate pk if blocks are being produced
+                .expect("aggregate pk is some"),
+            btc_network: storage.get_btc_network(),
+        });
+
+        let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
+            .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
+
+        let block_with_senders = BlockWithSenders::new(block.clone().unseal(), senders.clone())
+            .expect("senders are valid");
+
+        // validate before executing block
+        self.consensus
+            .validate_extra_data_header_single_signer(
+                &block.header.clone(),
+                &storage.get_authorities(),
+            )
+            .map_err(|e| {
+                warn!(target: "consensus::authority", "failed to validate POA header during PBFT: {:?}", e);
+                e
+            })?;
+
+        drop(storage);
+        let db = self.client.latest().expect("get latest");
+        let mut executor = self.executor_factory.with_state(&db);
+
+        executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
+
+        Ok(())
     }
 
     /// Intended to be called by the in turn block producer when a block is ready to be
@@ -494,11 +599,18 @@ where
         // validate block
         self.validate_block(&block).await?;
 
+        let leader_selection_window = self
+            .chain_spec
+            .leader_selection_window
+            .expect("block times to be set for PoA consensus");
         let coordinator = self
             .config
             .authorities
-            .get(current_inturn_index(self.config.authorities.len() as u64, unix_timestamp())
-                as usize)
+            .get(current_inturn_index(
+                self.config.authorities.len() as u64,
+                unix_timestamp(),
+                leader_selection_window,
+            ) as usize)
             .expect("should be valid index");
 
         // Check if the inturn block producer has the first signature on the block
@@ -509,7 +621,7 @@ where
                     return Err(Error::TooManySignaturesOnProposedBlock);
                 }
                 let msg = secp256k1::Message::from_digest_slice(
-                    &block.header.create_sighash()?.0.as_slice(),
+                    block.header.create_sighash()?.0.as_slice(),
                 )?;
                 let recovered_pk = sigs[0].recover(&msg)?;
                 if recovered_pk != *coordinator {
@@ -522,6 +634,9 @@ where
                 return Err(Error::MissingSignatures);
             }
         }
+
+        // execute block and run poa consensus
+        self.execute_and_validate_poa_consensus(block.clone()).await?;
 
         // Add our own pre-commitment
         let mut pre_commits = HashSet::new();
@@ -555,8 +670,8 @@ where
         let signed_authorities = block.header.recovered_signed_authorities()?;
         // Check if we have already signed for this time slot
         let time_slot = block.header.timestamp / 60;
-        let coord_pk = signed_authorities.get(0).unwrap();
-        let coord_peer_id = pk2id(&coord_pk);
+        let coord_pk = signed_authorities.first().unwrap();
+        let coord_peer_id = pk2id(coord_pk);
 
         if let Some(peer) = self.time_slot_commitment.get(&time_slot) {
             if *peer == coord_peer_id {
@@ -573,7 +688,9 @@ where
             .cloned()
             .unwrap_or_else(HashSet::new);
         // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() >= self.config.max_signers as usize {
+        if pre_commits.len() as u16 >=
+            PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
+        {
             // Save that we processed this time slot from this peer
             let time_slot = block.header.timestamp / 60;
             info!(target: "consensus::authority::pbft::check_and_send_commitment" ,"We have enough pre-commitments moving to next state");
@@ -617,6 +734,9 @@ where
             return Ok(());
         }
 
+        // execute block and run poa consensus
+        self.execute_and_validate_poa_consensus(block.clone()).await?;
+
         // Add the peer's precommitment
         let mut write_handle = self.pre_commitments.write().await;
         let pre_commits = write_handle.entry(block_hash).or_insert_with(HashSet::new);
@@ -646,6 +766,7 @@ where
         if peer_id == self.peer_id {
             return Ok(None);
         }
+
         let block_hash = block.header.segregated_signature_block_hash()?;
         // Check that this peer specifically provided a signature
         let current_state = self.get_state(block_hash);
@@ -653,13 +774,11 @@ where
             warn!(target: "consensus::authority::pbft::process_commitment" ,"State machine is not awaiting commitments for block {:?}", block_hash);
             return Ok(None);
         }
+
         let lock = self.sealed_blocks.read().await;
         // This block is originally added during init block proposal
-        let current_block = lock
-            .get(&block_hash)
-            // TODO should we be error'ing here instead
-            .expect("block should exist")
-            .clone();
+        let current_block =
+            lock.get(&block_hash).ok_or(Error::BlockHashNotFound(block_hash))?.clone();
         drop(lock);
         let mut current_header = current_block.header().clone();
         let mut edh = current_header.deserialize_extra_data_header()?;
@@ -697,8 +816,10 @@ where
             new_block.header().check_authority_sig_add(&self.config.authorities)?;
         info!("number of valid sigs: {}", number_of_valid_sigs);
         info!("max signers: {}", self.config.max_signers);
-        // if we have enough commitments, we can move to the next state
-        if number_of_valid_sigs >= self.config.max_signers {
+        // if we have enough commitments, we can move to the next st#[inline]
+        if number_of_valid_sigs >=
+            PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+        {
             info!(target: "consensus::authority::pbft::process_commitment" ,"We have enough commitments, time to produce a block");
             let block_witness =
                 new_block.header().get_block_witness()?.expect("set the witness above");
@@ -713,6 +834,12 @@ where
 mod tests {
     #![allow(unused_mut)]
     use super::*;
+    use bitcoin::{
+        block::{Header as BitcoinHeader, Version},
+        hash_types::TxMerkleNode,
+        hashes::Hash,
+        BlockHash, CompactTarget,
+    };
     use rand;
     use reth_consensus_common::utils::unix_timestamp;
     use reth_interfaces::p2p::{
@@ -723,8 +850,11 @@ mod tests {
     };
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_types::{pk2id, WithPeerId};
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256};
-    use reth_provider::{test_utils::MockEthProvider, HeaderProvider};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256, BOTANIX_TESTNET};
+    use reth_provider::{
+        test_utils::{MockEthProvider, TestExecutorFactory},
+        HeaderProvider,
+    };
     use secp256k1::SECP256K1;
     use tokio::sync::mpsc::error::SendError;
 
@@ -819,12 +949,18 @@ mod tests {
             $mock_eth_provider.add_block(parent_block.hash_slow(), parent_block.clone().into());
 
             let ts = unix_timestamp();
+            let authorities = pks.clone();
+            let dummy_agg_pk = pks[0];
+
             for i in 0..$n {
-                let edh = ExtraDataHeader::default();
+                let mut edh = ExtraDataHeader::default();
+                edh.authority_signers = Some(authorities.clone());
+                edh.aggregated_public_key = dummy_agg_pk;
                 let mut header = Header::default();
                 header.number = 1;
                 header.parent_hash = parent_block.hash_slow();
                 header.timestamp = ts;
+                header.base_fee_per_gas = Some(1);
                 header.add_extra_data_header(&edh);
                 header.sign_block(&$sks[i]).unwrap();
                 let block_body = BlockBody::default();
@@ -835,15 +971,40 @@ mod tests {
             let mut $block_to_propose = None;
             let mut $coord = None;
 
+            let header = BitcoinHeader {
+                version: Version::default(),
+                prev_blockhash: BlockHash::all_zeros(),
+                merkle_root: TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: CompactTarget::default(),
+                nonce: 0,
+            };
+
+            let bitcoin_block_header = Arc::new(RwLock::new(Some((header, 0))));
+            let chain_spec = BOTANIX_TESTNET.clone();
+
             for i in 0..$n {
+                let mut storage = Storage::new(
+                    authorities.clone(),
+                    authorities.clone(),
+                    i,
+                    pks[i],
+                    bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+                    Some(dummy_agg_pk),
+                );
                 let pbft_state_machine = PbftStateMachine::new(
+                    chain_spec.clone(),
                     $mock_eth_provider.clone(),
+                    storage,
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
                     $peer_ids[i],
                     $sks[i],
                     None,
                     $mock_network_client.clone(),
+                    bitcoin_block_header.clone(),
+                    TestExecutorFactory::default(),
+                    AuthorityConsensus::new(Arc::clone(&BOTANIX_TESTNET.clone())),
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -1246,7 +1407,7 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
@@ -1254,7 +1415,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Test that the other non-coord responds the same way
         non_coords[1]
@@ -1263,7 +1424,7 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[1].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[1].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
     }
 
     #[tokio::test]
@@ -1295,7 +1456,8 @@ mod tests {
             .expect("valid block proposal");
         // There should be two commitments
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        // only need one more pre-commitment but we have two which is enough
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
         non_coords[0]
@@ -1303,7 +1465,7 @@ mod tests {
             .await
             .expect("valid block proposal");
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         let other_peer_id = non_coords[1].peer_id.clone();
         // Process other peers pre-commitment
@@ -1314,26 +1476,10 @@ mod tests {
 
         // There should be three pre-commitments, non_coord[0], coord which was added at the block
         // proposal stage And non_coord[1] which we just added
-        let pre_commitments =
-            non_coords[0].pre_commitments.read().await.get(&block_hash).cloned().unwrap();
-        assert_eq!(pre_commitments.len(), 3);
-        for i in 0..pre_commitments.len() {
-            assert!(pre_commitments.contains(&peer_ids[i]));
-        }
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
-
-        // Adding the same pre-commit from the same peer shouldnt change anything b/c we are await
-        // for commitments
-        non_coords[0]
-            .process_precommitment(block_to_propose.clone(), other_peer_id)
-            .await
-            .expect("valid precommitment");
         let mut pre_commitments =
-            non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
-        assert_eq!(pre_commitments.len(), 3);
-        for i in 0..pre_commitments.len() {
-            assert!(pre_commitments.contains(&peer_ids[i]));
-        }
+            non_coords[0].pre_commitments.read().await.get(&block_hash).cloned().unwrap();
+        assert_eq!(pre_commitments.len(), 2);
+        // Still awaiting for commitments
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Remove the coord's pre-commits
@@ -1655,6 +1801,7 @@ mod tests {
     async fn signing_genisis_block() {
         let mock_eth_provider = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let config = FrostConfig {
             authorities: vec![],
@@ -1664,14 +1811,30 @@ mod tests {
             authority_pk: sk.public_key(SECP256K1),
         };
         let mock_network_client = MockNetworkClient::new(mock_eth_provider.clone());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let storage = Storage::new(
+            vec![],
+            vec![],
+            0,
+            pk,
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            // Dummy aggregate key
+            Some(pk),
+        );
+
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
             None,
             mock_network_client,
+            Arc::new(RwLock::new(None)),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
 
         let edh = ExtraDataHeader::default();
@@ -1757,18 +1920,34 @@ mod tests {
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = coord.secret_key.clone();
         let config = coord.config.clone();
         let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
 
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let storage = Storage::new(
+            vec![],
+            vec![],
+            0,
+            pk,
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            // Dummy aggregate key
+            Some(pk),
+        );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
             None,
             mock_network_client_peers,
+            Arc::new(RwLock::new(None)),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
@@ -1831,18 +2010,34 @@ mod tests {
         let mock_eth_provider_mine = MockEthProvider::default();
         let mock_eth_provider_peers = MockEthProvider::default();
         // frost config is not needed for this test
+        let secp = secp256k1::Secp256k1::new();
         let sk = coord.secret_key.clone();
         let config = coord.config.clone();
         let mock_network_client_peers = MockNetworkClient::new(mock_eth_provider_peers.clone());
 
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let storage = Storage::new(
+            vec![],
+            vec![],
+            0,
+            pk,
+            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            // Dummy aggregate key
+            Some(pk),
+        );
         let pbft_state_machine = PbftStateMachine::new(
+            BOTANIX_TESTNET.clone(),
             mock_eth_provider_mine.clone(),
+            storage,
             FrostHandleMock {},
             config,
             PeerId::default(),
             sk.clone(),
             None,
             mock_network_client_peers,
+            Arc::new(RwLock::new(None)),
+            TestExecutorFactory::default(),
+            AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();
         let mut b0 = Header::default();
