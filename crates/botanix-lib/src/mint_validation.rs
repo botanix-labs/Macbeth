@@ -62,16 +62,9 @@ pub enum ParseBurnEventError {
 #[derive(Debug, Error)]
 pub enum MintContractError {
     #[error("error parsing event log from Minting contract")]
-    InvalidLog {
-        event: &'static str,
-        error: String,
-    },
+    InvalidLog { event: &'static str, error: String },
     #[error("invalid pegin metadata")]
-    InvalidPeginData {
-        error: String,
-        revert_address: Address,
-        revert_amount: ethers::types::U256,
-    },
+    InvalidPeginData { error: String, revert_address: Address, revert_amount: ethers::types::U256 },
     #[error("invalid pegout metadata")]
     InvalidPegoutData(#[from] PegoutDataError),
 }
@@ -79,7 +72,9 @@ pub enum MintContractError {
 impl From<ParseMintEventError> for MintContractError {
     fn from(e: ParseMintEventError) -> Self {
         match e {
-            ParseMintEventError::InvalidLog(e) => Self::InvalidLog { event: "Mint", error: e.into() },
+            ParseMintEventError::InvalidLog(e) => {
+                Self::InvalidLog { event: "Mint", error: e.into() }
+            }
             ParseMintEventError::InvalidPeginData { error, revert_address, revert_amount } => {
                 Self::InvalidPeginData { error: error.to_string(), revert_address, revert_amount }
             }
@@ -90,7 +85,9 @@ impl From<ParseMintEventError> for MintContractError {
 impl From<ParseBurnEventError> for MintContractError {
     fn from(e: ParseBurnEventError) -> Self {
         match e {
-            ParseBurnEventError::InvalidLog(e) => Self::InvalidLog { event: "Burn", error: e.into() },
+            ParseBurnEventError::InvalidLog(e) => {
+                Self::InvalidLog { event: "Burn", error: e.into() }
+            }
             ParseBurnEventError::InvalidPegoutData(e) => Self::InvalidPegoutData(e),
         }
     }
@@ -140,32 +137,35 @@ pub fn try_parse_mint_event(
             ethers::abi::param_type::ParamType::Uint(256_usize),
         ],
         &log.data.data,
-    ).map_err(|_| ParseMintEventError::InvalidLog("invalid payload"))?;
+    )
+    .map_err(|_| ParseMintEventError::InvalidLog("invalid payload"))?;
 
     if params.len() != 4 {
         return Err(ParseMintEventError::InvalidLog("wrong number of params"));
     }
 
-    let bitcoin_block_height = params[1].clone().into_uint()
-        .ok_or(ParseMintEventError::InvalidLog(
-            "parsing bitcoin block height param",
-        ))?
+    let bitcoin_block_height = params[1]
+        .clone()
+        .into_uint()
+        .ok_or(ParseMintEventError::InvalidLog("parsing bitcoin block height param"))?
         .as_u32();
 
-    let meta_bytes = params[2].clone().into_bytes()
-        .ok_or(ParseMintEventError::InvalidLog(
-            "converting metadata param to bytes"
-        ))?;
+    let meta_bytes = params[2]
+        .clone()
+        .into_bytes()
+        .ok_or(ParseMintEventError::InvalidLog("converting metadata param to bytes"))?;
 
-    let mint_amount = params[3].clone().into_uint()
+    let mint_amount = params[3]
+        .clone()
+        .into_uint()
         .ok_or(ParseMintEventError::InvalidLog("invalid mint amount params"))?;
 
     let meta = {
         let mut proofs = Vec::new();
         let mut offset = 0;
         while offset < meta_bytes.len() {
-            let (proof, proof_size) = PeginMeta::deserialize(&meta_bytes[offset..])
-                .map_err(|e| {
+            let (proof, proof_size) =
+                PeginMeta::deserialize(&meta_bytes[offset..]).map_err(|e| {
                     let err = ParseMintEventError::InvalidPeginData {
                         error: e,
                         revert_address: destination,
@@ -180,12 +180,7 @@ pub fn try_parse_mint_event(
         proofs
     };
 
-    Ok(Some(PeginData {
-        account: destination,
-        amount: mint_amount,
-        bitcoin_block_height,
-        meta,
-    }))
+    Ok(Some(PeginData { account: destination, amount: mint_amount, bitcoin_block_height, meta }))
 }
 
 /// Parse the given log for a [Burn] event.
@@ -220,21 +215,26 @@ pub fn try_parse_burn_event(
             ethers::abi::param_type::ParamType::Bytes,
         ],
         &log.data.data,
-    ).map_err(|_| ParseBurnEventError::InvalidLog("invalid payload"))?;
+    )
+    .map_err(|_| ParseBurnEventError::InvalidLog("invalid payload"))?;
 
     if params.len() != 3 {
         return Err(ParseBurnEventError::InvalidLog("wrong number of params"));
     }
-    let amount = params[0].clone().into_uint()
-        .ok_or(ParseBurnEventError::InvalidLog("pegout amount"))?;
+    let amount =
+        params[0].clone().into_uint().ok_or(ParseBurnEventError::InvalidLog("pegout amount"))?;
     let btc_amount = bitcoin::Amount::from_wei_floor(amount)
         .ok_or(ParseBurnEventError::InvalidLog("invalid amount"))?;
 
-    let destination = params[1].clone().into_string()
+    let destination = params[1]
+        .clone()
+        .into_string()
         .ok_or(ParseBurnEventError::InvalidLog("pegout destination"))?;
 
-    Ok(Some(PegoutData::new(btc_amount, destination, btc_network)
-        .map_err(ParseBurnEventError::InvalidPegoutData)?))
+    Ok(Some(
+        PegoutData::new(btc_amount, destination, btc_network)
+            .map_err(ParseBurnEventError::InvalidPegoutData)?,
+    ))
 }
 
 #[cfg(test)]

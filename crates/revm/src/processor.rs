@@ -29,8 +29,7 @@ use crate::{
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
 use reth_botanix_lib::mint_validation::{
-    try_parse_mint_event, try_parse_burn_event,
-    MintContractError, MINT_CONTRACT_ADDRESS,
+    try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
@@ -237,7 +236,8 @@ where
             let bitcoin_checkpoint = consensus_pkg.expect("is some").bitcoin_checkpoint;
             if pegin_data.bitcoin_block_height >= bitcoin_checkpoint.1 {
                 return Err(MintContractError::InvalidPeginData {
-                    error: format!("pegin height {} below checkpoint of {}",
+                    error: format!(
+                        "pegin height {} below checkpoint of {}",
                         bitcoin_checkpoint.1, pegin_data.bitcoin_block_height,
                     ),
                     revert_address: pegin_data.account,
@@ -258,14 +258,14 @@ where
                             revert_amount: pegin_data.amount,
                         });
                     }
-                },
+                }
                 Err(e) => {
                     return Err(MintContractError::InvalidPeginData {
                         error: format!("pegin validation failed: {}", e),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
                     });
-                },
+                }
             }
         }
 
@@ -346,10 +346,7 @@ where
                 // get pegout amount so can update balance if pegout reverts
                 let pegout_amount = transaction.value();
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(
-                        &result,
-                        botanix_consensus_pkg,
-                    ) {
+                    match Self::botanix_mint_contract_checks(&result, botanix_consensus_pkg) {
                         Ok(()) => Ok(ResultAndState { result, state }),
                         Err(e) => {
                             error!("Botanix Minting contract event validation failed: {:?}", e);
@@ -357,23 +354,27 @@ where
                             // balances have been updated since tx was successful according to EVM
                             // and we are reverting according to botanix validation
                             match e {
-                                MintContractError::InvalidPeginData { revert_address, revert_amount, .. } => {
+                                MintContractError::InvalidPeginData {
+                                    revert_address,
+                                    revert_amount,
+                                    ..
+                                } => {
                                     Self::decrement_balance_by_address(
                                         revert_address,
                                         revert_amount,
                                         &mut state,
                                     );
-                                },
+                                }
                                 MintContractError::InvalidPegoutData(_) => {
                                     Self::increment_balance_by_address(
                                         sender,
                                         EthersU256::from_little_endian(pegout_amount.as_le_slice()),
                                         &mut state,
                                     );
-                                },
+                                }
                                 //TODO(stevenroose) this means we couldn't parse Minting contract
                                 //output, we might want to panic here, should really not happen
-                                MintContractError::InvalidLog { .. } => {},
+                                MintContractError::InvalidLog { .. } => {}
                             }
 
                             let new_result = ExecutionResult::Revert {
@@ -387,7 +388,7 @@ where
                                 },
                             };
                             Ok(ResultAndState { result: new_result, state })
-                        },
+                        }
                     }
                 } else {
                     Ok(ResultAndState { result, state })

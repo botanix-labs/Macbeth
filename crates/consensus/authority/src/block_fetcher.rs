@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     engine_util,
-    utils::{bloom_contains_pegin, is_active_sync_in_progress, call_notify_pegin},
+    utils::{bloom_contains_pegin, call_notify_pegin, is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
@@ -155,7 +155,7 @@ where
                     continue;
                 } else {
                     botanix_consensus_pkg = Some(BotanixConsensusPackage {
-                        bitcoin_checkpoint: bitcoin_checkpoint,
+                        bitcoin_checkpoint,
                         aggregate_public_key: storage
                             .aggregate_public_key
                             .expect("aggregate pk is some"),
@@ -220,12 +220,15 @@ where
                                         continue;
                                     }
                                     for log in &receipt.logs {
-                                        let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
+                                        let pegin_match =
+                                            try_parse_mint_event(log).expect("passed EVM check");
                                         if let Some(pegin_data) = pegin_match {
                                             info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
                                             for pegin in &pegin_data.meta {
                                                 //TODO(stevenroose) should this happen here?
-                                                if let Err(e) = call_notify_pegin(btc_server, &pegin).await {
+                                                if let Err(e) =
+                                                    call_notify_pegin(btc_server, &pegin).await
+                                                {
                                                     error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
                                                     return;
                                                 }
@@ -233,8 +236,9 @@ where
                                             }
                                         }
 
-                                        let pegout_match = try_parse_burn_event(log, self.btc_network)
-                                            .expect("passed EVM check");
+                                        let pegout_match =
+                                            try_parse_burn_event(log, self.btc_network)
+                                                .expect("passed EVM check");
                                         if let Some(pegout) = pegout_match {
                                             pegouts.push(pegout);
                                         }

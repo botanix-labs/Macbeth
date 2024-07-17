@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use bitcoin::{
-    TxOut,
     block::Header,
     consensus::{
         encode::{self as btcencode, Decodable},
@@ -9,6 +8,7 @@ use bitcoin::{
     },
     merkle_tree::PartialMerkleTree,
     secp256k1::{self, PublicKey},
+    TxOut,
 };
 
 use bitcoin::{self};
@@ -44,7 +44,9 @@ impl PeginData {
         let commit_hash = bitcoin_commitment.0.block_hash();
         for pegin in &self.meta {
             if pegin.version != PEGIN_META_VERSION {
-                return Err(PeginDataError::Invalid("invalid meta version: only accepting version 0"));
+                return Err(PeginDataError::Invalid(
+                    "invalid meta version: only accepting version 0",
+                ));
             }
 
             // pegin block headers list should contain the commitment header
@@ -188,7 +190,9 @@ impl PeginMeta {
     }
 
     pub fn txout(&self) -> &TxOut {
-        self.tx.output.get(self.outpoint.vout as usize)
+        self.tx
+            .output
+            .get(self.outpoint.vout as usize)
             .expect("we check on creation that vout exists")
     }
 }
