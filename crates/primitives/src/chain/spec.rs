@@ -306,7 +306,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         deposit_contract: None, // only relevant for PoS chains
         // Signet confirmation depth requirment
         parent_confirmation_depth: 1,
-        leader_selection_window: Some(5),
+        leader_selection_window: Some(9),
         // TODO (armins) do we need this?
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         prune_delete_limit: 1700,
