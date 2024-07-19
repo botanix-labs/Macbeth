@@ -65,7 +65,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.DEPLOYMENT_TOKEN }}" \
             -d '{"event_type": "deploy-testnet-v1"}' \
-            https://api.github.com/repos/botanix/internal-releases/dispatches
+            https://api.github.com/repos/botanix-labs/internal-releases/dispatches
 
         
      
