@@ -328,6 +328,7 @@ impl HeaderExt for Header {
     }
 
     /// Validates all signatures present on the edh
+    /// Returns total number of valid signatures
     fn check_authority_sig_add(
         &self,
         authority_signers: &[secp256k1::PublicKey],
