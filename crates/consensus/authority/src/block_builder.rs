@@ -5,14 +5,14 @@ use bitcoin::{
     psbt::Psbt,
     Witness,
 };
-use reth_consensus_common::utils;
+use reth_consensus_common::utils::{self, get_in_turn_interval, unix_timestamp};
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, header_ext::HeaderExt, public_key_to_address, Block,
+    botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block,
     SealedBlockWithSenders, B256,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
@@ -66,19 +66,11 @@ where
                 },
             );
 
-        // use authority address as suggested fee recipient
-        let authority_pub_key = secp256k1::PublicKey::from_secret_key_global(&self.sk);
-        let suggested_fee_recipient = public_key_to_address(authority_pub_key);
-
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-
         let payload_attributes = PayloadAttributes {
             timestamp: utils::unix_timestamp(),
             prev_randao: B256::ZERO, // only relevant for PoS
-            suggested_fee_recipient,
+            suggested_fee_recipient: Address::ZERO, /* fees are handled in processor.rs before
+                                      * the bundle state is created */
             withdrawals: None,              // only relevant for PoS
             parent_beacon_block_root: None, // only relevant for PoS
         };
@@ -262,12 +254,17 @@ where
                 }
 
                 // wait until the psbt is finalized
+                let (_, _, _, time_remaining) = get_in_turn_interval(
+                    storage.authorities.len() as u64,
+                    storage.signer_index as u64,
+                    unix_timestamp(),
+                    self.chain_spec
+                        .leader_selection_window
+                        .expect("should define leader selection window for poa consensus"),
+                );
+                info!(target: "consensus::authority", "Time remaining to gather frost signatures: {:?}", time_remaining);
                 let witness_data = match tokio::time::timeout(
-                    Duration::from_secs(
-                        leader_selection_window / 3, /* Lets wait a third of the block time for
-                                                      * frost
-                                                      * signing to finish */
-                    ),
+                    Duration::from_secs(time_remaining),
                     self.frost_task_rx.recv(),
                 )
                 .await
@@ -279,6 +276,10 @@ where
                     }
                     Err(e) => {
                         error!(target: "consensus::authority", "Failed to get finalized psbt from frost task, error: {:?}", e);
+                        // Attempt to abort the current signing session
+                        // We should panic if we cannot abort the signing session and be as loud as
+                        // possible
+                        self.btc_server.abort_signing(client::Empty {}).await.expect("valid abort");
                         return;
                     }
                     _ => {
@@ -314,7 +315,7 @@ where
                 return;
             }
         };
-        drop(storage);
+
         // Seal the block
         let mut block_to_commit = Block {
             header: new_header.clone().unseal(),
@@ -330,9 +331,20 @@ where
             .expect("send pbft task message");
         // Wait for commitments before we can commit to this block
         info!(target: "consensus::authority", "Waiting for commitments...");
+
+        let (_, _, _, time_remaining) = get_in_turn_interval(
+            storage.authorities.len() as u64,
+            storage.signer_index as u64,
+            unix_timestamp(),
+            self.chain_spec
+                .leader_selection_window
+                .expect("should define leader selection window for poa consensus"),
+        );
+        drop(storage);
+        info!(target: "consensus::authority", "Time remaining to gather frost signatures: {:?}", time_remaining);
         let _ = match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
-            Duration::from_secs(leader_selection_window / 3),
+            Duration::from_secs(time_remaining),
             self.pbft_task_rx.recv(),
         )
         .await

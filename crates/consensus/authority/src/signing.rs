@@ -4,7 +4,6 @@ use crate::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
         FrostParseError,
     },
-    BLOCK_TIME_DURATION_SECS,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
@@ -163,7 +162,9 @@ where
 
         let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
         let signing_states_clone = Arc::clone(&signing_states);
-        let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
+        let sleep_duration = Duration::from_secs(
+            2 * chain_spec.leader_selection_window.expect("block time to be set"),
+        );
         task_executor.spawn(async move {
             loop {
                 // remove stale signing sessions
@@ -840,7 +841,7 @@ where
                         if let Some(sender) = sender.as_ref() {
                             return sender
                                 .send(FrostPeerCommand::PeerMessage(message))
-                                .map_err(Error::Send)
+                                .map_err(Error::Send);
                         }
                         Ok(())
                     }
@@ -1002,7 +1003,7 @@ where
                         if let Some(sender) = sender.as_ref() {
                             return sender
                                 .send(FrostPeerCommand::PeerMessage(message))
-                                .map_err(Error::Send)
+                                .map_err(Error::Send);
                         }
                         Ok(())
                     }

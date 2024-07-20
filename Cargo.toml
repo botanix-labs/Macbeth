@@ -24,6 +24,7 @@ members = [
     "crates/interfaces/",
     "crates/metrics/",
     "crates/botanix-lib",
+    "crates/botanix-cli",
     "crates/metrics/metrics-derive/",
     "crates/net/common/",
     "crates/net/discv4/",

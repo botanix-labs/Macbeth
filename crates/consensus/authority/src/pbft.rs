@@ -1,6 +1,4 @@
-use crate::{
-    utils::retry_exec, AuthorityConsensus, AuthorityStorage, Storage, BLOCK_TIME_DURATION_SECS,
-};
+use crate::{utils::retry_exec, AuthorityConsensus, AuthorityStorage, Storage};
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
@@ -292,7 +290,9 @@ where
     EF: ExecutorFactory + Clone + 'static,
 {
     pub(crate) async fn spawn_cleanup_task(&mut self) {
-        let sleep_duration = Duration::from_secs(2 * BLOCK_TIME_DURATION_SECS);
+        let sleep_duration = Duration::from_secs(
+            2 * self.chain_spec.leader_selection_window.expect("block time to be set"),
+        );
         let client_clone = self.client.clone();
         let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
         let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));

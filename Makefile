@@ -424,7 +424,7 @@ start-test-suite:
 	--test-to-run "${TEST_TO_RUN}" \
 	--config "./config.toml" \
 	--run-suite all \
-	--timeout 400000 \
+	--timeout 133333 \
 	--dry-run false \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
