@@ -148,52 +148,53 @@ impl FrostManager {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
                 // make sure we ignore our own connection
                 let my_peer_id = self.network.peer_id();
                 if *my_peer_id != peer_id {
-                    if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
-                        peer_data.direction = Some(direction);
-                        peer_data.peer_commands_tx = Some(to_connection);
-                    } else {
-                        self.peers_connections.insert(
+                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
+                    self.peers_connections.insert(
+                        peer_id,
+                        PeerData {
                             peer_id,
-                            PeerData {
-                                peer_id,
-                                direction: Some(direction),
-                                peer_commands_tx: Some(to_connection),
-                                socket_addr: None,
-                                frost_identifier: None,
-                            },
-                        );
-                    }
+                            direction: Some(direction),
+                            peer_commands_tx: Some(to_connection),
+                            socket_addr: None,
+                            frost_identifier: None,
+                        },
+                    );
                 }
             }
             NetworkFrostEvent::PeerMessage { peer_id, response } => {
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
                 }
                 for task_forwarder in self.task_forwarder_txs.iter() {
-                    // TODO:  handle error?
-                    let _send_res = task_forwarder.send((peer_id, response.clone()));
+                    if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
+                        error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
+                    }
                 }
             }
             NetworkFrostEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr) => {
                 if !self.is_authority_peer(&peer_id) {
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} is not an authority member", peer_id);
                     return;
                 }
 
                 if self.peers_connections.contains_key(&peer_id) {
+                    let frost_identifier = peer_id_to_identifier(authority_index);
                     // only if we have an already connection established
                     if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
+                        info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id = {}, frost identifier = {:?}, socket address = {}. Authority index = {}", peer_id, frost_identifier, peer_socket_addr, authority_index);
                         // add the peer conn mapped to a frost id based on authority index
-                        let frost_identifier = peer_id_to_identifier(authority_index);
                         peer_data.socket_addr = Some(peer_socket_addr);
                         peer_data.frost_identifier = Some(frost_identifier);
+                    } else {
+                        warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} does not seem to be connected yet", peer_id);
                     }
                 }
             }
