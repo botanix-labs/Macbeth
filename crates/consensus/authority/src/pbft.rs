@@ -991,6 +991,7 @@ mod tests {
                     pks[i],
                     bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
                     Some(dummy_agg_pk),
+                    vec![],
                 );
                 let pbft_state_machine = PbftStateMachine::new(
                     chain_spec.clone(),
@@ -1819,6 +1820,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
 
         let pbft_state_machine = PbftStateMachine::new(
@@ -1933,6 +1935,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
         let pbft_state_machine = PbftStateMachine::new(
             BOTANIX_TESTNET.clone(),
@@ -2023,6 +2026,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
         let pbft_state_machine = PbftStateMachine::new(
             BOTANIX_TESTNET.clone(),
