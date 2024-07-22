@@ -156,7 +156,7 @@ where
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
                 warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 return;
             }
 
