@@ -46,7 +46,7 @@ where
         // ensure the node is not syncing
         if is_active_sync_in_progress(&self.network_handle) {
             warn!(target: "consensus::authority", "Node is still syncing, block builder task is awaiting fully synced status ...");
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
             return;
         }
 
@@ -97,7 +97,7 @@ where
                     transactions
                 } else {
                     // retry once since payload might not be ready yet
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     let transactions = engine_util::best_transactions_from_payload(
                         &self.payload_builder,
                         payload_id,

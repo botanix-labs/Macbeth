@@ -112,7 +112,7 @@ where
             }
 
             // short sleep
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
         // get all connected authority peers

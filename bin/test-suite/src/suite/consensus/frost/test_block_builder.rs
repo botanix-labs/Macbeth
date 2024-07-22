@@ -180,8 +180,8 @@ pub async fn block_builder(
                     botanix_block_reward_address_balance_after
                 );
 
-                let botanix_block_reward = botanix_block_reward_address_balance_after
-                    - botanix_block_reward_address_balance_before;
+                let botanix_block_reward = botanix_block_reward_address_balance_after -
+                    botanix_block_reward_address_balance_before;
 
                 let total_block_reward = fed_member_balance + botanix_block_reward;
 
