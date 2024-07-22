@@ -403,7 +403,7 @@ where
             Ok(())
         };
 
-        retry_exec(fut, 3, Duration::from_secs(1)).await
+        retry_exec(fut, 3, Duration::from_millis(500)).await
     }
 
     async fn validate_block(&self, block_to_sign: &SealedBlock) -> Result<(), ValidateBlockError> {
