@@ -48,7 +48,7 @@ use reth_revm::{
     database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
     processor::EVMProcessor, State,
 };
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, info, trace, warn};
 
@@ -351,6 +351,7 @@ impl Storage {
         pk: secp256k1::PublicKey,
         btc_network: bitcoin::Network,
         aggregate_public_key: Option<secp256k1::PublicKey>,
+        authority_socket_addresses: Vec<SocketAddr>,
     ) -> Self {
         let storage = StorageInner {
             genesis_authorities,
@@ -359,6 +360,7 @@ impl Storage {
             authority: pk,
             aggregate_public_key,
             btc_network,
+            authority_socket_addresses,
         };
 
         Self { inner: Arc::new(RwLock::new(storage)) }
@@ -395,6 +397,8 @@ pub(crate) struct StorageInner {
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
     /// Bitcoin network
     btc_network: bitcoin::Network,
+    /// Authority socket addresses pulled from federation config
+    authority_socket_addresses: Vec<SocketAddr>,
 }
 
 // === impl StorageInner ===

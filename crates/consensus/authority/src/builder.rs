@@ -30,7 +30,7 @@ use reth_provider::{
 };
 
 use reth_tasks::TaskExecutor;
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -119,6 +119,7 @@ where
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
         genesis_authorities: Vec<secp256k1::PublicKey>,
+        authority_socket_addresses: Vec<SocketAddr>,
         executor_factory: EF,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
@@ -176,7 +177,8 @@ where
             signer_index.expect("valid index"),
             pk,
             btc_network,
-            None, // Aggregate pk to be filled out by the dkg state machine
+            None, // Aggregate pk to be filled out by the dkg state machine,
+            authority_socket_addresses,
         );
 
         // Instantiate epoch manager

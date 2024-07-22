@@ -109,7 +109,7 @@ where
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!(target: "consensus::authority::frost_task::start_dkg", "Not yet connected to all frost peers. Waiting ....");
+                    info!(target: "consensus::authority::frost_task::start_dkg", "Not yet connected to all frost peers. Waiting to stark DKG ....");
                     return;
                 }
                 info!(target: "consensus::authority::frost_task::start_dkg", "Connected to all frost peers {}", is_connected);
