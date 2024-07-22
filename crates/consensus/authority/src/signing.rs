@@ -652,7 +652,7 @@ where
             Ok(())
         };
 
-        retry_exec(fut, 3, Duration::from_secs(1)).await
+        retry_exec(fut, 3, Duration::from_millis(500)).await
     }
 
     // ====================================== 1 =========================================
