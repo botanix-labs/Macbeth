@@ -64,7 +64,8 @@ where
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
+                    info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting to send healthchecks...");
+                    self.connect_trusted_peers().await;
                     return false;
                 }
                 info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
@@ -74,6 +75,31 @@ where
                 error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
                 false
             }
+        }
+    }
+
+    async fn connect_trusted_peers(&mut self) {
+        let authority_peers = self
+            .storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .filter_map(|authority_pk| {
+                let authority_peer_id = pk2id(authority_pk);
+                if authority_peer_id != *self.network_handle.peer_id() {
+                    // excluse our own peer_id
+                    Some(authority_peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<PeerId>>();
+        let authority_socket_addresses =
+            self.storage.read().await.authority_socket_addresses.clone();
+        // These should be the same size vecs
+        for (peer, addr) in authority_peers.iter().zip(authority_socket_addresses.iter()) {
+            self.network_handle.add_trusted_peer(*peer, *addr)
         }
     }
 

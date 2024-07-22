@@ -110,7 +110,7 @@ impl FrostManager {
         let mut all_peer_connection_peer_ids =
             self.peers_connections.keys().cloned().collect::<Vec<_>>();
 
-        // retain all peer ids that are not in the autorities list
+        // retain all peer ids that are not in the authorities list
         all_peer_connection_peer_ids.retain(|peer_id| !self.authority_peerid.contains(peer_id));
 
         // check that the connected peers are indeed the authority peers
