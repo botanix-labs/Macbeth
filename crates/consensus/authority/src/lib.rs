@@ -601,7 +601,7 @@ impl StorageInner {
             witness_data.clone(),
             recent_block_hash,
             utxo_commitment,
-            aggregated_public_key.clone(),
+            *aggregated_public_key,
         );
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(sk).map_err(|e| {

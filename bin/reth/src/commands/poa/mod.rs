@@ -503,8 +503,7 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory =
-            EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config.clone());
+        let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
@@ -595,7 +594,7 @@ where {
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
             .network
-            .network_config(&reth_config, chain_arc.clone(), secret_key.clone(), default_peers_path)
+            .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .listener_addr(SocketAddr::new(
@@ -768,13 +767,13 @@ where {
                     pbft_task.expect("pbft task exists").start_task().await;
                 }),
             );
-            // TODO: temporarily disable healthcheck task
-            // executor.spawn_critical(
-            //     "Healthcheck Task",
-            //     Box::pin(async move {
-            //         healthcheck_task.expect("health check task exists").start_task().await;
-            //     }),
-            // );
+
+            executor.spawn_critical(
+                "Healthcheck Task",
+                Box::pin(async move {
+                    healthcheck_task.expect("health check task exists").start_task().await;
+                }),
+            );
         }
 
         executor.spawn_critical(

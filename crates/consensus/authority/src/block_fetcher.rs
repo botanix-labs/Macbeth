@@ -71,6 +71,7 @@ where
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
@@ -154,7 +155,6 @@ where
                         bitcoin_checkpoint: bitcoin_block_header.expect("recent header is some"),
                         aggregate_public_key: storage
                             .aggregate_public_key
-                            .clone()
                             .expect("aggregate pk is some"),
                         btc_network: self.btc_network,
                     });
@@ -323,7 +323,7 @@ where
                         warn!(target: "consensus::authority", "Recieved block is not a direct child of the best block");
                         // need to retrieve this missing block from a peer
                         let missing_block =
-                            full_block_client.get_full_block(header.parent_hash.clone()).await;
+                            full_block_client.get_full_block(header.parent_hash).await;
                         // TODO (armins) should be using the insert with botanix consensus package
                         if let Err(e) = self.client.insert_block_without_senders(
                             missing_block.clone(),
