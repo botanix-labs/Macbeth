@@ -768,13 +768,13 @@ where {
                     pbft_task.expect("pbft task exists").start_task().await;
                 }),
             );
-
-            executor.spawn_critical(
-                "Healthcheck Task",
-                Box::pin(async move {
-                    healthcheck_task.expect("health check task exists").start_task().await;
-                }),
-            );
+            // TODO: temporarily disable healthcheck task
+            // executor.spawn_critical(
+            //     "Healthcheck Task",
+            //     Box::pin(async move {
+            //         healthcheck_task.expect("health check task exists").start_task().await;
+            //     }),
+            // );
         }
 
         executor.spawn_critical(
