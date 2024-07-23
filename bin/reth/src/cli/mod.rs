@@ -188,6 +188,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> Cli<Ext> {
 }
 
 /// Commands to be executed
+#[warn(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum Commands<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// Start the node

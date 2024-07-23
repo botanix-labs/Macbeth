@@ -328,7 +328,7 @@ where
         info!(target: "consensus::authority", "Waiting for commitments...");
 
         drop(storage);
-        let _ = match tokio::time::timeout(
+        match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
                 self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /

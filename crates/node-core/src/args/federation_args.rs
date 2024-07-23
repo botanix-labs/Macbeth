@@ -72,7 +72,7 @@ impl FederationTomlConfig {
 
     /// Convert the config to a string
     pub fn to_string(&self) -> Result<String, Error> {
-        Ok(toml::to_string(self).map_err(Error::ParseSerializeConfig)?)
+        toml::to_string(self).map_err(Error::ParseSerializeConfig)
     }
 
     /// Extracts federation public keys and socket addresses from the config

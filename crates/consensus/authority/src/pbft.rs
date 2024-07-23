@@ -81,9 +81,9 @@ pub(crate) enum Error {
     #[error("Peer for time slot {0} already processed")]
     PeerAlreadyProcessedTimeSlot(u64),
     #[error("Recover authorities error {0}")]
-    RecoverAuthoritiesError(#[from] RecoverAuthorityError),
+    RecoverAuthorities(#[from] RecoverAuthorityError),
     #[error("Block execution error: {0}")]
-    BlockExecutionError(#[from] BlockExecutionError),
+    BlockExecution(#[from] BlockExecutionError),
     #[error("Failed to find block with hash {0}")]
     BlockHashNotFound(BlockHash),
 }
@@ -203,6 +203,7 @@ where
     EF: ExecutorFactory + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
