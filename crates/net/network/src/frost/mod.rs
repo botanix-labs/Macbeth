@@ -96,23 +96,13 @@ impl fmt::Display for DkgResponse {
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UtxoSetResponse {
-    /// the utxo set request sender
-    pub sender: PeerId,
-    /// the utxo set target
-    pub target: PeerId,
     /// Utxo Set Data (Compressed and Serialized)
     pub data: Vec<u8>,
 }
 
 impl fmt::Display for UtxoSetResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Utxo Set Requester: {}, Utxo Set Sender {}, Data Size: {} bytes",
-            self.sender,
-            self.target,
-            self.data.len()
-        )
+        write!(f, "Utxo data Size: {} bytes", self.data.len())
     }
 }
 

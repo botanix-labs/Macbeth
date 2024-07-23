@@ -19,12 +19,18 @@ use reth_botanix_lib::{
     peg_contract::PegoutData,
 };
 use reth_interfaces::sync::SyncStateProvider;
-use reth_network::NetworkHandle;
+use reth_network::{
+    frost::manager::{FrostCommand, ToFrostManager},
+    NetworkHandle,
+};
+use reth_network_types::pk2id;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::{BlockReaderIdExt, BundleStateWithReceipts};
-use reth_rpc_types::BlockHashOrNumber;
+use reth_rpc_types::{BlockHashOrNumber, PeerId};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use crate::Storage;
 
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
@@ -43,7 +49,6 @@ pub(crate) fn compute_utxo_merkle_root(
     let mut utxos = peer_utxos
         .iter()
         .map(|u| {
-            // TODO: do we need to consider the other components of the utxo
             let mut engine = sha256::Hash::engine();
             let tx_id = bitcoin::hash_types::Txid::from_slice(&u.utxo_txid)
                 .ok()
@@ -71,6 +76,62 @@ pub(crate) fn compute_utxo_merkle_root(
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
     network_handle.is_syncing() || network_handle.is_initially_syncing()
+}
+
+/// Checks i all peers have been initially connected
+pub async fn check_all_peers_initially_connected(frost_handle: &impl ToFrostManager) -> bool {
+    // check if we are connected to all frost peers when in turn
+    let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
+    if let Err(e) = frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
+        error!(target: "check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
+        return false;
+    }
+    match receiver.await {
+        Ok(is_connected) => {
+            if !is_connected {
+                info!(target: "check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
+                return false;
+            }
+            info!(target: "check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
+            true
+        }
+        Err(e) => {
+            error!(target: "check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
+            false
+        }
+    }
+}
+
+/// Gets all but excluding ourselve authority peer ids
+pub(crate) async fn get_authority_peers(storage: &Storage) -> Vec<PeerId> {
+    // get a lock to the storage
+    let storage_lock = storage.read().await;
+
+    // read our own signer index
+    let authority_index = storage_lock.signer_index;
+
+    // get all authority peers
+    let authority_peers = storage
+        .read()
+        .await
+        .authorities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, authority_pk)| {
+            let authority_peer_id = pk2id(authority_pk);
+            if index != authority_index {
+                // excluse our own peer_id
+                Some(authority_peer_id)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<PeerId>>();
+
+    // drop the storage
+    drop(storage_lock);
+
+    authority_peers
 }
 
 /// Function for retrying an async closure with retries and delays

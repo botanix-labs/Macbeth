@@ -54,7 +54,7 @@ impl From<RpcUtxo> for Utxo {
         // FIXME: remove the unwrap
         let txid = Txid::from_slice(&txid).unwrap();
         let vout = value.utxo_vout;
-        let script = Script::from_bytes(&value.output_pubkey);
+        let script = Script::from_bytes(&value.output_scriptpubkey);
         Utxo::new(
             OutPoint::new(txid, vout),
             TxOut {

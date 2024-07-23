@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use crate::Storage;
+use crate::{utils::check_all_peers_initially_connected, Storage};
 use reth_network::{
     frost::{
         manager::{FrostCommand, ToFrostManager},
@@ -55,33 +55,11 @@ where
         }
     }
 
-    async fn check_all_peers_initially_connected(&mut self) -> bool {
-        // check if we are connected to all frost peers when in turn
-        let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
-            error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
-        }
-        match receiver.await {
-            Ok(is_connected) => {
-                if !is_connected {
-                    info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
-                    return false;
-                }
-                info!(target: "HealthcheckTask::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
-                true
-            }
-            Err(e) => {
-                error!(target: "HealthcheckTask::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
-                false
-            }
-        }
-    }
-
     pub async fn start_task(&mut self) {
         info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
         loop {
             // await all peers to be connected
-            if self.check_all_peers_initially_connected().await {
+            if check_all_peers_initially_connected(&self.frost_handle).await {
                 break;
             }
 

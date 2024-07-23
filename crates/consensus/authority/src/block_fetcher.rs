@@ -1,7 +1,10 @@
 use crate::{
     compressor::{Compressor, ProstMessageSerdelizer},
     engine_util,
-    utils::{bloom_contains_pegin, compute_utxo_merkle_root, is_active_sync_in_progress},
+    utils::{
+        bloom_contains_pegin, check_all_peers_initially_connected, compute_utxo_merkle_root,
+        is_active_sync_in_progress,
+    },
     AuthorityConsensus, Storage,
 };
 use bitcoin::hashes::{sha256, Hash};
@@ -22,7 +25,6 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkHandle,
 };
-use reth_network_types::pk2id;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_primitives::{
     botanix::BotanixConsensusPackage,
@@ -178,47 +180,6 @@ where
         Ok(())
     }
 
-    async fn get_authority_peers(&self) -> Vec<PeerId> {
-        // get all authority peers
-        self.storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .filter_map(|authority_pk| {
-                let authority_peer_id = pk2id(authority_pk);
-                if authority_peer_id != *self.network_handle.peer_id() {
-                    // excluse our own peer_id
-                    Some(authority_peer_id)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<PeerId>>()
-    }
-
-    async fn check_all_peers_initially_connected(&mut self) -> bool {
-        // check if we are connected to all frost peers when in turn
-        let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
-            error!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
-        }
-        match receiver.await {
-            Ok(is_connected) => {
-                if !is_connected {
-                    info!(target: "UtxoSyncTask::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
-                    return false;
-                }
-                info!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
-                true
-            }
-            Err(e) => {
-                error!(target: "consensus::authority::block_fetcher::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
-                false
-            }
-        }
-    }
-
     async fn sync_utxo_set(&self) {
         // get peer messages receiver
         let mut peer_messages_rx = match self.get_peer_messages_rx().await {
@@ -228,9 +189,6 @@ where
                 panic!("Error getting peer messages receiver = {:?}", e);
             }
         };
-
-        // get all connected peer ids
-        let all_trusted_connected_peers_ids = self.get_authority_peers().await;
 
         loop {
             // get edh from peers
@@ -287,18 +245,6 @@ where
                 Ok(peer_message) => {
                     if let Some((_peer_id, peer_message)) = peer_message {
                         if let PeerMessageResponse::Utxo(msg) = peer_message {
-                            // check message sender
-                            if msg.sender != *self.network_handle.peer_id() {
-                                warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Received a message whose sender is not us. Ignoring ...");
-                                continue;
-                            }
-
-                            // check message target (the one that message was initially sent out to)
-                            if !all_trusted_connected_peers_ids.contains(&msg.target) {
-                                warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Received a message whose target is not in the authorities list. Ignoring ...");
-                                continue;
-                            }
-
                             // decompress the serialized utxo data set
                             let prost_deserialized_decompressed = match self
                                 .compressor
@@ -383,7 +329,7 @@ where
 
         // await all peers to be connected
         loop {
-            if self.check_all_peers_initially_connected().await {
+            if check_all_peers_initially_connected(&self.frost_handle).await {
                 break;
             }
             // short sleep

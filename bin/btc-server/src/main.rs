@@ -316,7 +316,7 @@ impl From<database::Utxo> for rpc::Utxo {
         rpc::Utxo {
             utxo_txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
             utxo_vout: item.outpoint.vout,
-            output_pubkey: item.output.script_pubkey.to_bytes(),
+            output_scriptpubkey: item.output.script_pubkey.to_bytes(),
             output_value: item.output.value.to_sat() as u32,
             eth_address: item.eth_address.map_or(String::new(), hex::encode),
         }

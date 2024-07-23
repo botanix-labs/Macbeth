@@ -450,7 +450,7 @@ mod test {
             let utxo = Utxo {
                 utxo_txid: txid,
                 utxo_vout: vout,
-                output_pubkey: Script::from_bytes(&pub_key).to_bytes(),
+                output_scriptpubkey: Script::from_bytes(&pub_key).to_bytes(),
                 output_value: rng.gen::<u32>(),
                 eth_address: "0x0".to_string(),
             };
@@ -486,7 +486,7 @@ mod test {
             let utxo = Utxo {
                 utxo_txid: txid,
                 utxo_vout: vout,
-                output_pubkey: Script::from_bytes(&pub_key).to_bytes(),
+                output_scriptpubkey: Script::from_bytes(&pub_key).to_bytes(),
                 output_value: rng.gen::<u32>(),
                 eth_address: "0x0".to_string(),
             };

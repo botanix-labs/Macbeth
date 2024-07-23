@@ -215,11 +215,7 @@ impl FrostManager {
                     Some(peer_data) => {
                         if let Some(peer_commands_tx) = peer_data.peer_commands_tx.as_ref() {
                             match peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                                PeerMessageResponse::Utxo(UtxoSetResponse {
-                                    sender: *self.network.peer_id(),
-                                    target: peer_data.peer_id,
-                                    data: vec![],
-                                }),
+                                PeerMessageResponse::Utxo(UtxoSetResponse { data: vec![] }),
                             )) {
                                 Ok(_) => {
                                     debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);

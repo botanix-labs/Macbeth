@@ -281,8 +281,8 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::Utxo(utxo_response) => {
-                        let UtxoSetResponse { sender, target, data } = utxo_response;
-                        let req = UtxoRequest::new(sender, target, data);
+                        let UtxoSetResponse { data } = utxo_response;
+                        let req = UtxoRequest::new(data);
                         Poll::Ready(Some(FrostProtoMessage::utxo_message(req).encoded()))
                     }
                 },
@@ -444,11 +444,7 @@ impl Stream for FrostProtoConnection {
             }
             FrostProtoMessageKind::Utxo(data) => {
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::Utxo(UtxoSetResponse {
-                        sender: data.sender,
-                        target: data.target,
-                        data: data.data,
-                    }),
+                    response: PeerMessageResponse::Utxo(UtxoSetResponse { data: data.data }),
                     peer_id: this.peer_id,
                 });
             }

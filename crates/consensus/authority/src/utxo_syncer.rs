@@ -2,18 +2,17 @@ use std::collections::HashMap;
 
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
-    utils::is_active_sync_in_progress,
+    utils::{check_all_peers_initially_connected, is_active_sync_in_progress},
     Storage,
 };
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use reth_network::{
     frost::{
         manager::{FrostCommand, PeerData, ToFrostManager},
-        FrostPeerCommand, PeerMessageResponse, UtxoSetResponse,
+        FrostPeerCommand, PeerMessageResponse,
     },
     NetworkHandle,
 };
-use reth_network_types::pk2id;
 use reth_rpc_types::PeerId;
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot::error::RecvError};
 use tracing::{error, info, warn};
@@ -28,6 +27,10 @@ pub(crate) enum Error {
     Compressor(CompressorError),
 }
 
+/// The utxo sync task is responsible for running in th the background and receiving messages
+/// from counterpeers who want to sync their utxo set with us. Upon receiving a request, the
+/// task shall reply with the serialized utxo set back to the caller in an asynchronous manner
+/// over the gossiping protocol.
 pub struct UtxoSyncTask<ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
@@ -54,28 +57,6 @@ where
         btc_server: BtcServerExtendedClient,
     ) -> Self {
         Self { network_handle, frost_handle, storage, btc_server, compressor: Compressor::new() }
-    }
-
-    async fn check_all_peers_initially_connected(&mut self) -> bool {
-        // check if we are connected to all frost peers when in turn
-        let (sender, receiver) = tokio::sync::oneshot::channel::<bool>();
-        if let Err(e) = self.frost_handle.send_command(FrostCommand::CheckConnectedToAll(sender)) {
-            error!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Failed to send CheckConnectedToAll frost command {:?}", e);
-        }
-        match receiver.await {
-            Ok(is_connected) => {
-                if !is_connected {
-                    info!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Not yet connected to all frost peers. Waiting ...");
-                    return false;
-                }
-                info!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Connected to all frost peer {:?}", is_connected);
-                true
-            }
-            Err(e) => {
-                error!(target: "consensus::authority::utxo_syncer::check_all_peers_initially_connected", "Check for connection to other peers failed {:?}", e);
-                false
-            }
-        }
     }
 
     async fn get_serialized_compressed_utxo_set(&mut self) -> Result<Vec<u8>, Error> {
@@ -116,25 +97,6 @@ where
         Ok(peer_messages_rx)
     }
 
-    async fn get_authority_peers(&self) -> Vec<PeerId> {
-        // get all authority peers
-        self.storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .filter_map(|authority_pk| {
-                let authority_peer_id = pk2id(authority_pk);
-                if authority_peer_id != *self.network_handle.peer_id() {
-                    // excluse our own peer_id
-                    Some(authority_peer_id)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<PeerId>>()
-    }
-
     async fn get_all_connected_authority_peers(&self) -> Result<HashMap<PeerId, PeerData>, Error> {
         let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
         if let Err(e) =
@@ -154,7 +116,7 @@ where
 
         // await all peers to be connected
         loop {
-            if self.check_all_peers_initially_connected().await {
+            if check_all_peers_initially_connected(&self.frost_handle).await {
                 break;
             }
             // short sleep
@@ -188,11 +150,8 @@ where
             }
         };
 
-        // get all authority peers
-        let authority_peers = self.get_authority_peers().await;
-
         // receive over a channel message from other peers
-        while let Some((_peerid, msg)) = peer_messages_rx.recv().await {
+        while let Some((peerid, msg)) = peer_messages_rx.recv().await {
             match msg {
                 PeerMessageResponse::Pbft(_) => {
                     // Nothing to do for pbft related messages. Does are handled by the frost
@@ -210,54 +169,43 @@ where
                     // Nothing to do for healthcheck related messages. Does are handled by the frost
                     // task
                 }
-                PeerMessageResponse::Utxo(response) => {
+                PeerMessageResponse::Utxo(mut response) => {
                     // check target must be us, sender must be some authority member
-                    if response.target == *self.network_handle.peer_id() &&
-                        authority_peers.contains(&response.sender)
+                    match connected_peers
+                        .get(&peerid)
+                        .as_ref()
+                        .map(|&peer| peer.peer_commands_tx.as_ref())
+                        .flatten()
                     {
-                        match connected_peers
-                            .get(&response.sender)
-                            .as_ref()
-                            .map(|&peer| peer.peer_commands_tx.as_ref())
-                            .flatten()
-                        {
-                            Some(peer_sender_handle) => {
-                                let serialized_compressed_utxo_set = match self
-                                    .get_serialized_compressed_utxo_set()
-                                    .await
-                                {
-                                    Ok(serialized_compressed_utxo_set) => {
-                                        serialized_compressed_utxo_set
-                                    }
-                                    Err(e) => {
-                                        error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting serialized compressed utxo set: {:?}", e);
-                                        continue;
-                                    }
-                                };
-                                if serialized_compressed_utxo_set.is_empty() {
-                                    warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
+                        Some(peer_sender_handle) => {
+                            let serialized_compressed_utxo_set = match self
+                                .get_serialized_compressed_utxo_set()
+                                .await
+                            {
+                                Ok(serialized_compressed_utxo_set) => {
+                                    serialized_compressed_utxo_set
+                                }
+                                Err(e) => {
+                                    error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting serialized compressed utxo set: {:?}", e);
                                     continue;
                                 }
-                                if let Err(e) =
-                                    peer_sender_handle.send(FrostPeerCommand::PeerMessage(
-                                        PeerMessageResponse::Utxo(UtxoSetResponse {
-                                            sender: response.sender,
-                                            target: response.target,
-                                            data: serialized_compressed_utxo_set,
-                                        }),
-                                    ))
-                                {
-                                    error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
-                                    continue;
-                                }
+                            };
+                            if serialized_compressed_utxo_set.is_empty() {
+                                warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
+                                continue;
                             }
-                            None => {
-                                warn!(target: "consensus::authority::utxo_syncer::start_task", "Unable to get peer sender handle");
+                            response.data = serialized_compressed_utxo_set;
+                            if let Err(e) = peer_sender_handle.send(FrostPeerCommand::PeerMessage(
+                                PeerMessageResponse::Utxo(response),
+                            )) {
+                                error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
                                 continue;
                             }
                         }
-                    } else {
-                        warn!(target: "consensus::authority::utxo_syncer::start_task", "Received utxo request from a peer who is not in the federation. Sender = {:?}. Target = {:?}", &response.sender, &response.target);
+                        None => {
+                            warn!(target: "consensus::authority::utxo_syncer::start_task", "Unable to get peer sender handle");
+                            continue;
+                        }
                     }
                 }
             }

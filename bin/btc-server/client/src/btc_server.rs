@@ -42,9 +42,9 @@ pub struct Utxo {
     /// The user's ethereum address.
     #[prost(string, tag = "3")]
     pub eth_address: ::prost::alloc::string::String,
-    /// The txout pubkey of the utxo.
+    /// The txout script pubkey of the utxo.
     #[prost(bytes = "vec", tag = "4")]
-    pub output_pubkey: ::prost::alloc::vec::Vec<u8>,
+    pub output_scriptpubkey: ::prost::alloc::vec::Vec<u8>,
     /// The txout value of the utxo.
     #[prost(uint32, tag = "5")]
     pub output_value: u32,

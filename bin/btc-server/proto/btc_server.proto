@@ -84,8 +84,8 @@ message Utxo {
     uint32 utxo_vout = 2;
     // The user's ethereum address.
     string eth_address = 3;
-    // The txout pubkey of the utxo.
-    bytes output_pubkey = 4;
+    // The txout script pubkey of the utxo.
+    bytes output_scriptpubkey = 4;
     // The txout value of the utxo.
     uint32 output_value = 5;
 }

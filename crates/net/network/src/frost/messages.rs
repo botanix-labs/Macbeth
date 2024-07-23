@@ -105,30 +105,20 @@ impl SignRequest {
 pub struct UtxoRequest {
     /// The version of the request message
     pub version: u16,
-    /// utxo sender
-    pub sender: PeerId,
-    /// utxo target
-    pub target: PeerId,
     /// utxo set data
     pub data: Vec<u8>,
 }
 
 impl fmt::Display for UtxoRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Utxo set sender: {:?}. Utxo set target: {:?}. Data Size: {} bytes",
-            self.sender,
-            self.target,
-            self.data.len()
-        )
+        write!(f, "Utxo set data Size: {} bytes", self.data.len())
     }
 }
 
 impl UtxoRequest {
     /// Constructs a new PBFT Request using a data payload.
-    pub fn new(sender: PeerId, target: PeerId, data: Vec<u8>) -> Self {
-        UtxoRequest { version: PBFT_MESSAGE_VERSION as u16, sender, target, data }
+    pub fn new(data: Vec<u8>) -> Self {
+        UtxoRequest { version: PBFT_MESSAGE_VERSION as u16, data }
     }
 }
 
@@ -466,16 +456,6 @@ impl FrostProtoMessage {
                 buf.put_slice(&buffer);
             }
             FrostProtoMessageKind::Utxo(resource) => {
-                // Serialize the sender
-                let sender_bytes = resource.sender.as_slice();
-                buf.put_u16_le(sender_bytes.len() as u16); // Length of the sender
-                buf.put_slice(sender_bytes); // Sender bytes
-
-                // Serialize the receiver
-                let target_bytes = resource.target.as_slice();
-                buf.put_u16_le(target_bytes.len() as u16); // Length of the receiver
-                buf.put_slice(target_bytes); // Receiver bytes
-
                 // serialize the data
                 buf.put_u64_le(resource.data.len() as u64); // Use u64 to support larger data sizes
                 buf.put_slice(&resource.data);
@@ -741,27 +721,13 @@ impl FrostProtoMessage {
                 }
             }
             FrostProtoMessageId::Utxo => {
-                // Deserialize the sender
-                let sender_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let sender_bytes = &buf[..sender_len];
-                let sender = PeerId::from_slice(sender_bytes); // Assuming from_slice can never fail
-                buf.advance(sender_len);
-
-                // Deserialize the target
-                let target_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let target_bytes = &buf[..target_len];
-                let target = PeerId::from_slice(target_bytes); // Assuming from_slice can never fail
-                buf.advance(target_len);
-
                 // utxo
                 let utxo_set_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
                 buf.advance(8);
                 let utxo = buf[..utxo_set_len].to_vec();
                 buf.advance(utxo_set_len);
 
-                FrostProtoMessageKind::Utxo(UtxoRequest::new(sender, target, utxo))
+                FrostProtoMessageKind::Utxo(UtxoRequest::new(utxo))
             }
             FrostProtoMessageId::Healthcheck => {
                 // Deserialize the sender
@@ -980,16 +946,10 @@ mod tests {
     fn test_utxo_encode_decode() {
         let msg = "Hello world".to_owned();
         let random_string = msg.bytes().collect_vec();
-        let sender_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
-        let target_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Utxo,
-            message: FrostProtoMessageKind::Utxo(UtxoRequest::new(
-                sender_peer_id,
-                target_peer_id,
-                random_string,
-            )),
+            message: FrostProtoMessageKind::Utxo(UtxoRequest::new(random_string)),
         };
 
         // Encode the message
@@ -1004,8 +964,6 @@ mod tests {
         if let FrostProtoMessageKind::Utxo(utxo_request) = decoded_message.message {
             let decoded_message = String::from_utf8(utxo_request.data).unwrap();
             assert_eq!(decoded_message, msg, "data does not match");
-            assert_eq!(utxo_request.sender, sender_peer_id, "sender_peer_id does not match");
-            assert_eq!(utxo_request.target, target_peer_id, "target_peer_id does not match");
         } else {
             panic!("Decoded message is not a UtxoMessage");
         }
@@ -1013,9 +971,6 @@ mod tests {
 
     #[test]
     fn test_healtcheck_message_encode_decode() {
-        let sender_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
-        let receiver_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
-
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Healthcheck,
             message: FrostProtoMessageKind::Healthcheck(HealthcheckRequest::new(
