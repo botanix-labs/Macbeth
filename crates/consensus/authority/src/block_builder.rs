@@ -189,6 +189,8 @@ where
                         continue;
                     }
                     for log in &receipt.logs {
+                        // Mint event should have already been validated during evm execution (in
+                        // processor.rs)
                         let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
                         if let Some(pegin_data) = pegin_match {
                             info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
@@ -280,8 +282,8 @@ where
                     Duration::from_secs(
                         self.chain_spec
                             .leader_selection_window
-                            .expect("to be defined for poa consensus")
-                            / 3,
+                            .expect("to be defined for poa consensus") /
+                            3,
                     ),
                     self.frost_task_rx.recv(),
                 )
@@ -354,8 +356,8 @@ where
         match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
-                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus")
-                    / 3,
+                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /
+                    3,
             ),
             self.pbft_task_rx.recv(),
         )

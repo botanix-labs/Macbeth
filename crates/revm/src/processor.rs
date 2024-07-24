@@ -222,9 +222,8 @@ where
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg.as_ref();
-        let btc_network = consensus_pkg
-            .map(|package| package.btc_network)
-            .unwrap_or_else(|| bitcoin::Network::Regtest);
+        let btc_network =
+            consensus_pkg.map(|package| package.btc_network).expect("network to be defined");
 
         // Check pegins.
         for log in result.logs() {
@@ -234,10 +233,11 @@ where
             };
 
             let bitcoin_checkpoint = consensus_pkg.expect("is some").bitcoin_checkpoint;
+            // the pegin height must be equal or less than the required block depth (checkpoint)
             if pegin_data.bitcoin_block_height >= bitcoin_checkpoint.1 {
                 return Err(MintContractError::InvalidPeginData {
                     error: format!(
-                        "pegin height {} below checkpoint of {}",
+                        "pegin height {} greater than checkpoint of {}",
                         bitcoin_checkpoint.1, pegin_data.bitcoin_block_height,
                     ),
                     revert_address: pegin_data.account,
