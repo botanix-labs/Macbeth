@@ -10,10 +10,10 @@ use crate::{
     utils::AmountExt,
 };
 
-use tracing::error;
+use tracing::{error, info};
 
 lazy_static::lazy_static! {
-    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes,uint256)");
+    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
     static ref FROST_PUB_KEY: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
@@ -109,15 +109,18 @@ pub fn try_parse_mint_event(
     log: &revm::primitives::Log,
 ) -> Result<Option<PeginData>, ParseMintEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
+        info!("Log address is not mint contract address");
         return Ok(None);
     }
 
     let topics = log.topics();
     if topics.is_empty() {
         // NB I don't think this is possible but just be safe.
+        info!("Log has no topics");
         return Ok(None);
     }
     if topics[0] != *MINT_TOPIC {
+        info!("Log topic is not mint topic");
         return Ok(None);
     }
 
@@ -134,15 +137,19 @@ pub fn try_parse_mint_event(
             ethers::abi::param_type::ParamType::Uint(256_usize),
             ethers::abi::param_type::ParamType::Uint(32_usize),
             ethers::abi::param_type::ParamType::Bytes,
-            ethers::abi::param_type::ParamType::Uint(256_usize),
         ],
         &log.data.data,
     )
     .map_err(|_| ParseMintEventError::InvalidLog("invalid payload"))?;
 
-    if params.len() != 4 {
+    if params.len() != 3 {
         return Err(ParseMintEventError::InvalidLog("wrong number of params"));
     }
+
+    let amount = params[0]
+        .clone()
+        .into_uint()
+        .ok_or(ParseMintEventError::InvalidLog("invalid mint amount params"))?;
 
     let bitcoin_block_height = params[1]
         .clone()
@@ -155,11 +162,6 @@ pub fn try_parse_mint_event(
         .into_bytes()
         .ok_or(ParseMintEventError::InvalidLog("converting metadata param to bytes"))?;
 
-    let mint_amount = params[3]
-        .clone()
-        .into_uint()
-        .ok_or(ParseMintEventError::InvalidLog("invalid mint amount params"))?;
-
     let meta = {
         let mut proofs = Vec::new();
         let mut offset = 0;
@@ -169,7 +171,7 @@ pub fn try_parse_mint_event(
                     let err = ParseMintEventError::InvalidPeginData {
                         error: e,
                         revert_address: destination,
-                        revert_amount: mint_amount,
+                        revert_amount: amount,
                     };
                     error!("Failed to parse pegin meta: {:?}", err);
                     err
@@ -180,7 +182,7 @@ pub fn try_parse_mint_event(
         proofs
     };
 
-    Ok(Some(PeginData { account: destination, amount: mint_amount, bitcoin_block_height, meta }))
+    Ok(Some(PeginData { account: destination, amount, bitcoin_block_height, meta }))
 }
 
 /// Parse the given log for a [Burn] event.

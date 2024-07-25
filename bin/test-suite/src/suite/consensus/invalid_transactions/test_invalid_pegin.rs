@@ -171,6 +171,7 @@ pub async fn invalid_pegin(
 
     // pegin address balance before pegin
     let eth_pegin_address = eth_account.to_string();
+    it_info_print!("Pegin address", eth_pegin_address);
     let pegin_address_initial_balance =
         botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
     it_info_print!("Initial pegin address balance", pegin_address_initial_balance);

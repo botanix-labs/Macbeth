@@ -281,6 +281,8 @@ where
     /// This should only occur when a pegin reverts based on our custom validation
     fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
         let mut account = state.get(&address).expect("Account to exist").clone();
+        // print balance before decrement
+        info!("Balance before decrement: {:?}", account.info.balance);
         // decrement balance by amount
         info!("Decrementing address: {:?} by {:?}", address, amount);
         account.info.balance = account

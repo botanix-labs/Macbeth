@@ -30,8 +30,7 @@ contract Minting {
         address indexed account,
         uint256 amount,
         uint32 bitcoinBlockHeight,
-        bytes metadata,
-        uint256 mintAmount
+        bytes metadata
     );
 
     /// Some existing coins have been burned.
@@ -74,13 +73,13 @@ contract Minting {
         require(txCost <= amount, "Tx cost exceeds pegin amount");
 
         // 3 gas for subtraction and 2000 to update the local variable
-        uint256 mintAmount = amount - txCost;
+        amount -= txCost;
 
         // 21000 gas for each transfer
-        payable(destination).transfer(mintAmount);
+        payable(destination).transfer(amount);
         payable(refundAddress).transfer(txCost);
 
-        emit Mint(destination, amount, bitcoinBlockHeight, metadata, mintAmount);
+        emit Mint(destination, amount, bitcoinBlockHeight, metadata);
     }
 
     /// Burn coins by sending money to this function.
