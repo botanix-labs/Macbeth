@@ -527,6 +527,15 @@ clean-poa-1:
 	rm -rf "${NODE_1_DIR}/db" && \
 	rm -rf "${NODE_1_DIR}/static_files"
 
+
+clean-btc-server-1:
+	cd bin/btc-server && \
+	rm -rf "db1"
+
+clean-btc-server-2:
+	cd bin/btc-server && \
+	rm -rf "db2"
+
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
