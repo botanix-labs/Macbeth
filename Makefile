@@ -508,7 +508,7 @@ start-poa-server-2:
 	-vvv \
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
-	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
+	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
