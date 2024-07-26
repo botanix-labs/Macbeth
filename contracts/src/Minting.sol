@@ -10,9 +10,11 @@ contract Minting {
     // The base gas cost to emit the [Mint] event.
     //
     // Additionally the cost for the [metadata] variable length field
-    // shoudl be added.
+    // should be added.
     //
-    // 375 + 2 * 375 (topics) + 8 * 4 (account, amount, mintAmount, height)
+    // 375 + 2 * 375 (topics) + 8 * 4 (account, amount, bitcoinBlockHeight, metadata)
+    //
+    // metadata is variable length, so only including the first word above 
     //
     // Source: https://www.rareskills.io/post/ethereum-events
     // > 375 + 375 * num_topics + 8 * data_size + mem_expansion cost
@@ -56,18 +58,17 @@ contract Minting {
         );
         peginBitcoinBlockHeight[destination] = bitcoinBlockHeight;
 
-        // To estimate the entire tx cost we take the gas used until this point
-        // (using gaslest), then add the gas cost for all individual parts below
-        // this calculation manually accounted for.
-        uint256 metadataGas = metadata.length / 4 + 1;
-        uint256 txGas = gasStart - gasleft()
-            + GAS_SIMPLE_TRANSFER
-            + GAS_SIMPLE_TRANSFER
-            + GAS_AMOUNT_UPDATE
-            + GAS_REVERT_TRUE
-            + BASE_GAS_MINT_EVENT
-            + metadataGas;
-        uint256 txCost = txGas * tx.gasprice;
+        // account for gas needed for the transfers, amount update, and require statement if true
+        // metadata is variable length and the first byte is included in BASE_GAS_MINT_EVENT
+        uint256 txCost = 
+            (gasStart - gasleft() 
+                + GAS_SIMPLE_TRANSFER 
+                + GAS_SIMPLE_TRANSFER 
+                + GAS_AMOUNT_UPDATE 
+                + GAS_REVERT_TRUE 
+                + BASE_GAS_MINT_EVENT 
+                + metadata.length / 4 - 1) 
+            * tx.gasprice;
 
         // 3 gas for comparison if true
         require(txCost <= amount, "Tx cost exceeds pegin amount");

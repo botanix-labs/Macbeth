@@ -246,7 +246,7 @@ mod test {
     #[test]
     fn mint_topic() {
         let topic =
-            B256::from_str("0xdb6e7fd0f90daf31ba2e38073e487e3aad2df96224424a80b69dd799d4dec0f5")
+            B256::from_str("0x922344dc04648c0ce028ecdf9b2c9eed9a6794dbb47b777b54b0cfe069f128aa")
                 .unwrap();
         assert_eq!(topic, *MINT_TOPIC);
     }
