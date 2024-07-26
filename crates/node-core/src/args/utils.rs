@@ -117,7 +117,11 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render()?;
         let genesis = serde_json::from_str(&rendered_json)?;
-        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6, botanix_fee_recipient);
+        let botanix_testnet = create_botanix_config_with_genesis(
+            genesis,
+            BOTANIX_TESTNET.parent_confirmation_depth,
+            botanix_fee_recipient,
+        );
         Ok(botanix_testnet)
     } else {
         // TODO: to be fixed once the MAINNET has been activated
