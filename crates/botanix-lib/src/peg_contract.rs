@@ -85,9 +85,6 @@ impl PeginData {
             }
 
             let output_value = bitcoin::Amount::from_sat(output.value.to_sat()).to_wei();
-            // if output_value < self.amount {
-            //     return Err(PeginError::Invalid("invalid amount"));
-            // }
             aggregate_value += output_value;
 
             // check that the user provided an actual valid block header sequence
@@ -107,10 +104,10 @@ impl PeginData {
                 .iter()
                 .rev()
                 .skip_while(|h| h.block_hash() != commit_hash)
-                .count() -
-                1; // minus one for the commitment itself
-                   // the latest block height minus the position of the user block in the list is the
-                   // height of the user block
+                .count()
+                - 1; // minus one for the commitment itself
+                     // the latest block height minus the position of the user block in the list is the
+                     // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
