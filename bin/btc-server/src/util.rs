@@ -31,6 +31,7 @@ pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
         _ => panic!("Unsupported network"),
     }
 }
+pub const MAX_ALLOWED_TX_INPUTS: usize = 100;
 
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
