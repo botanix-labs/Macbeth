@@ -238,7 +238,7 @@ where
                 return Err(MintContractError::InvalidPeginData {
                     error: format!(
                         "pegin height {} greater than checkpoint of {}",
-                        bitcoin_checkpoint.1, pegin_data.bitcoin_block_height,
+                        pegin_data.bitcoin_block_height, bitcoin_checkpoint.1,
                     ),
                     revert_address: pegin_data.account,
                     revert_amount: pegin_data.amount,
