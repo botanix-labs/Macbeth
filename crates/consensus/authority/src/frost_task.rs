@@ -109,7 +109,7 @@ where
         match receiver.await {
             Ok(is_connected) => {
                 if !is_connected {
-                    info!(target: "consensus::authority::frost_task::start_dkg", "Not yet connected to all frost peers. Waiting ....");
+                    info!(target: "consensus::authority::frost_task::start_dkg", "Not yet connected to all frost peers. Waiting to stark DKG ....");
                     return;
                 }
                 info!(target: "consensus::authority::frost_task::start_dkg", "Connected to all frost peers {}", is_connected);
@@ -164,7 +164,7 @@ where
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
                 info!(target: "consensus::authority::frost_task::start_task", " Node is still syncing, frost task is awaiting fully synced status ...");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
 

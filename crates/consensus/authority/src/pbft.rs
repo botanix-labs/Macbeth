@@ -81,9 +81,9 @@ pub(crate) enum Error {
     #[error("Peer for time slot {0} already processed")]
     PeerAlreadyProcessedTimeSlot(u64),
     #[error("Recover authorities error {0}")]
-    RecoverAuthoritiesError(#[from] RecoverAuthorityError),
+    RecoverAuthorities(#[from] RecoverAuthorityError),
     #[error("Block execution error: {0}")]
-    BlockExecutionError(#[from] BlockExecutionError),
+    BlockExecution(#[from] BlockExecutionError),
     #[error("Failed to find block with hash {0}")]
     BlockHashNotFound(BlockHash),
 }
@@ -203,6 +203,7 @@ where
     EF: ExecutorFactory + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
         client: Client,
@@ -403,7 +404,7 @@ where
             Ok(())
         };
 
-        retry_exec(fut, 3, Duration::from_secs(1)).await
+        retry_exec(fut, 3, Duration::from_millis(500)).await
     }
 
     async fn validate_block(&self, block_to_sign: &SealedBlock) -> Result<(), ValidateBlockError> {
@@ -991,6 +992,7 @@ mod tests {
                     pks[i],
                     bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
                     Some(dummy_agg_pk),
+                    vec![],
                 );
                 let pbft_state_machine = PbftStateMachine::new(
                     chain_spec.clone(),
@@ -1820,6 +1822,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
 
         let pbft_state_machine = PbftStateMachine::new(
@@ -1934,6 +1937,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
         let pbft_state_machine = PbftStateMachine::new(
             BOTANIX_TESTNET.clone(),
@@ -2024,6 +2028,7 @@ mod tests {
             bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
             // Dummy aggregate key
             Some(pk),
+            vec![],
         );
         let pbft_state_machine = PbftStateMachine::new(
             BOTANIX_TESTNET.clone(),

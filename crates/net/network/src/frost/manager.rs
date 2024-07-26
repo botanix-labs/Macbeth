@@ -48,8 +48,6 @@ pub struct PeerData {
     pub peer_id: PeerId,
     /// chanel use for sending commands to the peer
     pub peer_commands_tx: Option<UnboundedSender<FrostPeerCommand>>,
-    /// socket where the peer is connected
-    pub socket_addr: Option<SocketAddr>,
     /// in or outgoing connection
     pub direction: Option<Direction>,
     /// the frost identifier of the peer
@@ -75,6 +73,8 @@ pub struct FrostManager {
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
     task_forwarder_txs: Vec<mpsc::UnboundedSender<(PeerId, PeerMessageResponse)>>,
+    /// Frost configuration
+    config: FrostConfig,
 }
 
 impl FrostManager {
@@ -84,15 +84,9 @@ impl FrostManager {
         network: NetworkHandle,
         from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
     ) -> Self {
-        let FrostConfig {
-            authority_index: _,
-            authorities,
-            min_signers: _,
-            max_signers: _,
-            authority_pk: _,
-        } = config;
         let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let authority_peerid = authorities
+        let authority_peerid = config
+            .authorities
             .iter()
             .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
             .collect();
@@ -105,6 +99,7 @@ impl FrostManager {
             peers_connections: HashMap::default(),
             authority_peerid,
             task_forwarder_txs: Vec::new(),
+            config,
         }
     }
 
@@ -113,7 +108,7 @@ impl FrostManager {
         let mut all_peer_connection_peer_ids =
             self.peers_connections.keys().cloned().collect::<Vec<_>>();
 
-        // retain all peer ids that are not in the autorities list
+        // retain all peer ids that are not in the authorities list
         all_peer_connection_peer_ids.retain(|peer_id| !self.authority_peerid.contains(peer_id));
 
         // check that the connected peers are indeed the authority peers
@@ -151,52 +146,59 @@ impl FrostManager {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
                 // make sure we ignore our own connection
                 let my_peer_id = self.network.peer_id();
                 if *my_peer_id != peer_id {
-                    if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
-                        peer_data.direction = Some(direction);
-                        peer_data.peer_commands_tx = Some(to_connection);
-                    } else {
-                        self.peers_connections.insert(
+                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
+                    self.peers_connections.insert(
+                        peer_id,
+                        PeerData {
                             peer_id,
-                            PeerData {
-                                peer_id,
-                                direction: Some(direction),
-                                peer_commands_tx: Some(to_connection),
-                                socket_addr: None,
-                                frost_identifier: None,
-                            },
-                        );
-                    }
+                            direction: Some(direction),
+                            peer_commands_tx: Some(to_connection),
+                            frost_identifier: None,
+                        },
+                    );
                 }
             }
             NetworkFrostEvent::PeerMessage { peer_id, response } => {
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received message from non-authority peer {:?}, protocol_event", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
                 }
                 for task_forwarder in self.task_forwarder_txs.iter() {
-                    // TODO:  handle error?
-                    let _send_res = task_forwarder.send((peer_id, response.clone()));
+                    if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
+                        error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
+                    }
                 }
             }
-            NetworkFrostEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr) => {
+            NetworkFrostEvent::PeerConfirmed(peer_id) => {
                 if !self.is_authority_peer(&peer_id) {
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} is not an authority member", peer_id);
                     return;
                 }
 
                 if self.peers_connections.contains_key(&peer_id) {
+                    let (index, _) = self
+                        .config
+                        .authorities
+                        .iter()
+                        .enumerate()
+                        .find(|(_, pk)| {
+                            peer_id == PeerId::from_slice(&pk.serialize_uncompressed()[1..])
+                        })
+                        .unzip();
                     // only if we have an already connection established
                     if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
                         // add the peer conn mapped to a frost id based on authority index
-                        let frost_identifier = peer_id_to_identifier(authority_index);
-                        peer_data.socket_addr = Some(peer_socket_addr);
-                        peer_data.frost_identifier = Some(frost_identifier);
+                        peer_data.frost_identifier = index.map(|i| peer_id_to_identifier(i as u16));
+                        info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id = {}, frost identifier = {:?}", peer_id, peer_data.frost_identifier);
+                    } else {
+                        warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} does not seem to be connected yet", peer_id);
                     }
                 }
             }
@@ -234,19 +236,18 @@ impl FrostManager {
             FrostCommand::SendHealtcheckToPeers => {
                 self.send_healthcheck_to_peers();
             }
-            FrostCommand::ReconnectPeers(peers) => {
-                let peers_to_reconnect = peers.len();
+            FrostCommand::ReconnectPeers(disconnected_peers) => {
+                let peers_to_reconnect = disconnected_peers.len();
                 let mut reconnected_peers = 0;
-                for peer in peers.into_iter() {
-                    if let Some(peer_data) = self.peers_connections.get(&peer) {
-                        if let Some(conn_socket) = peer_data.socket_addr {
-                            info!(target: "network::frost::on_command", "Readding peer {:?} with remote address {:?} ...", peer, conn_socket.to_string());
-                            self.network.add_trusted_peer(peer, conn_socket);
-                            reconnected_peers += 1;
-                        } else {
-                            warn!(target: "network::frost::on_command", "Could not find remote socket address for peer {:?}", peer);
-                        }
+
+                for (disconnected_peer, peer_remote_addr) in disconnected_peers.into_iter() {
+                    if !self.peers_connections.contains_key(&disconnected_peer) {
+                        warn!(target: "network::frost::on_command", "Could not find peer amongst own peer connections {:?}", disconnected_peer);
+                        continue;
                     }
+                    info!(target: "network::frost::on_command", "Reconnecting peer {:?} with remote address {:?} ...", disconnected_peer, peer_remote_addr.to_string());
+                    self.network.add_trusted_peer(disconnected_peer, peer_remote_addr);
+                    reconnected_peers += 1;
                 }
                 if reconnected_peers > 0 {
                     info!(target: "network::frost::on_command", "Readded/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
@@ -323,7 +324,7 @@ pub enum FrostCommand {
     /// sends healthcheck messages to all peers
     SendHealtcheckToPeers,
     /// Reconect peers in case their connection got dropped
-    ReconnectPeers(Vec<PeerId>),
+    ReconnectPeers(Vec<(PeerId, SocketAddr)>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
     /// Get the readily connected peers

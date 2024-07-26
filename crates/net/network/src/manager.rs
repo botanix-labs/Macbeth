@@ -352,8 +352,6 @@ where
         let (protocol_events_tx, protocol_events_rx) = mpsc::unbounded_channel();
         let (frost_peer_messages_forwarder_tx, frost_peer_messages_forwarder_rx) =
             mpsc::unbounded_channel::<FrostProtocolEvent>();
-        let authority_index =
-            frost_config.as_ref().map(|f| f.authority_index as u16).unwrap_or_default();
         let authorities = frost_config
             .as_ref()
             .map(|f| f.authorities.clone())
@@ -367,7 +365,6 @@ where
         let protocol_state = ProtocolState::new(
             protocol_events_tx,
             frost_peer_messages_forwarder_tx,
-            authority_index,
             network_handle,
             authorities,
         );
@@ -611,12 +608,8 @@ where
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 self.notify_frost_manager(NetworkFrostEvent::PeerMessage { peer_id, response });
             }
-            FrostProtocolEvent::PeerConfirmed(peer_id, authority_index, peer_socket_addr) => {
-                self.notify_frost_manager(NetworkFrostEvent::PeerConfirmed(
-                    peer_id,
-                    authority_index,
-                    peer_socket_addr,
-                ));
+            FrostProtocolEvent::PeerConfirmed(peer_id) => {
+                self.notify_frost_manager(NetworkFrostEvent::PeerConfirmed(peer_id));
             }
         }
     }

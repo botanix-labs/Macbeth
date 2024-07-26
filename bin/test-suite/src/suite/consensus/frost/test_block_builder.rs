@@ -1,10 +1,8 @@
 use bitcoincore_rpc::RpcApi;
 use reth::{
     consensus_common::utils::{current_inturn_index, unix_timestamp},
-    primitives::{constants::BOTANIX_FEES_RECIPIENT, public_key_to_address},
+    primitives::public_key_to_address,
 };
-use reth_authority_consensus::AuthorityConsensus;
-use reth_consensus::Consensus;
 use reth_primitives::{header_ext::HeaderExt, BOTANIX_TESTNET, U256};
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
@@ -13,6 +11,7 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{
+            botanix_client::BotanixEthClient,
             events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
             poa_node::Notifications,
         },
@@ -24,7 +23,6 @@ use crate::{
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
-    let consensus = AuthorityConsensus::new(BOTANIX_TESTNET.clone());
     it_info_print!("Running block builder test...");
     let leader_selection_window =
         BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
@@ -69,8 +67,10 @@ pub async fn block_builder(
     // create a minting contract instance
     let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
 
-    let botanix_block_reward_address_balance_before =
-        botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+    let botanix_block_reward_address_balance_before = botanix_eth_client
+        .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+        .await
+        .unwrap();
     it_info_print!(
         "Botanix block fee recipient balance before",
         botanix_block_reward_address_balance_before
@@ -117,19 +117,31 @@ pub async fn block_builder(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
-            // Run consensus checks
+
+            // wait for fed members to sync on the block
+            tokio::time::sleep(Duration::from_secs(9)).await;
+
+            // Check that all members accepted the block
+            let mut botanix_clients: Vec<BotanixEthClient> = vec![];
+            for (index, fed_member_config) in test_fed_members.iter() {
+                let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
+                botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for poa member {}", index);
+            }
+            let latest_block_hash = canon_state_notification.notification.tip().hash();
+            for (index, client) in botanix_clients.iter().enumerate() {
+                let block_hash = client.get_latest_block_hash().await.unwrap();
+                it_info_print!(
+                    "Botanix client",
+                    format!("index={index}: block hash - {block_hash}")
+                );
+
+                assert_eq!(block_hash.as_bytes(), latest_block_hash.as_slice());
+            }
+
             let header = canon_state_notification.notification.tip().header();
             let edh = header.deserialize_extra_data_header().unwrap();
             assert_eq!(edh.aggregated_public_key, aggregate_public_key);
-            let header = canon_state_notification.notification.tip().header();
-            consensus
-                .validate_header_standalone(
-                    header,
-                    &authority_signers,
-                    &authority_signers,
-                    Some(&aggregate_public_key),
-                )
-                .unwrap();
 
             let block_receipts = canon_state_notification.notification.block_receipts();
             it_info_print!("Block receipts ?", block_receipts);
@@ -140,7 +152,7 @@ pub async fn block_builder(
             assert!(block_payload.0.block.number > 0);
 
             // get fed member and botanix block reward address balances
-            it_info_print!("Botanix block fee recipient", BOTANIX_FEES_RECIPIENT);
+            it_info_print!("Botanix block fee recipient");
 
             info!("authority signer length: {}", authority_signers.len());
             let fed_member_pub_key = suite
@@ -157,10 +169,12 @@ pub async fn block_builder(
                 .unwrap();
             it_info_print!("Fed member balance", fed_member_balance);
 
+            // verify 80/20 block reward split is correct
             if fed_member_balance > U256::ZERO.into() {
-                // verify 80/20 block reward split is correct
-                let botanix_block_reward_address_balance_after =
-                    botanix_eth_client.get_botanix_balance(BOTANIX_FEES_RECIPIENT).await.unwrap();
+                let botanix_block_reward_address_balance_after = botanix_eth_client
+                    .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+                    .await
+                    .unwrap();
                 it_info_print!(
                     "Botanix block reward address balance after",
                     botanix_block_reward_address_balance_after

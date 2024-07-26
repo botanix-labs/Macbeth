@@ -3,7 +3,7 @@ use futures::{Stream, StreamExt};
 use reth_eth_wire::{
     capability::SharedCapabilities, multiplex::ProtocolConnection, protocol::Protocol,
 };
-use reth_network_api::{Direction, NetworkInfo};
+use reth_network_api::Direction;
 use reth_primitives::BytesMut;
 use reth_rpc_types::PeerId;
 use std::{
@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     frost::{
@@ -21,7 +21,6 @@ use crate::{
         DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
-    NetworkHandle,
 };
 
 use super::{
@@ -127,20 +126,14 @@ impl ConnectionHandler for FrostConnectionHandler {
             conn,
             // incoming - another peer is connecting with me (set the ping message to Some),
             // outgoing - I am connecting with a peer
-            initial_ping: direction.is_outgoing().then(|| {
-                FrostProtoMessage::ping_message(
-                    *self.state.network_handle.peer_id(),
-                    self.state.authority_index,
-                    self.state.network_handle.local_addr(),
-                )
-            }),
+            initial_ping: direction
+                .is_outgoing()
+                .then(|| FrostProtoMessage::ping_message(*self.state.network_handle.peer_id())),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
             pending_pong: None, // when the conn. is just established, there is no pending pong
-            my_authority_index: self.state.authority_index,
             my_peer_id: *self.state.network_handle.peer_id(),
             peer_id,
-            network_handle: self.state.network_handle.clone(),
         }
     }
 }
@@ -153,10 +146,8 @@ pub struct FrostProtoConnection {
     initial_ping: Option<FrostProtoMessage>,
     commands: UnboundedReceiverStream<FrostPeerCommand>,
     pending_pong: Option<oneshot::Sender<String>>,
-    my_authority_index: u16,
     my_peer_id: PeerId,
     peer_id: PeerId,
-    network_handle: NetworkHandle,
 }
 
 impl Stream for FrostProtoConnection {
@@ -177,15 +168,7 @@ impl Stream for FrostProtoConnection {
                 // answer once the pong is received
                 FrostPeerCommand::PingMessage { msg: _, response } => {
                     this.pending_pong = Some(response);
-                    let my_socket_addr = this.network_handle.local_addr();
-                    Poll::Ready(Some(
-                        FrostProtoMessage::ping_message(
-                            this.my_peer_id,
-                            this.my_authority_index,
-                            my_socket_addr,
-                        )
-                        .encoded(),
-                    ))
+                    Poll::Ready(Some(FrostProtoMessage::ping_message(this.my_peer_id).encoded()))
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
                     PeerMessageResponse::Healthcheck(healthcheck_response) => {
@@ -300,106 +283,117 @@ impl Stream for FrostProtoConnection {
         // react on message type sent to us by another peer
         match msg.message {
             FrostProtoMessageKind::Healthcheck(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
                         receiver: data.receiver,
                         sender: data.sender,
                     }),
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to send healthcheck message {:?}. Error = {:?}", data, e);
+                }
             }
             FrostProtoMessageKind::Ping => {
+                info!(target: "network::frost::protocol", "Received ping message from peer. Replying with pong...");
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
             }
             FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id, authority_index, peer_socket_addr) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
-                    peer_id,
-                    authority_index,
-                    peer_socket_addr,
-                ));
+            FrostProtoMessageKind::PingMessage(peer_id) => {
+                info!(target: "network::frost::protocol", "Received ping message from peer with id = {:?} Replying with pong...", peer_id);
+                if let Err(e) =
+                    peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(peer_id))
+                {
+                    error!(target: "network::frost::protocol", "Failed to forward received pong message from peer id {:?}. Error = {:?}", peer_id, e);
+                }
 
                 // answer with pong of my_authority_index
                 return Poll::Ready(Some(
-                    FrostProtoMessage::pong_message(
-                        this.my_peer_id,
-                        this.my_authority_index,
-                        this.network_handle.local_addr(),
-                    )
-                    .encoded(),
+                    FrostProtoMessage::pong_message(this.my_peer_id).encoded(),
                 ));
             }
             // other peers answers with pong message with a peer id and authority index
-            FrostProtoMessageKind::PongMessage(peer_id, authority_index, peer_socket_addr) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(
-                    peer_id,
-                    authority_index,
-                    peer_socket_addr,
-                ));
+            FrostProtoMessageKind::PongMessage(peer_id) => {
+                if let Err(e) =
+                    peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(peer_id))
+                {
+                    error!(target: "network::frost::protocol", "Failed to forward received PongMessage from peer id {:?}. Error = {:?}", peer_id, e);
+                }
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
                 }
             }
             FrostProtoMessageKind::CoordinatorBlockProposal(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
                         response_type: PbftEventResponseType::CoordinatorBlockProposal,
                         data: data.block,
                     }),
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorBlockProposal message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::PeerPreCommitment(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
                         response_type: PbftEventResponseType::PeerPreCommitment,
                         data: data.block,
                     }),
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received PeerPreCommitment message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::PeerCommit(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Pbft(PbftResponse {
                         response_type: PbftEventResponseType::PeerCommitment,
                         data: data.block,
                     }),
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received PeerCommit message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1,
                         identifier: data.identifier,
                         data: data.data,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received Round1Dkg message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::Round1DkgRequest(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1Request,
                         identifier: data.identifier,
                         data: data.data,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received Round1DkgRequest message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::Round2Dkg(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound2,
                         identifier: data.identifier,
                         data: data.data,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received Round2Dkg message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
                         identifier: data.identifier,
@@ -407,10 +401,12 @@ impl Stream for FrostProtoConnection {
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received SignerRound1SigningPackage message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                         identifier: data.identifier,
@@ -418,10 +414,12 @@ impl Stream for FrostProtoConnection {
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound1SigningPackage message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
                         identifier: data.identifier,
@@ -429,10 +427,12 @@ impl Stream for FrostProtoConnection {
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received SignerRound2SigningPackage message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
-                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                         identifier: data.identifier,
@@ -440,7 +440,9 @@ impl Stream for FrostProtoConnection {
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                });
+                }) {
+                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound2SigningPackage message. Error = {:?}", e);
+                }
             }
             FrostProtoMessageKind::Utxo(data) => {
                 let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {

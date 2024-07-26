@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    net::SocketAddr,
     sync::Arc,
     time::Instant,
 };
@@ -64,28 +65,36 @@ where
             }
 
             // short sleep
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
-        // get all connected authority peers
-        let (connected_peers_tx, connected_peers_rx) = tokio::sync::oneshot::channel();
-        if let Err(e) =
-            self.frost_handle.send_command(FrostCommand::GetAllConnectedPeers(connected_peers_tx))
-        {
-            error!(target: "HealthcheckTask::start_task", "Failed to send GetAllConnectedPeers frost command {:?}", e);
-        }
-        let connected_peers = match connected_peers_rx.await {
-            Ok(connected_peers) => connected_peers,
-            Err(e) => {
-                error!(target: "HealthcheckTask::start_task", "Error getting receiver handle = {:?}", e);
-                panic!("Error getting receiver handle");
-            }
-        };
+        // get all connected peers (could be authority and none-authority)
+        let all_connected_peers =
+            self.network_handle.get_all_peers().await.ok().unwrap_or_default();
+
+        // get all authority peers in the federation (at this point we must be connected to all of
+        // them)
+        let authority_peers = self
+            .storage
+            .read()
+            .await
+            .authorities
+            .iter()
+            .filter_map(|authority_pk| {
+                let authority_peer_id = pk2id(authority_pk);
+                if authority_peer_id != *self.network_handle.peer_id() {
+                    // excluse our own peer_id
+                    Some(authority_peer_id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<PeerId>>();
 
         // update the tracker for each authority peer_id and mark its state as healthy initially
         let mut guard = self.peers_healthcheck_tracker.write().await;
-        for (peer_id, _) in connected_peers.into_iter() {
-            let _ = guard.insert(peer_id, Instant::now());
+        for peer_id in authority_peers.iter() {
+            let _ = guard.insert(*peer_id, Instant::now());
         }
         drop(guard);
 
@@ -103,24 +112,6 @@ where
                 panic!("Error getting receiver handle");
             }
         };
-
-        // get all authority peers
-        let authority_peers = self
-            .storage
-            .read()
-            .await
-            .authorities
-            .iter()
-            .filter_map(|authority_pk| {
-                let authority_peer_id = pk2id(authority_pk);
-                if authority_peer_id != *self.network_handle.peer_id() {
-                    // excluse our own peer_id
-                    Some(authority_peer_id)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<PeerId>>();
 
         // spawn a background task to do periodical healthchecks
         let frost_handle = self.frost_handle.clone();
@@ -180,7 +171,7 @@ where
                     continue;
                 }
 
-                // send to slack/stdout alarms about those peers
+                // print the peeers we need to reconnect with
                 let peers_to_reconnect_stringified = peers_to_reconnect
                 .clone()
                 .iter()
@@ -188,6 +179,15 @@ where
                 .collect::<Vec<String>>()
                 .join(",");
                 warn!(target: "HealthcheckTask::start_task", "Trying to reconnect to peers {} ...", peers_to_reconnect_stringified);
+
+                // now for all peers we want to reconnect with, get their socket addresses
+                let peers_to_reconnect = peers_to_reconnect
+                .iter()
+                .filter_map(|peer_id| {
+                    let peer_remote_addr = all_connected_peers.iter().find(|p| p.remote_id == *peer_id).map(|p| p.remote_addr);
+                    Some(*peer_id).zip(peer_remote_addr)
+                })
+                .collect::<Vec<(PeerId, SocketAddr)>>();
 
                 // try to reconnect to the peers whose frost subprotocol connection or physical connection has been lost to
                 if let Err(e) = frost_handle

@@ -46,6 +46,8 @@ pub struct FedMemberPubKey {
 pub struct FederationTomlConfig {
     /// federation members public keys
     pub federation_member_public_key: Vec<FedMemberPubKey>,
+    /// botanix fee recipient
+    pub botanix_fee_recipient: String,
 }
 
 impl FederationTomlConfig {
@@ -55,8 +57,11 @@ impl FederationTomlConfig {
     }
 
     /// Create a new genesis config
-    pub fn new(federation_member_public_key: Vec<FedMemberPubKey>) -> Self {
-        Self { federation_member_public_key }
+    pub fn new(
+        federation_member_public_key: Vec<FedMemberPubKey>,
+        botanix_fee_recipient: String,
+    ) -> Self {
+        Self { federation_member_public_key, botanix_fee_recipient }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
@@ -67,7 +72,7 @@ impl FederationTomlConfig {
 
     /// Convert the config to a string
     pub fn to_string(&self) -> Result<String, Error> {
-        Ok(toml::to_string(self).map_err(Error::ParseSerializeConfig)?)
+        toml::to_string(self).map_err(Error::ParseSerializeConfig)
     }
 
     /// Extracts federation public keys and socket addresses from the config

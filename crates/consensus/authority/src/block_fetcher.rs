@@ -108,6 +108,7 @@ where
         ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
@@ -333,14 +334,14 @@ where
                 break;
             }
             // short sleep
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
         // ensure the node is not syncing
         loop {
             if !is_active_sync_in_progress(&self.network_handle) {
                 // short sleep
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 break;
             }
         }
@@ -354,7 +355,7 @@ where
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
                 warn!(target: "consensus::authority", "Node is still syncing, block fetcher task is awaiting fully synced status ...");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
 
@@ -364,7 +365,7 @@ where
                     info!(target: "consensus::authority",
                         "block fetcher task shutting down (channel closed)",
                     );
-                    return;
+                    continue;
                 }
             };
 
@@ -397,7 +398,6 @@ where
                         bitcoin_checkpoint: bitcoin_block_header.expect("recent header is some"),
                         aggregate_public_key: storage
                             .aggregate_public_key
-                            .clone()
                             .expect("aggregate pk is some"),
                         btc_network: self.btc_network,
                     });
@@ -566,7 +566,7 @@ where
                         warn!(target: "consensus::authority", "Recieved block is not a direct child of the best block");
                         // need to retrieve this missing block from a peer
                         let missing_block =
-                            full_block_client.get_full_block(header.parent_hash.clone()).await;
+                            full_block_client.get_full_block(header.parent_hash).await;
                         // TODO (armins) should be using the insert with botanix consensus package
                         if let Err(e) = self.client.insert_block_without_senders(
                             missing_block.clone(),

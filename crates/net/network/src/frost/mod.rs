@@ -1,7 +1,6 @@
 #![allow(unreachable_pub)]
 //! Testing gossiping of transactions.
 use core::fmt;
-use std::net::SocketAddr;
 
 use reth_network_api::Direction;
 use reth_primitives::SealedBlock;
@@ -23,7 +22,6 @@ pub mod protocol;
 pub struct ProtocolState {
     events: mpsc::UnboundedSender<FrostProtocolEvent>,
     peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
-    authority_index: u16,
     network_handle: NetworkHandle,
     authorities: Vec<PeerId>,
 }
@@ -33,11 +31,10 @@ impl ProtocolState {
     pub fn new(
         events: mpsc::UnboundedSender<FrostProtocolEvent>,
         peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
-        authority_index: u16,
         network_handle: NetworkHandle,
         authorities: Vec<PeerId>,
     ) -> Self {
-        Self { events, peer_message_forwarder, authority_index, network_handle, authorities }
+        Self { events, peer_message_forwarder, network_handle, authorities }
     }
 }
 
@@ -272,7 +269,7 @@ pub enum FrostProtocolEvent {
         response: PeerMessageResponse,
     },
     /// Peer confirmation
-    PeerConfirmed(PeerId, u16, SocketAddr),
+    PeerConfirmed(PeerId),
 }
 
 /// All events related to frost events emitted by the network.
@@ -300,7 +297,7 @@ pub enum NetworkFrostEvent {
         response: PeerMessageResponse,
     },
     /// Peer Confirmation
-    PeerConfirmed(PeerId, u16, SocketAddr),
+    PeerConfirmed(PeerId),
 }
 
 /// Commands sent by us to a peer.

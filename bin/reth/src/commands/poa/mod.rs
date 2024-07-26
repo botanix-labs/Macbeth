@@ -491,6 +491,8 @@ where {
         );
         let genesis_authorities =
             federation_authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
+        let authorities_socket_addresses =
+            federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
 
@@ -501,8 +503,7 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory =
-            EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config.clone());
+        let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
@@ -593,7 +594,7 @@ where {
         let default_peers_path = data_dir.known_peers_path();
         let cfg_builder = self
             .network
-            .network_config(&reth_config, chain_arc.clone(), secret_key.clone(), default_peers_path)
+            .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .listener_addr(SocketAddr::new(
@@ -701,6 +702,7 @@ where {
             payload_builder.clone(),
             node_config.rpc.btc_network,
             genesis_authorities,
+            authorities_socket_addresses,
             executor_factory.clone(),
         )
         .expect("Failed to create authority consensus builder")
@@ -1162,7 +1164,7 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities);
+        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.is_testnet,
@@ -1199,7 +1201,7 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities);
+        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",
