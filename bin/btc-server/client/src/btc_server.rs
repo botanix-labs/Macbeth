@@ -698,5 +698,23 @@ pub mod btc_server_client {
             req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "GetSessionIds"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn check_connection_auth(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/btc_server.BtcServer/CheckConnectionAuth");
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "CheckConnectionAuth"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
