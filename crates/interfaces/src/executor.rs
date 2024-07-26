@@ -1,10 +1,9 @@
 use core::fmt;
 
 use crate::{provider::ProviderError, trie::StateRootError};
-use ethers::types::U256;
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    revm_primitives::EVMError, Address, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
+    revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
     PruneSegmentError, B256,
 };
 use thiserror::Error;
