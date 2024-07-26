@@ -10,7 +10,12 @@ use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, rpc, util, App};
+use crate::{
+    database::Utxo,
+    rpc,
+    util::{self, MAX_ALLOWED_TX_INPUTS},
+    App,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -293,7 +298,7 @@ impl rpc::BtcServer for App {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self
-            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root, MAX_ALLOWED_TX_INPUTS)
             .await
             .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
