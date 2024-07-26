@@ -116,7 +116,7 @@ impl BtcServerExtendedClient {
     generate_method!(abort_signing, Empty, Empty);
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
-    generate_method!(check_connection_auth, Empty, Empty);
+    generate_method!(health_check, Empty, Empty);
 }
 
 #[cfg(test)]

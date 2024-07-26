@@ -354,7 +354,7 @@ where {
             };
             info!(target: "reth::cli", "Btc server connected");
 
-            client.check_connection_auth(Empty {}).await.map_err(|err| {
+            client.health_check(Empty {}).await.map_err(|err| {
                 error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
