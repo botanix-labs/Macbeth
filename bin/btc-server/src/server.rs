@@ -101,7 +101,7 @@ impl App {
 
 #[tonic::async_trait]
 impl rpc::BtcServer for App {
-    async fn check_connection_auth(
+    async fn health_check(
         &self,
         request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
