@@ -64,6 +64,7 @@ impl From<RpcUtxo> for Utxo {
             if value.eth_address.is_empty() {
                 None
             } else {
+                // FIXME: remove the unwrap
                 Some(parse_eth_address(value.eth_address).unwrap())
             },
         )

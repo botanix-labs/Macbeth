@@ -328,15 +328,6 @@ where
         let consensus = Arc::new(self.consensus.clone());
         let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
-        // await all peers to be connected
-        loop {
-            if check_all_peers_initially_connected(&self.frost_handle).await {
-                break;
-            }
-            // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-
         // ensure the node is not syncing
         loop {
             if !is_active_sync_in_progress(&self.network_handle) {
