@@ -104,6 +104,11 @@ impl Suite for ConsensusIntegrationTestSuite {
                 CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
                 frost::test_utxo_commitment::test_utxo_commitment
             ),
+            "utxo_sync" => run_test!(
+                self,
+                CreateTestConfig { should_create_poa_nodes: true, should_create_rpc_node: false },
+                frost::test_utxo_sync::test_utxo_sync
+            ),
             "block_builder" => {
                 run_test!(self, Default::default(), frost::test_block_builder::block_builder)
             }
