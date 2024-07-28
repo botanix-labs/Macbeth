@@ -1877,7 +1877,6 @@ mod tests {
             3,
             sks,
             frost_handle_mock,
-            configs,
             peer_ids,
             signed_blocks,
             non_coords,
@@ -1936,8 +1935,6 @@ mod tests {
     async fn will_not_sign_if_block_is_known() {
         setup_multi_party_test!(
             1,
-            sks,
-            frost_handle_mock,
             configs,
             peer_ids,
             signed_blocks,
