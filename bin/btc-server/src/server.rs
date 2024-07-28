@@ -104,6 +104,14 @@ impl App {
 
 #[tonic::async_trait]
 impl rpc::BtcServer for App {
+    async fn health_check(
+        &self,
+        request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn get_signing_status(
         &self,
         req: tonic::Request<rpc::GetSigningStatusRequest>,

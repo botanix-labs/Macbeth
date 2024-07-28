@@ -3,6 +3,7 @@
 use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::{value_parser, Parser};
+use client::Empty;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
@@ -344,7 +345,7 @@ where {
                 .await
             };
 
-            let client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
+            let mut client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
                 Ok(client) => client,
                 Err(err) => {
                     error!(target: "reth::cli", "Failed to connect to btc server: {}", err);
@@ -352,6 +353,12 @@ where {
                 }
             };
             info!(target: "reth::cli", "Btc server connected");
+
+            client.health_check(Empty {}).await.map_err(|err| {
+                error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
+                eyre::eyre!("Failed to authenticate to btc server: {}", err)
+            })?;
+            info!(target: "reth::cli", "Btc server authenticated");
 
             Some(client)
         } else {

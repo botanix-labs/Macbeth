@@ -22,7 +22,7 @@ use url::Url;
 use tracing::info;
 
 #[cfg(feature = "optimism")]
-use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
+use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, BOTANIX_TESTNET, DEV, OP_MAINNET, OP_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
@@ -117,7 +117,11 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
         let rendered_json = botanix_testnet_config_genesis.render()?;
         let genesis = serde_json::from_str(&rendered_json)?;
-        let botanix_testnet = create_botanix_config_with_genesis(genesis, 6, botanix_fee_recipient);
+        let botanix_testnet = create_botanix_config_with_genesis(
+            genesis,
+            BOTANIX_TESTNET.parent_confirmation_depth,
+            botanix_fee_recipient,
+        );
         Ok(botanix_testnet)
     } else {
         // TODO: to be fixed once the MAINNET has been activated

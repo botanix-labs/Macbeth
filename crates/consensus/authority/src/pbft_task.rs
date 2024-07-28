@@ -145,8 +145,17 @@ where
                 info!(target: "PBFT Task", "Received block proposal notification");
                 // we are the in turn block producer proposing a block
                 match self.pbft_state_machine.init_block_proposal(pbft_notification.block).await {
-                    Ok(()) => {
+                    Ok(None) => {
                         info!(target: "PBFT Task", "Block proposal Init processed successfully");
+                    }
+                    Ok(Some(block_witness)) => {
+                        info!(target: "PBFT Task", "Block proposal Init processed successfully -- already ready to produce a block");
+                        self.pbft_task_tx
+                            .send(PbftNotificationMessage::CommitmentsReceived(
+                                PbftFinalizationNotification { block_witness },
+                            ))
+                            // TODO remove unwrap()
+                            .unwrap();
                     }
                     Err(e) => {
                         error!(target: "PBFT Task", "Error processing block proposal Init {:?}", e);

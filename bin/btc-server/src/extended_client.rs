@@ -118,6 +118,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
     generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
     generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
+    generate_method!(health_check, Empty, Empty);
 }
 
 #[cfg(test)]

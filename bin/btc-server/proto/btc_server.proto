@@ -55,6 +55,8 @@ service BtcServer {
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
+
+    rpc HealthCheck(Empty) returns (Empty) {}
 }
 
 message FinalizeSignerRequest {
