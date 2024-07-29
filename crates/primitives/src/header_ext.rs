@@ -473,6 +473,10 @@ mod tests {
         let hash_after = header.segregated_signature_block_hash().expect("valid hash");
 
         assert_eq!(hash_before, hash_after);
+
+        // segregated_signature_block_hash and block.hash_slow should be the same
+        let hash_slow = header.hash_slow();
+        assert_eq!(hash_after, hash_slow);
     }
 
     #[test]
