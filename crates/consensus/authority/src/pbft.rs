@@ -1858,6 +1858,66 @@ mod tests {
         // TODO add a check here where we try to get another commitment from a peer
     }
 
+    #[tokio::test]
+    async fn cannot_suggest_at_same_timeslot() {
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
+
+        coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+        // Process block proposal
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+        for i in 0..non_coords.len() {
+            non_coords[i]
+                .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+                .await
+                .expect("valid block proposal");
+        }
+
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        // At this point we should have two pre-commitments
+        // The other non-coord peers need to provide their pre-commitments
+        coord
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid precommitment");
+        // Coordinator should now be awaiting commitments
+        assert!(coord.get_state(block_hash).is_awaiting_commitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
+
+        let altered_block = block_to_propose.clone();
+        let mut altered_header = altered_block.header().clone();
+        let mut edh = altered_header.deserialize_extra_data_header().unwrap();
+        edh.clear_signatures();
+        altered_header.add_extra_data_header(&edh);
+        altered_header.nonce = 2;
+        altered_header.sign_block(&coord.secret_key).expect("to sign block");
+        let altered_block = SealedBlock::new(altered_header.seal_slow(), BlockBody::default());
+
+        coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+        // Restart the state machine with the altered block
+        for i in 0..non_coords.len() {
+            let res = non_coords[i]
+                .process_block_proposal(altered_block.clone(), coord.peer_id.clone())
+                .await;
+            assert!(res.err().unwrap().to_string().contains("Peer for time slot"),);
+        }
+    }
+
     /* Validating fork */
     #[tokio::test]
     async fn will_not_sign_if_block_is_known() {
