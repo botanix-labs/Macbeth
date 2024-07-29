@@ -590,8 +590,6 @@ where
 
         let block_to_propose = sealed_blocks.get(&block_hash);
         if let Some(saved_block) = block_to_propose {
-            // TODO we need to reorder the block witness such that we are the ones that signed first
-            // i.e recieve the fee reward.
             let number_of_valid_sigs =
                 saved_block.header().check_authority_sig_add(&self.config.authorities)?;
             info!(target: "consensus::authority::pbft::init_block_proposal" ,"number of valid sigs: {}", number_of_valid_sigs);
@@ -600,8 +598,22 @@ where
             {
                 info!(target: "consensus::authority::pbft::init_block_proposal" ,"We have enough commitments, time to produce a block");
                 // TODO (armins) need better error handling
-                let block_witness =
+                let mut block_witness =
                     saved_block.header().get_block_witness()?.expect("set the witness above");
+
+                // Reorder the block witness so block producer signature is first
+                for (i, signature) in block_witness.iter().enumerate() {
+                    let msg = secp256k1::Message::from_digest_slice(
+                        block.header.create_sighash()?.0.as_slice(),
+                    )?;
+                    if signature.recover(&msg)? == self.config.authority_pk && i != 0 {
+                        info!(target: "consensus::authority::pbft::init_block_proposal" ,"Reordering block witness");
+                        let block_producer_signature = block_witness.remove(i);
+                        block_witness.insert(0, block_producer_signature);
+                        break;
+                    }
+                }
+
                 // Set the state accordingly
                 self.set_state(PbftState::Finished, block_hash);
 
@@ -1282,6 +1294,126 @@ mod tests {
 
         assert!(block_witness_init.is_some());
         assert_eq!(block_witness, block_witness_init);
+    }
+
+    #[tokio::test]
+    async fn multi_party_init_block_proposal_from_previous_round() {
+        // The purpose of this test is to ensure the block producer signature is at index 0
+        // in the block witness when proposing a block from a previous PBFT round
+
+        // first do multi party init_block_proposal during current round
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        let peer_id_1 = non_coords[1].peer_id.clone();
+        let pbft_state_machine = coord;
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+
+        // reset and this time the state should be waiting for pre-commitments
+        let mut pbft_state_machine = pbft_state_machine.reset();
+        pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+        assert_eq!(
+            pbft_state_machine.sealed_blocks.read().await.get(&block_hash).unwrap(),
+            &block_to_propose
+        );
+        // there should only be the one pre-commitment
+        assert_eq!(
+            pbft_state_machine.pre_commitments.read().await.get(&block_hash).unwrap().len(),
+            1
+        );
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
+        // Lets add one more pre commits from other peers
+        pbft_state_machine
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid pre-commitment");
+        // Should be waiting for commitments now
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingCommitments);
+        // Lets submit a commitment from the first peer
+        // Sign the block as peer 1
+        let mut header_to_sign_0 = block_to_propose.header().clone();
+        header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
+        let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_0.header().segregated_signature_block_hash().unwrap(), block_hash);
+
+        let mut header_to_sign_1 = block_to_propose.header().clone();
+        header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
+        let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_1.header().segregated_signature_block_hash().unwrap(), block_hash);
+
+        let _ = pbft_state_machine
+            .process_commitment(signed_block_0.clone(), peer_id_0)
+            .await
+            .expect("valid commitment");
+
+        let block_witness = pbft_state_machine
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+
+        // Should be finished now
+        assert!(block_witness.is_some());
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::Finished);
+        // Re initing the block should produce the same block witness as we have enough commitments
+        // already
+        let block_witness_init = pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+
+        assert!(block_witness_init.is_some());
+        assert_eq!(block_witness, block_witness_init);
+
+        // Simulate broadcasting a block from a previous round with a different block producer
+        // check that the next block producer signature is not at index 0
+        let mut next_coord = non_coords[0].clone();
+        let msg = secp256k1::Message::from_digest_slice(
+            block_to_propose.header.create_sighash().unwrap().0.as_slice(),
+        )
+        .unwrap();
+        let first_signature_pk = block_witness.unwrap()[0].recover(&msg).unwrap();
+        assert!(first_signature_pk != next_coord.config.authority_pk);
+
+        // insert the block, set pre commitments, and set the state to awaiting commitments
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+        next_coord.sealed_blocks = pbft_state_machine.sealed_blocks.clone();
+        next_coord.pre_commitments = pbft_state_machine.pre_commitments.clone();
+        next_coord.set_state(PbftState::AwaitingCommitments, block_hash);
+
+        // wait until next_coord is in turn
+        while !next_coord.is_coordinator() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
+        let block_witness =
+            next_coord.init_block_proposal(block_to_propose.clone()).await.unwrap().unwrap();
+        // assert that the block producer signature is at index 0
+        let msg = secp256k1::Message::from_digest_slice(
+            block_to_propose.header.create_sighash().unwrap().0.as_slice(),
+        )
+        .unwrap();
+        let first_signature_pk = block_witness[0].recover(&msg).unwrap();
+        assert!(first_signature_pk == non_coords[0].config.authority_pk);
     }
 
     #[ignore]
