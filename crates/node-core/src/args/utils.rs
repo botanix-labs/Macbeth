@@ -22,7 +22,7 @@ use url::Url;
 use tracing::info;
 
 #[cfg(feature = "optimism")]
-use reth_primitives::{BOTANIX_TESTNET, BASE_MAINNET, BASE_SEPOLIA, DEV, OP_MAINNET, OP_SEPOLIA};
+use reth_primitives::{BASE_MAINNET, BASE_SEPOLIA, BOTANIX_TESTNET, DEV, OP_MAINNET, OP_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
 use reth_primitives::{BOTANIX_TESTNET, DEV, GOERLI, HOLESKY, MAINNET, SEPOLIA};
