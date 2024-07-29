@@ -198,7 +198,7 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     /// Store commitment to time slot
     /// We store this as to avoid signing for a different block hash proposed by the same peer
     /// during their timeslot
-    time_slot_commitment: BTreeMap<u64, PeerId>,
+    time_slot_commitment: BTreeMap<u64, (PeerId, BlockHash)>,
     /// latest known bitcoin block header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     consensus: AuthorityConsensus,
@@ -727,8 +727,8 @@ where
         let coord_pk = signed_authorities.first().unwrap();
         let coord_peer_id = pk2id(coord_pk);
 
-        if let Some(peer) = self.time_slot_commitment.get(&time_slot) {
-            if *peer == coord_peer_id {
+        if let Some((peer, prev_signed_block_hash)) = self.time_slot_commitment.get(&time_slot) {
+            if *peer == coord_peer_id && *prev_signed_block_hash != block_hash {
                 warn!(target: "consensus::authority::pbft::check_and_send_commitment" ,"Peer has already processed this time slot");
                 return Err(Error::PeerAlreadyProcessedTimeSlot(time_slot));
             }
@@ -755,7 +755,7 @@ where
                 mutable_header.seal_slow(),
                 BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
             );
-            self.time_slot_commitment.insert(time_slot, coord_peer_id);
+            self.time_slot_commitment.insert(time_slot, (coord_peer_id, block_hash));
             // Update state
             self.set_state(PbftState::AwaitingCommitments, block_hash);
 
@@ -860,7 +860,8 @@ where
             new_block.header().check_authority_sig_add(&self.config.authorities)?;
         info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
         info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
-        // if we have enough commitments, we can move to the next st#[inline]
+        // if we have enough commitments, we can move to the next state
+        self.check_and_send_commitment(&new_block).await?;
         if number_of_valid_sigs >=
             PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
         {
@@ -1307,7 +1308,10 @@ mod tests {
         let time_slots = &other_peer.clone().time_slot_commitment;
         assert_eq!(time_slots.len(), 1);
         // only timeslot should be coord peerid
-        assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
+        let timeslot_peer_id = time_slots.iter().next().unwrap().1 .0;
+        let timeslot_block_hash = time_slots.iter().next().unwrap().1 .1;
+        assert_eq!(timeslot_peer_id, coord.peer_id);
+        assert_eq!(timeslot_block_hash, block_hash);
 
         let res = other_peer.clone().check_and_send_commitment(&block_to_propose).await;
         // TODO should be checking an error variant
@@ -1330,7 +1334,10 @@ mod tests {
 
         assert_eq!(time_slots.len(), 1);
         // only timeslot should be coord peerid
-        assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
+        let timeslot_peer_id = time_slots.iter().next().unwrap().1 .0;
+        let timeslot_block_hash = time_slots.iter().next().unwrap().1 .1;
+        assert_eq!(timeslot_peer_id, coord.peer_id);
+        assert_eq!(timeslot_block_hash, block.hash_slow());
     }
 
     #[tokio::test]
@@ -1607,20 +1614,17 @@ mod tests {
         // Remove the coord's pre-commits
         pre_commitments.remove(&coord.peer_id);
         non_coords[0].pre_commitments.write().await.insert(block_hash, pre_commitments.clone());
-        non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
-        // Adding the same pre-commit here is requesting another signed block. This will fail b/c we
-        // have already signed for this timeslot
-        let res =
-            non_coords[0].process_precommitment(block_to_propose.clone(), other_peer_id).await;
-        assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), other_peer_id)
+            .await
+            .expect("valid pre-commitment request");
 
         let pre_commitments =
             non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
         assert_eq!(pre_commitments.len(), 2);
-        // At this point its us (non_coord[0]) and the other peer (non_coord[1)
         assert!(pre_commitments.contains(&non_coords[0].peer_id));
         assert!(pre_commitments.contains(&non_coords[1].peer_id));
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
     }
 
     #[tokio::test]
@@ -1768,8 +1772,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cannot_suggest_the_same_block_twice() {
-        // Note: set up test signs with the first authorities key
+    async fn can_suggest_the_same_block_twice() {
+        // This test ensure thats peers will commit to the same block twice as long
+        // as the block hash is the same
+        // Peers should still reject if the same block producer is suggesting two different blocks
+        // in the same time slot Note: set up test signs with the first authorities key
         setup_multi_party_test!(
             3,
             sks,
@@ -1814,12 +1821,16 @@ mod tests {
 
         // At this point peer 0 should have committed to the block as we only need 2 pre-commitments
         // But the round is awaiting the last commitment from peer 1
-
-        // Re-requesting a commitment from peer 0 as the same block producer should fail
-        let res = non_coords[0].process_precommitment(block_to_propose.clone(), peer_id_1).await;
-        assert!(res.err().unwrap().to_string().contains("Peer for time slot"),);
-        let res = non_coords[1].process_precommitment(block_to_propose.clone(), peer_id_0).await;
-        assert!(res.err().unwrap().to_string().contains("Peer for time slot"),);
+        // Re-requesting a commitment from peers as the same block producer should be fine as its
+        // the same block
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), coord.peer_id)
+            .await
+            .expect("valid precommitment request");
+        non_coords[1]
+            .process_precommitment(block_to_propose.clone(), coord.peer_id)
+            .await
+            .expect("valid precommitment request");
 
         // Sign block as peer 0
         let mut header_to_sign_0 = block_to_propose.header().clone();
