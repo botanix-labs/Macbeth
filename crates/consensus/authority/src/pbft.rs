@@ -462,6 +462,7 @@ where
             return Ok(());
         } else {
             // Somehow we have the parent block but its not the current canon chain?
+            // This means the block is building on an older block that is not the best block
             // This should not happen
             match BlockReader::block_by_hash(&self.client, block_to_sign.parent_hash) {
                 Ok(existing_block) => {
@@ -778,8 +779,6 @@ where
         self.validate_block(&block).await?;
 
         let block_hash = block.header.segregated_signature_block_hash()?;
-        let current_state = self.get_state(block_hash);
-
         // Do not process our own response
         if peer_id == self.peer_id {
             return Ok(());
@@ -801,8 +800,8 @@ where
     }
 
     /// Process a commitment from a peer
-    /// If we have enough commitments, returns true
-    /// Otherwise returns false
+    /// If we have enough commitments, returns the block witness
+    /// Otherwise returns None
     pub(crate) async fn process_commitment(
         &mut self,
         block: SealedBlock,
@@ -860,8 +859,8 @@ where
         self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
         let number_of_valid_sigs =
             new_block.header().check_authority_sig_add(&self.config.authorities)?;
-        info!("number of valid sigs: {}", number_of_valid_sigs);
-        info!("max signers: {}", self.config.max_signers);
+        info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
+        info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next st#[inline]
         if number_of_valid_sigs >=
             PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
