@@ -709,7 +709,7 @@ where
         .await?;
 
         // Edge case: In a n=2 federation we can move to the next state
-        self.check_and_send_commitment(&block, &peer_id).await?;
+        self.check_and_send_commitment(&block).await?;
 
         Ok(())
     }
@@ -719,7 +719,6 @@ where
     pub(crate) async fn check_and_send_commitment(
         &mut self,
         block: &SealedBlock,
-        _peer_id: &PeerId,
     ) -> Result<(), Error> {
         let block_hash = block.header.segregated_signature_block_hash()?;
         let signed_authorities = block.header.recovered_signed_authorities()?;
@@ -794,7 +793,7 @@ where
         info!(target: "consensus::authority::pbft::process_precommitment" ,"pre-commitments: {:?}", pre_commits.len());
         drop(write_handle);
 
-        self.check_and_send_commitment(&block, &peer_id).await?;
+        self.check_and_send_commitment(&block).await?;
 
         Ok(())
     }
@@ -1310,8 +1309,7 @@ mod tests {
         // only timeslot should be coord peerid
         assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
 
-        let res =
-            other_peer.clone().check_and_send_commitment(&block_to_propose, &coord.peer_id).await;
+        let res = other_peer.clone().check_and_send_commitment(&block_to_propose).await;
         // TODO should be checking an error variant
         assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
 
