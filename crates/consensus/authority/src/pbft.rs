@@ -23,7 +23,9 @@ use reth_primitives::{
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory};
+use reth_provider::{
+    BlockReader, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory,
+};
 
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
@@ -461,11 +463,20 @@ where
         } else {
             // Somehow we have the parent block but its not the current canon chain?
             // This should not happen
-            if self.client.contains(block_to_sign.parent_hash) {
-                return Err(ValidateBlockError::ParentHashNotCanonicalTip(
-                    block_to_sign.hash_slow(),
-                    block_to_sign.parent_hash,
-                ));
+            match BlockReader::block_by_hash(&self.client, block_to_sign.parent_hash) {
+                Ok(existing_block) => {
+                    if let Some(existing_block) = existing_block {
+                        if existing_block.hash_slow() != best_block_hash {
+                            return Err(ValidateBlockError::ParentHashNotCanonicalTip(
+                                block_hash,
+                                block_to_sign.parent_hash,
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(target: "consensus::authority::pbft::validate_block", "Failed to get block hash for block: {:?}", e);
+                }
             }
 
             // we could be missing the parent block that is being suggested indicating that there is
