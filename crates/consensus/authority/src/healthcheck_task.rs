@@ -58,15 +58,6 @@ where
 
     pub async fn start_task(&mut self) {
         info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
-        loop {
-            // await all peers to be connected
-            if check_all_peers_initially_connected(&self.frost_handle).await {
-                break;
-            }
-
-            // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
 
         // get all connected peers (could be authority and none-authority)
         let all_connected_peers =
