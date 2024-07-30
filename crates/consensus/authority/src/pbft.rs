@@ -602,12 +602,12 @@ where
                     saved_block.header().get_block_witness()?.expect("set the witness above");
 
                 // Reorder the block witness so block producer signature is first
+                let msg = secp256k1::Message::from_digest_slice(
+                    block.header.create_sighash()?.0.as_slice(),
+                )?;
                 for (i, signature) in block_witness.iter().enumerate() {
-                    let msg = secp256k1::Message::from_digest_slice(
-                        block.header.create_sighash()?.0.as_slice(),
-                    )?;
                     if signature.recover(&msg)? == self.config.authority_pk && i != 0 {
-                        info!(target: "consensus::authority::pbft::init_block_proposal" ,"Reordering block witness");
+                        info!(target: "consensus::authority::pbft::init_block_proposal", "Reordering block witness: moving signature at index {} to position 0 out of {} signatures", i, block_witness.len());
                         let block_producer_signature = block_witness.remove(i);
                         block_witness.insert(0, block_producer_signature);
                         break;
@@ -2009,6 +2009,7 @@ mod tests {
             3,
             sks,
             frost_handle_mock,
+            configs,
             peer_ids,
             signed_blocks,
             non_coords,
@@ -2067,6 +2068,8 @@ mod tests {
     async fn will_not_sign_if_block_is_known() {
         setup_multi_party_test!(
             1,
+            sks,
+            frost_handle_mock,
             configs,
             peer_ids,
             signed_blocks,
