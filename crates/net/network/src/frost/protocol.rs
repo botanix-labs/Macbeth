@@ -109,14 +109,14 @@ impl ConnectionHandler for FrostConnectionHandler {
         // on every new connection to us, send over the cloned shared channel an Established event
         // to the other side and a tx handle to send Command messages to us directly
         let (remote_peer_tx, remote_peer_rx) = mpsc::unbounded_channel();
-        self.state
-            .events
-            .send(FrostProtocolEvent::ConnectionEstablished {
-                direction,
-                peer_id,
-                to_connection: remote_peer_tx,
-            })
-            .ok();
+        let connection_established_event = FrostProtocolEvent::ConnectionEstablished {
+            direction,
+            peer_id,
+            to_connection: remote_peer_tx,
+        };
+        if let Err(e) = self.state.events.send(connection_established_event) {
+            error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e);
+        }
         let peer_message_forwarder = self.state.peer_message_forwarder.clone();
         // update connection state
         FrostProtoConnection {
