@@ -287,7 +287,7 @@ impl App {
         let bitcoind = self.bitcoind_client.as_ref().expect("should have bitcoind");
         let db = &self.db;
         lock.sync_until(bitcoind, checkpoint, move |utxo| {
-            db.store_utxo(&utxo)?;
+            db.store_utxos(&[&utxo])?;
             db.flush()?;
             Ok(())
         })?;
@@ -318,7 +318,12 @@ impl From<database::Utxo> for rpc::Utxo {
                 txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
                 vout: item.outpoint.vout,
             }),
-            output: item.output.value.to_sat() as u32,
+            output: Some(rpc::TxOut {
+                value: item.output.value.to_sat() as u64,
+                script_pubkey: Some(rpc::ScriptBuf {
+                    script: item.output.script_pubkey.to_bytes(),
+                }),
+            }),
             eth_address: item.eth_address.map_or(String::new(), hex::encode),
         }
     }
@@ -816,7 +821,7 @@ mod test {
         let tx = psbt.clone().unsigned_tx;
         // Add the utxo
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
-        app.add_pegin(&utxo).expect("valid pegin utxo");
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
         let mock_bitcoind = MockBitcoind::new();
 
         let nonce_commits =
@@ -867,7 +872,7 @@ mod test {
             psbt.inputs[0].witness_utxo.clone().expect("some"),
             None,
         );
-        app.add_pegin(&utxo).expect("valid pegin utxo");
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
             .expect("valid nonce commits request");
@@ -891,7 +896,7 @@ mod test {
             psbt.inputs[0].witness_utxo.clone().expect("some"),
             None,
         );
-        app.add_pegin(&utxo).expect("valid pegin utxo");
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
             .expect("valid nonce commits request");
@@ -929,8 +934,8 @@ mod test {
             psbt.inputs[0].witness_utxo.clone().expect("some"),
             None,
         );
-        app_signer.add_pegin(&utxo).expect("valid pegin utxo");
-        app_coordinator.add_pegin(&utxo).expect("valid pegin utxo");
+        app_signer.add_pegins(&[&utxo]).expect("valid pegin utxo");
+        app_coordinator.add_pegins(&[&utxo]).expect("valid pegin utxo");
 
         // Should fail if there are no signing commits in the psbt
         let res =
@@ -1004,7 +1009,7 @@ mod test {
             psbt.inputs[0].witness_utxo.clone().expect("some"),
             None,
         );
-        app.add_pegin(&utxo).expect("valid pegin utxo");
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
 
         app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
             .await
@@ -1046,7 +1051,7 @@ mod test {
                 TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
                 None,
             );
-            app.db.store_utxo(&utxo).expect("Failed to store UTXO");
+            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
         }
 
         let request = Request::new(rpc::Empty {});

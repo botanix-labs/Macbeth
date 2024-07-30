@@ -75,14 +75,10 @@ pub enum CoordinatorError {
 }
 
 impl App {
-    pub(crate) fn add_pegin(&self, utxo: &Utxo) -> Result<(), CoordinatorError> {
-        if self.db.store_utxo(utxo)? {
-            self.db.update_utxo_merkle_root()?;
-            self.db.flush()?;
-            debug!("Stored utxo {}", utxo.outpoint);
-        } else {
-            warn!("Duplicate utxo {}", utxo.outpoint);
-        }
+    pub(crate) fn add_pegins(&self, utxos: &[&Utxo]) -> Result<(), CoordinatorError> {
+        self.db.store_utxos(utxos)?;
+        self.db.update_utxo_merkle_root()?;
+        self.db.flush()?;
         Ok(())
     }
 

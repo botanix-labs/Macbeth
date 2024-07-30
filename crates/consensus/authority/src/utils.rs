@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
+use client::{MakeTxRequest, NotifyPeginsRequest, Output, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{
@@ -292,20 +292,40 @@ async fn process_botanix_log(
                     warn!(target: "consensus::authority", "pegin confirmation depth not met, skipping");
                     continue;
                 }
-                for pegin in &pegin_data.meta {
-                    let request = NotifyPeginRequest {
-                        utxo_txid: pegin.outpoint.txid.to_string(),
-                        utxo_vout: pegin.outpoint.vout,
-                        eth_address: hex::encode(pegin.address),
-                        output: bitcoin::consensus::serialize(
-                            pegin.tx.output.get(pegin.outpoint.vout as usize).expect("valid vout"),
-                        ),
-                    };
-                    btc_server.notify_pegin(request).await.map_err(|e| {
-                        ProcessBotanixLogError::NotifyPeginFailure(e.to_tonic_status())
-                    })?;
-                    info!(target: "consensus::authority", "notifying btc server about pegin utxo");
-                }
+
+                let utxos = pegin_data
+                    .meta
+                    .iter()
+                    .map(|pegin_meta| {
+                        let tx_out = pegin_meta
+                            .tx
+                            .output
+                            .get(pegin_meta.outpoint.vout as usize)
+                            .expect("valid vout");
+                        let serialized_script_pub_key =
+                            bitcoin::consensus::serialize(&tx_out.script_pubkey);
+                        Utxo {
+                            outpoint: Some(client::OutPoint {
+                                txid: bitcoin::consensus::serialize(&pegin_meta.outpoint.txid),
+                                vout: pegin_meta.outpoint.vout,
+                            }),
+                            output: Some(TxOut {
+                                script_pubkey: Some(ScriptBuf {
+                                    script: serialized_script_pub_key,
+                                }),
+                                value: pegin_meta.outpoint.vout as u64,
+                            }),
+                            eth_address: hex::encode(pegin_meta.address),
+                        }
+                    })
+                    .collect();
+
+                let request = NotifyPeginsRequest { utxos };
+                btc_server
+                    .notify_pegins(request)
+                    .await
+                    .map_err(|e| ProcessBotanixLogError::NotifyPeginFailure(e.to_tonic_status()))?;
+                info!(target: "consensus::authority", "notifying btc server about pegin utxos");
             }
             Ok(GenesisContractEvents::BurnEvent) => {
                 // validate pegout

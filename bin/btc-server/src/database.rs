@@ -1,18 +1,22 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
+use crate::{
+    rpc::Utxo as RpcUtxo,
+    txindex,
+    util::{parse_eth_address, OutPointExt},
+};
 use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    BlockHash, OutPoint, TxOut,
+    Amount, BlockHash, OutPoint, Script, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
+use sled::transaction::{ConflictableTransactionError, TransactionError};
 use thiserror::Error;
-
-use crate::{txindex, util::OutPointExt};
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -44,6 +48,35 @@ impl Utxo {
         Utxo { outpoint, output, eth_address }
     }
 }
+
+impl From<RpcUtxo> for Utxo {
+    fn from(value: RpcUtxo) -> Self {
+        // outpoint
+        let outpoint = value.outpoint.unwrap();
+        // FIXME: remove the unwrap
+        let txid = Txid::from_slice(&outpoint.txid).unwrap();
+        let vout = outpoint.vout;
+
+        // txout
+        let tx_out = value.output.unwrap();
+        let script_pubkey = tx_out.script_pubkey.unwrap();
+        let script = Script::from_bytes(&script_pubkey.script);
+        let tx_out_val = Amount::from_sat(tx_out.value as u64);
+
+        // create the utxo
+        Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value: tx_out_val, script_pubkey: script.into() },
+            if value.eth_address.is_empty() {
+                None
+            } else {
+                // FIXME: remove the unwrap
+                Some(parse_eth_address(value.eth_address).unwrap())
+            },
+        )
+    }
+}
+
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -375,7 +408,15 @@ impl Db {
         })
     }
 
-    pub fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
+    pub fn store_utxos(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
+        match utxos.len() {
+            0 => Ok(false),
+            1 => self.store_utxo(utxos.get(0).unwrap()),
+            _ => self.store_utxos_atomically(utxos),
+        }
+    }
+
+    fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
         let op = utxo.outpoint;
         if !self.utxos.contains_key(op.to_bytes())? {
             let mut bytes = Vec::new();
@@ -385,6 +426,23 @@ impl Db {
         } else {
             Ok(false)
         }
+    }
+
+    fn store_utxos_atomically(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
+        self.utxos
+            .transaction(|tx| {
+                for utxo in utxos.iter() {
+                    let op = utxo.outpoint;
+                    if tx.get(op.to_bytes())?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
+                        tx.insert(op.to_bytes().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))
+            .map(|_| true)
     }
 
     /// Retrieves all utxos from the database.
@@ -469,6 +527,8 @@ pub enum Error {
     BitcoinSerialization(#[from] bitcoin::consensus::encode::Error),
     #[error("PSBT error: {0}")]
     Psbt(#[from] psbt::Error),
+    #[error("Transaction error: {0}")]
+    Transaction(String),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
