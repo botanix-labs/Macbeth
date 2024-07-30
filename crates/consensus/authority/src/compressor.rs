@@ -122,6 +122,28 @@ where
     }
 }
 
+macro_rules! define_compression_methods {
+    ($($name:ident),+) => {
+        paste::item! {
+            $(
+                pub(crate) async fn [<compress_ $name:lower>](&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+                    let mut encoder = [<$name Encoder>]::with_quality(Vec::new(), self.compression_level);
+                    encoder.write_all(in_data).await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
+                    encoder.shutdown().await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
+                    Ok(encoder.into_inner())
+                }
+
+                pub(crate) async fn [<decompress_ $name:lower>](&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
+                    let mut decoder = [<$name Decoder>]::new(Vec::new());
+                    decoder.write_all(in_data).await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
+                    decoder.shutdown().await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
+                    Ok(decoder.into_inner())
+                }
+            )*
+        }
+    };
+}
+
 /// Compressor implementation
 #[derive(Debug)]
 pub(crate) struct Compressor {
@@ -139,6 +161,9 @@ impl Compressor {
             serialization_type: SerializationType::Bincode,
         }
     }
+
+    // Macro invocation to generate methods
+    define_compression_methods!(Zlib, Gzip, Brotli, Bz, Lzma, Deflate, Zstd);
 
     /// Sets the compression type
     pub(crate) fn set_compression_type(&mut self, compression_type: CompressionType) {
@@ -203,90 +228,13 @@ impl Compressor {
     pub(crate) async fn compress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
-            CompressionType::Zlib => {
-                let mut encoder = ZlibEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zlib(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zlib(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Gzip => {
-                let mut encoder = GzipEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Gzip(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Gzip(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Brotli => {
-                let mut encoder = BrotliEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Brotli(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Brotli(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Bz => {
-                let mut encoder = BzEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Bz(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Bz(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Lzma => {
-                let mut encoder = LzmaEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Lzma(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Lzma(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Deflate => {
-                let mut encoder = DeflateEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Deflate(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Deflate(e)))?;
-                Ok(encoder.into_inner())
-            }
-            CompressionType::Zstd => {
-                let mut encoder = ZstdEncoder::with_quality(Vec::new(), self.compression_level);
-                encoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zstd(e)))?;
-                encoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zstd(e)))?;
-                Ok(encoder.into_inner())
-            }
+            CompressionType::Zlib => self.compress_zlib(in_data).await,
+            CompressionType::Gzip => self.compress_gzip(in_data).await,
+            CompressionType::Brotli => self.compress_brotli(in_data).await,
+            CompressionType::Bz => self.compress_bz(in_data).await,
+            CompressionType::Lzma => self.compress_lzma(in_data).await,
+            CompressionType::Deflate => self.compress_deflate(in_data).await,
+            CompressionType::Zstd => self.compress_zstd(in_data).await,
         }
     }
 
@@ -294,90 +242,13 @@ impl Compressor {
     pub(crate) async fn decompress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
         match self.compression_type {
             CompressionType::None => Ok(in_data.to_vec()),
-            CompressionType::Zlib => {
-                let mut decoder = ZlibDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zlib(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zlib(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Gzip => {
-                let mut decoder = GzipDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Gzip(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Gzip(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Brotli => {
-                let mut decoder = BrotliDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Brotli(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Brotli(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Bz => {
-                let mut decoder = BzDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Bz(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Bz(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Lzma => {
-                let mut decoder = LzmaDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Lzma(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Lzma(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Deflate => {
-                let mut decoder = DeflateDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Deflate(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Deflate(e)))?;
-                Ok(decoder.into_inner())
-            }
-            CompressionType::Zstd => {
-                let mut decoder = ZstdDecoder::new(Vec::new());
-                decoder
-                    .write_all(in_data)
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zstd(e)))?;
-                decoder
-                    .shutdown()
-                    .await
-                    .map_err(|e| Error::Compression(CompressionError::Zstd(e)))?;
-                Ok(decoder.into_inner())
-            }
+            CompressionType::Zlib => self.decompress_zlib(in_data).await,
+            CompressionType::Gzip => self.decompress_gzip(in_data).await,
+            CompressionType::Brotli => self.decompress_brotli(in_data).await,
+            CompressionType::Bz => self.decompress_bz(in_data).await,
+            CompressionType::Lzma => self.decompress_lzma(in_data).await,
+            CompressionType::Deflate => self.decompress_deflate(in_data).await,
+            CompressionType::Zstd => self.decompress_zstd(in_data).await,
         }
     }
 }

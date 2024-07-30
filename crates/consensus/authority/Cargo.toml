@@ -56,6 +56,9 @@ strum_macros = "0.26.4"
 # prost
 prost = "0.12.6"
 
+# paste
+paste = "1.0.15"
+
 # bytes
 bytes = "1.6.0"
 

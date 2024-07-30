@@ -7823,6 +7823,7 @@ dependencies = [
  "frost-secp256k1-tr",
  "futures-util",
  "hex",
+ "paste",
  "postcard",
  "prost",
  "rand 0.8.5",
