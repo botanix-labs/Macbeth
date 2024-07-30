@@ -311,24 +311,6 @@ impl App {
     }
 }
 
-impl From<database::Utxo> for rpc::Utxo {
-    fn from(item: database::Utxo) -> Self {
-        rpc::Utxo {
-            outpoint: Some(rpc::OutPoint {
-                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
-                vout: item.outpoint.vout,
-            }),
-            output: Some(rpc::TxOut {
-                value: item.output.value.to_sat() as u64,
-                script_pubkey: Some(rpc::ScriptBuf {
-                    script: item.output.script_pubkey.to_bytes(),
-                }),
-            }),
-            eth_address: item.eth_address.map_or(String::new(), hex::encode),
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()

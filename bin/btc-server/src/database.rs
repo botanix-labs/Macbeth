@@ -1,7 +1,7 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use crate::{
-    rpc::Utxo as RpcUtxo,
+    rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     txindex,
     util::{parse_eth_address, OutPointExt},
 };
@@ -74,6 +74,22 @@ impl From<RpcUtxo> for Utxo {
                 Some(parse_eth_address(value.eth_address).unwrap())
             },
         )
+    }
+}
+
+impl From<Utxo> for RpcUtxo {
+    fn from(item: Utxo) -> Self {
+        RpcUtxo {
+            outpoint: Some(RpcOutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: Some(RpcTxOut {
+                value: item.output.value.to_sat() as u64,
+                script_pubkey: Some(RpcScriptBuf { script: item.output.script_pubkey.to_bytes() }),
+            }),
+            eth_address: item.eth_address.map_or(String::new(), hex::encode),
+        }
     }
 }
 

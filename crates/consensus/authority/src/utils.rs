@@ -10,7 +10,7 @@ use reth_botanix_lib::{
         parse_pegin_reth_log_topic, parse_pegout_reth_log_topic, GenesisContractEvents, BURN_TOPIC,
         MINT_CONTRACT_ADDRESS, MINT_TOPIC,
     },
-    peg_contract::PegoutData,
+    peg_contract::{PeginMeta, PegoutData},
 };
 use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
@@ -293,32 +293,7 @@ async fn process_botanix_log(
                     continue;
                 }
 
-                let utxos = pegin_data
-                    .meta
-                    .iter()
-                    .map(|pegin_meta| {
-                        let tx_out = pegin_meta
-                            .tx
-                            .output
-                            .get(pegin_meta.outpoint.vout as usize)
-                            .expect("valid vout");
-                        let serialized_script_pub_key =
-                            bitcoin::consensus::serialize(&tx_out.script_pubkey);
-                        Utxo {
-                            outpoint: Some(client::OutPoint {
-                                txid: bitcoin::consensus::serialize(&pegin_meta.outpoint.txid),
-                                vout: pegin_meta.outpoint.vout,
-                            }),
-                            output: Some(TxOut {
-                                script_pubkey: Some(ScriptBuf {
-                                    script: serialized_script_pub_key,
-                                }),
-                                value: pegin_meta.outpoint.vout as u64,
-                            }),
-                            eth_address: hex::encode(pegin_meta.address),
-                        }
-                    })
-                    .collect();
+                let utxos = pegin_data.meta.iter().map(utxo_from_pegin_meta).collect();
 
                 let request = NotifyPeginsRequest { utxos };
                 btc_server
@@ -347,6 +322,22 @@ async fn process_botanix_log(
         }
     }
     Ok(pegout)
+}
+
+fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
+    let tx_out = pegin_meta.tx.output.get(pegin_meta.outpoint.vout as usize).expect("valid vout");
+    let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+    Utxo {
+        outpoint: Some(client::OutPoint {
+            txid: bitcoin::consensus::serialize(&pegin_meta.outpoint.txid),
+            vout: pegin_meta.outpoint.vout,
+        }),
+        output: Some(TxOut {
+            script_pubkey: Some(ScriptBuf { script: serialized_script_pub_key }),
+            value: pegin_meta.outpoint.vout as u64,
+        }),
+        eth_address: hex::encode(pegin_meta.address),
+    }
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
