@@ -127,9 +127,6 @@ pub async fn send_pegin_notification(
     eth_address: String,
     txid: [u8; 32],
 ) -> Result<(), Error> {
-    // let prev_out =
-    //     TxOut { script_pubkey: address.script_pubkey(), value: Amount::from_sat(100_000_000) };
-
     let mut prev_out_bytes = Vec::new();
     address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
     let utxos = [client::Utxo {
@@ -142,14 +139,8 @@ pub async fn send_pegin_notification(
     }]
     .to_vec();
 
-    let res = client
-        .notify_pegins(tonic::Request::new(client::NotifyPeginsRequest {
-            utxos, /* eth_address,
-                    * utxo_txid: hex::encode(txid),
-                    * utxo_vout: 1,
-                    * output: prev_out_bytes, */
-        }))
-        .await;
+    let res =
+        client.notify_pegins(tonic::Request::new(client::NotifyPeginsRequest { utxos })).await;
     if res.is_err() {
         return Err(Error::PeginNotification);
     }
