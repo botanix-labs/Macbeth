@@ -637,7 +637,6 @@ where
         self.sealed_blocks.write().await.insert(block_hash, block.clone());
 
         // Set the state to awaiting pre-commitments
-        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
         self.gossip_to_peers(PbftResponse {
             response_type: PbftEventResponseType::CoordinatorBlockProposal,
             data: block.clone(),
@@ -652,6 +651,7 @@ where
             .or_insert_with(HashSet::new)
             .insert(self.peer_id);
 
+        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
         Ok(None)
     }
 
@@ -894,7 +894,9 @@ where
                 new_block.header().get_block_witness()?.expect("set the witness above");
             info!(target: "consensus::authority::pbft::process_commitment" ,"Block witness: {:?}", block_witness);
             self.set_state(PbftState::Finished, block_hash);
-            return Ok(Some(block_witness));
+            if self.is_coordinator() {
+                return Ok(Some(block_witness));
+            }
         }
         Ok(None)
     }
