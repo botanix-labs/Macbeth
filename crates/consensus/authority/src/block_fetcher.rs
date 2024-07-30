@@ -142,7 +142,7 @@ where
         }
     }
 
-    fn get_best_block_edh_from_peers(&self) -> Result<Option<ExtraDataHeader>, Error> {
+    fn get_best_block_edh(&self) -> Result<Option<ExtraDataHeader>, Error> {
         let best_block_number = self.client.best_block_number().map_err(Error::Provider)?;
         let best_block_header =
             self.client.block_by_number(best_block_number).map_err(Error::Provider)?;
@@ -193,7 +193,7 @@ where
 
         loop {
             // get edh from peers
-            let edh = match self.get_best_block_edh_from_peers() {
+            let edh = match self.get_best_block_edh() {
                 Ok(edh) => match edh {
                     Some(edh) => edh,
                     None => {
