@@ -722,7 +722,9 @@ where
         // And implicitly add the coordinator's pre-commitment
         pre_commits.insert(peer_id);
         self.pre_commitments.write().await.insert(block_hash, pre_commits);
-        // Store block in sealed blocks
+        // Store block in sealed blocks as a non-coordiantor.
+        // This is to ensure that we can continue the PBFT round for the same block hash if the
+        // current coordinator changes
         self.sealed_blocks.write().await.insert(block_hash, block.clone());
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
 
@@ -780,6 +782,9 @@ where
                 mutable_header.seal_slow(),
                 BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
             );
+            // Update sealed blocks
+            self.sealed_blocks.write().await.insert(block_hash, signed_block.clone());
+
             self.time_slot_commitment.insert(time_slot, (coord_peer_id, block_hash));
             // Update state
             self.set_state(PbftState::AwaitingCommitments, block_hash);
@@ -1331,15 +1336,7 @@ mod tests {
             .init_block_proposal(block_to_propose.clone())
             .await
             .expect("valid block proposal");
-        assert_eq!(
-            pbft_state_machine.sealed_blocks.read().await.get(&block_hash).unwrap(),
-            &block_to_propose
-        );
-        // there should only be the one pre-commitment
-        assert_eq!(
-            pbft_state_machine.pre_commitments.read().await.get(&block_hash).unwrap().len(),
-            1
-        );
+
         assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
         // Lets add one more pre commits from other peers
         pbft_state_machine
@@ -1354,7 +1351,7 @@ mod tests {
         header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
         let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
         assert_eq!(signed_block_0.header().segregated_signature_block_hash().unwrap(), block_hash);
-
+        // Sign the block as peer 2
         let mut header_to_sign_1 = block_to_propose.header().clone();
         header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
         let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
@@ -1878,12 +1875,13 @@ mod tests {
         assert!(sigs_again.contains(&sigs_so_far[0]));
         assert!(sigs_again.contains(&sigs_so_far[1]));
 
-        let finished_block = coord
+        // Since we added the last signature needed we should get returned
+        // `Some(Vec<RecoverableSignature>)`
+        let block_witness = coord
             .process_commitment(signed_block_1.clone(), peer_id_1)
             .await
-            .expect("valid commitment");
-        // Since we added the last signature needed we should get returned `Some(SealedBlock)`
-        assert!(finished_block.is_some());
+            .expect("valid commitment")
+            .unwrap();
 
         let sigs_so_far = coord
             .sealed_blocks
@@ -1898,6 +1896,8 @@ mod tests {
             .authority_signatures
             .expect("should have signatures");
         // There should be a sig from all peers
+
+        assert_eq!(sigs_so_far, block_witness);
         assert_eq!(sigs_so_far.len(), 3);
         for sk in sks {
             let pk = sk.public_key(secp256k1::SECP256K1);
@@ -1916,6 +1916,13 @@ mod tests {
 
             assert!(recovered);
         }
+
+        // non coordiantors should NOT respond with block witness
+        let res = non_coords[0]
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+        assert!(res.is_none());
     }
 
     #[tokio::test]
