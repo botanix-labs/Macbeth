@@ -31,9 +31,6 @@ pub(crate) enum PbftNotificationMessage {
     /// A notification to the block builder task that we have received a with a quorum of
     /// commitments
     CommitmentsReceived(PbftFinalizationNotification),
-    /// A notification to the block builder task we have timed out or are no longer in turn so we
-    /// can reset
-    Reset,
 }
 
 /// Notification for proposing a block
@@ -137,10 +134,6 @@ where
     /// handle any pbft notifications from the block builder task
     async fn handle_notification(&mut self, message: PbftNotificationMessage) {
         match message {
-            PbftNotificationMessage::Reset => {
-                info!(target: "PBFT Task", "Resetting PBFT State Machine");
-                self.pbft_state_machine = self.pbft_state_machine.clone().reset();
-            }
             PbftNotificationMessage::ProposeBlock(pbft_notification) => {
                 info!(target: "PBFT Task", "Received block proposal notification");
                 // we are the in turn block producer proposing a block
