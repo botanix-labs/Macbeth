@@ -31,6 +31,7 @@ use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt,
     sync::Arc,
     time::Duration,
 };
@@ -93,6 +94,8 @@ pub(crate) enum Error {
     BlockExecution(#[from] BlockExecutionError),
     #[error("Failed to find block with hash {0}")]
     BlockHashNotFound(BlockHash),
+    #[error("Incorrect state for request. Currently in state {0} for block hash {1}")]
+    IncorrectState(PbftState, BlockHash),
 }
 
 /// Error when validating a block as a block signer
@@ -158,9 +161,18 @@ pub(crate) enum PbftState {
     /// We have received k pre-commitments, now we are waiting for k commitments from peers
     AwaitingCommitments,
     /// finished state for either the block producer or the peer
-    #[allow(dead_code)]
-    /// TODO do we really need this?
     Finished,
+}
+
+impl fmt::Display for PbftState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PbftState::Initial => write!(f, "Initial"),
+            PbftState::AwaitingPreCommitments => write!(f, "AwaitingPreCommitments"),
+            PbftState::AwaitingCommitments => write!(f, "AwaitingCommitments"),
+            PbftState::Finished => write!(f, "Finished"),
+        }
+    }
 }
 
 impl PbftState {
@@ -169,6 +181,7 @@ impl PbftState {
         !matches!(self, PbftState::Initial)
     }
     /// Returns true if we are waiting for a number of pre-commitments
+    #[allow(dead_code)]
     pub(crate) fn is_awaiting_precommitments(&self) -> bool {
         matches!(self, PbftState::AwaitingPreCommitments)
     }
@@ -642,7 +655,7 @@ where
         let current_state = self.get_state(block_hash);
         if current_state.is_running() {
             warn!(target: "consensus::authority::pbft::process_block_proposal" ,"State machine is already running for block {:?}", block_hash);
-            return Ok(());
+            return Err(Error::IncorrectState(current_state, block_hash));
         }
 
         if peer_id == self.peer_id {
@@ -816,7 +829,7 @@ where
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
             warn!(target: "consensus::authority::pbft::process_commitment" ,"State machine is not awaiting commitments for block {:?}", block_hash);
-            return Ok(None);
+            return Err(Error::IncorrectState(current_state, block_hash));
         }
 
         let lock = self.sealed_blocks.read().await;
@@ -861,7 +874,6 @@ where
         info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
         info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
-        self.check_and_send_commitment(&new_block).await?;
         if number_of_valid_sigs >=
             PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
         {
@@ -1491,10 +1503,10 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0]
             .pre_commitments
@@ -1545,10 +1557,10 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
@@ -1595,10 +1607,11 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        // TODO(armins) compare error variants not string!
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
