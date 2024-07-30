@@ -158,9 +158,8 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-
-        let utxos = req.utxos.into_iter().map(Into::into).collect::<Vec<Utxo>>();
-
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
         let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
 
         self.add_pegins(&utxo_refs).map_err(|e| internal!("Failed to add pegins: {}", e))?;
@@ -629,7 +628,11 @@ impl rpc::BtcServer for App {
         self.validate_jwt(&req)?;
         let db_utxos =
             self.db.get_all_utxos().map_err(|e| internal!("Failed to get utxos: {}", e))?;
-        let utxos = db_utxos.into_iter().map(Into::into).collect::<Vec<rpc::Utxo>>();
+        let utxos = db_utxos
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<rpc::Utxo>, _>>()
+            .map_err(|e| internal!("Failed to get utxos: {}", e))?;
         let res = rpc::GetAllUtxosResponse { utxos };
 
         Ok(tonic::Response::new(res))

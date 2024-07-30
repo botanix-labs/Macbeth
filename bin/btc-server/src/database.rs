@@ -49,50 +49,6 @@ impl Utxo {
     }
 }
 
-impl From<RpcUtxo> for Utxo {
-    fn from(value: RpcUtxo) -> Self {
-        // outpoint
-        let outpoint = value.outpoint.unwrap();
-        // FIXME: remove the unwrap
-        let txid = Txid::from_slice(&outpoint.txid).unwrap();
-        let vout = outpoint.vout;
-
-        // txout
-        let tx_out = value.output.unwrap();
-        let script_pubkey = tx_out.script_pubkey.unwrap();
-        let script = Script::from_bytes(&script_pubkey.script);
-        let tx_out_val = Amount::from_sat(tx_out.value as u64);
-
-        // create the utxo
-        Utxo::new(
-            OutPoint::new(txid, vout),
-            TxOut { value: tx_out_val, script_pubkey: script.into() },
-            if value.eth_address.is_empty() {
-                None
-            } else {
-                // FIXME: remove the unwrap
-                Some(parse_eth_address(value.eth_address).unwrap())
-            },
-        )
-    }
-}
-
-impl From<Utxo> for RpcUtxo {
-    fn from(item: Utxo) -> Self {
-        RpcUtxo {
-            outpoint: Some(RpcOutPoint {
-                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
-                vout: item.outpoint.vout,
-            }),
-            output: Some(RpcTxOut {
-                value: item.output.value.to_sat() as u64,
-                script_pubkey: Some(RpcScriptBuf { script: item.output.script_pubkey.to_bytes() }),
-            }),
-            eth_address: item.eth_address.map_or(String::new(), hex::encode),
-        }
-    }
-}
-
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -545,6 +501,8 @@ pub enum Error {
     Psbt(#[from] psbt::Error),
     #[error("Transaction error: {0}")]
     Transaction(String),
+    #[error("Rpc to db data mapping error: {0}")]
+    RpcToDbMap(String),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
@@ -560,6 +518,60 @@ impl From<sled::transaction::TransactionError<sled::Error>> for Error {
 impl From<Error> for tonic::Status {
     fn from(e: Error) -> tonic::Status {
         tonic::Status::internal(e.to_string())
+    }
+}
+
+impl TryFrom<RpcUtxo> for Utxo {
+    type Error = Error;
+
+    fn try_from(value: RpcUtxo) -> Result<Self, Self::Error> {
+        // outpoint
+        let outpoint =
+            value.outpoint.ok_or_else(|| Error::RpcToDbMap("Outpoint is None".to_string()))?;
+        let txid = Txid::from_slice(&outpoint.txid)
+            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?;
+        let vout = outpoint.vout;
+
+        // txout
+        let tx_out = value.output.ok_or_else(|| Error::RpcToDbMap("TxOut is None".to_string()))?;
+        let script_pubkey = tx_out
+            .script_pubkey
+            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
+        let script = Script::from_bytes(&script_pubkey.script);
+        let tx_out_val = Amount::from_sat(tx_out.value as u64);
+
+        // create the utxo
+        Ok(Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value: tx_out_val, script_pubkey: script.into() },
+            if value.eth_address.is_empty() {
+                None
+            } else {
+                Some(
+                    parse_eth_address(value.eth_address).map_err(|_| {
+                        Error::RpcToDbMap("Unparsable Ethereum Address".to_string())
+                    })?,
+                )
+            },
+        ))
+    }
+}
+
+impl TryFrom<Utxo> for RpcUtxo {
+    type Error = Error;
+
+    fn try_from(item: Utxo) -> Result<Self, Self::Error> {
+        Ok(RpcUtxo {
+            outpoint: Some(RpcOutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: Some(RpcTxOut {
+                value: item.output.value.to_sat() as u64,
+                script_pubkey: Some(RpcScriptBuf { script: item.output.script_pubkey.to_bytes() }),
+            }),
+            eth_address: item.eth_address.map_or(String::new(), hex::encode),
+        })
     }
 }
 
