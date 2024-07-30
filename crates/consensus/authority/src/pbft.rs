@@ -253,6 +253,7 @@ where
     }
 
     /// Resets the state machine to its initial state
+    #[allow(dead_code)]
     pub(crate) fn reset(self) -> Self {
         Self {
             chain_spec: self.chain_spec,
