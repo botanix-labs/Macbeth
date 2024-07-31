@@ -473,7 +473,7 @@ start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "time.cloudflare.com" \
+	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
@@ -498,7 +498,7 @@ start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "time.cloudflare.com" \
+	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
@@ -542,7 +542,7 @@ start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "time.cloudflare.com" \
+	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
 	--datadir ${NON_FED_1_DIR} \
 	--http \

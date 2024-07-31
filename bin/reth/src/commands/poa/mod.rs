@@ -316,7 +316,7 @@ where {
         raise_fd_limit()?;
 
         // async task that checks system clock is in sync with NTP server
-        let ntp_server = self.ntp_server.clone();
+        let ntp_server = ntp_server.clone();
         info!("NTP server url: {}", ntp_server);
         executor.spawn_critical(
             "async system clock sync with ntp task",
