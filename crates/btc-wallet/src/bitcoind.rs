@@ -5,7 +5,6 @@ use bitcoincore_rpc::{
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
-use tracing::error;
 use url::Url;
 
 #[derive(Debug, Error)]
@@ -87,7 +86,8 @@ impl BitcoindClient {
                 Ok(blockchain_info_result.initial_block_download == false)
             }
             Err(err) => {
-                error!("error getting get_blockchain_info(): {:?}", err);
+                // TODO (armins) use logger library
+                println!("error getting get_blockchain_info(): {:?}", err);
                 Ok(false)
             }
         }
