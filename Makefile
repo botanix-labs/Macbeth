@@ -556,5 +556,5 @@ start-non-fed-server-1:
 	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
-	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
+	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
 	--port 30305
