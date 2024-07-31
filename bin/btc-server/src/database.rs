@@ -402,13 +402,13 @@ impl Db {
 
     fn store_utxos_atomically(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
         self.utxos
-            .transaction(|tx| {
+            .transaction(|database_tx| {
                 for utxo in utxos.iter() {
                     let op = utxo.outpoint;
-                    if tx.get(op.to_bytes())?.is_none() {
+                    if database_tx.get(op.to_bytes())?.is_none() {
                         let mut bytes = Vec::new();
                         ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
-                        tx.insert(op.to_bytes().to_vec(), &bytes[..])?;
+                        database_tx.insert(op.to_bytes().to_vec(), &bytes[..])?;
                     }
                 }
                 Ok::<(), ConflictableTransactionError>(())
@@ -538,7 +538,7 @@ impl TryFrom<RpcUtxo> for Utxo {
             .script_pubkey
             .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
         let script = Script::from_bytes(&script_pubkey.script);
-        let tx_out_val = Amount::from_sat(tx_out.value as u64);
+        let tx_out_val = Amount::from_sat(tx_out.value);
 
         // create the utxo
         Ok(Utxo::new(
