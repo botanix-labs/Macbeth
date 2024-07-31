@@ -59,32 +59,31 @@ where
     pub async fn start_task(&mut self) {
         info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
 
-        // get all connected peers (could be authority and none-authority)
-        let all_connected_peers =
-            self.network_handle.get_all_peers().await.ok().unwrap_or_default();
-
         // get all authority peers in the federation (at this point we must be connected to all of
         // them)
-        let authority_peers = self
-            .storage
-            .read()
-            .await
+
+        let storage_lock = self.storage.read().await;
+
+        let authority_peers_sockets = storage_lock
             .authorities
             .iter()
-            .filter_map(|authority_pk| {
+            .enumerate()
+            .filter_map(|(index, authority_pk)| {
                 let authority_peer_id = pk2id(authority_pk);
                 if authority_peer_id != *self.network_handle.peer_id() {
                     // excluse our own peer_id
-                    Some(authority_peer_id)
+                    let authority_socket_addr =
+                        storage_lock.authority_socket_addresses.get(index).cloned();
+                    Some(authority_peer_id).zip(authority_socket_addr)
                 } else {
                     None
                 }
             })
-            .collect::<Vec<PeerId>>();
+            .collect::<Vec<(PeerId, SocketAddr)>>();
 
         // update the tracker for each authority peer_id and mark its state as healthy initially
         let mut guard = self.peers_healthcheck_tracker.write().await;
-        for peer_id in authority_peers.iter() {
+        for (peer_id, _) in authority_peers_sockets.iter() {
             let _ = guard.insert(*peer_id, Instant::now());
         }
         drop(guard);
@@ -108,7 +107,6 @@ where
         let frost_handle = self.frost_handle.clone();
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
         let network_handle = self.network_handle.clone();
-        let authority_peers_clone = authority_peers.clone();
         self.task_executor.spawn(async move {
             // start looping and sending healthchecks to all connected authority peers
             loop {
@@ -147,14 +145,14 @@ where
                 .collect::<Vec<_>>();
 
                 // check for any physically disconnected authority peers
-                let disconnected_authority_peers = authority_peers_clone
+                let disconnected_authority_peers = authority_peers_sockets
                 .iter()
-                .filter(|peer| !all_trusted_connected_peers_ids.contains(peer))
+                .filter(|(peer_id, _)| !all_trusted_connected_peers_ids.contains(peer_id))
                 .cloned()
                 .collect::<Vec<_>>();
 
                 // merge physically disconnected and frost non-responsive peers
-                none_responding_authority_peers.extend(disconnected_authority_peers);
+                none_responding_authority_peers.extend(disconnected_authority_peers.iter().map(|(k, _)| k.clone()));
                 let peers_to_reconnect: HashSet<PeerId> = HashSet::from_iter(none_responding_authority_peers.into_iter());
 
                 // if no peers to reconnect to, skip
@@ -175,7 +173,10 @@ where
                 let peers_to_reconnect = peers_to_reconnect
                 .iter()
                 .filter_map(|peer_id| {
-                    let peer_remote_addr = all_connected_peers.iter().find(|p| p.remote_id == *peer_id).map(|p| p.remote_addr);
+                    let peer_remote_addr = authority_peers_sockets
+                    .iter()
+                    .find(|(p, _)| *p == *peer_id)
+                    .map(|(_, socket_addr)| *socket_addr);
                     Some(*peer_id).zip(peer_remote_addr)
                 })
                 .collect::<Vec<(PeerId, SocketAddr)>>();
@@ -206,18 +207,9 @@ where
                     // task
                 }
                 PeerMessageResponse::Healthcheck(healthcheck_response) => {
-                    // check receiver must be us, sender must be another authority member
-                    if healthcheck_response.receiver == *self.network_handle.peer_id() &&
-                        authority_peers.contains(&healthcheck_response.sender) &&
-                        healthcheck_response.receiver.eq(self.network_handle.peer_id())
-                    {
-                        let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
-                        peers_healthcheck_tracker
-                            .insert(healthcheck_response.sender, Instant::now());
-                        drop(peers_healthcheck_tracker);
-                    } else {
-                        warn!(target: "HealthcheckTask::start_task", "Received healthcheck response from a peer without having requested it. Sender = {:?}. Receiver = {:?}", &healthcheck_response.sender,&healthcheck_response.receiver);
-                    }
+                    let mut peers_healthcheck_tracker = peers_healthcheck_tracker.write().await;
+                    peers_healthcheck_tracker.insert(healthcheck_response.sender, Instant::now());
+                    drop(peers_healthcheck_tracker);
                 }
             }
         }
