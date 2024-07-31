@@ -20,7 +20,7 @@ use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    ChainSpec,
+    ChainSpec, BOTANIX_TESTNET,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -288,8 +288,11 @@ impl FederationMemberTestConfig {
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
-        let botanix_testnet =
-            create_botanix_config_with_genesis(genesis, 6, self.botanix_fee_recipient.clone());
+        let botanix_testnet = create_botanix_config_with_genesis(
+            genesis,
+            BOTANIX_TESTNET.parent_confirmation_depth,
+            self.botanix_fee_recipient.clone(),
+        );
 
         (command, botanix_testnet)
     }
