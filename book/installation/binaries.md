@@ -1,5 +1,7 @@
 # Binaries
 
+### TODO replace with Botanix release keys
+
 [**Archives of precompiled binaries of reth are available for Windows, macOS and Linux.**](https://github.com/paradigmxyz/reth/releases) They are static executables. Users of platforms not explicitly listed below should download one of these archives.
 
 If you use **macOS Homebrew** or **Linuxbrew**, you can install Reth from Paradigm's homebrew tap:

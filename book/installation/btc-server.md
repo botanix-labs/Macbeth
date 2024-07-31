@@ -3,6 +3,19 @@
 The Bitcoin signing server is responsible for managing they Bitcoin multisig keys of the federation. This service needs to be live before the poa node can begin to produce blocks.
 This service only needs to be ran for block producing federation nodes.
 
+Additionally this service does not need to be publicly accessible. It is recommended that only the machine hosting your Botanix node should be able to access the Bitcoin signing server.
+
+### Additional notes
+#### What is identifier?
+Your identifier is your index into the federation list. More about this list can be found in [chain-config.md].
+For example if my public key's index into the list is the first one my indentifier is 0.
+If its the fourth, my identifier is 3. 
+
+#### What is the database?
+This service needs to store several key peices of information critical for signing bitcoin withdrawal requests.
+For example the UTXO set and information about its private key share in the FROST multisig.
+This database includes sensative data and is non-recoverable once deleted.   
+
 ###  Cli Refrence
 
 ```
