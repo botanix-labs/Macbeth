@@ -61,6 +61,9 @@ reth-node-events.workspace = true
 reth-consensus.workspace = true
 thiserror.workspace = true
 
+# botanix
+reth-botanix-lib.workspace = true
+
 # crypto
 alloy-rlp.workspace = true
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery", "serde"] }

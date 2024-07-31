@@ -4,10 +4,15 @@ use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::{value_parser, Parser};
 use client::Empty;
+use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
-use reth_authority_consensus::{utils::retry_exec, AuthorityConsensus, AuthorityConsensusBuilder};
+use reth_authority_consensus::{
+    utils::{is_known_minting_contract, retry_exec},
+    AuthorityConsensus, AuthorityConsensusBuilder,
+};
+use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_network_types::pk2id;
 use reth_node_core::cli::config::BtcServerConfig;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -880,6 +885,18 @@ where {
         });
 
         let _ = ext.on_node_started(components);
+
+        // check Minting.sol deployed bytecode matches known bytecode
+        info!(target: "reth::cli", "Checking minting contract bytecode");
+        let state_provider = provider_factory.latest().expect("provider factory to exist");
+        let deployed_bytecode = state_provider
+            .account_code(*MINT_CONTRACT_ADDRESS)
+            .expect("Minting contract address exists")
+            .expect("Minting contract bytecode to exist");
+        if let Err(e) = is_known_minting_contract(&deployed_bytecode.bytecode) {
+            error!(target: "reth::cli", "{}", e);
+            panic!("{}", e);
+        }
 
         match rx.await? {
             Ok(()) => info!("Beacon consensus engine exited successfully"),
