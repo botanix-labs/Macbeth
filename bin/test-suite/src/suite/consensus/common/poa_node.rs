@@ -246,6 +246,8 @@ impl FederationMemberTestConfig {
         let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--is-testnet",
+            "--ntp-server",
+            "time.cloudflare.com",
             "--federation-config-path",
             format!("{}", federation_config_path.display().to_string()).as_str(),
             "--federation-mode",

@@ -104,6 +104,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "IS_TESTNET", default_value = "true")]
     pub is_testnet: bool,
 
+    /// The NTP server url
+    #[arg(long, value_name = "NTP_SERVER", default_value = "time.cloudflare.com")]
+    pub ntp_server: String,
+
     /// The path to the configuration file for the federation setup.
     #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
     pub federation_config_path: PathBuf,
@@ -193,6 +197,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path,
             federation_mode,
             metrics,
@@ -210,6 +215,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path,
             federation_mode,
             metrics,
@@ -234,6 +240,7 @@ where {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path: _,
             federation_mode,
             metrics,
@@ -309,14 +316,16 @@ where {
         raise_fd_limit()?;
 
         // async task that checks system clock is in sync with NTP server
+        let ntp_server = self.ntp_server.clone();
+        info!("NTP server url: {}", ntp_server);
         executor.spawn_critical(
             "async system clock sync with ntp task",
-            Box::pin(async {
+            Box::pin(async move {
                 let sleep_sec = tokio::time::Duration::from_secs(15);
                 let acceptable_drift_sec = 1;
                 loop {
                     // TODO (scott) pass in ntp url as arg
-                    match ntp_unix_timestamp("time.cloudflare.com").await {
+                    match ntp_unix_timestamp(&ntp_server).await {
                         Ok(ntp_timestamp) => {
                             let system_timestamp = utils::unix_timestamp();
                             if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
