@@ -247,7 +247,7 @@ where
             let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
             match pegin_data.validate(&bitcoin_checkpoint, &aggregate_public_key) {
                 Ok(aggregate_value) => {
-                    if aggregate_value == pegin_data.amount {
+                    if pegin_data.amount >= aggregate_value {
                         return Err(MintContractError::InvalidPeginData {
                             error: format!(
                                 "pegin amount should be less than aggregate value: \
