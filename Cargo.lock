@@ -7735,6 +7735,7 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
+ "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-cli-runner",
  "reth-config",
