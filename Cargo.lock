@@ -7994,7 +7994,6 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
- "tracing",
  "url",
 ]
 

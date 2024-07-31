@@ -28,7 +28,6 @@ bitcoincore-rpc = "0.18.0"
 serde = "1.0.171"
 tokio = { version = "1.37.0", features = ["full"] }
 thiserror = "1.0.43"
-tracing.workspace = true
 
 ## url
 url = { version = "2.2.2", features = ["serde"] }
