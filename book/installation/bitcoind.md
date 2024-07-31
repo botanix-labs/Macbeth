@@ -14,7 +14,7 @@ rpcallowip=127.0.0.1
 server=1
 ```
 
-Note that the bitcoind rpc endpoints do not secure the traffic. It is recommended to run bitcoind on the same machine or in the same VPC as your Botanix node.
+Note that the bitcoind rpc does not secure the traffic. It is recommended to run bitcoind on the same machine or in the same VPC as your Botanix node.
 
 ### Testnet
 Botanix testnet uses bitcoin signet as its L1 chain.

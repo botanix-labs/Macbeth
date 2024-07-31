@@ -1,5 +1,10 @@
 # Botanix Federation Book
 
+TBD: What is Botanix
+TBD: what is the federation
+TBD: Who is this for 
+TBD: Alpha software warning copy
+
 **Note: this book is copied over from The [Reth book](https://reth.rs/) modified to fit the requirments needed for the Botanix federation.
 
 <!-- Commented out sections are not used in Botanix PoA  -->
@@ -9,14 +14,19 @@
    - [Pre-Built Binaries](./installation/binaries.md)
    - [Docker](./installation/docker.md)
    - [Build from Source](./installation/source.md)
-   - [Build for ARM devices](./installation/build-for-arm-devices.md)
+   <!-- - [Build for ARM devices](./installation/build-for-arm-devices.md) -->
    <!-- - [Update Priorities](./installation/priorities.md) -->
 - [Run a Node](./run/run-a-node.md)
-   - [Mainnet or official testnets](./run/mainnet.md)
+   - [Federation TOML](./installation/chain-config.md)
+   - [Bitcoind](./installation/bitcoind.md)
+   - [Bitcoin Signing Service](./installation/btc-server.md)
+   - [PoA Node](./cli/poa.md)
+
+   <!-- - [Mainnet or official testnets](./run/mainnet.md) -->
    <!-- - [OP Stack](./run/optimism.md) -->
    <!-- - [Private testnet](./run/private-testnet.md) -->
    - [Metrics](./run/observability.md)
-   - [Configuring Reth](./run/config.md)
+   <!-- - [Configuring Reth](./run/config.md) -->
    - [Transaction types](./run/transactions.md)
    <!-- - [Pruning & Full Node](./run/pruning.md) -->
    - [Ports](./run/ports.md)
