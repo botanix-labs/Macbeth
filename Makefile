@@ -553,7 +553,6 @@ start-non-fed-server-1:
 	-vvv \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
-	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
