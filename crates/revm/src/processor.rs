@@ -234,7 +234,7 @@ where
 
             let bitcoin_checkpoint = consensus_pkg.expect("is some").bitcoin_checkpoint;
             // the pegin height must be equal or less than the required block depth (checkpoint)
-            if pegin_data.bitcoin_block_height >= bitcoin_checkpoint.1 {
+            if pegin_data.bitcoin_block_height > bitcoin_checkpoint.1 {
                 return Err(MintContractError::InvalidPeginData {
                     error: format!(
                         "pegin height {} greater than checkpoint of {}",
