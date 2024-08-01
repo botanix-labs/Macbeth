@@ -4,10 +4,15 @@ use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::{value_parser, Parser};
 use client::Empty;
+use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
-use reth_authority_consensus::{utils::retry_exec, AuthorityConsensus, AuthorityConsensusBuilder};
+use reth_authority_consensus::{
+    utils::{is_known_minting_contract, retry_exec},
+    AuthorityConsensus, AuthorityConsensusBuilder,
+};
+use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_network_types::pk2id;
 use reth_node_core::cli::config::BtcServerConfig;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -99,6 +104,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "IS_TESTNET", default_value = "true")]
     pub is_testnet: bool,
 
+    /// The NTP server url
+    #[arg(long, value_name = "NTP_SERVER", default_value = "time.cloudflare.com")]
+    pub ntp_server: String,
+
     /// The path to the configuration file for the federation setup.
     #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
     pub federation_config_path: PathBuf,
@@ -188,6 +197,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path,
             federation_mode,
             metrics,
@@ -205,6 +215,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path,
             federation_mode,
             metrics,
@@ -229,6 +240,7 @@ where {
             datadir,
             network_config_path,
             is_testnet,
+            ntp_server,
             federation_config_path: _,
             federation_mode,
             metrics,
@@ -304,14 +316,15 @@ where {
         raise_fd_limit()?;
 
         // async task that checks system clock is in sync with NTP server
+        let ntp_server = ntp_server.clone();
+        info!("NTP server url: {}", ntp_server);
         executor.spawn_critical(
             "async system clock sync with ntp task",
-            Box::pin(async {
+            Box::pin(async move {
                 let sleep_sec = tokio::time::Duration::from_secs(15);
                 let acceptable_drift_sec = 1;
                 loop {
-                    // TODO (scott) pass in ntp url as arg
-                    match ntp_unix_timestamp("time.cloudflare.com").await {
+                    match ntp_unix_timestamp(&ntp_server).await {
                         Ok(ntp_timestamp) => {
                             let system_timestamp = utils::unix_timestamp();
                             if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
@@ -445,12 +458,13 @@ where {
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
         let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
-
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
             data_dir.static_files_path(),
         )?;
+        let genesis_hash = init_genesis(provider_factory.clone())?;
+        info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
 
         // Configure static file producer
         let static_file_producer = StaticFileProducer::new(
@@ -501,7 +515,6 @@ where {
         let authorities_socket_addresses =
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
-        let genesis_hash = init_genesis(provider_factory.clone())?;
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
@@ -538,6 +551,19 @@ where {
         // setup the blockchain provider
         let blockchain_db =
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
+
+        // check Minting.sol deployed bytecode matches known bytecode
+        // Disabled this check till we can package the bytecode hex file with the binary
+        // info!(target: "reth::cli", "Checking minting contract bytecode");
+        // let state_provider = provider_factory.latest().expect("provider factory to exist");
+        // let deployed_bytecode = state_provider
+        //     .account_code(*MINT_CONTRACT_ADDRESS)
+        //     .expect("Minting contract address exists")
+        //     .expect("Minting contract bytecode to exist");
+        // if let Err(e) = is_known_minting_contract(&deployed_bytecode.bytecode) {
+        //     error!(target: "reth::cli", "{}", e);
+        //     panic!("{}", e);
+        // }
 
         let blob_store = InMemoryBlobStore::default();
         let validator =
@@ -599,7 +625,7 @@ where {
         };
 
         let default_peers_path = data_dir.known_peers_path();
-        let cfg_builder = self
+        let network_cfg_builder = self
             .network
             .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
@@ -618,7 +644,7 @@ where {
             .frost_config(frost_config.clone())
             .network_mode(reth_network::config::NetworkMode::Authority);
 
-        let network_config = cfg_builder.build(provider_factory.clone());
+        let network_config = network_cfg_builder.build(provider_factory.clone());
 
         // Now we need to build the network components including frost p2p, txpool p2p, eth request
         // handling p2p, as well as the general p2p network
