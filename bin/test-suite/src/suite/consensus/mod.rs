@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use client::{btc_server_client, BtcServerClient};
+use client::BtcServerClient;
 use port_killer::kill;
 use reth::CliRunner;
 use reth_tracing::tracing::error;
