@@ -473,7 +473,6 @@ start-poa-server-1:
 	--is-testnet \
 	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_1_DIR}/federation.toml" \
-	--minting-contract-bytecode-path "${NODE_1_DIR}/minting_bytecode.hex" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
 	--http \
@@ -499,7 +498,6 @@ start-poa-server-2:
 	--is-testnet \
 	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_2_DIR}/federation.toml" \
-	--minting-contract-bytecode-path "${NODE_2_DIR}/minting_bytecode.hex" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
 	--http \
@@ -544,7 +542,6 @@ start-non-fed-server-1:
 	--is-testnet \
 	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
-	--minting-contract-bytecode-path "${NON_FED_1_DIR}/minting_bytecode.hex" \
 	--datadir ${NON_FED_1_DIR} \
 	--http \
 	--http.corsdomain "*" \

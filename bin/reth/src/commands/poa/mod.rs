@@ -112,10 +112,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
     pub federation_config_path: PathBuf,
 
-    /// The path to the bytecode file for the minting contract.
-    #[arg(long, value_name = "MINTING_CONTRACT_BYTECODE_FILE", verbatim_doc_comment)]
-    pub minting_contract_bytecode_path: PathBuf,
-
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
     #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
     pub federation_mode: bool,
@@ -203,7 +199,6 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             is_testnet,
             ntp_server,
             federation_config_path,
-            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -222,7 +217,6 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             is_testnet,
             ntp_server,
             federation_config_path,
-            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -248,7 +242,6 @@ where {
             is_testnet,
             ntp_server,
             federation_config_path: _,
-            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -559,17 +552,19 @@ where {
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
 
         // check Minting.sol deployed bytecode matches known bytecode
-        // Disabled this check till we can package the bytecode hex file with the binary
-        // info!(target: "reth::cli", "Checking minting contract bytecode");
-        // let state_provider = provider_factory.latest().expect("provider factory to exist");
-        // let deployed_bytecode = state_provider
-        //     .account_code(*MINT_CONTRACT_ADDRESS)
-        //     .expect("Minting contract address exists")
-        //     .expect("Minting contract bytecode to exist");
-        // if let Err(e) = is_known_minting_contract(&deployed_bytecode.bytecode) {
-        //     error!(target: "reth::cli", "{}", e);
-        //     panic!("{}", e);
-        // }
+        info!(target: "reth::cli", "Checking minting contract bytecode");
+        let state_provider = provider_factory.latest().expect("provider factory to exist");
+        let deployed_bytecode = state_provider
+            .account_code(*MINT_CONTRACT_ADDRESS)
+            .expect("Minting contract address exists")
+            .expect("Minting contract bytecode to exist");
+        if let Err(e) = is_known_minting_contract(
+            federation_config.minting_contract_bytecode,
+            &deployed_bytecode.bytecode,
+        ) {
+            error!(target: "reth::cli", "{}", e);
+            panic!("{}", e);
+        }
 
         let blob_store = InMemoryBlobStore::default();
         let validator =
@@ -1195,7 +1190,8 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
+        let federation_config =
+            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.is_testnet,
@@ -1232,7 +1228,8 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
+        let federation_config =
+            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",

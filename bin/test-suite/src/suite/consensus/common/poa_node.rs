@@ -8,7 +8,7 @@ use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
-    args::{write_data_to_file, FedMemberPubKey},
+    args::FedMemberPubKey,
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
@@ -42,8 +42,8 @@ use crate::{
     suite::consensus::common::MINTING_CONTRACT_BYTECODE,
 };
 
-const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
-pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
+const MINT_CONTRACT_ADDRESS: &str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
+pub const PREFUNDED_ACCOUNT_SECRET_KEY: &str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
 
 #[derive(Template, Clone, Debug)]
@@ -239,15 +239,14 @@ impl FederationMemberTestConfig {
         }
 
         // Need to create a federation.toml in the data dir
-        let federation_config =
-            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
+        let federation_config = FederationTomlConfig::new(
+            edh_authorities,
+            self.botanix_fee_recipient.clone(),
+            String::from(MINTING_CONTRACT_BYTECODE),
+        );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
-
-        let minting_contract_bytecode_path = Path::new(datadir).join("minting_bytecode.hex");
-        write_data_to_file(&minting_contract_bytecode_path, MINTING_CONTRACT_BYTECODE.as_bytes())
-            .unwrap();
 
         let no_args = NoArgs::with(self.clone());
         let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
@@ -257,8 +256,6 @@ impl FederationMemberTestConfig {
             "time.cloudflare.com",
             "--federation-config-path",
             format!("{}", federation_config_path.display().to_string()).as_str(),
-            "--minting-contract-bytecode-path",
-            format!("{}", minting_contract_bytecode_path.display().to_string()).as_str(),
             "--federation-mode",
             "--ipcdisable",
             "--datadir",
