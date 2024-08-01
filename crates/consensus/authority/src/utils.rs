@@ -334,7 +334,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
         }),
         output: Some(TxOut {
             script_pubkey: Some(ScriptBuf { script: serialized_script_pub_key }),
-            value: pegin_meta.outpoint.vout as u64,
+            value: tx_out.value.to_sat(),
         }),
         eth_address: hex::encode(pegin_meta.address),
     }

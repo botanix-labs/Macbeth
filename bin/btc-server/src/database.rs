@@ -529,7 +529,7 @@ impl TryFrom<RpcUtxo> for Utxo {
         let outpoint =
             value.outpoint.ok_or_else(|| Error::RpcToDbMap("Outpoint is None".to_string()))?;
         let txid = Txid::from_slice(&outpoint.txid)
-            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?;
+            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?; // OR:  let txid = bitcoin::consensus::deserialize::<Txid>(&outpoint.txid)
         let vout = outpoint.vout;
 
         // txout
@@ -537,7 +537,7 @@ impl TryFrom<RpcUtxo> for Utxo {
         let script_pubkey = tx_out
             .script_pubkey
             .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
-        let script = Script::from_bytes(&script_pubkey.script);
+        let script = Script::from_bytes(&script_pubkey.script); // OR:  let txid = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
         let tx_out_val = Amount::from_sat(tx_out.value);
 
         // create the utxo
@@ -567,7 +567,7 @@ impl TryFrom<Utxo> for RpcUtxo {
                 vout: item.outpoint.vout,
             }),
             output: Some(RpcTxOut {
-                value: item.output.value.to_sat() as u64,
+                value: item.output.value.to_sat(),
                 script_pubkey: Some(RpcScriptBuf { script: item.output.script_pubkey.to_bytes() }),
             }),
             eth_address: item.eth_address.map_or(String::new(), hex::encode),
