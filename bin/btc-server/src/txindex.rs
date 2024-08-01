@@ -344,13 +344,14 @@ impl TxIndex {
         // Then we actually sync all blocks.
         for hash in to_sync.into_iter().rev() {
             if self.last_finalized == checkpoint {
+                info!("Checkpoint reached: {}", checkpoint);
                 break;
             }
 
             let block = bitcoind.get_block(&hash)?;
             self.add_block(&block);
 
-            if self.last_blocks.len() == self.window as usize {
+            if self.last_blocks.len() == self.window as usize + 1 {
                 let deep = self.last_blocks.pop_front().unwrap();
                 self.finalize_block(&mut finalize_utxo, &deep)?;
                 self.last_finalized = deep.hash;
@@ -398,7 +399,7 @@ fn is_syncing(bitcoind: &impl RpcApi) -> Result<bool, bitcoincore_rpc::Error> {
 pub enum SyncError {
     #[error("target sync checkpoint not reached yet")]
     CheckPointNotReached,
-    #[error("the node isn't synced yet")]
+    #[error("the bitcoind isn't synced yet")]
     NodeNotSynced,
     #[error("bitcoind RPC error: {0}")]
     Rpc(#[from] bitcoincore_rpc::Error),
