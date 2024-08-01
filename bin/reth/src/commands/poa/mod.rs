@@ -112,6 +112,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
     pub federation_config_path: PathBuf,
 
+    /// The path to the bytecode file for the minting contract.
+    #[arg(long, value_name = "MINTING_CONTRACT_BYTECODE_FILE", verbatim_doc_comment)]
+    pub minting_contract_bytecode_path: PathBuf,
+
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
     #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
     pub federation_mode: bool,
@@ -199,6 +203,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             is_testnet,
             ntp_server,
             federation_config_path,
+            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -217,6 +222,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             is_testnet,
             ntp_server,
             federation_config_path,
+            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -242,6 +248,7 @@ where {
             is_testnet,
             ntp_server,
             federation_config_path: _,
+            minting_contract_bytecode_path,
             federation_mode,
             metrics,
             instance,
@@ -514,7 +521,6 @@ where {
             federation_authorities.iter().map(|authority| authority.0).collect::<Vec<PublicKey>>();
         let authorities_socket_addresses =
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
-
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();

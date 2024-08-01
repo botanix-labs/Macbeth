@@ -15,7 +15,11 @@ use reth_network::NetworkHandle;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, hex, Bloom, BloomInput, Log, Receipt};
 use reth_provider::{BlockReaderIdExt, BundleStateWithReceipts};
 use reth_rpc_types::BlockHashOrNumber;
-use std::{fs::read_to_string, path::Path, time::Duration};
+use std::{
+    fs::read_to_string,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -333,14 +337,14 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 #[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom)
-        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom) &&
+        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -481,12 +485,13 @@ pub(crate) fn generate_signing_session_id(
     Ok(bytes_array)
 }
 
-/// Checks Minting.sol deployed bytecode against known bytecode
+/// Checks Minting.sol deployed bytecode against known and verified bytecode
 pub fn is_known_minting_contract(
+    verified_bytecode_path: &PathBuf,
     deployed_bytecode: &[u8],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let path = Path::new("../../contracts/minting_bytecode.hex");
-    let known_minting_contract_bytecode = read_to_string(path).expect("file to exist");
+    let known_minting_contract_bytecode =
+        read_to_string(verified_bytecode_path).expect("file to exist");
 
     if known_minting_contract_bytecode != hex::encode(deployed_bytecode) {
         error!("Known Minting contract bytecode: {}", known_minting_contract_bytecode);
@@ -506,7 +511,7 @@ mod test {
         transaction::Version,
     };
     use rand::Rng;
-    use reth_primitives::{address, b256, bytes, Bytecode, Bytes, Header, B256, U256};
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
 
     use super::*;
 
@@ -649,7 +654,7 @@ mod test {
 
     #[test]
     fn test_is_known_mint_contract() {
-        env::set_current_dir("../../../bin/reth").unwrap();
+        env::set_current_dir("../../../contracts").unwrap();
 
         // test happy path
         let deployed_bytecode = [
@@ -740,10 +745,12 @@ mod test {
             163, 227, 219, 166, 252, 112, 124, 69, 214, 78, 129, 41, 115, 103, 100, 115, 111, 108,
             99, 67, 0, 8, 21, 0, 51,
         ];
-        assert!(is_known_minting_contract(&deployed_bytecode).is_ok());
+
+        let minting_contract_path = PathBuf::from_str("./minting_bytecode.hex").unwrap();
+        assert!(is_known_minting_contract(&minting_contract_path, &deployed_bytecode).is_ok());
 
         // test fail path
         let deployed_bytecode = "not known minting contract bytecode".as_bytes();
-        assert!(is_known_minting_contract(deployed_bytecode).is_err());
+        assert!(is_known_minting_contract(&minting_contract_path, deployed_bytecode).is_err());
     }
 }
