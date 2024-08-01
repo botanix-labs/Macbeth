@@ -10,7 +10,7 @@ use client::{
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
     GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
     GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
-    SigningPackage, SigningPackageRequest, ToSignRequest,
+    SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
@@ -117,6 +117,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
     generate_method!(health_check, Empty, Empty);
+    generate_method!(tx_index_new_checkpoint, SyncTxIndexRequest, Empty);
 }
 
 #[cfg(test)]
