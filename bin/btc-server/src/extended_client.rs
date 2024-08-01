@@ -120,6 +120,25 @@ impl BtcServerExtendedClient {
     generate_method!(tx_index_new_checkpoint, SyncTxIndexRequest, Empty);
 }
 
+#[derive(Clone, Debug)]
+pub struct GrpcClientFactory {
+    grpc_url: String,
+    jwt_secret: Option<JwtSecret>,
+}
+
+impl GrpcClientFactory {
+    pub fn new(grpc_url: String, jwt_secret: Option<JwtSecret>) -> Self {
+        Self { grpc_url, jwt_secret }
+    }
+
+    pub async fn build_and_connect(&self) -> Result<BtcServerExtendedClient, GrpcClientError> {
+        let client =
+            BtcServerExtendedClient::new(self.grpc_url.clone(), self.jwt_secret.clone()).await?;
+
+        Ok(client)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use client::jwt::{Claims, JwtSecret};
