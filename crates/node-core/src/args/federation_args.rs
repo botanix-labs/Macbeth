@@ -110,3 +110,8 @@ fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> {
     file.read_to_end(&mut contents).map_err(Error::ReadConfig)?;
     String::from_utf8(contents).map_err(Error::ParseUtf8)
 }
+
+pub fn write_data_to_file(path: impl AsRef<Path> + Send, data: &[u8]) -> Result<(), Error> {
+    let mut file = File::create(path).map_err(Error::OpenConfig)?;
+    file.write_all(data).map_err(Error::ReadConfig)
+}

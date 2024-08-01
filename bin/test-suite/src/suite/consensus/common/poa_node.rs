@@ -8,7 +8,7 @@ use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
-    args::FedMemberPubKey,
+    args::{write_data_to_file, FedMemberPubKey},
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
@@ -37,7 +37,10 @@ use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 
 use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{context::GlobalContext, it_error_print, it_info_print, it_warn_print};
+use crate::{
+    context::GlobalContext, it_error_print, it_info_print, it_warn_print,
+    suite::consensus::common::MINTING_CONTRACT_BYTECODE,
+};
 
 const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
@@ -242,6 +245,10 @@ impl FederationMemberTestConfig {
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
 
+        let minting_contract_bytecode_path = Path::new(datadir).join("minting_bytecode.hex");
+        write_data_to_file(&minting_contract_bytecode_path, MINTING_CONTRACT_BYTECODE.as_bytes())
+            .unwrap();
+
         let no_args = NoArgs::with(self.clone());
         let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
@@ -250,6 +257,8 @@ impl FederationMemberTestConfig {
             "time.cloudflare.com",
             "--federation-config-path",
             format!("{}", federation_config_path.display().to_string()).as_str(),
+            "--minting-contract-bytecode-path",
+            format!("{}", minting_contract_bytecode_path.display().to_string()).as_str(),
             "--federation-mode",
             "--ipcdisable",
             "--datadir",

@@ -6,7 +6,7 @@ pub use network_args::{DiscoveryArgs, NetworkArgs};
 
 /// Configuration for the genesis block (toml)
 mod federation_args;
-pub use federation_args::{FedMemberPubKey, FederationTomlConfig};
+pub use federation_args::{write_data_to_file, FedMemberPubKey, FederationTomlConfig};
 
 /// RpcServerArg struct for configuring the RPC
 mod rpc_server_args;
