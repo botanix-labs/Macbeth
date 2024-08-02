@@ -437,7 +437,7 @@ where {
                         let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
                         let height = tip_block.height;
                         let finalized = {
-                            let height = height.saturating_sub(pegin_conf_depth as usize + 1);
+                            let height = height.saturating_sub(pegin_conf_depth as usize);
                             let hash = or_continue!(bitcoind.get_block_hash(height as u64));
                             or_continue!(bitcoind.get_block_info(&hash))
                         };

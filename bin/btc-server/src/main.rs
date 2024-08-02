@@ -183,7 +183,7 @@ impl App {
             let tip_height =
                 bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
             bitcoind_client
-                .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64 + 1))
+                .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
                 .map_err(|e| Error::TxIndexSync(e.into()))?
         };
         let txindex =

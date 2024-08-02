@@ -93,7 +93,10 @@ pub struct TxIndex {
     /// The txs that are confirmed but not finalized yet.
     confirmed: HashSet<Txid>,
 
+    /// The last [window] blocks we have seen. This data strucutre
+    /// includes txs and inputs that are relevant to the txs we are tracking.
     last_blocks: VecDeque<BlockInfo>,
+    /// The last block that was finalized.  
     last_finalized: BlockHash,
 }
 
@@ -235,7 +238,7 @@ impl TxIndex {
     ///
     /// Updates the [SyncResult] with the data from newly finalized blocks.
     fn add_block(&mut self, block: &Block) {
-        let hash = block.block_hash();
+        let hash: BlockHash = block.block_hash();
         let height = block.bip34_block_height().expect("bip34 is active");
         let last = self.last_blocks.back().expect("always something");
         assert_eq!(block.header.prev_blockhash, last.hash, "adding {}:{}", height, hash);
@@ -344,14 +347,14 @@ impl TxIndex {
         // Then we actually sync all blocks.
         for hash in to_sync.into_iter().rev() {
             if self.last_finalized == checkpoint {
-                info!("Checkpoint reached: {}", checkpoint);
+                debug!("Checkpoint reached: {}", checkpoint);
                 break;
             }
 
             let block = bitcoind.get_block(&hash)?;
             self.add_block(&block);
 
-            if self.last_blocks.len() == self.window as usize + 1 {
+            if self.last_blocks.len() > self.window as usize {
                 let deep = self.last_blocks.pop_front().unwrap();
                 self.finalize_block(&mut finalize_utxo, &deep)?;
                 self.last_finalized = deep.hash;
@@ -359,6 +362,7 @@ impl TxIndex {
         }
 
         if self.last_finalized == checkpoint {
+            info!("Checkpoint reached: {}", checkpoint);
             Ok(())
         } else {
             let last_info = bitcoind.get_block_header_info(&self.last_finalized);
