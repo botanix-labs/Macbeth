@@ -224,15 +224,11 @@ impl Suite for ConsensusIntegrationTestSuite {
                     .expect("btc server port");
                 match client::BtcServerClient::connect(format!("http://localhost:{}", port)).await {
                     Ok(_) => {
-                        it_info_print!("Connected to btc server at port {:?}", port);
+                        it_info_print!("Connected to btc server at port", port);
                         successes += 1;
                     }
                     Err(e) => {
-                        it_warn_print!(
-                            "Failed to connect to btc server at port {:?} -> {:?}",
-                            port,
-                            e
-                        );
+                        it_warn_print!("Failed to connect to btc server at port", port, e);
                     }
                 }
 
