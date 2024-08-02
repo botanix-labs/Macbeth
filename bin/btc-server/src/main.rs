@@ -43,6 +43,7 @@ use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, transport::Server};
+use util::get_pegin_confirmation_depth;
 
 use crate::{
     config::{GrpcConfig, TomlConfig},
@@ -177,18 +178,16 @@ impl App {
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
                 .expect("valid fee rate");
 
+        let pegin_confirmation_depth = get_pegin_confirmation_depth(config.btc_network);
         let fallback_checkpoint = {
             let tip_height =
                 bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
             bitcoind_client
-                .get_block_hash(tip_height.saturating_sub(config.pegin_confirmation_depth as u64))
+                .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
                 .map_err(|e| Error::TxIndexSync(e.into()))?
         };
-        let txindex = Mutex::new(Self::load_txindex(
-            &db,
-            fallback_checkpoint,
-            config.pegin_confirmation_depth,
-        )?);
+        let txindex =
+            Mutex::new(Self::load_txindex(&db, fallback_checkpoint, pegin_confirmation_depth)?);
         Ok(Self {
             btc_network: config.btc_network,
             db,
@@ -466,7 +465,6 @@ mod test {
                 bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
-                pegin_confirmation_depth: 6,
             },
         };
         println!("App setup complete");

@@ -4,6 +4,7 @@ use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
+use reth_primitives::BOTANIX_TESTNET;
 use tonic::transport::Channel;
 
 use crate::{
@@ -64,19 +65,11 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     let signing_session_id = [0u8; 32];
 
     // create btc server clients
-    let mut clients: Vec<BtcServerClient<Channel>> = vec![];
-    for instance in 0..suite.global_context.instances {
-        let port = suite
-            .local_context
-            .btc_servers
-            .as_ref()
-            .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
-            .ok_or_else(|| Error::InvalidBtcServerPort)?;
-        let c = client::BtcServerClient::connect(format!("http://localhost:{port}"))
-            .await
-            .map_err(Error::ServerConnect)?;
-        clients.push(c);
-    }
+    let mut clients = suite
+        .local_context
+        .btc_server_clients
+        .clone()
+        .expect("btc server rpc clients to be defined");
 
     // Getting public key should fail for all clients
     for client in &mut clients {
@@ -124,7 +117,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // First step: get the PSBT
     let checkpoint = {
         let tip = bitcoind.get_block_count().unwrap();
-        bitcoind.get_block_hash(tip - 5).unwrap()
+        bitcoind.get_block_hash(tip - 2).unwrap()
     };
     let utxo_merkle = coordinator
         .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))

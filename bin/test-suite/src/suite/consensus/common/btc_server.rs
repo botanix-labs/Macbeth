@@ -64,8 +64,6 @@ fn spawn_btc_server(
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
         "3",
-        "--pegin-confirmation-depth",
-        "6",
     ];
 
     // Create a Command instance and set the working directory

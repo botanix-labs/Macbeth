@@ -1,8 +1,9 @@
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::poa_node::{
-            CannonStateNofificationPayload, FederationMemberTestConfig, Notifications,
+        common::{
+            poa_node::{CannonStateNofificationPayload, FederationMemberTestConfig, Notifications},
+            MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
@@ -163,8 +164,11 @@ impl NonFederationMemberTestConfig {
             }
         }
 
-        let federation_config =
-            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
+        let federation_config = FederationTomlConfig::new(
+            edh_authorities,
+            self.botanix_fee_recipient.clone(),
+            String::from(MINTING_CONTRACT_BYTECODE),
+        );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
@@ -230,7 +234,7 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    network.add_peer(peer.peer_id, peer_socket);
+                    network.add_trusted_peer(peer.peer_id, peer_socket);
                     it_info_print!("RPC added peer", peer.peer_id);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;

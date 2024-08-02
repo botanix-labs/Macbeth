@@ -20,7 +20,7 @@ use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
-    ChainSpec,
+    ChainSpec, BOTANIX_TESTNET,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -37,10 +37,13 @@ use tokio::sync::broadcast::{channel, Sender};
 use url::Url;
 
 use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{context::GlobalContext, it_error_print, it_info_print, it_warn_print};
+use crate::{
+    context::GlobalContext, it_error_print, it_info_print, it_warn_print,
+    suite::consensus::common::MINTING_CONTRACT_BYTECODE,
+};
 
-const MINT_CONTRACT_ADDRESS: &'static str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
-pub const PREFUNDED_ACCOUNT_SECRET_KEY: &'static str =
+const MINT_CONTRACT_ADDRESS: &str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
+pub const PREFUNDED_ACCOUNT_SECRET_KEY: &str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
 
 #[derive(Template, Clone, Debug)]
@@ -236,8 +239,11 @@ impl FederationMemberTestConfig {
         }
 
         // Need to create a federation.toml in the data dir
-        let federation_config =
-            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
+        let federation_config = FederationTomlConfig::new(
+            edh_authorities,
+            self.botanix_fee_recipient.clone(),
+            String::from(MINTING_CONTRACT_BYTECODE),
+        );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
@@ -288,8 +294,11 @@ impl FederationMemberTestConfig {
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .expect("Can't deserialize Botanix Testnet genesis json");
-        let botanix_testnet =
-            create_botanix_config_with_genesis(genesis, 6, self.botanix_fee_recipient.clone());
+        let botanix_testnet = create_botanix_config_with_genesis(
+            genesis,
+            BOTANIX_TESTNET.parent_confirmation_depth,
+            self.botanix_fee_recipient.clone(),
+        );
 
         (command, botanix_testnet)
     }
@@ -317,7 +326,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    network.add_peer(peer.peer_id, peer_socket);
+                    network.add_trusted_peer(peer.peer_id, peer_socket);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 let all_peers = network.get_all_peers().await.unwrap();
@@ -391,9 +400,10 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         // disconnect all peers
                         'inner: loop {
                             for peer in peers_list.iter() {
-                                network_clone.remove_peer(peer.peer_id, PeerKind::Basic);
+                                network_clone.disconnect_peer(peer.peer_id);
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                it_info_print!("Disconnected peer", peer.peer_id);
                             }
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             let all_peers = network_clone.get_all_peers().await.unwrap();
                             it_info_print!(
                                 "Engine disconnected from peers",
@@ -412,7 +422,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                                     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                                     peer.discovery_port,
                                 );
-                                network_clone.add_peer(peer.peer_id, peer_socket);
+                                network_clone.add_trusted_peer(peer.peer_id, peer_socket);
                             }
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             let all_peers = network_clone.get_all_peers().await.unwrap();

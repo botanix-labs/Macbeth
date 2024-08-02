@@ -515,7 +515,6 @@ where {
         let authorities_socket_addresses =
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
-
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
         let sync_metrics_listener = reth_stages::MetricsListener::new(sync_metrics_rx);
@@ -553,17 +552,19 @@ where {
             BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
 
         // check Minting.sol deployed bytecode matches known bytecode
-        // Disabled this check till we can package the bytecode hex file with the binary
-        // info!(target: "reth::cli", "Checking minting contract bytecode");
-        // let state_provider = provider_factory.latest().expect("provider factory to exist");
-        // let deployed_bytecode = state_provider
-        //     .account_code(*MINT_CONTRACT_ADDRESS)
-        //     .expect("Minting contract address exists")
-        //     .expect("Minting contract bytecode to exist");
-        // if let Err(e) = is_known_minting_contract(&deployed_bytecode.bytecode) {
-        //     error!(target: "reth::cli", "{}", e);
-        //     panic!("{}", e);
-        // }
+        info!(target: "reth::cli", "Checking minting contract bytecode");
+        let state_provider = provider_factory.latest().expect("provider factory to exist");
+        let deployed_bytecode = state_provider
+            .account_code(*MINT_CONTRACT_ADDRESS)
+            .expect("Minting contract address exists")
+            .expect("Minting contract bytecode to exist");
+        if let Err(e) = is_known_minting_contract(
+            federation_config.minting_contract_bytecode,
+            &deployed_bytecode.bytecode,
+        ) {
+            error!(target: "reth::cli", "{}", e);
+            panic!("{}", e);
+        }
 
         let blob_store = InMemoryBlobStore::default();
         let validator =
@@ -1189,7 +1190,8 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
+        let federation_config =
+            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.is_testnet,
@@ -1226,7 +1228,8 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config = FederationTomlConfig::new(authorities, "0x".to_string());
+        let federation_config =
+            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",

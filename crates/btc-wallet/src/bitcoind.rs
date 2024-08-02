@@ -81,19 +81,14 @@ impl BitcoindClient {
     }
 
     pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        match self.rpc.get_index_info().map_err(BitcoindError::BlockIndexStatusFailed) {
-            Ok(index_data) => match index_data.txindex {
-                Some(txindex) => Ok(txindex.synced),
-                _ => Ok(false),
-            },
-            Err(_) => {
-                // call the info method in case the get index info is unavailable
-                match self.rpc.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
-                    Ok(blockchain_info_result) => {
-                        Ok(blockchain_info_result.blocks == blockchain_info_result.headers)
-                    }
-                    Err(_) => Ok(false),
-                }
+        match self.rpc.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
+            Ok(blockchain_info_result) => {
+                Ok(blockchain_info_result.initial_block_download == false)
+            }
+            Err(err) => {
+                // TODO (armins) use logger library
+                println!("error getting get_blockchain_info(): {:?}", err);
+                Ok(false)
             }
         }
     }
