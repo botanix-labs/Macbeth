@@ -2,10 +2,8 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
-use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
+use client::{SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
-use reth_primitives::BOTANIX_TESTNET;
-use tonic::transport::Channel;
 
 use crate::{
     it_info_print,
