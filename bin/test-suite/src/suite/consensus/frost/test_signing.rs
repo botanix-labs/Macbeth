@@ -4,6 +4,7 @@ use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
 use client::{SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
+use reth_primitives::BOTANIX_TESTNET;
 
 use crate::{
     it_info_print,
@@ -32,6 +33,7 @@ impl Pegins {
 }
 
 pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     let bitcoind = suite.global_context.bitcoind_rpc();
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind.list_wallets().unwrap() {
@@ -115,7 +117,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // First step: get the PSBT
     let checkpoint = {
         let tip = bitcoind.get_block_count().unwrap();
-        bitcoind.get_block_hash(tip - 2).unwrap()
+        bitcoind.get_block_hash(tip - pegin_conf_depth as u64).unwrap()
     };
     let utxo_merkle = coordinator
         .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
@@ -216,8 +218,8 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // In the future we can generate some addresses send funds and use those outpoints for this
     // test.
     assert!(
-        err.message().contains("bad-txns-inputs-missingorspent") ||
-            err.message().contains("Missing inputs")
+        err.message().contains("bad-txns-inputs-missingorspent")
+            || err.message().contains("Missing inputs")
     );
 
     /*
