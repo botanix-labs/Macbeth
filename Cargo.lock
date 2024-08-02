@@ -8459,7 +8459,6 @@ version = "0.2.0-beta.6"
 dependencies = [
  "auto_impl",
  "clap",
- "ethers",
  "futures 0.3.30",
  "parking_lot 0.12.3",
  "rand 0.8.5",
@@ -9067,7 +9066,6 @@ dependencies = [
 name = "reth-revm"
 version = "0.2.0-beta.6"
 dependencies = [
- "bitcoin",
  "ethers",
  "reth-botanix-lib",
  "reth-consensus-common",
