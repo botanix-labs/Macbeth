@@ -48,6 +48,8 @@ pub struct FederationTomlConfig {
     pub federation_member_public_key: Vec<FedMemberPubKey>,
     /// botanix fee recipient
     pub botanix_fee_recipient: String,
+    /// The precompiled Minting contract bytecode
+    pub minting_contract_bytecode: String,
 }
 
 impl FederationTomlConfig {
@@ -60,8 +62,9 @@ impl FederationTomlConfig {
     pub fn new(
         federation_member_public_key: Vec<FedMemberPubKey>,
         botanix_fee_recipient: String,
+        minting_contract_bytecode: String,
     ) -> Self {
-        Self { federation_member_public_key, botanix_fee_recipient }
+        Self { federation_member_public_key, botanix_fee_recipient, minting_contract_bytecode }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
@@ -109,4 +112,11 @@ fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> {
     let mut contents = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
     file.read_to_end(&mut contents).map_err(Error::ReadConfig)?;
     String::from_utf8(contents).map_err(Error::ParseUtf8)
+}
+
+/// Writes random bytes to a filepath
+#[allow(dead_code)]
+pub fn write_data_to_file(path: impl AsRef<Path> + Send, data: &[u8]) -> Result<(), Error> {
+    let mut file = File::create(path).map_err(Error::OpenConfig)?;
+    file.write_all(data).map_err(Error::ReadConfig)
 }

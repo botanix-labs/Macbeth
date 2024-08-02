@@ -1,8 +1,9 @@
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::poa_node::{
-            CannonStateNofificationPayload, FederationMemberTestConfig, Notifications,
+        common::{
+            poa_node::{CannonStateNofificationPayload, FederationMemberTestConfig, Notifications},
+            MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
@@ -163,8 +164,11 @@ impl NonFederationMemberTestConfig {
             }
         }
 
-        let federation_config =
-            FederationTomlConfig::new(edh_authorities, self.botanix_fee_recipient.clone());
+        let federation_config = FederationTomlConfig::new(
+            edh_authorities,
+            self.botanix_fee_recipient.clone(),
+            String::from(MINTING_CONTRACT_BYTECODE),
+        );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
@@ -173,6 +177,8 @@ impl NonFederationMemberTestConfig {
         let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
             "poa",
             "--is-testnet",
+            "--ntp-server",
+            "time.cloudflare.com",
             "--federation-config-path",
             format!("{}", federation_config_path.display().to_string()).as_str(),
             "--datadir",

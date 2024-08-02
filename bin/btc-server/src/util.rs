@@ -25,6 +25,13 @@ pub const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
 pub const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
 pub const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
 
+pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
+    match network {
+        bitcoin::Network::Regtest | bitcoin::Network::Signet => 1,
+        _ => panic!("Unsupported network"),
+    }
+}
+
 /// Extension trait for OutPoint.
 pub trait OutPointExt: Into<OutPoint> {
     fn to_bytes(self) -> [u8; 36] {

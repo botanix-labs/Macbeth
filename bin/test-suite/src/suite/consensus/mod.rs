@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use client::BtcServerClient;
+use client::{btc_server_client, BtcServerClient};
 use port_killer::kill;
 use reth::CliRunner;
 use reth_tracing::tracing::error;
@@ -241,6 +241,21 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
         }
         it_info_print!("Connected to all btc servers");
+        // Save the clients in local context
+        let mut btc_server_clients = vec![];
+        for instance in 0..self.global_context.instances {
+            let port = self
+                .local_context
+                .btc_servers
+                .as_ref()
+                .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+                .expect("btc server port");
+            let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
+                .await
+                .unwrap();
+            btc_server_clients.push(client.clone());
+        }
+        self.local_context.btc_server_clients = Some(btc_server_clients.clone());
 
         // short delay to prevent btc_server hitting `Unable to get public key`
         // when starting poa nodes in tests
@@ -282,32 +297,16 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
             await_dkg(&mut test_fed_members, &mut rx).await;
 
-            // Every btc server should have an aggregate key
-            let mut btc_server_clients = vec![];
+            // At this point all the btc servers should have the same aggregate key
             let mut keys = HashSet::new();
-            for instance in 0..self.global_context.instances {
-                let port = self
-                    .local_context
-                    .btc_servers
-                    .as_ref()
-                    .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
-                    .expect("btc server port");
-                let mut client =
-                    client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                        .await
-                        .unwrap();
-
-                btc_server_clients.push(client.clone());
-
+            for client in btc_server_clients.iter_mut() {
                 let key =
                     client.get_public_key(client::Empty {}).await.unwrap().into_inner().publickey;
                 keys.insert(key);
             }
-
             // All keys should be the same
             assert_eq!(keys.len(), 1);
 
-            self.local_context.btc_server_clients = Some(btc_server_clients);
             self.local_context.poa_nodes = Some(test_fed_members);
             self.local_context.poa_notification = Some(tx);
         }

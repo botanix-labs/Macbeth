@@ -23,12 +23,15 @@ use reth_primitives::{
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
 };
-use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory};
+use reth_provider::{
+    BlockReader, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory,
+};
 
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt,
     sync::Arc,
     time::Duration,
 };
@@ -91,6 +94,8 @@ pub(crate) enum Error {
     BlockExecution(#[from] BlockExecutionError),
     #[error("Failed to find block with hash {0}")]
     BlockHashNotFound(BlockHash),
+    #[error("Incorrect state for request. Currently in state {0} for block hash {1}")]
+    IncorrectState(PbftState, BlockHash),
 }
 
 /// Error when validating a block as a block signer
@@ -156,9 +161,18 @@ pub(crate) enum PbftState {
     /// We have received k pre-commitments, now we are waiting for k commitments from peers
     AwaitingCommitments,
     /// finished state for either the block producer or the peer
-    #[allow(dead_code)]
-    /// TODO do we really need this?
     Finished,
+}
+
+impl fmt::Display for PbftState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PbftState::Initial => write!(f, "Initial"),
+            PbftState::AwaitingPreCommitments => write!(f, "AwaitingPreCommitments"),
+            PbftState::AwaitingCommitments => write!(f, "AwaitingCommitments"),
+            PbftState::Finished => write!(f, "Finished"),
+        }
+    }
 }
 
 impl PbftState {
@@ -167,6 +181,7 @@ impl PbftState {
         !matches!(self, PbftState::Initial)
     }
     /// Returns true if we are waiting for a number of pre-commitments
+    #[allow(dead_code)]
     pub(crate) fn is_awaiting_precommitments(&self) -> bool {
         matches!(self, PbftState::AwaitingPreCommitments)
     }
@@ -194,7 +209,9 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     task_executor: Option<TaskExecutor>,
     network_client: NetworkClient,
     /// Store commitment to time slot
-    time_slot_commitment: BTreeMap<u64, PeerId>,
+    /// We store this as to avoid signing for a different block hash proposed by the same peer
+    /// during their timeslot
+    time_slot_commitment: BTreeMap<u64, (PeerId, BlockHash)>,
     /// latest known bitcoin block header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     consensus: AuthorityConsensus,
@@ -458,12 +475,22 @@ where
             return Ok(());
         } else {
             // Somehow we have the parent block but its not the current canon chain?
+            // This means the block is building on an older block that is not the best block
             // This should not happen
-            if self.client.contains(block_to_sign.parent_hash) {
-                return Err(ValidateBlockError::ParentHashNotCanonicalTip(
-                    block_to_sign.hash_slow(),
-                    block_to_sign.parent_hash,
-                ));
+            match BlockReader::block_by_hash(&self.client, block_to_sign.parent_hash) {
+                Ok(existing_block) => {
+                    if let Some(existing_block) = existing_block {
+                        if existing_block.hash_slow() != best_block_hash {
+                            return Err(ValidateBlockError::ParentHashNotCanonicalTip(
+                                block_hash,
+                                block_to_sign.parent_hash,
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(target: "consensus::authority::pbft::validate_block", "Failed to get block hash for block: {:?}", e);
+                }
             }
 
             // we could be missing the parent block that is being suggested indicating that there is
@@ -563,8 +590,6 @@ where
 
         let block_to_propose = sealed_blocks.get(&block_hash);
         if let Some(saved_block) = block_to_propose {
-            // TODO we need to reorder the block witness such that we are the ones that signed first
-            // i.e recieve the fee reward.
             let number_of_valid_sigs =
                 saved_block.header().check_authority_sig_add(&self.config.authorities)?;
             info!(target: "consensus::authority::pbft::init_block_proposal" ,"number of valid sigs: {}", number_of_valid_sigs);
@@ -573,8 +598,22 @@ where
             {
                 info!(target: "consensus::authority::pbft::init_block_proposal" ,"We have enough commitments, time to produce a block");
                 // TODO (armins) need better error handling
-                let block_witness =
+                let mut block_witness =
                     saved_block.header().get_block_witness()?.expect("set the witness above");
+
+                // Reorder the block witness so block producer signature is first
+                let msg = secp256k1::Message::from_digest_slice(
+                    block.header.create_sighash()?.0.as_slice(),
+                )?;
+                for (i, signature) in block_witness.iter().enumerate() {
+                    if signature.recover(&msg)? == self.config.authority_pk && i != 0 {
+                        info!(target: "consensus::authority::pbft::init_block_proposal", "Reordering block witness: moving signature at index {} to position 0 out of {} signatures", i, block_witness.len());
+                        let block_producer_signature = block_witness.remove(i);
+                        block_witness.insert(0, block_producer_signature);
+                        break;
+                    }
+                }
+
                 // Set the state accordingly
                 self.set_state(PbftState::Finished, block_hash);
 
@@ -598,7 +637,6 @@ where
         self.sealed_blocks.write().await.insert(block_hash, block.clone());
 
         // Set the state to awaiting pre-commitments
-        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
         self.gossip_to_peers(PbftResponse {
             response_type: PbftEventResponseType::CoordinatorBlockProposal,
             data: block.clone(),
@@ -613,6 +651,7 @@ where
             .or_insert_with(HashSet::new)
             .insert(self.peer_id);
 
+        self.set_state(PbftState::AwaitingPreCommitments, block_hash);
         Ok(None)
     }
 
@@ -628,7 +667,7 @@ where
         let current_state = self.get_state(block_hash);
         if current_state.is_running() {
             warn!(target: "consensus::authority::pbft::process_block_proposal" ,"State machine is already running for block {:?}", block_hash);
-            return Ok(());
+            return Err(Error::IncorrectState(current_state, block_hash));
         }
 
         if peer_id == self.peer_id {
@@ -683,6 +722,10 @@ where
         // And implicitly add the coordinator's pre-commitment
         pre_commits.insert(peer_id);
         self.pre_commitments.write().await.insert(block_hash, pre_commits);
+        // Store block in sealed blocks as a non-coordiantor.
+        // This is to ensure that we can continue the PBFT round for the same block hash if the
+        // current coordinator changes
+        self.sealed_blocks.write().await.insert(block_hash, block.clone());
         self.set_state(PbftState::AwaitingPreCommitments, block_hash);
 
         // Broadcast our pre-commitment
@@ -692,8 +735,8 @@ where
         })
         .await?;
 
-        // Edge case: In a two person federation we can move to the next state
-        self.check_and_send_commitment(&block, &peer_id).await?;
+        // Edge case: In a n=2 federation we can move to the next state
+        self.check_and_send_commitment(&block).await?;
 
         Ok(())
     }
@@ -703,7 +746,6 @@ where
     pub(crate) async fn check_and_send_commitment(
         &mut self,
         block: &SealedBlock,
-        _peer_id: &PeerId,
     ) -> Result<(), Error> {
         let block_hash = block.header.segregated_signature_block_hash()?;
         let signed_authorities = block.header.recovered_signed_authorities()?;
@@ -712,8 +754,8 @@ where
         let coord_pk = signed_authorities.first().unwrap();
         let coord_peer_id = pk2id(coord_pk);
 
-        if let Some(peer) = self.time_slot_commitment.get(&time_slot) {
-            if *peer == coord_peer_id {
+        if let Some((peer, prev_signed_block_hash)) = self.time_slot_commitment.get(&time_slot) {
+            if *peer == coord_peer_id && *prev_signed_block_hash != block_hash {
                 warn!(target: "consensus::authority::pbft::check_and_send_commitment" ,"Peer has already processed this time slot");
                 return Err(Error::PeerAlreadyProcessedTimeSlot(time_slot));
             }
@@ -740,7 +782,10 @@ where
                 mutable_header.seal_slow(),
                 BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
             );
-            self.time_slot_commitment.insert(time_slot, coord_peer_id);
+            // Update sealed blocks
+            self.sealed_blocks.write().await.insert(block_hash, signed_block.clone());
+
+            self.time_slot_commitment.insert(time_slot, (coord_peer_id, block_hash));
             // Update state
             self.set_state(PbftState::AwaitingCommitments, block_hash);
 
@@ -763,12 +808,6 @@ where
         self.validate_block(&block).await?;
 
         let block_hash = block.header.segregated_signature_block_hash()?;
-        let current_state = self.get_state(block_hash);
-        if !current_state.is_awaiting_precommitments() {
-            warn!(target: "consensus::authority::pbft::process_precommitment", "State machine is not awaiting pre-commitments for block {:?}", block_hash);
-            return Ok(());
-        }
-
         // Do not process our own response
         if peer_id == self.peer_id {
             return Ok(());
@@ -784,16 +823,14 @@ where
         info!(target: "consensus::authority::pbft::process_precommitment" ,"pre-commitments: {:?}", pre_commits.len());
         drop(write_handle);
 
-        self.check_and_send_commitment(&block, &peer_id).await?;
-
-        println!("state: {:?}", self.state.get(&block_hash));
+        self.check_and_send_commitment(&block).await?;
 
         Ok(())
     }
 
     /// Process a commitment from a peer
-    /// If we have enough commitments, returns true
-    /// Otherwise returns false
+    /// If we have enough commitments, returns the block witness
+    /// Otherwise returns None
     pub(crate) async fn process_commitment(
         &mut self,
         block: SealedBlock,
@@ -809,7 +846,7 @@ where
         let current_state = self.get_state(block_hash);
         if !current_state.is_awaiting_commitments() {
             warn!(target: "consensus::authority::pbft::process_commitment" ,"State machine is not awaiting commitments for block {:?}", block_hash);
-            return Ok(None);
+            return Err(Error::IncorrectState(current_state, block_hash));
         }
 
         let lock = self.sealed_blocks.read().await;
@@ -851,9 +888,9 @@ where
         self.sealed_blocks.write().await.insert(block_hash, new_block.clone());
         let number_of_valid_sigs =
             new_block.header().check_authority_sig_add(&self.config.authorities)?;
-        info!("number of valid sigs: {}", number_of_valid_sigs);
-        info!("max signers: {}", self.config.max_signers);
-        // if we have enough commitments, we can move to the next st#[inline]
+        info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
+        info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
+        // if we have enough commitments, we can move to the next state
         if number_of_valid_sigs >=
             PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
         {
@@ -862,7 +899,9 @@ where
                 new_block.header().get_block_witness()?.expect("set the witness above");
             info!(target: "consensus::authority::pbft::process_commitment" ,"Block witness: {:?}", block_witness);
             self.set_state(PbftState::Finished, block_hash);
-            return Ok(Some(block_witness));
+            if self.is_coordinator() {
+                return Ok(Some(block_witness));
+            }
         }
         Ok(None)
     }
@@ -1264,6 +1303,118 @@ mod tests {
         assert_eq!(block_witness, block_witness_init);
     }
 
+    #[tokio::test]
+    async fn multi_party_init_block_proposal_from_previous_round() {
+        // The purpose of this test is to ensure the block producer signature is at index 0
+        // in the block witness when proposing a block from a previous PBFT round
+
+        // first do multi party init_block_proposal during current round
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        let peer_id_1 = non_coords[1].peer_id.clone();
+        let pbft_state_machine = coord;
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+
+        // reset and this time the state should be waiting for pre-commitments
+        let mut pbft_state_machine = pbft_state_machine.reset();
+        pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingPreCommitments);
+        // Lets add one more pre commits from other peers
+        pbft_state_machine
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid pre-commitment");
+        // Should be waiting for commitments now
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::AwaitingCommitments);
+        // Lets submit a commitment from the first peer
+        // Sign the block as peer 1
+        let mut header_to_sign_0 = block_to_propose.header().clone();
+        header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
+        let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_0.header().segregated_signature_block_hash().unwrap(), block_hash);
+        // Sign the block as peer 2
+        let mut header_to_sign_1 = block_to_propose.header().clone();
+        header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
+        let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
+        assert_eq!(signed_block_1.header().segregated_signature_block_hash().unwrap(), block_hash);
+
+        let _ = pbft_state_machine
+            .process_commitment(signed_block_0.clone(), peer_id_0)
+            .await
+            .expect("valid commitment");
+
+        let block_witness = pbft_state_machine
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+
+        // Should be finished now
+        assert!(block_witness.is_some());
+        assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::Finished);
+        // Re initing the block should produce the same block witness as we have enough commitments
+        // already
+        let block_witness_init = pbft_state_machine
+            .init_block_proposal(block_to_propose.clone())
+            .await
+            .expect("valid block proposal");
+
+        assert!(block_witness_init.is_some());
+        assert_eq!(block_witness, block_witness_init);
+
+        // Simulate broadcasting a block from a previous round with a different block producer
+        // check that the next block producer signature is not at index 0
+        let mut next_coord = non_coords[0].clone();
+        let msg = secp256k1::Message::from_digest_slice(
+            block_to_propose.header.create_sighash().unwrap().0.as_slice(),
+        )
+        .unwrap();
+        let first_signature_pk = block_witness.unwrap()[0].recover(&msg).unwrap();
+        assert!(first_signature_pk != next_coord.config.authority_pk);
+
+        // insert the block, set pre commitments, and set the state to awaiting commitments
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+        next_coord.sealed_blocks = pbft_state_machine.sealed_blocks.clone();
+        next_coord.pre_commitments = pbft_state_machine.pre_commitments.clone();
+        next_coord.set_state(PbftState::AwaitingCommitments, block_hash);
+
+        // wait until next_coord is in turn
+        while !next_coord.is_coordinator() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
+        let block_witness =
+            next_coord.init_block_proposal(block_to_propose.clone()).await.unwrap().unwrap();
+        // assert that the block producer signature is at index 0
+        let msg = secp256k1::Message::from_digest_slice(
+            block_to_propose.header.create_sighash().unwrap().0.as_slice(),
+        )
+        .unwrap();
+        let first_signature_pk = block_witness[0].recover(&msg).unwrap();
+        assert!(first_signature_pk == non_coords[0].config.authority_pk);
+    }
+
     #[ignore]
     #[tokio::test]
     async fn will_reprocess_proposal_for_timeslot() {
@@ -1300,10 +1451,12 @@ mod tests {
         let time_slots = &other_peer.clone().time_slot_commitment;
         assert_eq!(time_slots.len(), 1);
         // only timeslot should be coord peerid
-        assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
+        let timeslot_peer_id = time_slots.iter().next().unwrap().1 .0;
+        let timeslot_block_hash = time_slots.iter().next().unwrap().1 .1;
+        assert_eq!(timeslot_peer_id, coord.peer_id);
+        assert_eq!(timeslot_block_hash, block_hash);
 
-        let res =
-            other_peer.clone().check_and_send_commitment(&block_to_propose, &coord.peer_id).await;
+        let res = other_peer.clone().check_and_send_commitment(&block_to_propose).await;
         // TODO should be checking an error variant
         assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
 
@@ -1324,7 +1477,10 @@ mod tests {
 
         assert_eq!(time_slots.len(), 1);
         // only timeslot should be coord peerid
-        assert_eq!(time_slots.iter().next().unwrap().1, &coord.peer_id);
+        let timeslot_peer_id = time_slots.iter().next().unwrap().1 .0;
+        let timeslot_block_hash = time_slots.iter().next().unwrap().1 .1;
+        assert_eq!(timeslot_peer_id, coord.peer_id);
+        assert_eq!(timeslot_block_hash, block.hash_slow());
     }
 
     #[tokio::test]
@@ -1478,10 +1634,10 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0]
             .pre_commitments
@@ -1532,10 +1688,10 @@ mod tests {
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
@@ -1576,26 +1732,21 @@ mod tests {
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
             .await
             .expect("valid block proposal");
-        // There should be two commitments
+        // There should be two pre-commitments
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         // only need one more pre-commitment but we have two which is enough
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         // Getting anther block proposal from the same peer should not change the state
-        non_coords[0]
+        let res = non_coords[0]
             .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
-            .await
-            .expect("valid block proposal");
+            .await;
+        // TODO(armins) compare error variants not string!
+        assert!(res.err().unwrap().to_string().contains("Incorrect state for request"));
         assert_eq!(non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().len(), 2);
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
 
         let other_peer_id = non_coords[1].peer_id.clone();
-        // Process other peers pre-commitment
-        non_coords[0]
-            .process_precommitment(block_to_propose.clone(), other_peer_id)
-            .await
-            .expect("valid precommitment");
-
         // There should be three pre-commitments, non_coord[0], coord which was added at the block
         // proposal stage And non_coord[1] which we just added
         let mut pre_commitments =
@@ -1607,20 +1758,17 @@ mod tests {
         // Remove the coord's pre-commits
         pre_commitments.remove(&coord.peer_id);
         non_coords[0].pre_commitments.write().await.insert(block_hash, pre_commitments.clone());
-        non_coords[0].set_state(PbftState::AwaitingPreCommitments, block_hash);
-        // Adding the same pre-commit here is requesting another signed block. This will fail b/c we
-        // have already signed for this timeslot
-        let res =
-            non_coords[0].process_precommitment(block_to_propose.clone(), other_peer_id).await;
-        assert!(res.err().unwrap().to_string().contains("Peer for time slot"));
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), other_peer_id)
+            .await
+            .expect("valid pre-commitment request");
 
         let pre_commitments =
             non_coords[0].pre_commitments.read().await.get(&block_hash).unwrap().clone();
         assert_eq!(pre_commitments.len(), 2);
-        // At this point its us (non_coord[0]) and the other peer (non_coord[1)
         assert!(pre_commitments.contains(&non_coords[0].peer_id));
         assert!(pre_commitments.contains(&non_coords[1].peer_id));
-        assert!(non_coords[0].get_state(block_hash).is_awaiting_precommitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
     }
 
     #[tokio::test]
@@ -1653,22 +1801,11 @@ mod tests {
                 .await
                 .expect("valid block proposal");
         }
-        // At this point we should have two pre-commitments
-        // The other non-coord peers need to provide their pre-commitments
+        // At this point we should have two pre-commitments which is suffecient in a n=3 federation
 
         let peer_id_0 = non_coords[0].peer_id.clone();
         let peer_id_1 = non_coords[1].peer_id.clone();
         // Process other peers pre-commitment
-        non_coords[0]
-            .process_precommitment(block_to_propose.clone(), peer_id_1)
-            .await
-            .expect("valid precommitment");
-
-        non_coords[1]
-            .process_precommitment(block_to_propose.clone(), peer_id_0)
-            .await
-            .expect("valid precommitment");
-
         // both non-coords should be awaiting commitments
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
         assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
@@ -1679,11 +1816,7 @@ mod tests {
             .process_precommitment(block_to_propose.clone(), peer_id_0)
             .await
             .expect("valid precommitment");
-
-        coord
-            .process_precommitment(block_to_propose.clone(), peer_id_1)
-            .await
-            .expect("valid precommitment");
+        // Just need one pre-commitment for a 3 party federation
 
         // Coordinator should now be awaiting commitments
         assert!(coord.get_state(block_hash).is_awaiting_commitments());
@@ -1742,12 +1875,13 @@ mod tests {
         assert!(sigs_again.contains(&sigs_so_far[0]));
         assert!(sigs_again.contains(&sigs_so_far[1]));
 
-        let finished_block = coord
+        // Since we added the last signature needed we should get returned
+        // `Some(Vec<RecoverableSignature>)`
+        let block_witness = coord
             .process_commitment(signed_block_1.clone(), peer_id_1)
             .await
-            .expect("valid commitment");
-        // Since we added the last signature needed we should get returned `Some(SealedBlock)`
-        assert!(finished_block.is_some());
+            .expect("valid commitment")
+            .unwrap();
 
         let sigs_so_far = coord
             .sealed_blocks
@@ -1762,6 +1896,8 @@ mod tests {
             .authority_signatures
             .expect("should have signatures");
         // There should be a sig from all peers
+
+        assert_eq!(sigs_so_far, block_witness);
         assert_eq!(sigs_so_far.len(), 3);
         for sk in sks {
             let pk = sk.public_key(secp256k1::SECP256K1);
@@ -1780,11 +1916,21 @@ mod tests {
 
             assert!(recovered);
         }
+
+        // non coordiantors should NOT respond with block witness
+        let res = non_coords[0]
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+        assert!(res.is_none());
     }
 
     #[tokio::test]
-    async fn cannot_suggest_the_same_block_twice() {
-        // Note: set up test signs with the first authorities key
+    async fn can_suggest_the_same_block_twice() {
+        // This test ensure thats peers will commit to the same block twice as long
+        // as the block hash is the same
+        // Peers should still reject if the same block producer is suggesting two different blocks
+        // in the same time slot Note: set up test signs with the first authorities key
         setup_multi_party_test!(
             3,
             sks,
@@ -1817,40 +1963,113 @@ mod tests {
         let peer_id_0 = non_coords[0].peer_id.clone();
         let peer_id_1 = non_coords[1].peer_id.clone();
         // Process other peers pre-commitment
-        non_coords[0]
-            .process_precommitment(block_to_propose.clone(), peer_id_1)
-            .await
-            .expect("valid precommitment");
-
-        non_coords[1]
-            .process_precommitment(block_to_propose.clone(), peer_id_0)
-            .await
-            .expect("valid precommitment");
-
+        // For three party federation we only need 2 pre-commitments
         coord
             .process_precommitment(block_to_propose.clone(), peer_id_0)
             .await
             .expect("valid precommitment");
-
-        coord
-            .process_precommitment(block_to_propose.clone(), peer_id_1)
-            .await
-            .expect("valid precommitment");
-
         // Coordinator should now be awaiting commitments
         assert!(coord.get_state(block_hash).is_awaiting_commitments());
         assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
         assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
 
+        // At this point peer 0 should have committed to the block as we only need 2 pre-commitments
+        // But the round is awaiting the last commitment from peer 1
+        // Re-requesting a commitment from peers as the same block producer should be fine as its
+        // the same block
+        non_coords[0]
+            .process_precommitment(block_to_propose.clone(), coord.peer_id)
+            .await
+            .expect("valid precommitment request");
+        non_coords[1]
+            .process_precommitment(block_to_propose.clone(), coord.peer_id)
+            .await
+            .expect("valid precommitment request");
+
         // Sign block as peer 0
         let mut header_to_sign_0 = block_to_propose.header().clone();
         header_to_sign_0.sign_block(&non_coords[0].secret_key).expect("to sign block");
         let signed_block_0 = SealedBlock::new(header_to_sign_0.seal_slow(), BlockBody::default());
+        // Sign block as peer 1
+        let mut header_to_sign_1 = block_to_propose.header().clone();
+        header_to_sign_1.sign_block(&non_coords[1].secret_key).expect("to sign block");
+        let signed_block_1 = SealedBlock::new(header_to_sign_1.seal_slow(), BlockBody::default());
 
-        non_coords[0]
-            .process_commitment(signed_block_0, peer_ids[0])
+        // Sanity check that the block hash is the same
+        assert_eq!(signed_block_0.header().hash_slow(), block_hash);
+        assert_eq!(signed_block_1.header().hash_slow(), block_hash);
+
+        coord
+            .process_commitment(signed_block_0.clone(), peer_id_0)
             .await
             .expect("valid commitment");
+        let res = coord
+            .process_commitment(signed_block_1.clone(), peer_id_1)
+            .await
+            .expect("valid commitment");
+        assert!(res.is_some_and(|sigs| sigs.len() == 3));
+
+        // TODO add a check here where we try to get another commitment from a peer
+    }
+
+    #[tokio::test]
+    async fn cannot_suggest_at_same_timeslot() {
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
+
+        coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+        // Process block proposal
+        let block_hash = block_to_propose
+            .header()
+            .segregated_signature_block_hash()
+            .expect("to get the block hash");
+        for i in 0..non_coords.len() {
+            non_coords[i]
+                .process_block_proposal(block_to_propose.clone(), coord.peer_id.clone())
+                .await
+                .expect("valid block proposal");
+        }
+
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        // At this point we should have two pre-commitments
+        // The other non-coord peers need to provide their pre-commitments
+        coord
+            .process_precommitment(block_to_propose.clone(), peer_id_0)
+            .await
+            .expect("valid precommitment");
+        // Coordinator should now be awaiting commitments
+        assert!(coord.get_state(block_hash).is_awaiting_commitments());
+        assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
+        assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
+
+        let altered_block = block_to_propose.clone();
+        let mut altered_header = altered_block.header().clone();
+        let mut edh = altered_header.deserialize_extra_data_header().unwrap();
+        edh.clear_signatures();
+        altered_header.add_extra_data_header(&edh);
+        altered_header.nonce = 2;
+        altered_header.sign_block(&coord.secret_key).expect("to sign block");
+        let altered_block = SealedBlock::new(altered_header.seal_slow(), BlockBody::default());
+
+        coord.init_block_proposal(block_to_propose.clone()).await.expect("valid block proposal");
+        // Restart the state machine with the altered block
+        for i in 0..non_coords.len() {
+            let res = non_coords[i]
+                .process_block_proposal(altered_block.clone(), coord.peer_id.clone())
+                .await;
+            assert!(res.err().unwrap().to_string().contains("Peer for time slot"),);
+        }
     }
 
     /* Validating fork */
