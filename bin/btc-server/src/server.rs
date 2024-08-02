@@ -7,7 +7,6 @@ use bitcoin::{
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
-use futures_util::TryFutureExt;
 use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
@@ -114,6 +113,7 @@ impl rpc::BtcServer for App {
         &self,
         request: tonic::Request<rpc::SyncTxIndexRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&request)?;
         let checkpoint =
             bitcoin::BlockHash::from_slice(request.into_inner().checkpoint_block_hash.as_slice())
                 .map_err(|e| {
