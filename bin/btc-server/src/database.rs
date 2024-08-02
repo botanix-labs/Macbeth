@@ -9,7 +9,7 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    Amount, BlockHash, OutPoint, Script, TxOut, Txid,
+    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
@@ -528,8 +528,8 @@ impl TryFrom<RpcUtxo> for Utxo {
         // outpoint
         let outpoint =
             value.outpoint.ok_or_else(|| Error::RpcToDbMap("Outpoint is None".to_string()))?;
-        let txid = Txid::from_slice(&outpoint.txid)
-            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?; // OR:  let txid = bitcoin::consensus::deserialize::<Txid>(&outpoint.txid)
+        let txid = bitcoin::consensus::deserialize::<Txid>(&outpoint.txid)
+            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?;
         let vout = outpoint.vout;
 
         // txout
@@ -537,13 +537,14 @@ impl TryFrom<RpcUtxo> for Utxo {
         let script_pubkey = tx_out
             .script_pubkey
             .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
-        let script = Script::from_bytes(&script_pubkey.script); // OR:  let txid = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
+        let script = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
+            .map_err(|_| Error::RpcToDbMap("Unparsable ScriptBuf".to_string()))?;
         let tx_out_val = Amount::from_sat(tx_out.value);
 
         // create the utxo
         Ok(Utxo::new(
             OutPoint::new(txid, vout),
-            TxOut { value: tx_out_val, script_pubkey: script.into() },
+            TxOut { value: tx_out_val, script_pubkey: script },
             if value.eth_address.is_empty() {
                 None
             } else {
