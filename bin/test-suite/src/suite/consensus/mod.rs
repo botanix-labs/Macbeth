@@ -129,6 +129,9 @@ impl Suite for ConsensusIntegrationTestSuite {
                 Default::default(),
                 frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
             ),
+            "test_edh_size_limit" => {
+                run_test!(self, Default::default(), frost::test_edh_size_limit::test_edh_size_limit,)
+            }
             "rpc_node" => {
                 run_test!(
                     self,
