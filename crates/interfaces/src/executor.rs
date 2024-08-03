@@ -1,10 +1,9 @@
 use core::fmt;
 
 use crate::{provider::ProviderError, trie::StateRootError};
-use ethers::types::U256;
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    revm_primitives::EVMError, Address, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
+    revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
     PruneSegmentError, B256,
 };
 use thiserror::Error;
@@ -98,18 +97,6 @@ pub enum BlockValidationError {
         parent_beacon_block_root: Box<B256>,
         /// The error message.
         message: String,
-    },
-    /// Error when failing to parse pegin/pegout topic
-    #[error("Failed to parse topic")]
-    FailedToParseMintTopic {
-        /// Optional pegin/pegout data: destination address, amount, and type (pegin/pegout)
-        event_data: Option<(Address, U256, String)>,
-    },
-    /// Error when pegin/pegout fails consenus validation
-    #[error("Invalid Mint contract invocation")]
-    MintContractViolation {
-        /// The pegin/pegout address and amount
-        event_data: (Address, U256, String),
     },
     /// Poa specific error when Extra data header is invalid
     #[error("Invalid extra header")]

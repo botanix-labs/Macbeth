@@ -4,6 +4,10 @@ syntax = "proto3";
 package btc_server;
 
 service BtcServer {
+    rpc HealthCheck(Empty) returns (Empty) {}
+
+    rpc TxIndexNewCheckpoint(SyncTxIndexRequest) returns (Empty) {}
+
     rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
 
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
@@ -53,8 +57,11 @@ service BtcServer {
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
+}
 
-    rpc HealthCheck(Empty) returns (Empty) {}
+message SyncTxIndexRequest {
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 1;
 }
 
 message FinalizeSignerRequest {

@@ -8,6 +8,7 @@ use bitcoin::{
     },
     merkle_tree::PartialMerkleTree,
     secp256k1::{self, PublicKey},
+    TxOut,
 };
 
 use bitcoin::{self};
@@ -37,18 +38,20 @@ impl PeginData {
         &self,
         bitcoin_commitment: &(bitcoin::block::Header, u32),
         aggregate_pk: &secp256k1::PublicKey,
-    ) -> Result<U256, PeginError> {
+    ) -> Result<U256, PeginDataError> {
         // the aggregate value from all the pegin proofs
         let mut aggregate_value = U256::from_str_radix("0", 10).expect("valid amount");
         let commit_hash = bitcoin_commitment.0.block_hash();
         for pegin in &self.meta {
             if pegin.version != PEGIN_META_VERSION {
-                return Err(PeginError::Invalid("invalid meta version: only accepting version 0"));
+                return Err(PeginDataError::Invalid(
+                    "invalid meta version: only accepting version 0",
+                ));
             }
 
             // pegin block headers list should contain the commitment header
             if !pegin.block_headers.iter().any(|h| h.block_hash() == commit_hash) {
-                return Err(PeginError::Invalid("recent block hash mismatch"));
+                return Err(PeginDataError::Invalid("recent block hash mismatch"));
             }
 
             // Then let's validate the merkle proof.
@@ -57,34 +60,31 @@ impl PeginData {
             let mut idxs = Vec::with_capacity(1);
             let root = merkle.extract_matches(&mut txids, &mut idxs).unwrap();
             if !txids.contains(&pegin.outpoint.txid) {
-                return Err(PeginError::Invalid("invalid merkle proof: inclusion"));
+                return Err(PeginDataError::Invalid("invalid merkle proof: inclusion"));
             }
             // And check that the merkle proof is indeed for the first header provided.
             if pegin.block_headers[0].merkle_root != root {
-                return Err(PeginError::Invalid("merkle proof and block header mismatch"));
+                return Err(PeginDataError::Invalid("merkle proof and block header mismatch"));
             }
 
             // then check that the merkle proof was indeed for the pegin tx
             if pegin.tx.txid() != pegin.outpoint.txid {
-                return Err(PeginError::Invalid("invalid tx or outpoint: txid"));
+                return Err(PeginDataError::Invalid("invalid tx or outpoint: txid"));
             }
             if pegin.tx.output.len() < pegin.outpoint.vout as usize {
-                return Err(PeginError::Invalid("invalid tx or outpoint: output idx"));
+                return Err(PeginDataError::Invalid("invalid tx or outpoint: output idx"));
             }
 
             let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.into())
-                .map_err(|_e| PeginError::InvalidTweak())?;
+                .map_err(|_e| PeginDataError::InvalidTweak())?;
             let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[pegin.outpoint.vout as usize];
             if gateway_script != output.script_pubkey {
-                return Err(PeginError::Invalid("invalid script pubkey"));
+                return Err(PeginDataError::Invalid("invalid script pubkey"));
             }
 
             let output_value = bitcoin::Amount::from_sat(output.value.to_sat()).to_wei();
-            // if output_value < self.amount {
-            //     return Err(PeginError::Invalid("invalid amount"));
-            // }
             aggregate_value += output_value;
 
             // check that the user provided an actual valid block header sequence
@@ -92,7 +92,7 @@ impl PeginData {
             while let Some(header) = iter.next() {
                 if let Some(next) = iter.peek() {
                     if next.prev_blockhash != header.block_hash() {
-                        return Err(PeginError::Invalid("invalid block header sequence"));
+                        return Err(PeginDataError::Invalid("invalid block header sequence"));
                     }
                 }
             }
@@ -104,12 +104,12 @@ impl PeginData {
                 .iter()
                 .rev()
                 .skip_while(|h| h.block_hash() != commit_hash)
-                .count() -
-                1; // minus one for the commitment itself
-                   // the latest block height minus the position of the user block in the list is the
-                   // height of the user block
+                .count()
+                - 1; // minus one for the commitment itself
+                     // the latest block height minus the position of the user block in the list is the
+                     // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
-                return Err(PeginError::InvalidBitcoinBlockHeight());
+                return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
         }
 
@@ -150,7 +150,7 @@ impl PeginMeta {
         bytes
     }
 
-    pub fn deserialize(mut bytes: &[u8]) -> Result<(PeginMeta, usize), PeginError> {
+    pub fn deserialize(mut bytes: &[u8]) -> Result<(PeginMeta, usize), PeginDataError> {
         // bytes is a list of proofs
         let proofs_size = bytes.len();
 
@@ -167,7 +167,7 @@ impl PeginMeta {
                     // compressed schnorr public key
                     let mut pk_bytes = [0u8; 33];
                     bytes.read_slice(&mut pk_bytes)?;
-                    PublicKey::from_slice(&pk_bytes).map_err(PeginError::InvalidPublicKey)?
+                    PublicKey::from_slice(&pk_bytes).map_err(PeginDataError::InvalidPublicKey)?
                 },
                 block_headers: {
                     let len = btcencode::VarInt::consensus_decode(&mut bytes)?.0;
@@ -185,10 +185,17 @@ impl PeginMeta {
             proofs_size - bytes.len(),
         ))
     }
+
+    pub fn txout(&self) -> &TxOut {
+        self.tx
+            .output
+            .get(self.outpoint.vout as usize)
+            .expect("we check on creation that vout exists")
+    }
 }
 
 #[derive(Debug, Error)]
-pub enum PeginError {
+pub enum PeginDataError {
     #[error("invalid data format")]
     InvalidFormat(#[from] btcencode::Error),
     #[error("invalid pegin proof")]
@@ -196,13 +203,13 @@ pub enum PeginError {
     #[error("invalid public key format")]
     InvalidPublicKey(secp256k1::Error),
     #[error("invalid bitcoin block height")]
-    InvalidBitcoinBlockHeight(),
+    InvalidBitcoinBlockHeight,
     #[error("invalid tweak: failed to tweak aggregate public key")]
     InvalidTweak(),
 }
 
 #[derive(Debug, Error)]
-pub enum PegoutError {
+pub enum PegoutDataError {
     #[error("invalid pegout proof")]
     Invalid(&'static str),
 }
@@ -219,16 +226,16 @@ impl PegoutData {
         amount: bitcoin::Amount,
         address: String,
         btc_network: bitcoin::Network,
-    ) -> Result<Self, PegoutError> {
+    ) -> Result<Self, PegoutDataError> {
         // Check for valid addres
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
-                .map_err(|_e| PegoutError::Invalid("Invalid Bitcoin Address"))?;
+                .map_err(|_e| PegoutDataError::Invalid("Invalid Bitcoin Address"))?;
 
         // For is address if valid for network
         let network_checked_destination = destination
             .require_network(btc_network)
-            .map_err(|_e| PegoutError::Invalid("Address not valid for network"))?;
+            .map_err(|_e| PegoutDataError::Invalid("Address not valid for network"))?;
 
         Ok(Self { amount, destination: network_checked_destination, network: btc_network })
     }
