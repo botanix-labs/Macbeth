@@ -8,7 +8,7 @@ use crate::{
     task::BlockProductionTask,
     AuthorityConsensus, Storage,
 };
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::GrpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
@@ -52,7 +52,7 @@ pub struct AuthorityConsensusBuilder<
     storage: Storage,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     canon_state_notification: CanonStateNotificationSender,
-    btc_server: Option<BtcServerExtendedClient>,
+    btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     bitcoind_config: BitcoindConfig,
     sk: secp256k1::SecretKey,
@@ -104,7 +104,7 @@ where
         client: Client,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
-        btc_server: Option<BtcServerExtendedClient>,
+        btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         bitcoind_config: BitcoindConfig,
         // TODO (armins) This should be Arc protected
@@ -123,7 +123,7 @@ where
         executor_factory: EF,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
-        let is_fed_node = btc_server.is_some();
+        let is_fed_node = btc_server_factory.is_some();
 
         let mut latest_header = client
             .latest_header()
@@ -167,7 +167,6 @@ where
                 return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
             }
         }
-
         let pk = sk.public_key(secp256k1::SECP256K1);
 
         // Try to instantiate storage
@@ -192,7 +191,7 @@ where
             consensus: AuthorityConsensus::new(chain_spec),
             to_engine,
             canon_state_notification,
-            btc_server,
+            btc_server_factory,
             bitcoin_block_header,
             bitcoind_config,
             sk,
@@ -226,7 +225,7 @@ where
     ) {
         let Self {
             chain_spec,
-            btc_server,
+            btc_server_factory,
             client,
             consensus,
             storage,
@@ -247,7 +246,22 @@ where
             btc_network,
             executor_factory,
         } = self;
-        let is_fed_node = btc_server.is_some();
+        let is_fed_node = btc_server_factory.is_some();
+
+        let btc_server_client = async {
+            if is_fed_node {
+                Some(
+                    btc_server_factory
+                        .expect("btc_server_factory is available")
+                        .build_and_connect()
+                        .await
+                        .expect("Failed to build and connect to btc server"),
+                )
+            } else {
+                None
+            }
+        }
+        .await;
 
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
@@ -260,7 +274,7 @@ where
             block_import_rx,
             to_engine.clone(),
             canon_state_notification.clone(),
-            btc_server.clone(),
+            btc_server_client.clone(),
             storage.clone(),
             bitcoin_block_header.clone(),
             evm_config.clone(),
@@ -294,7 +308,7 @@ where
             // frost task
             let task = FrostTask::new(
                 chain_spec.clone(),
-                btc_server.clone().expect("btc_server is available"),
+                btc_server_client.clone().expect("btc_server is available"),
                 network_handle.clone(),
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.clone().expect("frost config exists"),
@@ -340,7 +354,7 @@ where
                 to_engine,
                 canon_state_notification,
                 storage,
-                btc_server.clone().expect("btc_server is available"),
+                btc_server_client.clone().expect("btc_server is available"),
                 bitcoin_block_header,
                 sk,
                 epoch_manager,

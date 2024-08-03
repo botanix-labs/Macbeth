@@ -1,9 +1,9 @@
 //! Main node command
 
 use bitcoin::hashes::Hash;
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
-use client::Empty;
+use client::{Empty, SyncTxIndexRequest};
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -349,14 +349,13 @@ where {
         let is_fed_node = node_config.federation_mode;
 
         // Connect to btc signining server if in federation mode
-        let btc_server_client = if is_fed_node {
-            let fut = || async {
-                BtcServerExtendedClient::new(
-                    node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                    btc_signing_server_jwt_secret.clone().map(Into::into),
-                )
-                .await
-            };
+        let btc_server_factory = if is_fed_node {
+            let btc_server_factory = GrpcClientFactory::new(
+                node_config.rpc.btc_server.clone().expect("btc_server exists"),
+                btc_signing_server_jwt_secret.clone().map(Into::into),
+            );
+
+            let fut = || async { btc_server_factory.build_and_connect().await };
 
             let mut client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
                 Ok(client) => client,
@@ -367,13 +366,14 @@ where {
             };
             info!(target: "reth::cli", "Btc server connected");
 
+            // Check our connection to the btc server is authenticated properly
             client.health_check(Empty {}).await.map_err(|err| {
                 error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
             info!(target: "reth::cli", "Btc server authenticated");
 
-            Some(client)
+            Some(btc_server_factory)
         } else {
             None
         };
@@ -402,6 +402,7 @@ where {
         }
 
         let bitcoind_config_clone = bitcoind_config.clone();
+        let bitcoind_signing_server_factory_clone = btc_server_factory.clone();
         let pegin_conf_depth = chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
@@ -436,7 +437,7 @@ where {
                         let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
                         let height = tip_block.height;
                         let finalized = {
-                            let height = height.saturating_sub(pegin_conf_depth as usize - 1);
+                            let height = height.saturating_sub(pegin_conf_depth as usize);
                             let hash = or_continue!(bitcoind.get_block_hash(height as u64));
                             or_continue!(bitcoind.get_block_info(&hash))
                         };
@@ -447,9 +448,31 @@ where {
                             finalized.height,
                             header.block_hash(),
                         );
+                        info!("Async bitcoin Tip {}:{}", height, tip_hash,);
                         *bitcoin_block_header.write().await =
                             Some((header, finalized.height as u32));
                         last_tip = tip_hash;
+
+                        // Sync the bitcoind signing server's txindexer
+                        if let Some(btc_factory) = &bitcoind_signing_server_factory_clone {
+                            let res = btc_factory.build_and_connect().await;
+
+                            match res {
+                                Ok(mut client) => {
+                                    let _ = client
+                                        .tx_index_new_checkpoint(SyncTxIndexRequest {
+                                            checkpoint_block_hash: header
+                                                .block_hash()
+                                                .to_byte_array()
+                                                .to_vec(),
+                                        })
+                                        .await;
+                                }
+                                Err(e) => {
+                                    error!("Failed to connect to btc signing server: {}", e);
+                                }
+                            }
+                        }
                     }
                     tokio::time::sleep(SLEEP).await;
                 }
@@ -721,7 +744,7 @@ where {
             blockchain_db.clone(),
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
-            btc_server_client.clone(),
+            btc_server_factory.clone(),
             bitcoin_block_header_clone,
             bitcoind_config,
             secret_key,

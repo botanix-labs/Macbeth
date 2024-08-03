@@ -11,7 +11,7 @@ use revm::{
 use std::{sync::Arc, time::Instant};
 
 use reth_evm::ConfigureEvm;
-use reth_interfaces::executor::{BlockExecutionError, BlockValidationError, MintContractErrorType};
+use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 #[cfg(feature = "optimism")]
 use reth_primitives::revm::env::fill_op_tx_env;
 #[cfg(not(feature = "optimism"))]
@@ -19,7 +19,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     batch::{BlockBatchRecord, BlockExecutorStats},
@@ -29,8 +29,7 @@ use crate::{
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
 use reth_botanix_lib::mint_validation::{
-    parse_pegin_topic, parse_pegout_topic, MintConsensusError, BURN_TOPIC, MINT_CONTRACT_ADDRESS,
-    MINT_TOPIC,
+    try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
@@ -221,84 +220,58 @@ where
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-        sender_address: Address, // used for reverted pegouts
-        sender_value: U256,      // used for reverted pegouts
-    ) -> Result<(), BlockExecutionError> {
+    ) -> Result<(), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg.as_ref();
+        let btc_network =
+            consensus_pkg.map(|package| package.btc_network).expect("network to be defined");
+
+        // Check pegins.
         for log in result.logs() {
-            if log.topics().first() == Some(&MINT_TOPIC) && botanix_consensus_pkg.is_some() {
-                let pegin_data =
-                    parse_pegin_topic(log, &result.clone().into_logs()).map_err(|e| {
-                        error!("Failed to parse pegin topic! {:?}", e);
-                        let pegin_data_error = match e {
-                            MintConsensusError::LogParsingBlockHeightError(pegin) => Some(pegin),
-                            MintConsensusError::LogParsingMetaDataError(pegin) => Some(pegin),
-                            MintConsensusError::FailedToConvertMetadataToBytes(pegin) => {
-                                Some(pegin)
-                            }
-                            MintConsensusError::FailedtoDeserialiseMetadata(pegin) => Some(pegin),
-                            _ => None,
-                        };
-                        let mint_topic_pegin_data = if let Some(pegin_data_error) = pegin_data_error
-                        {
-                            Some(pegin_data_error.pegin)
-                        } else {
-                            None
-                        };
-                        BlockValidationError::FailedToParseMintTopic {
-                            event_data: mint_topic_pegin_data,
-                        }
-                    })?;
+            let pegin_data = match try_parse_mint_event(log)? {
+                None => continue,
+                Some(p) => p,
+            };
 
-                let recent_header = consensus_pkg.expect("is some").bitcoin_checkpoint;
-                let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
-
-                match pegin_data.validate(&recent_header, &aggregate_public_key) {
-                    Ok(aggregate_value) => {
-                        tracing::info!("Pegin aggregate value: {}", aggregate_value);
-                        tracing::info!("Pegin amount: {}", pegin_data.amount);
-                        if aggregate_value == pegin_data.amount {
-                            warn!("Failed pegin attempt! Pegin amount should be less than aggregate value because fees are deducted.");
-                            return Err(BlockValidationError::MintContractViolation {
-                                event_data: (
-                                    pegin_data.account,
-                                    pegin_data.amount,
-                                    MintContractErrorType::Pegin.to_string(),
-                                ),
-                            }
-                            .into());
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Failed pegin attempt! {:?}", e);
-                        return Err(BlockValidationError::MintContractViolation {
-                            event_data: (
-                                pegin_data.account,
-                                pegin_data.amount,
-                                MintContractErrorType::Pegin.to_string(),
+            let bitcoin_checkpoint = consensus_pkg.expect("is some").bitcoin_checkpoint;
+            // the pegin height must be equal or less than the required block depth (checkpoint)
+            if pegin_data.bitcoin_block_height > bitcoin_checkpoint.1 {
+                return Err(MintContractError::InvalidPeginData {
+                    error: format!(
+                        "pegin height {} greater than checkpoint of {}",
+                        pegin_data.bitcoin_block_height, bitcoin_checkpoint.1,
+                    ),
+                    revert_address: pegin_data.account,
+                    revert_amount: pegin_data.amount,
+                });
+            }
+            let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
+            match pegin_data.validate(&bitcoin_checkpoint, &aggregate_public_key) {
+                Ok(aggregate_value) => {
+                    if pegin_data.amount >= aggregate_value {
+                        return Err(MintContractError::InvalidPeginData {
+                            error: format!(
+                                "pegin amount should be less than aggregate value: \
+                                    pegin aggregate value: {}; pegin amount: {}",
+                                aggregate_value, pegin_data.amount,
                             ),
-                        }
-                        .into());
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        });
                     }
                 }
+                Err(e) => {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: format!("pegin validation failed: {}", e),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    });
+                }
             }
+        }
 
-            if log.topics().first() == Some(&BURN_TOPIC) {
-                let btc_network = consensus_pkg
-                    .map(|package| package.btc_network)
-                    .unwrap_or_else(|| bitcoin::Network::Regtest);
-                if let Err(e) = parse_pegout_topic(log, btc_network) {
-                    error!("Failed to parse pegout topic! {:?}", e);
-                    return Err(BlockValidationError::FailedToParseMintTopic {
-                        event_data: Some((
-                            sender_address,
-                            EthersU256::from_little_endian(sender_value.as_le_slice()),
-                            MintContractErrorType::Pegout.to_string(),
-                        )),
-                    }
-                    .into());
-                }
-            }
+        // Check pegouts
+        for log in result.logs() {
+            let _ = try_parse_burn_event(log, btc_network)?;
         }
 
         Ok(())
@@ -308,6 +281,8 @@ where
     /// This should only occur when a pegin reverts based on our custom validation
     fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
         let mut account = state.get(&address).expect("Account to exist").clone();
+        // print balance before decrement
+        info!("Balance before decrement: {:?}", account.info.balance);
         // decrement balance by amount
         info!("Decrementing address: {:?} by {:?}", address, amount);
         account.info.balance = account
@@ -369,77 +344,56 @@ where
 
         // ***** Botanix specific checks ******
         let out = match out {
-            Ok(ResultAndState { ref result, ref state }) => {
+            Ok(ResultAndState { result, mut state }) => {
                 // get pegout amount so can update balance if pegout reverts
                 let pegout_amount = transaction.value();
-
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(
-                        result,
-                        botanix_consensus_pkg,
-                        sender,
-                        pegout_amount,
-                    ) {
-                        Ok(()) => out,
-                        Err(e) => Ok({
-                            error!("Botanix mint contract validation failed: {:?}", e);
-                            let output_match = match result {
-                                ExecutionResult::Success { output, .. } => {
-                                    output.clone().into_data()
-                                }
-                                ExecutionResult::Revert { output, .. } => output.clone(),
-                                ExecutionResult::Halt { .. } => Bytes::new(),
-                            };
-                            let new_result = ExecutionResult::Revert {
-                                gas_used: result.gas_used(),
-                                output: output_match,
-                            };
-
+                    match Self::botanix_mint_contract_checks(&result, botanix_consensus_pkg) {
+                        Ok(()) => Ok(ResultAndState { result, state }),
+                        Err(e) => {
+                            error!("Botanix Minting contract event validation failed: {:?}", e);
                             // Update state for reverted pegins/pegouts:
                             // balances have been updated since tx was successful according to EVM
                             // and we are reverting according to botanix validation
-                            let event_data = match e {
-                                BlockExecutionError::Validation(
-                                    BlockValidationError::MintContractViolation {
-                                        event_data: (address, amount, event_type),
-                                    },
-                                ) => Some((address, amount, event_type)),
-                                BlockExecutionError::Validation(
-                                    BlockValidationError::FailedToParseMintTopic {
-                                        event_data: Some((address, amount, event_type)),
-                                    },
-                                ) => Some((address, amount, event_type)),
-                                _ => None,
-                            };
-
-                            if let Some(event_data) = event_data {
-                                let (address, amount, event_type) = event_data;
-                                if event_type == MintContractErrorType::Pegin.to_string() {
-                                    let mut updated_state = state.clone();
+                            match e {
+                                MintContractError::InvalidPeginData {
+                                    revert_address,
+                                    revert_amount,
+                                    ..
+                                } => {
                                     Self::decrement_balance_by_address(
-                                        address,
-                                        amount,
-                                        &mut updated_state,
+                                        revert_address,
+                                        revert_amount,
+                                        &mut state,
                                     );
-
-                                    ResultAndState { result: new_result, state: updated_state }
-                                } else {
-                                    let mut updated_state = state.clone();
-                                    Self::increment_balance_by_address(
-                                        address,
-                                        amount,
-                                        &mut updated_state,
-                                    );
-
-                                    ResultAndState { result: new_result, state: updated_state }
                                 }
-                            } else {
-                                ResultAndState { result: new_result, state: state.clone() }
+                                MintContractError::InvalidPegoutData(_) => {
+                                    Self::increment_balance_by_address(
+                                        sender,
+                                        EthersU256::from_little_endian(pegout_amount.as_le_slice()),
+                                        &mut state,
+                                    );
+                                }
+                                //TODO(stevenroose) this means we couldn't parse Minting contract
+                                //output, we might want to panic here, should really not happen
+                                MintContractError::InvalidLog { .. } => {}
                             }
-                        }),
+
+                            let new_result = ExecutionResult::Revert {
+                                gas_used: result.gas_used(),
+                                output: match result {
+                                    ExecutionResult::Success { output, .. } => {
+                                        output.clone().into_data()
+                                    }
+                                    ExecutionResult::Revert { output, .. } => output.clone(),
+                                    ExecutionResult::Halt { .. } => Bytes::new(),
+                                },
+                            };
+                            Ok(ResultAndState { result: new_result, state })
+                        }
                     }
                 } else {
-                    out
+                    Ok(ResultAndState { result, state })
                 }
             }
             Err(ref evm_error) => {

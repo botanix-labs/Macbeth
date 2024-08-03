@@ -59,7 +59,7 @@ impl App {
                 // we are in test mode, user has deliberately switched off authentication and is
                 // making direct requests without jwt
                 debug!("Missing JWT in request metadata and no supplied jwt secret. This is a test mode!");
-                return Ok(())
+                return Ok(());
             }
             (metadata_value, jwt_secret) => {
                 match jwt_secret {
@@ -105,6 +105,26 @@ impl rpc::BtcServer for App {
         request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&request)?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn tx_index_new_checkpoint(
+        &self,
+        request: tonic::Request<rpc::SyncTxIndexRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        let checkpoint =
+            bitcoin::BlockHash::from_slice(request.into_inner().checkpoint_block_hash.as_slice())
+                .map_err(|e| {
+                error!("Failed to parse checkpoint hash: {}", e);
+                badarg!("Failed to parse checkpoint hash: {}", e)
+            })?;
+
+        self.sync_txindex(checkpoint).await.map_err(|e| {
+            error!("Failed to sync txindex: {}", e);
+            internal!("Failed to sync txindex: {}", e)
+        })?;
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
