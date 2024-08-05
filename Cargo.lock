@@ -8987,6 +8987,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "rayon",
+ "reth-btc-wallet",
  "reth-codecs",
  "reth-ethereum-forks",
  "reth-rpc-types",

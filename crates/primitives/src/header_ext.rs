@@ -5,9 +5,12 @@ use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
 
 use crate::{
+    botanix::{BotanixConsensusPackage, RecentHeader},
     extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
     Bytes, Header, B256,
 };
+
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindError};
 
 /// Authority Block signatures
 pub type BlockWitness = Vec<RecoverableSignature>;
@@ -75,6 +78,13 @@ pub trait HeaderExt {
         &self,
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError>;
+
+    /// Creates a Botanix consensus package
+    fn botanix_consensus_package(
+        &self,
+        btc_network: bitcoin::Network,
+        bitcoind_factory: BitcoindClientFactory,
+    ) -> Result<BotanixConsensusPackage, BotanixConsensusPackageError>;
 }
 
 #[derive(Debug, Error)]
@@ -123,8 +133,8 @@ impl PartialEq for ValidateInturnError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
-                (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
+            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn)
+                | (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
         )
     }
 }
@@ -161,15 +171,35 @@ impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::InvalidAuthority, Self::InvalidAuthority) |
-                (Self::InvalidMessage, Self::InvalidMessage) |
-                (Self::InvalidSignature, Self::InvalidSignature) |
-                (Self::MissingSignature, Self::MissingSignature) |
-                (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
-                (Self::RecoverFailed, Self::RecoverFailed) |
-                (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
+            (Self::InvalidAuthority, Self::InvalidAuthority)
+                | (Self::InvalidMessage, Self::InvalidMessage)
+                | (Self::InvalidSignature, Self::InvalidSignature)
+                | (Self::MissingSignature, Self::MissingSignature)
+                | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
+                | (Self::RecoverFailed, Self::RecoverFailed)
+                | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
         )
     }
+}
+
+/// Errors that can occur while creating a Botanix consensus package
+#[derive(Debug, Error)]
+pub enum BotanixConsensusPackageError {
+    #[error("Failed to deserialize the Extra Data Header: {0}")]
+    /// Failed to deserialize the Extra Data Header
+    FailedToDeserializeExtraDataHeader(ExtraDataHeaderDeserializeError),
+
+    #[error("Failed to create Bitcoind client: {0}")]
+    /// Failed to create Bitcoind client
+    FailedToCreateBitcoindClient(BitcoindError),
+
+    #[error("Failed to retrieve the bitcoin checkpoint header: {0}")]
+    /// Failed to retrieve the bitcoin checkpoint header
+    FailedToRetrieveBitcoinCheckpointHeader(BitcoindError),
+
+    #[error("Failed to retrieve the bitcoin checkpoint height: {0}")]
+    /// Failed to retrieve the bitcoin checkpoint height
+    FailedToRetrieveBitcoinCheckpointHeight(BitcoindError),
 }
 
 impl HeaderExt for Header {
@@ -248,8 +278,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
-            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
@@ -399,6 +429,52 @@ impl HeaderExt for Header {
         }
 
         Err(ValidateAuthoritySignatureError::InvalidSignature)
+    }
+
+    /// Creates a Botanix consensus package
+    fn botanix_consensus_package(
+        &self,
+        btc_network: bitcoin::Network,
+        bitcoind_factory: BitcoindClientFactory,
+    ) -> Result<BotanixConsensusPackage, BotanixConsensusPackageError> {
+        let edh = match self.deserialize_extra_data_header() {
+            Ok(edh) => edh,
+            Err(e) => {
+                return Err(BotanixConsensusPackageError::FailedToDeserializeExtraDataHeader(e))
+            }
+        };
+
+        let bitcoind = match bitcoind_factory.build_and_connect() {
+            Ok(bitcoind) => bitcoind,
+            Err(e) => return Err(BotanixConsensusPackageError::FailedToCreateBitcoindClient(e)),
+        };
+
+        let bitcoin_checkpoint_header = match bitcoind.get_block_header(edh.bitcoin_block_hash) {
+            Ok(header) => header,
+            Err(e) => {
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(
+                    e,
+                ))
+            }
+        };
+
+        let bitcoin_checkpoint_height = match bitcoind.get_block_info(&edh.bitcoin_block_hash) {
+            Ok(info) => info.height,
+            Err(e) => {
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(
+                    e,
+                ))
+            }
+        };
+
+        let bitcoin_checkpoint: RecentHeader =
+            (bitcoin_checkpoint_header, bitcoin_checkpoint_height as u32);
+
+        Ok(BotanixConsensusPackage {
+            bitcoin_checkpoint,
+            aggregate_public_key: edh.aggregated_public_key,
+            btc_network,
+        })
     }
 }
 
