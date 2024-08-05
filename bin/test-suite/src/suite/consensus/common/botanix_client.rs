@@ -63,8 +63,49 @@ impl BotanixEthClient {
         Self { mint_contract, client: client2 }
     }
 
+    pub fn provider(&self) -> Provider<Http> {
+        self.client.provider().clone()
+    }
+
+    pub async fn nonce(&self) -> U256 {
+        let address = self.client.address();
+        let nonce = self
+            .client
+            .provider()
+            .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
+            .await
+            .expect("nonce to be returned");
+
+        nonce
+    }
+
     pub fn get_sender_address(&self) -> EtherAddress {
         self.client.address()
+    }
+
+    pub async fn non_confirmed_mint(
+        &self,
+        destination: EtherAddress,
+        amount: ethers::core::types::U256,
+        bitcoin_block_height: u32,
+        metadata: ethers::core::types::Bytes,
+        refund_address: EtherAddress,
+        nonce: ethers::core::types::U256,
+    ) -> Result<[u8; 32], Error> {
+        let gas_price = self.client.get_gas_price().await.unwrap();
+        let binding = self
+            .mint_contract
+            .method::<_, H256>(
+                "mint",
+                (destination, amount, bitcoin_block_height, metadata, refund_address),
+            )
+            .unwrap()
+            .gas_price(gas_price)
+            .gas(U256::from(1_000_000))
+            .nonce(nonce);
+        let prepared_tx = binding.send().await.map_err(Error::Contract)?;
+
+        Ok(prepared_tx.0)
     }
 
     pub async fn mint(
@@ -111,11 +152,21 @@ impl BotanixEthClient {
         Ok(tx_receipt)
     }
 
+    /// Get the balance of some address
+    /// we leave it as string to allow for different types across ethers and reth primitives
     pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
         let sender_account = NameOrAddress::from_str(address).expect("address to be valid");
         let sender_cur_balance =
             self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
         Ok(sender_cur_balance)
+    }
+
+    pub async fn get_balance(&self, address: ethers::core::types::Address) -> Result<U256, Error> {
+        let sender_account = NameOrAddress::Address(address);
+        let balance =
+            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(balance)
     }
 
     pub async fn send_eoa(
