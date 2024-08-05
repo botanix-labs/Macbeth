@@ -57,9 +57,8 @@ use reth_primitives::{
     Bytes, Head, PruneModes,
 };
 use reth_provider::{
-    providers::{BlockchainProvider, StaticFileProvider},
-    BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
-    StageCheckpointReader,
+    providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
+    ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
 };
 use reth_revm::EvmProcessorFactory;
 use reth_rpc::EngineApi;
@@ -480,12 +479,13 @@ where {
         );
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
-        let static_file_provider = StaticFileProvider::new(data_dir.static_files_path())?;
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
             data_dir.static_files_path(),
         )?;
+        let static_file_provider = provider_factory.static_file_provider();
+
         let genesis_hash = init_genesis(provider_factory.clone())?;
         info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
 
