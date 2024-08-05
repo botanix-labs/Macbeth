@@ -65,6 +65,9 @@ strum = { workspace = true, features = ["derive"] }
 # Bitcoin
 bitcoin.workspace = true
 
+# BTC wallet
+reth-btc-wallet.workspace = true
+
 [dev-dependencies]
 # eth
 revm-primitives = { workspace = true, features = ["arbitrary"] }
