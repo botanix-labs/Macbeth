@@ -7833,12 +7833,14 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.2.0-beta.6"
 dependencies = [
+ "bitcoin",
  "clap",
  "eyre",
  "futures-util",
  "jsonrpsee",
  "reth",
  "reth-beacon-consensus",
+ "reth-btc-wallet",
  "reth-consensus",
  "reth-engine-primitives",
  "reth-evm",
@@ -7856,6 +7858,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -9082,6 +9085,7 @@ dependencies = [
  "revm",
  "revm-inspectors",
  "tracing",
+ "url",
 ]
 
 [[package]]

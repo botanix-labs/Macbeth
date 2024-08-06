@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 # reth
 reth-beacon-consensus.workspace = true
+reth-btc-wallet.workspace = true
 reth-primitives.workspace = true
 reth-interfaces.workspace = true
 reth-provider.workspace = true
@@ -37,6 +38,12 @@ secp256k1 = { workspace = true, features = [
     "rand-std",
     "recovery",
 ] }
+
+# Bitcoin
+bitcoin.workspace = true
+
+## url
+url = { version = "2.2.2", features = ["serde"] }
 
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }

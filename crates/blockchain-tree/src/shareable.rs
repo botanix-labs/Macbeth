@@ -63,23 +63,6 @@ where
         res
     }
 
-    fn insert_block_with_botanix_consensus_package(
-        &self,
-        block: SealedBlockWithSenders,
-        validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<InsertPayloadOk, InsertBlockError> {
-        trace!(target: "blockchain_tree", hash = %block.hash(), number = block.number, parent_hash = %block.parent_hash, "Inserting block");
-        let mut tree = self.tree.write();
-        let res = tree.insert_block_with_botanix_consensus_package(
-            block,
-            validation_kind,
-            botanix_consensus_pkg,
-        );
-        tree.update_chains_metrics();
-        res
-    }
-
     fn finalize_block(&self, finalized_block: BlockNumber) {
         trace!(target: "blockchain_tree", finalized_block, "Finalizing block");
         let mut tree = self.tree.write();

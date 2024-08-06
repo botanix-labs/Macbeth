@@ -38,6 +38,9 @@ tracing.workspace = true
 # Botanix
 reth-botanix-lib.workspace = true
 
+## url
+url = { version = "2.2.2", features = ["serde"] }
+
 [dev-dependencies]
 reth-trie.workspace = true
 
