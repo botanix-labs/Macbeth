@@ -16,6 +16,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_btc_wallet::{
+    bitcoind::{BitcoindConfig, BitcoindFactory},
+    test_utils::MockBitcoindFactory,
+};
 use reth_consensus::{Consensus, ConsensusError};
 use reth_engine_primitives::EngineTypes;
 use reth_evm::ConfigureEvm;
@@ -43,6 +47,7 @@ use std::{
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::trace;
+use url::Url;
 
 mod client;
 mod mode;
@@ -385,7 +390,7 @@ impl StorageInner {
         executor.set_first_block(block.number);
 
         let (receipts, gas_used, _total_block_fees) =
-            executor.execute_transactions(block, U256::ZERO, None)?;
+            executor.execute_transactions(block, U256::ZERO)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
@@ -489,7 +494,19 @@ impl StorageInner {
             )))
             .with_bundle_update()
             .build();
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+        let mut executor = EVMProcessor::new_with_state(
+            chain_spec.clone(),
+            db,
+            evm_config,
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
+        );
 
         let (bundle_state, gas_used) = self.execute(&block, &mut executor)?;
 

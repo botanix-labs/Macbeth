@@ -17,8 +17,8 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, ForkBlock, GotExpected,
-    Hardfork, PruneModes, Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, U256,
+    BlockHash, BlockNumHash, BlockNumber, ForkBlock, GotExpected, Hardfork, PruneModes, Receipt,
+    SealedBlock, SealedBlockWithSenders, SealedHeader, U256,
 };
 use reth_provider::{
     chain::{ChainSplit, ChainSplitTarget},
@@ -331,7 +331,6 @@ where
         &mut self,
         block: SealedBlockWithSenders,
         block_validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<BlockStatus, InsertBlockErrorKind> {
         debug_assert!(self.validate_block(&block).is_ok(), "Block must be validated");
 
@@ -345,11 +344,7 @@ where
 
         // if not found, check if the parent can be found inside canonical chain.
         if self.is_block_hash_canonical(&parent.hash)? {
-            return self.try_append_canonical_chain(
-                block.clone(),
-                block_validation_kind,
-                botanix_consensus_pkg,
-            );
+            return self.try_append_canonical_chain(block.clone(), block_validation_kind);
         }
 
         // this is another check to ensure that if the block points to a canonical block its block
@@ -398,7 +393,6 @@ where
         &mut self,
         block: SealedBlockWithSenders,
         block_validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<BlockStatus, InsertBlockErrorKind> {
         let parent = block.parent_num_hash();
         let block_num_hash = block.num_hash();
@@ -446,7 +440,6 @@ where
             &self.externals,
             block_attachment,
             block_validation_kind,
-            botanix_consensus_pkg,
         )?;
 
         self.insert_chain(chain);
@@ -786,7 +779,7 @@ where
         }
 
         let status = self
-            .try_insert_validated_block(block.clone(), block_validation_kind, None)
+            .try_insert_validated_block(block.clone(), block_validation_kind)
             .map_err(|kind| InsertBlockError::new(block.block, kind))?;
         Ok(InsertPayloadOk::Inserted(status))
     }
@@ -818,7 +811,6 @@ where
         &mut self,
         block: SealedBlockWithSenders,
         block_validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<InsertPayloadOk, InsertBlockError> {
         // check if we already have this block
         match self.is_block_known(block.num_hash()) {
@@ -832,7 +824,7 @@ where
             return Err(InsertBlockError::consensus_error(err, block.block));
         }
         let status = self
-            .try_insert_validated_block(block.clone(), block_validation_kind, botanix_consensus_pkg)
+            .try_insert_validated_block(block.clone(), block_validation_kind)
             .map_err(|kind| InsertBlockError::new(block.block, kind))?;
         Ok(InsertPayloadOk::Inserted(status))
     }
@@ -942,11 +934,7 @@ where
         for block in include_blocks.into_iter() {
             // dont fail on error, just ignore the block.
             let _ = self
-                .try_insert_validated_block(
-                    block,
-                    BlockValidationKind::SkipStateRootValidation,
-                    None,
-                )
+                .try_insert_validated_block(block, BlockValidationKind::SkipStateRootValidation)
                 .map_err(|err| {
                     debug!(
                         target: "blockchain_tree", %err,
@@ -1575,8 +1563,8 @@ mod tests {
                     signer,
                     (
                         AccountInfo {
-                            balance: initial_signer_balance -
-                                (single_tx_cost * U256::from(num_of_signer_txs)),
+                            balance: initial_signer_balance
+                                - (single_tx_cost * U256::from(num_of_signer_txs)),
                             nonce: num_of_signer_txs,
                             ..Default::default()
                         },

@@ -335,7 +335,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        botanix_consensus_pkg: &BotanixConsensusPackage,
+        botanix_consensus_pkg: BotanixConsensusPackage,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
@@ -366,7 +366,7 @@ where
                 // get pegout amount so can update balance if pegout reverts
                 let pegout_amount = transaction.value();
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(&result, botanix_consensus_pkg) {
+                    match Self::botanix_mint_contract_checks(&result, &botanix_consensus_pkg) {
                         Ok(()) => Ok(ResultAndState { result, state }),
                         Err(e) => {
                             error!("Botanix Minting contract event validation failed: {:?}", e);
@@ -514,7 +514,7 @@ where
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         let header = block.header.clone();
         let botanix_consensus_pkg = header
-            .botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory)
+            .botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory.clone())
             .map_err(|e| {
                 error!("Failed to get botanix consensus package: {:?}", e);
                 BlockExecutionError::BotanixConsensusPkgError()
@@ -543,9 +543,10 @@ where
                 }
                 .into());
             }
+
             // Execute transaction.
             let ResultAndState { result, state } =
-                self.transact(transaction, *sender, &botanix_consensus_pkg)?;
+                self.transact(transaction, *sender, botanix_consensus_pkg.clone())?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -662,6 +663,13 @@ pub fn compare_receipts_root_and_logs_bloom(
 mod tests {
     use super::*;
     use crate::test_utils::{StateProviderTest, TestEvmConfig};
+    use bitcoin::{
+        block::{Header as BtcHeader, Version},
+        hashes::Hash,
+        secp256k1::{self, PublicKey},
+        BlockHash, CompactTarget, TxMerkleNode,
+    };
+    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
     use reth_primitives::{
         bytes,
         constants::{BEACON_ROOTS_ADDRESS, EIP1559_INITIAL_BASE_FEE, SYSTEM_ADDRESS},
@@ -669,7 +677,8 @@ mod tests {
         TxEip1559, MAINNET,
     };
     use revm::{Database, TransitionState};
-    use std::collections::HashMap;
+    use std::{collections::HashMap, str::FromStr};
+    use url::Url;
 
     static BEACON_ROOT_CONTRACT_CODE: Bytes = bytes!("3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500");
     const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
@@ -708,11 +717,19 @@ mod tests {
         );
 
         // execute invalid header (no parent beacon block root)
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            // TODO
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
 
         // attempt to execute a block without parent beacon block root, expect err
@@ -728,7 +745,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .expect_err(
                 "Executing cancun block without parent beacon block root field should fail",
@@ -754,7 +770,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .unwrap();
 
@@ -803,10 +818,19 @@ mod tests {
                 .build(),
         );
 
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -826,7 +850,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -853,10 +876,19 @@ mod tests {
                 .build(),
         );
 
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
 
         // construct the header for block one
@@ -883,7 +915,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .expect(
                 "Executing a block with no transactions while cancun is active should not fail",
@@ -908,10 +939,19 @@ mod tests {
 
         let mut header = chain_spec.genesis_header();
 
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -929,7 +969,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .expect_err(
                 "Executing genesis cancun block with non-zero parent beacon block root field should fail",
@@ -952,7 +991,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .unwrap();
 
@@ -989,10 +1027,19 @@ mod tests {
         );
 
         // execute header
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -1012,7 +1059,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .unwrap();
 
@@ -1052,10 +1098,19 @@ mod tests {
         let chain_id = chain_spec.chain.id();
 
         // execute header
+        let mock_bitcoind_config = BitcoindConfig::new(
+            Url::parse("http://foobar").unwrap(),
+            String::from("foo"),
+            String::from("bar"),
+        );
+        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
+
         let mut executor = EVMProcessor::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            mock_bitcoind_factory,
+            bitcoin::Network::Testnet,
         );
 
         // Create a test transaction that gonna fail
@@ -1071,7 +1126,23 @@ mod tests {
             Signature::default(),
         );
 
-        let result = executor.transact(&transaction, Address::random(), None);
+        let bitcoin_header = BtcHeader {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+        let botanix_consensus_pkg = BotanixConsensusPackage {
+            btc_network: BITCOIN_NETWORK,
+            bitcoin_checkpoint: (bitcoin_header, 0),
+            aggregate_public_key: PublicKey::from_str(
+                "0376698beebe8ee5c74d8cc50ab84ac301ee8f10af6f28d0ffd6adf4d6d3b9b762",
+            )
+            .unwrap(),
+        };
+        let result = executor.transact(&transaction, Address::random(), botanix_consensus_pkg);
 
         let expected_hash = transaction.recalculate_hash();
 
