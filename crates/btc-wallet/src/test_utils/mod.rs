@@ -4,11 +4,13 @@ use bitcoin::{
     hashes::Hash,
     CompactTarget, TxMerkleNode,
 };
+use std::{future::Future, pin::Pin};
 use bitcoincore_rpc::{
     json::{self, GetBlockResult},
     jsonrpc::serde_json,
     Error as JsonRPCError,
 };
+use tokio::task::futures;
 
 pub struct MockBitcoind;
 impl bitcoincore_rpc::RpcApi for MockBitcoind {

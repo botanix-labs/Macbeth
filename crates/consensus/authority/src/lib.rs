@@ -777,20 +777,18 @@ impl StorageInner {
         // validate before executing block
         let authority_signers = self.authorities.clone();
         let genesis_authorities = self.genesis_authorities.clone();
-        if aggregated_public_key.is_some() {
-            consensus
-                .validate_header_standalone(
-                    &sealed_block.header.clone(),
-                    &authority_signers,
-                    &genesis_authorities,
-                    aggregated_public_key,
-                )
-                .map_err(|e| {
-                    warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                    // TODO(armins) return more expressive error
-                    BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-                })?;
-        }
+        consensus
+            .validate_header_standalone(
+                &sealed_block.header.clone(),
+                &authority_signers,
+                &genesis_authorities,
+                Some(aggregated_public_key),
+            )
+            .map_err(|e| {
+                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+                // TODO(armins) return more expressive error
+                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+            })?;
         let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let (bundle_state, _gas_used) =
             self.execute(&block_with_senders, &mut executor, Some(block_builder_address))?;

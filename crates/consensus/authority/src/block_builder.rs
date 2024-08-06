@@ -149,6 +149,7 @@ where
         };
         let bitcoin_checkpoint =
             recent_bitcoin_block_header.expect("valid header and height tuple");
+        let edh_config = (bitcoin_checkpoint.0.block_hash(), secp_pk);
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
