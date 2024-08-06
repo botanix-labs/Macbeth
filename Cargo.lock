@@ -8971,6 +8971,7 @@ dependencies = [
  "askama",
  "assert_matches",
  "bitcoin",
+ "bitcoincore-rpc",
  "byteorder",
  "bytes",
  "c-kzg",
@@ -9068,8 +9069,10 @@ dependencies = [
 name = "reth-revm"
 version = "0.2.0-beta.6"
 dependencies = [
+ "bitcoincore-rpc",
  "ethers",
  "reth-botanix-lib",
+ "reth-btc-wallet",
  "reth-consensus-common",
  "reth-evm",
  "reth-interfaces",
