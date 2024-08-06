@@ -17,27 +17,26 @@ pub struct EvmProcessorFactory<EvmConfig, BF> {
     stack: Option<InspectorStack>,
     /// Type that defines how the produced EVM should be configured.
     evm_config: EvmConfig,
-    /// Bitcoind factory
-    bitcoind_factory: BF,
-    /// bitcoin network
-    bitcoin_network: bitcoin::Network,
+    /// Factory for creating bitcoind clients + Bitcoin network
+    /// leaving as optional for executions that do not require this
+    /// For any Botanix uses this needs to be defined during the creation of the node components
+    bitcoin_resource: Option<(BF, bitcoin::Network)>,
 }
 
-impl<EvmConfig, BF> EvmProcessorFactory<EvmConfig, BF> {
+impl<EvmConfig: ConfigureEvm, BF> EvmProcessorFactory<EvmConfig, BF> {
     /// Create new factory
-    pub fn new(
-        chain_spec: Arc<ChainSpec>,
-        evm_config: EvmConfig,
-        bitcoin_factory: BF,
-        bitcoin_network: bitcoin::Network,
+    pub fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
+        Self { chain_spec, stack: None, evm_config, bitcoin_resource: None }
+    }
+
+    /// Set the bitcoind factory and network for the factory
+    pub fn with_bitcoind_factory(
+        mut self,
+        bitcoind_factory: BF,
+        network: bitcoin::Network,
     ) -> Self {
-        Self {
-            chain_spec,
-            stack: None,
-            evm_config,
-            bitcoind_factory: bitcoin_factory,
-            bitcoin_network,
-        }
+        self.bitcoin_resource = Some((bitcoind_factory, network));
+        self
     }
 
     /// Sets the inspector stack for all generated executors.
@@ -67,11 +66,12 @@ where
             self.chain_spec.clone(),
             database_state,
             self.evm_config.clone(),
-            self.bitcoind_factory.clone(),
-            self.bitcoin_network,
         );
         if let Some(stack) = &self.stack {
             evm.set_stack(stack.clone());
+        }
+        if let Some((bitcoind_factory, network)) = &self.bitcoin_resource {
+            evm.with_bitcoind_factory(bitcoind_factory.clone(), network.clone());
         }
         Box::new(evm)
     }

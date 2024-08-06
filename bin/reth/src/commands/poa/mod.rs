@@ -51,7 +51,7 @@ use reth_node_core::{
     node_config::NodeConfig,
     version,
 };
-use reth_node_ethereum::EthEvmConfig;
+use reth_node_ethereum::{BotanixEvmConfig, EthEvmConfig};
 use reth_node_events::node::handle_events;
 use reth_primitives::{
     constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
@@ -548,7 +548,7 @@ where {
         executor.spawn_critical("stages metrics listener task", sync_metrics_listener);
 
         // Config executor factory
-        let evm_config = EthEvmConfig::default();
+        let mut evm_config = EthEvmConfig::default();
         let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config);
 
         // Authority consensus

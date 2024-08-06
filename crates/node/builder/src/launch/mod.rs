@@ -16,6 +16,7 @@ use reth_beacon_consensus::{
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_consensus::Consensus;
 use reth_exex::{ExExContext, ExExHandle, ExExManager, ExExManagerHandle};
 use reth_interfaces::p2p::either::EitherDownloader;
@@ -157,7 +158,10 @@ where
         let tree_externals = TreeExternals::new(
             ctx.provider_factory().clone(),
             consensus.clone(),
-            EvmProcessorFactory::new(ctx.chain_spec(), components.evm_config().clone()),
+            EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+                ctx.chain_spec(),
+                components.evm_config().clone(),
+            ),
         );
         let tree = BlockchainTree::new(tree_externals, tree_config, ctx.prune_modes())?
             .with_sync_metrics_tx(sync_metrics_tx.clone())

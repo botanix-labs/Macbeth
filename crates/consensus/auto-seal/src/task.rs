@@ -1,6 +1,7 @@
 use crate::{mode::MiningMode, Storage};
 use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
+use reth_btc_wallet::{bitcoind::BitcoindClientFactory, test_utils::MockBitcoindFactory};
 use reth_engine_primitives::EngineTypes;
 use reth_evm::ConfigureEvm;
 use reth_primitives::{
@@ -108,7 +109,7 @@ where
             if this.insert_task.is_none() {
                 if this.queued.is_empty() {
                     // nothing to insert
-                    break
+                    break;
                 }
 
                 // ready to queue in new insert task
@@ -139,7 +140,8 @@ where
                     let ommers = vec![];
                     let withdrawals = Some(Withdrawals::default());
 
-                    match storage.build_and_execute(
+                    // Using mock here as we don't need to actually connect to a bitcoind instance
+                    match storage.build_and_execute::<_, MockBitcoindFactory>(
                         transactions.clone(),
                         ommers.clone(),
                         withdrawals.clone(),
@@ -178,18 +180,18 @@ where
                                             ForkchoiceStatus::Valid => break,
                                             ForkchoiceStatus::Invalid => {
                                                 error!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned invalid response");
-                                                return None
+                                                return None;
                                             }
                                             ForkchoiceStatus::Syncing => {
                                                 debug!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
                                                 // wait for the next fork choice update
-                                                continue
+                                                continue;
                                             }
                                         }
                                     }
                                     Err(err) => {
                                         error!(target: "consensus::auto", %err, "Autoseal fork choice update failed");
-                                        return None
+                                        return None;
                                     }
                                 }
                             }
@@ -240,7 +242,7 @@ where
                     }
                     Poll::Pending => {
                         this.insert_task = Some(fut);
-                        break
+                        break;
                     }
                 }
             }

@@ -17,7 +17,7 @@
 
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::{
-    bitcoind::{BitcoindConfig, BitcoindFactory},
+    bitcoind::{BitcoindClientFactory, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
 use reth_consensus::{Consensus, ConsensusError};
@@ -374,13 +374,16 @@ impl StorageInner {
     /// Executes the block with the given block and senders, on the provided [EVMProcessor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    pub(crate) fn execute<EvmConfig>(
+    pub(crate) fn execute<EvmConfig, BF>(
         &mut self,
         block: &BlockWithSenders,
-        executor: &mut EVMProcessor<'_, EvmConfig>,
+        executor: &mut EVMProcessor<'_, EvmConfig, BF>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvm,
+        // B/c we have hijacked the eth processor the types (BitcoinFactory & BitcoinNetwork) need
+        // to be defined here
+        BF: BitcoindFactory,
     {
         trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
         // TODO: there isn't really a parent beacon block root here, so not sure whether or not to
@@ -457,7 +460,7 @@ impl StorageInner {
     /// Builds and executes a new block with the given transactions, on the provided [EVMProcessor].
     ///
     /// This returns the header of the executed block, as well as the poststate from execution.
-    pub(crate) fn build_and_execute<EvmConfig>(
+    pub(crate) fn build_and_execute<EvmConfig, BF>(
         &mut self,
         transactions: Vec<TransactionSigned>,
         ommers: Vec<Header>,
@@ -468,6 +471,7 @@ impl StorageInner {
     ) -> Result<(SealedHeader, BundleStateWithReceipts), BlockExecutionError>
     where
         EvmConfig: ConfigureEvm,
+        BF: BitcoindFactory,
     {
         let header = self.build_header_template(
             &transactions,
@@ -494,18 +498,12 @@ impl StorageInner {
             )))
             .with_bundle_update()
             .build();
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-        let mut executor = EVMProcessor::new_with_state(
+
+        // Passing in mock here as we are not using the bitcoind client
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_state(
             chain_spec.clone(),
             db,
             evm_config,
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
 
         let (bundle_state, gas_used) = self.execute(&block, &mut executor)?;

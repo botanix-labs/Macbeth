@@ -40,6 +40,9 @@ reth-downloaders.workspace = true
 reth-node-events.workspace = true
 reth-consensus.workspace = true
 
+## Botanix things
+reth-btc-wallet.workspace = true
+
 ## async
 futures.workspace = true
 tokio = { workspace = true, features = [

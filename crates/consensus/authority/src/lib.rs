@@ -522,7 +522,7 @@ impl StorageInner {
     pub(crate) fn execute<EvmConfig>(
         &mut self,
         block: &BlockWithSenders,
-        executor: &mut EVMProcessor<'_, EvmConfig>,
+        executor: &mut EVMProcessor<'_, EvmConfig, BitcoindClientFactory>,
         botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         block_builder_address: Option<Address>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>

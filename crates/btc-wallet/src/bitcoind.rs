@@ -40,6 +40,16 @@ pub struct BitcoindConfig {
     password: String,
 }
 
+impl Default for BitcoindConfig {
+    fn default() -> Self {
+        Self {
+            url: Url::parse("http://localhost:18843").unwrap(),
+            username: "foo".to_string(),
+            password: "bar".to_string(),
+        }
+    }
+}
+
 impl BitcoindConfig {
     pub fn new(url: Url, username: String, password: String) -> Self {
         Self { url, username, password }
