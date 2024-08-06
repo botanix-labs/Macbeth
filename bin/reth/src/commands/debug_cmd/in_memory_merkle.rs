@@ -11,6 +11,7 @@ use crate::{
 };
 use backon::{ConstantBuilder, Retryable};
 use clap::Parser;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_runner::CliContext;
 use reth_config::Config;
 use reth_db::{init_db, DatabaseEnv};
@@ -162,8 +163,10 @@ impl Command {
             )
             .await?;
 
-        let executor_factory =
-            reth_revm::EvmProcessorFactory::new(self.chain.clone(), EthEvmConfig::default());
+        let executor_factory = reth_revm::EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+            self.chain.clone(),
+            EthEvmConfig::default(),
+        );
         let mut executor = executor_factory.with_state(LatestStateProviderRef::new(
             provider.tx_ref(),
             factory.static_file_provider(),
@@ -178,7 +181,6 @@ impl Command {
                 .with_recovered_senders()
                 .ok_or(BlockValidationError::SenderRecoveryError)?,
             merkle_block_td + block.difficulty,
-            None,
         )?;
         let block_state = executor.take_output_state();
 
@@ -188,7 +190,7 @@ impl Command {
 
         if in_memory_state_root == block.state_root {
             info!(target: "reth::cli", state_root = ?in_memory_state_root, "Computed in-memory state root matches");
-            return Ok(())
+            return Ok(());
         }
 
         let provider_rw = factory.provider_rw()?;

@@ -849,8 +849,8 @@ where
         //
         // This ensures that the finalized block is consistent with the head block, i.e. the
         // finalized block is an ancestor of the head block.
-        if !state.finalized_block_hash.is_zero()
-            && !self.blockchain.is_canonical(state.finalized_block_hash)?
+        if !state.finalized_block_hash.is_zero() &&
+            !self.blockchain.is_canonical(state.finalized_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -863,8 +863,8 @@ where
         //
         // This ensures that the safe block is consistent with the head block, i.e. the safe
         // block is an ancestor of the head block.
-        if !state.safe_block_hash.is_zero()
-            && !self.blockchain.is_canonical(state.safe_block_hash)?
+        if !state.safe_block_hash.is_zero() &&
+            !self.blockchain.is_canonical(state.safe_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -1069,7 +1069,6 @@ where
         &mut self,
         payload: ExecutionPayload,
         cancun_fields: Option<CancunPayloadFields>,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<PayloadStatus, BeaconOnNewPayloadError> {
         let block = match self.ensure_well_formed_payload(payload, cancun_fields) {
             Ok(block) => block,
@@ -1315,8 +1314,8 @@ where
                 latest_valid_hash = Some(block_hash);
                 PayloadStatusEnum::Valid
             }
-            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. })
-            | InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
+            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. }) |
+            InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
                 // check if the block's parent is already marked as invalid
                 if let Some(status) =
                     self.check_invalid_ancestor_with_head(block.parent_hash, block.hash())
@@ -1771,15 +1770,9 @@ where
                                 }
                             }
                         }
-                        BeaconEngineMessage::NewPayload {
-                            payload,
-                            cancun_fields,
-                            tx,
-                            botanix_consensus_pkg,
-                        } => {
+                        BeaconEngineMessage::NewPayload { payload, cancun_fields, tx } => {
                             this.metrics.new_payload_messages.increment(1);
-                            let res =
-                                this.on_new_payload(payload, cancun_fields, botanix_consensus_pkg);
+                            let res = this.on_new_payload(payload, cancun_fields);
                             let _ = tx.send(res);
                         }
                         BeaconEngineMessage::TransitionConfigurationExchanged => {

@@ -152,8 +152,6 @@ pub enum BeaconEngineMessage<Engine: EngineTypes> {
         cancun_fields: Option<CancunPayloadFields>,
         /// The sender for returning payload status result.
         tx: oneshot::Sender<Result<PayloadStatus, BeaconOnNewPayloadError>>,
-        /// Optional Botanix consensus package.
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     },
     /// Message with updated forkchoice state.
     ForkchoiceUpdated {

@@ -12,6 +12,7 @@ use crate::{
 use backon::{ConstantBuilder, Retryable};
 use clap::Parser;
 use reth_beacon_consensus::BeaconConsensus;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_runner::CliContext;
 use reth_config::Config;
 use reth_consensus::Consensus;
@@ -181,7 +182,7 @@ impl Command {
                 Ok(senders) => senders,
                 Err(err) => {
                     warn!(target: "reth::cli", "Error sealing block with senders: {err:?}. Skipping...");
-                    continue
+                    continue;
                 }
             };
             provider_rw.insert_block(sealed_block, None)?;
@@ -201,8 +202,10 @@ impl Command {
                         checkpoint.stage_checkpoint.is_some()
                 });
 
-        let factory =
-            reth_revm::EvmProcessorFactory::new(self.chain.clone(), EthEvmConfig::default());
+        let factory = reth_revm::EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+            self.chain.clone(),
+            EthEvmConfig::default(),
+        );
         let mut execution_stage = ExecutionStage::new(
             factory,
             ExecutionStageThresholds {
@@ -284,7 +287,7 @@ impl Command {
                     let clean_result = merkle_stage.execute(&provider_rw, clean_input);
                     assert!(clean_result.is_ok(), "Clean state root calculation failed");
                     if clean_result.unwrap().done {
-                        break
+                        break;
                     }
                 }
 
@@ -350,7 +353,7 @@ impl Command {
                                 clean.1.nibbles.len() > self.skip_node_depth.unwrap_or_default()
                             {
                                 first_mismatched_storage = Some((incremental, clean));
-                                break
+                                break;
                             }
                         }
                         (Some(incremental), None) => {

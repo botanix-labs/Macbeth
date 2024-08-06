@@ -18,7 +18,6 @@ use reth_network::frost::{
 use reth_network_types::pk2id;
 
 use reth_primitives::{
-    botanix::BotanixConsensusPackage,
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
     BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
@@ -529,16 +528,8 @@ where
         &mut self,
         block: SealedBlock,
     ) -> Result<(), BlockExecutionError> {
-        let recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
+        let _recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
         let storage = self.storage.read().await;
-        let botanix_consensus_pkg = Some(BotanixConsensusPackage {
-            bitcoin_checkpoint: recent_bitcoin_block_header.expect("recent header to exist"),
-            aggregate_public_key: storage
-                .get_aggregate_key()
-                // we should have an aggregate pk if blocks are being produced
-                .expect("aggregate pk is some"),
-            btc_network: storage.get_btc_network(),
-        });
 
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
@@ -561,7 +552,7 @@ where
         let db = self.client.latest().expect("get latest");
         let mut executor = self.executor_factory.with_state(&db);
 
-        executor.execute_transactions(&block_with_senders, U256::ZERO, botanix_consensus_pkg)?;
+        executor.execute_transactions(&block_with_senders, U256::ZERO)?;
 
         Ok(())
     }
