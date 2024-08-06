@@ -178,6 +178,7 @@ where
                 }
             };
 
+            let aggregate_public_key = storage.aggregate_public_key.expect("aggregate pk is some");
             match storage.execute_imported_block(
                 &self.consensus,
                 sealed_block.clone(),

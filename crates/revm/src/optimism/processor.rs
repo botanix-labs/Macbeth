@@ -145,7 +145,7 @@ where
                 })?;
 
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, *sender, None)?;
+            let ResultAndState { result, state } = self.transact(transaction, *sender)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,

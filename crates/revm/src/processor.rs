@@ -32,7 +32,7 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
-use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindFactory};
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block, BlockNumber,
