@@ -4,9 +4,11 @@ use super::{
     error::Error,
     test_dkg::{do_dkg, send_pegin_notification},
 };
-use crate::suite::consensus::ConsensusIntegrationTestSuite;
+use crate::{
+    it_info_print,
+    suite::consensus::{frost::test_dkg::send_pegins_notifications, ConsensusIntegrationTestSuite},
+};
 use bitcoin::{hashes::Hash, Address};
-use client::{BtcServerClient, Utxo};
 use hex::{self, encode as hex_encode};
 
 const NUM_UTXOS: usize = 10;
@@ -176,6 +178,50 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
     // all the btc_servers should have the same merkel commitment to the utxo set
     assert_eq!(hashset.len(), 1);
     assert_ne!(first_utxo_commitment, hashset.iter().next().unwrap().to_owned());
+
+    // Submit many pegins at the same time
+    let mut pegins = Pegins::new();
+    // create NUM_UTXOS pegins
+    for _ in 0..NUM_UTXOS {
+        let eth_address = ethers::core::types::Address::random();
+        pegins.eth_addresses.push(eth_address);
+        pegins.txids.push(rand::random::<[u8; 32]>());
+        let pk = clients[0]
+            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+                eth_address: hex_encode(eth_address),
+            }))
+            .await
+            .map_err(Error::Request)?
+            .into_inner();
+        let btc_address =
+            Address::from_str(&pk.gateway_address).expect("valid address").assume_checked();
+        pegins.btc_addresses.push(btc_address);
+    }
+
+    for c in clients.iter_mut() {
+        let _ = send_pegins_notifications(
+            c,
+            pegins.txids.iter().map(|a| a.to_vec()).collect(),
+            pegins.eth_addresses.iter().map(hex::encode).collect(),
+            pegins.btc_addresses.clone(),
+        )
+        .await?;
+    }
+    // get all utxos
+    let mut all_utxos = clients[0]
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .utxos;
+
+    // Filter out only for utxos from pegin
+    all_utxos.retain(|utxo| {
+        let txid = utxo.clone().outpoint.expect("outpoint").txid.to_vec();
+        pegins.txids.iter().any(|peg_txid| txid == peg_txid)
+    });
+    it_info_print!("All utxos: {:?}", all_utxos);
+    assert_eq!(all_utxos.len(), NUM_UTXOS);
 
     Ok(())
 }
