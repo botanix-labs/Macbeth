@@ -25,7 +25,9 @@ use reth_beacon_consensus::{
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
+use reth_btc_wallet::bitcoind::{
+    BitcoindClient, BitcoindClientFactory, BitcoindConfig, BitcoindFactory,
+};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::{utils, utils::get_authority_signer_index};
@@ -295,6 +297,7 @@ where {
             info!(target: "reth::cli", path = ?bitcoind_config_path, "Bitcoind config loaded from file");
             bitcoind_config = config.into();
         }
+        let bitcoind_factory = BitcoindClientFactory::new(bitcoind_config.clone());
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
@@ -383,8 +386,7 @@ where {
         let bitcoin_block_header_clone = bitcoin_block_header.clone();
 
         // create bitcoind client and make sure its synced
-        let bitcoind_client =
-            BitcoindClient::new(bitcoind_config.clone()).expect("Unable to create bitcoind client");
+        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
 
         info!(target: "reth::cli", "Waiting for bitcoind client to sync...");
         match tokio::time::timeout(Duration::from_secs(60), bitcoind_client.wait_until_synced())
@@ -401,7 +403,7 @@ where {
             }
         }
 
-        let bitcoind_config_clone = bitcoind_config.clone();
+        let bitcoind_factory_clone = bitcoind_factory.clone();
         let bitcoind_signing_server_factory_clone = btc_server_factory.clone();
         let pegin_conf_depth = chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
@@ -428,8 +430,9 @@ where {
                     }};
                 }
 
-                let bitcoind = BitcoindClient::new(bitcoind_config_clone)
-                    .expect("Unable to create bitcoind client");
+                // Note: we should be panicing if our connection to bitcoind is severed
+                let bitcoind =
+                    bitcoind_factory_clone.build_and_connect().expect("can connect to bitcoind");
                 let mut last_tip = bitcoin::BlockHash::all_zeros();
                 loop {
                     let tip_hash = or_continue!(bitcoind.get_best_block_hash());
@@ -555,6 +558,7 @@ where {
             provider_factory.clone(),
             consensus.clone(),
             executor_factory.clone(),
+            bitcoind_factory.clone(),
         );
 
         let tree = BlockchainTree::new(
@@ -746,7 +750,6 @@ where {
             canon_state_notification_sender.clone(),
             btc_server_factory.clone(),
             bitcoin_block_header_clone,
-            bitcoind_config,
             secret_key,
             network_handle.clone(),
             network_client.clone(),

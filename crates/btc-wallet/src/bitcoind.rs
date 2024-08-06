@@ -50,17 +50,22 @@ pub struct BitcoindClient {
     rpc: Client,
 }
 
+pub trait BitcoindFactory {
+    fn new(config: BitcoindConfig) -> Self;
+    fn build_and_connect(&self) -> Result<BitcoindClient, BitcoindError>;
+}
+
 #[derive(Clone, Debug)]
 pub struct BitcoindClientFactory {
     config: BitcoindConfig,
 }
 
-impl BitcoindClientFactory {
-    pub fn new(config: BitcoindConfig) -> Self {
+impl BitcoindFactory for BitcoindClientFactory {
+    fn new(config: BitcoindConfig) -> Self {
         Self { config }
     }
 
-    pub fn build_and_connect(&self) -> Result<BitcoindClient, BitcoindError> {
+    fn build_and_connect(&self) -> Result<BitcoindClient, BitcoindError> {
         BitcoindClient::new(self.config.clone())
     }
 }
