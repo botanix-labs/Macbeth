@@ -4,9 +4,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256,
-};
+use reth_primitives::{BlockNumber, BlockWithSenders, PruneModes, Receipt, U256};
 use std::sync::Arc;
 /// Test executor with mocked result.
 #[derive(Debug)]

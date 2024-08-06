@@ -4,9 +4,8 @@ use reth_interfaces::executor::{
     BlockExecutionError, BlockValidationError, OptimismBlockExecutionError,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, proofs::calculate_receipt_root_optimism,
-    revm_primitives::ResultAndState, BlockWithSenders, Bloom, ChainSpec, Hardfork, Receipt,
-    ReceiptWithBloom, TxType, B256, U256,
+    proofs::calculate_receipt_root_optimism, revm_primitives::ResultAndState, BlockWithSenders,
+    Bloom, ChainSpec, Hardfork, Receipt, ReceiptWithBloom, TxType, B256, U256,
 };
 use reth_provider::{BlockExecutor, BundleStateWithReceipts};
 use revm::DatabaseCommit;
@@ -49,10 +48,9 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
+        let receipts = self.execute_inner(block, total_difficulty)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -80,7 +78,6 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
@@ -106,7 +103,6 @@ where
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
         for (sender, transaction) in block.transactions_with_sender() {
-            let botanix_consensus_pkg = botanix_consensus_pkg.clone();
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -147,8 +143,7 @@ where
                 })?;
 
             // Execute transaction.
-            let ResultAndState { result, state } =
-                self.transact(transaction, *sender, botanix_consensus_pkg)?;
+            let ResultAndState { result, state } = self.transact(transaction, *sender)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,

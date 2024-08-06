@@ -1,6 +1,7 @@
 use super::setup;
 use crate::utils::DbTool;
 use eyre::Result;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::config::EtlConfig;
 use reth_db::{database::Database, table::TableImporter, tables, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
@@ -87,7 +88,7 @@ async fn unwind_and_copy<DB: Database>(
 
     // Bring Plainstate to TO (hashing stage execution requires it)
     let mut exec_stage = ExecutionStage::new(
-        reth_revm::EvmProcessorFactory::new(db_tool.chain.clone(), EthEvmConfig::default()),
+        reth_revm::EvmProcessorFactory::<reth_node_ethereum::EthEvmConfig, MockBitcoindFactory>::new(db_tool.chain.clone(), EthEvmConfig::default()),
         ExecutionStageThresholds {
             max_blocks: Some(u64::MAX),
             max_changes: None,
@@ -158,7 +159,7 @@ async fn dry_run<DB: Database>(
             checkpoint: Some(StageCheckpoint::new(from)),
         };
         if stage.execute(&provider, input)?.done {
-            break
+            break;
         }
     }
 

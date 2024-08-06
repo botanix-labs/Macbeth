@@ -218,8 +218,8 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // In the future we can generate some addresses send funds and use those outpoints for this
     // test.
     assert!(
-        err.message().contains("bad-txns-inputs-missingorspent")
-            || err.message().contains("Missing inputs")
+        err.message().contains("bad-txns-inputs-missingorspent") ||
+            err.message().contains("Missing inputs")
     );
 
     /*

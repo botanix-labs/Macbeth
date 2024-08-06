@@ -1,6 +1,7 @@
 use super::setup;
 use crate::utils::DbTool;
 use eyre::Result;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_db::{
     cursor::DbCursorRO, database::Database, table::TableImporter, tables, transaction::DbTx,
     DatabaseEnv,
@@ -131,7 +132,10 @@ async fn unwind_and_copy<DB: Database>(
 ) -> eyre::Result<()> {
     let provider = db_tool.provider_factory.provider_rw()?;
 
-    let mut exec_stage = ExecutionStage::new_with_factory(EvmProcessorFactory::new(
+    let mut exec_stage = ExecutionStage::new_with_factory(EvmProcessorFactory::<
+        reth_node_ethereum::EthEvmConfig,
+        MockBitcoindFactory,
+    >::new(
         db_tool.chain.clone(),
         EthEvmConfig::default(),
     ));
@@ -163,7 +167,10 @@ async fn dry_run<DB: Database>(
 ) -> eyre::Result<()> {
     info!(target: "reth::cli", "Executing stage. [dry-run]");
 
-    let mut exec_stage = ExecutionStage::new_with_factory(EvmProcessorFactory::new(
+    let mut exec_stage = ExecutionStage::new_with_factory(EvmProcessorFactory::<
+        reth_node_ethereum::EthEvmConfig,
+        MockBitcoindFactory,
+    >::new(
         output_provider_factory.chain_spec(),
         EthEvmConfig::default(),
     ));

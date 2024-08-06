@@ -10,12 +10,8 @@ use reth_network::NetworkHandle;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, Bloom, BloomInput};
 use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::BlockHashOrNumber;
-use std::{
-    fs::read_to_string,
-    path::{Path, PathBuf},
-    time::Duration,
-};
-use tracing::{debug, error, info, warn};
+use std::time::Duration;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};

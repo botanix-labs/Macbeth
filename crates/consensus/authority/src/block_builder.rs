@@ -13,10 +13,7 @@ use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, Blockcha
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{
-    botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block,
-    SealedBlockWithSenders, B256,
-};
+use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
@@ -152,13 +149,14 @@ where
         };
         let bitcoin_checkpoint =
             recent_bitcoin_block_header.expect("valid header and height tuple");
+        let edh_config = (bitcoin_checkpoint.0.block_hash(), secp_pk);
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
         let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
             self.consensus.chain_spec.clone(),
-            (bitcoin_checkpoint.0.block_hash(), secp_pk),
+            edh_config.clone(),
             &self.sk,
             self.evm_config.clone(),
             &self.client,
@@ -277,8 +275,8 @@ where
                     Duration::from_secs(
                         self.chain_spec
                             .leader_selection_window
-                            .expect("to be defined for poa consensus")
-                            / 3,
+                            .expect("to be defined for poa consensus") /
+                            3,
                     ),
                     self.frost_task_rx.recv(),
                 )
@@ -315,7 +313,7 @@ where
             &bundle_state,
             block,
             gas_used,
-            &botanix_consensus_pkg,
+            edh_config,
             // TODO(armins) read vote in as param
             &self.sk,
             &authority_signers,
@@ -351,8 +349,8 @@ where
         match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
-                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus")
-                    / 3,
+                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /
+                    3,
             ),
             self.pbft_task_rx.recv(),
         )
@@ -382,11 +380,7 @@ where
                 .expect("senders are valid");
 
         // update canon chain
-        match self.client.insert_block_with_botanix_consensus_package(
-            sealed_block_with_senders.clone(),
-            Exhaustive,
-            Some(botanix_consensus_pkg),
-        ) {
+        match self.client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");

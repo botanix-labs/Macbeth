@@ -12,6 +12,7 @@ use clap::Parser;
 use eyre::Context;
 use futures::{Stream, StreamExt};
 use reth_beacon_consensus::BeaconConsensus;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::{config::EtlConfig, Config};
 use reth_consensus::Consensus;
 use reth_db::{database::Database, init_db};
@@ -247,8 +248,10 @@ impl ImportCommand {
             .expect("failed to set download range");
 
         let (tip_tx, tip_rx) = watch::channel(B256::ZERO);
-        let factory =
-            reth_revm::EvmProcessorFactory::new(self.chain.clone(), EthEvmConfig::default());
+        let factory = reth_revm::EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+            self.chain.clone(),
+            EthEvmConfig::default(),
+        );
 
         let max_block = file_client.max_block().unwrap_or(0);
 

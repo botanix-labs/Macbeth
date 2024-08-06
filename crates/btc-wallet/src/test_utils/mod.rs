@@ -1,9 +1,12 @@
-use crate::bitcoind::BitcoindFactory;
+use std::{future::Future, pin::Pin};
+
+use crate::bitcoind::{BitcoindError, BitcoindFactory, RpcApiExt};
 use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
     jsonrpc::serde_json,
     Auth, Client, Error as JsonRPCError, RpcApi,
 };
+use tokio::task::futures;
 
 pub struct MockBitcoind;
 impl bitcoincore_rpc::RpcApi for MockBitcoind {
@@ -22,6 +25,16 @@ impl MockBitcoind {
     }
 }
 
+impl RpcApiExt for MockBitcoind {
+    async fn is_synced(&self) -> Result<bool, BitcoindError> {
+        Ok(true)
+    }
+
+    async fn wait_until_synced(&self) {
+        ()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MockBitcoindFactory;
 impl BitcoindFactory for MockBitcoindFactory {
@@ -29,7 +42,7 @@ impl BitcoindFactory for MockBitcoindFactory {
         Self {}
     }
 
-    fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError> {
+    fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError> {
         Ok(MockBitcoind::new())
     }
 }
