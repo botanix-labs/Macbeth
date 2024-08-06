@@ -34,8 +34,9 @@ const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_TXINDEX_TIP: &[u8; 10] = b"txindextip";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
+    // This is skipped during serialization because the db key is the outpoint so its redundant.
     #[serde(skip)]
     pub outpoint: OutPoint,
     pub output: TxOut,
@@ -421,8 +422,10 @@ impl Db {
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
         for res in self.utxos.iter() {
-            let (_k, v) = res?;
-            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
+            let (k, v) = res?;
+            let outpoint: OutPoint = OutPoint::from_slice(&k).expect("corrupt db: outpoint");
+            let mut utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
+            utxo.outpoint = outpoint;
             utxos.push(utxo);
         }
         Ok(utxos)
@@ -587,6 +590,90 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn test_storing_single_utxo() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 0),
+            tx.output.get(0).expect("one output").clone(),
+            None,
+        );
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+
+        let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+        assert!(retrieved_utxo == utxo);
+    }
+
+    #[test]
+    fn test_storing_many_utxo() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(2);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        for utxo in utxos.iter() {
+            let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+            assert!(retrieved_utxo == *utxo);
+        }
+
+        // Get all utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        println!("{:?}", retrieved_utxos);
+        assert!(retrieved_utxos.len() == num_txs);
+        // All utxos should be present
+        for utxo in utxos.iter() {
+            assert!(retrieved_utxos.contains(utxo));
+        }
+    }
+
+    // Should have the same outcome as test_storing_many_utxo
+    #[test]
+    fn test_storing_many_utxo_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(2);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos_atomically(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        for utxo in utxos.iter() {
+            let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+            assert!(retrieved_utxo == *utxo);
+        }
+
+        // Get all utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        println!("{:?}", retrieved_utxos);
+        assert!(retrieved_utxos.len() == num_txs);
+        // All utxos should be present
+        for utxo in utxos.iter() {
+            assert!(retrieved_utxos.contains(utxo));
+        }
     }
 
     #[test]
