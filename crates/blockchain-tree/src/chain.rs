@@ -76,7 +76,6 @@ impl AppendableChain {
         externals: &TreeExternals<DB, EF>,
         block_attachment: BlockAttachment,
         block_validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<Self, InsertBlockErrorKind>
     where
         DB: Database + Clone,
@@ -99,7 +98,6 @@ impl AppendableChain {
             externals,
             block_attachment,
             block_validation_kind,
-            botanix_consensus_pkg,
         )?;
 
         Ok(Self { chain: Chain::new(vec![block], bundle_state, trie_updates) })
@@ -145,7 +143,6 @@ impl AppendableChain {
             externals,
             BlockAttachment::HistoricalFork,
             block_validation_kind,
-            None,
         )?;
         // extending will also optimize few things, mostly related to selfdestruct and wiping of
         // storage.
@@ -178,7 +175,6 @@ impl AppendableChain {
         externals: &TreeExternals<DB, EVM>,
         block_attachment: BlockAttachment,
         block_validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> RethResult<(BundleStateWithReceipts, Option<TrieUpdates>)>
     where
         BSDP: BundleStateDataProvider,
@@ -212,7 +208,7 @@ impl AppendableChain {
         let mut executor = externals.executor_factory.with_state(&provider);
         let block_hash = block.hash();
         let block = block.unseal();
-        executor.execute_and_verify_receipt(&block, U256::MAX, botanix_consensus_pkg)?;
+        executor.execute_and_verify_receipt(&block, U256::MAX)?;
         let bundle_state = executor.take_output_state();
 
         // check state root if the block extends the canonical chain __and__ if state root
@@ -295,7 +291,6 @@ impl AppendableChain {
             externals,
             block_attachment,
             block_validation_kind,
-            None,
         )?;
         // extend the state.
         self.chain.append_block(block, block_state);

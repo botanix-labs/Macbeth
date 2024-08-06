@@ -452,6 +452,7 @@ impl StorageInner {
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
         client: &impl BlockReaderIdExt,
+        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
     ) -> Result<Header, BlockExecutionError> {
         // let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
@@ -471,6 +472,18 @@ impl StorageInner {
                 parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
             });
 
+        // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
+        // so the botanix consensus package can be constructed from the EDH
+        let edh = ExtraDataHeader::new(
+            0,
+            None,
+            None,
+            None,
+            None,
+            edh_config.0,
+            utxo_commitment,
+            *edh_config.1,
+        );
         let mut header = Header {
             parent_hash: best_hash,
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
@@ -490,7 +503,7 @@ impl StorageInner {
             base_fee_per_gas,
             blob_gas_used: None,
             excess_blob_gas: None,
-            extra_data: Default::default(),
+            extra_data: Bytes::from(edh.serialize()),
             parent_beacon_block_root: None,
         };
 
@@ -520,7 +533,7 @@ impl StorageInner {
         executor.set_first_block(block.number);
 
         let (receipts, gas_used, total_block_fees) =
-            executor.execute_transactions(block, U256::ZERO, botanix_consensus_pkg)?;
+            executor.execute_transactions(block, U256::ZERO)?;
 
         // Save receipts.
         executor.save_receipts(receipts)?;
@@ -619,7 +632,7 @@ impl StorageInner {
         &mut self,
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
         sk: &secp256k1::SecretKey,
         evm_config: EvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
@@ -634,7 +647,8 @@ impl StorageInner {
         }
 
         // Construct block and header
-        let header = self.build_header_template(&transactions, &chain_spec.clone(), client)?;
+        let header =
+            self.build_header_template(&transactions, &chain_spec.clone(), client, edh_config)?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())

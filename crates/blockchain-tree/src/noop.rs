@@ -52,15 +52,6 @@ impl BlockchainTreeEngine for NoopBlockchainTree {
         ))
     }
 
-    fn insert_block_with_botanix_consensus_package(
-        &self,
-        block: SealedBlockWithSenders,
-        validation_kind: BlockValidationKind,
-        _botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<InsertPayloadOk, InsertBlockError> {
-        self.insert_block(block, validation_kind)
-    }
-
     fn finalize_block(&self, _finalized_block: BlockNumber) {}
 
     fn connect_buffered_blocks_to_canonical_hashes_and_finalize(
