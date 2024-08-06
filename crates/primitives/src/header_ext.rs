@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use alloy_eips::merge::ALLOWED_FUTURE_BLOCK_TIME_SECONDS;
+use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
 use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
 
@@ -9,8 +10,7 @@ use crate::{
     extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
     Bytes, Header, B256,
 };
-
-use reth_btc_wallet::bitcoind::{BitcoindError, BitcoindFactory};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 
 /// Authority Block signatures
 pub type BlockWitness = Vec<RecoverableSignature>;
@@ -79,7 +79,11 @@ pub trait HeaderExt {
         authority_signers: &[secp256k1::PublicKey],
     ) -> Result<(), ValidateAuthoritySignatureError>;
 
-    /// Creates a Botanix consensus package
+    /// Creates a Botanix consensus package from the current header
+    /// Meaning we take the checkpoint block hash + aggregated public key store in edh
+    /// The only things we dont have is the bitcoin network (needed to validate bitcoind addresses
+    /// during pegout) Lastly we need to take the blockhash and get the block header from
+    /// bitcoind
     fn botanix_consensus_package(
         &self,
         btc_network: bitcoin::Network,
@@ -449,7 +453,7 @@ impl HeaderExt for Header {
             Err(e) => return Err(BotanixConsensusPackageError::FailedToCreateBitcoindClient(e)),
         };
 
-        let bitcoin_checkpoint_header = match bitcoind.get_block_header(edh.bitcoin_block_hash) {
+        let bitcoin_checkpoint_header = match bitcoind.get_block_header(&edh.bitcoin_block_hash) {
             Ok(header) => header,
             Err(e) => {
                 return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(e))

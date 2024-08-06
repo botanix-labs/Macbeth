@@ -18,6 +18,7 @@ use reth_node_core::cli::config::BtcServerConfig;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
+use bitcoincore_rpc::client::RpcApi;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
     hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -444,7 +445,7 @@ where {
                             let hash = or_continue!(bitcoind.get_block_hash(height as u64));
                             or_continue!(bitcoind.get_block_info(&hash))
                         };
-                        let header = or_continue!(bitcoind.get_block_header(finalized.hash));
+                        let header = or_continue!(bitcoind.get_block_header(&finalized.hash));
 
                         info!(
                             "Async bitcoin task setting checkpoint to {}:{}",

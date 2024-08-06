@@ -80,7 +80,7 @@ reth-btc-wallet.workspace = true
 
 ## Bitcoin
 bitcoin.workspace = true
-bitcoincore-rpc = "0.18.0"
+bitcoincore-rpc.workspace = true
 
 ## url
 url = "2.2"
