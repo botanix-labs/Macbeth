@@ -50,7 +50,7 @@ pub struct BitcoindClient {
     rpc: Client,
 }
 
-pub trait BitcoindFactory {
+pub trait BitcoindFactory: Clone {
     fn new(config: BitcoindConfig) -> Self;
     fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError>;
 }

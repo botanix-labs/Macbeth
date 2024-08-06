@@ -303,6 +303,7 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::FailedToDeserializePreviousBlockHeader => true,
                     BlockExecutionError::BitcoinRecentHeaderNotAvailable => true,
                     BlockExecutionError::PBFTConsensusError(_) => true,
+                    BlockExecutionError::BotanixConsensusPkgError() => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

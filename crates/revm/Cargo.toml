@@ -23,6 +23,7 @@ reth-trie = { workspace = true, optional = true }
 # Botanix
 reth-btc-wallet.workspace = true
 bitcoincore-rpc.workspace = true
+bitcoin.workspace = true
 
 # revm
 revm.workspace = true
