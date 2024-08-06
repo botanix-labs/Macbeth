@@ -10,7 +10,6 @@ use crate::{
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig};
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -54,7 +53,6 @@ pub struct AuthorityConsensusBuilder<
     canon_state_notification: CanonStateNotificationSender,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    bitcoind_config: BitcoindConfig,
     sk: secp256k1::SecretKey,
     #[allow(dead_code)]
     epoch_manager: EpochManager<Client>,
@@ -106,8 +104,6 @@ where
         canon_state_notification: CanonStateNotificationSender,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        bitcoind_config: BitcoindConfig,
-        // TODO (armins) This should be Arc protected
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
         network_client: NetworkClient,
@@ -193,7 +189,6 @@ where
             canon_state_notification,
             btc_server_factory,
             bitcoin_block_header,
-            bitcoind_config,
             sk,
             epoch_manager,
             network_handle,
@@ -232,7 +227,6 @@ where
             to_engine,
             canon_state_notification,
             bitcoin_block_header,
-            bitcoind_config,
             sk,
             epoch_manager,
             network_handle,
@@ -346,8 +340,6 @@ where
             );
             pbft_task = Some(pbft);
 
-            let _bitcoind_client =
-                BitcoindClient::new(bitcoind_config).expect("Invalid Bitcoind client");
             let block_production = BlockProductionTask::new(
                 chain_spec.clone(),
                 consensus.clone(),

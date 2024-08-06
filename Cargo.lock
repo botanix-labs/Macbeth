@@ -7941,6 +7941,7 @@ dependencies = [
  "lru",
  "metrics",
  "parking_lot 0.12.3",
+ "reth-btc-wallet",
  "reth-consensus",
  "reth-db",
  "reth-interfaces",
