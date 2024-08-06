@@ -64,6 +64,7 @@ strum = { workspace = true, features = ["derive"] }
 
 # Bitcoin
 bitcoin.workspace = true
+bitcoincore-rpc.workspace = true
 
 # BTC wallet
 reth-btc-wallet.workspace = true

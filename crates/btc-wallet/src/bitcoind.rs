@@ -1,6 +1,6 @@
 use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
-    Auth, Client, RpcApi,
+    Auth, Client, Error as JsonRPCError, RpcApi,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -52,7 +52,7 @@ pub struct BitcoindClient {
 
 pub trait BitcoindFactory {
     fn new(config: BitcoindConfig) -> Self;
-    fn build_and_connect(&self) -> Result<BitcoindClient, BitcoindError>;
+    fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError>;
 }
 
 #[derive(Clone, Debug)]
@@ -65,11 +65,15 @@ impl BitcoindFactory for BitcoindClientFactory {
         Self { config }
     }
 
-    fn build_and_connect(&self) -> Result<BitcoindClient, BitcoindError> {
-        BitcoindClient::new(self.config.clone())
+    fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError> {
+        let BitcoindConfig { url, username, password } = &self.config;
+        let creds = Auth::UserPass(username.clone(), password.clone());
+        let rpc = Client::new(url.to_string().as_str(), creds)?;
+        Ok(rpc)
     }
 }
 
+// TODO(armins) we dont really need this. We can just use BitcoindClientFactory directly
 impl BitcoindClient {
     pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
         let BitcoindConfig { url, username, password } = config;

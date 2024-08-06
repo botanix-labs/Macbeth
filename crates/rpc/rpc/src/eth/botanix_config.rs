@@ -273,6 +273,7 @@ impl Botanix {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
         let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
             .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
+        // TODO replace this with the jsonrpc client for bitcoind
         let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
             .map_err(|_| MerkleProofRPCError::BitcoindClientInitialization)?;
 
