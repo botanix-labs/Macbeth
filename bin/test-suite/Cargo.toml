@@ -44,7 +44,7 @@ reth-tracing.workspace = true
 reth-ecies.workspace = true
 
 ## Bitcoin rpc
-bitcoincore-rpc = "0.18.0"
+bitcoincore-rpc.workspace = true
 
 # crates.io dependencies
 askama = "0.12.1"
