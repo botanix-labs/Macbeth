@@ -5,10 +5,9 @@ use super::{
     test_dkg::{do_dkg, send_pegin_notification},
 };
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
-use bitcoin::Address;
-use client::BtcServerClient;
+use bitcoin::{hashes::Hash, Address};
+use client::{BtcServerClient, Utxo};
 use hex::{self, encode as hex_encode};
-use tonic::transport::Channel;
 
 const NUM_UTXOS: usize = 10;
 
@@ -36,20 +35,8 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
     }
 
     // create btc server clients
-    let mut clients: Vec<BtcServerClient<Channel>> = vec![];
-    for instance in 0..suite.global_context.instances {
-        let port = suite
-            .local_context
-            .btc_servers
-            .as_ref()
-            .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
-            .ok_or_else(|| Error::InvalidBtcServerPort)?;
-        let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-            .await
-            .map_err(Error::ServerConnect)?;
-        clients.push(c);
-    }
-
+    let mut clients =
+        suite.local_context.btc_server_clients.as_ref().expect("btc servers not found").clone();
     // run the dkg
     let _ = do_dkg(&mut clients).await?;
 
@@ -93,6 +80,45 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
     // all the btc_servers should have the same merkel commitment to the utxo set
     assert_eq!(hashset.len(), 1);
 
+    // Get all utxos
+    let mut all_utxos = vec![];
+    for c in clients.iter_mut() {
+        let utxos = c
+            .get_all_utxos(tonic::Request::new(client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner()
+            .utxos;
+        all_utxos.push(utxos);
+    }
+    all_utxos.dedup();
+    assert_eq!(all_utxos.len(), 1);
+    // all the btc_servers should have the same utxos
+    let utxos = clients[0]
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .utxos;
+    // All the utxos are accounted for
+    assert_eq!(utxos.len(), NUM_UTXOS);
+    // There should be dups
+    let mut deduped = utxos.clone();
+    deduped.dedup();
+    assert_eq!(utxos.len(), deduped.len());
+
+    let txids = pegins
+        .txids
+        .iter()
+        .map(|txid| bitcoin::Txid::from_slice(txid).unwrap())
+        .collect::<Vec<bitcoin::Txid>>();
+    for utxo in utxos.iter() {
+        let txid =
+            bitcoin::Txid::from_slice(utxo.clone().outpoint.expect("outpoint").txid.as_slice())
+                .expect("valid txid");
+        assert!(txids.contains(&txid));
+    }
+
     // Lets get some new utxos
     let mut pegins = Pegins::new();
 
@@ -121,7 +147,7 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
         let txid = pegins.txids.get(input).cloned().unwrap();
         let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
         let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-        let () = send_pegin_notification(
+        let _ = send_pegin_notification(
             &mut clients[0],
             btc_address.clone(),
             hex_encode(eth_address),
