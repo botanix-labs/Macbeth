@@ -19,7 +19,6 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
-        _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         if self.0.is_none() {
             return Err(BlockExecutionError::UnavailableForTest);
@@ -31,7 +30,6 @@ impl BlockExecutor for TestExecutor {
         &mut self,
         _block: &BlockWithSenders,
         _total_difficulty: U256,
-        _botanix_consenusus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         Ok((vec![], 0, 0))
     }

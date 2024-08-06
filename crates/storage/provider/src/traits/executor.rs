@@ -2,9 +2,7 @@
 
 use crate::{bundle_state::BundleStateWithReceipts, StateProvider};
 use reth_interfaces::executor::BlockExecutionError;
-use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockNumber, BlockWithSenders, PruneModes, Receipt, U256,
-};
+use reth_primitives::{BlockNumber, BlockWithSenders, PruneModes, Receipt, U256};
 /// A factory capable of creating an executor with the given state provider.
 pub trait ExecutorFactory: Send + Sync + 'static {
     /// Executor with [`StateProvider`]
@@ -30,7 +28,6 @@ pub trait BlockExecutor {
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError>;
 
     /// Runs the provided transactions and commits their state to the run-time database.
@@ -50,7 +47,6 @@ pub trait BlockExecutor {
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError>;
 
     /// Return bundle state. This is output of executed blocks.

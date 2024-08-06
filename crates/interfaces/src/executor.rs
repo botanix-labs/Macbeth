@@ -3,8 +3,8 @@ use core::fmt;
 use crate::{provider::ProviderError, trie::StateRootError};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
-    PruneSegmentError, B256,
+    header_ext::BotanixConsensusPackageError, revm_primitives::EVMError, BlockNumHash, Bloom,
+    GotExpected, GotExpectedBoxed, PruneSegmentError, B256,
 };
 use thiserror::Error;
 
@@ -167,6 +167,10 @@ pub enum BlockExecutionError {
     /// Consensus error during PBFT
     #[error("PBFT Consensus error: {0}")]
     PBFTConsensusError(#[from] ConsensusError),
+
+    /// TODO should pass error to this variant
+    #[error("Failed to construct Botanix Consensus Pkg")]
+    BotanixConsensusPkgError(),
 
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]

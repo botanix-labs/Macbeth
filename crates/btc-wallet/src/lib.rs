@@ -8,6 +8,8 @@ pub mod psbt;
 pub mod transaction;
 pub mod util;
 
+pub mod test_utils;
+
 use bitcoin::Weight;
 
 /// The weight needed to satisfy a taproot output using keyspend.

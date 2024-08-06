@@ -19,6 +19,7 @@ use reth_primitives::revm::env::fill_tx_env;
 #[cfg(not(feature = "optimism"))]
 use reth_provider::BundleStateWithReceipts;
 use reth_provider::{BlockExecutor, ProviderError, PrunableBlockExecutor, StateProvider};
+
 use tracing::{debug, error, info, trace};
 
 use crate::{
@@ -31,11 +32,12 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes,
-    ChainSpec, GotExpected, Hardfork, Header, PruneModes, Receipt, ReceiptWithBloom, Receipts,
-    TransactionSigned, Withdrawals, B256, U256,
+    botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block, BlockNumber,
+    BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork, Header, PruneModes, Receipt,
+    ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256, U256,
 };
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.
@@ -54,7 +56,7 @@ use reth_primitives::{
 /// InspectorStack are used for optional inspecting execution. And it contains
 /// various duration of parts of execution.
 #[allow(missing_debug_implementations)]
-pub struct EVMProcessor<'a, EvmConfig> {
+pub struct EVMProcessor<'a, EvmConfig, BF> {
     /// The configured chain-spec
     pub(crate) chain_spec: Arc<ChainSpec>,
     /// revm instance that contains database and env environment.
@@ -65,11 +67,16 @@ pub struct EVMProcessor<'a, EvmConfig> {
     pub(crate) stats: BlockExecutorStats,
     /// The type that is able to configure the EVM environment.
     _evm_config: EvmConfig,
+    /// Bitcoind client factory
+    bitcoind_factory: BF,
+    /// Bitcoin network
+    bitcoin_network: bitcoin::Network,
 }
 
-impl<'a, EvmConfig> EVMProcessor<'a, EvmConfig>
+impl<'a, EvmConfig, BF> EVMProcessor<'a, EvmConfig, BF>
 where
     EvmConfig: ConfigureEvm,
+    BF: BitcoindFactory,
 {
     /// Return chain spec.
     pub fn chain_spec(&self) -> &Arc<ChainSpec> {
@@ -81,13 +88,21 @@ where
         chain_spec: Arc<ChainSpec>,
         db: StateProviderDatabase<DB>,
         evm_config: EvmConfig,
+        bitcoind_factory: BF,
+        bitcoin_network: bitcoin::Network,
     ) -> Self {
         let state = State::builder()
             .with_database_boxed(Box::new(db))
             .with_bundle_update()
             .without_state_clear()
             .build();
-        EVMProcessor::new_with_state(chain_spec, state, evm_config)
+        EVMProcessor::new_with_state(
+            chain_spec,
+            state,
+            evm_config,
+            bitcoind_factory,
+            bitcoin_network,
+        )
     }
 
     /// Create a new EVM processor with the given revm state.
@@ -95,6 +110,8 @@ where
         chain_spec: Arc<ChainSpec>,
         revm_state: StateDBBox<'a, ProviderError>,
         evm_config: EvmConfig,
+        bitcoind_factory: BF,
+        bitcoin_network: bitcoin::Network,
     ) -> Self {
         let stack = InspectorStack::new(InspectorStackConfig::default());
         let evm = evm_config.evm_with_inspector(revm_state, stack);
@@ -104,6 +121,8 @@ where
             batch_record: BlockBatchRecord::default(),
             stats: BlockExecutorStats::default(),
             _evm_config: evm_config,
+            bitcoind_factory,
+            bitcoin_network,
         }
     }
 
@@ -219,11 +238,10 @@ where
     /// Performs additional checks on mint contract transactions.
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        botanix_consensus_pkg: &BotanixConsensusPackage,
     ) -> Result<(), MintContractError> {
-        let consensus_pkg = botanix_consensus_pkg.as_ref();
-        let btc_network =
-            consensus_pkg.map(|package| package.btc_network).expect("network to be defined");
+        let consensus_pkg = botanix_consensus_pkg;
+        let btc_network = consensus_pkg.btc_network;
 
         // Check pegins.
         for log in result.logs() {
@@ -232,7 +250,7 @@ where
                 Some(p) => p,
             };
 
-            let bitcoin_checkpoint = consensus_pkg.expect("is some").bitcoin_checkpoint;
+            let bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
             // the pegin height must be equal or less than the required block depth (checkpoint)
             if pegin_data.bitcoin_block_height > bitcoin_checkpoint.1 {
                 return Err(MintContractError::InvalidPeginData {
@@ -244,7 +262,7 @@ where
                     revert_amount: pegin_data.amount,
                 });
             }
-            let aggregate_public_key = consensus_pkg.expect("is some").aggregate_public_key;
+            let aggregate_public_key = consensus_pkg.aggregate_public_key;
             match pegin_data.validate(&bitcoin_checkpoint, &aggregate_public_key) {
                 Ok(aggregate_value) => {
                     if pegin_data.amount >= aggregate_value {
@@ -317,7 +335,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        botanix_consensus_pkg: &BotanixConsensusPackage,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
@@ -414,12 +432,11 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<Vec<Receipt>, BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
         self.apply_beacon_root_contract_call(block)?;
         let (receipts, cumulative_gas_used, total_block_fees) =
-            self.execute_transactions(block, total_difficulty, botanix_consensus_pkg)?;
+            self.execute_transactions(block, total_difficulty)?;
 
         // Check if gas used matches the value set in header.
         if block.gas_used != cumulative_gas_used {
@@ -456,9 +473,10 @@ where
 
 /// Default Ethereum implementation of the [BlockExecutor] trait for the [EVMProcessor].
 #[cfg(not(feature = "optimism"))]
-impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig>
+impl<'a, EvmConfig, BF> BlockExecutor for EVMProcessor<'a, EvmConfig, BF>
 where
     EvmConfig: ConfigureEvm,
+    BF: BitcoindFactory,
 {
     type Error = BlockExecutionError;
 
@@ -466,10 +484,9 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, botanix_consensus_pkg)?;
+        let receipts = self.execute_inner(block, total_difficulty)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -494,8 +511,15 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
+        let header = block.header.clone();
+        let botanix_consensus_pkg = header
+            .botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory)
+            .map_err(|e| {
+                error!("Failed to get botanix consensus package: {:?}", e);
+                BlockExecutionError::BotanixConsensusPkgError()
+            })?;
+
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
@@ -521,7 +545,7 @@ where
             }
             // Execute transaction.
             let ResultAndState { result, state } =
-                self.transact(transaction, *sender, botanix_consensus_pkg.clone())?;
+                self.transact(transaction, *sender, &botanix_consensus_pkg)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -571,9 +595,10 @@ where
     }
 }
 
-impl<'a, EvmConfig> PrunableBlockExecutor for EVMProcessor<'a, EvmConfig>
+impl<'a, EvmConfig, BF> PrunableBlockExecutor for EVMProcessor<'a, EvmConfig, BF>
 where
     EvmConfig: ConfigureEvm,
+    BF: BitcoindFactory,
 {
     fn set_tip(&mut self, tip: BlockNumber) {
         self.batch_record.set_tip(tip);
@@ -647,6 +672,7 @@ mod tests {
     use std::collections::HashMap;
 
     static BEACON_ROOT_CONTRACT_CODE: Bytes = bytes!("3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500");
+    const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 
     fn create_state_provider_with_beacon_root_contract() -> StateProviderTest {
         let mut db = StateProviderTest::default();
@@ -686,6 +712,7 @@ mod tests {
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
+            // TODO
         );
 
         // attempt to execute a block without parent beacon block root, expect err
