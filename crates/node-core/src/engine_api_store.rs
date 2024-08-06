@@ -70,12 +70,7 @@ impl EngineApiStore {
                     })?,
                 )?;
             }
-            BeaconEngineMessage::NewPayload {
-                payload,
-                cancun_fields,
-                tx: _tx,
-                botanix_consensus_pkg: _,
-            } => {
+            BeaconEngineMessage::NewPayload { payload, cancun_fields, tx: _tx } => {
                 let filename = format!("{}-new_payload-{}.json", timestamp, payload.block_hash());
                 fs::write(
                     self.path.join(filename),

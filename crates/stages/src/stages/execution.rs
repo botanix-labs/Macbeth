@@ -213,11 +213,9 @@ impl<EF: ExecutorFactory> ExecutionStage<EF> {
 
             // Execute the block
             let execute_start = Instant::now();
-            executor.execute_and_verify_receipt(&block, td, None).map_err(|error| {
-                StageError::Block {
-                    block: Box::new(block.header.clone().seal_slow()),
-                    error: BlockErrorKind::Execution(error),
-                }
+            executor.execute_and_verify_receipt(&block, td).map_err(|error| StageError::Block {
+                block: Box::new(block.header.clone().seal_slow()),
+                error: BlockErrorKind::Execution(error),
             })?;
             execution_duration += execute_start.elapsed();
 
@@ -610,6 +608,7 @@ mod tests {
     use crate::test_utils::TestStageDB;
     use alloy_rlp::Decodable;
     use assert_matches::assert_matches;
+    use reth_btc_wallet::{bitcoind::BitcoindFactory, test_utils::MockBitcoindFactory};
     use reth_db::{models::AccountBeforeTx, transaction::DbTxMut};
     use reth_evm_ethereum::EthEvmConfig;
     use reth_interfaces::executor::BlockValidationError;
@@ -625,7 +624,7 @@ mod tests {
     use reth_revm::EvmProcessorFactory;
     use std::collections::BTreeMap;
 
-    fn stage() -> ExecutionStage<EvmProcessorFactory<EthEvmConfig>> {
+    fn stage() -> ExecutionStage<EvmProcessorFactory<EthEvmConfig, MockBitcoindFactory>> {
         let executor_factory = EvmProcessorFactory::new(
             Arc::new(ChainSpecBuilder::mainnet().berlin_activated().build()),
             EthEvmConfig::default(),
@@ -866,7 +865,9 @@ mod tests {
                 mode.receipts_log_filter = random_filter.clone();
             }
 
-            let mut execution_stage: ExecutionStage<EvmProcessorFactory<EthEvmConfig>> = stage();
+            let mut execution_stage: ExecutionStage<
+                EvmProcessorFactory<EthEvmConfig, MockBitcoindFactory>,
+            > = stage();
             execution_stage.prune_modes = mode.clone().unwrap_or_default();
 
             let output = execution_stage.execute(&provider, input).unwrap();

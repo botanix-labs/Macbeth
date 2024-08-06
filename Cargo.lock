@@ -8406,6 +8406,8 @@ dependencies = [
 name = "reth-evm"
 version = "0.2.0-beta.6"
 dependencies = [
+ "bitcoin",
+ "reth-btc-wallet",
  "reth-interfaces",
  "reth-primitives",
  "revm",
@@ -8416,6 +8418,8 @@ dependencies = [
 name = "reth-evm-ethereum"
 version = "0.2.0-beta.6"
 dependencies = [
+ "bitcoin",
+ "reth-btc-wallet",
  "reth-evm",
  "reth-interfaces",
  "reth-primitives",
@@ -8713,6 +8717,7 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
+ "reth-btc-wallet",
  "reth-config",
  "reth-consensus",
  "reth-db",
@@ -9294,6 +9299,7 @@ dependencies = [
  "pprof",
  "rand 0.8.5",
  "rayon",
+ "reth-btc-wallet",
  "reth-codecs",
  "reth-config",
  "reth-consensus",

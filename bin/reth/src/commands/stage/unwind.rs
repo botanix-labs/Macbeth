@@ -9,6 +9,7 @@ use crate::{
 };
 use clap::{Parser, Subcommand};
 use reth_beacon_consensus::BeaconConsensus;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::{Config, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db::{database::Database, open_db};
@@ -178,7 +179,10 @@ impl Command {
         let stage_conf = &config.stages;
 
         let (tip_tx, tip_rx) = watch::channel(B256::ZERO);
-        let factory = reth_revm::EvmProcessorFactory::new(
+        let factory: reth_revm::EvmProcessorFactory<
+            reth_node_ethereum::EthEvmConfig,
+            MockBitcoindFactory,
+        > = reth_revm::EvmProcessorFactory::new(
             provider_factory.chain_spec(),
             EthEvmConfig::default(),
         );

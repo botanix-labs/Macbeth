@@ -52,6 +52,7 @@ reth-static-file.workspace = true
 reth-trie = { workspace = true, features = ["test-utils"] }
 reth-provider = { workspace = true, features = ["test-utils"] }
 reth-network-types.workspace = true
+reth-btc-wallet.workspace = true
 
 alloy-rlp.workspace = true
 itertools.workspace = true

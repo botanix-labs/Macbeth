@@ -14,6 +14,7 @@ use crate::{
 };
 use clap::Parser;
 use reth_beacon_consensus::BeaconConsensus;
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_runner::CliContext;
 use reth_config::{config::EtlConfig, Config};
 use reth_db::init_db;
@@ -229,10 +230,11 @@ impl Command {
                 }
                 StageEnum::Senders => (Box::new(SenderRecoveryStage::new(batch_size)), None),
                 StageEnum::Execution => {
-                    let factory = reth_revm::EvmProcessorFactory::new(
-                        self.chain.clone(),
-                        EthEvmConfig::default(),
-                    );
+                    let factory =
+                        reth_revm::EvmProcessorFactory::<
+                            reth_node_ethereum::EthEvmConfig,
+                            MockBitcoindFactory,
+                        >::new(self.chain.clone(), EthEvmConfig::default());
                     (
                         Box::new(ExecutionStage::new(
                             factory,
@@ -324,7 +326,7 @@ impl Command {
             }
 
             if done {
-                break
+                break;
             }
         }
         info!(target: "reth::cli", stage = %self.stage, time = ?start.elapsed(), "Finished stage");

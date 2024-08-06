@@ -16,6 +16,7 @@ use reth_beacon_consensus::BeaconConsensus;
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_runner::CliContext;
 use reth_consensus::Consensus;
 use reth_db::{init_db, DatabaseEnv};
@@ -170,7 +171,7 @@ impl Command {
         let tree_externals = TreeExternals::new(
             provider_factory.clone(),
             Arc::clone(&consensus),
-            EvmProcessorFactory::new(self.chain.clone(), evm_config),
+            EvmProcessorFactory::<_, MockBitcoindFactory>::new(self.chain.clone(), evm_config),
         );
         let tree = BlockchainTree::new(tree_externals, BlockchainTreeConfig::default(), None)?;
         let blockchain_tree = Arc::new(ShareableBlockchainTree::new(tree));
@@ -308,13 +309,13 @@ impl Command {
                 let block_with_senders =
                     SealedBlockWithSenders::new(block.clone(), senders).unwrap();
 
-                let executor_factory = EvmProcessorFactory::new(self.chain.clone(), evm_config);
+                let executor_factory = EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+                    self.chain.clone(),
+                    evm_config,
+                );
                 let mut executor = executor_factory.with_state(blockchain_db.latest()?);
-                executor.execute_and_verify_receipt(
-                    &block_with_senders.clone().unseal(),
-                    U256::MAX,
-                    None,
-                )?;
+                executor
+                    .execute_and_verify_receipt(&block_with_senders.clone().unseal(), U256::MAX)?;
                 let state = executor.take_output_state();
                 debug!(target: "reth::cli", ?state, "Executed block");
 

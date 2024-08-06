@@ -32,7 +32,7 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
-use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindFactory};
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block, BlockNumber,
@@ -67,10 +67,8 @@ pub struct EVMProcessor<'a, EvmConfig, BF> {
     pub(crate) stats: BlockExecutorStats,
     /// The type that is able to configure the EVM environment.
     _evm_config: EvmConfig,
-    /// Bitcoind client factory
-    bitcoind_factory: BF,
-    /// Bitcoin network
-    bitcoin_network: bitcoin::Network,
+    /// Bitcoin resouces in case processor is configured for botanix uses
+    bitcoin_resource: Option<(BF, bitcoin::Network)>,
 }
 
 impl<'a, EvmConfig, BF> EVMProcessor<'a, EvmConfig, BF>
@@ -83,26 +81,23 @@ where
         &self.chain_spec
     }
 
+    /// Sets bitcoind factory and network for the processor.
+    pub fn with_bitcoind_factory(&mut self, bitcoind_factory: BF, network: bitcoin::Network) {
+        self.bitcoin_resource = Some((bitcoind_factory, network));
+    }
+
     /// Creates a new executor from the given chain spec and database.
     pub fn new_with_db<DB: StateProvider + 'a>(
         chain_spec: Arc<ChainSpec>,
         db: StateProviderDatabase<DB>,
         evm_config: EvmConfig,
-        bitcoind_factory: BF,
-        bitcoin_network: bitcoin::Network,
     ) -> Self {
         let state = State::builder()
             .with_database_boxed(Box::new(db))
             .with_bundle_update()
             .without_state_clear()
             .build();
-        EVMProcessor::new_with_state(
-            chain_spec,
-            state,
-            evm_config,
-            bitcoind_factory,
-            bitcoin_network,
-        )
+        EVMProcessor::new_with_state(chain_spec, state, evm_config)
     }
 
     /// Create a new EVM processor with the given revm state.
@@ -110,8 +105,6 @@ where
         chain_spec: Arc<ChainSpec>,
         revm_state: StateDBBox<'a, ProviderError>,
         evm_config: EvmConfig,
-        bitcoind_factory: BF,
-        bitcoin_network: bitcoin::Network,
     ) -> Self {
         let stack = InspectorStack::new(InspectorStackConfig::default());
         let evm = evm_config.evm_with_inspector(revm_state, stack);
@@ -121,8 +114,7 @@ where
             batch_record: BlockBatchRecord::default(),
             stats: BlockExecutorStats::default(),
             _evm_config: evm_config,
-            bitcoind_factory,
-            bitcoin_network,
+            bitcoin_resource: None,
         }
     }
 
@@ -238,7 +230,7 @@ where
     /// Performs additional checks on mint contract transactions.
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
-        botanix_consensus_pkg: &BotanixConsensusPackage,
+        botanix_consensus_pkg: BotanixConsensusPackage,
     ) -> Result<(), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
@@ -335,7 +327,7 @@ where
         &mut self,
         transaction: &TransactionSigned,
         sender: Address,
-        botanix_consensus_pkg: BotanixConsensusPackage,
+        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<ResultAndState, BlockExecutionError> {
         // Fill revm structure.
         #[cfg(not(feature = "optimism"))]
@@ -366,7 +358,9 @@ where
                 // get pegout amount so can update balance if pegout reverts
                 let pegout_amount = transaction.value();
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(&result, &botanix_consensus_pkg) {
+                    // At this point if we do not have a consensus pkg defined we should panic as
+                    // the node is not configured for handling botanix events
+                    match Self::botanix_mint_contract_checks(&result, botanix_consensus_pkg.expect("Botanix consensus package not found. Executory factory probably not configured for botanix")) {
                         Ok(()) => Ok(ResultAndState { result, state }),
                         Err(e) => {
                             error!("Botanix Minting contract event validation failed: {:?}", e);
@@ -513,12 +507,17 @@ where
         total_difficulty: U256,
     ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         let header = block.header.clone();
-        let botanix_consensus_pkg = header
-            .botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory.clone())
-            .map_err(|e| {
-                error!("Failed to get botanix consensus package: {:?}", e);
-                BlockExecutionError::BotanixConsensusPkgError()
-            })?;
+        let mut botanix_consensus_pkg = None;
+        if let Some((bitcoind_factory, bitcoin_network)) = &self.bitcoin_resource {
+            botanix_consensus_pkg = Some(
+                header
+                    .botanix_consensus_package(bitcoin_network.clone(), bitcoind_factory.clone())
+                    .map_err(|e| {
+                        error!("Failed to get botanix consensus package: {:?}", e);
+                        BlockExecutionError::BotanixConsensusPkgError()
+                    })?,
+            );
+        }
 
         self.init_env(&block.header, total_difficulty);
 
@@ -546,6 +545,7 @@ where
 
             // Execute transaction.
             let ResultAndState { result, state } =
+                // TOOD(armins) can we pass a ref here?
                 self.transact(transaction, *sender, botanix_consensus_pkg.clone())?;
             trace!(
                 target: "evm",
@@ -663,13 +663,7 @@ pub fn compare_receipts_root_and_logs_bloom(
 mod tests {
     use super::*;
     use crate::test_utils::{StateProviderTest, TestEvmConfig};
-    use bitcoin::{
-        block::{Header as BtcHeader, Version},
-        hashes::Hash,
-        secp256k1::{self, PublicKey},
-        BlockHash, CompactTarget, TxMerkleNode,
-    };
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_primitives::{
         bytes,
         constants::{BEACON_ROOTS_ADDRESS, EIP1559_INITIAL_BASE_FEE, SYSTEM_ADDRESS},
@@ -677,7 +671,7 @@ mod tests {
         TxEip1559, MAINNET,
     };
     use revm::{Database, TransitionState};
-    use std::{collections::HashMap, str::FromStr};
+    use std::collections::HashMap;
     use url::Url;
 
     static BEACON_ROOT_CONTRACT_CODE: Bytes = bytes!("3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500");
@@ -717,19 +711,10 @@ mod tests {
         );
 
         // execute invalid header (no parent beacon block root)
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
 
         // attempt to execute a block without parent beacon block root, expect err
@@ -818,19 +803,10 @@ mod tests {
                 .build(),
         );
 
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -876,19 +852,10 @@ mod tests {
                 .build(),
         );
 
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
 
         // construct the header for block one
@@ -939,19 +906,10 @@ mod tests {
 
         let mut header = chain_spec.genesis_header();
 
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -1027,19 +985,10 @@ mod tests {
         );
 
         // execute header
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
         executor.init_env(&header, U256::ZERO);
 
@@ -1098,19 +1047,10 @@ mod tests {
         let chain_id = chain_spec.chain.id();
 
         // execute header
-        let mock_bitcoind_config = BitcoindConfig::new(
-            Url::parse("http://foobar").unwrap(),
-            String::from("foo"),
-            String::from("bar"),
-        );
-        let mock_bitcoind_factory = MockBitcoindFactory::new(mock_bitcoind_config);
-
-        let mut executor = EVMProcessor::new_with_db(
+        let mut executor = EVMProcessor::<_, MockBitcoindFactory>::new_with_db(
             chain_spec,
             StateProviderDatabase::new(db),
             TestEvmConfig::default(),
-            mock_bitcoind_factory,
-            bitcoin::Network::Testnet,
         );
 
         // Create a test transaction that gonna fail
@@ -1126,23 +1066,7 @@ mod tests {
             Signature::default(),
         );
 
-        let bitcoin_header = BtcHeader {
-            version: Version::default(),
-            prev_blockhash: BlockHash::all_zeros(),
-            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
-            time: 0,
-            bits: CompactTarget::from_consensus(0),
-            nonce: 0,
-        };
-        let botanix_consensus_pkg = BotanixConsensusPackage {
-            btc_network: BITCOIN_NETWORK,
-            bitcoin_checkpoint: (bitcoin_header, 0),
-            aggregate_public_key: PublicKey::from_str(
-                "0376698beebe8ee5c74d8cc50ab84ac301ee8f10af6f28d0ffd6adf4d6d3b9b762",
-            )
-            .unwrap(),
-        };
-        let result = executor.transact(&transaction, Address::random(), botanix_consensus_pkg);
+        let result = executor.transact(&transaction, Address::random(), None);
 
         let expected_hash = transaction.recalculate_hash();
 
