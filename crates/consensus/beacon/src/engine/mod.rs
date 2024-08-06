@@ -849,8 +849,8 @@ where
         //
         // This ensures that the finalized block is consistent with the head block, i.e. the
         // finalized block is an ancestor of the head block.
-        if !state.finalized_block_hash.is_zero() &&
-            !self.blockchain.is_canonical(state.finalized_block_hash)?
+        if !state.finalized_block_hash.is_zero()
+            && !self.blockchain.is_canonical(state.finalized_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -863,8 +863,8 @@ where
         //
         // This ensures that the safe block is consistent with the head block, i.e. the safe
         // block is an ancestor of the head block.
-        if !state.safe_block_hash.is_zero() &&
-            !self.blockchain.is_canonical(state.safe_block_hash)?
+        if !state.safe_block_hash.is_zero()
+            && !self.blockchain.is_canonical(state.safe_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -1093,7 +1093,7 @@ where
         let res = if self.sync.is_pipeline_idle() {
             // we can only insert new payloads if the pipeline is _not_ running, because it holds
             // exclusive access to the database
-            self.try_insert_new_payload(block, botanix_consensus_pkg)
+            self.try_insert_new_payload(block)
         } else {
             self.try_buffer_payload(block)
         };
@@ -1288,17 +1288,14 @@ where
     fn try_insert_new_payload(
         &mut self,
         block: SealedBlock,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
     ) -> Result<PayloadStatus, InsertBlockError> {
         debug_assert!(self.sync.is_pipeline_idle(), "pipeline must be idle");
 
         let block_hash = block.hash();
         let start = Instant::now();
-        let status = self.blockchain.insert_block_without_senders(
-            block.clone(),
-            BlockValidationKind::Exhaustive,
-            botanix_consensus_pkg,
-        )?;
+        let status = self
+            .blockchain
+            .insert_block_without_senders(block.clone(), BlockValidationKind::Exhaustive)?;
 
         let elapsed = start.elapsed();
         let mut latest_valid_hash = None;
@@ -1318,8 +1315,8 @@ where
                 latest_valid_hash = Some(block_hash);
                 PayloadStatusEnum::Valid
             }
-            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. }) |
-            InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
+            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. })
+            | InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
                 // check if the block's parent is already marked as invalid
                 if let Some(status) =
                     self.check_invalid_ancestor_with_head(block.parent_hash, block.hash())
@@ -1365,11 +1362,10 @@ where
             return;
         }
 
-        match self.blockchain.insert_block_without_senders(
-            block,
-            BlockValidationKind::SkipStateRootValidation,
-            None,
-        ) {
+        match self
+            .blockchain
+            .insert_block_without_senders(block, BlockValidationKind::SkipStateRootValidation)
+        {
             Ok(status) => {
                 match status {
                     InsertPayloadOk::Inserted(BlockStatus::Valid(_)) => {

@@ -152,18 +152,13 @@ where
         };
         let bitcoin_checkpoint =
             recent_bitcoin_block_header.expect("valid header and height tuple");
-        let botanix_consensus_pkg = BotanixConsensusPackage {
-            bitcoin_checkpoint,
-            aggregate_public_key: secp_pk,
-            btc_network: self.btc_network,
-        };
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
         let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
             self.consensus.chain_spec.clone(),
-            Some(botanix_consensus_pkg.clone()),
+            (bitcoin_checkpoint.0.block_hash(), secp_pk),
             &self.sk,
             self.evm_config.clone(),
             &self.client,
@@ -281,8 +276,8 @@ where
                     Duration::from_secs(
                         self.chain_spec
                             .leader_selection_window
-                            .expect("to be defined for poa consensus") /
-                            3,
+                            .expect("to be defined for poa consensus")
+                            / 3,
                     ),
                     self.frost_task_rx.recv(),
                 )
@@ -355,8 +350,8 @@ where
         match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
-                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /
-                    3,
+                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus")
+                    / 3,
             ),
             self.pbft_task_rx.recv(),
         )

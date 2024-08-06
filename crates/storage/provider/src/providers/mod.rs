@@ -666,19 +666,6 @@ where
         self.tree.insert_block(block, validation_kind)
     }
 
-    fn insert_block_with_botanix_consensus_package(
-        &self,
-        block: SealedBlockWithSenders,
-        validation_kind: BlockValidationKind,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
-    ) -> Result<InsertPayloadOk, InsertBlockError> {
-        self.tree.insert_block_with_botanix_consensus_package(
-            block,
-            validation_kind,
-            botanix_consensus_pkg,
-        )
-    }
-
     fn finalize_block(&self, finalized_block: BlockNumber) {
         self.tree.finalize_block(finalized_block)
     }

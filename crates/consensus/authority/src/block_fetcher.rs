@@ -147,28 +147,16 @@ where
 
             let bitcoin_block_header = *self.bitcoin_block_header.read().await;
             let bitcoin_checkpoint = bitcoin_block_header.expect("recent header is some");
-            let mut botanix_consensus_pkg = None;
             let mut storage = self.storage.write().await;
-            if is_fed_node {
-                if storage.aggregate_public_key.is_none() {
-                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
-                    continue;
-                } else {
-                    botanix_consensus_pkg = Some(BotanixConsensusPackage {
-                        bitcoin_checkpoint,
-                        aggregate_public_key: storage
-                            .aggregate_public_key
-                            .expect("aggregate pk is some"),
-                        btc_network: self.btc_network,
-                    });
-                }
+            if is_fed_node && storage.aggregate_public_key.is_none() {
+                warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                continue;
             }
 
             // Notify the engine of the new block
             let _payload_status = match engine_util::send_beacon_new_payload(
                 sealed_block.clone(),
                 self.to_engine.clone(),
-                botanix_consensus_pkg.clone(),
             )
             .await
             {
@@ -188,7 +176,6 @@ where
             match storage.execute_imported_block(
                 &self.consensus,
                 sealed_block.clone(),
-                botanix_consensus_pkg.clone(),
                 self.evm_config.clone(),
                 &self.client,
             ) {
@@ -350,7 +337,6 @@ where
                         if let Err(e) = self.client.insert_block_without_senders(
                             missing_block.clone(),
                             BlockValidationKind::Exhaustive,
-                            botanix_consensus_pkg,
                         ) {
                             error!(target: "consensus::authority", ?e, "Failed to insert forked block");
                             continue;
