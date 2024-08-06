@@ -40,6 +40,16 @@ pub struct BitcoindConfig {
     password: String,
 }
 
+impl Default for BitcoindConfig {
+    fn default() -> Self {
+        Self {
+            url: Url::parse("http://localhost:18843").unwrap(),
+            username: "foo".to_string(),
+            password: "bar".to_string(),
+        }
+    }
+}
+
 impl BitcoindConfig {
     pub fn new(url: Url, username: String, password: String) -> Self {
         Self { url, username, password }
@@ -52,7 +62,7 @@ pub struct BitcoindClient {
 
 pub trait BitcoindFactory: Clone {
     fn new(config: BitcoindConfig) -> Self;
-    fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError>;
+    fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError>;
 }
 
 #[derive(Clone, Debug)]
@@ -60,12 +70,48 @@ pub struct BitcoindClientFactory {
     config: BitcoindConfig,
 }
 
+pub trait RpcApiExt: RpcApi {
+    async fn is_synced(&self) -> Result<bool, BitcoindError>;
+    async fn wait_until_synced(&self);
+}
+
+impl RpcApiExt for Client {
+    async fn is_synced(&self) -> Result<bool, BitcoindError> {
+        match self.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
+            Ok(blockchain_info_result) => Ok(!blockchain_info_result.initial_block_download),
+            Err(err) => {
+                // TODO (armins) use logger library
+                println!("error getting get_blockchain_info(): {:?}", err);
+                Ok(false)
+            }
+        }
+    }
+
+    async fn wait_until_synced(&self) {
+        loop {
+            match self.is_synced().await {
+                Ok(is_synced) => {
+                    if !is_synced {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    break;
+                }
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+        }
+    }
+}
+
 impl BitcoindFactory for BitcoindClientFactory {
     fn new(config: BitcoindConfig) -> Self {
         Self { config }
     }
 
-    fn build_and_connect(&self) -> Result<impl RpcApi, JsonRPCError> {
+    fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError> {
         let BitcoindConfig { url, username, password } = &self.config;
         let creds = Auth::UserPass(username.clone(), password.clone());
         let rpc = Client::new(url.to_string().as_str(), creds)?;

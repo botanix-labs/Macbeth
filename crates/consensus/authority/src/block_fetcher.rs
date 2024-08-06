@@ -11,10 +11,7 @@ use reth_interfaces::{
 };
 use reth_network::{message::NewBlockMessage, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
-use reth_primitives::{
-    botanix::BotanixConsensusPackage, header_ext::HeaderExt, SealedBlockWithSenders,
-    TransactionSigned,
-};
+use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
@@ -145,8 +142,6 @@ where
             // Seal the block
             let sealed_block = block.clone().seal_slow();
 
-            let bitcoin_block_header = *self.bitcoin_block_header.read().await;
-            let bitcoin_checkpoint = bitcoin_block_header.expect("recent header is some");
             let mut storage = self.storage.write().await;
             if is_fed_node && storage.aggregate_public_key.is_none() {
                 warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
@@ -167,17 +162,13 @@ where
                 }
             };
 
-            if bitcoin_block_header.is_none() {
-                warn!(target: "consensus::authority",
-                    "Do not have recent block header in memory, skipping block import");
-                continue;
-            }
-
+            let aggregate_public_key = storage.aggregate_public_key.expect("aggregate pk is some");
             match storage.execute_imported_block(
                 &self.consensus,
                 sealed_block.clone(),
                 self.evm_config.clone(),
                 &self.client,
+                &aggregate_public_key,
             ) {
                 Ok(bundle_state) => {
                     let senders =

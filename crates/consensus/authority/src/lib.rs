@@ -20,8 +20,9 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 
-use bitcoin::hashes::sha256;
+use bitcoin::hashes::{sha256, Hash};
 use pbft::PbftCommitmentCriteria;
+use reth_btc_wallet::bitcoind::BitcoindClientFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::{
     utils::{get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities},
@@ -33,7 +34,6 @@ use reth_interfaces::{
 };
 use reth_node_api::ConfigureEvmEnv;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage,
     constants::{nums_secp256k1_pk, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
     extra_data_header::ExtraDataHeader,
     header_ext::HeaderExt,
@@ -481,8 +481,8 @@ impl StorageInner {
             None,
             None,
             edh_config.0,
-            utxo_commitment,
-            *edh_config.1,
+            sha256::Hash::all_zeros(),
+            edh_config.1,
         );
         let mut header = Header {
             parent_hash: best_hash,
@@ -522,8 +522,7 @@ impl StorageInner {
     pub(crate) fn execute<EvmConfig>(
         &mut self,
         block: &BlockWithSenders,
-        executor: &mut EVMProcessor<'_, EvmConfig>,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
+        executor: &mut EVMProcessor<'_, EvmConfig, BitcoindClientFactory>,
         block_builder_address: Option<Address>,
     ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     where
@@ -640,12 +639,6 @@ impl StorageInner {
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
-        // Check if we have a recent block header
-        // Can't validate pegin without it
-        if botanix_consensus_pkg.is_none() {
-            return Err(BlockExecutionError::BitcoinRecentHeaderNotAvailable);
-        }
-
         // Construct block and header
         let header =
             self.build_header_template(&transactions, &chain_spec.clone(), client, edh_config)?;
@@ -671,12 +664,8 @@ impl StorageInner {
         let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
         let block_builder_address = public_key_to_address(block_builder_pub_key);
         info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
-        let (bundle_state, gas_used) = self.execute(
-            &block_with_senders,
-            &mut executor,
-            botanix_consensus_pkg.clone(),
-            Some(block_builder_address),
-        )?;
+        let (bundle_state, gas_used) =
+            self.execute(&block_with_senders, &mut executor, Some(block_builder_address))?;
         Ok((bundle_state, block, gas_used))
     }
 
@@ -690,7 +679,7 @@ impl StorageInner {
         bundle_state: &BundleStateWithReceipts,
         block: Block,
         gas_used: u64,
-        botanix_consensus_pkg: &BotanixConsensusPackage,
+        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
         sk: &secp256k1::SecretKey,
         authority_signers: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
@@ -710,10 +699,10 @@ impl StorageInner {
             authority_signers,
             witness_data,
             // This is checked to be Some above
-            botanix_consensus_pkg.bitcoin_checkpoint.0.block_hash(),
+            edh_config.0,
             utxo_commitment,
             client,
-            &botanix_consensus_pkg.aggregate_public_key,
+            &edh_config.1,
         )?;
 
         // Validate EDH authorities match genesis authorities
@@ -744,9 +733,9 @@ impl StorageInner {
         &mut self,
         consensus: &AuthorityConsensus,
         sealed_block: SealedBlock,
-        botanix_consensus_pkg: Option<BotanixConsensusPackage>,
         evm_config: EvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
+        aggregated_public_key: &secp256k1::PublicKey,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -773,27 +762,21 @@ impl StorageInner {
         // validate before executing block
         let authority_signers = self.authorities.clone();
         let genesis_authorities = self.genesis_authorities.clone();
-        if let Some(consensus_pkg) = botanix_consensus_pkg.clone() {
-            consensus
-                .validate_header_standalone(
-                    &sealed_block.header.clone(),
-                    &authority_signers,
-                    &genesis_authorities,
-                    Some(&consensus_pkg.aggregate_public_key),
-                )
-                .map_err(|e| {
-                    warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                    // TODO(armins) return more expressive error
-                    BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-                })?;
-        }
+        consensus
+            .validate_header_standalone(
+                &sealed_block.header.clone(),
+                &authority_signers,
+                &genesis_authorities,
+                Some(aggregated_public_key),
+            )
+            .map_err(|e| {
+                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
+                // TODO(armins) return more expressive error
+                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+            })?;
         let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
-        let (bundle_state, _gas_used) = self.execute(
-            &block_with_senders,
-            &mut executor,
-            botanix_consensus_pkg,
-            Some(block_builder_address),
-        )?;
+        let (bundle_state, _gas_used) =
+            self.execute(&block_with_senders, &mut executor, Some(block_builder_address))?;
 
         Ok(bundle_state)
     }

@@ -1,6 +1,7 @@
 //! Main node command
 
 use bitcoin::hashes::Hash;
+use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
@@ -18,7 +19,6 @@ use reth_node_core::cli::config::BtcServerConfig;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
-use bitcoincore_rpc::client::RpcApi;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
     hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -27,7 +27,7 @@ use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
 use reth_btc_wallet::bitcoind::{
-    BitcoindClient, BitcoindClientFactory, BitcoindConfig, BitcoindFactory,
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
@@ -72,6 +72,7 @@ use tokio::{
     sync::{mpsc::unbounded_channel, oneshot, RwLock},
     time::Duration,
 };
+
 use tracing::{debug, error, info};
 
 use crate::{
@@ -549,7 +550,8 @@ where {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config);
+        let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config)
+            .with_bitcoind_factory(bitcoind_factory.clone(), node_config.rpc.btc_network);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
