@@ -20,40 +20,27 @@ use std::{collections::BTreeMap, sync::Arc};
 /// - The executor factory to execute blocks with
 /// - The chain spec
 #[derive(Debug)]
-pub struct TreeExternals<DB, EVM, BF> {
+pub struct TreeExternals<DB, EVM> {
     /// The provider factory, used to commit the canonical chain, or unwind it.
     pub(crate) provider_factory: ProviderFactory<DB>,
     /// The consensus engine.
     pub(crate) consensus: Arc<dyn Consensus>,
     /// The executor factory to execute blocks with.
     pub(crate) executor_factory: EVM,
-    /// Factory to create bitcoind clients
-    pub(crate) bitcoind_factory: BF,
 }
 
-impl<DB, EVM, BF> TreeExternals<DB, EVM, BF> {
+impl<DB, EVM> TreeExternals<DB, EVM> {
     /// Create new tree externals.
     pub fn new(
         provider_factory: ProviderFactory<DB>,
         consensus: Arc<dyn Consensus>,
         executor_factory: EVM,
-        bitcoind_factory: BF,
     ) -> Self {
-        Self { provider_factory, consensus, executor_factory, bitcoind_factory }
+        Self { provider_factory, consensus, executor_factory }
     }
 }
 
-impl<DB: Database, EVM, BF: BitcoindFactory> TreeExternals<DB, EVM, BF> {
-    /// Fetch bitcoind client
-    pub(crate) fn bitcoind_client(&self) -> RethResult<BitcoindClient> {
-        let client = self
-            .bitcoind_factory
-            .build_and_connect()
-            .map_err(|e| RethError::Custom("Failed to connect to bitcoind".to_string()))?;
-
-        Ok(client)
-    }
-
+impl<DB: Database, EVM> TreeExternals<DB, EVM> {
     /// Fetches the latest canonical block hashes by walking backwards from the head.
     ///
     /// Returns the hashes sorted by increasing block numbers
