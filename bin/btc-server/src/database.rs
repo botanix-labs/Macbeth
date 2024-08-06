@@ -9,7 +9,7 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
+    Amount, BlockHash, OutPoint, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
@@ -537,17 +537,18 @@ impl TryFrom<RpcUtxo> for Utxo {
 
         // txout
         let tx_out = value.output.ok_or_else(|| Error::RpcToDbMap("TxOut is None".to_string()))?;
-        let script_pubkey = tx_out
+        let script_pk_vec = tx_out
             .script_pubkey
-            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
-        let script = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
-            .map_err(|_| Error::RpcToDbMap("Unparsable ScriptBuf".to_string()))?;
+            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?
+            .script;
+
+        let script_pubkey = bitcoin::ScriptBuf::from_bytes(script_pk_vec);
         let tx_out_val = Amount::from_sat(tx_out.value);
 
         // create the utxo
         Ok(Utxo::new(
             OutPoint::new(txid, vout),
-            TxOut { value: tx_out_val, script_pubkey: script },
+            TxOut { value: tx_out_val, script_pubkey },
             if value.eth_address.is_empty() {
                 None
             } else {
@@ -590,6 +591,29 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn from_db_utxo_to_rpc_utxo() {
+        let tx = create_tx(1);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 0),
+            tx.output.get(0).expect("one output").clone(),
+            Some([0; 20]),
+        );
+        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
+        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
+        assert!(utxo == utxo2);
+
+        // Without eth address
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 2),
+            tx.output.get(0).expect("one output").clone(),
+            None,
+        );
+        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
+        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
+        assert!(utxo == utxo2);
     }
 
     #[test]
