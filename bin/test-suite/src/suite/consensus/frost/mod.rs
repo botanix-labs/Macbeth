@@ -1,6 +1,7 @@
 pub mod error;
 
 // tests
+pub mod test_batch_pegins;
 pub mod test_block_builder;
 pub mod test_dkg;
 pub mod test_e2e_peer_disconnect;
