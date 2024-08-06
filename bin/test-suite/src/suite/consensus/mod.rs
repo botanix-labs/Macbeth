@@ -107,6 +107,9 @@ impl Suite for ConsensusIntegrationTestSuite {
             "block_builder" => {
                 run_test!(self, Default::default(), frost::test_block_builder::block_builder)
             }
+            "batch_pegins" => {
+                run_test!(self, Default::default(), frost::test_batch_pegins::batch_pegins)
+            }
             "frost_e2e_stable" => {
                 run_test!(self, Default::default(), frost::test_frost_e2e::frost_e2e_stable)
             }
