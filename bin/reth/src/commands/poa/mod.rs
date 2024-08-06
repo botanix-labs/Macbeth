@@ -559,7 +559,6 @@ where {
             provider_factory.clone(),
             consensus.clone(),
             executor_factory.clone(),
-            bitcoind_factory.clone(),
         );
 
         let tree = BlockchainTree::new(
