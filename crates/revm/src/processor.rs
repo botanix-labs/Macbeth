@@ -443,7 +443,7 @@ where
         }
         let time = Instant::now();
         let block_builder_address = get_block_producer_address(&block.header.clone());
-        info!(target: "evm", "Block builder address: {:?}", block_builder_address);
+        debug!(target: "evm", "Block builder address: {:?}", block_builder_address);
         self.apply_post_execution_state_change(
             block,
             total_difficulty,
