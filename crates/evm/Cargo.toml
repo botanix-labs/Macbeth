@@ -16,9 +16,3 @@ reth-primitives.workspace = true
 revm-primitives.workspace = true
 revm.workspace = true
 reth-interfaces.workspace = true
-
-
-# Botanix things
-bitcoin.workspace = true
-reth-btc-wallet.workspace = true
-

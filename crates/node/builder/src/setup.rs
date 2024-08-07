@@ -2,7 +2,7 @@
 
 use crate::ConfigureEvm;
 use bitcoin;
-use reth_btc_wallet::{bitcoind::BitcoindFactory, test_utils::MockBitcoindFactory};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db::database::Database;
