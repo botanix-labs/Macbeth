@@ -22,8 +22,8 @@ use reth_interfaces::{
 };
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, constants::EPOCH_SLOTS, stage::StageId, BlockNumHash,
-    BlockNumber, Head, Header, SealedBlock, SealedHeader, B256,
+    constants::EPOCH_SLOTS, stage::StageId, BlockNumHash, BlockNumber, Head, Header, SealedBlock,
+    SealedHeader, B256,
 };
 use reth_provider::{
     BlockIdReader, BlockReader, BlockSource, CanonChainTracker, ChainSpecProvider, ProviderError,

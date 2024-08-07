@@ -15,8 +15,7 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockHash, BlockNumber, ForkBlock, GotExpected,
-    SealedBlockWithSenders, SealedHeader, U256,
+    BlockHash, BlockNumber, ForkBlock, GotExpected, SealedBlockWithSenders, SealedHeader, U256,
 };
 use reth_provider::{
     providers::{BundleStateProvider, ConsistentDbView},

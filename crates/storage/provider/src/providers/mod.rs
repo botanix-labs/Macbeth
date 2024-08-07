@@ -22,7 +22,6 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage,
     stage::{StageCheckpoint, StageId},
     Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumber,
     BlockNumberOrTag, BlockWithSenders, ChainInfo, ChainSpec, Header, PruneCheckpoint,

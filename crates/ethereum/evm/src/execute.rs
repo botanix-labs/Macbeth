@@ -1,7 +1,7 @@
 //! Ethereum block executor.
 
 use crate::EthEvmConfig;
-use reth_btc_wallet::bitcoind::BitcoindClientFactory;
+
 use reth_evm::{
     execute::{
         BatchBlockOutput, BatchExecutor, EthBlockExecutionInput, EthBlockOutput, Executor,

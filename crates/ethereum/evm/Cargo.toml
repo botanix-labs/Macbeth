@@ -21,10 +21,6 @@ reth-provider.workspace = true
 # Ethereum
 revm-primitives.workspace = true
 
-# Bitcoin
-bitcoin.workspace = true
-reth-btc-wallet.workspace = true
-
 # misc
 tracing.workspace = true
 

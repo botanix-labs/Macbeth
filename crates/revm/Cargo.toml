@@ -22,7 +22,6 @@ reth-trie = { workspace = true, optional = true }
 
 # Botanix
 reth-btc-wallet.workspace = true
-bitcoincore-rpc.workspace = true
 bitcoin.workspace = true
 
 # revm
@@ -37,9 +36,6 @@ tracing.workspace = true
 
 # Botanix
 reth-botanix-lib.workspace = true
-
-## url
-url = { version = "2.2.2", features = ["serde"] }
 
 [dev-dependencies]
 reth-trie.workspace = true

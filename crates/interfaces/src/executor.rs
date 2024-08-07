@@ -3,8 +3,8 @@ use core::fmt;
 use crate::{provider::ProviderError, trie::StateRootError};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    header_ext::BotanixConsensusPackageError, revm_primitives::EVMError, BlockNumHash, Bloom,
-    GotExpected, GotExpectedBoxed, PruneSegmentError, B256,
+    revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
+    PruneSegmentError, B256,
 };
 use thiserror::Error;
 
