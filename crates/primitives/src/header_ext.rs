@@ -137,8 +137,8 @@ impl PartialEq for ValidateInturnError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
-                (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
+            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn)
+                | (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
         )
     }
 }
@@ -175,13 +175,13 @@ impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::InvalidAuthority, Self::InvalidAuthority) |
-                (Self::InvalidMessage, Self::InvalidMessage) |
-                (Self::InvalidSignature, Self::InvalidSignature) |
-                (Self::MissingSignature, Self::MissingSignature) |
-                (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
-                (Self::RecoverFailed, Self::RecoverFailed) |
-                (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
+            (Self::InvalidAuthority, Self::InvalidAuthority)
+                | (Self::InvalidMessage, Self::InvalidMessage)
+                | (Self::InvalidSignature, Self::InvalidSignature)
+                | (Self::MissingSignature, Self::MissingSignature)
+                | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
+                | (Self::RecoverFailed, Self::RecoverFailed)
+                | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
         )
     }
 }
@@ -282,8 +282,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
-            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
@@ -456,14 +456,18 @@ impl HeaderExt for Header {
         let bitcoin_checkpoint_header = match bitcoind.get_block_header(&edh.bitcoin_block_hash) {
             Ok(header) => header,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(e))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(
+                    e,
+                ))
             }
         };
 
         let bitcoin_checkpoint_height = match bitcoind.get_block_info(&edh.bitcoin_block_hash) {
             Ok(info) => info.height,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(e))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(
+                    e,
+                ))
             }
         };
 
@@ -480,7 +484,13 @@ impl HeaderExt for Header {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{
+        block::{BlockHash, Header as BtcHeader, Version},
+        hashes::Hash,
+        CompactTarget, TxMerkleNode,
+    };
     use rand::rngs::OsRng;
+    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
     use secp256k1::Secp256k1;
 
     use super::*;
@@ -804,5 +814,34 @@ mod tests {
 
         let res = header.check_authority_sig_add(&authority_signers);
         assert_eq!(res.unwrap_err(), ValidateAuthoritySignatureError::MissingSignature);
+    }
+
+    #[test]
+    fn test_botanix_consensus_package() {
+        let mut header = Header::default();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
+        let btc_network = bitcoin::Network::Testnet;
+        let bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
+
+        let res = header.botanix_consensus_package(btc_network, bitcoind_factory);
+        assert!(res.is_ok());
+
+        let BotanixConsensusPackage { bitcoin_checkpoint, aggregate_public_key, btc_network } =
+            res.unwrap();
+
+        let expected_header = BtcHeader {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+
+        assert_eq!(bitcoin_checkpoint.0, expected_header);
+        assert_eq!(bitcoin_checkpoint.1, 0);
+        assert_eq!(aggregate_public_key, edh.aggregated_public_key);
+        assert_eq!(btc_network, bitcoin::Network::Testnet);
     }
 }
