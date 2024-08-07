@@ -10,6 +10,7 @@ use crate::{
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_btc_wallet::bitcoind::BitcoindClientFactory;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
@@ -67,6 +68,7 @@ pub struct AuthorityConsensusBuilder<
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     btc_network: bitcoin::Network,
     executor_factory: EF,
+    bitcoind_factory: BitcoindClientFactory,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -117,6 +119,7 @@ where
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authority_socket_addresses: Vec<SocketAddr>,
         executor_factory: EF,
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -201,6 +204,7 @@ where
             payload_builder,
             btc_network,
             executor_factory,
+            bitcoind_factory,
         })
     }
 
@@ -239,6 +243,7 @@ where
             payload_builder,
             btc_network,
             executor_factory,
+            bitcoind_factory,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
 
@@ -276,6 +281,7 @@ where
             network_client.clone(),
             network_handle.clone(),
             client.clone(),
+            bitcoind_factory.clone(),
         );
 
         // Set up frost notification message queue
@@ -361,6 +367,7 @@ where
                 pbft_task_notifications1_tx,
                 btc_network,
                 client.clone(),
+                bitcoind_factory.clone(),
             );
 
             block_production_task = Some(block_production);
