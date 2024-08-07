@@ -5,6 +5,7 @@ use crate::{
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 
+use reth_btc_wallet::bitcoind::{self, BitcoindClientFactory};
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};
@@ -68,6 +69,8 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) btc_network: bitcoin::Network,
     /// Database provider
     pub(crate) client: Client,
+    /// Bitcoind client factory
+    pub(crate) bitcoind_factory: BitcoindClientFactory,
 }
 impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
     BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
@@ -106,6 +109,7 @@ where
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
         btc_network: bitcoin::Network,
         client: Client,
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
         Self {
             chain_spec,
@@ -128,6 +132,7 @@ where
             pbft_task_tx,
             btc_network,
             client,
+            bitcoind_factory,
         }
     }
 

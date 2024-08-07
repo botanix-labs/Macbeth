@@ -140,7 +140,7 @@ where
 
         let mut storage = self.storage.inner.write().await;
         // retrieve aggregate key
-        let secp_pk = match storage.aggregate_public_key {
+        let agg_pk = match storage.aggregate_public_key {
             Some(pk) => pk,
             None => {
                 warn!(target: "consensus::authority", "Failed to get aggregate public key from cache. DKG is probably not finished yet. Skipping block production");
@@ -149,17 +149,18 @@ where
         };
         let bitcoin_checkpoint =
             recent_bitcoin_block_header.expect("valid header and height tuple");
-        let edh_config = (bitcoin_checkpoint.0.block_hash(), secp_pk);
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
         let (bundle_state, block, gas_used) = match storage.build_and_execute(
             transactions.clone(),
             self.consensus.chain_spec.clone(),
-            edh_config.clone(),
+            &bitcoin_checkpoint.0.block_hash(),
+            &agg_pk,
             &self.sk,
             self.evm_config.clone(),
             &self.client,
+            self.bitcoind_factory.clone(),
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -312,8 +313,8 @@ where
             &bundle_state,
             block,
             gas_used,
-            edh_config,
-            // TODO(armins) read vote in as param
+            &bitcoin_checkpoint.0.block_hash(),
+            &agg_pk,
             &self.sk,
             &authority_signers,
             &epoch_witness,
