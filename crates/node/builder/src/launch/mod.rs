@@ -16,7 +16,10 @@ use reth_beacon_consensus::{
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
+use reth_btc_wallet::{
+    bitcoind::{BitcoindConfig, BitcoindFactory},
+    test_utils::MockBitcoindFactory,
+};
 use reth_consensus::Consensus;
 use reth_exex::{ExExContext, ExExHandle, ExExManager, ExExManagerHandle};
 use reth_interfaces::p2p::either::EitherDownloader;
@@ -340,6 +343,8 @@ address.to_string(), format_ether(alloc.balance));
                 static_file_producer,
                 node_adapter.components.evm_config().clone(),
                 pipeline_exex_handle,
+                MockBitcoindFactory::new(BitcoindConfig::default()),
+                bitcoin::Network::Regtest,
             )
             .await?;
 
@@ -363,6 +368,8 @@ address.to_string(), format_ether(alloc.balance));
                 static_file_producer,
                 node_adapter.components.evm_config().clone(),
                 pipeline_exex_handle,
+                MockBitcoindFactory::new(BitcoindConfig::default()),
+                bitcoin::Network::Regtest,
             )
             .await?;
 

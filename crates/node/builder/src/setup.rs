@@ -1,7 +1,8 @@
 //! Helpers for setting up parts of the node.
 
 use crate::ConfigureEvm;
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
+use bitcoin;
+use reth_btc_wallet::{bitcoind::BitcoindFactory, test_utils::MockBitcoindFactory};
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db::database::Database;
@@ -38,7 +39,7 @@ use tokio::sync::watch;
 
 /// Constructs a [Pipeline] that's wired to the network
 #[allow(clippy::too_many_arguments)]
-pub async fn build_networked_pipeline<DB, Client, EvmConfig>(
+pub async fn build_networked_pipeline<DB, Client, EvmConfig, BF>(
     node_config: &NodeConfig,
     config: &StageConfig,
     client: Client,
@@ -51,11 +52,14 @@ pub async fn build_networked_pipeline<DB, Client, EvmConfig>(
     static_file_producer: StaticFileProducer<DB>,
     evm_config: EvmConfig,
     exex_manager_handle: ExExManagerHandle,
+    bitcoind_factory: BF,
+    bitcoin_network: bitcoin::Network,
 ) -> eyre::Result<Pipeline<DB>>
 where
     DB: Database + Unpin + Clone + 'static,
     Client: HeadersClient + BodiesClient + Clone + 'static,
     EvmConfig: ConfigureEvm + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
 {
     // building network downloaders using the fetch client
     let header_downloader = ReverseHeadersDownloaderBuilder::new(config.headers)
@@ -79,6 +83,8 @@ where
         static_file_producer,
         evm_config,
         exex_manager_handle,
+        bitcoind_factory,
+        bitcoin_network,
     )
     .await?;
 
@@ -87,7 +93,7 @@ where
 
 /// Builds the [Pipeline] with the given [ProviderFactory] and downloaders.
 #[allow(clippy::too_many_arguments)]
-pub async fn build_pipeline<DB, H, B, EvmConfig>(
+pub async fn build_pipeline<DB, H, B, EvmConfig, BF>(
     node_config: &NodeConfig,
     provider_factory: ProviderFactory<DB>,
     stage_config: &StageConfig,
@@ -100,12 +106,15 @@ pub async fn build_pipeline<DB, H, B, EvmConfig>(
     static_file_producer: StaticFileProducer<DB>,
     evm_config: EvmConfig,
     exex_manager_handle: ExExManagerHandle,
+    bitcoind_factory: BF,
+    bitcoin_network: bitcoin::Network,
 ) -> eyre::Result<Pipeline<DB>>
 where
     DB: Database + Clone + 'static,
     H: HeaderDownloader + 'static,
     B: BodyDownloader + 'static,
     EvmConfig: ConfigureEvm + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
 {
     let mut builder = Pipeline::builder();
 
@@ -115,10 +124,7 @@ where
     }
 
     let (tip_tx, tip_rx) = watch::channel(B256::ZERO);
-    let factory = reth_revm::EvmProcessorFactory::<_, MockBitcoindFactory>::new(
-        node_config.chain.clone(),
-        evm_config,
-    );
+    let factory = reth_revm::EvmProcessorFactory::new(node_config.chain.clone(), evm_config);
 
     let stack_config = InspectorStackConfig {
         use_printer_tracer: node_config.debug.print_inspector,
@@ -133,7 +139,9 @@ where
         },
     };
 
-    let factory = factory.with_stack_config(stack_config);
+    let factory = factory
+        .with_stack_config(stack_config)
+        .with_bitcoind_factory(bitcoind_factory, bitcoin_network);
 
     let prune_modes = prune_config.map(|prune| prune.segments).unwrap_or_default();
 
