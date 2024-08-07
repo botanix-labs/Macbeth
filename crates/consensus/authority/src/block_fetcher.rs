@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::hashes::{sha256, Hash};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
+use reth_btc_wallet::bitcoind::BitcoindClientFactory;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
     p2p::{
@@ -54,6 +55,9 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     network_handle: NetworkHandle,
     /// Database provider
     client: Client,
+    /// Bitcoind client factory
+    // TODO use trait here instead of concrete type when we want to mock this out
+    bitcoind_factory: BitcoindClientFactory,
 }
 
 impl<Client, EvmConfig, Engine, NetworkClient>
@@ -84,6 +88,7 @@ where
         network_client: NetworkClient,
         network_handle: NetworkHandle,
         client: Client,
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
         Self {
             consensus,
@@ -98,6 +103,7 @@ where
             network_client,
             network_handle,
             client,
+            bitcoind_factory,
         }
     }
 
@@ -169,6 +175,7 @@ where
                 self.evm_config.clone(),
                 &self.client,
                 &aggregate_public_key,
+                self.bitcoind_factory.clone(),
             ) {
                 Ok(bundle_state) => {
                     let senders =

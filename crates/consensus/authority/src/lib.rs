@@ -452,7 +452,8 @@ impl StorageInner {
         transactions: &[TransactionSigned],
         chain_spec: &Arc<ChainSpec>,
         client: &impl BlockReaderIdExt,
-        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
+        bitcoin_checkpoint: &bitcoin::BlockHash,
+        aggregate_public_key: &secp256k1::PublicKey,
     ) -> Result<Header, BlockExecutionError> {
         // let (best_block, best_hash) = self.get_best_block_and_hash()?;
         let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
@@ -480,9 +481,9 @@ impl StorageInner {
             None,
             None,
             None,
-            edh_config.0,
+            *bitcoin_checkpoint,
             sha256::Hash::all_zeros(),
-            edh_config.1,
+            *aggregate_public_key,
         );
         let mut header = Header {
             parent_hash: best_hash,
@@ -631,17 +632,24 @@ impl StorageInner {
         &mut self,
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
+        bitcoin_checkpoint: &bitcoin::BlockHash,
+        aggregate_public_key: &secp256k1::PublicKey,
         sk: &secp256k1::SecretKey,
         evm_config: EvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
     {
         // Construct block and header
-        let header =
-            self.build_header_template(&transactions, &chain_spec.clone(), client, edh_config)?;
+        let header = self.build_header_template(
+            &transactions,
+            &chain_spec.clone(),
+            client,
+            bitcoin_checkpoint,
+            aggregate_public_key,
+        )?;
 
         let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -658,7 +666,9 @@ impl StorageInner {
             .with_bundle_update()
             .build();
 
+        // TODO why are we not using the executor factory here?
         let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
+        executor.with_bitcoind_factory(bitcoind_factory, self.btc_network);
 
         // derive block builder address to receive block fees
         let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
@@ -679,7 +689,8 @@ impl StorageInner {
         bundle_state: &BundleStateWithReceipts,
         block: Block,
         gas_used: u64,
-        edh_config: (bitcoin::BlockHash, secp256k1::PublicKey),
+        bitcoin_checkpoint: &bitcoin::BlockHash,
+        aggregate_public_key: &secp256k1::PublicKey,
         sk: &secp256k1::SecretKey,
         authority_signers: &[secp256k1::PublicKey],
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
@@ -699,10 +710,10 @@ impl StorageInner {
             authority_signers,
             witness_data,
             // This is checked to be Some above
-            edh_config.0,
+            bitcoin_checkpoint.clone(),
             utxo_commitment,
             client,
-            &edh_config.1,
+            &aggregate_public_key,
         )?;
 
         // Validate EDH authorities match genesis authorities
@@ -736,6 +747,7 @@ impl StorageInner {
         evm_config: EvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
         aggregated_public_key: &secp256k1::PublicKey,
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Result<BundleStateWithReceipts, BlockExecutionError>
     where
         EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
@@ -747,8 +759,11 @@ impl StorageInner {
             .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
             .with_bundle_update()
             .build();
+
+        // TODO why are we not using the executor factory here?
         let mut executor =
             EVMProcessor::new_with_state(consensus.chain_spec.clone(), db, evm_config);
+        executor.with_bitcoind_factory(bitcoind_factory, self.btc_network);
 
         let senders =
             TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
