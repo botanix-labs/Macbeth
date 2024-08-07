@@ -81,10 +81,17 @@ impl BitcoindClient {
     }
 
     pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        match self.rpc.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
-            Ok(blockchain_info_result) => {
-                Ok(blockchain_info_result.initial_block_download == false)
-            }
+        #[derive(Deserialize)]
+        struct Res {
+            initialblockdownload: bool,
+        }
+
+        match self
+            .rpc
+            .call::<Res>("getblockchaininfo", &[])
+            .map_err(BitcoindError::BlockchainInfoFailed)
+        {
+            Ok(blockchain_info_result) => Ok(blockchain_info_result.initialblockdownload == false),
             Err(err) => {
                 // TODO (armins) use logger library
                 println!("error getting get_blockchain_info(): {:?}", err);
