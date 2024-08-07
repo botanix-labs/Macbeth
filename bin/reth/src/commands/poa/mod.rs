@@ -765,6 +765,7 @@ where {
             genesis_authorities,
             authorities_socket_addresses,
             executor_factory.clone(),
+            bitcoind_factory.clone(),
         )
         .expect("Failed to create authority consensus builder")
         .build()
