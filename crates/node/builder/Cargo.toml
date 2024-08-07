@@ -43,6 +43,9 @@ reth-consensus.workspace = true
 ## Botanix things
 reth-btc-wallet.workspace = true
 
+# Bitcoin
+bitcoin.workspace = true
+
 ## async
 futures.workspace = true
 tokio = { workspace = true, features = [

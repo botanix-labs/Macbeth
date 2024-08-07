@@ -298,7 +298,8 @@ where {
             info!(target: "reth::cli", path = ?bitcoind_config_path, "Bitcoind config loaded from file");
             bitcoind_config = config.into();
         }
-        let bitcoind_factory = BitcoindClientFactory::new(bitcoind_config.clone());
+        let bitcoind_factory: BitcoindClientFactory =
+            BitcoindClientFactory::new(bitcoind_config.clone());
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
@@ -800,6 +801,8 @@ where {
             static_file_producer.clone(),
             evm_config,
             exex_manager,
+            bitcoind_factory.clone(),
+            node_config.rpc.btc_network,
         )
         .await?;
 
