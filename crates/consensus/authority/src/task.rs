@@ -5,7 +5,7 @@ use crate::{
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 
-use reth_btc_wallet::bitcoind::{self, BitcoindClientFactory};
+use reth_btc_wallet::bitcoind::BitcoindClientFactory;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::{ConfigureEvmEnv, EngineTypes};

@@ -1,12 +1,5 @@
-use std::{future::Future, pin::Pin};
-
 use crate::bitcoind::{BitcoindError, BitcoindFactory, RpcApiExt};
-use bitcoincore_rpc::{
-    json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
-    jsonrpc::serde_json,
-    Auth, Client, Error as JsonRPCError, RpcApi,
-};
-use tokio::task::futures;
+use bitcoincore_rpc::{jsonrpc::serde_json, Error as JsonRPCError};
 
 pub struct MockBitcoind;
 impl bitcoincore_rpc::RpcApi for MockBitcoind {

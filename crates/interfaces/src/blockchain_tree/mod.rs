@@ -1,7 +1,7 @@
 use crate::{blockchain_tree::error::InsertBlockError, provider::ProviderError, RethResult};
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock,
-    SealedBlockWithSenders, SealedHeader,
+    BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock, SealedBlockWithSenders,
+    SealedHeader,
 };
 use std::collections::{BTreeMap, HashSet};
 

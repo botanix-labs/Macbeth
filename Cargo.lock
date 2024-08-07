@@ -7833,7 +7833,6 @@ dependencies = [
 name = "reth-auto-seal-consensus"
 version = "0.2.0-beta.6"
 dependencies = [
- "bitcoin",
  "clap",
  "eyre",
  "futures-util",
@@ -7858,7 +7857,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -8406,8 +8404,6 @@ dependencies = [
 name = "reth-evm"
 version = "0.2.0-beta.6"
 dependencies = [
- "bitcoin",
- "reth-btc-wallet",
  "reth-interfaces",
  "reth-primitives",
  "revm",
@@ -8418,8 +8414,6 @@ dependencies = [
 name = "reth-evm-ethereum"
 version = "0.2.0-beta.6"
 dependencies = [
- "bitcoin",
- "reth-btc-wallet",
  "reth-evm",
  "reth-interfaces",
  "reth-primitives",
@@ -9078,7 +9072,6 @@ name = "reth-revm"
 version = "0.2.0-beta.6"
 dependencies = [
  "bitcoin",
- "bitcoincore-rpc",
  "ethers",
  "reth-botanix-lib",
  "reth-btc-wallet",
@@ -9091,7 +9084,6 @@ dependencies = [
  "revm",
  "revm-inspectors",
  "tracing",
- "url",
 ]
 
 [[package]]

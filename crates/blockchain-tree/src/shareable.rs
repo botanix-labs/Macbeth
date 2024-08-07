@@ -12,8 +12,8 @@ use reth_interfaces::{
     RethResult,
 };
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock,
-    SealedBlockWithSenders, SealedHeader,
+    BlockHash, BlockNumHash, BlockNumber, Receipt, SealedBlock, SealedBlockWithSenders,
+    SealedHeader,
 };
 use reth_provider::{
     BlockchainTreePendingStateProvider, BundleStateDataProvider, CanonStateSubscriptions,
