@@ -6,6 +6,7 @@ use crate::{
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
 };
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::config::EtlConfig;
 use reth_consensus::{test_utils::TestConsensus, Consensus};
 use reth_db::{test_utils::TempDatabase, DatabaseEnv as DE};
@@ -86,7 +87,7 @@ impl<DB> TestEnv<DB> {
         loop {
             let result = self.send_new_payload(payload.clone(), cancun_fields.clone()).await?;
             if !result.is_syncing() {
-                return Ok(result)
+                return Ok(result);
             }
         }
     }
@@ -107,7 +108,7 @@ impl<DB> TestEnv<DB> {
         loop {
             let result = self.engine_handle.fork_choice_updated(state, None).await?;
             if !result.is_syncing() {
-                return Ok(result)
+                return Ok(result);
             }
         }
     }
@@ -370,10 +371,12 @@ where
                 executor_factory.extend(results);
                 EitherExecutorFactory::Left(executor_factory)
             }
-            TestExecutorConfig::Real => EitherExecutorFactory::Right(EvmProcessorFactory::new(
-                self.base_config.chain_spec.clone(),
-                EthEvmConfig::default(),
-            )),
+            TestExecutorConfig::Real => {
+                EitherExecutorFactory::Right(EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+                    self.base_config.chain_spec.clone(),
+                    EthEvmConfig::default(),
+                ))
+            }
         };
 
         let static_file_producer = StaticFileProducer::new(

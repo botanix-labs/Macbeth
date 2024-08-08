@@ -6,6 +6,7 @@ use crate::{
 };
 use alloy_rlp::Decodable;
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_db::test_utils::{create_test_rw_db, create_test_static_files_dir};
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{BlockBody, SealedBlock, StaticFileSegment};
@@ -61,7 +62,7 @@ impl Case for BlockchainTestCase {
     fn run(&self) -> Result<(), Error> {
         // If the test is marked for skipping, return a Skipped error immediately.
         if self.skip {
-            return Err(Error::Skipped)
+            return Err(Error::Skipped);
         }
 
         // Iterate through test cases, filtering by the network type to exclude specific forks.
@@ -70,13 +71,13 @@ impl Case for BlockchainTestCase {
             .filter(|case| {
                 !matches!(
                     case.network,
-                    ForkSpec::ByzantiumToConstantinopleAt5 |
-                        ForkSpec::Constantinople |
-                        ForkSpec::ConstantinopleFix |
-                        ForkSpec::MergeEOF |
-                        ForkSpec::MergeMeterInitCode |
-                        ForkSpec::MergePush0 |
-                        ForkSpec::Unknown
+                    ForkSpec::ByzantiumToConstantinopleAt5
+                        | ForkSpec::Constantinople
+                        | ForkSpec::ConstantinopleFix
+                        | ForkSpec::MergeEOF
+                        | ForkSpec::MergeMeterInitCode
+                        | ForkSpec::MergePush0
+                        | ForkSpec::Unknown
                 )
             })
             .par_bridge()
@@ -136,7 +137,10 @@ impl Case for BlockchainTestCase {
 
                 // Execute the execution stage using the EVM processor factory for the test case
                 // network.
-                let _ = ExecutionStage::new_with_factory(reth_revm::EvmProcessorFactory::new(
+                let _ = ExecutionStage::new_with_factory(reth_revm::EvmProcessorFactory::<
+                    _,
+                    MockBitcoindFactory,
+                >::new(
                     Arc::new(case.network.clone().into()),
                     EthEvmConfig::default(),
                 ))

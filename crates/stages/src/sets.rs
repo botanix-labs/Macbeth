@@ -19,8 +19,9 @@
 //! # use reth_provider::test_utils::create_test_provider_factory;
 //! # use reth_static_file::StaticFileProducer;
 //! # use reth_config::config::EtlConfig;
+//! # use reth_btc_wallet::test_utils::MockBitcoindFactory;
 //!
-//! # let executor_factory = EvmProcessorFactory::new(MAINNET.clone(), EthEvmConfig::default());
+//! # let executor_factory = EvmProcessorFactory::<_, MockBitcoindFactory>::new(MAINNET.clone(), EthEvmConfig::default());
 //! # let provider_factory = create_test_provider_factory();
 //! # let static_file_producer =  StaticFileProducer::new(
 //!     provider_factory.clone(),
