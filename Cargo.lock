@@ -8419,8 +8419,6 @@ dependencies = [
 name = "reth-evm-ethereum"
 version = "0.2.0-beta.6"
 dependencies = [
- "bitcoin",
- "reth-btc-wallet",
  "reth-evm",
  "reth-interfaces",
  "reth-primitives",
@@ -8710,6 +8708,7 @@ name = "reth-node-builder"
 version = "0.2.0-beta.6"
 dependencies = [
  "aquamarine",
+ "bitcoin",
  "confy",
  "eyre",
  "fdlimit",

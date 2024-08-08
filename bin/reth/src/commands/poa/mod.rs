@@ -760,7 +760,6 @@ where {
             frost_handle,
             block_import_rx,
             executor.clone(),
-            evm_config,
             frost_config,
             payload_builder.clone(),
             node_config.rpc.btc_network,
@@ -768,6 +767,7 @@ where {
             authorities_socket_addresses,
             executor_factory.clone(),
             bitcoind_factory.clone(),
+            evm_config.clone(),
         )
         .expect("Failed to create authority consensus builder")
         .build()

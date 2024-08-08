@@ -304,6 +304,7 @@ impl InsertBlockErrorKind {
                     BlockExecutionError::BitcoinRecentHeaderNotAvailable => true,
                     BlockExecutionError::PBFTConsensusError(_) => true,
                     BlockExecutionError::BotanixConsensusPkgError() => true,
+                    BlockExecutionError::MissingAggregatePublicKey() => true,
                 }
             }
             InsertBlockErrorKind::Tree(err) => {

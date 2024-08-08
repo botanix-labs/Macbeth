@@ -5,18 +5,15 @@ use crate::{
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 
-use reth_btc_wallet::bitcoind::BitcoindClientFactory;
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_network::NetworkHandle;
+use reth_node_api::EngineTypes;
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::ChainSpec;
-use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
-};
+
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_stages::PipelineEvent;
-use reth_tasks::TaskExecutor;
 
 use std::sync::Arc;
 
@@ -26,15 +23,13 @@ use tokio::sync::{
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMan> {
-    /// Chainspec
-    pub(crate) chain_spec: Arc<ChainSpec>,
+pub struct BlockProductionTask<EF, BF, DB, Engine: EngineTypes> {
     /// The authority consensus wrapper
     pub(crate) consensus: AuthorityConsensus,
     /// The active epoch
-    pub(crate) epoch_manager: EpochManager<Client>,
+    pub(crate) epoch_manager: EpochManager<EF, BF, DB>,
     /// Shared storage to insert new blocks
-    pub(crate) storage: Storage,
+    pub(crate) storage: Storage<EF, BF, DB>,
     /// TODO: ideally this would just be a sender of hashes
     pub(crate) to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// The pipeline events to listen on
@@ -47,14 +42,6 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) sk: secp256k1::SecretKey,
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
-    /// Frost Handler
-    #[allow(dead_code)]
-    pub(crate) frost_handle: ToFrostMan,
-    /// The type that defines how to configure the EVM.
-    pub(crate) evm_config: EvmConfig,
-    /// Task executor
-    #[allow(dead_code)]
-    task_executor: TaskExecutor,
     /// Ethereum Payload Builder
     pub(crate) payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     /// Frost Task Receiver
@@ -65,54 +52,37 @@ pub struct BlockProductionTask<Client, EvmConfig, Engine: EngineTypes, ToFrostMa
     pub(crate) pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
     /// Frost Task Sender
     pub(crate) pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
-    /// Bitcoin Network
-    pub(crate) btc_network: bitcoin::Network,
-    /// Database provider
-    pub(crate) client: Client,
-    /// Bitcoind client factory
-    pub(crate) bitcoind_factory: BitcoindClientFactory,
 }
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
-    BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
+impl<EF, BF, DB, Engine: reth_node_api::EngineTypes> BlockProductionTask<EF, BF, DB, Engine>
 where
-    ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
+    DB: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    EF: ExecutorFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
         consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
-        _canon_state_notification: CanonStateNotificationSender,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         btc_server: BtcServerExtendedClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         sk: secp256k1::SecretKey,
-        epoch_manager: EpochManager<Client>,
+        epoch_manager: EpochManager<EF, BF, DB>,
         network_handle: NetworkHandle,
-        frost_handle: ToFrostMan,
-        task_executor: TaskExecutor,
-        evm_config: EvmConfig,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
-        btc_network: bitcoin::Network,
-        client: Client,
-        bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
         Self {
-            chain_spec,
             consensus,
             storage,
             to_engine,
@@ -122,17 +92,11 @@ where
             sk,
             epoch_manager,
             network_handle,
-            frost_handle,
-            task_executor,
-            evm_config,
             payload_builder,
             frost_task_rx,
             frost_task_tx,
             pbft_task_rx,
             pbft_task_tx,
-            btc_network,
-            client,
-            bitcoind_factory,
         }
     }
 
@@ -149,9 +113,7 @@ where
     }
 }
 
-impl<Client, EvmConfig: std::fmt::Debug, Engine: EngineTypes, ToFrostMan> std::fmt::Debug
-    for BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
-{
+impl<EF, BF, DB, Engine: EngineTypes> std::fmt::Debug for BlockProductionTask<EF, BF, DB, Engine> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Authority Block Production Task").finish_non_exhaustive()
     }

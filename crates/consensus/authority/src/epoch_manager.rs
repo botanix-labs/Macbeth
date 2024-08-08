@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use crate::Storage;
 use reth_consensus_common::utils;
-use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber, ChainSpec};
+use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
@@ -13,21 +11,17 @@ use tracing::{debug, info, warn};
 /// 1. The signer is not in the federation
 /// 2. signer is not inturn
 /// 3. block fails common consensus checks
-pub(crate) struct EpochManager<Client> {
+pub(crate) struct EpochManager<EF, BF, DB> {
     /// Access to storage to fetch headers.
-    pub(crate) storage: Storage,
-    /// Database provider
-    pub(crate) client: Client,
-    /// chain spec
-    pub(crate) chain_spec: Arc<ChainSpec>,
+    pub(crate) storage: Storage<EF, BF, DB>,
 }
 
-impl<Client: HeaderProvider> EpochManager<Client>
+impl<EF, BF, DB> EpochManager<EF, BF, DB>
 where
-    Client: BlockReaderIdExt + Clone + 'static,
+    DB: BlockReaderIdExt + HeaderProvider + Clone + 'static,
 {
-    pub(crate) fn new(storage: Storage, client: Client, chain_spec: Arc<ChainSpec>) -> Self {
-        Self { storage, client, chain_spec }
+    pub(crate) fn new(storage: Storage<EF, BF, DB>) -> Self {
+        Self { storage }
     }
 
     pub(crate) async fn poll(&mut self) -> bool {
@@ -35,9 +29,11 @@ where
         let signer_index = storage.signer_index;
         let signer_pk = storage.authority;
         let authority_len = storage.authorities.len() as u64;
+        let client = storage.client.clone();
+        let chain_spec = storage.chain_spec.clone();
         drop(storage);
         // get best block
-        let best_block_number = match self.client.best_block_number() {
+        let best_block_number = match client.best_block_number() {
             Ok(best_block_number) => best_block_number,
             Err(_) => {
                 return false;
@@ -46,8 +42,7 @@ where
 
         // Check if the last signer was us
         // If so nothing to do anymore until the next timeslot
-        let latest_header = self
-            .client
+        let latest_header = client
             .header_by_hash_or_number(BlockHashOrNumber::Number(best_block_number))
             .ok()
             .flatten();
@@ -59,10 +54,8 @@ where
 
         // Checked above
         let latest_header = latest_header.expect("latest header should be present");
-        let block_time = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
+        let block_time =
+            chain_spec.leader_selection_window.expect("block times to be set for PoA consensus");
 
         let is_inturn = utils::is_inturn(authority_len, signer_index as u64, block_time);
 

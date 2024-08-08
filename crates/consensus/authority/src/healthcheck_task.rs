@@ -22,20 +22,20 @@ use tracing::{error, info, warn};
 
 const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 45;
 
-pub struct HealthcheckTask<ToFrostMan> {
+pub struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
     pub(crate) frost_handle: ToFrostMan,
     /// Shared authority storage
-    pub(crate) storage: Storage,
+    pub(crate) storage: Storage<EF, BF, DB>,
     /// Task Executor
     pub(crate) task_executor: TaskExecutor,
     /// Tracker list for peers healthcheck
     pub(crate) peers_healthcheck_tracker: Arc<RwLock<HashMap<PeerId, Instant>>>,
 }
 
-impl<ToFrostMan> HealthcheckTask<ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> HealthcheckTask<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone + Send + 'static,
 {
@@ -44,7 +44,7 @@ where
     pub(crate) fn new(
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         task_executor: TaskExecutor,
     ) -> Self {
         Self {
@@ -218,10 +218,7 @@ where
     }
 }
 
-impl<ToFrostMan> std::fmt::Debug for HealthcheckTask<ToFrostMan>
-where
-    ToFrostMan: ToFrostManager + Clone,
-{
+impl<EF, BF, DB, ToFrostMan> std::fmt::Debug for HealthcheckTask<EF, BF, DB, ToFrostMan> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HealthcheckTask").finish_non_exhaustive()
     }

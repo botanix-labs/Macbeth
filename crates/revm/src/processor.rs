@@ -32,7 +32,7 @@ use crate::{
 use reth_botanix_lib::mint_validation::{
     try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
 };
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindFactory};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
     botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block, BlockNumber,
@@ -674,7 +674,6 @@ mod tests {
     use std::collections::HashMap;
 
     static BEACON_ROOT_CONTRACT_CODE: Bytes = bytes!("3373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500");
-    const BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 
     fn create_state_provider_with_beacon_root_contract() -> StateProviderTest {
         let mut db = StateProviderTest::default();

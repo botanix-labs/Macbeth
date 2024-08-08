@@ -95,9 +95,9 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine<ToFrostMan> {
+pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan> {
     btc_client: BtcServerExtendedClient,
-    storage: Storage,
+    storage: Storage<EF, BF, DB>,
     frost_handle: ToFrostMan,
     state: DKGState,
     personal_frost_identifier: frost::Identifier,
@@ -109,14 +109,14 @@ pub(crate) struct DKGStateMachine<ToFrostMan> {
     round2_packages: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
-impl<ToFrostMan> DKGStateMachine<ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         btc_client: BtcServerExtendedClient,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
     ) -> Self {
@@ -163,7 +163,7 @@ where
     }
 }
 
-impl<ToFrostMan> DKGStateMachine<ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
 {
