@@ -5,6 +5,7 @@ use crate::{
     state::{BlockchainId, TreeState},
     AppendableChain, BlockIndices, BlockchainTreeConfig, BundleStateData, TreeExternals,
 };
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError};
 use reth_db::database::Database;
 use reth_interfaces::{
@@ -1488,8 +1489,10 @@ mod tests {
         );
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         let consensus = Arc::new(TestConsensus::default());
-        let executor_factory =
-            EvmProcessorFactory::new(chain_spec.clone(), EthEvmConfig::default());
+        let executor_factory = EvmProcessorFactory::<_, MockBitcoindFactory>::new(
+            chain_spec.clone(),
+            EthEvmConfig::default(),
+        );
 
         {
             let provider_rw = provider_factory.provider_rw().unwrap();
@@ -1563,8 +1566,8 @@ mod tests {
                     signer,
                     (
                         AccountInfo {
-                            balance: initial_signer_balance -
-                                (single_tx_cost * U256::from(num_of_signer_txs)),
+                            balance: initial_signer_balance
+                                - (single_tx_cost * U256::from(num_of_signer_txs)),
                             nonce: num_of_signer_txs,
                             ..Default::default()
                         },

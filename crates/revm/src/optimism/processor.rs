@@ -1,4 +1,5 @@
 use crate::processor::{compare_receipts_root_and_logs_bloom, EVMProcessor};
+use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_evm::ConfigureEvm;
 use reth_interfaces::executor::{
     BlockExecutionError, BlockValidationError, OptimismBlockExecutionError,
@@ -38,7 +39,7 @@ pub fn verify_receipt_optimism<'a>(
     Ok(())
 }
 
-impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig>
+impl<'a, EvmConfig> BlockExecutor for EVMProcessor<'a, EvmConfig, MockBitcoindFactory>
 where
     EvmConfig: ConfigureEvm,
 {
@@ -107,8 +108,8 @@ where
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
             let block_available_gas = block.header.gas_limit - cumulative_gas_used;
-            if transaction.gas_limit() > block_available_gas &&
-                (is_regolith || !transaction.is_system_transaction())
+            if transaction.gas_limit() > block_available_gas
+                && (is_regolith || !transaction.is_system_transaction())
             {
                 return Err(BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
                     transaction_gas_limit: transaction.gas_limit(),
@@ -143,7 +144,7 @@ where
                 })?;
 
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, *sender)?;
+            let ResultAndState { result, state } = self.transact(transaction, *sender, None)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -174,8 +175,9 @@ where
                 // receipt hashes should be computed when set. The state transition process ensures
                 // this is only set for post-Canyon deposit transactions.
                 #[cfg(feature = "optimism")]
-                deposit_receipt_version: (transaction.is_deposit() &&
-                    self.chain_spec()
+                deposit_receipt_version: (transaction.is_deposit()
+                    && self
+                        .chain_spec()
                         .is_fork_active_at_timestamp(Hardfork::Canyon, block.timestamp))
                 .then_some(1),
             });
