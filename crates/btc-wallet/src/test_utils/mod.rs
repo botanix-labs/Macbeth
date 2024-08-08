@@ -23,9 +23,7 @@ impl RpcApiExt for MockBitcoind {
         Ok(true)
     }
 
-    async fn wait_until_synced(&self) {
-        ()
-    }
+    async fn wait_until_synced(&self) {}
 }
 
 #[derive(Debug, Clone)]
