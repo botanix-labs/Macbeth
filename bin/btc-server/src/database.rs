@@ -9,7 +9,7 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    Amount, BlockHash, OutPoint, TxOut, Txid,
+    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
@@ -537,18 +537,17 @@ impl TryFrom<RpcUtxo> for Utxo {
 
         // txout
         let tx_out = value.output.ok_or_else(|| Error::RpcToDbMap("TxOut is None".to_string()))?;
-        let script_pk_vec = tx_out
-            .script_pubkey
-            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?
-            .script;
-
-        let script_pubkey = bitcoin::ScriptBuf::from_bytes(script_pk_vec);
         let tx_out_val = Amount::from_sat(tx_out.value);
+        let script_pubkey = tx_out
+            .script_pubkey
+            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
+        let script = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
+            .map_err(|_| Error::RpcToDbMap("Unparsable ScriptBuf".to_string()))?;
 
         // create the utxo
         Ok(Utxo::new(
             OutPoint::new(txid, vout),
-            TxOut { value: tx_out_val, script_pubkey },
+            TxOut { value: tx_out_val, script_pubkey: script },
             if value.eth_address.is_empty() {
                 None
             } else {
@@ -566,6 +565,11 @@ impl TryFrom<Utxo> for RpcUtxo {
     type Error = Error;
 
     fn try_from(item: Utxo) -> Result<Self, Self::Error> {
+        let mut script_pk = vec![];
+        item.output
+            .script_pubkey
+            .consensus_encode(&mut script_pk)
+            .map_err(|_e| Error::RpcToDbMap("Failed to serialize scriptpubkey".to_string()))?;
         Ok(RpcUtxo {
             outpoint: Some(RpcOutPoint {
                 txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
@@ -573,7 +577,7 @@ impl TryFrom<Utxo> for RpcUtxo {
             }),
             output: Some(RpcTxOut {
                 value: item.output.value.to_sat(),
-                script_pubkey: Some(RpcScriptBuf { script: item.output.script_pubkey.to_bytes() }),
+                script_pubkey: Some(RpcScriptBuf { script: script_pk }),
             }),
             eth_address: item.eth_address.map_or(String::new(), hex::encode),
         })
