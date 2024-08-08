@@ -70,6 +70,7 @@ pub struct BitcoindClientFactory {
     config: BitcoindConfig,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait RpcApiExt: RpcApi {
     async fn is_synced(&self) -> Result<bool, BitcoindError>;
     async fn wait_until_synced(&self);

@@ -154,6 +154,16 @@ where
                 continue;
             }
 
+            let mut aggregate_public_key = None;
+            if is_fed_node {
+                if storage.aggregate_public_key.is_none() {
+                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                    continue;
+                } else {
+                    aggregate_public_key = storage.aggregate_public_key;
+                }
+            }
+
             // Notify the engine of the new block
             let _payload_status = match engine_util::send_beacon_new_payload(
                 sealed_block.clone(),
@@ -168,13 +178,12 @@ where
                 }
             };
 
-            let aggregate_public_key = storage.aggregate_public_key.expect("aggregate pk is some");
             match storage.execute_imported_block(
                 &self.consensus,
                 sealed_block.clone(),
                 self.evm_config.clone(),
                 &self.client,
-                &aggregate_public_key,
+                aggregate_public_key.as_ref(),
                 self.bitcoind_factory.clone(),
             ) {
                 Ok(bundle_state) => {
