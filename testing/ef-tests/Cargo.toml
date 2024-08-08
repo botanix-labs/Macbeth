@@ -23,6 +23,7 @@ reth-stages.workspace = true
 reth-interfaces.workspace = true
 reth-revm.workspace = true
 reth-node-ethereum.workspace = true
+reth-btc-wallet.workspace = true
 
 alloy-rlp.workspace = true
 tokio = "1.28.1"

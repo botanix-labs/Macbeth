@@ -3064,6 +3064,7 @@ version = "0.2.0-beta.6"
 dependencies = [
  "alloy-rlp",
  "rayon",
+ "reth-btc-wallet",
  "reth-db",
  "reth-interfaces",
  "reth-node-ethereum",
@@ -7890,6 +7891,7 @@ dependencies = [
  "metrics",
  "reth-beacon-consensus-core",
  "reth-blockchain-tree",
+ "reth-btc-wallet",
  "reth-config",
  "reth-consensus",
  "reth-db",
@@ -7942,6 +7944,7 @@ dependencies = [
  "lru",
  "metrics",
  "parking_lot 0.12.3",
+ "reth-btc-wallet",
  "reth-consensus",
  "reth-db",
  "reth-interfaces",

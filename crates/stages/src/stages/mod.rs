@@ -42,6 +42,7 @@ mod tests {
     use super::*;
     use crate::test_utils::TestStageDB;
     use alloy_rlp::Decodable;
+    use reth_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_db::{
         cursor::DbCursorRO,
         mdbx::{cursor::Cursor, RW},
@@ -140,7 +141,7 @@ mod tests {
             // Check execution and create receipts and changesets according to the pruning
             // configuration
             let mut execution_stage = ExecutionStage::new(
-                EvmProcessorFactory::new(
+                EvmProcessorFactory::<_, MockBitcoindFactory>::new(
                     Arc::new(ChainSpecBuilder::mainnet().berlin_activated().build()),
                     EthEvmConfig::default(),
                 ),
