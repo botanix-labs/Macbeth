@@ -6,40 +6,42 @@ use bitcoin::{
     Witness,
 };
 use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils;
 
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
-use reth_network::frost::manager::ToFrostManager;
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+
+use reth_node_api::EngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSenders, B256};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, warn};
 
 use crate::{
     engine_util,
+    excecution_utils::authority_execution_utils::{
+        build_and_execute, build_and_validate_completed_header,
+    },
     frost_task::{FrostNotification, FrostNotificationMessage},
     pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
     utils::{call_notify_pegin, get_witness_data_from_psbt, is_active_sync_in_progress},
 };
 
-impl<Client, EvmConfig, Engine: reth_node_api::EngineTypes, ToFrostMan>
-    BlockProductionTask<Client, EvmConfig, Engine, ToFrostMan>
+impl<EF, BF, DB, Engine: reth_node_api::EngineTypes> BlockProductionTask<EF, BF, DB, Engine>
 where
-    ToFrostMan: ToFrostManager + Clone,
-    Client: BlockReaderIdExt
+    DB: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    EF: ExecutorFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
 {
     pub(crate) async fn try_build_block(&mut self) {
         // ensure the node is not syncing
@@ -56,14 +58,17 @@ where
             info!(target: "consensus::authority", "Not in turn, skipping");
             return;
         }
+        let guard = self.storage.inner.read().await;
+        let client = guard.client.clone();
+        let bitcoin_network = guard.btc_network.clone();
+        let chain_spec = guard.chain_spec.clone();
+        drop(guard);
 
-        let best_block = self.client.best_block_number().expect("best block number exists");
+        let best_block = client.best_block_number().expect("best block number exists");
         let best_hash =
-            self.client.block_hash(best_block).expect("best block hash exists").unwrap_or_else(
-                || {
-                    panic!("best block hash is valid");
-                },
-            );
+            client.block_hash(best_block).expect("best block hash exists").unwrap_or_else(|| {
+                panic!("best block hash is valid");
+            });
 
         let payload_attributes = PayloadAttributes {
             timestamp: utils::unix_timestamp(),
@@ -138,7 +143,7 @@ where
             return;
         }
 
-        let mut storage = self.storage.inner.write().await;
+        let storage = self.storage.inner.write().await;
         // retrieve aggregate key
         let agg_pk = match storage.aggregate_public_key {
             Some(pk) => pk,
@@ -149,19 +154,19 @@ where
         };
         let bitcoin_checkpoint =
             recent_bitcoin_block_header.expect("valid header and height tuple");
-        let edh_config = (bitcoin_checkpoint.0.block_hash(), secp_pk);
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
-        let (bundle_state, block, gas_used) = match storage.build_and_execute(
+        let (bundle_state, block, gas_used) = match build_and_execute(
             transactions.clone(),
-            self.consensus.chain_spec.clone(),
+            chain_spec.clone(),
+            &self.sk,
+            storage.evm_config,
+            &client,
+            &storage.bitcoind_factory,
+            bitcoin_network,
             &bitcoin_checkpoint.0.block_hash(),
             &agg_pk,
-            &self.sk,
-            self.evm_config.clone(),
-            &self.client,
-            self.bitcoind_factory.clone(),
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -200,7 +205,7 @@ where
                         }
 
                         let pegout_match =
-                            try_parse_burn_event(log, self.btc_network).expect("passed EVM check");
+                            try_parse_burn_event(log, bitcoin_network).expect("passed EVM check");
                         if let Some(pegout) = pegout_match {
                             block_pegouts.push(pegout);
                         }
@@ -224,8 +229,7 @@ where
         if block.header.is_poa_epoch() {
             // get pegouts up to best block
             let mut pegouts =
-                match crate::utils::epoch_pegouts(best_block, &self.client, self.btc_network).await
-                {
+                match crate::utils::epoch_pegouts(best_block, &client, bitcoin_network).await {
                     Ok(epoch_pegouts) => epoch_pegouts,
                     Err(e) => {
                         error!(target: "consensus::authority", ?e, "Failed to fetch pegouts");
@@ -274,7 +278,7 @@ where
 
                 let witness_data = match tokio::time::timeout(
                     Duration::from_secs(
-                        self.chain_spec
+                        chain_spec
                             .leader_selection_window
                             .expect("to be defined for poa consensus") /
                             3,
@@ -309,19 +313,20 @@ where
 
         info!(target: "consensus::authority", "UTXO commitment: {:?}", utxo_commitment);
 
-        let mut storage = self.storage.inner.write().await;
-        let new_header = match storage.build_and_validate_header(
+        let storage = self.storage.inner.write().await;
+        let new_header = match build_and_validate_completed_header(
             &bundle_state,
             block,
             gas_used,
             &bitcoin_checkpoint.0.block_hash(),
-            &agg_pk,
             &self.sk,
             &authority_signers,
             &epoch_witness,
             utxo_commitment,
             &self.consensus,
-            &self.client,
+            &client,
+            &agg_pk,
+            &storage.genesis_authorities,
         ) {
             Ok(ret) => ret,
             Err(err) => {
@@ -350,8 +355,7 @@ where
         match tokio::time::timeout(
             // Lets await another third of the block time for the PBFT commitments
             Duration::from_secs(
-                self.chain_spec.leader_selection_window.expect("to be defined for poa consensus") /
-                    3,
+                chain_spec.leader_selection_window.expect("to be defined for poa consensus") / 3,
             ),
             self.pbft_task_rx.recv(),
         )
@@ -381,16 +385,16 @@ where
                 .expect("senders are valid");
 
         // update canon chain
-        match self.client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
+        match client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");
                 return;
             }
         }
-        self.client.set_canonical_head(sealed_block.header.clone());
-        self.client.set_safe(sealed_block.header.clone());
-        self.client.set_finalized(sealed_block.header.clone());
+        client.set_canonical_head(sealed_block.header.clone());
+        client.set_safe(sealed_block.header.clone());
+        client.set_finalized(sealed_block.header.clone());
 
         match engine_util::send_fork_choice_update_payload(
             commited_header.hash_slow(),

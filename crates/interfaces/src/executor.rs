@@ -172,6 +172,10 @@ pub enum BlockExecutionError {
     #[error("Failed to construct Botanix Consensus Pkg")]
     BotanixConsensusPkgError(),
 
+    /// Missing aggregate public key
+    #[error("Missing aggregate public key")]
+    MissingAggregatePublicKey(),
+
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]
     #[error(transparent)]

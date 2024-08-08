@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use bitcoin::hashes::{sha256, Hash};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
-use reth_btc_wallet::bitcoind::BitcoindClientFactory;
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::{
     blockchain_tree::{BlockValidationKind, BlockchainTreeEngine},
     p2p::{
@@ -11,10 +11,11 @@ use reth_interfaces::{
     },
 };
 use reth_network::{message::NewBlockMessage, NetworkHandle};
-use reth_node_api::{ConfigureEvmEnv, EngineTypes};
+use reth_node_api::EngineTypes;
 use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, ExecutorFactory,
+    StateProviderFactory,
 };
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -24,13 +25,14 @@ use tracing::{error, info, warn};
 
 use crate::{
     engine_util,
+    excecution_utils::authority_execution_utils::execute_imported_block,
     utils::{bloom_contains_pegin, call_notify_pegin, is_active_sync_in_progress},
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, Output};
 
-pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClient> {
+pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
@@ -42,36 +44,26 @@ pub struct BlockFetcherTask<Client, EvmConfig, Engine: EngineTypes, NetworkClien
     /// Btc Server client
     btc_server: Option<BtcServerExtendedClient>,
     /// Consensus cache
-    storage: Storage,
+    storage: Storage<EF, BF, DB>,
     /// Recent finalize bitcoin block checkpoint.
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// The type that defines how to configure the EVM.
-    evm_config: EvmConfig,
-    /// Bitcoin network
-    btc_network: bitcoin::Network,
     /// Network Client, used to create [FullBlockClient]
     network_client: NetworkClient,
     /// Network Handle, used to create [FullBlockClient]
     network_handle: NetworkHandle,
-    /// Database provider
-    client: Client,
-    /// Bitcoind client factory
-    // TODO use trait here instead of concrete type when we want to mock this out
-    bitcoind_factory: BitcoindClientFactory,
 }
 
-impl<Client, EvmConfig, Engine, NetworkClient>
-    BlockFetcherTask<Client, EvmConfig, Engine, NetworkClient>
+impl<EF, BF, DB, Engine, NetworkClient> BlockFetcherTask<EF, BF, DB, Engine, NetworkClient>
 where
-    Client: BlockReaderIdExt
+    DB: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
         + BlockchainTreeEngine
         + Clone
         + 'static,
+    BF: BitcoindFactory + Clone + 'static,
+    EF: ExecutorFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
-    EvmConfig:
-        ConfigureEvmEnv + Clone + Unpin + Send + Sync + 'static + reth_node_api::ConfigureEvm,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
 {
     #[allow(clippy::too_many_arguments)]
@@ -81,14 +73,10 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        evm_config: EvmConfig,
-        btc_network: bitcoin::Network,
         network_client: NetworkClient,
         network_handle: NetworkHandle,
-        client: Client,
-        bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
         Self {
             consensus,
@@ -98,12 +86,8 @@ where
             btc_server,
             storage,
             bitcoin_block_header,
-            evm_config,
-            btc_network,
             network_client,
             network_handle,
-            client,
-            bitcoind_factory,
         }
     }
 
@@ -133,14 +117,17 @@ where
 
             let block = new_block.block.block.clone();
             info!(target: "consensus::authority", "Recieved new block from peer {:?}", block.header.hash_slow());
+            let guard = self.storage.inner.read().await;
+            let client = guard.client.clone();
+            drop(guard);
 
-            let best_block = self.client.best_block_number().expect("best block number exists");
-            let best_hash =
-                self.client.block_hash(best_block).expect("best block hash exists").unwrap_or_else(
-                    || {
-                        panic!("best block hash is valid");
-                    },
-                );
+            let best_block = client.best_block_number().expect("best block number exists");
+            let best_hash = client
+                .block_hash(best_block)
+                .expect("best block hash exists")
+                .unwrap_or_else(|| {
+                    panic!("best block hash is valid");
+                });
             if block.header.hash_slow() == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
                 continue;
@@ -148,7 +135,7 @@ where
             // Seal the block
             let sealed_block = block.clone().seal_slow();
 
-            let mut storage = self.storage.write().await;
+            let storage = self.storage.write().await;
             if is_fed_node && storage.aggregate_public_key.is_none() {
                 warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
                 continue;
@@ -178,14 +165,14 @@ where
                 }
             };
 
-            let aggregate_public_key = storage.aggregate_public_key.expect("aggregate pk is some");
-            match storage.execute_imported_block(
+            match execute_imported_block(
                 &self.consensus,
                 sealed_block.clone(),
-                self.evm_config.clone(),
-                &self.client,
+                &client,
+                &storage.executor_factory.clone(),
                 aggregate_public_key.as_ref(),
-                self.bitcoind_factory.clone(),
+                &storage.authorities,
+                &storage.genesis_authorities,
             ) {
                 Ok(bundle_state) => {
                     let senders =
@@ -231,7 +218,7 @@ where
                                         }
 
                                         let pegout_match =
-                                            try_parse_burn_event(log, self.btc_network)
+                                            try_parse_burn_event(log, storage.btc_network)
                                                 .expect("passed EVM check");
                                         if let Some(pegout) = pegout_match {
                                             pegouts.push(pegout);
@@ -261,13 +248,13 @@ where
                         }
 
                         let best_block =
-                            self.client.best_block_number().expect("best block number exists");
+                            client.best_block_number().expect("best block number exists");
 
                         // get the pegouts from during the epoch
                         let epoch_pegouts = match crate::utils::epoch_pegouts(
                             best_block,
-                            &self.client,
-                            self.btc_network,
+                            &client,
+                            storage.btc_network,
                         )
                         .await
                         {
@@ -330,9 +317,8 @@ where
 
                     // Need to decide if we accepting a forked block or not
                     // There is a garuntee a quorum of signers will not sign an invalid fork
-                    let tip = self.client.best_block_number().expect("best block exists");
-                    let best_block = self
-                        .client
+                    let tip = client.best_block_number().expect("best block exists");
+                    let best_block = client
                         .block_by_number(tip)
                         .expect("best block exists")
                         .expect("best block exists");
@@ -341,17 +327,16 @@ where
                         // need to retrieve this missing block from a peer
                         let missing_block =
                             full_block_client.get_full_block(header.parent_hash).await;
-                        // TODO (armins) should be using the insert with botanix consensus package
-                        if let Err(e) = self.client.insert_block_without_senders(
+                        if let Err(e) = client.insert_block_without_senders(
                             missing_block.clone(),
                             BlockValidationKind::Exhaustive,
                         ) {
                             error!(target: "consensus::authority", ?e, "Failed to insert forked block");
                             continue;
                         }
-                        self.client.set_canonical_head(missing_block.header.clone());
-                        self.client.set_safe(missing_block.header.clone());
-                        self.client.set_finalized(missing_block.header.clone());
+                        client.set_canonical_head(missing_block.header.clone());
+                        client.set_safe(missing_block.header.clone());
+                        client.set_finalized(missing_block.header.clone());
                         if let Err(e) = engine_util::send_fork_choice_update_payload(
                             sealed_block.clone().hash(),
                             self.to_engine.clone(),
@@ -373,9 +358,9 @@ where
                     .unwrap();
 
                     // update canon chain for rpc
-                    self.client.set_canonical_head(header);
-                    self.client.set_safe(sealed_block.header.clone());
-                    self.client.set_finalized(sealed_block.header.clone());
+                    client.set_canonical_head(header);
+                    client.set_safe(sealed_block.header.clone());
+                    client.set_finalized(sealed_block.header.clone());
                     drop(storage);
 
                     // TODO(armins) trie updates here are non. is that correct?

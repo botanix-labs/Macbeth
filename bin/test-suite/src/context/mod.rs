@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub const RPC_PORT_BASE: u16 = 8545;
-pub const DISCOVERY_PORT_BASE: u16 = 30305;
+pub const DISCOVERY_PORT_BASE: u16 = 30330;
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,

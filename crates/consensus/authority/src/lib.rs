@@ -20,37 +20,22 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 
-use bitcoin::hashes::{sha256, Hash};
 use pbft::PbftCommitmentCriteria;
-use reth_btc_wallet::bitcoind::BitcoindClientFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::{
-    utils::{get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities},
+    utils::{unix_timestamp, validate_extra_data_header_authorities},
     validation::{self},
 };
-use reth_interfaces::{
-    executor::{BlockExecutionError, BlockValidationError},
-    provider::ProviderError,
-};
-use reth_node_api::ConfigureEvmEnv;
+
+use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
-    constants::{nums_secp256k1_pk, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-    extra_data_header::ExtraDataHeader,
-    header_ext::HeaderExt,
-    proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders,
-    Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedHeader,
-    TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+    constants::nums_secp256k1_pk, header_ext::HeaderExt, Address, ChainSpec, Header, SealedBlock,
+    SealedHeader, U256,
 };
-use reth_provider::{
-    BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, StateProviderFactory,
-};
-use reth_revm::{
-    database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-    processor::EVMProcessor, State,
-};
+
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{error, info, trace, warn};
+use tracing::{error, warn};
 
 mod block_builder;
 mod block_fetcher;
@@ -58,6 +43,7 @@ mod builder;
 mod dkg;
 mod engine_util;
 mod epoch_manager;
+mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
 mod pbft;
@@ -273,7 +259,6 @@ impl Consensus for AuthorityConsensus {
     /// Validate poa extra data header
     /// This function will validate the extra data header and check for a quorum of signatures
     /// from authorities memebers.
-    /// TODO (armins) validate only 2/3 of the authorities have signed, rn we are checking for n
     fn validate_extra_data_header_single_signer(
         &self,
         header: &Header,
@@ -329,69 +314,62 @@ impl Consensus for AuthorityConsensus {
     }
 }
 
-/// Collection of getters and setters for all things concerned with the authority consensus
-#[allow(dead_code)]
-pub(crate) trait AuthorityStorage {
-    /// Get list of authorities
-    fn get_authorities(&self) -> Vec<secp256k1::PublicKey>;
-    /// Set the aggregate key
-    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey);
-    /// Get the aggregate key
-    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey>;
-    /// Get the signer index
-    fn get_signer_index(&self) -> usize;
-    /// Get genesis authorities
-    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey>;
-    /// Get the authority public key
-    fn get_authority(&self) -> secp256k1::PublicKey;
-    /// Get btc network
-    fn get_btc_network(&self) -> bitcoin::Network;
-}
-
 /// In memory storage
+/// All this struct does is provide a rwlock wrapper around the storage inner
 #[derive(Clone, Debug)]
-pub(crate) struct Storage {
-    pub(crate) inner: Arc<RwLock<StorageInner>>,
+pub(crate) struct Storage<EF, BF, DB> {
+    pub(crate) inner: Arc<RwLock<StorageInner<EF, BF, DB>>>,
 }
 
-impl Storage {
-    fn new(
+impl<EF, BF, DB> Storage<EF, BF, DB> {
+    /// Create a new instance of the storage
+    pub(crate) fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
-        pk: secp256k1::PublicKey,
+        authority: secp256k1::PublicKey,
         btc_network: bitcoin::Network,
         aggregate_public_key: Option<secp256k1::PublicKey>,
         authority_socket_addresses: Vec<SocketAddr>,
+        evm_config: EthEvmConfig,
+        chain_spec: Arc<ChainSpec>,
+        bitcoind_factory: BF,
+        executor_factory: EF,
+        client: DB,
     ) -> Self {
-        let storage = StorageInner {
+        let storage_inner = StorageInner {
             genesis_authorities,
             authorities,
             signer_index,
-            authority: pk,
+            authority,
             aggregate_public_key,
             btc_network,
             authority_socket_addresses,
+            evm_config,
+            chain_spec,
+            bitcoind_factory,
+            executor_factory,
+            client,
         };
 
-        Self { inner: Arc::new(RwLock::new(storage)) }
+        Self { inner: Arc::new(RwLock::new(storage_inner)) }
     }
 
     /// Returns the write lock of the storage
-    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner> {
+    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner<EF, BF, DB>> {
         self.inner.write().await
     }
 
-    #[allow(dead_code)]
     /// Returns the read lock of the storage
-    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
+    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner<EF, BF, DB>> {
         self.inner.read().await
     }
 }
 
 #[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
-pub(crate) struct StorageInner {
+/// data shared amongst the different tasks should be stored here and protected by a rwlock
+pub(crate) struct StorageInner<EF, BF, DB> {
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// Keep track of the signers
@@ -410,390 +388,21 @@ pub(crate) struct StorageInner {
     btc_network: bitcoin::Network,
     /// Authority socket addresses pulled from federation config
     authority_socket_addresses: Vec<SocketAddr>,
+    /// Evm config
+    evm_config: EthEvmConfig,
+    /// Bitcoind Factory
+    bitcoind_factory: BF,
+    /// Chain spec
+    chain_spec: Arc<ChainSpec>,
+    /// Executor Factory
+    executor_factory: EF,
+    /// The db provider
+    client: DB,
 }
 
-// === impl StorageInner ===
-#[allow(dead_code)]
-impl AuthorityStorage for StorageInner {
+impl<EF, BF, DB> StorageInner<EF, BF, DB> {
     fn get_authorities(&self) -> Vec<secp256k1::PublicKey> {
         self.authorities.clone()
-    }
-
-    fn set_aggregate_key(&mut self, pk: secp256k1::PublicKey) {
-        self.aggregate_public_key = Some(pk);
-    }
-
-    fn get_aggregate_key(&self) -> Option<secp256k1::PublicKey> {
-        self.aggregate_public_key
-    }
-
-    fn get_signer_index(&self) -> usize {
-        self.signer_index
-    }
-
-    fn get_genesis_authorities(&self) -> Vec<secp256k1::PublicKey> {
-        self.genesis_authorities.clone()
-    }
-
-    fn get_authority(&self) -> secp256k1::PublicKey {
-        self.authority
-    }
-
-    fn get_btc_network(&self) -> bitcoin::Network {
-        self.btc_network
-    }
-}
-
-impl StorageInner {
-    /// Fills in pre-execution header fields based on the current best block and given
-    /// transactions.
-    pub(crate) fn build_header_template(
-        &self,
-        transactions: &[TransactionSigned],
-        chain_spec: &Arc<ChainSpec>,
-        client: &impl BlockReaderIdExt,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
-        aggregate_public_key: &secp256k1::PublicKey,
-    ) -> Result<Header, BlockExecutionError> {
-        // let (best_block, best_hash) = self.get_best_block_and_hash()?;
-        let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
-        let best_hash = client
-            .block_hash(best_block)
-            .map_err(BlockExecutionError::LatestBlock)?
-            .unwrap_or_else(|| {
-                panic!("best block hash not found for block number: {}", best_block);
-            });
-        let timestamp = unix_timestamp();
-
-        // check previous block for base fee
-        let base_fee_per_gas = client
-            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
-            .expect("header to exist")
-            .and_then(|parent| {
-                parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
-            });
-
-        // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
-        // so the botanix consensus package can be constructed from the EDH
-        let edh = ExtraDataHeader::new(
-            0,
-            None,
-            None,
-            None,
-            None,
-            *bitcoin_checkpoint,
-            sha256::Hash::all_zeros(),
-            *aggregate_public_key,
-        );
-        let mut header = Header {
-            parent_hash: best_hash,
-            ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: Address::ZERO, // burn the block reward so not to increase ether supply
-            state_root: Default::default(),
-            transactions_root: Default::default(),
-            receipts_root: Default::default(),
-            withdrawals_root: None,
-            logs_bloom: Default::default(),
-            difficulty: Default::default(),
-            number: best_block + 1,
-            gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-            gas_used: 0,
-            timestamp,
-            mix_hash: Default::default(),
-            nonce: 0,
-            base_fee_per_gas,
-            blob_gas_used: None,
-            excess_blob_gas: None,
-            extra_data: Bytes::from(edh.serialize()),
-            parent_beacon_block_root: None,
-        };
-
-        header.transactions_root = if transactions.is_empty() {
-            EMPTY_TRANSACTIONS
-        } else {
-            proofs::calculate_transaction_root(transactions)
-        };
-
-        Ok(header)
-    }
-
-    /// Executes the block with the given block and senders, on the provided [Executor].
-    ///
-    /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    pub(crate) fn execute<EvmConfig>(
-        &mut self,
-        block: &BlockWithSenders,
-        executor: &mut EVMProcessor<'_, EvmConfig, BitcoindClientFactory>,
-        block_builder_address: Option<Address>,
-    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
-    where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
-    {
-        // set the first block to find the correct index in bundle state
-        executor.set_first_block(block.number);
-
-        let (receipts, gas_used, total_block_fees) =
-            executor.execute_transactions(block, U256::ZERO)?;
-
-        // Save receipts.
-        executor.save_receipts(receipts)?;
-
-        // add post execution state change
-        // Withdrawals, rewards etc.
-        executor.apply_post_execution_state_change(
-            block,
-            U256::ZERO,
-            Some(total_block_fees),
-            block_builder_address,
-        )?;
-
-        // merge transitions
-        executor.db_mut().merge_transitions(BundleRetention::Reverts);
-
-        // apply post block changes
-        Ok((executor.take_output_state(), gas_used))
-    }
-
-    /// Fills in the post-execution header fields based on the given PostState and gas used.
-    /// In doing this, the state root is calculated and the final header is returned.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn complete_header(
-        &self,
-        mut header: Header,
-        bundle_state: &BundleStateWithReceipts,
-        gas_used: u64,
-        sk: &secp256k1::SecretKey,
-        authorities: &[secp256k1::PublicKey],
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
-        recent_block_hash: bitcoin::BlockHash,
-        utxo_commitment: sha256::Hash,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        aggregated_public_key: &secp256k1::PublicKey,
-    ) -> Result<Header, BlockExecutionError> {
-        let receipts = bundle_state.receipts_by_block(header.number);
-        header.receipts_root = if receipts.is_empty() {
-            EMPTY_RECEIPTS
-        } else {
-            let receipts_with_bloom = receipts
-                .iter()
-                .map(|r| (*r).clone().expect("receipts have not been pruned").into())
-                .collect::<Vec<ReceiptWithBloom>>();
-            header.logs_bloom =
-                receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | r.bloom);
-            proofs::calculate_receipt_root(&receipts_with_bloom)
-        };
-        header.gas_used = gas_used;
-        // calculate the state root
-        let state_root = client
-            .latest()
-            .map_err(|_| {
-                BlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
-                    header.hash_slow(),
-                ))
-            })?
-            .state_root(bundle_state.state())
-            .unwrap();
-        header.state_root = state_root;
-
-        // fail if witness data is empty
-        // witness data will be None if no pegouts are being processed in this block
-        if let Some(witness_data) = witness_data {
-            if witness_data.is_empty() {
-                return Err(BlockExecutionError::Validation(
-                    BlockValidationError::MissingWitnessData,
-                ));
-            }
-        };
-
-        // Construct [ExtraDataHeader] and sign the block
-        let edh = ExtraDataHeader::new(
-            0,
-            None,
-            if header.is_poa_epoch() { Some(authorities.to_vec()) } else { None },
-            None,
-            witness_data.clone(),
-            recent_block_hash,
-            utxo_commitment,
-            *aggregated_public_key,
-        );
-        header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(sk).map_err(|e| {
-            warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
-            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-        })?;
-        Ok(header)
-    }
-
-    //// Builds and executes a new block with the given transactions, on the provided [Executor].
-    ///
-    /// This returns bundle state, block, and gas used.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_execute<EvmConfig>(
-        &mut self,
-        transactions: Vec<TransactionSigned>,
-        chain_spec: Arc<ChainSpec>,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
-        aggregate_public_key: &secp256k1::PublicKey,
-        sk: &secp256k1::SecretKey,
-        evm_config: EvmConfig,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        bitcoind_factory: BitcoindClientFactory,
-    ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError>
-    where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
-    {
-        // Construct block and header
-        let header = self.build_header_template(
-            &transactions,
-            &chain_spec.clone(),
-            client,
-            bitcoin_checkpoint,
-            aggregate_public_key,
-        )?;
-
-        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
-        let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
-            .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
-
-        let block_with_senders =
-            BlockWithSenders::new(block.clone(), senders.clone()).expect("senders are valid");
-
-        trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
-
-        // Now execute the block
-        let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
-            .with_bundle_update()
-            .build();
-
-        // TODO why are we not using the executor factory here?
-        let mut executor = EVMProcessor::new_with_state(chain_spec.clone(), db, evm_config);
-        executor.with_bitcoind_factory(bitcoind_factory, self.btc_network);
-
-        // derive block builder address to receive block fees
-        let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
-        let block_builder_address = public_key_to_address(block_builder_pub_key);
-        info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
-        let (bundle_state, gas_used) =
-            self.execute(&block_with_senders, &mut executor, Some(block_builder_address))?;
-        Ok((bundle_state, block, gas_used))
-    }
-
-    /// Builds and validates the current block header with the given transactions, on the provided
-    /// [Executor].
-    ///
-    /// This returns the current block header.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_validate_header(
-        &mut self,
-        bundle_state: &BundleStateWithReceipts,
-        block: Block,
-        gas_used: u64,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
-        aggregate_public_key: &secp256k1::PublicKey,
-        sk: &secp256k1::SecretKey,
-        authority_signers: &[secp256k1::PublicKey],
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
-        utxo_commitment: sha256::Hash,
-        consensus: &AuthorityConsensus,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-    ) -> Result<SealedHeader, BlockExecutionError> {
-        let Block { header, body, .. } = block;
-        let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
-
-        // fill in the rest of the fields
-        let header = self.complete_header(
-            header,
-            bundle_state,
-            gas_used,
-            sk,
-            authority_signers,
-            witness_data,
-            // This is checked to be Some above
-            bitcoin_checkpoint.clone(),
-            utxo_commitment,
-            client,
-            &aggregate_public_key,
-        )?;
-
-        // Validate EDH authorities match genesis authorities
-        if let Err(e) = validate_extra_data_header_authorities(&header, &self.genesis_authorities) {
-            error!(target: "consensus::authority", "failed to validate EDH authorities: {:?}", e);
-            return Err(BlockExecutionError::Validation(
-                BlockValidationError::InvalidExtraDataAuthorities,
-            ));
-        }
-
-        // Redundant check. Lets make sure the header is valid
-        consensus.validate_extra_data_header_single_signer(&header, authority_signers).map_err(
-            |e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            },
-        )?;
-
-        trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
-        let block_hash = header.hash_slow();
-        let new_header = header.seal(block_hash);
-        Ok(new_header)
-    }
-
-    // Execute and run poa validation on the block without inserting it into the storage
-    pub(crate) fn execute_imported_block<EvmConfig>(
-        &mut self,
-        consensus: &AuthorityConsensus,
-        sealed_block: SealedBlock,
-        evm_config: EvmConfig,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        aggregated_public_key: Option<&secp256k1::PublicKey>,
-        bitcoind_factory: BitcoindClientFactory,
-    ) -> Result<BundleStateWithReceipts, BlockExecutionError>
-    where
-        EvmConfig: ConfigureEvmEnv + Clone + 'static + reth_node_api::ConfigureEvm,
-    {
-        trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
-
-        // Now execute the block
-        let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
-            .with_bundle_update()
-            .build();
-
-        // TODO why are we not using the executor factory here?
-        let mut executor =
-            EVMProcessor::new_with_state(consensus.chain_spec.clone(), db, evm_config);
-        executor.with_bitcoind_factory(bitcoind_factory, self.btc_network);
-
-        let senders =
-            TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
-                BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
-            )?;
-
-        let block_with_senders =
-            BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
-                .expect("senders are valid");
-
-        // validate before executing block
-        let authority_signers = self.authorities.clone();
-        let genesis_authorities = self.genesis_authorities.clone();
-        consensus
-            .validate_header_standalone(
-                &sealed_block.header.clone(),
-                &authority_signers,
-                &genesis_authorities,
-                Some(aggregated_public_key),
-            )
-            .map_err(|e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            })?;
-        let block_builder_address = get_block_producer_address(&sealed_block.header.clone());
-        let (bundle_state, _gas_used) =
-            self.execute(&block_with_senders, &mut executor, Some(block_builder_address))?;
-
-        Ok(bundle_state)
     }
 }
 
@@ -803,10 +412,12 @@ mod tests {
 
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
-        block_fees_split, current_inturn_index, get_in_turn_interval, is_inturn,
-        validate_against_parent,
+        block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
+        is_inturn, validate_against_parent,
     };
-    use reth_primitives::BOTANIX_TESTNET;
+    use reth_primitives::{
+        extra_data_header::ExtraDataHeader, public_key_to_address, Bytes, BOTANIX_TESTNET,
+    };
 
     use super::*;
 

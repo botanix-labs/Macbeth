@@ -608,7 +608,7 @@ mod tests {
     use crate::test_utils::TestStageDB;
     use alloy_rlp::Decodable;
     use assert_matches::assert_matches;
-    use reth_btc_wallet::{bitcoind::BitcoindFactory, test_utils::MockBitcoindFactory};
+    use reth_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_db::{models::AccountBeforeTx, transaction::DbTxMut};
     use reth_evm_ethereum::EthEvmConfig;
     use reth_interfaces::executor::BlockValidationError;

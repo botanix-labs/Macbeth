@@ -137,8 +137,8 @@ impl PartialEq for ValidateInturnError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn)
-                | (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
+            (Self::AuthorityNotInTurn, Self::AuthorityNotInTurn) |
+                (Self::FailedToRecoverSigner(_), Self::FailedToRecoverSigner(_))
         )
     }
 }
@@ -175,13 +175,13 @@ impl PartialEq for ValidateAuthoritySignatureError {
     fn eq(&self, other: &Self) -> bool {
         matches!(
             (self, other),
-            (Self::InvalidAuthority, Self::InvalidAuthority)
-                | (Self::InvalidMessage, Self::InvalidMessage)
-                | (Self::InvalidSignature, Self::InvalidSignature)
-                | (Self::MissingSignature, Self::MissingSignature)
-                | (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_))
-                | (Self::RecoverFailed, Self::RecoverFailed)
-                | (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
+            (Self::InvalidAuthority, Self::InvalidAuthority) |
+                (Self::InvalidMessage, Self::InvalidMessage) |
+                (Self::InvalidSignature, Self::InvalidSignature) |
+                (Self::MissingSignature, Self::MissingSignature) |
+                (Self::InvalidSignerIndex(_), Self::InvalidSignerIndex(_)) |
+                (Self::RecoverFailed, Self::RecoverFailed) |
+                (Self::InvalidEdhFormat(_), Self::InvalidEdhFormat(_))
         )
     }
 }
@@ -282,8 +282,8 @@ impl HeaderExt for Header {
     /// Validate timestamp
     fn validate_timestamp(&self, current_timestamp: u64) -> Result<(), ValidateInturnError> {
         // Time stamp should be less that or greater than by 2 seconds
-        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS
-            || self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
+        if self.timestamp < current_timestamp - ALLOWED_FUTURE_BLOCK_TIME_SECONDS ||
+            self.timestamp > current_timestamp + ALLOWED_FUTURE_BLOCK_TIME_SECONDS
         {
             return Err(ValidateInturnError::AuthorityNotInTurn);
         }
@@ -456,18 +456,14 @@ impl HeaderExt for Header {
         let bitcoin_checkpoint_header = match bitcoind.get_block_header(&edh.bitcoin_block_hash) {
             Ok(header) => header,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(
-                    e,
-                ))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(e))
             }
         };
 
         let bitcoin_checkpoint_height = match bitcoind.get_block_info(&edh.bitcoin_block_hash) {
             Ok(info) => info.height,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(
-                    e,
-                ))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(e))
             }
         };
 

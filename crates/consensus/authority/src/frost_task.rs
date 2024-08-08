@@ -36,7 +36,7 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<ToFrostMan> {
+pub struct FrostTask<EF, BF, DB, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -44,19 +44,22 @@ pub struct FrostTask<ToFrostMan> {
     /// Frost configuration
     pub(crate) frost_config: FrostConfig,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<ToFrostMan>,
+    pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan>,
     /// signing state machine
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan>,
     /// Shared storage to insert aggregate public key
-    pub(crate) storage: Storage,
+    pub(crate) storage: Storage<EF, BF, DB>,
     /// Channel to receive frost notifications (from the block production task)
     /// We only wait for init signing messages
     frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
 }
 
-impl<ToFrostMan> FrostTask<ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> FrostTask<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
+    BF: Clone,
+    DB: Clone,
+    EF: Clone,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -66,7 +69,7 @@ where
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         config: FrostConfig,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
@@ -349,7 +352,7 @@ where
     }
 }
 
-impl<ToFrostMan> std::fmt::Debug for FrostTask<ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
 {

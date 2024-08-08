@@ -1,4 +1,5 @@
-use crate::{utils::retry_exec, AuthorityConsensus, AuthorityStorage, Storage};
+use crate::{utils::retry_exec, AuthorityConsensus, Storage};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
@@ -20,7 +21,7 @@ use reth_network_types::pk2id;
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
-    BlockBody, BlockHash, BlockWithSenders, ChainSpec, SealedBlock, TransactionSigned, U256,
+    BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, BOTANIX_TESTNET, U256,
 };
 use reth_provider::{
     BlockReader, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory,
@@ -192,10 +193,8 @@ impl PbftState {
 
 /// A state machine for transitioning between different pbft states
 #[derive(Debug, Clone)]
-pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkClient, EF> {
-    chain_spec: Arc<ChainSpec>,
-    client: Client,
-    storage: Storage,
+pub(crate) struct PbftStateMachine<EF, BF, DB, ToFrostMan: ToFrostManager, NetworkClient> {
+    storage: Storage<EF, BF, DB>,
     frost_handle: ToFrostMan,
     state: BTreeMap<BlockHash, PbftState>,
     /// our peer id
@@ -214,21 +213,17 @@ pub(crate) struct PbftStateMachine<ToFrostMan: ToFrostManager, Client, NetworkCl
     /// latest known bitcoin block header
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     consensus: AuthorityConsensus,
-    /// executor factory
-    executor_factory: EF,
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
+impl<EF, BF, DB, ToFrostMan: ToFrostManager, NetworkClient>
+    PbftStateMachine<EF, BF, DB, ToFrostMan, NetworkClient>
 where
     EF: ExecutorFactory + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
-        client: Client,
-        storage: Storage,
+        storage: Storage<EF, BF, DB>,
         frost_handle: ToFrostMan,
         config: FrostConfig,
         peer_id: PeerId,
@@ -236,7 +231,6 @@ where
         task_executor: Option<TaskExecutor>,
         network_client: NetworkClient,
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        executor_factory: EF,
         consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
@@ -248,8 +242,6 @@ where
         );
 
         Self {
-            chain_spec,
-            client,
             storage,
             personal_frost_identifier,
             frost_handle,
@@ -262,7 +254,6 @@ where
             secret_key,
             task_executor: task_executor.clone(),
             network_client,
-            executor_factory,
             bitcoin_block_header,
             consensus,
         }
@@ -272,8 +263,6 @@ where
     #[allow(dead_code)]
     pub(crate) fn reset(self) -> Self {
         Self {
-            chain_spec: self.chain_spec,
-            client: self.client,
             storage: self.storage,
             personal_frost_identifier: self.personal_frost_identifier,
             frost_handle: self.frost_handle,
@@ -288,7 +277,6 @@ where
             time_slot_commitment: BTreeMap::new(),
             bitcoin_block_header: self.bitcoin_block_header,
             consensus: self.consensus,
-            executor_factory: self.executor_factory,
         }
     }
 
@@ -304,19 +292,24 @@ where
     }
 }
 
-impl<ToFrostMan: ToFrostManager, Client, NetworkClient, EF>
-    PbftStateMachine<ToFrostMan, Client, NetworkClient, EF>
+impl<EF, BF, DB, ToFrostMan: ToFrostManager, NetworkClient>
+    PbftStateMachine<EF, BF, DB, ToFrostMan, NetworkClient>
 where
-    Client: StateProviderFactory + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    DB: StateProviderFactory + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
     EF: ExecutorFactory + Clone + 'static,
 {
     pub(crate) async fn spawn_cleanup_task(&mut self) {
+        let storage = self.storage.inner.read().await;
+        let chain_spec = storage.chain_spec.clone();
+        let client_clone = storage.client.clone();
+        drop(storage);
+
         let sleep_duration = Duration::from_secs(
-            2 * self.chain_spec.leader_selection_window.expect("block time to be set"),
+            2 * chain_spec.leader_selection_window.expect("block time to be set"),
         );
-        let client_clone = self.client.clone();
         let sealed_blocks: SealedBlocksMap = Arc::new(RwLock::new(BTreeMap::new()));
         let pre_commitments: PreCommitmentsMap = Arc::new(RwLock::new(BTreeMap::new()));
         let sealed_blocks_clone = Arc::clone(&sealed_blocks);
@@ -385,8 +378,8 @@ where
     }
 
     pub(crate) fn is_coordinator(&self) -> bool {
-        let leader_selection_window = self
-            .chain_spec
+        // TODO change this to come to from storage
+        let leader_selection_window = BOTANIX_TESTNET
             .leader_selection_window
             .expect("block times to be set for PoA consensus");
         is_inturn(
@@ -435,10 +428,13 @@ where
             return Err(ValidateBlockError::WillNotSignGenesisBlock);
         }
 
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
+        let storage = self.storage.read().await;
+        let client = storage.client.clone();
+        let chain_spec = storage.chain_spec.clone();
+        drop(storage);
+
+        let leader_selection_window =
+            chain_spec.leader_selection_window.expect("block times to be set for PoA consensus");
         let block_hash = block_to_sign.header.segregated_signature_block_hash()?;
         block_to_sign
             .header
@@ -449,13 +445,13 @@ where
         // Or building on one of the 1 block deep forks
         // But never on a block that is not in the canonical chain
         // Or a block building on a fork that is deeper than 1 block deep
-        let tip = self.client.canonical_tip();
+        let tip = client.canonical_tip();
         let best_block =
-            self.client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
+            client.block_by_number(tip.number)?.ok_or(ValidateBlockError::FailedToFindTip)?;
         let best_block_hash = tip.hash;
 
         // if the suggested block is the canon tip there is no point to signing it again
-        match self.client.is_canonical(block_hash) {
+        match client.is_canonical(block_hash) {
             Ok(false) => (),                                // continue
             Err(ProviderError::BlockHashNotFound(_)) => (), /* great block being proposed is not */
             // canon
@@ -476,7 +472,7 @@ where
             // Somehow we have the parent block but its not the current canon chain?
             // This means the block is building on an older block that is not the best block
             // This should not happen
-            match BlockReader::block_by_hash(&self.client, block_to_sign.parent_hash) {
+            match BlockReader::block_by_hash(&client, block_to_sign.parent_hash) {
                 Ok(existing_block) => {
                     if let Some(existing_block) = existing_block {
                         if existing_block.hash_slow() != best_block_hash {
@@ -528,7 +524,6 @@ where
         &mut self,
         block: SealedBlock,
     ) -> Result<(), BlockExecutionError> {
-        let _recent_bitcoin_block_header = *self.bitcoin_block_header.read().await;
         let storage = self.storage.read().await;
 
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
@@ -548,9 +543,8 @@ where
                 e
             })?;
 
-        drop(storage);
-        let db = self.client.latest().expect("get latest");
-        let mut executor = self.executor_factory.with_state(&db);
+        let db = storage.client.latest().expect("get latest");
+        let mut executor = storage.executor_factory.with_state(&db);
 
         executor.execute_transactions(&block_with_senders, U256::ZERO)?;
 
@@ -667,11 +661,12 @@ where
 
         // validate block
         self.validate_block(&block).await?;
+        let chain_spec = self.storage.read().await.chain_spec.clone();
 
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
+        let leader_selection_window =
+            chain_spec.leader_selection_window.expect("block times to be set for PoA consensus");
+        drop(chain_spec);
+
         let coordinator = self
             .config
             .authorities
@@ -909,6 +904,7 @@ mod tests {
         BlockHash, CompactTarget,
     };
     use rand;
+    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
     use reth_consensus_common::utils::unix_timestamp;
     use reth_interfaces::p2p::{
         download::DownloadClient,
@@ -918,6 +914,7 @@ mod tests {
     };
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_types::{pk2id, WithPeerId};
+    use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256, BOTANIX_TESTNET};
     use reth_provider::{
         test_utils::{MockEthProvider, TestExecutorFactory},
@@ -1050,6 +1047,7 @@ mod tests {
 
             let bitcoin_block_header = Arc::new(RwLock::new(Some((header, 0))));
             let chain_spec = BOTANIX_TESTNET.clone();
+            let executor_factory = TestExecutorFactory::default();
 
             for i in 0..$n {
                 let mut storage = Storage::new(
@@ -1057,13 +1055,16 @@ mod tests {
                     authorities.clone(),
                     i,
                     pks[i],
-                    bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+                    bitcoin::Network::Regtest,
                     Some(dummy_agg_pk),
                     vec![],
+                    EthEvmConfig::default(),
+                    chain_spec.clone(),
+                    MockBitcoindFactory::new(BitcoindConfig::default()),
+                    executor_factory.clone(),
+                    $mock_eth_provider.clone(),
                 );
                 let pbft_state_machine = PbftStateMachine::new(
-                    chain_spec.clone(),
-                    $mock_eth_provider.clone(),
                     storage,
                     $frost_handle_mock.clone(),
                     $configs[i].clone(),
@@ -1072,8 +1073,7 @@ mod tests {
                     None,
                     $mock_network_client.clone(),
                     bitcoin_block_header.clone(),
-                    TestExecutorFactory::default(),
-                    AuthorityConsensus::new(Arc::clone(&BOTANIX_TESTNET.clone())),
+                    AuthorityConsensus::new(Arc::clone(&chain_spec.clone())),
                 );
                 if !pbft_state_machine.is_coordinator() {
                     $non_coords.push(pbft_state_machine.clone());
@@ -2149,16 +2149,19 @@ mod tests {
             vec![],
             0,
             pk,
-            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            bitcoin::Network::Regtest,
             // Dummy aggregate key
             Some(pk),
             vec![],
+            EthEvmConfig::default(),
+            BOTANIX_TESTNET.clone(),
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            TestExecutorFactory::default(),
+            mock_eth_provider.clone(),
         );
 
         let pbft_state_machine = PbftStateMachine::new(
-            BOTANIX_TESTNET.clone(),
-            mock_eth_provider.clone(),
-            storage,
+            storage.clone(),
             FrostHandleMock {},
             config,
             PeerId::default(),
@@ -2166,7 +2169,6 @@ mod tests {
             None,
             mock_network_client,
             Arc::new(RwLock::new(None)),
-            TestExecutorFactory::default(),
             AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
 
@@ -2264,15 +2266,19 @@ mod tests {
             vec![],
             0,
             pk,
-            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            bitcoin::Network::Regtest,
             // Dummy aggregate key
             Some(pk),
             vec![],
-        );
-        let pbft_state_machine = PbftStateMachine::new(
+            EthEvmConfig::default(),
             BOTANIX_TESTNET.clone(),
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            TestExecutorFactory::default(),
             mock_eth_provider_mine.clone(),
-            storage,
+        );
+
+        let pbft_state_machine = PbftStateMachine::new(
+            storage.clone(),
             FrostHandleMock {},
             config,
             PeerId::default(),
@@ -2280,7 +2286,6 @@ mod tests {
             None,
             mock_network_client_peers,
             Arc::new(RwLock::new(None)),
-            TestExecutorFactory::default(),
             AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();
@@ -2355,15 +2360,19 @@ mod tests {
             vec![],
             0,
             pk,
-            bitcoin::Network::from_core_arg("regtest").expect("regtest exists"),
+            bitcoin::Network::Regtest,
             // Dummy aggregate key
             Some(pk),
             vec![],
-        );
-        let pbft_state_machine = PbftStateMachine::new(
+            EthEvmConfig::default(),
             BOTANIX_TESTNET.clone(),
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            TestExecutorFactory::default(),
             mock_eth_provider_mine.clone(),
-            storage,
+        );
+
+        let pbft_state_machine = PbftStateMachine::new(
+            storage.clone(),
             FrostHandleMock {},
             config,
             PeerId::default(),
@@ -2371,7 +2380,6 @@ mod tests {
             None,
             mock_network_client_peers,
             Arc::new(RwLock::new(None)),
-            TestExecutorFactory::default(),
             AuthorityConsensus::new(Arc::clone(&mock_eth_provider.chain_spec)),
         );
         let edh = ExtraDataHeader::default();

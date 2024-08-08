@@ -2,7 +2,6 @@
 
 use crate::ConfigureEvm;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db::database::Database;
@@ -124,10 +123,8 @@ where
     }
 
     let (tip_tx, tip_rx) = watch::channel(B256::ZERO);
-    let factory = reth_revm::EvmProcessorFactory::<_, MockBitcoindFactory>::new(
-        node_config.chain.clone(),
-        evm_config,
-    );
+    let factory =
+        reth_revm::EvmProcessorFactory::<_, BF>::new(node_config.chain.clone(), evm_config);
 
     let stack_config = InspectorStackConfig {
         use_printer_tracer: node_config.debug.print_inspector,
