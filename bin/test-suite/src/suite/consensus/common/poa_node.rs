@@ -326,7 +326,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    network.add_peer(peer.peer_id, peer_socket);
+                    network.add_trusted_peer(peer.peer_id, peer_socket);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 let all_peers = network.get_all_peers().await.unwrap();
@@ -400,9 +400,10 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                         // disconnect all peers
                         'inner: loop {
                             for peer in peers_list.iter() {
-                                network_clone.remove_peer(peer.peer_id, PeerKind::Basic);
+                                network_clone.disconnect_peer(peer.peer_id);
+                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                it_info_print!("Disconnected peer", peer.peer_id);
                             }
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             let all_peers = network_clone.get_all_peers().await.unwrap();
                             it_info_print!(
                                 "Engine disconnected from peers",
@@ -421,7 +422,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
                                     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                                     peer.discovery_port,
                                 );
-                                network_clone.add_peer(peer.peer_id, peer_socket);
+                                network_clone.add_trusted_peer(peer.peer_id, peer_socket);
                             }
                             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                             let all_peers = network_clone.get_all_peers().await.unwrap();

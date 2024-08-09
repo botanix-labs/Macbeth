@@ -234,7 +234,7 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    network.add_peer(peer.peer_id, peer_socket);
+                    network.add_trusted_peer(peer.peer_id, peer_socket);
                     it_info_print!("RPC added peer", peer.peer_id);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
