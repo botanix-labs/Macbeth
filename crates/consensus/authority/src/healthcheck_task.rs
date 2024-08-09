@@ -81,6 +81,8 @@ where
             })
             .collect::<Vec<(PeerId, SocketAddr)>>();
 
+        drop(storage_lock);
+
         // update the tracker for each authority peer_id and mark its state as healthy initially
         let mut guard = self.peers_healthcheck_tracker.write().await;
         for (peer_id, _) in authority_peers_sockets.iter() {
