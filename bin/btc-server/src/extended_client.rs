@@ -4,7 +4,7 @@ use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
     GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginRequest,
+    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginsRequest,
     SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
 };
 use displaydoc::Display as DisplayDoc;
@@ -109,7 +109,7 @@ impl BtcServerExtendedClient {
         })
     }
 
-    generate_method!(notify_pegin, NotifyPeginRequest, Empty);
+    generate_method!(notify_pegins, NotifyPeginsRequest, Empty);
     generate_method!(get_gateway_address, GetGatewayAddressRequest, GetGatewayAddressResponse);
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_round1_dkg_package, Empty, DkgPayload);

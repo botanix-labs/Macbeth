@@ -1,5 +1,7 @@
 //! Botanix consensus utility functions
 use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use client::{MakeTxRequest, NotifyPeginsRequest, Output, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_botanix_lib::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
@@ -10,16 +12,9 @@ use reth_network::NetworkHandle;
 use reth_primitives::{constants::eip225::EPOCH_LENGTH, Bloom, BloomInput};
 use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::BlockHashOrNumber;
-use std::{
-    fs::read_to_string,
-    path::{Path, PathBuf},
-    time::Duration,
-};
-use tracing::{debug, error, info, warn};
+use std::time::Duration;
+use tracing::{error, info};
 use uuid::Uuid;
-
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{MakeTxRequest, NotifyPeginRequest, Output, SigningPackage};
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -116,16 +111,29 @@ pub(crate) async fn call_get_psbt(
 
 pub(crate) async fn call_notify_pegin(
     btc_server: &mut BtcServerExtendedClient,
-    pegin: &PeginMeta,
+    pegins: &[PeginMeta],
 ) -> Result<(), GrpcClientError> {
-    let request = NotifyPeginRequest {
-        utxo_txid: pegin.outpoint.txid.to_string(),
-        utxo_vout: pegin.outpoint.vout,
-        eth_address: hex::encode(pegin.address),
-        output: bitcoin::consensus::serialize(pegin.txout()),
-    };
-    let _ = btc_server.notify_pegin(request).await?;
+    let utxos = pegins.iter().map(utxo_from_pegin_meta).collect();
+    let request = NotifyPeginsRequest { utxos };
+    btc_server.notify_pegins(request).await?;
+    info!(target: "consensus::authority", "notifying btc server about pegin utxos");
     Ok(())
+}
+
+fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
+    let tx_out = pegin_meta.tx.output.get(pegin_meta.outpoint.vout as usize).expect("valid vout");
+    let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+    Utxo {
+        outpoint: Some(client::OutPoint {
+            txid: bitcoin::consensus::serialize(&pegin_meta.outpoint.txid),
+            vout: pegin_meta.outpoint.vout,
+        }),
+        output: Some(TxOut {
+            script_pubkey: Some(ScriptBuf { script: serialized_script_pub_key }),
+            value: tx_out.value.to_sat(),
+        }),
+        eth_address: hex::encode(pegin_meta.address),
+    }
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
@@ -297,7 +305,7 @@ pub fn is_known_minting_contract(
 
 #[cfg(test)]
 mod test {
-    use std::{env, str::FromStr};
+    use std::str::FromStr;
 
     use bitcoin::{
         psbt::{Input, Psbt},

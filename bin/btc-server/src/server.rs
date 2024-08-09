@@ -1,9 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitcoin::{
-    consensus::encode as btcencode,
     hashes::{sha256, Hash},
     psbt::Psbt,
-    Amount, BlockHash, FeeRate, OutPoint, TxOut,
+    Amount, BlockHash, FeeRate, TxOut,
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
@@ -173,26 +172,17 @@ impl rpc::BtcServer for App {
     }
 
     // Saves peg'd in UTXO
-    async fn notify_pegin(
+    async fn notify_pegins(
         &self,
-        req: tonic::Request<rpc::NotifyPeginRequest>,
+        req: tonic::Request<rpc::NotifyPeginsRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let txid = req.utxo_txid.parse().map_err(|e| badarg!("bad txid: {}", e))?;
-        let outpoint = OutPoint::new(txid, req.utxo_vout);
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
+        let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
 
-        let eth_addr = parse_eth_address(req.eth_address).map_err(|e| {
-            error!("Failed to parse eth address: {}", e);
-            badarg!("Failed to parse eth address: {}", e)
-        })?;
-        let utxo = Utxo::new(
-            outpoint,
-            btcencode::deserialize(&req.output).map_err(|e| badarg!("bad txout format: {}", e))?,
-            Some(eth_addr),
-        );
-
-        self.add_pegin(&utxo).map_err(|e| internal!("Failed to add pegin: {}", e))?;
+        self.add_pegins(&utxo_refs).map_err(|e| internal!("Failed to add pegins: {}", e))?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -658,7 +648,11 @@ impl rpc::BtcServer for App {
         self.validate_jwt(&req)?;
         let db_utxos =
             self.db.get_all_utxos().map_err(|e| internal!("Failed to get utxos: {}", e))?;
-        let utxos = db_utxos.into_iter().map(|utxo| utxo.into()).collect::<Vec<rpc::Utxo>>();
+        let utxos = db_utxos
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<rpc::Utxo>, _>>()
+            .map_err(|e| internal!("Failed to get utxos: {}", e))?;
         let res = rpc::GetAllUtxosResponse { utxos };
 
         Ok(tonic::Response::new(res))

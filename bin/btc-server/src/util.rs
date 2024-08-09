@@ -373,7 +373,7 @@ mod util_tests {
             eth_address: None,
         };
 
-        db.store_utxo(&utxo).unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
         let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_ok());
@@ -391,7 +391,7 @@ mod util_tests {
             eth_address: Some(eth),
         };
 
-        db.store_utxo(&utxo).unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
         let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
@@ -421,7 +421,7 @@ mod util_tests {
             script_pubkey: ScriptBuf::from_hex("7e").expect("valid script"),
         });
 
-        db.store_utxo(&utxo).unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
         let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
@@ -439,7 +439,7 @@ mod util_tests {
             eth_address: None,
         };
 
-        db.store_utxo(&utxo).unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
         let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_err());
@@ -488,7 +488,7 @@ mod util_tests {
         };
         let rng = &mut rand::thread_rng();
 
-        db.store_utxo(&utxo).unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
         let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");

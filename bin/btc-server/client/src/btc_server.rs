@@ -50,8 +50,8 @@ pub struct OutPoint {
 pub struct Utxo {
     #[prost(message, optional, tag = "1")]
     pub outpoint: ::core::option::Option<OutPoint>,
-    #[prost(uint32, tag = "2")]
-    pub output: u32,
+    #[prost(message, optional, tag = "2")]
+    pub output: ::core::option::Option<TxOut>,
     #[prost(string, tag = "3")]
     pub eth_address: ::prost::alloc::string::String,
 }
@@ -63,19 +63,9 @@ pub struct GetAllUtxosResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NotifyPeginRequest {
-    /// The txid of the utxo in hex.
-    #[prost(string, tag = "1")]
-    pub utxo_txid: ::prost::alloc::string::String,
-    /// The output index of the utxo.
-    #[prost(uint32, tag = "2")]
-    pub utxo_vout: u32,
-    /// The user's ethereum address.
-    #[prost(string, tag = "3")]
-    pub eth_address: ::prost::alloc::string::String,
-    /// The txout of the utxo.
-    #[prost(bytes = "vec", tag = "4")]
-    pub output: ::prost::alloc::vec::Vec<u8>,
+pub struct NotifyPeginsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -358,9 +348,9 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "TxIndexNewCheckpoint"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn notify_pegin(
+        pub async fn notify_pegins(
             &mut self,
-            request: impl tonic::IntoRequest<super::NotifyPeginRequest>,
+            request: impl tonic::IntoRequest<super::NotifyPeginsRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
@@ -369,9 +359,9 @@ pub mod btc_server_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/NotifyPegin");
+            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/NotifyPegins");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "NotifyPegin"));
+            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "NotifyPegins"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_gateway_address(

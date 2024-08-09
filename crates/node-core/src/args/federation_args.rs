@@ -116,7 +116,7 @@ fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> {
 
 /// Writes random bytes to a filepath
 #[allow(dead_code)]
-pub fn write_data_to_file(path: impl AsRef<Path> + Send, data: &[u8]) -> Result<(), Error> {
+pub(crate) fn write_data_to_file(path: impl AsRef<Path> + Send, data: &[u8]) -> Result<(), Error> {
     let mut file = File::create(path).map_err(Error::OpenConfig)?;
     file.write_all(data).map_err(Error::ReadConfig)
 }

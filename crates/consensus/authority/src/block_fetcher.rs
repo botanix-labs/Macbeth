@@ -224,16 +224,15 @@ where
                                             try_parse_mint_event(log).expect("passed EVM check");
                                         if let Some(pegin_data) = pegin_match {
                                             info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                                            for pegin in &pegin_data.meta {
-                                                //TODO(stevenroose) should this happen here?
-                                                if let Err(e) =
-                                                    call_notify_pegin(btc_server, &pegin).await
-                                                {
-                                                    error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
-                                                    return;
-                                                }
-                                                info!(target: "consensus::authority", "notifying btc server about pegin utxo");
+                                            //TODO(stevenroose) should this happen here?
+                                            if let Err(e) =
+                                                call_notify_pegin(btc_server, &pegin_data.meta)
+                                                    .await
+                                            {
+                                                error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
+                                                return;
                                             }
+                                            info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                                         }
 
                                         let pegout_match =

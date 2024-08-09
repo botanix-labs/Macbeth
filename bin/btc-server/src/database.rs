@@ -1,18 +1,22 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
+use crate::{
+    rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
+    txindex,
+    util::{parse_eth_address, OutPointExt},
+};
 use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    BlockHash, OutPoint, TxOut,
+    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
+use sled::transaction::{ConflictableTransactionError, TransactionError};
 use thiserror::Error;
-
-use crate::{txindex, util::OutPointExt};
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -30,8 +34,9 @@ const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_TXINDEX_TIP: &[u8; 10] = b"txindextip";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
+    // This is skipped during serialization because the db key is the outpoint so its redundant.
     #[serde(skip)]
     pub outpoint: OutPoint,
     pub output: TxOut,
@@ -44,6 +49,7 @@ impl Utxo {
         Utxo { outpoint, output, eth_address }
     }
 }
+
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -375,7 +381,15 @@ impl Db {
         })
     }
 
-    pub fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
+    pub fn store_utxos(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
+        match utxos.len() {
+            0 => Ok(false),
+            1 => self.store_utxo(utxos.get(0).unwrap()),
+            _ => self.store_utxos_atomically(utxos),
+        }
+    }
+
+    fn store_utxo(&self, utxo: &Utxo) -> Result<bool, Error> {
         let op = utxo.outpoint;
         if !self.utxos.contains_key(op.to_bytes())? {
             let mut bytes = Vec::new();
@@ -387,12 +401,31 @@ impl Db {
         }
     }
 
+    fn store_utxos_atomically(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
+        self.utxos
+            .transaction(|database_tx| {
+                for utxo in utxos.iter() {
+                    let op = utxo.outpoint;
+                    if database_tx.get(op.to_bytes())?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
+                        database_tx.insert(op.to_bytes().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))
+            .map(|_| true)
+    }
+
     /// Retrieves all utxos from the database.
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
         for res in self.utxos.iter() {
-            let (_k, v) = res?;
-            let utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
+            let (k, v) = res?;
+            let outpoint: OutPoint = OutPoint::from_slice(&k).expect("corrupt db: outpoint");
+            let mut utxo: Utxo = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: utxo");
+            utxo.outpoint = outpoint;
             utxos.push(utxo);
         }
         Ok(utxos)
@@ -469,6 +502,10 @@ pub enum Error {
     BitcoinSerialization(#[from] bitcoin::consensus::encode::Error),
     #[error("PSBT error: {0}")]
     Psbt(#[from] psbt::Error),
+    #[error("Transaction error: {0}")]
+    Transaction(String),
+    #[error("Rpc to db data mapping error: {0}")]
+    RpcToDbMap(String),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
@@ -487,6 +524,66 @@ impl From<Error> for tonic::Status {
     }
 }
 
+impl TryFrom<RpcUtxo> for Utxo {
+    type Error = Error;
+
+    fn try_from(value: RpcUtxo) -> Result<Self, Self::Error> {
+        // outpoint
+        let outpoint =
+            value.outpoint.ok_or_else(|| Error::RpcToDbMap("Outpoint is None".to_string()))?;
+        let txid = bitcoin::consensus::deserialize::<Txid>(&outpoint.txid)
+            .map_err(|_| Error::RpcToDbMap("Unparsable Txid".to_string()))?;
+        let vout = outpoint.vout;
+
+        // txout
+        let tx_out = value.output.ok_or_else(|| Error::RpcToDbMap("TxOut is None".to_string()))?;
+        let tx_out_val = Amount::from_sat(tx_out.value);
+        let script_pubkey = tx_out
+            .script_pubkey
+            .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
+        let script = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
+            .map_err(|_| Error::RpcToDbMap("Unparsable ScriptBuf".to_string()))?;
+
+        // create the utxo
+        Ok(Utxo::new(
+            OutPoint::new(txid, vout),
+            TxOut { value: tx_out_val, script_pubkey: script },
+            if value.eth_address.is_empty() {
+                None
+            } else {
+                Some(
+                    parse_eth_address(value.eth_address).map_err(|_| {
+                        Error::RpcToDbMap("Unparsable Ethereum Address".to_string())
+                    })?,
+                )
+            },
+        ))
+    }
+}
+
+impl TryFrom<Utxo> for RpcUtxo {
+    type Error = Error;
+
+    fn try_from(item: Utxo) -> Result<Self, Self::Error> {
+        let mut script_pk = vec![];
+        item.output
+            .script_pubkey
+            .consensus_encode(&mut script_pk)
+            .map_err(|_e| Error::RpcToDbMap("Failed to serialize scriptpubkey".to_string()))?;
+        Ok(RpcUtxo {
+            outpoint: Some(RpcOutPoint {
+                txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
+                vout: item.outpoint.vout,
+            }),
+            output: Some(RpcTxOut {
+                value: item.output.value.to_sat(),
+                script_pubkey: Some(RpcScriptBuf { script: script_pk }),
+            }),
+            eth_address: item.eth_address.map_or(String::new(), hex::encode),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test::create_tx;
@@ -498,6 +595,113 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn from_db_utxo_to_rpc_utxo() {
+        let tx = create_tx(1);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 0),
+            tx.output.get(0).expect("one output").clone(),
+            Some([0; 20]),
+        );
+        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
+        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
+        assert!(utxo == utxo2);
+
+        // Without eth address
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 2),
+            tx.output.get(0).expect("one output").clone(),
+            None,
+        );
+        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
+        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
+        assert!(utxo == utxo2);
+    }
+
+    #[test]
+    fn test_storing_single_utxo() {
+        let (db, _temp_dir) = setup_db();
+
+        let tx = create_tx(2);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 0),
+            tx.output.get(0).expect("one output").clone(),
+            None,
+        );
+        db.store_utxo(&utxo).unwrap();
+        db.flush().unwrap();
+
+        let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+        assert!(retrieved_utxo == utxo);
+    }
+
+    #[test]
+    fn test_storing_many_utxo() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(2);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        for utxo in utxos.iter() {
+            let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+            assert!(retrieved_utxo == *utxo);
+        }
+
+        // Get all utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        println!("{:?}", retrieved_utxos);
+        assert!(retrieved_utxos.len() == num_txs);
+        // All utxos should be present
+        for utxo in utxos.iter() {
+            assert!(retrieved_utxos.contains(utxo));
+        }
+    }
+
+    // Should have the same outcome as test_storing_many_utxo
+    #[test]
+    fn test_storing_many_utxo_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(2);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos_atomically(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        for utxo in utxos.iter() {
+            let retrieved_utxo = db.get_utxo(utxo.outpoint).unwrap().unwrap();
+            assert!(retrieved_utxo == *utxo);
+        }
+
+        // Get all utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        println!("{:?}", retrieved_utxos);
+        assert!(retrieved_utxos.len() == num_txs);
+        // All utxos should be present
+        for utxo in utxos.iter() {
+            assert!(retrieved_utxos.contains(utxo));
+        }
     }
 
     #[test]

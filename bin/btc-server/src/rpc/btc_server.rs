@@ -50,8 +50,8 @@ pub struct OutPoint {
 pub struct Utxo {
     #[prost(message, optional, tag = "1")]
     pub outpoint: ::core::option::Option<OutPoint>,
-    #[prost(uint32, tag = "2")]
-    pub output: u32,
+    #[prost(message, optional, tag = "2")]
+    pub output: ::core::option::Option<TxOut>,
     #[prost(string, tag = "3")]
     pub eth_address: ::prost::alloc::string::String,
 }
@@ -63,19 +63,9 @@ pub struct GetAllUtxosResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NotifyPeginRequest {
-    /// The txid of the utxo in hex.
-    #[prost(string, tag = "1")]
-    pub utxo_txid: ::prost::alloc::string::String,
-    /// The output index of the utxo.
-    #[prost(uint32, tag = "2")]
-    pub utxo_vout: u32,
-    /// The user's ethereum address.
-    #[prost(string, tag = "3")]
-    pub eth_address: ::prost::alloc::string::String,
-    /// The txout of the utxo.
-    #[prost(bytes = "vec", tag = "4")]
-    pub output: ::prost::alloc::vec::Vec<u8>,
+pub struct NotifyPeginsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -257,9 +247,9 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::SyncTxIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn notify_pegin(
+        async fn notify_pegins(
             &self,
-            request: tonic::Request<super::NotifyPeginRequest>,
+            request: tonic::Request<super::NotifyPeginsRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn get_gateway_address(
             &self,
@@ -503,19 +493,19 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/NotifyPegin" => {
+                "/btc_server.BtcServer/NotifyPegins" => {
                     #[allow(non_camel_case_types)]
-                    struct NotifyPeginSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::NotifyPeginRequest> for NotifyPeginSvc<T> {
+                    struct NotifyPeginsSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::NotifyPeginsRequest> for NotifyPeginsSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::NotifyPeginRequest>,
+                            request: tonic::Request<super::NotifyPeginsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as BtcServer>::notify_pegin(&inner, request).await
+                                <T as BtcServer>::notify_pegins(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -527,7 +517,7 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = NotifyPeginSvc(inner);
+                        let method = NotifyPeginsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -1,7 +1,7 @@
 //! Main node command
 
 use bitcoin::hashes::Hash;
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientFactory};
+use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
 use core::panic;

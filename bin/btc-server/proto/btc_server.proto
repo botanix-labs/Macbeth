@@ -4,11 +4,12 @@ syntax = "proto3";
 package btc_server;
 
 service BtcServer {
+
     rpc HealthCheck(Empty) returns (Empty) {}
 
     rpc TxIndexNewCheckpoint(SyncTxIndexRequest) returns (Empty) {}
 
-    rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
+    rpc NotifyPegins(NotifyPeginsRequest) returns (Empty) {}
 
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
@@ -91,7 +92,7 @@ message OutPoint {
 
 message Utxo {
     OutPoint outpoint = 1; 
-    uint32 output = 2;
+    TxOut output = 2;
     string eth_address = 3;
 }
 
@@ -99,15 +100,8 @@ message GetAllUtxosResponse {
     repeated Utxo utxos = 1;
 }
 
-message NotifyPeginRequest {
-    // The txid of the utxo in hex.
-    string utxo_txid = 1;
-    // The output index of the utxo.
-    uint32 utxo_vout = 2;
-    // The user's ethereum address.
-    string eth_address = 3;
-    // The txout of the utxo.
-    bytes output = 4;
+message NotifyPeginsRequest {
+    repeated Utxo utxos = 1;
 }
 
 message GetGatewayAddressRequest {
