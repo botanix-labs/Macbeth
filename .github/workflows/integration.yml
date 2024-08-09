@@ -39,6 +39,9 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
+      - name: Install killall 
+        run: sudo apt-get install psmisc
+
       - run: rustup toolchain install stable --profile minimal
 
       - uses: Swatinem/rust-cache@v2
@@ -65,7 +68,7 @@ jobs:
           set -o pipefail
           chmod +x test_runner.sh
           bash test_runner.sh
-          killall btc-server
+          killall btc-server || true
           echo "e2e tests completed successfully!"
 
   sync:
