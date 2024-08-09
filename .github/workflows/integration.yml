@@ -65,6 +65,7 @@ jobs:
           set -o pipefail
           chmod +x test_runner.sh
           bash test_runner.sh
+          killall btc-server
           echo "e2e tests completed successfully!"
 
   sync:
