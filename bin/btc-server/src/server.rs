@@ -188,6 +188,21 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Resets all utxos in the database
+    async fn reset_all_utxos(
+        &self,
+        req: tonic::Request<rpc::ResetAllUtxosRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset all utxos request");
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
+        let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
+        self.db.reset_utxos(&utxo_refs).map_err(|e| internal!("Failed to reset utxos: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     async fn abort_signing(
         &self,
         _req: tonic::Request<rpc::Empty>,

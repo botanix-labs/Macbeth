@@ -418,6 +418,20 @@ impl Db {
             .map(|_| true)
     }
 
+    /// Resetting all utxos
+    pub fn reset_utxos(&self, utxos: &[&Utxo]) -> Result<(), Error> {
+        self.clear_utxos()?;
+        for utxo in utxos.iter() {
+            self.store_utxo(utxo)?;
+        }
+        Ok(())
+    }
+
+    /// Clears all utxos from the database.
+    pub fn clear_utxos(&self) -> Result<(), Error> {
+        Ok(self.utxos.clear()?)
+    }
+
     /// Retrieves all utxos from the database.
     pub fn get_all_utxos(&self) -> Result<Vec<Utxo>, Error> {
         let mut utxos = vec![];
@@ -667,6 +681,62 @@ mod tests {
         // All utxos should be present
         for utxo in utxos.iter() {
             assert!(retrieved_utxos.contains(utxo));
+        }
+    }
+
+    #[test]
+    fn test_clear_utxos() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(1);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        db.clear_utxos().unwrap();
+        db.flush().unwrap();
+        // shouldnt have any utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        assert!(retrieved_utxos.is_empty());
+    }
+
+    #[test]
+    fn test_reset_utxos() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(1);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos(&utxo_slice).unwrap();
+        db.flush().unwrap();
+
+        let selected_utxos = utxos.iter().take(2).collect::<Vec<&Utxo>>();
+        db.reset_utxos(&selected_utxos).unwrap();
+        db.flush().unwrap();
+        // shouldnt have any utxos
+        let retrieved_utxos = db.get_all_utxos().unwrap();
+        assert!(!retrieved_utxos.is_empty());
+        assert!(retrieved_utxos.len() == 2);
+        // Check the selected utxos are not in the set
+        for utxo in selected_utxos.iter() {
+            assert!(retrieved_utxos.contains(*utxo));
         }
     }
 

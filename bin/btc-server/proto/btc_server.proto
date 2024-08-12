@@ -55,6 +55,8 @@ service BtcServer {
 
     rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
 
+    rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
+
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
@@ -72,6 +74,10 @@ message FinalizeSignerRequest {
     bytes checkpoint_block_hash = 3;
     // The merkle root of our wallet's UTXO set.
     bytes utxo_merkle_root = 4;
+}
+
+message ResetAllUtxosRequest {
+    repeated Utxo utxos = 1;
 }
 
 message ScriptBuf {
