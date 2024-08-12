@@ -89,6 +89,11 @@ pub trait HeaderExt {
         btc_network: bitcoin::Network,
         bitcoind_factory: impl BitcoindFactory,
     ) -> Result<BotanixConsensusPackage, BotanixConsensusPackageError>;
+
+    /// Get aggregate public key
+    fn get_aggregate_public_key(
+        &self,
+    ) -> Result<secp256k1::PublicKey, ExtraDataHeaderDeserializeError>;
 }
 
 #[derive(Debug, Error)]
@@ -475,6 +480,14 @@ impl HeaderExt for Header {
             aggregate_public_key: edh.aggregated_public_key,
             btc_network,
         })
+    }
+
+    /// Get aggregate public key
+    fn get_aggregate_public_key(
+        &self,
+    ) -> Result<secp256k1::PublicKey, ExtraDataHeaderDeserializeError> {
+        let edh = self.deserialize_extra_data_header()?;
+        Ok(edh.aggregated_public_key)
     }
 }
 
