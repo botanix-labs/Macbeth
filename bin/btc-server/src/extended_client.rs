@@ -5,7 +5,7 @@ use client::{
     FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
     GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
     GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginsRequest,
-    SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
+    ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -131,6 +131,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
     generate_method!(health_check, Empty, Empty);
     generate_method!(tx_index_new_checkpoint, SyncTxIndexRequest, Empty);
+    generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
 }
 
 #[derive(Clone, Debug)]
