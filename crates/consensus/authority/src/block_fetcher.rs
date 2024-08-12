@@ -141,14 +141,11 @@ where
                 continue;
             }
 
-            let mut aggregate_public_key = None;
-            if is_fed_node {
-                if storage.aggregate_public_key.is_none() {
-                    warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
-                    continue;
-                } else {
-                    aggregate_public_key = storage.aggregate_public_key;
-                }
+            let aggregate_public_key = storage.aggregate_public_key.clone();
+            if is_fed_node && storage.aggregate_public_key.is_none() {
+                // note: `storage.aggregate_public_key` will get populated by the dkg state machine
+                warn!(target: "consensus::authority", "Do not have aggregate public key in memory, skipping block import");
+                continue;
             }
 
             // Notify the engine of the new block
@@ -164,6 +161,7 @@ where
                     continue;
                 }
             };
+            // TODO Should be handling payload status here
 
             match execute_imported_block(
                 &self.consensus,

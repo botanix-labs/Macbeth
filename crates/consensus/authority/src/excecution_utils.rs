@@ -164,12 +164,29 @@ pub(crate) mod authority_execution_utils {
                 .expect("senders are valid");
 
         // validate before executing block
+        // Edge case: block 1 for the rpc nodes
+        // Rpc nodes will typically store the agg pk from the latest block on boot up 
+        // In the case where they boot up on block 0, they will not have an agg pk
+        // Here we pull the agg pk from the incoming block if it is not provided
+        let aggregate_public_key = {
+            if let Some(current_pk) = agg_pk {
+                current_pk.clone()
+            } else {
+                let current_agg_key =
+                    sealed_block.header.clone().unseal().get_aggregate_public_key().map_err(
+                        |e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData),
+                    )?;
+                current_agg_key.clone()
+            }
+        };
+
         consensus
             .validate_header_standalone(
                 &sealed_block.header.clone(),
                 &authorities,
                 &genesis_authorities,
-                agg_pk,
+                // TODO(https://github.com/botanix-labs/botanix/issues/615) this shouldn't need to be an option
+                Some(&aggregate_public_key),
             )
             .map_err(|e| {
                 warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
