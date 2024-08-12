@@ -216,6 +216,9 @@ where
             PeerMessageResponse::Healthcheck(_) => {
                 // Nothing to do for health related messages.
             }
+            PeerMessageResponse::Utxo(_) => {
+                // Nothing to do for UTXO sync related messages.
+            }
         }
     }
 

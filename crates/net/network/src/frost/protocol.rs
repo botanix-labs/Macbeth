@@ -24,9 +24,11 @@ use crate::{
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest},
+    messages::{
+        FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
+    },
     FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PbftEventResponseType, PbftResponse,
-    PeerMessageResponse, ProtocolState,
+    PeerMessageResponse, ProtocolState, UtxoSetResponse,
 };
 
 /// Frost Protocol Handler
@@ -261,6 +263,11 @@ impl Stream for FrostProtoConnection {
                             }
                         }
                     }
+                    PeerMessageResponse::Utxo(utxo_response) => {
+                        let UtxoSetResponse { data } = utxo_response;
+                        let req = UtxoRequest::new(data);
+                        Poll::Ready(Some(FrostProtoMessage::utxo_message(req).encoded()))
+                    }
                 },
             };
         }
@@ -436,6 +443,12 @@ impl Stream for FrostProtoConnection {
                 }) {
                     error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound2SigningPackage message. Error = {:?}", e);
                 }
+            }
+            FrostProtoMessageKind::Utxo(data) => {
+                let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    response: PeerMessageResponse::Utxo(UtxoSetResponse { data: data.data }),
+                    peer_id: this.peer_id,
+                });
             }
         }
 

@@ -10,6 +10,7 @@ use tracing::warn;
 
 const MESSAGE_VERSION: usize = 0;
 const PBFT_MESSAGE_VERSION: usize = 0;
+const UTXO_SET_MESSAGE_VERSION: usize = 0;
 
 /// A structured healthcheck message
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +101,28 @@ impl SignRequest {
     }
 }
 
+/// A structured utxo set message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UtxoRequest {
+    /// The version of the request message
+    pub version: u16,
+    /// utxo set data
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Utxo set data Size: {} bytes", self.data.len())
+    }
+}
+
+impl UtxoRequest {
+    /// Constructs a new PBFT Request using a data payload.
+    pub fn new(data: Vec<u8>) -> Self {
+        UtxoRequest { version: UTXO_SET_MESSAGE_VERSION as u16, data }
+    }
+}
+
 /// Enum defining the frost message type as u8
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,10 +153,12 @@ pub enum FrostProtoMessageId {
     PeerPreCommitment = 0x0B,
     /// PBFT message peer commit
     PeerCommit = 0x0C,
+    /// utxo set
+    Utxo = 0x0D,
     /// Healthcheck
-    Healthcheck = 0x0D,
+    Healthcheck = 0x0E,
     /// Round 1 Dkg request message
-    Round1DkgRequest = 0x0E,
+    Round1DkgRequest = 0x0F,
 }
 
 /// Enum defining the frost message kind
@@ -167,6 +192,8 @@ pub enum FrostProtoMessageKind {
     PeerPreCommitment(PbftRequest),
     /// PBFT message peer commit
     PeerCommit(PbftRequest),
+    /// Utxo set message
+    Utxo(UtxoRequest),
     /// Health
     Healthcheck(HealthcheckRequest),
 }
@@ -296,6 +323,14 @@ impl FrostProtoMessage {
         }
     }
 
+    /// Creates a utxo set message
+    pub fn utxo_message(resource: UtxoRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::Utxo,
+            message: FrostProtoMessageKind::Utxo(resource),
+        }
+    }
+
     /// Peer healthcheck
     pub fn peer_health_message(resource: HealthcheckRequest) -> Self {
         Self {
@@ -404,6 +439,11 @@ impl FrostProtoMessage {
                 buf.put_u32_le(buffer.len() as u32);
                 buf.put_slice(&buffer);
             }
+            FrostProtoMessageKind::Utxo(resource) => {
+                // serialize the data
+                buf.put_u64_le(resource.data.len() as u64); // Use u64 to support larger data sizes
+                buf.put_slice(&resource.data);
+            }
             FrostProtoMessageKind::Healthcheck(resource) => {
                 // Serialize the sender
                 let sender_bytes = resource.sender.as_slice();
@@ -440,8 +480,9 @@ impl FrostProtoMessage {
             0x0A => FrostProtoMessageId::CoordinatorBlockProposal,
             0x0B => FrostProtoMessageId::PeerPreCommitment,
             0x0C => FrostProtoMessageId::PeerCommit,
-            0x0D => FrostProtoMessageId::Healthcheck,
-            0x0E => FrostProtoMessageId::Round1DkgRequest,
+            0x0D => FrostProtoMessageId::Utxo,
+            0x0E => FrostProtoMessageId::Healthcheck,
+            0x0F => FrostProtoMessageId::Round1DkgRequest,
             _ => return None,
         };
         let message = match message_type {
@@ -645,6 +686,15 @@ impl FrostProtoMessage {
                     return None;
                 }
             }
+            FrostProtoMessageId::Utxo => {
+                // utxo
+                let utxo_set_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                buf.advance(8);
+                let utxo = buf[..utxo_set_len].to_vec();
+                buf.advance(utxo_set_len);
+
+                FrostProtoMessageKind::Utxo(UtxoRequest::new(utxo))
+            }
             FrostProtoMessageId::Healthcheck => {
                 // Deserialize the sender
                 let sender_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
@@ -669,12 +719,13 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::HealthcheckRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, PbftRequest,
         SignRequest,
     };
+    use super::{HealthcheckRequest, UtxoRequest};
+    use itertools::Itertools;
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
@@ -825,6 +876,33 @@ mod tests {
             assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
         } else {
             panic!("Decoded message is not a PongMessage");
+        }
+    }
+
+    #[test]
+    fn test_utxo_encode_decode() {
+        let msg = "foo bar".to_owned();
+        let random_string = msg.bytes().collect_vec();
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::Utxo,
+            message: FrostProtoMessageKind::Utxo(UtxoRequest::new(random_string)),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode UtxoMessage");
+
+        // Verify that the decoded message matches the original message
+        if let FrostProtoMessageKind::Utxo(utxo_request) = decoded_message.message {
+            let decoded_message = String::from_utf8(utxo_request.data).unwrap();
+            assert_eq!(decoded_message, msg, "data does not match");
+        } else {
+            panic!("Decoded message is not a UtxoMessage");
         }
     }
 
