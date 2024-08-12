@@ -35,7 +35,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::error;
+use tracing::{error, info};
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<EF, BF, DB, Engine: EngineTypes, ToFrostMan, NetworkClient> {
@@ -139,6 +139,19 @@ where
             })?
             .expect("authority signer list in epoch block");
 
+        let agg_pk = {
+            if latest_header.number > 0 {
+                Some(
+                    latest_header
+                        .get_aggregate_public_key()
+                        .expect("latest header is greater than genesis"),
+                )
+            } else {
+                None
+            }
+        };
+        info!("Aggregate public key: {:?}", agg_pk);
+
         // authority length represents a non federation node since it would be out of bounds
         // this prevents the node from signing blocks although there are other checks to stop this
         // as well
@@ -161,7 +174,9 @@ where
             signer_index.expect("valid index"),
             pk,
             btc_network,
-            None, // Aggregate pk to be filled out by the dkg state machine,
+            // Aggregate pk to be filled out by the dkg state machine if we are still on genesis
+            // block
+            agg_pk,
             authority_socket_addresses,
             evm_config.clone(),
             chain_spec.clone(),

@@ -149,7 +149,6 @@ where
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey).unwrap().as_slice(),
             ) {
-                // TODO replace with setter method
                 let mut storage = self.storage.inner.write().await;
                 storage.aggregate_public_key = Some(secp_pk);
 
