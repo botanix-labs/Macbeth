@@ -206,6 +206,10 @@ where
             // receive over a channel message from other peers and update our state machine
             while let Ok((_peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
+                    PeerMessageResponse::Utxo(_) => {
+                        // TODO handle this
+                        continue;
+                    }
                     PeerMessageResponse::Healthcheck(_) => {
                         // Nothing to do for healthcheck related messages.
                         continue;

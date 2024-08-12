@@ -47,6 +47,8 @@ pub enum PeerMessageResponse {
     Signing(SigningResponse),
     /// PBFT related responses
     Pbft(PbftResponse),
+    /// UTXO related responses
+    Utxo(UtxoSetResponse),
     /// Healtcheck response
     Healthcheck(HealthcheckResponse),
 }
@@ -57,6 +59,7 @@ impl fmt::Display for PeerMessageResponse {
             PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
             PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
             PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
+            PeerMessageResponse::Utxo(response) => write!(f, "Utxo Response: {}", response),
             PeerMessageResponse::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
             }
@@ -84,6 +87,19 @@ impl fmt::Display for DkgResponse {
             self.identifier.len(),
             self.data.len()
         )
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UtxoSetResponse {
+    /// Utxo Set Data (Compressed and Serialized)
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoSetResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Utxo data Size: {} bytes", self.data.len())
     }
 }
 
@@ -184,6 +200,19 @@ impl fmt::Display for DkgEventResponseType {
             DkgEventResponseType::DkgRound2 => write!(f, "dkground 2"),
             DkgEventResponseType::DkgRound1Request => write!(f, "dkground 1 request"),
         }
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UtxoResponse {
+    /// serialized utxo data set
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for UtxoResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Utxo Data Size: {} bytes", self.data.len(),)
     }
 }
 
