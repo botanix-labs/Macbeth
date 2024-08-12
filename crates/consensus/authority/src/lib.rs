@@ -51,6 +51,7 @@ mod pbft_task;
 mod signing;
 mod sync;
 mod task;
+mod compressor;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 

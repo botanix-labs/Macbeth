@@ -72,6 +72,29 @@ tonic = "0.11.0"
 ## this error
 thiserror.workspace = true
 
+# compression
+async-compression = {version = "0.4.11", features = ["all"]}
+serde = { version = "1.0", features = ["derive"] }
+serde_json.workspace = true
+strum = { version = "0.26.3", features = ["derive"] }
+strum_macros = "0.26.4"
+
+# prost
+prost = "0.12.6"
+
+# paste
+paste = "1.0.15"
+
+# bytes
+bytes = "1.6.0"
+
+# displaydoc
+displaydoc = "0.2"
+
+# ser/deser
+bincode = "1.3.3"
+postcard = "1.0.8"
+
 [dev-dependencies]
 reth-interfaces = { workspace = true, features = ["test-utils"] }
 
