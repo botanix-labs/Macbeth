@@ -137,6 +137,8 @@ This service runs a Botanix PoA node, which connects to the Bitcoin Core node an
 -   **Dependencies**: This service depends on the `bitcoin-core` service to ensure it starts only after Bitcoin Core is running.
 -   **Restart Policy**: The service is configured to restart on failure. The rpc node will exit if bitcoin core is not fully sync'd
 
+**Note** To re-sync your node please remove both the database and the static file directory.
+
 #### 3. `alloy`
 
 This service runs Grafana Alloy, a lightweight, scalable time-series database, only used for monitoring purposes.
