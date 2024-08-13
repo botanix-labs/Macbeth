@@ -2,10 +2,11 @@
 use client::{
     jwt::{Claims, JwtSecret},
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
-    FinalizeSigningResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-    GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-    GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest, NotifyPeginsRequest,
-    ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
+    FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
+    GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
+    GetSigningStatusRequest, GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest,
+    NotifyPeginsRequest, ResetAllUtxosRequest, SigningPackage, SigningPackageRequest,
+    SyncTxIndexRequest, ToSignRequest,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -70,6 +71,8 @@ macro_rules! generate_method {
     };
 }
 
+pub trait BtcServerGrpcClient {}
+
 /// Bitcoin Server Client with extended authentication credentials
 #[derive(Clone, Debug)]
 pub struct BtcServerExtendedClient {
@@ -132,6 +135,7 @@ impl BtcServerExtendedClient {
     generate_method!(health_check, Empty, Empty);
     generate_method!(tx_index_new_checkpoint, SyncTxIndexRequest, Empty);
     generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
+    generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
 }
 
 #[derive(Clone, Debug)]
