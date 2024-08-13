@@ -1,27 +1,12 @@
-use clap::{Parser, Subcommand};
+/// Module that defines the CLI commands
+mod cli;
+/// Module that creates a wallet to get and sweep balances
+mod wallet;
+
+use clap::Parser;
+use cli::{Cli, Commands};
 use thiserror::Error;
 use tracing::error;
-
-#[derive(Parser)]
-#[command(version, about)]
-enum App {
-    /// Generate the key to sign blocks
-    #[command(subcommand)]
-    Command(Command),
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Generate the key to sign blocks
-    #[command()]
-    GenerateKey,
-    /// Get the wallet balance
-    #[command()]
-    GetBalance,
-    /// Sweep the wallet balance to a destination address
-    #[command()]
-    SweepBalance,
-}
 
 #[derive(Error, Debug)]
 enum FederationUtilsError {
@@ -34,19 +19,23 @@ enum FederationUtilsError {
 }
 
 fn inner_main() -> Result<(), FederationUtilsError> {
-    match App::parse() {
-        App::Command(cmd) => match cmd {
-            Command::GenerateKey => {
-                println!("Generating key...");
-            }
-            Command::GetBalance => {
-                println!("Getting balance...");
-            }
-            Command::SweepBalance => {
-                println!("Sweeping balance...");
-            }
-        },
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Commands::Setup(setup) => {
+            println!("Setting up wallet config...");
+        }
+        cli::Commands::GenerateKey(_) => {
+            println!("Generating key...");
+        }
+        cli::Commands::GetBalance(_) => {
+            println!("Getting balance...");
+        }
+        cli::Commands::SweepBalance(_) => {
+            println!("Sweeping balance...");
+        }
     }
+
     Ok(())
 }
 

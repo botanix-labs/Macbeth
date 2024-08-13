@@ -3765,8 +3765,12 @@ name = "federation-utils-cli"
 version = "0.2.0-beta.6"
 dependencies = [
  "clap",
+ "ethers",
+ "serde",
+ "serde_json",
  "thiserror",
  "tracing",
+ "url",
 ]
 
 [[package]]
