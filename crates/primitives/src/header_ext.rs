@@ -94,6 +94,11 @@ pub trait HeaderExt {
     fn get_aggregate_public_key(
         &self,
     ) -> Result<secp256k1::PublicKey, ExtraDataHeaderDeserializeError>;
+
+    /// Get UTXO set merkel root
+    fn get_utxo_set_merkle_root(
+        &self,
+    ) -> Result<bitcoin::hashes::sha256::Hash, ExtraDataHeaderDeserializeError>;
 }
 
 #[derive(Debug, Error)]
@@ -488,6 +493,13 @@ impl HeaderExt for Header {
     ) -> Result<secp256k1::PublicKey, ExtraDataHeaderDeserializeError> {
         let edh = self.deserialize_extra_data_header()?;
         Ok(edh.aggregated_public_key)
+    }
+
+    fn get_utxo_set_merkle_root(
+        &self,
+    ) -> Result<bitcoin::hashes::sha256::Hash, ExtraDataHeaderDeserializeError> {
+        let edh = self.deserialize_extra_data_header()?;
+        Ok(edh.utxo_commitment)
     }
 }
 
