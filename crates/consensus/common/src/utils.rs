@@ -1,7 +1,6 @@
 use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
-    constants::STAKING_CONTRACT_ADDRESS,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
     keccak256, public_key_to_address, Address, ChainSpec, Header, U256,
 };
@@ -13,38 +12,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tracing::error;
-
-/// Error that can occur while accessing EVM global storage
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum StorageAccessError {
-    /// Failed to access storage
-    FailedAccess(&'static str),
-}
-
-/// Read staker balance from staking contract storage
-/// TODO(armins) refactor needed, read comment below    
-pub fn read_staker_balance(
-    provider: impl StateProvider,
-    _staker_address: Address,
-) -> Result<U256, StorageAccessError> {
-    let staking_contract_address = Address::from_slice(STAKING_CONTRACT_ADDRESS.as_bytes());
-    let payload: Vec<Vec<u8>> = vec![];
-    // And no longer supports `from_low_u64_le()`
-    // payload
-    // payload.push(staker_address.as_bytes().to_vec());
-    //     .push(H160::from_low_u64_le(STAKER_BALANCE_MAPPING_STORAGE_SLOT_INDEX).as_bytes().
-    // to_vec());
-
-    let storage_key = keccak256(payload.into_iter().flatten().collect::<Vec<u8>>());
-    let balance = provider
-        .storage(staking_contract_address, storage_key)
-        .map_err(|_e| StorageAccessError::FailedAccess("Failed to retrieve storage"))?
-        // TODO remove unwrap
-        .unwrap();
-
-    Ok(balance)
-}
 
 /// Returns
 /// - The index of the authority that is currently in turn
