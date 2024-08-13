@@ -13,7 +13,7 @@ use reth_network::frost::{
 };
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
 use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError};
-use tokio::sync::mpsc::error::SendError;
+use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -46,10 +46,11 @@ pub(crate) enum UtxoSyncError {
     Sha256HashError(#[from] FromSliceError),
 }
 
-trait UTXOSync {
+pub(crate) trait UTXOSync {
     async fn sync_utxo_set(&self) -> Result<(), UtxoSyncError>;
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
     storage: Storage<EF, BF, DB>,
     btc_server: BtcServerExtendedClient,

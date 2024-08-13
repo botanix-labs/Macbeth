@@ -10,7 +10,7 @@ use reth_interfaces::{
         bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
     },
 };
-use reth_network::{message::NewBlockMessage, NetworkHandle};
+use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};
 use reth_node_api::EngineTypes;
 use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{
@@ -27,12 +27,13 @@ use crate::{
     engine_util,
     excecution_utils::authority_execution_utils::execute_imported_block,
     utils::{bloom_contains_pegin, call_notify_pegin, is_active_sync_in_progress},
+    utxo_sync::{UTXOSync, UTXOSyncEngine},
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, Output};
 
-pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient> {
+pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient, ToFrostMan> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
@@ -51,9 +52,13 @@ pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient> {
     network_client: NetworkClient,
     /// Network Handle, used to create [FullBlockClient]
     network_handle: NetworkHandle,
+    /// Utxo set sync controller
+    /// Rpc servers will not have a utxo sync engine
+    utxo_sync: Option<UTXOSyncEngine<EF, BF, DB, ToFrostMan>>,
 }
 
-impl<EF, BF, DB, Engine, NetworkClient> BlockFetcherTask<EF, BF, DB, Engine, NetworkClient>
+impl<EF, BF, DB, Engine, NetworkClient, ToFrostMan>
+    BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -65,6 +70,7 @@ where
     EF: ExecutorFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -77,6 +83,7 @@ where
         bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
         network_client: NetworkClient,
         network_handle: NetworkHandle,
+        utxo_sync: Option<UTXOSyncEngine<EF, BF, DB, ToFrostMan>>,
     ) -> Self {
         Self {
             consensus,
@@ -88,6 +95,7 @@ where
             bitcoin_block_header,
             network_client,
             network_handle,
+            utxo_sync,
         }
     }
 
@@ -103,6 +111,15 @@ where
                 warn!(target: "consensus::authority", "Node is still syncing, block fetcher task is awaiting fully synced status ...");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 return;
+            }
+
+            // Rpc servers will not have a utxo sync engine
+            if let Some(utxo_sync) = &self.utxo_sync {
+                if let Err(utxo_sync_err) = utxo_sync.sync_utxo_set().await {
+                    error!(target: "consensus::authority", ?utxo_sync_err, "Failed to sync utxo set");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                };
             }
 
             let new_block = match self.block_import_rx.recv().await {
