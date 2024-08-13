@@ -256,8 +256,8 @@ impl Compressor {
 #[cfg(test)]
 mod test {
     use crate::compressor::{Compressor, ProstMessageSerdelizer};
-    use bitcoin::{hashes::Hash, Script, Txid};
-    use client::{GetAllUtxosResponse, Utxo};
+    use bitcoin::{hashes::Hash, Txid};
+    use client::{GetAllUtxosResponse, TxOut, Utxo};
     use rand::{thread_rng, Rng};
     use serde_json::Value;
 
@@ -316,13 +316,14 @@ mod test {
         // generate utxos
         for _ in 0..100 {
             let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
-            let pub_key = rng.gen::<[u8; 32]>();
+            let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                utxo_txid: txid,
-                utxo_vout: vout,
-                output_scriptpubkey: Script::from_bytes(&pub_key).to_bytes(),
-                output_value: rng.gen::<u32>(),
+                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                output: Some(TxOut {
+                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    value: rng.gen::<u64>(),
+                }),
                 eth_address: "0x0".to_string(),
             };
             utxos.push(utxo);
@@ -352,13 +353,14 @@ mod test {
         // generate utxos
         for _ in 0..100 {
             let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
-            let pub_key = rng.gen::<[u8; 32]>();
+            let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                utxo_txid: txid,
-                utxo_vout: vout,
-                output_scriptpubkey: Script::from_bytes(&pub_key).to_bytes(),
-                output_value: rng.gen::<u32>(),
+                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                output: Some(TxOut {
+                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    value: rng.gen::<u64>(),
+                }),
                 eth_address: "0x0".to_string(),
             };
             utxos.push(utxo);

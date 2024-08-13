@@ -1109,6 +1109,7 @@ mod tests {
                 }
                 FrostCommand::SendHealtcheckToPeers => Ok(()),
                 FrostCommand::ReconnectPeers(_) => Ok(()),
+                FrostCommand::GetUtxoSetFromPeer => Ok(()),
             }
         }
     }

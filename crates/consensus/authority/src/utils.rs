@@ -1,5 +1,11 @@
 //! Botanix consensus utility functions
-use bitcoin::{hashes::sha256, psbt::Psbt, witness::Witness, BlockHash};
+use bitcoin::{
+    consensus::Encodable,
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    witness::Witness,
+    BlockHash,
+};
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::{MakeTxRequest, NotifyPeginsRequest, Output, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
@@ -289,6 +295,50 @@ pub(crate) fn generate_signing_session_id(
     Ok(bytes_array)
 }
 
+/// Repersents an error related to utxo operations
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum UtxoError {
+    #[error("Unparsable tx id")]
+    UnparsableTxId,
+    #[error("Outpoint encoding")]
+    OutpointEncoding,
+    #[error("Error calculating merkle root")]
+    BadMerkleRoot,
+    #[error("Missing UTXO outpoint")]
+    MissingOutpoint,
+}
+
+/// Generates a utxo merkel root from a list of utxos
+pub(crate) fn generate_utxo_merkel_root(
+    peer_utxos: &[Utxo],
+) -> Result<bitcoin::hashes::sha256::Hash, UtxoError> {
+    if peer_utxos.len() == 0 {
+        return Ok(bitcoin::hashes::sha256::Hash::all_zeros());
+    }
+
+    let mut utxos = peer_utxos
+        .iter()
+        .map(|u| {
+            let mut engine = sha256::Hash::engine();
+            let ot = u.clone().outpoint.ok_or(UtxoError::MissingOutpoint)?;
+            let tx_id = bitcoin::hash_types::Txid::from_slice(&ot.txid)
+                .ok()
+                .ok_or_else(|| UtxoError::UnparsableTxId)?;
+            let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, ot.vout);
+            btc_outpoint.consensus_encode(&mut engine).map_err(|_| UtxoError::OutpointEncoding)?;
+            Ok(sha256::Hash::from_engine(engine))
+        })
+        .collect::<Result<Vec<_>, UtxoError>>()?;
+
+    // sort the utxos
+    utxos.sort();
+
+    // compute the utxo set hash root
+    let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
+        .ok_or_else(|| UtxoError::BadMerkleRoot)?;
+    Ok(root)
+}
+
 /// Checks Minting.sol deployed bytecode against known and verified bytecode
 pub fn is_known_minting_contract(
     precompiled_bytecode: String,
@@ -305,16 +355,54 @@ pub fn is_known_minting_contract(
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use bitcoin::{
         psbt::{Input, Psbt},
         transaction::Version,
     };
-    use rand::Rng;
+    use rand::{thread_rng, Rng};
     use reth_primitives::{address, b256, bytes, Header, B256, U256};
+    use std::str::FromStr;
 
     use super::*;
+
+    #[test]
+    fn generate_empty_merkel_root() {
+        // generate merkel root with no utxos
+        let root = generate_utxo_merkel_root(&[]).unwrap();
+        assert_eq!(root, sha256::Hash::all_zeros());
+    }
+
+    #[test]
+    fn generate_non_empty_merkel_root() {
+        let mut rng = thread_rng();
+        let mut utxos = vec![];
+        // generate utxos
+        for _ in 0..100 {
+            let txid =
+                bitcoin::Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().to_byte_array().to_vec();
+            let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
+            let vout = rng.gen_range(0..u32::MAX);
+            let utxo = Utxo {
+                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                output: Some(TxOut {
+                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    value: rng.gen::<u64>(),
+                }),
+                eth_address: "0x0".to_string(),
+            };
+            utxos.push(utxo);
+        }
+
+        // generate merkel root with no utxos
+        let root = generate_utxo_merkel_root(&utxos).unwrap();
+        assert_ne!(root, sha256::Hash::all_zeros());
+
+        // Root of the first 20 utxos
+        let root_1 = generate_utxo_merkel_root(&utxos[0..20]).unwrap();
+        assert_ne!(root_1, root);
+        // TODO more assertions
+        // Should try with out any eth address or other opti
+    }
 
     #[test]
     fn test_uuid() {
