@@ -145,7 +145,7 @@ macro_rules! define_compression_methods {
 }
 
 /// Compressor implementation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Compressor {
     compression_type: CompressionType,
     compression_level: Level,

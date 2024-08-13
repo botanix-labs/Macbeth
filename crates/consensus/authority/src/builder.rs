@@ -7,6 +7,7 @@ use crate::{
     pbft_task::{PbftNotificationMessage, PbftTask},
     sync::SyncController,
     task::BlockProductionTask,
+    utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
@@ -217,7 +218,7 @@ where
     ) -> (
         AuthorityConsensus,
         Option<BlockProductionTask<EF, BF, DB, Engine>>,
-        BlockFetcherTask<EF, BF, DB, Engine, NetworkClient>,
+        BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController<Engine>,
         Option<PbftTask<EF, BF, DB, ToFrostMan, NetworkClient>>,
@@ -244,7 +245,6 @@ where
         let is_fed_node = btc_server_factory.is_some();
         let guard = storage.read().await;
         let executor_factory = guard.executor_factory.clone();
-        let _evm_config = guard.evm_config.clone();
         let chain_spec = guard.chain_spec.clone();
         drop(guard);
         let compressor = Compressor::new();
@@ -264,6 +264,20 @@ where
         }
         .await;
 
+        let utxo_sync = {
+            if let Some(btc_server) = &btc_server_client {
+                let utxo_set_sync_engine = UTXOSyncEngine::new(
+                    storage.clone(),
+                    btc_server.clone(),
+                    frost_handle.clone().expect("Requires frost handle"),
+                    compressor.clone(),
+                );
+                Some(utxo_set_sync_engine)
+            } else {
+                None
+            }
+        };
+
         let sync_task = SyncController::new(
             network_handle.clone().event_listener(),
             *network_handle.peer_id(),
@@ -280,6 +294,7 @@ where
             bitcoin_block_header.clone(),
             network_client.clone(),
             network_handle.clone(),
+            utxo_sync.clone(),
         );
 
         // Set up frost notification message queue
