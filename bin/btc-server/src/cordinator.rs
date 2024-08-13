@@ -351,7 +351,7 @@ impl App {
         {
             error!("Had {} PSBT finalization errors:", errs.len());
             for e in &errs {
-                error!("  PSBT finalization error: {}", e);
+                error!("PSBT finalization error: {}", e);
             }
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }

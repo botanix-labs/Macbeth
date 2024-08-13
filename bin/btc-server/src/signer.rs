@@ -16,6 +16,7 @@ use reth_btc_wallet::{
 };
 
 use crate::{
+    cordinator::CoordinatorError,
     database,
     util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
     App, Error,
@@ -119,6 +120,8 @@ pub enum SigningFinalizeError {
     SigFromSliceError(#[from] SigFromSliceError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("coordinator internal error: {0}")]
+    CoordinatorError(#[from] CoordinatorError),
 }
 
 #[derive(Debug, Error)]
@@ -295,8 +298,7 @@ impl App {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
         let mut original_psbt = self
             .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
-            .await
-            .unwrap();
+            .await?;
 
         let hash_ty = bitcoin::sighash::TapSighashType::All;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
