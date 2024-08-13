@@ -53,6 +53,7 @@ mod signing;
 mod sync;
 mod task;
 pub mod utils;
+mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
 
 /// Max EDH size, assuming max inputs spent are 100 and the only spends are keyspends

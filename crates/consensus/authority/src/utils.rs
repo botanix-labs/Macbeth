@@ -297,7 +297,7 @@ pub(crate) fn generate_signing_session_id(
 
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum UtxoError {
+pub(crate) enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
     UnparsableTxId,
     #[error("Outpoint encoding")]
@@ -311,7 +311,7 @@ pub(crate) enum UtxoError {
 /// Generates a utxo merkel root from a list of utxos
 pub(crate) fn generate_utxo_merkel_root(
     peer_utxos: &[Utxo],
-) -> Result<bitcoin::hashes::sha256::Hash, UtxoError> {
+) -> Result<bitcoin::hashes::sha256::Hash, UtxoMerkelRootError> {
     if peer_utxos.len() == 0 {
         return Ok(bitcoin::hashes::sha256::Hash::all_zeros());
     }
@@ -320,22 +320,24 @@ pub(crate) fn generate_utxo_merkel_root(
         .iter()
         .map(|u| {
             let mut engine = sha256::Hash::engine();
-            let ot = u.clone().outpoint.ok_or(UtxoError::MissingOutpoint)?;
+            let ot = u.clone().outpoint.ok_or(UtxoMerkelRootError::MissingOutpoint)?;
             let tx_id = bitcoin::hash_types::Txid::from_slice(&ot.txid)
                 .ok()
-                .ok_or_else(|| UtxoError::UnparsableTxId)?;
+                .ok_or_else(|| UtxoMerkelRootError::UnparsableTxId)?;
             let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, ot.vout);
-            btc_outpoint.consensus_encode(&mut engine).map_err(|_| UtxoError::OutpointEncoding)?;
+            btc_outpoint
+                .consensus_encode(&mut engine)
+                .map_err(|_| UtxoMerkelRootError::OutpointEncoding)?;
             Ok(sha256::Hash::from_engine(engine))
         })
-        .collect::<Result<Vec<_>, UtxoError>>()?;
+        .collect::<Result<Vec<_>, UtxoMerkelRootError>>()?;
 
     // sort the utxos
     utxos.sort();
 
     // compute the utxo set hash root
     let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
-        .ok_or_else(|| UtxoError::BadMerkleRoot)?;
+        .ok_or_else(|| UtxoMerkelRootError::BadMerkleRoot)?;
     Ok(root)
 }
 

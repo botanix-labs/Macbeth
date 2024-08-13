@@ -894,7 +894,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(unused_mut)]
     use super::*;
     use bitcoin::{
@@ -1089,7 +1089,7 @@ mod tests {
     /* Tests for PbftStateMachine */
     // mock frost handle
     #[derive(Clone)]
-    struct FrostHandleMock;
+    pub(crate) struct FrostHandleMock;
     impl ToFrostManager for FrostHandleMock {
         fn send_command(&self, command: FrostCommand) -> Result<(), SendError<FrostCommand>> {
             match command {
