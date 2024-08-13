@@ -15,10 +15,14 @@ name = "utils"
 path = "src/main.rs"
 
 [dependencies]
-# CLI
 clap = { version = "4", features = [ "derive" ] }
 thiserror.workspace = true
 tracing.workspace = true
+ethers = "2.0.10"
+url = "2.5.0"
+serde.workspace = true
+serde_json.workspace = true
+
 
 [lints]
 workspace = true
