@@ -183,6 +183,7 @@ impl rpc::BtcServer for App {
         let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
 
         self.add_pegins(&utxo_refs).map_err(|e| internal!("Failed to add pegins: {}", e))?;
+        info!("processed pegins.len(): {:?}", utxos.len());
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
