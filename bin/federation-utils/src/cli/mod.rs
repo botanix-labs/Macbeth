@@ -2,13 +2,13 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "Wallet CLI")]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub(crate) command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Commands {
+pub(crate) enum Commands {
     /// Sets up the wallet
     Setup(Setup),
     /// Generates a key
@@ -19,31 +19,31 @@ pub enum Commands {
     SweepBalance(SweepBalance),
 }
 
-/// Command for setting up the wallet
+/// Command for setting up the wallet config
 #[derive(Parser, Debug)]
-pub struct Setup {
+pub(crate) struct Setup {
     /// Path to the wallet config file
     #[arg(long)]
-    config_path: String,
+    pub(crate) config_path: String,
 
     /// Path to the secret key output file
     #[arg(long)]
-    secret_key_output_path: String,
+    pub(crate) secret_key_output_path: String,
 
     /// Chain ID
     #[arg(long)]
-    chain_id: u64,
+    pub(crate) chain_id: u64,
 
     /// Address to receive funds (optional)
     #[arg(long)]
-    receiver_address: Option<String>,
+    pub(crate) receiver_address: Option<String>,
 }
 
 #[derive(Parser, Debug)]
-pub struct GenerateKey {}
+pub(crate) struct GenerateKey {}
 
 #[derive(Parser, Debug)]
-pub struct GetBalance {}
+pub(crate) struct GetBalance {}
 
 #[derive(Parser, Debug)]
-pub struct SweepBalance {}
+pub(crate) struct SweepBalance {}

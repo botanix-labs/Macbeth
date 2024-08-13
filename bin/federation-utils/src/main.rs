@@ -1,15 +1,25 @@
+//! # Wallet CLI
+//!
+//! This crate provides a command-line interface for managing a wallet,
+//! including setting up the wallet, generating keys, getting the balance,
+//! and sweeping the balance.
+
 /// Module that defines the CLI commands
 mod cli;
 /// Module that creates a wallet to get and sweep balances
 mod wallet;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, Setup};
 use thiserror::Error;
 use tracing::error;
+use wallet::WalletConfig;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 enum FederationUtilsError {
+    #[error("Failed to setup the wallet config: {0}")]
+    SetupFailed(#[from] wallet::WalletError),
     #[error("Failed to generate key")]
     GenerateKeyFailed,
     #[error("Failed to get balance")]
@@ -23,15 +33,26 @@ fn inner_main() -> Result<(), FederationUtilsError> {
 
     match &cli.command {
         Commands::Setup(setup) => {
-            println!("Setting up wallet config...");
+            let Setup { config_path, secret_key_output_path, chain_id, receiver_address } = setup;
+            let receiver_addres_hash =
+                receiver_address.as_ref().map(|addr| addr.parse().expect("Valid address"));
+            let config = WalletConfig::new(
+                config_path.clone(),
+                secret_key_output_path.clone(),
+                *chain_id,
+                receiver_addres_hash,
+            )?;
+
+            let pretty_config = serde_json::to_string_pretty(&config).expect("Valid JSON");
+            println!("Wallet config: {}", pretty_config);
         }
-        cli::Commands::GenerateKey(_) => {
+        Commands::GenerateKey(_) => {
             println!("Generating key...");
         }
-        cli::Commands::GetBalance(_) => {
+        Commands::GetBalance(_) => {
             println!("Getting balance...");
         }
-        cli::Commands::SweepBalance(_) => {
+        Commands::SweepBalance(_) => {
             println!("Sweeping balance...");
         }
     }

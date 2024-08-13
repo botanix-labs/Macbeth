@@ -71,3 +71,6 @@ rustc-ice-*
 
 # botanix federation chain toml
 chain.toml
+
+# federation utils cli
+config.json
