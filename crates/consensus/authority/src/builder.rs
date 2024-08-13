@@ -1,5 +1,6 @@
 use crate::{
     block_fetcher::BlockFetcherTask,
+    compressor::Compressor,
     epoch_manager::EpochManager,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
@@ -245,8 +246,8 @@ where
         let executor_factory = guard.executor_factory.clone();
         let _evm_config = guard.evm_config.clone();
         let chain_spec = guard.chain_spec.clone();
-
         drop(guard);
+        let compressor = Compressor::new();
 
         let btc_server_client = async {
             if is_fed_node {
@@ -313,6 +314,7 @@ where
                 frost_task_notifications1_rx,
                 frost_task_notifications2_tx,
                 task_executor.clone(),
+                compressor,
             );
 
             frost_task = Some(task);
