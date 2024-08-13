@@ -349,11 +349,11 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
             let pub_key = loop {
                 match btc_server_client.get_public_key(Empty {}).await {
                     Ok(pub_key) => {
-                        it_info_print!("Dkg Finished for index {:?}!", engine_index);
+                        it_info_print!("Dkg Finished for index", engine_index);
                         break pub_key;
                     }
                     Err(_) => {
-                        it_warn_print!("Dkg Pending for engine index {:?}...", engine_index);
+                        it_warn_print!("Dkg Pending for engine index", engine_index);
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
