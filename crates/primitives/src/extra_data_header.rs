@@ -278,9 +278,8 @@ impl ExtraDataHeader {
         reader: &mut impl io::Read,
     ) -> Result<Self, ExtraDataHeaderDeserializeError> {
         let version = u32::consensus_decode(reader)?;
-        if version > EXTRA_HEADER_VERSION {
-            return Err(ExtraDataHeaderDeserializeError::InvalidVersion);
-        }
+        // in the future you can deserialize specific versions of edh based on the version
+        
         let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
         let utxo_commitment = Decodable::consensus_decode(reader)?;
