@@ -8,6 +8,7 @@
    <!-- - [Update Priorities](./installation/priorities.md) -->
 - [Run a Node](./run/run-a-node.md)
    - [Federation TOML](./installation/chain-config.md)
+   - [Federation Utils](./installation/federation-utils.md)
    - [Bitcoind](./installation/bitcoind.md)
    - [Bitcoin Signing Service](./installation/btc-server.md)
    - [PoA Node](./cli/poa.md)
