@@ -17,6 +17,7 @@
    - [Transaction types](./run/transactions.md)
    - [Ports](./run/ports.md)
    - [Troubleshooting](./run/troubleshooting.md)
+   - [Reth Config](./run/config.md)
 - [Interacting with Reth over JSON-RPC](./jsonrpc/intro.md)
    - [eth](./jsonrpc/eth.md)
    - [web3](./jsonrpc/web3.md)
