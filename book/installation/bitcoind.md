@@ -7,7 +7,7 @@ Please refer to [Setting up bitcoin core](https://bitcoin.org/en/full-node)
 
 ### Base configs
 The Botanix node will always use rpc credentials for authentication. Please start with these base configs.
-```
+```env
 rpcuser=<username>
 rpcpassword=<password>
 rpcallowip=127.0.0.1

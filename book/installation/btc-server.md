@@ -18,7 +18,7 @@ This database includes sensative data and is non-recoverable once deleted.
 
 ###  Cli Refrence
 
-```
+```bash
 $ cargo run -- --help 
 Usage: btc-server [OPTIONS]
 

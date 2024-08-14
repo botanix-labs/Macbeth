@@ -1,29 +1,8 @@
-# Botanix Federation Book
-### What is Botanix?
-
-Botanix is a Bitcoin-focused company dedicated to creating decentralized sidechains. Our primary objective is to develop the [Spiderchain](https://a-us.storyblok.com/f/1014909/x/8bdb3e5611/botanix-protocol-whitepaper.pdf), a sidechain structure that utilizes a Proof-of-Stake consensus algorithm. This innovation allows anyone to validate the Bitcoin sidechain.
-
-### Botanix Federation
-
-The Botanix Federation represents the initial version of our sidechain framework, enabling a fixed group of signatories to manage funds on behalf of users. Botanix, as a company, will establish its own federation in collaboration with 14 other members. However, anyone can create their own federation by following the provided documentation.
-
-### Who is this for?
-
-This documentation is intended for developers interested in running their own federation or participating in the Botanix Federation as an RPC node. RPC nodes are non-block-producing entities within the Botanix Federation. While they have access to the canonical blockchain, they do not produce blocks.
-
-#### Alpha software warning copy
-Botanix Federation is a alpha software that has not been audited. Please only deposit funds that you are willing to lose.
-
-**Note**: this book is copied over from The [Reth book](https://reth.rs/) modified to fit the requirments needed for the Botanix federation.
-
 #### Table of Contents
-
 <!-- Commented out sections are not used in Botanix PoA  -->
+- [Introduction](./intro.md)
 
-<!-- - [Introduction](./intro.md) -->
-- [Installation](./installation/installation.md)
    <!-- - [Pre-Built Binaries](./installation/binaries.md) -->
-   - [Docker](./installation/docker.md)
    <!-- - [Build from Source](./installation/source.md) -->
    <!-- - [Build for ARM devices](./installation/build-for-arm-devices.md) -->
    <!-- - [Update Priorities](./installation/priorities.md) -->
@@ -32,13 +11,9 @@ Botanix Federation is a alpha software that has not been audited. Please only de
    - [Bitcoind](./installation/bitcoind.md)
    - [Bitcoin Signing Service](./installation/btc-server.md)
    - [PoA Node](./cli/poa.md)
-   <!-- - [Mainnet or official testnets](./run/mainnet.md) -->
-   <!-- - [OP Stack](./run/optimism.md) -->
-   <!-- - [Private testnet](./run/private-testnet.md) -->
+   - [Rpc Server Docker Compose](./run/rpc-server-docker.md)
    - [Metrics](./run/observability.md)
-   <!-- - [Configuring Reth](./run/config.md) -->
    - [Transaction types](./run/transactions.md)
-   <!-- - [Pruning & Full Node](./run/pruning.md) -->
    - [Ports](./run/ports.md)
    - [Troubleshooting](./run/troubleshooting.md)
 - [Interacting with Reth over JSON-RPC](./jsonrpc/intro.md)
