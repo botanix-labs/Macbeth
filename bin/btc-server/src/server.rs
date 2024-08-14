@@ -627,7 +627,6 @@ impl rpc::BtcServer for App {
             })
             .collect::<Result<Vec<_>, tonic::Status>>()?;
 
-        // Witnesses can be get big. Remove this clone()
         let witnesses = req.witness;
         let psbt = self
             .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
