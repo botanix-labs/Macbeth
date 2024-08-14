@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use ethers::abi::decode;
 use reth_primitives::{keccak256, Address, B256};
-use secp256k1::{self, PublicKey};
 use thiserror::Error;
 
 use crate::{
@@ -16,7 +15,6 @@ lazy_static::lazy_static! {
     pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
-    static ref FROST_PUB_KEY: PublicKey = PublicKey::from_str("02d0a67d0b49551c6edfa7f00737b8139a28de6eb7102131c02704f3ad1cf579cd").unwrap();
 }
 
 #[derive(Debug)]
