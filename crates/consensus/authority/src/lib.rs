@@ -23,7 +23,7 @@
 use pbft::PbftCommitmentCriteria;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::{
-    utils::{unix_timestamp, validate_extra_data_header_authorities},
+    utils::{unix_timestamp, validate_chain_version, validate_extra_data_header_authorities},
     validation::{self},
 };
 
@@ -131,6 +131,7 @@ impl Consensus for AuthorityConsensus {
         if header.number == 0 {
             return Ok(());
         }
+
         // there should alawys be an aggregate public key for poa
         if aggregate_public_key.is_none() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
@@ -147,17 +148,14 @@ impl Consensus for AuthorityConsensus {
         validation::validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
-        header.deserialize_extra_data_header().map_err(|e| {
-            error!("Failed to deserialize extra data header: {:?}", e);
-            ConsensusError::ExtraDataInvalid
-        })?;
-
-        validate_extra_data_header_authorities(header, genesis_authorities)?;
-
         let edh = header.deserialize_extra_data_header().map_err(|e| {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
+
+        validate_chain_version(edh.chain_version)?;
+
+        validate_extra_data_header_authorities(header, genesis_authorities)?;
 
         // Past genesis NUMS point should never be used as the aggregated public key
         if edh.aggregated_public_key == nums_secp256k1_pk() {

@@ -14,7 +14,7 @@ use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
-    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
 };
 use url::Url;
@@ -105,6 +105,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
 
         let extra_data_header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             Some(public_keys),
             None,
@@ -210,6 +211,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
 
                     let extra_data_header = ExtraDataHeader::new(
                         EXTRA_HEADER_VERSION,
+                        CHAIN_VERSION,
                         None,
                         Some(public_keys),
                         None,
