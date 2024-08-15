@@ -18,7 +18,8 @@ jobs:
         uses: docker/setup-buildx-action@v1
 
       - name: Install cargo cross compile
-        run: cargo install cross
+        run: |
+          rustup default stable && cargo install cross
 
       - name: Build Multi-arch Docker image
         run: |
