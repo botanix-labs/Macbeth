@@ -1,36 +1,34 @@
-use crate::{
-    epoch_manager::EpochManager, frost_task::FrostNotificationMessage,
-    pbft_task::PbftNotificationMessage, AuthorityConsensus, Storage,
-};
+use std::sync::Arc;
+
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
-
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_network::NetworkHandle;
+use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
-
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_stages::PipelineEvent;
-
-use std::sync::Arc;
-
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-pub struct BlockProductionTask<EF, BF, DB, Engine: EngineTypes> {
+use crate::{
+    epoch_manager::EpochManager, frost_task::FrostNotificationMessage,
+    pbft_task::PbftNotificationMessage, utxo_sync::UTXOSyncEngine, AuthorityConsensus, Storage,
+};
+
+pub struct BlockProductionTask<EF, BF, DB, Engine: EngineTypes, ToFrostMan> {
     /// The authority consensus wrapper
     pub(crate) consensus: AuthorityConsensus,
     /// The active epoch
     pub(crate) epoch_manager: EpochManager<EF, BF, DB>,
     /// Shared storage to insert new blocks
     pub(crate) storage: Storage<EF, BF, DB>,
-    /// TODO: ideally this would just be a sender of hashes
+    /// To engine sender
     pub(crate) to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     /// The pipeline events to listen on
     pub(crate) pipe_line_events: Option<UnboundedReceiverStream<PipelineEvent>>,
@@ -52,8 +50,11 @@ pub struct BlockProductionTask<EF, BF, DB, Engine: EngineTypes> {
     pub(crate) pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
     /// Frost Task Sender
     pub(crate) pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
+    /// utxo syncing engine
+    pub(crate) utxo_sync: UTXOSyncEngine<EF, BF, DB, ToFrostMan>,
 }
-impl<EF, BF, DB, Engine: reth_node_api::EngineTypes> BlockProductionTask<EF, BF, DB, Engine>
+impl<EF, BF, DB, Engine: reth_node_api::EngineTypes, ToFrostMan>
+    BlockProductionTask<EF, BF, DB, Engine, ToFrostMan>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -64,6 +65,7 @@ where
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -81,6 +83,7 @@ where
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         pbft_task_rx: UnboundedReceiver<PbftNotificationMessage>,
         pbft_task_tx: UnboundedSender<PbftNotificationMessage>,
+        utxo_sync: UTXOSyncEngine<EF, BF, DB, ToFrostMan>,
     ) -> Self {
         Self {
             consensus,
@@ -97,6 +100,7 @@ where
             frost_task_tx,
             pbft_task_rx,
             pbft_task_tx,
+            utxo_sync,
         }
     }
 
@@ -113,7 +117,9 @@ where
     }
 }
 
-impl<EF, BF, DB, Engine: EngineTypes> std::fmt::Debug for BlockProductionTask<EF, BF, DB, Engine> {
+impl<EF, BF, DB, Engine: EngineTypes, ToFrostMan> std::fmt::Debug
+    for BlockProductionTask<EF, BF, DB, Engine, ToFrostMan>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Authority Block Production Task").finish_non_exhaustive()
     }

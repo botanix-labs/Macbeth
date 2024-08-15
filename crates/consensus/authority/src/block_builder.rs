@@ -12,6 +12,7 @@ use reth_consensus_common::utils;
 use reth_eth_wire::NewBlock;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 
+use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::EngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSenders, B256};
@@ -29,9 +30,11 @@ use crate::{
     pbft_task::{PbftFinalizationNotification, PbftNotification, PbftNotificationMessage},
     task::BlockProductionTask,
     utils::{call_notify_pegin, get_witness_data_from_psbt, is_active_sync_in_progress},
+    utxo_sync::UTXOSync,
 };
 
-impl<EF, BF, DB, Engine: reth_node_api::EngineTypes> BlockProductionTask<EF, BF, DB, Engine>
+impl<EF, BF, DB, Engine: reth_node_api::EngineTypes, ToFrostMan>
+    BlockProductionTask<EF, BF, DB, Engine, ToFrostMan>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -42,6 +45,7 @@ where
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
+    ToFrostMan: ToFrostManager + Clone + 'static,
 {
     pub(crate) async fn try_build_block(&mut self) {
         // ensure the node is not syncing
@@ -50,6 +54,12 @@ where
             tokio::time::sleep(Duration::from_millis(500)).await;
             return;
         }
+
+        if let Err(utxo_sync_err) = self.utxo_sync.sync_utxo_set().await {
+            error!(target: "consensus::authority", ?utxo_sync_err, "Failed to sync utxo set");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            return;
+        };
 
         // Check if we are in_turn
         let is_inturn = self.epoch_manager.poll().await;
