@@ -217,7 +217,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockProductionTask<EF, BF, DB, Engine>>,
+        Option<BlockProductionTask<EF, BF, DB, Engine, ToFrostMan>>,
         BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController<Engine>,
@@ -372,6 +372,7 @@ where
                 frost_task_notifications1_tx,
                 pbft_task_notifications2_rx,
                 pbft_task_notifications1_tx,
+                utxo_sync.expect("utxo_sync exists").clone(),
             );
 
             block_production_task = Some(block_production);
