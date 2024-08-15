@@ -165,7 +165,7 @@ pub(crate) mod authority_execution_utils {
 
         // validate before executing block
         // Edge case: block 1 for the rpc nodes
-        // Rpc nodes will typically store the agg pk from the latest block on boot up 
+        // Rpc nodes will typically store the agg pk from the latest block on boot up
         // In the case where they boot up on block 0, they will not have an agg pk
         // Here we pull the agg pk from the incoming block if it is not provided
         let aggregate_public_key = {

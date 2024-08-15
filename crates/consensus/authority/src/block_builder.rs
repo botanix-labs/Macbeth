@@ -18,7 +18,7 @@ use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSend
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     engine_util,
@@ -55,7 +55,7 @@ where
         let is_inturn = self.epoch_manager.poll().await;
 
         if !is_inturn {
-            info!(target: "consensus::authority", "Not in turn, skipping");
+            trace!(target: "consensus::authority", "Not in turn, skipping");
             return;
         }
         let guard = self.storage.inner.read().await;

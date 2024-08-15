@@ -2,7 +2,7 @@ use crate::Storage;
 use reth_consensus_common::utils;
 use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, HeaderProvider};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Clone, Debug)]
 /// Manages the block production epochs
@@ -78,7 +78,7 @@ where
             }
         }
 
-        info!("Epoch manager. Member index = {}. Inturn?: {}", signer_index, is_inturn);
+        trace!("Epoch manager. Member index = {}. Inturn?: {}", signer_index, is_inturn);
         is_inturn
     }
 }

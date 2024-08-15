@@ -185,12 +185,12 @@ pub(crate) struct CliConfig {
 pub(crate) struct Config {
     /// The path to the database.
     pub(crate) db: PathBuf,
-    /// The bitcoin L1 network 
+    /// The bitcoin L1 network
     pub(crate) btc_network: bitcoin::Network,
     /// Frost participant identifier. Should be your index into the chain.toml federation pk list
     /// for exmaple if you are the first signer in the chain.toml you should use 0
     pub(crate) identifier: u16,
-    /// Address to bind to. 
+    /// Address to bind to.
     pub(crate) address: String,
     /// multisig max signers
     pub(crate) max_signers: u16,
