@@ -19,7 +19,7 @@ use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
-    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     ChainSpec, BOTANIX_TESTNET,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
@@ -599,6 +599,7 @@ pub async fn create_poa_federation_members(
     // now create the edh
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
+        CHAIN_VERSION,
         None,
         Some(authorities.clone()),
         None,

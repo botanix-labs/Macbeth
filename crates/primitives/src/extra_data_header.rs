@@ -12,6 +12,8 @@ use crate::constants::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;
+/// The version of the chain
+pub const CHAIN_VERSION: u32 = 0;
 const HAS_AUTHORTIES_POS: u8 = 0;
 const HAS_VOTE_POS: u8 = 1;
 const HAS_SIGNATURE_POS: u8 = 2;
@@ -27,6 +29,8 @@ const HAS_WITNESS_DATA_POS: u8 = 3;
 pub struct ExtraDataHeader {
     /// The version of the extra data header
     pub version: u32,
+    /// Chain version that determines the valid chain
+    pub chain_version: u32,
     /// Bitmask of optional fields
     pub optional_fields: u8,
     /// Optional set of authority signers. Non-optional during a epoch block.
@@ -50,6 +54,7 @@ impl Default for ExtraDataHeader {
     fn default() -> Self {
         Self {
             version: EXTRA_HEADER_VERSION,
+            chain_version: CHAIN_VERSION,
             optional_fields: 0,
             authority_signers: None,
             authority_vote: None,
@@ -117,6 +122,8 @@ impl ExtraDataHeader {
     /// Create a new extra data header
     pub fn new(
         version: u32,
+        // Chain version that determines the valid chain
+        chain_version: u32,
         // This field is only optional b/c the block producer will need to sign the extra header
         // data without a signature appended at the end
         authority_signatures: Option<Vec<secp256k1::ecdsa::RecoverableSignature>>,
@@ -150,6 +157,7 @@ impl ExtraDataHeader {
 
         Self {
             version,
+            chain_version,
             authority_signers,
             authority_vote,
             witness_data,
@@ -224,6 +232,7 @@ impl ExtraDataHeader {
         writer: &mut impl io::Write,
     ) -> Result<(), io::Error> {
         self.version.consensus_encode(writer)?;
+        self.chain_version.consensus_encode(writer)?;
         self.optional_fields.consensus_encode(writer)?;
         self.bitcoin_block_hash.consensus_encode(writer)?;
         self.utxo_commitment.consensus_encode(writer)?;
@@ -280,6 +289,7 @@ impl ExtraDataHeader {
         let version = u32::consensus_decode(reader)?;
         // in the future you can deserialize specific versions of edh based on the version
 
+        let chain_version = u32::consensus_decode(reader)?;
         let optional_fields = u8::consensus_decode(reader)?;
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
         let utxo_commitment = Decodable::consensus_decode(reader)?;
@@ -347,6 +357,7 @@ impl ExtraDataHeader {
 
         Ok(Self {
             version,
+            chain_version,
             optional_fields,
             bitcoin_block_hash,
             utxo_commitment,
@@ -398,6 +409,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             Some(authority_signers.clone()),
             None,
@@ -407,6 +419,7 @@ mod tests {
             nums_secp256k1_pk(),
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
+        assert_eq!(header.chain_version, CHAIN_VERSION);
         assert_eq!(header.authority_signatures, None);
         assert_eq!(header.authority_signers, Some(authority_signers));
         assert_eq!(header.authority_vote, None);
@@ -427,6 +440,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             Some(authority_signers),
             None,
@@ -459,6 +473,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             Some(vec![signature]),
             Some(authority_signers),
             None,
@@ -507,6 +522,7 @@ mod tests {
         let key = nums_secp256k1_pk();
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             Some(vec![signature]),
             Some(authority_signers),
             Some(pubkey_to_vote),
@@ -555,6 +571,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             Some(vec![signature]),
             None,
             None,
@@ -599,6 +616,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             Some(vec![signature]),
             Some(authority_signers.clone()),
             None,
@@ -631,6 +649,7 @@ mod tests {
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             Some(vec![signature]),
             Some(authority_signers),
             None,
@@ -651,6 +670,7 @@ mod tests {
     fn serialize_without_any_authorities() {
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             None,
             None,
@@ -774,6 +794,7 @@ mod tests {
 
         let extra_data_header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             Some(vec![pk1, pk2]),
             None,

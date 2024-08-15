@@ -347,6 +347,10 @@ pub enum ConsensusError {
     /// Invalid Aggregated Public key
     #[error("invalid aggregated public key")]
     InvalidAggregatedPublicKey(#[from] InvalidAggregatedPublicKeyError),
+
+    /// Invalid Chain Version
+    #[error("invalid chain version")]
+    InvalidChainVersion,
 }
 
 impl ConsensusError {

@@ -27,7 +27,7 @@ use reth_network_types::pk2id;
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
     constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
 };
 use reth_provider::CanonStateSubscriptions;
@@ -122,6 +122,7 @@ impl NonFederationMemberTestConfig {
         // now create the edh
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             None,
             Some(edh_authorities_list.to_vec()),
             None,

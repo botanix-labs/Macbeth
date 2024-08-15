@@ -13,7 +13,7 @@ pub(crate) mod authority_execution_utils {
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-        extra_data_header::ExtraDataHeader,
+        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
         proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber,
         BlockWithSenders, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock,
@@ -234,7 +234,8 @@ pub(crate) mod authority_execution_utils {
         // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
         // so the botanix consensus package can be constructed from the EDH
         let edh = ExtraDataHeader::new(
-            0,
+            EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             // This will be filled out complete_header
             None,
             // This will be filled out complete_header
@@ -331,7 +332,8 @@ pub(crate) mod authority_execution_utils {
 
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
-            0,
+            EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
             // block signatures do not effect the block hash and are added after the pbft consensus
             // rounds are completed
             None,
