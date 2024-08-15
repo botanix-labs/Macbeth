@@ -39,6 +39,9 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v1
 
+      - name: Install cargo cross compile
+        run: cargo install cross
+
       - name: Build Docker image
         run: |
           docker build --platform linux/amd64 -t botanix_testnet_v1 -f Dockerfile .

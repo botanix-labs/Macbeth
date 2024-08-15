@@ -35,7 +35,7 @@ EF_TESTS_URL := https://github.com/ethereum/tests/archive/refs/tags/$(EF_TESTS_T
 EF_TESTS_DIR := ./testing/ef-tests/ethereum-tests
 
 # The docker image name
-DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
+DOCKER_IMAGE_NAME ?= us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
 
 # Features in reth/op-reth binary crate other than "ethereum" and "optimism"
 BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
@@ -49,16 +49,16 @@ help: ## Display this help.
 ##@ Build
 
 .PHONY: install
-install: ## Build and install the reth binary under `~/.cargo/bin`.
+install: ## Build and install the botanix reth binary under `~/.cargo/bin`.
 	cargo install --path bin/reth --bin reth --force --locked \
 		--features "$(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
-.PHONY: install-op
-install-op: ## Build and install the op-reth binary under `~/.cargo/bin`.
-	cargo install --path bin/reth --bin op-reth --force --locked \
-		--features "optimism,$(FEATURES)" \
+.PHONY: install-btc-server
+install-btc-server: ## Build and install the btc-server binary under `~/.cargo/bin`.
+	cargo install --path bin/btc-server --bin btc-server --force --locked \
+		--features "$(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
@@ -66,8 +66,8 @@ install-op: ## Build and install the op-reth binary under `~/.cargo/bin`.
 build-native-%:
 	cargo build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
-op-build-native-%:
-	cargo build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
+btc-server-build-native-%:
+	cargo build --bin op-reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
 # The following commands use `cross` to build a cross-compile.
 #
@@ -99,7 +99,7 @@ build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
 		cross build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
-op-build-%:
+btc-server-build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
 		cross build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
 
@@ -118,7 +118,7 @@ build-aarch64-apple-darwin:
 define tarball_release_binary
 	cp $(BUILD_PATH)/$(1)/$(PROFILE)/$(2) $(BIN_DIR)/$(2)
 	cd $(BIN_DIR) && \
-		tar -czf reth-$(GIT_TAG)-$(1)$(3).tar.gz $(2) && \
+		tar -czf botanix-reth-$(GIT_TAG)-$(1)$(3).tar.gz $(2) && \
 		rm $(2)
 endef
 
@@ -138,29 +138,32 @@ build-release-tarballs: ## Create a series of `.tar.gz` files in the BIN_DIR dir
 
 ##@ Test
 
-UNIT_TEST_ARGS := --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
+UNIT_TEST_ARGS := --locked --workspace --features 'jemalloc-prof,ethereum' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
 UNIT_TEST_ARGS_OP := --locked --workspace --features 'jemalloc-prof,optimism' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
 COV_FILE := lcov.info
 
 .PHONY: test-unit
 test-unit: ## Run unit tests.
 	cargo install cargo-nextest --locked
-	cargo nextest run $(UNIT_TEST_ARGS)
+	cargo nextest run \
+        --locked --features "ethereum" \
+        --workspace --exclude examples --exclude ef-tests \
+        -E "kind(lib) | kind(bin) | kind(proc-macro)"
 
-.PHONY: test-unit-op
-test-unit-op: ## Run unit tests (with optimism feature flag enabled).
-	cargo install cargo-nextest --locked
-	cargo nextest run $(UNIT_TEST_ARGS_OP)
+# .PHONY: test-unit-op
+# test-unit-op: ## Run unit tests (with optimism feature flag enabled).
+# 	cargo install cargo-nextest --locked
+# 	cargo nextest run $(UNIT_TEST_ARGS_OP)
 
 .PHONY: cov-unit
 cov-unit: ## Run unit tests with coverage.
 	rm -f $(COV_FILE)
 	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
 
-.PHONY: cov-unit-op
-cov-unit-op: ## Run unit tests with coverage (with optimism feature flag enabled).
-	rm -f $(COV_FILE)
-	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
+# .PHONY: cov-unit-op
+# cov-unit-op: ## Run unit tests with coverage (with optimism feature flag enabled).
+# 	rm -f $(COV_FILE)
+# 	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
 
 .PHONY: cov-report-html
 cov-report-html: cov-unit ## Generate a HTML coverage report and open it in the browser.
@@ -224,6 +227,7 @@ define docker_build_push
 		--push
 endef
 
+
 ##@ Other
 
 .PHONY: clean
@@ -278,10 +282,10 @@ lint-reth:
 	--features "ethereum $(BIN_OTHER_FEATURES)" \
 	-- -D warnings
 
-lint-op-reth:
+lint-btc-server:
 	cargo +nightly clippy \
 	--workspace \
-	--bin "op-reth" \
+	--bin "btc-server" \
 	--lib \
 	--examples \
 	--tests \
@@ -311,7 +315,7 @@ ensure-codespell:
 lint:
 	make fmt && \
 	make lint-reth && \
-	make lint-op-reth && \
+	make lint-btc-server && \
 	make lint-other-targets && \
 	make lint-codespell
 
@@ -329,15 +333,14 @@ fix-lint-reth:
 	--allow-dirty \
 	-- -D warnings
 
-fix-lint-op-reth:
+fix-lint-btc-server:
 	cargo +nightly clippy \
 	--workspace \
-	--bin "op-reth" \
+	--bin "btc-server" \
 	--lib \
 	--examples \
 	--tests \
 	--benches \
-	--features "optimism $(BIN_OTHER_FEATURES)" \
 	--fix \
 	--allow-staged \
 	--allow-dirty \
@@ -382,15 +385,6 @@ test-reth:
 	--benches \
 	--features "ethereum $(BIN_OTHER_FEATURES)"
 
-test-op-reth:
-	cargo test \
-	--workspace \
-	--bin "op-reth" \
-	--lib --examples \
-	--tests \
-	--benches \
-	--features "optimism $(BIN_OTHER_FEATURES)"
-
 test-other-targets:
 	cargo test \
 	--workspace \
@@ -405,7 +399,6 @@ test-doc:
 
 test:
 	make test-reth && \
-	make test-op-reth && \
 	make test-doc && \
 	make test-other-targets
 
