@@ -1,6 +1,7 @@
 use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
+    extra_data_header::CHAIN_VERSION,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
     public_key_to_address, Address, ChainSpec, Header,
 };
@@ -122,6 +123,15 @@ pub fn validate_extra_data_header_authorities(
             // error!("No authority signers in extra data header");
             return Err(ConsensusError::MissingAuthorityList);
         }
+    }
+
+    Ok(())
+}
+
+/// Check the extra data header field has the current chain version
+pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusError> {
+    if edh_chain_version != CHAIN_VERSION {
+        return Err(ConsensusError::InvalidChainVersion);
     }
 
     Ok(())
@@ -501,5 +511,16 @@ mod tests {
         );
         assert!(current_ts >= start);
         assert!(current_ts <= end);
+    }
+
+    #[test]
+    fn should_validate_chain_version() {
+        let edh_chain_version = CHAIN_VERSION;
+        let result = validate_chain_version(edh_chain_version);
+        assert!(result.is_ok());
+
+        let edh_chain_version = CHAIN_VERSION + 1;
+        let result = validate_chain_version(edh_chain_version);
+        assert!(result.is_err());
     }
 }
