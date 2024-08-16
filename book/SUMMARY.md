@@ -12,12 +12,12 @@
    - [Bitcoind](./installation/bitcoind.md)
    - [Bitcoin Signing Service](./installation/btc-server.md)
    - [PoA Node](./cli/poa.md)
-   - [Rpc Server Docker Compose](./run/rpc-server-docker.md)
-   - [Metrics](./run/observability.md)
+   - [RPC via Docker Compose](./run/rpc-server-docker.md)
+   - [Logs and observability](./run/observability.md)
+   - [Reth Config](./run/config.md)
    - [Transaction types](./run/transactions.md)
    - [Ports](./run/ports.md)
    - [Troubleshooting](./run/troubleshooting.md)
-   - [Reth Config](./run/config.md)
 - [Interacting with Reth over JSON-RPC](./jsonrpc/intro.md)
    - [eth](./jsonrpc/eth.md)
    - [web3](./jsonrpc/web3.md)
@@ -27,7 +27,7 @@
    - [trace](./jsonrpc/trace.md)
    - [admin](./jsonrpc/admin.md)
    - [rpc](./jsonrpc/rpc.md)
-- [CLI Reference](./cli/poa.md) <!-- CLI_REFERENCE START -->
+<!-- - [CLI Reference](./cli/poa.md)  <!-- CLI_REFERENCE START -->
 <!-- - [CLI Reference](./cli/cli.md)
   - [`reth`](./cli/reth.md)
     - [`reth node`](./cli/reth/node.md)
@@ -73,5 +73,5 @@
       - [`reth debug replay-engine`](./cli/reth/debug/replay-engine.md)
     - [`reth recover`](./cli/reth/recover.md)
       - [`reth recover storage-tries`](./cli/reth/recover/storage-tries.md) -->
-- [Developers](./developers/developers.md) <!-- CLI_REFERENCE END -->
-   - [Contribute](./developers/contribute.md)
+<!-- - [Developers](./developers/developers.md) <!-- CLI_REFERENCE END -->
+<!--   - [Contribute](./developers/contribute.md) -->

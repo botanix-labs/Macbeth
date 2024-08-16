@@ -1,7 +1,7 @@
 # Docker
 
-Our installation docs support running rpc-nodes via docker compose.
-In the future we will provide federation member support, also via docker compose.
+Our installation docs support running RPC nodes via Docker Compose.
+In the future we will provide federation member support, also via Docker Compose.
 
 > **Note**
 >
@@ -9,7 +9,7 @@ In the future we will provide federation member support, also via docker compose
 
 ## GitHub
 
-Botanix docker images are released on docker hub.
+Botanix Docker images are released on Docker Hub.
 
 You can obtain the latest image with:
 
@@ -25,7 +25,7 @@ docker pull us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/bo
 
 ### Using Docker Compose
 
-This setup provides a environment for running a Bitcoin Core node, a Botanix Rpc node, and monitoring tools using Grafana Alloy. The services are configured to work together, with appropriate dependencies and ports exposed for interaction.
+This setup provides a environment for running a Bitcoin Core node, a Botanix RPC node, and monitoring tools using Grafana Alloy. The services are configured to work together, with appropriate dependencies and ports exposed for interaction.
 
 ```docker
 version: '3.7'
@@ -131,11 +131,9 @@ This service runs a Botanix PoA node, which connects to the Bitcoin Core node an
 -   **Environment Variables**: It uses the same `.bitcoin.env` file as the Bitcoin Core service.
 -   **Container Name**: The container is named `botanix-poa-node-rpc`.
 -   **Image**: It uses a custom Botanix image (`botanix-testnet-node-v1`).
--   **Command**: The command options specify the following
-    For details on each cli flag please visit the [cli documentation
-    ](../cli/poa.md)
+-   **Command**: The command options are listed and explained in the [CLI documentation](../cli/poa.md)
 -   **Dependencies**: This service depends on the `bitcoin-core` service to ensure it starts only after Bitcoin Core is running.
--   **Restart Policy**: The service is configured to restart on failure. The rpc node will exit if bitcoin core is not fully sync'd
+-   **Restart Policy**: The service is configured to restart on failure. The RPC node will exit if Bitcoin Core is not fully sync'd
 
 **Note** To re-sync your node please remove both the database and the static file directory.
 
@@ -154,7 +152,7 @@ For more information please visit [rpc-compose-file](https://github.com/botanix-
 
 ### Connecting to federated testnet
 
-Botanix will be hosting a tentnet federation. To connect your rpc set up with the federation please use the following chain.toml.
+Botanix will be hosting a testnet federation. To connect your RPC set up with the federation please use the following chain.toml.
 Warning: this config may change in the future as we add and remove federation members.
 
 ```toml
