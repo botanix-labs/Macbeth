@@ -1,4 +1,5 @@
 use self::common::{
+    botanix_client::BotanixEthClient,
     poa_node::{FederationMemberTestConfig, Notifications},
     rpc_node::NonFederationMemberTestConfig,
 };
@@ -67,6 +68,8 @@ pub struct LocalContext {
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
     pub authorities: Vec<secp256k1::PublicKey>,
     pub botanix_fee_recipient: String,
+    // Only available if poa nodes are being created for the test
+    pub eth_providers: Option<Vec<BotanixEthClient>>,
 }
 
 pub struct CreateTestConfig {
@@ -109,6 +112,9 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
             "batch_pegins" => {
                 run_test!(self, Default::default(), frost::test_batch_pegins::batch_pegins)
+            }
+            "utxo_sync" => {
+                run_test!(self, Default::default(), frost::test_utxo_sync::utxo_sync)
             }
             "frost_e2e_stable" => {
                 run_test!(self, Default::default(), frost::test_frost_e2e::frost_e2e_stable)
@@ -306,8 +312,16 @@ impl Suite for ConsensusIntegrationTestSuite {
             // All keys should be the same
             assert_eq!(keys.len(), 1);
 
+            let mut botanix_clients = vec![];
+            for (index, fed_member_config) in test_fed_members.iter() {
+                let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
+                botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for poa member {}", index);
+            }
+
             self.local_context.poa_nodes = Some(test_fed_members);
             self.local_context.poa_notification = Some(tx);
+            self.local_context.eth_providers = Some(botanix_clients);
         }
 
         if create_test_config.should_create_rpc_node {
@@ -354,6 +368,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         self.local_context.btc_server_clients = None;
         self.local_context.rpc_node = None;
         self.local_context.rpc_notification = None;
+        self.local_context.eth_providers = None;
 
         // allow a few seconds to pass after cleanup
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -375,6 +390,7 @@ impl ConsensusIntegrationTestSuite {
                 rpc_notification: None,
                 authorities: vec![],
                 botanix_fee_recipient: "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5".to_string(),
+                eth_providers: None,
             },
         }
     }

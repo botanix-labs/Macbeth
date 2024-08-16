@@ -93,9 +93,16 @@ where
         let latest_header = client.latest_header()?.expect("should get latest block");
         let latest_merkel_root = latest_header.get_utxo_set_merkle_root()?;
 
+        if latest_header.number == 0 {
+            debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "genesis block, no utxo set to sync");
+            return Ok(());
+        }
+
         // get utxo set from btc server
-        let latest_utxo_commitment = btc_server.get_utxo_merkle_root(Empty {}).await?.merkle_root;
-        if latest_merkel_root.to_byte_array().to_vec() == latest_utxo_commitment {
+        let latest_utxo_commitment = Sha256Hash::from_slice(
+            btc_server.get_utxo_merkle_root(Empty {}).await?.merkle_root.as_slice(),
+        )?;
+        if latest_merkel_root == latest_utxo_commitment {
             debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in sync");
             // All done! We are in sync
             return Ok(());
@@ -128,10 +135,10 @@ where
                         )?;
 
                         let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
-                        if merkel_root.to_byte_array().to_vec() != latest_utxo_commitment {
+                        if merkel_root != latest_utxo_commitment {
                             return Err(UtxoSyncError::UtxoSetNotInSync(
                                 merkel_root,
-                                Sha256Hash::from_slice(&latest_utxo_commitment)?,
+                                latest_utxo_commitment,
                             ));
                         }
 
