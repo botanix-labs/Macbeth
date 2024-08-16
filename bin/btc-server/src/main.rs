@@ -3,6 +3,7 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
+mod coin_selection;
 mod config;
 mod coordinator;
 mod database;
