@@ -13,14 +13,14 @@ use hex::{self, encode as hex_encode};
 
 const NUM_UTXOS: usize = 10;
 
-struct Pegins {
+pub struct Pegins {
     pub eth_addresses: Vec<ethers::core::types::Address>,
     pub btc_addresses: Vec<Address>,
     pub txids: Vec<[u8; 32]>,
 }
 
 impl Pegins {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Pegins { eth_addresses: Vec::new(), btc_addresses: Vec::new(), txids: Vec::new() }
     }
 }
