@@ -3,24 +3,27 @@
 ## Installation
 
 The Botanix Federation runs on Linux and macOS.
-It is recommended for the time being that node operators deploy on non-arm based linux machines.
+It is recommended for the time being that node operators deploy on non-ARM based Linux machines.
 
-This document currently supports setting up RPC server as non-block producing federation members.
-In the future we will provide documentation on this subject as well.
+> **Note**
+>
+> This document supports setting up an RPC server as <ins>non-block producing federation members</ins>. If you are looking to set up a RPC server for an existing federation please refer to [docker installation](./rpc-server-docker.md).
+>
+> In the future we will provide documentation for block producing federation members as well.
 
-In this chapter we'll go through a few different topics you'll encounter when configuring the Botanix federation, including:
+In this chapter we'll go through a few different topics you'll encounter when configuring the Botanix Federation, including:
 
-1. [Federation Configs](../installation/chain-config.md)
+1. [Federation TOML](../installation/chain-config.md)
+1. [Federation utilities](../installation/federation-utils.md) (coming soon)
 1. [Setting up bitcoind](../installation/bitcoind.md)
 1. [Setting up the bitcoin signing server](../installation/btc-server.md)
-1. [Federation Utilities](../installation/federation-utils.md)
-1. [Logs and Observability](./observability.md)
+1. [Botanix PoA node](../cli/poa.md)
+1. [RPC via Docker Compose](./rpc-server-docker.md)
+1. [Logs and observability](./observability.md)
 1. [Configuring the eth client](./config.md)
 1. [Transaction types](./transactions.md)
 1. [Ports](./ports.md)
 1. [Troubleshooting](./troubleshooting.md)
-
-If you are looking to set up a rpc server for an existing federation please refer to [docker installation](./rpc-server-docker.md)
 
 ## Hardware Requirements
 
@@ -35,16 +38,6 @@ The most important requirement is by far the disk, whereas CPU and RAM requireme
 | CPU       | Higher clock speeds over core count   |
 | Bandwidth | Stable 24Mbps+                        |
 
-#### QLC and TLC
-
-It is crucial to understand the difference between QLC and TLC NVMe drives when considering the disk requirement.
-
-QLC (Quad-Level Cell) NVMe drives utilize four bits of data per cell, allowing for higher storage density and lower manufacturing costs. However, this increased density comes at the expense of performance. QLC drives have slower read and write speeds compared to TLC drives. They also have a lower endurance, meaning they may have a shorter lifespan and be less suitable for heavy workloads or constant data rewriting.
-
-TLC (Triple-Level Cell) NVMe drives, on the other hand, use three bits of data per cell. While they have a slightly lower storage density compared to QLC drives, TLC drives offer faster performance. They typically have higher read and write speeds, making them more suitable for demanding tasks such as data-intensive applications, gaming, and multimedia editing. TLC drives also tend to have a higher endurance, making them more durable and longer-lasting.
-
-Prior to purchasing an NVMe drive, it is advisable to research and determine whether the disk will be based on QLC or TLC technology. An overview of recommended and not-so-recommended NVMe boards can be found at [here](https://gist.github.com/yorickdowne/f3a3e79a573bf35767cd002cc977b038).
-
 ### Disk
 
 There are multiple types of disks to sync Reth, with varying size requirements, depending on the syncing mode.
@@ -57,15 +50,16 @@ NVMe drives are recommended for the best performance, with SSDs being a cheaper 
 
 As of February 2024, syncing an Ethereum mainnet node to block 19.3M on NVMe drives takes about 50 hours, while on a GCP "Persistent SSD" it takes around 5 days.
 
-> **Note**
+> **Note - QLC and TLC**
 >
-> It is highly recommended to choose a TLC drive when using NVMe, and not a QLC drive. See [the note](#qlc-and-tlc) above. A list of recommended drives can be found [here](https://gist.github.com/yorickdowne/f3a3e79a573bf35767cd002cc977b038).
+> It is highly recommended to choose a TLC drive when using NVMe, and not a QLC drive. A list of recommended drives can be found [here](https://gist.github.com/yorickdowne/f3a3e79a573bf35767cd002cc977b038).
+> It is crucial to understand the difference between QLC and TLC NVMe drives when considering the disk requirement.
+> QLC (Quad-Level Cell) NVMe drives utilize four bits of data per cell, allowing for higher storage density and lower manufacturing costs. However, this increased density comes at the expense of performance. QLC drives have slower read and write speeds compared to TLC drives. They also have a lower endurance, meaning they may have a shorter lifespan and be less suitable for heavy workloads or constant data rewriting.
+> TLC (Triple-Level Cell) NVMe drives, on the other hand, use three bits of data per cell. While they have a slightly lower storage density compared to QLC drives, TLC drives offer faster performance. They typically have higher read and write speeds, making them more suitable for demanding tasks such as data-intensive applications, gaming, and multimedia editing. TLC drives also tend to have a higher endurance, making them more durable and longer-lasting.
 
 ### CPU
 
-Most of the time during syncing is spent executing transactions, which is a single-threaded operation due to potential state dependencies of a transaction on previous ones.
-
-As a result, the number of cores matters less, but in general higher clock speeds are better. More cores are better for parallelizable [stages](https://github.com/paradigmxyz/reth/blob/main/docs/crates/stages.md) (like sender recovery or bodies downloading), but these stages are not the primary bottleneck for syncing.
+Most of the time spent during syncing is used to execute transactions, a single-threaded operation due to potential state dependencies of one transaction on previous ones. As a result, the number of cores matters less, but in general higher clock speeds are better. More cores are better for parallelizable [stages](https://github.com/paradigmxyz/reth/blob/main/docs/crates/stages.md) (like sender recovery or bodies downloading), but these stages are not the primary bottleneck for syncing.
 
 ### Memory
 
@@ -82,9 +76,3 @@ A stable and dependable internet connection is crucial for both syncing a node f
 Note that due to Reth's staged sync, you only need an internet connection for the Headers and Bodies stages. This means that the first 1-3 hours (depending on your internet connection) will be online, downloading all necessary data, and the rest will be done offline and does not require an internet connection.
 
 Once you're synced to the tip you will need a reliable connection, especially if you're operating a validator. A 24Mbps connection is recommended, but you can probably get away with less. Make sure your ISP does not cap your bandwidth.
-
-## What hardware can I get?
-
-If you are buying your own NVMe SSD, please consult [this hardware comparison](https://gist.github.com/yorickdowne/f3a3e79a573bf35767cd002cc977b038) which is being actively maintained. We recommend against buying DRAM-less or QLC devices as these are noticeably slower.
-
-All our benchmarks have been produced on [Latitude.sh](https://www.latitude.sh/), a bare metal provider. We use `c3.large.x86` boxes, and also recommend trying the `s2.small.x86` box for pruned/full nodes. So far our experience has been smooth with some users reporting that the NVMEs there outperform AWS NVMEs by 3x or more. We're excited for more Reth nodes on Latitude.sh, so for a limited time you can use `RETH400` for a $250 discount. [Run a node now!](https://metal.new/reth)

@@ -39,7 +39,7 @@ Options:
 
           Configures the ports of the node to avoid conflicts with the defaults. This is useful for running multiple nodes on the same machine.
 
-          Max number of instances is 200. It is chosen in a way so that it's not possible to have port numbers that conflict with each other.
+          Max number of instances is 200. It is chosen in a way so that it is not possible to have port numbers that conflict with each other.
 
           Changes to the following port numbers: - DISCOVERY_PORT: default + `instance` - 1 - AUTH_PORT: default + `instance` * 100 - 100 - HTTP_RPC_PORT: default - `instance` + 1 - WS_RPC_PORT: default + `instance` * 2 - 2
 
@@ -144,7 +144,7 @@ Networking:
           Maximum number of inbound requests. default: 30
 
       --pooled-tx-response-soft-limit <BYTES>
-          Soft limit for the byte size of a `PooledTransactions` response on assembling a `GetPooledTransactions` request. Spec'd at 2 MiB.
+          Soft limit for the byte size of a `PooledTransactions` response on assembling a `GetPooledTransactions` request. Spec`d at 2 MiB.
 
           <https://github.com/ethereum/devp2p/blob/master/caps/eth.md#protocol-messages>.
 

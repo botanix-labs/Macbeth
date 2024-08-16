@@ -1,4 +1,4 @@
-# Observability with Prometheus & Grafana
+# Logs and observability 
 
 Reth exposes a number of metrics, which are listed [here][metrics]. We can serve them from an HTTP endpoint by adding the `--metrics` flag:
 
