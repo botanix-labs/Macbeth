@@ -1,12 +1,12 @@
-use bdk::{
-    miniscript::psbt::Error as PsbtError,
-    wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
-};
+use bdk::miniscript::psbt::Error as PsbtError;
+use std::time::{Instant, SystemTime};
+
+use crate::coin_selection::CoinSelectionError;
 use bitcoin::{
     hashes::sha256,
     psbt::{ExtractTxError, Psbt},
     secp256k1::PublicKey,
-    Address, Amount, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut,
+    Address, BlockHash, FeeRate, ScriptBuf, TxOut,
 };
 use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
@@ -15,16 +15,15 @@ use reth_btc_wallet::{
     psbt::{EthAddress, PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
-    TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
-use std::time::{Instant, SystemTime};
 
 use crate::{
+    coin_selection,
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
     util::{
-        get_available_utxos, validate_psbt, OutPointExt, ValidatePSBTError, NO_FLAGS, ROUND1,
-        ROUND1_TRANSITION, ROUND2,
+        get_available_utxos, validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION,
+        ROUND2,
     },
     App, Error,
 };
@@ -44,8 +43,6 @@ pub enum CoordinatorError {
     InvalidSigningPackage(&'static str),
     #[error("failed to convert verifying key to secp pk")]
     FailedToConvertVerifyingKeyToSecpPk(#[from] VerifyingKeyExtError),
-    #[error("Coin Selection error: {0}")]
-    CoinSelection(#[from] BdkCoinselectionError),
     #[error("Failed to calculate sighash: {0}")]
     FailedToCalculateSighash(#[from] CalculateSighashError),
     #[error("Pbst error: {0}")]
@@ -82,6 +79,8 @@ pub enum CoordinatorError {
     MissingFinalScript,
     #[error("missing signing package at index: {0}")]
     MissingSigningPackageAtIndex(usize),
+    #[error("coin selection error: {0}")]
+    CoinSelectionErr(#[from] CoinSelectionError),
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -229,83 +228,8 @@ where
         let (available_utxos, _tracked_inputs) =
             get_available_utxos(&self.db).await.map_err(CoordinatorError::Db)?;
 
-        let to_bdk = |u: &Utxo| {
-            bdk::WeightedUtxo {
-                satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-                utxo: bdk::Utxo::Local(bdk::LocalOutput {
-                    outpoint: u.outpoint.to_bdk(),
-                    txout: bdk::bitcoin::TxOut {
-                        script_pubkey: u.output.script_pubkey.to_bytes().into(),
-                        value: u.output.value,
-                    },
-                    keychain: bdk::KeychainKind::External,
-                    is_spent: false,
-                    derivation_index: 0, // we're not using this
-                    // Also not used
-                    confirmation_time: bdk::chain::ConfirmationTime::Confirmed {
-                        height: 1,
-                        time: 1,
-                    },
-                }),
-            }
-        };
-
-        // Now we're going to hijack BDK coin selection real quick..
-        let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
-        let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
-
-        // Try once with finalized, then add pending and try again.
-        let selection = coin_select
-            .coin_select(
-                vec![],
-                bdk_utxos,
-                fee_rate,
-                target_amount.to_sat(),
-                &change_script, // drain_script
-            )
-            .map_err(CoordinatorError::CoinSelection)?;
-
-        let selected = selection
-            .selected
-            .iter()
-            .map(|s| available_utxos.get(&OutPoint::from_bdk(s.outpoint())))
-            .filter_map(|s| if s.is_some() { s } else { None })
-            .collect::<Vec<_>>();
-        let change = match selection.excess {
-            bdk::wallet::coin_selection::Excess::Change { amount, .. } => Some(TxOut {
-                script_pubkey: change_script.clone(),
-                value: Amount::from_sat(amount),
-            }),
-            bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
-        };
-
-        let pegout_ids = outputs
-            .into_iter()
-            .map(|(txout, pegout_id)| {
-                if let Some(pegout_id) = pegout_id {
-                    (txout, Some(pegout_id.as_bytes()))
-                } else {
-                    (txout, None)
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let psbt = reth_btc_wallet::transaction::create_psbt(
-            selected
-                .iter()
-                .map(|s| reth_btc_wallet::transaction::Input {
-                    outpoint: s.outpoint,
-                    output: s.output.clone(),
-                    eth_address: s.eth_address,
-                })
-                .collect(),
-            pegout_ids,
-            change,
-        );
-
-        info!("make_tx psbt = {}", psbt);
-
+        let psbt =
+            coin_selection::coin_selection(available_utxos, outputs, fee_rate, change_script)?;
         // Sanity check that we created a valid PSBT
         // This should not fail
         validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;
