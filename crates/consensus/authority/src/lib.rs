@@ -277,6 +277,8 @@ impl Consensus for AuthorityConsensus {
             ConsensusError::ExtraDataInvalid
         })?;
 
+        validate_chain_version(edh.chain_version)?;
+
         if edh.aggregated_public_key == nums_secp256k1_pk() {
             return Err(ConsensusError::InvalidAggregatedPublicKey(
                 InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,

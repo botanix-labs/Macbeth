@@ -915,7 +915,10 @@ pub(crate) mod tests {
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_types::{pk2id, WithPeerId};
     use reth_node_ethereum::EthEvmConfig;
-    use reth_primitives::{extra_data_header::ExtraDataHeader, Header, B256, BOTANIX_TESTNET};
+    use reth_primitives::{
+        extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
+        Header, B256, BOTANIX_TESTNET,
+    };
     use reth_provider::{
         test_utils::{MockEthProvider, TestExecutorFactory},
         HeaderProvider,
@@ -2433,5 +2436,41 @@ pub(crate) mod tests {
             res.err().unwrap(),
             ValidateBlockError::ForkDepthGreaterThanOne(block.hash_slow())
         );
+    }
+
+    #[tokio::test]
+    async fn will_not_sign_for_block_with_invalid_chain_version() {
+        setup_multi_party_test!(
+            3,
+            sks,
+            frost_handle_mock,
+            configs,
+            peer_ids,
+            signed_blocks,
+            non_coords,
+            coord,
+            block_to_propose,
+            mock_eth_provider,
+            mock_network_client
+        );
+
+        let mut pbft_state_machine = coord;
+        let peer_id_0 = non_coords[0].peer_id.clone();
+        let mut block_with_invalid_chain_version = block_to_propose.clone();
+
+        // edh with invalid chain version
+        let mut invalid_header = block_with_invalid_chain_version.header().clone();
+        let mut edh = block_to_propose.header().deserialize_extra_data_header().unwrap();
+        edh.chain_version = CHAIN_VERSION + 1;
+        invalid_header.add_extra_data_header(&edh);
+        invalid_header.sign_block(&sks[1]).unwrap();
+        block_with_invalid_chain_version.header = invalid_header.seal_slow();
+
+        let result = pbft_state_machine
+            .process_precommitment(block_with_invalid_chain_version, peer_id_0)
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().to_string(), "Invalid chain version in block header");
     }
 }
