@@ -13,7 +13,7 @@ use reth_network::frost::{
 };
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
 use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError};
-use tokio::sync::{mpsc::error::SendError, RwLock};
+use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
 
 use crate::{

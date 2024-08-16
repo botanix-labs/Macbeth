@@ -7923,6 +7923,7 @@ dependencies = [
  "metrics",
  "reth-beacon-consensus-core",
  "reth-blockchain-tree",
+ "reth-btc-wallet",
  "reth-config",
  "reth-consensus",
  "reth-db",
