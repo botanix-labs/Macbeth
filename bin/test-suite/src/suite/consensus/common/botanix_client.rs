@@ -235,4 +235,15 @@ impl BotanixEthClient {
 
         Ok(nonce)
     }
+
+    pub async fn get_latest_block(&self) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let latest_block = self
+            .client
+            .get_block(BlockNumber::Latest)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(latest_block)
+    }
 }
