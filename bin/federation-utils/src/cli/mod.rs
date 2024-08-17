@@ -22,17 +22,21 @@ pub(crate) enum Commands {
 /// Command for setting up the wallet config
 #[derive(Parser, Debug)]
 pub(crate) struct Setup {
-    /// Path to the wallet config file
-    #[arg(long)]
-    pub(crate) config_path: String,
-
-    /// Path to the secret key output file
-    #[arg(long)]
-    pub(crate) secret_key_output_path: String,
-
     /// Chain ID
     #[arg(long)]
     pub(crate) chain_id: u64,
+
+    /// Path to the secret key output file
+    #[arg(long)]
+    pub(crate) secret_key_destination: Option<String>,
+
+    /// Path to the wallet config file (optional)
+    #[arg(long)]
+    pub(crate) provider_url: Option<String>,
+
+    /// Path to the wallet config file (optional)
+    #[arg(long)]
+    pub(crate) config_path: Option<String>,
 
     /// Address to receive funds (optional)
     #[arg(long)]

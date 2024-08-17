@@ -33,13 +33,20 @@ fn inner_main() -> Result<(), FederationUtilsError> {
 
     match &cli.command {
         Commands::Setup(setup) => {
-            let Setup { config_path, secret_key_output_path, chain_id, receiver_address } = setup;
+            let Setup {
+                chain_id,
+                config_path,
+                secret_key_destination,
+                provider_url,
+                receiver_address,
+            } = setup;
             let receiver_addres_hash =
                 receiver_address.as_ref().map(|addr| addr.parse().expect("Valid address"));
             let config = WalletConfig::new(
-                config_path.clone(),
-                secret_key_output_path.clone(),
                 *chain_id,
+                config_path.clone(),
+                secret_key_destination.clone(),
+                provider_url.clone(),
                 receiver_addres_hash,
             )?;
 
