@@ -74,3 +74,4 @@ chain.toml
 
 # federation utils cli
 config.json
+secret_key.hex
