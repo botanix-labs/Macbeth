@@ -569,15 +569,15 @@ where
                     leader_selection_window,
                 );
                 let current_inturn_authority_frost_identifier =
-                    peer_id_to_identifier(current_inturn_authority_index.try_into().unwrap());
+                    peer_id_to_identifier(current_inturn_authority_index as u16);
                 let coord = all_connected_frost_peers.iter().find_map(|(_peer_id, peer_data)| {
-                    if peer_data.frost_identifier.as_ref().cloned().unwrap() ==
-                        current_inturn_authority_frost_identifier
-                    {
-                        Some(peer_data.clone())
-                    } else {
-                        None
-                    }
+                    peer_data.frost_identifier.as_ref().and_then(|frost_id| {
+                        if *frost_id == current_inturn_authority_frost_identifier {
+                            Some(peer_data.clone())
+                        } else {
+                            None
+                        }
+                    })
                 });
 
                 Ok(coord.zip(Some(current_inturn_authority_index)))
@@ -751,11 +751,11 @@ where
         }
 
         // get coordinator
-        let coordinator = self.get_coordinator().await?;
-
-        // get coordinator id
-        let coordinator_id =
-            coordinator.as_ref().map(|(_, authority_index)| *authority_index).unwrap_or_default();
+        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
+            Some(coord_data) => (coord_data.0, coord_data.1),
+            None => return Ok(()),
+        };
+        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
         // get coordinator time interval validity
         let (start, end, _time_passed, _time_remaining) =
@@ -817,8 +817,6 @@ where
         // Update signing state
         self.update_signing_state(session_id, SigningState::Round2).await;
 
-        let (coordinator_peer_data, coordinator_authority_index) = coordinator.unwrap();
-        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_authority_index);
         // Broadcast signing round 1 to the coordinator
         if coordinator_peer_data
             .frost_identifier
@@ -974,12 +972,13 @@ where
         // get coordinator
         let coordinator = self.get_coordinator().await?;
         // if none, we are coordinator, if some, someone else is
-        if coordinator.is_none() {
-            warn!(target: "consensus::authority::signing::signer_process_round2", "No coordinator found");
-            return Ok(());
-        }
-
-        let (coordinator_peer_data, _coordinator_authority_index) = coordinator.unwrap();
+        let (coordinator_peer_data, _coordinator_authority_index) = match coordinator {
+            Some(coord_data) => (coord_data.0, coord_data.1),
+            None => {
+                warn!(target: "consensus::authority::signing::signer_process_round2", "No coordinator found");
+                return Ok(());
+            }
+        };
 
         // Broadcast signing round 2 to the coordinator
         if coordinator_peer_data
@@ -1117,16 +1116,24 @@ where
                 return Ok(());
             }
 
-            // if all good, re-initiate the signing rounds
-            if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::InitiateSigning(
-                FrostNotification {
+            let signing_session_notifications = match signing_session {
+                Some(signing_session) => FrostNotification {
                     signing_session_id,
                     psbt: signing_session
-                        .unwrap()
                         .original_psbt
                         .expect("Original psbt to be valid and present"),
                 },
-            )) {
+                None => {
+                    warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Signing session psbt is empty for session id {:?}", &session_id);
+                    return Ok(());
+                }
+            };
+
+            // if all good, re-initiate the signing rounds
+            if let Err(e) = self
+                .frost_task_tx
+                .send(FrostNotificationMessage::InitiateSigning(signing_session_notifications))
+            {
                 error!(target: "consensus::authority::signing::handle_errored_signing_process", "Error trying to re-initialize failed signing session with session id {:?}. Error = {:?}", &session_id, e);
             }
         }

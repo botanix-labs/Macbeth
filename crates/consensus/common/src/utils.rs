@@ -2,9 +2,9 @@ use reth_consensus::ConsensusError;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
-    keccak256, public_key_to_address, Address, ChainSpec, Header, U256,
+    public_key_to_address, Address, ChainSpec, Header,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProvider, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 
 use secp256k1::{All, Secp256k1};
 use std::{
