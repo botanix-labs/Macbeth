@@ -2,7 +2,7 @@ use crate::Storage;
 use reth_consensus_common::utils;
 use reth_primitives::{header_ext::HeaderExt, BlockHashOrNumber};
 use reth_provider::{BlockReaderIdExt, HeaderProvider};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
 /// Manages the block production epochs

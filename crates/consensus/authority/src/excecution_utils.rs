@@ -174,7 +174,9 @@ pub(crate) mod authority_execution_utils {
             } else {
                 let current_agg_key =
                     sealed_block.header.clone().unseal().get_aggregate_public_key().map_err(
-                        |e| BlockExecutionError::Validation(BlockValidationError::InvalidExtraData),
+                        |_e| {
+                            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
+                        },
                     )?;
                 current_agg_key.clone()
             }
