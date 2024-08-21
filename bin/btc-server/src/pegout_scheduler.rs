@@ -3,11 +3,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bitcoin::{Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
+use bitcoin::{Amount, Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use thiserror::Error;
 
-use crate::database;
+use crate::{database, pegout_id::PegoutId};
 
 macro_rules! print_safe {
     ($e:expr) => {
@@ -80,6 +80,57 @@ struct BlockInfo {
     hash: BlockHash,
     relevant_txs: Vec<Txid>,
     relevant_inputs: Vec<OutPoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PegoutRequest {
+    pub id: PegoutId,
+    /// The scriptpubkey of the pegout request.
+    pub spk: bitcoin::ScriptBuf,
+    /// The btc amount of pegout to deliver.
+    pub value: Amount,
+    /// Botanix block height this pegout was requested at.
+    pub botanix_height: u64,
+}
+
+impl PegoutRequest {
+    pub fn txout(&self) -> TxOut {
+        TxOut { script_pubkey: self.spk.clone(), value: self.value }
+    }
+}
+
+struct PendingPegout {
+    request: PegoutRequest,
+    attempts: HashSet<bitcoin::Txid>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum OutputMeta {
+    Pegout(PegoutId),
+    Change,
+}
+
+impl OutputMeta {
+    pub fn is_pegout(&self) -> bool {
+        match self {
+            Self::Pegout(_) => true,
+            Self::Change => false,
+        }
+    }
+
+    pub fn is_change(&self) -> bool {
+        match self {
+            Self::Pegout(_) => false,
+            Self::Change => true,
+        }
+    }
+
+    pub fn pegout_id(&self) -> Option<PegoutId> {
+        match self {
+            Self::Pegout(id) => Some(*id),
+            Self::Change => None,
+        }
+    }
 }
 
 pub struct PegoutScheduler {

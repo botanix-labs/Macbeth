@@ -34,6 +34,9 @@ const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
 
+/// sled tree for pending pegout requests
+const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
     // This is skipped during serialization because the db key is the outpoint so its redundant.
@@ -82,6 +85,11 @@ pub struct Db {
     ///
     /// Indexed by txid.
     pending_txs: sled::Tree,
+
+    /// A tree of pending pegout requests, serialized as the [pegouts::PegoutRequest] format.
+    ///
+    /// Indexed by the [PegoutRequest::id] inspector.
+    pegouts: sled::Tree,
 }
 
 impl Db {
@@ -93,6 +101,7 @@ impl Db {
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
             pending_txs: db.open_tree(TREE_PENDING_TXS)?,
+            pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             db,
         })
     }
@@ -104,6 +113,7 @@ impl Db {
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
         self.pending_txs.flush()?;
+        self.pegouts.flush()?;
         Ok(())
     }
 
@@ -500,6 +510,23 @@ impl Db {
             sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
         }))
     }
+
+    pub fn store_pending_pegout(&self, req: &pegout_scheduler::PegoutRequest) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
+        self.pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
+        Ok(())
+    }
+
+    pub fn get_pending_pegouts(&self) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
+        let mut ret = Vec::new();
+        for res in self.pegouts.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -603,12 +630,34 @@ mod tests {
     use crate::test::create_tx;
 
     use super::*;
+    use crate::pegout_id::PegoutId;
     use tempfile::TempDir;
 
     fn setup_db() -> (Db, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
         (db, temp_dir)
+    }
+
+    #[test]
+    fn can_save_and_read_pegout_reqs() {
+        let (db, _temp_dir) = setup_db();
+        
+        let pegout_id = PegoutId::new([0; 32], 0);
+        let req = pegout_scheduler::PegoutRequest {
+            id: pegout_id,
+            spk: ScriptBuf::from_bytes(vec![0x01, 0x02, 0x03]),
+            value: Amount::from_sat(1000),
+            botanix_height: 1,
+        };
+        db.store_pending_pegout(&req).unwrap();
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), 1);
+        let pegout_req = pegouts.get(0).unwrap();
+        assert_eq!(pegout_req.id, req.id);
+        assert_eq!(pegout_req.spk, req.spk);
+        assert_eq!(pegout_req.value, req.value);
+        assert_eq!(pegout_req.botanix_height, req.botanix_height);
     }
 
     #[test]
