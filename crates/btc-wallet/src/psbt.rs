@@ -2,13 +2,17 @@ use std::{borrow::BorrowMut, collections::BTreeMap};
 
 use bitcoin::{
     hashes::Hash,
-    psbt::{raw::ProprietaryKey, Input, Psbt},
+    psbt::{raw::ProprietaryKey, Input, Output, Psbt},
 };
 use frost_secp256k1_tr as frost;
 
+// input keys
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
 const SIGNING_COMMITMENTS_KEY_TYPE: u8 = 2;
 const PARTIAL_SIGNATURE_KEY_TYPE: u8 = 3;
+
+// output keys
+const PEGOUT_ID_KEY_TYPE: u8 = 4;
 
 lazy_static::lazy_static! {
     static ref PROP_KEY_PREFIX: &'static [u8] = b"btx";
@@ -16,6 +20,12 @@ lazy_static::lazy_static! {
     static ref ETH_ADDRESS_KEY: ProprietaryKey = ProprietaryKey {
         prefix: PROP_KEY_PREFIX.to_vec(),
         subtype: ETH_ADDRESS_KEY_TYPE,
+        key: Vec::new(),
+    };
+
+    static ref PEGOUT_ID_KEY: ProprietaryKey = ProprietaryKey {
+        prefix: PROP_KEY_PREFIX.to_vec(),
+        subtype: PEGOUT_ID_KEY_TYPE,
         key: Vec::new(),
     };
 }
@@ -155,6 +165,28 @@ pub trait PsbtInputExt: BorrowMut<Input> {
     }
 }
 impl PsbtInputExt for Input {}
+
+pub type PegoutId = [u8; 36]; //TODO(stevenroose) fix or import maybe
+
+pub trait PsbtOutputExt: BorrowMut<Output> {
+    fn set_pegout_id(&mut self, pegout_id: PegoutId) {
+        // Key stores no keydata, only the type value
+        self.borrow_mut().proprietary.insert(PEGOUT_ID_KEY.clone(), pegout_id.to_vec());
+    }
+
+    fn pegout_id(&self) -> Option<PegoutId> {
+        self.borrow().proprietary.get(&PEGOUT_ID_KEY).and_then(|b| {
+            if b.len() == 36 {
+                let mut ret = [0u8; 36];
+                ret.copy_from_slice(&b[..]);
+                Some(ret)
+            } else {
+                None
+            }
+        })
+    }
+}
+impl PsbtOutputExt for Output {}
 
 pub trait PsbtExt: BorrowMut<Psbt> {
     /// Converts this PSBT into a vector of Frost signing packages.

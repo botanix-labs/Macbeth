@@ -642,7 +642,7 @@ mod tests {
     #[test]
     fn can_save_and_read_pegout_reqs() {
         let (db, _temp_dir) = setup_db();
-        
+
         let pegout_id = PegoutId::new([0; 32], 0);
         let req = pegout_scheduler::PegoutRequest {
             id: pegout_id,
