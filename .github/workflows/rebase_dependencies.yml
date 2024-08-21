@@ -1,0 +1,23 @@
+name: Automatic Rebase Dependencies
+on:
+  push:
+    branches:
+      - feature/poA-consensus
+      - main
+jobs:
+    rebase_macbeth_dependencies:
+        name: Rebase `dependencies` branch with `main`
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+              with: 
+                fetch-depth: 0
+                ref: dependencies
+
+            - name: Rebase dependencies
+              run: |
+                git config user.name github-actions
+                git config user.email github-actions@github.com
+                git rebase origin/feature/poA-consensus #This should be the main branch moving forward
+                git push origin dependencies --force

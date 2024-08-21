@@ -4,3 +4,10 @@ updates:
   directory: "/"
   schedule:
     interval: "weekly"
+
+# Enable version updates for Rust dependencies
+- package-ecosystem: "cargo"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  target-branch: "dependencies"
