@@ -125,7 +125,7 @@ impl rpc::BtcServer for App {
                 badarg!("Failed to parse checkpoint hash: {}", e)
             })?;
 
-        self.sync_txindex(checkpoint).await.map_err(|e| {
+        self.sync_pegout_scheduler(checkpoint).await.map_err(|e| {
             error!("Failed to sync txindex: {}", e);
             internal!("Failed to sync txindex: {}", e)
         })?;

@@ -7,10 +7,10 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod pegout_scheduler;
 mod server;
 mod shutdown;
 mod signer;
-mod txindex;
 mod util;
 
 mod rpc {
@@ -49,8 +49,8 @@ use util::get_pegin_confirmation_depth;
 use crate::{
     config::{GrpcConfig, TomlConfig},
     dkg::DKGError,
+    pegout_scheduler::PegoutScheduler,
     signer::SigningError,
-    txindex::TxIndex,
     util::ParsingError,
 };
 
@@ -75,7 +75,7 @@ pub enum Error {
     #[error("db error: {0}")]
     Db(#[from] database::Error),
     #[error("sync error: {0}")]
-    TxIndexSync(#[from] txindex::SyncError),
+    PegoutSchedulerSync(#[from] pegout_scheduler::SyncError),
     #[error("failed to sync to given checkpoint block: {0}")]
     FailedToReachCheckPoint(BlockHash),
 }
@@ -89,7 +89,7 @@ type SigningNoncesCommitmentsMap =
 struct App {
     db: database::Db,
     btc_network: bitcoin::Network,
-    txindex: Mutex<TxIndex>,
+    pegout_scheduler: Mutex<PegoutScheduler>,
 
     /// This lock is taken when we're making a tx so that we don't accidentally
     /// spend the same operations twice.
@@ -115,16 +115,16 @@ struct App {
 }
 
 impl App {
-    fn load_txindex(
+    fn load_pegout_scheduler(
         db: &database::Db,
         fallback_checkpoint: BlockHash,
         pegin_conf_depth: u32,
-    ) -> Result<TxIndex, database::Error> {
-        if let Some(latest) = db.get_txindex_finalized_block()? {
+    ) -> Result<PegoutScheduler, database::Error> {
+        if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
             let txs = db.get_pending_txs()?;
-            Ok(TxIndex::new(pegin_conf_depth, txs, latest))
+            Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest))
         } else {
-            Ok(TxIndex::new(pegin_conf_depth, vec![], fallback_checkpoint))
+            Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint))
         }
     }
 
@@ -189,18 +189,22 @@ impl App {
 
         let pegin_confirmation_depth = get_pegin_confirmation_depth(config.btc_network);
         let fallback_checkpoint = {
-            let tip_height =
-                bitcoind_client.get_block_count().map_err(|e| Error::TxIndexSync(e.into()))?;
+            let tip_height = bitcoind_client
+                .get_block_count()
+                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?;
             bitcoind_client
                 .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
-                .map_err(|e| Error::TxIndexSync(e.into()))?
+                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?
         };
-        let txindex =
-            Mutex::new(Self::load_txindex(&db, fallback_checkpoint, pegin_confirmation_depth)?);
+        let pegout_manager = Mutex::new(Self::load_pegout_scheduler(
+            &db,
+            fallback_checkpoint,
+            pegin_confirmation_depth,
+        )?);
         Ok(Self {
             btc_network: config.btc_network,
             db,
-            txindex,
+            pegout_scheduler: pegout_manager,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_identifier,
             frost_round1_dkg: round1_dkg,
@@ -290,8 +294,11 @@ impl App {
         Ok(StopHandle { stop_cmd_sender: shutdown_send })
     }
 
-    pub async fn sync_txindex(&self, checkpoint: BlockHash) -> Result<(), txindex::SyncError> {
-        let mut lock = self.txindex.lock().await;
+    pub async fn sync_pegout_scheduler(
+        &self,
+        checkpoint: BlockHash,
+    ) -> Result<(), pegout_scheduler::SyncError> {
+        let mut lock = self.pegout_scheduler.lock().await;
         let bitcoind = self.bitcoind_client.as_ref().expect("should have bitcoind");
         let db = &self.db;
         lock.sync_until(bitcoind, checkpoint, move |utxo| {
@@ -299,7 +306,7 @@ impl App {
             db.flush()?;
             Ok(())
         })?;
-        self.db.store_txindex_finalized_block(lock.last_finalized())?;
+        self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;
         Ok(())
@@ -311,7 +318,7 @@ impl App {
         targets: &[TxOut],
         timestamp: SystemTime,
     ) -> Result<(), database::Error> {
-        let mut txindex = self.txindex.lock().await;
+        let mut txindex = self.pegout_scheduler.lock().await;
         let tx = txindex.add_tx(tx, targets, timestamp);
         self.db.store_pending_tx(tx)?;
         self.db.flush()?;
@@ -429,10 +436,11 @@ mod test {
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
         let db = database::Db::open(&dbdir).unwrap();
-        let txindex = Mutex::new(App::load_txindex(&db, BlockHash::all_zeros(), 6).unwrap());
+        let txindex =
+            Mutex::new(App::load_pegout_scheduler(&db, BlockHash::all_zeros(), 6).unwrap());
         let app = App {
             db,
-            txindex,
+            pegout_scheduler: txindex,
             btc_network: NETWORK,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_id!(1u16),
