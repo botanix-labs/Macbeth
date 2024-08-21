@@ -1,16 +1,21 @@
-# Runs unit tests.
-
-name: unit
+# Run unit tests
+name: Botanix Unit Tests
 
 on:
   pull_request:
   merge_group:
+    branches: [main, feature/poA-consensus]
   push:
-    branches: [main]
+    branches: [feature/poA-consensus]
 
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
+  BITCOIND_NETWORK: regtest
+  BITCOIND_URL: http:/localhost:18443
+  BITCOIND_USER: botanix-ci-user
+  BITCOIND_PASS: ${{ secrets.BITCOIND_PWD }}
+  TEST_JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -18,36 +23,48 @@ concurrency:
 
 jobs:
   test:
-    name: test / ${{ matrix.network }} (${{ matrix.partition }}/2)
-    runs-on:
-      group: Reth
-    strategy:
-      matrix:
-        partition: [1, 2]
-        network: ["ethereum", "optimism"]
-    timeout-minutes: 30
+    name: test / ethereum
+    runs-on: botanix-actions-runner-vm-1
+    env:
+      RUST_BACKTRACE: 1
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - uses: taiki-e/install-action@nextest
+          cache-all-crates: true
+
       - name: Run tests
         run: |
           cargo nextest run \
-            --locked --features "${{ matrix.network }}" \
+            --locked --features "ethereum" \
             --workspace --exclude examples --exclude ef-tests \
-            --partition hash:${{ matrix.partition }}/2 \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
 
   state:
     name: Ethereum state tests
-    runs-on:
-      group: Reth
+    runs-on: botanix-actions-runner-vm-1
     env:
       RUST_LOG: info,sync=error
-    timeout-minutes: 30
+      RUST_BACKTRACE: 1
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Checkout ethereum/tests
@@ -58,35 +75,44 @@ jobs:
           submodules: recursive
           fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@nextest
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - run: cargo nextest run --release -p ef-tests --features ef-tests
+          cache-all-crates: true
+
+      - run: cargo nextest run --release -p ef-tests --features "asm-keccak ef-tests"
 
   doc:
-    name: doc tests (${{ matrix.network }})
-    runs-on:
-      group: Reth
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        network: ["ethereum", "optimism"]
+    name: doc tests (ethereum)
+    runs-on: botanix-actions-runner-vm-1
+    env:
+      RUST_BACKTRACE: 1
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-all-crates: true
+
       - name: Run doctests
-        run: cargo test --doc --workspace --features "${{ matrix.network }}"
+        run: cargo test --doc --workspace --features "ethereum"
+
 
   unit-success:
     name: unit success
     runs-on: ubuntu-latest
     if: always()
     needs: [test, state, doc]
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1

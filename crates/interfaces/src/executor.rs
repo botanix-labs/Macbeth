@@ -1,9 +1,30 @@
-use crate::provider::ProviderError;
+use core::fmt;
+
+use crate::{provider::ProviderError, trie::StateRootError};
+use reth_consensus::ConsensusError;
 use reth_primitives::{
     revm_primitives::EVMError, BlockNumHash, Bloom, GotExpected, GotExpectedBoxed,
     PruneSegmentError, B256,
 };
 use thiserror::Error;
+
+/// Mint contract error type
+#[derive(Debug)]
+pub enum MintContractErrorType {
+    /// Pegin error
+    Pegin,
+    /// Pegout error
+    Pegout,
+}
+
+impl fmt::Display for MintContractErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MintContractErrorType::Pegin => write!(f, "Pegin"),
+            MintContractErrorType::Pegout => write!(f, "Pegout"),
+        }
+    }
+}
 
 /// Transaction validation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -29,6 +50,9 @@ pub enum BlockValidationError {
     /// Error when header bloom filter doesn't match expected value
     #[error("header bloom filter mismatch: {0}")]
     BloomLogDiff(GotExpectedBoxed<Bloom>),
+    /// Error when the state root does not match the expected value.
+    #[error(transparent)]
+    StateRoot(#[from] StateRootError),
     /// Error when transaction gas limit exceeds available block gas
     #[error("transaction gas limit {transaction_gas_limit} is more than blocks available gas {block_available_gas}")]
     TransactionGasLimitMoreThanAvailableBlockGas {
@@ -74,8 +98,18 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
-    #[error("Invalid Mint contract invocation")]
-    MintContractViolation,
+    /// Poa specific error when Extra data header is invalid
+    #[error("Invalid extra header")]
+    InvalidExtraData,
+    /// Poa specific error when Extra data header is failed to deserialize
+    #[error("Failed to serialize extra header")]
+    ExtraDataSerializeError,
+    /// Error when witness data is missing for a pegout psbt
+    #[error("Missing witness data for pegout psbt")]
+    MissingWitnessData,
+    /// Poa specific error when EDH authorities fail validation
+    #[error("Invalid authorities in EDH")]
+    InvalidExtraDataAuthorities,
 }
 
 /// BlockExecutor Errors
@@ -87,9 +121,6 @@ pub enum BlockExecutionError {
     /// Pruning error, transparently wrapping `PruneSegmentError`
     #[error(transparent)]
     Pruning(#[from] PruneSegmentError),
-    /// Error representing a provider error
-    #[error("provider error")]
-    ProviderError,
     /// Transaction error on revert with inner details
     #[error("transaction error on revert: {inner}")]
     CanonicalRevert {
@@ -117,10 +148,33 @@ pub enum BlockExecutionError {
     /// Note: this is not feature gated for convenience.
     #[error("execution unavailable for tests")]
     UnavailableForTest,
-    //TODO(stevenroose) this should be removed in later versions
-    /// Failed to get bitcoin header
-    #[error("Failed to get bitcoin header")]
-    FailedToGetBitcoinHeader,
+    /// Error when fetching latest block state.
+    #[error(transparent)]
+    LatestBlock(#[from] ProviderError),
+
+    /// Cannot add and existing federation memeber to the federation
+    #[error("Cannot add and existing federation memeber to the federation")]
+    CannotAddExistingFederationMember,
+
+    /// Failed to deserialize previous block header
+    #[error("Failed to deserialize previous block header")]
+    FailedToDeserializePreviousBlockHeader,
+
+    /// Bitcoin recent header is not available
+    #[error("Bitcoin recent header is not available")]
+    BitcoinRecentHeaderNotAvailable,
+
+    /// Consensus error during PBFT
+    #[error("PBFT Consensus error: {0}")]
+    PBFTConsensusError(#[from] ConsensusError),
+
+    /// TODO should pass error to this variant
+    #[error("Failed to construct Botanix Consensus Pkg")]
+    BotanixConsensusPkgError(),
+
+    /// Missing aggregate public key
+    #[error("Missing aggregate public key")]
+    MissingAggregatePublicKey(),
 
     /// Optimism Block Executor Errors
     #[cfg(feature = "optimism")]
@@ -141,6 +195,12 @@ pub enum OptimismBlockExecutionError {
     /// Thrown when force deploy of create2deployer code fails.
     #[error("failed to force create2deployer account code")]
     ForceCreate2DeployerFail,
+    /// Thrown when a blob transaction is included in a sequencer's block.
+    #[error("blob transaction included in sequencer block")]
+    BlobTransactionRejected,
+    /// Thrown when a database account could not be loaded.
+    #[error("failed to load account {0}")]
+    AccountLoadFailed(reth_primitives::Address),
 }
 
 impl BlockExecutionError {
@@ -149,5 +209,10 @@ impl BlockExecutionError {
     /// This represents an unrecoverable database related error.
     pub fn is_fatal(&self) -> bool {
         matches!(self, Self::CanonicalCommit { .. } | Self::CanonicalRevert { .. })
+    }
+
+    /// Returns `true` if the error is a state root error.
+    pub fn is_state_root_error(&self) -> bool {
+        matches!(self, Self::Validation(BlockValidationError::StateRoot(_)))
     }
 }

@@ -24,8 +24,7 @@ Currently, there are two main ways to fix this issue.
 
 
 #### Compact the database
-It will take around 5-6 hours and require **additional** disk space located on the same or different drive
-equal to the [freshly synced node](../installation/installation.md#hardware-requirements).
+It will take around 5-6 hours and require **additional** disk space located on the same or different drive.
 
 1. Clone Reth
    ```bash
@@ -61,7 +60,7 @@ is less than 1 second.
 It will take the same time as initial sync.
 
 1. Stop Reth
-2. Drop the database using [`reth db drop`](../cli/db.md#reth-db-drop)
+2. Drop the database using by remove the db and static file directories found in your data_dir
 3. Start reth
 
 ### Database write error

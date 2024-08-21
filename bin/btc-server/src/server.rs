@@ -1,0 +1,697 @@
+use base64::{engine::general_purpose, Engine as _};
+use bitcoin::{
+    hashes::{sha256, Hash},
+    psbt::Psbt,
+    Amount, BlockHash, FeeRate, TxOut,
+};
+use bitcoincore_rpc::{json::EstimateMode, RpcApi};
+use frost_secp256k1_tr as frost;
+use std::{collections::BTreeMap, str::FromStr};
+use tonic::{self, metadata::BinaryMetadataKey};
+use util::{parse_eth_address, VerifyingKeyExt};
+
+use crate::{database::Utxo, rpc, util, App};
+
+const JWT_HEADER_KEY: &str = "trace-proto-bin";
+
+macro_rules! badarg {
+    ($($arg:tt)*) => {{
+        tonic::Status::invalid_argument(format!($($arg)*))
+    }};
+}
+
+macro_rules! already_exists {
+    ($($arg:tt)*) => {{
+        tonic::Status::already_exists(format!($($arg)*))
+    }};
+}
+
+macro_rules! internal {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        error!("INTERNAL ERROR: {}", msg);
+        tonic::Status::internal(format!("internal error: {}", msg))
+    }};
+}
+
+macro_rules! unauthenticated {
+    ($($arg:tt)*) => {{
+        tonic::Status::unauthenticated(format!($($arg)*))
+    }};
+}
+
+#[allow(dead_code)]
+trait ToStatus<T> {
+    fn to_status(self) -> Result<T, tonic::Status>;
+}
+
+impl<T> ToStatus<T> for Result<T, crate::Error> {
+    fn to_status(self) -> Result<T, tonic::Status> {
+        self.map_err(|e| internal!("{}", e))
+    }
+}
+
+impl App {
+    fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
+        let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+        match (request.metadata().get_bin(key), self.btc_signing_server_jwt_secret.as_ref()) {
+            (None, None) => {
+                // we are in test mode, user has deliberately switched off authentication and is
+                // making direct requests without jwt
+                debug!("Missing JWT in request metadata and no supplied jwt secret. This is a test mode!");
+                return Ok(());
+            }
+            (metadata_value, jwt_secret) => {
+                match jwt_secret {
+                    Some(jwt_secret) => {
+                        // we have activated verification
+                        if let Some(metadata_value) = metadata_value {
+                            let jwt_request_token_received = metadata_value.as_encoded_bytes();
+                            let jwt_token_base64_decoded = general_purpose::STANDARD
+                                .decode(jwt_request_token_received)
+                                .map_err(|e| {
+                                    error!("Failed to base64 decode request metadata: {}", e);
+                                    badarg!("Failed to base64 decode request metadata: {}", e)
+                                })?;
+                            let jwt_stringified = String::from_utf8(jwt_token_base64_decoded)
+                                .map_err(|e| {
+                                    error!("Failed to utf8 decode jwt value: {}", e);
+                                    badarg!("Failed to utf8 decode jwt value: {}", e)
+                                })?;
+                            jwt_secret.validate(jwt_stringified).map_err(|e| {
+                                error!("Request authentication failed {}", e);
+                                unauthenticated!("Request authentication failed")
+                            })?;
+                        } else {
+                            error!("Missing JWT in request metadata. Warning: Btc-server cannot authenticate request!");
+                            return Err(unauthenticated!("Missing JWT in request metadata. Warning: Btc-server cannot authenticate request!"));
+                        }
+                    }
+                    None => {
+                        warn!("Warning: btc server has no authentication activated. Request will be executed");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[tonic::async_trait]
+impl rpc::BtcServer for App {
+    async fn health_check(
+        &self,
+        request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn tx_index_new_checkpoint(
+        &self,
+        request: tonic::Request<rpc::SyncTxIndexRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        let checkpoint =
+            bitcoin::BlockHash::from_slice(request.into_inner().checkpoint_block_hash.as_slice())
+                .map_err(|e| {
+                error!("Failed to parse checkpoint hash: {}", e);
+                badarg!("Failed to parse checkpoint hash: {}", e)
+            })?;
+
+        self.sync_txindex(checkpoint).await.map_err(|e| {
+            error!("Failed to sync txindex: {}", e);
+            internal!("Failed to sync txindex: {}", e)
+        })?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn get_signing_status(
+        &self,
+        req: tonic::Request<rpc::GetSigningStatusRequest>,
+    ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        //info!("Received get signing  status request");
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+
+        let signing_status = self
+            .get_signing_status(&signing_session_id)
+            .await
+            .map_err(|e| internal!("Failed to get signing status: {}", e))?;
+
+        let res =
+            tonic::Response::new(rpc::GetSigningStatusResponse { status: signing_status.into() });
+
+        Ok(res)
+    }
+
+    async fn get_session_ids(
+        &self,
+        req: tonic::Request<rpc::GetSessionIdsRequest>,
+    ) -> Result<tonic::Response<rpc::GetSessionIdsResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        //info!("Received get signing session ids request");
+        let req = req.into_inner();
+        let signing_session_ids = self
+            .get_session_ids(req.max_results)
+            .await
+            .map_err(|e| internal!("Failed to get signing session ids: {}", e))?;
+
+        let res = tonic::Response::new(rpc::GetSessionIdsResponse {
+            data: signing_session_ids.into_iter().map(|s| s.to_vec()).collect(),
+        });
+
+        Ok(res)
+    }
+
+    // Saves peg'd in UTXO
+    async fn notify_pegins(
+        &self,
+        req: tonic::Request<rpc::NotifyPeginsRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
+        let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
+
+        self.add_pegins(&utxo_refs).map_err(|e| internal!("Failed to add pegins: {}", e))?;
+        info!("processed pegins.len(): {:?}", utxos.len());
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    /// Resets all utxos in the database
+    async fn reset_all_utxos(
+        &self,
+        req: tonic::Request<rpc::ResetAllUtxosRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset all utxos request");
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
+        let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
+        self.db.reset_utxos(&utxo_refs).map_err(|e| internal!("Failed to reset utxos: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn abort_signing(
+        &self,
+        _req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.abort_signing().await.map_err(|e| internal!("Failed to abort signing: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn finalize_signing(
+        &self,
+        req: tonic::Request<rpc::FinalizeSigningRequest>,
+    ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        info!("Received finalize signing request");
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+
+        let psbt = self
+            .finalize_signing(&signing_session_id)
+            .await
+            .map_err(|e| internal!("Failed to finalize signing: {}", e))?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+
+        // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
+
+        Ok(res)
+    }
+
+    async fn get_psbt(
+        &self,
+        req: tonic::Request<rpc::MakeTxRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        info!("Received make tx request: {:?}", req);
+        let req = req.into_inner();
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
+            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
+            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
+
+        let bitcoind_rpc = self.bitcoind_client.as_ref().expect("bitcoind client");
+        let fee_res = bitcoind_rpc.estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let mut fee_rate = self.fall_back_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+            }
+        }
+
+        debug!("Cord Fee rate: {:?}", fee_rate);
+
+        let outputs = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
+            })
+            .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
+
+        // TODO this should live in coordinator.rs
+        let pk_package = self
+            .db
+            .get_key_package()?
+            .ok_or_else(|| internal!("missing key package, run the dkg process first"))?;
+
+        let secp_pk = pk_package
+            .verifying_key()
+            .to_secp_pk()
+            .map_err(|e| internal!("Failed to convert verifying key to secp pk: {}", e))?;
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+
+        let psbt = self
+            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .await
+            .map_err(|e| internal!("Failed to make tx: {}", e))?;
+
+        // Save psbt to db
+        self.db.update_psbt(&signing_session_id, &psbt)?;
+        self.db.flush()?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        let res = tonic::Response::new(rpc::SigningPackage {
+            // identifier really doent matter here.
+            identifier: self.identifier.serialize().to_vec(),
+            psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
+        });
+        Ok(res)
+    }
+
+    async fn get_to_sign_package(
+        &self,
+        req: tonic::Request<rpc::ToSignRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received to sign package request, signing session id: {:?}", req.signing_session_id);
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let psbt = self
+            .get_to_sign(&signing_session_id)
+            .map_err(|e| internal!("Failed to get to sign: {}", e))?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        let res = tonic::Response::new(rpc::SigningPackage {
+            // indentifier really doent matter here.
+            identifier: self.identifier.serialize().to_vec(),
+            psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
+        });
+        Ok(res)
+    }
+
+    async fn new_round1_signing_package(
+        &self,
+        req: tonic::Request<rpc::SigningPackage>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received round1 signing package");
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
+            error!("Failed to parse frost peer id: {}", e);
+            badarg!("Failed to parse frost peer id: {}", e)
+        })?;
+
+        let psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
+
+        self.add_round1_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
+            error!("Failed to add round1 signing: {}", e);
+            badarg!("Failed to add round1 signing")
+        })?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn new_round2_signing_package(
+        &self,
+        req: tonic::Request<rpc::SigningPackage>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received round2 signing package");
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
+            error!("Failed to parse frost peer id: {}", e);
+            badarg!("Failed to parse frost peer id: {}", e)
+        })?;
+
+        let psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
+
+        self.add_round2_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
+            error!("Failed to add round2 signing: {}", e);
+            badarg!("Failed to add round2 signing: {}", e)
+        })?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn get_public_key(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let pk = self.get_public_key().map_err(|e| {
+            debug!("Unable to get public key: {}", e);
+            tonic::Status::internal(format!("internal error: {}", e))
+        })?;
+        let pk = hex::encode(pk.serialize());
+
+        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
+    }
+
+    async fn get_gateway_address(
+        &self,
+        req: tonic::Request<rpc::GetGatewayAddressRequest>,
+    ) -> Result<tonic::Response<rpc::GetGatewayAddressResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let eth_address = parse_eth_address(req.eth_address).map_err(|e| {
+            error!("Failed to parse eth address: {}", e);
+            badarg!("Failed to parse eth address: {}", e)
+        })?;
+        let pk_packages = self
+            .get_gateway_address(&eth_address)
+            .map_err(|e| internal!("Failed to get public key: {}", e))?;
+        let pk = hex::encode(pk_packages.0.serialize());
+        let pk_tweaked = hex::encode(pk_packages.1.serialize());
+        let address = pk_packages.2.to_string();
+
+        return Ok(tonic::Response::new(rpc::GetGatewayAddressResponse {
+            publickey: pk,
+            tweaked_public_key: pk_tweaked,
+            gateway_address: address,
+        }));
+    }
+
+    /// Adds round2 packages received from a peer
+    async fn new_round2_dkg_package(
+        &self,
+        req: tonic::Request<rpc::DkgPayload>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
+            error!("Failed to parse frost peer id: {}", e);
+            badarg!("Failed to parse frost peer id: {}", e)
+        })?;
+        let packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
+            serde_json::from_slice(req.payload.as_slice()).map_err(|e| {
+                error!("Failed to deserialize round2 dkg package: {}", e);
+                badarg!("Failed to deserialize round2 dkg package: {}", e)
+            })?;
+
+        self.add_round2_dkg(frost_id, packages).await.map_err(|e| {
+            error!("Failed to add round2 dkg: {}", e);
+            badarg!("Failed to add round2 dkg: {}", e)
+        })?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    /// Generates a hashmap of round2 packages for sending to all other peers (needs round 1
+    /// packages)
+    async fn get_round2_dkg_package(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let round2_packages = self
+            .get_round2_dkg()
+            .await
+            .map_err(|e| internal!("Failed to get round2 dkg package: {}", e))?;
+        let json = serde_json::to_string(&round2_packages).unwrap();
+        let res = rpc::DkgPayload {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: json.as_bytes().to_vec(),
+        };
+        Ok(tonic::Response::new(res))
+    }
+
+    /// Adds round 1 pkg received from another peer to our own state
+    async fn new_round1_dkg_package(
+        &self,
+        req: tonic::Request<rpc::DkgPayload>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let frost_id =
+            crate::util::deserialize_frost_peer_id(req.identifier.clone()).map_err(|e| {
+                error!("Failed to parse frost peer id: {}", e);
+                badarg!("Failed to parse frost peer id: {}", e)
+            })?;
+        let dkg_round1 = frost::keys::dkg::round1::Package::deserialize(req.payload.as_slice())
+            .map_err(|e| {
+                error!("Failed to deserialize round1 dkg package: {}", e);
+                badarg!("Failed to deserialize round1 dkg package: {}", e)
+            })?;
+        self.add_round1_dkg(frost_id, dkg_round1)
+            .map_err(|e| internal!("Failed to add round1 dkg: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    /// Gets round 1 pkg we have generated (to be sent to another peer) - default when we start the
+    /// btc server
+    async fn get_round1_dkg_package(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let round1_dkg_package = self
+            .get_round1_dkg()
+            .map_err(|e| internal!("Failed to get round1 dkg package: {}", e))?;
+
+        let res = rpc::DkgPayload {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: round1_dkg_package
+                .serialize()
+                .map_err(|e| internal!("Failed to serialize round1 dkg package: {}", e))?
+                .to_vec(),
+        };
+
+        Ok(tonic::Response::new(res))
+    }
+
+    /// Gets round 1 pkgs we have collected so far - includes our own package
+    async fn get_round1_dkg_packages(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        if self.db.get_public_key_package()?.is_some() {
+            warn!("recieved notification about round 2 DKG while having key package");
+            return Err(already_exists!("already have key package"));
+        }
+
+        let round1_packages = self
+            .db
+            .get_round1_dkg_packages()
+            .map_err(|e| internal!("Failed to get round1 dkg packages: {}", e))?;
+
+        let json = serde_json::to_string(&round1_packages).unwrap();
+        let res = rpc::DkgPayload {
+            identifier: self.identifier.serialize().to_vec(),
+            payload: json.as_bytes().to_vec(),
+        };
+        Ok(tonic::Response::new(res))
+    }
+
+    /// Endpoint responds with a nonce commitments for a ONE particular signings session
+    async fn get_round1_signing_package(
+        &self,
+        req: tonic::Request<rpc::SigningPackageRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received round1 signing package request");
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+
+        let mut psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
+
+        let bitcoind = self.bitcoind_client.as_ref().expect("bitcoind client");
+        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind)
+            .await
+            .map_err(|e| internal!("Failed to get round1 signing package: {}", e))?;
+
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+
+        let res = rpc::SigningPackage {
+            identifier: self.identifier.serialize().to_vec(),
+            psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
+        };
+
+        Ok(tonic::Response::new(res))
+    }
+
+    async fn get_round2_signing_package(
+        &self,
+        req: tonic::Request<rpc::SigningPackageRequest>,
+    ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received round2 signing package request");
+        let signing_session_id =
+            util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
+                error!("Failed to parse signing session id: {}", e);
+                badarg!("Failed to parse signing session id: {}", e)
+            })?;
+        let mut psbt = Psbt::deserialize(req.psbt.as_slice())
+            .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
+        let _partial_signature = self
+            .get_round2_signing_package(&mut psbt)
+            .await
+            .map_err(|e| internal!("Failed to get round2 signing package: {}", e))?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        let res = rpc::SigningPackage {
+            identifier: self.identifier.serialize().to_vec(),
+            psbt: psbt_bytes,
+            signing_session_id: signing_session_id.to_vec(),
+        };
+
+        Ok(tonic::Response::new(res))
+    }
+
+    async fn signer_finalize(
+        &self,
+        req: tonic::Request<rpc::FinalizeSignerRequest>,
+    ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
+        let req = req.into_inner();
+        info!("Received finalize signer request");
+        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
+            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
+            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
+
+        let fee_res = self
+            .bitcoind_client
+            .as_ref()
+            .expect("instatiated bitcoin rpc")
+            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let mut fee_rate = self.fall_back_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+            }
+        }
+        let outputs = req
+            .outputs
+            .into_iter()
+            .map(|o| {
+                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+                    .map_err(|e| internal!("invalid address: {}", e))?
+                    .assume_checked()
+                    .script_pubkey();
+
+                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
+            })
+            .collect::<Result<Vec<_>, tonic::Status>>()?;
+
+        let witnesses = req.witness;
+        let psbt = self
+            .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
+            .await
+            .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
+        let psbt_bytes = hex::decode(psbt.serialize_hex())
+            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+
+        let res = tonic::Response::new(rpc::FinalizeSigningResponse {
+            psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
+        });
+        Ok(res)
+    }
+
+    async fn get_all_utxos(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetAllUtxosResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let db_utxos =
+            self.db.get_all_utxos().map_err(|e| internal!("Failed to get utxos: {}", e))?;
+        let utxos = db_utxos
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<rpc::Utxo>, _>>()
+            .map_err(|e| internal!("Failed to get utxos: {}", e))?;
+        let res = rpc::GetAllUtxosResponse { utxos };
+
+        Ok(tonic::Response::new(res))
+    }
+
+    // Gets the merkle root of the utxo set
+    async fn get_utxo_merkle_root(
+        &self,
+        request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        match self.db.get_utxo_merkle_root() {
+            Ok(Some(merkle_root)) => {
+                // Successfully found the merkle root, return it
+                let response =
+                    rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root[..].to_vec() };
+                Ok(tonic::Response::new(response))
+            }
+            Ok(None) => {
+                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: [0u8; 32].to_vec() };
+                Ok(tonic::Response::new(response))
+            }
+            // An error occurred while accessing the database
+            Err(e) => Err(internal!("Failed to retrieve UTXO Merkle root: {}", e)),
+        }
+    }
+}

@@ -7,14 +7,14 @@ use reth_interfaces::test_utils::generators::{
 };
 use reth_primitives::{
     bytes::{Bytes, BytesMut},
-    proofs, Block, SealedBlock, TransactionSigned, B256, U256,
+    proofs, Block, SealedBlock, TransactionSigned, Withdrawals, B256, U256,
 };
 use reth_rpc_types::engine::{
     ExecutionPayload, ExecutionPayloadBodyV1, ExecutionPayloadV1, PayloadError,
 };
 use reth_rpc_types_compat::engine::payload::{
-    convert_standalone_withdraw_to_withdrawal, convert_to_payload_body_v1, try_block_to_payload,
-    try_block_to_payload_v1, try_into_sealed_block, try_payload_v1_to_block,
+    convert_to_payload_body_v1, try_block_to_payload, try_block_to_payload_v1,
+    try_into_sealed_block, try_payload_v1_to_block,
 };
 
 fn transform_block<F: FnOnce(Block) -> Block>(src: SealedBlock, f: F) -> ExecutionPayload {
@@ -46,12 +46,7 @@ fn payload_body_roundtrip() {
                 .map(|x| TransactionSigned::decode(&mut &x[..]))
                 .collect::<Result<Vec<_>, _>>(),
         );
-        let withdraw = payload_body.withdrawals.map(|withdrawals| {
-            withdrawals
-                .into_iter()
-                .map(convert_standalone_withdraw_to_withdrawal)
-                .collect::<Vec<_>>()
-        });
+        let withdraw = payload_body.withdrawals.map(Withdrawals::new);
         assert_eq!(block.withdrawals, withdraw);
     }
 }
@@ -70,17 +65,18 @@ fn payload_validation() {
 
     assert_matches!(try_into_sealed_block(block_with_valid_extra_data, None), Ok(_));
 
+    // Botanix exception test commented out as we have removed the extra data max byte check
     // Invalid extra data
-    let block_with_invalid_extra_data: Bytes = BytesMut::zeroed(33).freeze();
-    let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
-        b.header.extra_data = block_with_invalid_extra_data.clone().into();
-        b
-    });
-    assert_matches!(
+    // let block_with_invalid_extra_data: Bytes = BytesMut::zeroed(33).freeze();
+    // let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
+    //     b.header.extra_data = block_with_invalid_extra_data.clone().into();
+    //     b
+    // });
+    // assert_matches!(
 
-        try_into_sealed_block(invalid_extra_data_block,None),
-        Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
-    );
+    //     try_into_sealed_block(invalid_extra_data_block,None),
+    //     Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
+    // );
 
     // Zero base fee
     let block_with_zero_base_fee = transform_block(block.clone(), |mut b| {

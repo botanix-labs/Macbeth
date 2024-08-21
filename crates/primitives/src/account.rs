@@ -1,6 +1,7 @@
 use crate::{
+    keccak256,
     revm_primitives::{Bytecode as RevmBytecode, BytecodeState, Bytes, JumpMap},
-    B256, KECCAK_EMPTY, U256,
+    GenesisAccount, B256, KECCAK_EMPTY, U256,
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::Buf;
@@ -27,23 +28,27 @@ impl Account {
     }
 
     /// After SpuriousDragon empty account is defined as account with nonce == 0 && balance == 0 &&
-    /// bytecode = None.
+    /// bytecode = None (or hash is [`KECCAK_EMPTY`]).
     pub fn is_empty(&self) -> bool {
-        let is_bytecode_empty = match self.bytecode_hash {
-            None => true,
-            Some(hash) => hash == KECCAK_EMPTY,
-        };
+        self.nonce == 0 &&
+            self.balance.is_zero() &&
+            self.bytecode_hash.map_or(true, |hash| hash == KECCAK_EMPTY)
+    }
 
-        self.nonce == 0 && self.balance.is_zero() && is_bytecode_empty
+    /// Makes an [Account] from [GenesisAccount] type
+    pub fn from_genesis_account(value: &GenesisAccount) -> Self {
+        Account {
+            // nonce must exist, so we default to zero when converting a genesis account
+            nonce: value.nonce.unwrap_or_default(),
+            balance: value.balance,
+            bytecode_hash: value.code.as_ref().map(keccak256),
+        }
     }
 
     /// Returns an account bytecode's hash.
     /// In case of no bytecode, returns [`KECCAK_EMPTY`].
     pub fn get_bytecode_hash(&self) -> B256 {
-        match self.bytecode_hash {
-            Some(hash) => hash,
-            None => KECCAK_EMPTY,
-        }
+        self.bytecode_hash.unwrap_or(KECCAK_EMPTY)
     }
 }
 
@@ -142,6 +147,31 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_account() {
+        let mut acc = Account { nonce: 0, balance: U256::ZERO, bytecode_hash: None };
+        // Nonce 0, balance 0, and bytecode hash set to None is considered empty.
+        assert!(acc.is_empty());
+
+        acc.bytecode_hash = Some(KECCAK_EMPTY);
+        // Nonce 0, balance 0, and bytecode hash set to KECCAK_EMPTY is considered empty.
+        assert!(acc.is_empty());
+
+        acc.balance = U256::from(2);
+        // Non-zero balance makes it non-empty.
+        assert!(!acc.is_empty());
+
+        acc.balance = U256::ZERO;
+        acc.nonce = 10;
+        // Non-zero nonce makes it non-empty.
+        assert!(!acc.is_empty());
+
+        acc.nonce = 0;
+        acc.bytecode_hash = Some(B256::from(U256::ZERO));
+        // Non-empty bytecode hash makes it non-empty.
+        assert!(!acc.is_empty());
+    }
+
+    #[test]
     fn test_bytecode() {
         let mut buf = vec![];
         let mut bytecode = Bytecode(RevmBytecode::new_raw(Bytes::default()));
@@ -149,7 +179,7 @@ mod tests {
         assert_eq!(len, 5);
 
         let mut buf = vec![];
-        bytecode.0.bytecode = Bytes::from(hex!("ffff").as_ref());
+        bytecode.0.bytecode = Bytes::from(&hex!("ffff"));
         let len = bytecode.clone().to_compact(&mut buf);
         assert_eq!(len, 7);
 

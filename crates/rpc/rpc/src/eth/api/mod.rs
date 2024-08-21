@@ -13,20 +13,21 @@ use crate::eth::{
 };
 
 use async_trait::async_trait;
+use reth_evm::ConfigureEvm;
 use reth_interfaces::RethResult;
 use reth_network_api::NetworkInfo;
 use reth_primitives::{
-    revm_primitives::{BlockEnv, CfgEnv},
-    Address, BlockId, BlockNumberOrTag, ChainInfo, SealedBlockWithSenders, B256, U256, U64,
+    revm_primitives::{BlockEnv, CfgEnvWithHandlerCfg},
+    Address, BlockId, BlockNumberOrTag, ChainInfo, SealedBlockWithSenders, SealedHeader, B256,
+    U256, U64,
 };
-
 use reth_provider::{
     BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderBox, StateProviderFactory,
 };
 use reth_rpc_types::{SyncInfo, SyncStatus};
-use reth_tasks::{TaskSpawner, TokioTaskExecutor};
+use reth_tasks::{pool::BlockingTaskPool, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::TransactionPool;
-
+use revm_primitives::{CfgEnv, SpecId};
 use std::{
     fmt::Debug,
     future::Future,
@@ -38,6 +39,7 @@ use tokio::sync::{oneshot, Mutex};
 mod block;
 mod call;
 pub(crate) mod fee_history;
+
 mod fees;
 #[cfg(feature = "optimism")]
 mod optimism;
@@ -47,16 +49,12 @@ mod sign;
 mod state;
 mod transactions;
 
-use crate::BlockingTaskPool;
+use crate::eth::traits::RawTransactionForwarder;
 pub use transactions::{EthTransactions, TransactionSource};
 
 use super::botanix_config::{
-    Botanix, BtcFeesRPCError, GatewayAddressRPCError, MerkleProofRPCError,
+    Botanix, BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError,
 };
-
-lazy_static::lazy_static! {
-    static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-}
 
 /// `Eth` API trait.
 ///
@@ -72,6 +70,15 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     /// Returns provider chain info
     fn chain_info(&self) -> RethResult<ChainInfo>;
 
+    /// Returns a list of addresses owned by provider.
+    fn accounts(&self) -> Vec<Address>;
+
+    /// Returns `true` if the network is undergoing sync.
+    fn is_syncing(&self) -> bool;
+
+    /// Returns the [SyncStatus] of the network
+    fn sync_status(&self) -> RethResult<SyncStatus>;
+
     /// Returns gateway address
     async fn get_gateway_address(
         &self,
@@ -86,16 +93,7 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
 
     /// Returns the BTC fee rate for a pegout transaction in sat/vb.
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError>;
-
-    /// Returns a list of addresses owned by provider.
-    fn accounts(&self) -> Vec<Address>;
-
-    /// Returns `true` if the network is undergoing sync.
-    fn is_syncing(&self) -> bool;
-
-    /// Returns the [SyncStatus] of the network
-    fn sync_status(&self) -> RethResult<SyncStatus>;
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError>;
 }
 
 /// `Eth` API implementation.
@@ -106,12 +104,12 @@ pub trait EthApiSpec: EthTransactions + Send + Sync {
 /// are implemented separately in submodules. The rpc handler implementation can then delegate to
 /// the main impls. This way [`EthApi`] is not limited to [`jsonrpsee`] and can be used standalone
 /// or in other network handlers (for example ipc).
-pub struct EthApi<Provider, Pool, Network> {
+pub struct EthApi<Provider, Pool, Network, EvmConfig> {
     /// All nested fields bundled together.
-    inner: Arc<EthApiInner<Provider, Pool, Network>>,
+    inner: Arc<EthApiInner<Provider, Pool, Network, EvmConfig>>,
 }
 
-impl<Provider, Pool, Network> EthApi<Provider, Pool, Network>
+impl<Provider, Pool, Network, EvmConfig> EthApi<Provider, Pool, Network, EvmConfig>
 where
     Provider: BlockReaderIdExt + ChainSpecProvider,
 {
@@ -126,6 +124,8 @@ where
         gas_cap: impl Into<GasCap>,
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
+        evm_config: EvmConfig,
+        raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
         botanix_provider: Botanix,
     ) -> Self {
         Self::with_spawner(
@@ -138,6 +138,8 @@ where
             Box::<TokioTaskExecutor>::default(),
             blocking_task_pool,
             fee_history_cache,
+            evm_config,
+            raw_transaction_forwarder,
             botanix_provider,
         )
     }
@@ -154,6 +156,8 @@ where
         task_spawner: Box<dyn TaskSpawner>,
         blocking_task_pool: BlockingTaskPool,
         fee_history_cache: FeeHistoryCache,
+        evm_config: EvmConfig,
+        raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
         botanix_provider: Botanix,
     ) -> Self {
         // get the block number of the latest block
@@ -168,7 +172,7 @@ where
             provider,
             pool,
             network,
-            signers: Default::default(),
+            signers: parking_lot::RwLock::new(Default::default()),
             eth_cache,
             gas_oracle,
             gas_cap,
@@ -177,8 +181,8 @@ where
             pending_block: Default::default(),
             blocking_task_pool,
             fee_history_cache,
-            #[cfg(feature = "optimism")]
-            http_client: reqwest::Client::new(),
+            evm_config,
+            raw_transaction_forwarder,
             botanix_provider,
         };
 
@@ -189,6 +193,8 @@ where
     ///
     /// This accepts a closure that creates a new future using a clone of this type and spawns the
     /// future onto a new task that is allowed to block.
+    ///
+    /// Note: This is expected for futures that are dominated by blocking IO operations.
     pub(crate) async fn on_blocking_task<C, F, R>(&self, c: C) -> EthResult<R>
     where
         C: FnOnce(Self) -> F,
@@ -243,7 +249,7 @@ where
 
 // === State access helpers ===
 
-impl<Provider, Pool, Network> EthApi<Provider, Pool, Network>
+impl<Provider, Pool, Network, EvmConfig> EthApi<Provider, Pool, Network, EvmConfig>
 where
     Provider:
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
@@ -280,48 +286,60 @@ where
     }
 }
 
-impl<Provider, Pool, Network> EthApi<Provider, Pool, Network>
+impl<Provider, Pool, Network, EvmConfig> EthApi<Provider, Pool, Network, EvmConfig>
 where
     Provider:
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Pool: TransactionPool + Clone + 'static,
     Network: NetworkInfo + Send + Sync + 'static,
+    EvmConfig: ConfigureEvm + Clone + 'static,
 {
-    /// Configures the [CfgEnv] and [BlockEnv] for the pending block
+    /// Configures the [CfgEnvWithHandlerCfg] and [BlockEnv] for the pending block
     ///
     /// If no pending block is available, this will derive it from the `latest` block
     pub(crate) fn pending_block_env_and_cfg(&self) -> EthResult<PendingBlockEnv> {
-        let origin = if let Some(pending) = self.provider().pending_block_with_senders()? {
+        let origin: PendingBlockEnvOrigin = if let Some(pending) =
+            self.provider().pending_block_with_senders()?
+        {
             PendingBlockEnvOrigin::ActualPending(pending)
         } else {
             // no pending block from the CL yet, so we use the latest block and modify the env
             // values that we can
-            let mut latest =
+            let latest =
                 self.provider().latest_header()?.ok_or_else(|| EthApiError::UnknownBlockNumber)?;
 
+            let (mut latest_header, block_hash) = latest.split();
             // child block
-            latest.number += 1;
-            // assumed child block is in the next slot
-            latest.timestamp += 12;
+            latest_header.number += 1;
+            // assumed child block is in the next slot: 12s
+            latest_header.timestamp += 12;
             // base fee of the child block
             let chain_spec = self.provider().chain_spec();
-            latest.base_fee_per_gas =
-                latest.next_block_base_fee(chain_spec.base_fee_params(latest.timestamp));
+
+            latest_header.base_fee_per_gas = latest_header.next_block_base_fee(
+                chain_spec.base_fee_params_at_timestamp(latest_header.timestamp),
+            );
+
+            // update excess blob gas consumed above target
+            latest_header.excess_blob_gas = latest_header.next_block_excess_blob_gas();
+
+            // we're reusing the same block hash because we need this to lookup the block's state
+            let latest = SealedHeader::new(latest_header, block_hash);
 
             PendingBlockEnvOrigin::DerivedFromLatest(latest)
         };
 
-        let mut cfg = CfgEnv::default();
-
-        #[cfg(feature = "optimism")]
-        {
-            cfg.optimism = self.provider().chain_spec().is_optimism();
-        }
+        let mut cfg = CfgEnvWithHandlerCfg::new_with_spec_id(CfgEnv::default(), SpecId::LATEST);
 
         let mut block_env = BlockEnv::default();
         // Note: for the PENDING block we assume it is past the known merge block and thus this will
         // not fail when looking up the total difficulty value for the blockenv.
-        self.provider().fill_env_with_header(&mut cfg, &mut block_env, origin.header())?;
+        self.provider().fill_env_with_header(
+            &mut cfg,
+            &mut block_env,
+            origin.header(),
+            self.inner.evm_config.clone(),
+        )?;
 
         Ok(PendingBlockEnv { cfg, block_env, origin })
     }
@@ -330,7 +348,7 @@ where
     pub(crate) async fn local_pending_block(&self) -> EthResult<Option<SealedBlockWithSenders>> {
         let pending = self.pending_block_env_and_cfg()?;
         if pending.origin.is_actual_pending() {
-            return Ok(pending.origin.into_actual_pending())
+            return Ok(pending.origin.into_actual_pending());
         }
 
         // no pending block from the CL yet, so we need to build it ourselves via txpool
@@ -342,16 +360,11 @@ where
             if let Some(pending_block) = lock.as_ref() {
                 // this is guaranteed to be the `latest` header
                 if pending.block_env.number.to::<u64>() == pending_block.block.number &&
-                    pending.origin.header().hash == pending_block.block.parent_hash &&
+                    pending.origin.header().hash() == pending_block.block.parent_hash &&
                     now <= pending_block.expires_at
                 {
-                    return Ok(Some(pending_block.block.clone()))
+                    return Ok(Some(pending_block.block.clone()));
                 }
-            }
-
-            // if we're currently syncing, we're unable to build a pending block
-            if this.network().is_syncing() {
-                return Ok(None)
             }
 
             // we rebuild the block
@@ -359,14 +372,14 @@ where
                 Ok(block) => block,
                 Err(err) => {
                     tracing::debug!(target: "rpc", "Failed to build pending block: {:?}", err);
-                    return Ok(None)
+                    return Ok(None);
                 }
             };
 
             let now = Instant::now();
             *lock = Some(PendingBlock {
                 block: pending_block.clone(),
-                expires_at: now + Duration::from_secs(3),
+                expires_at: now + Duration::from_secs(1),
             });
 
             Ok(Some(pending_block))
@@ -375,25 +388,28 @@ where
     }
 }
 
-impl<Provider, Pool, Events> std::fmt::Debug for EthApi<Provider, Pool, Events> {
+impl<Provider, Pool, Events, EvmConfig> std::fmt::Debug
+    for EthApi<Provider, Pool, Events, EvmConfig>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EthApi").finish_non_exhaustive()
     }
 }
 
-impl<Provider, Pool, Events> Clone for EthApi<Provider, Pool, Events> {
+impl<Provider, Pool, Events, EvmConfig> Clone for EthApi<Provider, Pool, Events, EvmConfig> {
     fn clone(&self) -> Self {
         Self { inner: Arc::clone(&self.inner) }
     }
 }
 
 #[async_trait]
-impl<Provider, Pool, Network> EthApiSpec for EthApi<Provider, Pool, Network>
+impl<Provider, Pool, Network, EvmConfig> EthApiSpec for EthApi<Provider, Pool, Network, EvmConfig>
 where
     Pool: TransactionPool + Clone + 'static,
     Provider:
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Network: NetworkInfo + 'static,
+    EvmConfig: ConfigureEvm + 'static,
 {
     /// Returns the current ethereum protocol version.
     ///
@@ -425,7 +441,7 @@ where
         Ok(pegin_info)
     }
 
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeesRPCError> {
+    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
         let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
         Ok(fee_rate)
     }
@@ -436,7 +452,7 @@ where
     }
 
     fn accounts(&self) -> Vec<Address> {
-        self.inner.signers.iter().flat_map(|s| s.accounts()).collect()
+        self.inner.signers.read().iter().flat_map(|s| s.accounts()).collect()
     }
 
     fn is_syncing(&self) -> bool {
@@ -493,7 +509,7 @@ impl From<GasCap> for u64 {
 }
 
 /// Container type `EthApi`
-struct EthApiInner<Provider, Pool, Network> {
+struct EthApiInner<Provider, Pool, Network, EvmConfig> {
     /// The transaction pool.
     pool: Pool,
     /// The provider that can interact with the chain.
@@ -501,7 +517,7 @@ struct EthApiInner<Provider, Pool, Network> {
     /// An interface to interact with the network
     network: Network,
     /// All configured Signers
-    signers: Vec<Box<dyn EthSigner>>,
+    signers: parking_lot::RwLock<Vec<Box<dyn EthSigner>>>,
     /// The async cache frontend for eth related data
     eth_cache: EthStateCache,
     /// The async gas oracle frontend for gas price suggestions
@@ -518,9 +534,10 @@ struct EthApiInner<Provider, Pool, Network> {
     blocking_task_pool: BlockingTaskPool,
     /// Cache for block fees history
     fee_history_cache: FeeHistoryCache,
-    /// An http client for communicating with sequencers.
-    #[cfg(feature = "optimism")]
-    http_client: reqwest::Client,
-    /// Botanix config
+    /// The type that defines how to configure the EVM
+    evm_config: EvmConfig,
+    /// Allows forwarding received raw transactions
+    raw_transaction_forwarder: Option<Arc<dyn RawTransactionForwarder>>,
+    /// Botanix specific configurations
     botanix_provider: Botanix,
 }

@@ -1,26 +1,32 @@
 //! Error handling for (`EthStream`)[crate::EthStream]
+
 use crate::{
-    errors::P2PStreamError, version::ParseVersionError, DisconnectReason, EthMessageID, EthVersion,
+    errors::{MuxDemuxError, P2PStreamError},
+    message::MessageError,
+    version::ParseVersionError,
+    DisconnectReason,
 };
 use reth_primitives::{Chain, GotExpected, GotExpectedBoxed, ValidationError, B256};
 use std::io;
 
 /// Errors when sending/receiving messages
 #[derive(thiserror::Error, Debug)]
-
 pub enum EthStreamError {
     #[error(transparent)]
     /// Error of the underlying P2P connection.
     P2PStreamError(#[from] P2PStreamError),
+    #[error(transparent)]
+    /// Error of the underlying de-/muxed P2P connection.
+    MuxDemuxError(#[from] MuxDemuxError),
     #[error(transparent)]
     /// Failed to parse peer's version.
     ParseVersionError(#[from] ParseVersionError),
     #[error(transparent)]
     /// Failed Ethereum handshake.
     EthHandshakeError(#[from] EthHandshakeError),
-    #[error("message id {1:?} is invalid for version {0:?}")]
-    /// Flags an unrecognized message ID for a given protocol version.
-    EthInvalidMessageError(EthVersion, EthMessageID),
+    /// Thrown when decoding a message message failed.
+    #[error(transparent)]
+    InvalidMessage(#[from] MessageError),
     #[error("message size ({0}) exceeds max length (10MB)")]
     /// Received a message whose size exceeds the standard limit.
     MessageTooBig(usize),
@@ -34,6 +40,9 @@ pub enum EthStreamError {
         /// The number of transaction sizes.
         sizes_len: usize,
     },
+    /// Error when data is not received from peer for a prolonged period.
+    #[error("never received data from remote peer")]
+    StreamTimeout,
 }
 
 // === impl EthStreamError ===
@@ -42,6 +51,8 @@ impl EthStreamError {
     /// Returns the [`DisconnectReason`] if the error is a disconnect message
     pub fn as_disconnected(&self) -> Option<DisconnectReason> {
         if let EthStreamError::P2PStreamError(err) = self {
+            err.as_disconnected()
+        } else if let EthStreamError::MuxDemuxError(MuxDemuxError::P2PStreamError(err)) = self {
             err.as_disconnected()
         } else {
             None
@@ -63,15 +74,8 @@ impl From<io::Error> for EthStreamError {
     }
 }
 
-impl From<alloy_rlp::Error> for EthStreamError {
-    fn from(err: alloy_rlp::Error) -> Self {
-        P2PStreamError::from(err).into()
-    }
-}
-
 /// Error  that can occur during the `eth` sub-protocol handshake.
 #[derive(thiserror::Error, Debug)]
-
 pub enum EthHandshakeError {
     /// Status message received or sent outside of the handshake process.
     #[error("status message can only be recv/sent in handshake")]

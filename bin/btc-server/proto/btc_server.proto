@@ -4,29 +4,115 @@ syntax = "proto3";
 package btc_server;
 
 service BtcServer {
-    rpc NotifyPegin(NotifyPeginRequest) returns (Empty) {}
 
-    rpc MakeTx(MakeTxRequest) returns (MakeTxResponse) {}
+    rpc HealthCheck(Empty) returns (Empty) {}
+
+    rpc TxIndexNewCheckpoint(SyncTxIndexRequest) returns (Empty) {}
+
+    rpc NotifyPegins(NotifyPeginsRequest) returns (Empty) {}
+
+    rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
+
+    rpc GetRound1DkgPackage(Empty) returns(DkgPayload){}
+
+    rpc GetRound1DkgPackages(Empty) returns(DkgPayload){}
+
+    rpc NewRound1DkgPackage(DkgPayload) returns (Empty) {}
+
+    rpc GetRound2DkgPackage(Empty) returns (DkgPayload) {}
+
+    rpc NewRound2DkgPackage(DkgPayload) returns (Empty) {}
+
+    // Signing Endpoints
+
+    rpc GetRound1SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
+
+    rpc GetRound2SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
+
+    // Ran by the signer.
+    rpc SignerFinalize(FinalizeSignerRequest) returns (FinalizeSigningResponse) {}
+
+    rpc AbortSigning(Empty) returns (Empty) {}
+
+    // only meant to be used by the cordinator
+    rpc NewRound1SigningPackage(SigningPackage) returns (Empty) {}
+
+    rpc NewRound2SigningPackage(SigningPackage) returns (Empty) {}
+
+    // Meant to be used at anytime to perform utxo selection and create a tx
+    rpc GetPsbt(MakeTxRequest) returns (SigningPackage) {}
+
+    // Meant to be used to transition the signing round to round 2 after round 1
+    // signing commitments have been collected
+    rpc GetToSignPackage(ToSignRequest) returns (SigningPackage) {}
+
+    // Ran by the coordinator.
+    rpc FinalizeSigning(FinalizeSigningRequest) returns (FinalizeSigningResponse) {}
+
+    rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
+
+    rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
+
+    rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
+
+    rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
+
+    rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
 }
 
-message NotifyPeginRequest {
-    // The txid of the utxo in hex.
-    string utxo_txid = 1;
-    // The output index of the utxo.
-    uint32 utxo_vout = 2;
-    // The user's ethereum address.
+message SyncTxIndexRequest {
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 1;
+}
+
+message FinalizeSignerRequest {
+    repeated bytes witness = 1;
+    repeated Output outputs = 2;
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 3;
+    // The merkle root of our wallet's UTXO set.
+    bytes utxo_merkle_root = 4;
+}
+
+message ResetAllUtxosRequest {
+    repeated Utxo utxos = 1;
+}
+
+message ScriptBuf {
+    bytes script = 1; // Represents the Vec<u8> in Rust
+}
+
+message TxOut {
+    // The value of the output, in satoshis.
+    uint64 value = 1;
+    // The script which must be satisfied for the output to be spent.
+    ScriptBuf script_pubkey = 2;
+}
+
+message OutPoint {
+    bytes txid = 1;
+    uint32 vout = 2;
+}
+
+message Utxo {
+    OutPoint outpoint = 1; 
+    TxOut output = 2;
     string eth_address = 3;
-    // The txout of the utxo.
-    bytes output = 4;
 }
 
-message MakeTxRequest {
-    string address = 1;
-    uint64 value = 2;
-    // Fee rate in satoshi per vbyte.
-    uint32 fee_rate = 3;
+message GetAllUtxosResponse {
+    repeated Utxo utxos = 1;
+}
+
+message NotifyPeginsRequest {
+    repeated Utxo utxos = 1;
+}
+
+message GetGatewayAddressRequest {
+    // Eth address to tweak by
+    string eth_address = 1;
 }
 
 message MakeTxResponse {
@@ -36,7 +122,85 @@ message MakeTxResponse {
 
 message GetPublicKeyResponse {
     // hex encoded
-    string publickey = 1; 
+    string publickey = 1;
+}
+
+message GetGatewayAddressResponse {
+    // hex encoded
+    string publickey = 1;
+    string tweaked_public_key = 2;
+    string gateway_address = 3;
 }
 
 message Empty {}
+
+// Frost things
+message DkgPayload {
+    bytes identifier = 1;
+    bytes payload = 2;
+}
+
+message SigningPackageRequest {
+    bytes psbt = 1;
+    bytes signing_session_id = 2;
+}
+
+message SigningPackage {
+    bytes psbt = 1;
+    bytes identifier = 2;
+    bytes signing_session_id = 3;
+}
+
+message Output {
+    string address = 1;
+    uint64 value = 2;
+}
+
+message MakeTxRequest {
+    repeated Output outputs = 1;
+    bytes signing_session_id = 2;
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 3;
+    // The merkle root of our wallet's UTXO.
+    bytes utxo_merkle_root = 4;
+}
+
+message ToSignRequest {
+    bytes signing_session_id = 3;
+}
+
+message FinalizeSigningRequest {
+    bytes signing_session_id = 1;
+}
+
+message FinalizeSigningResponse {
+    // Finalized tx which includes witness data
+    bytes psbt = 1;
+}
+
+message GetUTXOMerkleRootResponse {
+    // The Merkle root of all spendable UTXOs.
+    bytes merkle_root = 1;
+}
+
+message GetSigningStatusRequest {
+    bytes signing_session_id = 1;
+}
+
+message GetSigningStatusResponse {
+    SigningStatus status = 1;
+}
+
+message GetSessionIdsRequest {
+    uint32 max_results = 1;
+}
+
+message GetSessionIdsResponse {
+    repeated bytes data = 1;
+}
+
+enum SigningStatus {
+    RUNNING = 0;
+    FINALIZED = 1;
+    FAILED = 2;
+}

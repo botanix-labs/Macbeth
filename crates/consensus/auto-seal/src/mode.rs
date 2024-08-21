@@ -12,7 +12,6 @@ use std::{
 };
 use tokio::{sync::mpsc::Receiver, time::Interval};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
-use tracing::debug;
 
 /// Mode of operations for the `Miner`
 #[derive(Debug)]
@@ -60,6 +59,17 @@ impl MiningMode {
             MiningMode::Auto(miner) => miner.poll(pool, cx),
             MiningMode::FixedBlockTime(miner) => miner.poll(pool, cx),
         }
+    }
+}
+
+impl fmt::Display for MiningMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self {
+            MiningMode::None => "None",
+            MiningMode::Auto(_) => "Auto",
+            MiningMode::FixedBlockTime(_) => "FixedBlockTime",
+        };
+        write!(f, "{kind}")
     }
 }
 
@@ -135,7 +145,6 @@ impl ReadyTransactionMiner {
         }
 
         let transactions = pool.best_transactions().take(self.max_transactions).collect::<Vec<_>>();
-        debug!("Miner processing txs {:?}", transactions);
 
         // there are pending transactions if we didn't drain the pool
         self.has_pending_txs = Some(transactions.len() >= self.max_transactions);

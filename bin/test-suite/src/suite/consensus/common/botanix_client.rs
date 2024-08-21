@@ -1,0 +1,249 @@
+use crate::{it_info_print, minting::Minting as MintContract};
+use displaydoc::Display as DisplayDoc;
+use ethers::{
+    contract::ContractError,
+    core::{
+        k256::ecdsa::SigningKey,
+        types::{Address as EtherAddress, BlockNumber},
+    },
+    middleware::{signer::SignerMiddlewareError, SignerMiddleware},
+    providers::{Http, Middleware, Provider, ProviderError},
+    signers::{LocalWallet, Signer, Wallet},
+    types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
+    utils,
+};
+use reth_primitives::BOTANIX_TESTNET;
+use std::{str::FromStr, sync::Arc};
+use thiserror::Error;
+
+/// Contract Error
+#[derive(Debug, DisplayDoc, Error)]
+pub enum Error {
+    /// Contract error: `{0}`
+    Contract(ContractError<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>),
+    /// Provider error: `{0}`
+    Provider(ProviderError),
+    /// Signer middleware error: `{0}`
+    SignerMiddleware(SignerMiddlewareError<Provider<Http>, Wallet<SigningKey>>),
+}
+
+#[derive(Clone, Debug)]
+pub struct BotanixEthClient {
+    mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
+}
+
+impl BotanixEthClient {
+    pub async fn new(
+        rpc_port: u16,
+        sender_secret_key: &str,
+        mint_contract_address: EtherAddress,
+    ) -> Self {
+        // Connect to the network
+        let provider = Provider::<Http>::try_from(&format!("http://127.0.0.1:{rpc_port}"))
+            .expect("Provider created");
+        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{rpc_port}"));
+
+        // get chain id
+        let chain_id = provider.get_chainid().await.expect("chain id to be returned");
+        assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
+
+        // create a local wallet
+        let wallet: LocalWallet = sender_secret_key
+            .parse::<LocalWallet>()
+            .expect("sender secret key to be valid")
+            .with_chain_id(chain_id.as_u64());
+
+        // connect the wallet to the provider
+        let client = SignerMiddleware::new(provider.clone(), wallet);
+        let client2 = client.clone();
+
+        let mint_contract = MintContract::new(mint_contract_address, Arc::new(client));
+
+        Self { mint_contract, client: client2 }
+    }
+
+    pub fn provider(&self) -> Provider<Http> {
+        self.client.provider().clone()
+    }
+
+    pub async fn nonce(&self) -> U256 {
+        let address = self.client.address();
+        let nonce = self
+            .client
+            .provider()
+            .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
+            .await
+            .expect("nonce to be returned");
+
+        nonce
+    }
+
+    pub fn get_sender_address(&self) -> EtherAddress {
+        self.client.address()
+    }
+
+    pub async fn non_confirmed_mint(
+        &self,
+        destination: EtherAddress,
+        amount: ethers::core::types::U256,
+        bitcoin_block_height: u32,
+        metadata: ethers::core::types::Bytes,
+        refund_address: EtherAddress,
+        nonce: ethers::core::types::U256,
+    ) -> Result<[u8; 32], Error> {
+        let gas_price = self.client.get_gas_price().await.unwrap();
+        let binding = self
+            .mint_contract
+            .method::<_, H256>(
+                "mint",
+                (destination, amount, bitcoin_block_height, metadata, refund_address),
+            )
+            .unwrap()
+            .gas_price(gas_price)
+            .gas(U256::from(1_000_000))
+            .nonce(nonce);
+        let prepared_tx = binding.send().await.map_err(Error::Contract)?;
+
+        Ok(prepared_tx.0)
+    }
+
+    pub async fn mint(
+        &self,
+        destination: EtherAddress,
+        amount: ethers::core::types::U256,
+        bitcoin_block_height: u32,
+        metadata: ethers::core::types::Bytes,
+        refund_address: EtherAddress,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+
+        let tx_receipt = self
+            .mint_contract
+            .mint(destination, amount, bitcoin_block_height, metadata, refund_address)
+            .gas_price(gas_price)
+            .gas(U256::from(1_000_000))
+            .send()
+            .await
+            .map_err(Error::Contract)?
+            .await
+            .map_err(Error::Provider)?;
+        Ok(tx_receipt)
+    }
+
+    pub async fn burn(
+        &self,
+        destination: ethers::core::types::Bytes,
+        data: ethers::core::types::Bytes,
+        value: U256,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+
+        let tx_receipt = self
+            .mint_contract
+            .burn(destination, data)
+            .gas_price(gas_price)
+            .value(value)
+            .send()
+            .await
+            .map_err(Error::Contract)?
+            .await
+            .map_err(Error::Provider)?;
+        Ok(tx_receipt)
+    }
+
+    /// Get the balance of some address
+    /// we leave it as string to allow for different types across ethers and reth primitives
+    pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
+        let sender_account = NameOrAddress::from_str(address).expect("address to be valid");
+        let sender_cur_balance =
+            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+        Ok(sender_cur_balance)
+    }
+
+    pub async fn get_balance(&self, address: ethers::core::types::Address) -> Result<U256, Error> {
+        let sender_account = NameOrAddress::Address(address);
+        let balance =
+            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(balance)
+    }
+
+    pub async fn send_eoa(
+        &self,
+        receiver_address: EtherAddress,
+        amount: u64,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        // Eip1559TransactionRequest
+        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+        let amount = utils::parse_ether(amount.to_string()).expect("amount to be valid");
+
+        // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
+        let tx = TransactionRequest::new()
+            .chain_id(BOTANIX_TESTNET.chain().id())
+            .to(receiver_address)
+            .value(amount)
+            .gas_price(gas_price)
+            .gas(U256::from(50_000));
+
+        // send the tx with the initialized signer client
+        let tx_receipt = self
+            .client
+            .send_transaction(tx, None)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .await
+            .map_err(Error::Provider)?;
+
+        Ok(tx_receipt)
+    }
+
+    pub async fn get_latest_block_hash(&self) -> Result<ethers::core::types::H256, Error> {
+        let block_hash = self
+            .client
+            .get_block(BlockNumber::Latest)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists")
+            .hash
+            .expect("block hash exists");
+
+        Ok(block_hash)
+    }
+
+    pub async fn get_latest_block_by_hash(
+        &self,
+        hash: H256,
+    ) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let block = self
+            .client
+            .get_block(hash)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(block)
+    }
+
+    pub async fn get_nonce(&self, address: EtherAddress) -> Result<U256, Error> {
+        let nonce = self
+            .client
+            .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
+            .await
+            .map_err(Error::SignerMiddleware)
+            .expect("nonce exists");
+
+        Ok(nonce)
+    }
+
+    pub async fn get_latest_block(&self) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let latest_block = self
+            .client
+            .get_block(BlockNumber::Latest)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(latest_block)
+    }
+}

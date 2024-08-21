@@ -15,9 +15,8 @@
     html_favicon_url = "https://avatars0.githubusercontent.com/u/97369466?s=256",
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
-#![warn(missing_debug_implementations, missing_docs, unreachable_pub, rustdoc::all)]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 pub mod blockchain_tree;
 pub use blockchain_tree::BlockchainTree;
@@ -53,3 +52,5 @@ pub use block_buffer::BlockBuffer;
 pub mod noop;
 
 mod state;
+
+use aquamarine as _;

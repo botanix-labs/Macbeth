@@ -1,0 +1,505 @@
+use reth_consensus::ConsensusError;
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_primitives::{
+    header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
+    public_key_to_address, Address, ChainSpec, Header,
+};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+
+use secp256k1::{All, Secp256k1};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tracing::error;
+
+/// Returns
+/// - The index of the authority that is currently in turn
+/// - The list of all authorities
+/// - The public key of the authority
+pub fn get_authority_signer_index<Client>(
+    client: Client,
+    chain_spec: Arc<ChainSpec>,
+    secp: Secp256k1<All>,
+    sk: secp256k1::SecretKey,
+) -> Result<(usize, Vec<secp256k1::PublicKey>, secp256k1::PublicKey), GetAuthoritiesError>
+where
+    Client: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+{
+    let mut latest_header =
+        client.latest_header().ok().flatten().unwrap_or_else(|| chain_spec.sealed_genesis_header());
+    let mut headers = vec![latest_header.clone()];
+
+    while !latest_header.header().is_poa_epoch() {
+        let parent_hash = latest_header.parent_hash;
+
+        if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
+            let old_latest_header = std::mem::replace(&mut latest_header, new_header.seal_slow());
+            headers.push(old_latest_header);
+        } else {
+            return Err(GetAuthoritiesError::FailedToRetrieveEpochHeader);
+        }
+    }
+
+    // Latest epoch header is the last header in the vector
+    // This header should include the authority list which is validated by consensus
+    let authorities =
+        latest_header.get_authority_list()?.expect("authority signer list in epoch block");
+
+    let authority_pk = sk.public_key(&secp);
+    let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
+
+    Ok((
+        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
+        authorities,
+        authority_pk,
+    ))
+}
+
+/// Returns the unix timestamp in seconds
+pub fn unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+// TODO move this into header ext
+// not in authority utils because of circular dependency
+/// Get the authority address from the header
+pub fn get_block_producer_address(header: &Header) -> Address {
+    if let Ok(authorities) = header.recovered_signed_authorities() {
+        // TODO remove this unwrap
+        let block_builder_public_key =
+            authorities.first().expect("block producer authority to be present");
+        return public_key_to_address(*block_builder_public_key);
+    }
+
+    // TODO this method should return a Result
+    Address::ZERO
+}
+// not in authority utils because of circular dependency
+/// Calculate the block reward split between botanix and the beneficiary
+pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
+    // 20% of the block reward
+    let botanix_reward = total_block_fees / 5;
+    let beneficiary_reward = total_block_fees - botanix_reward;
+    (botanix_reward, beneficiary_reward)
+}
+
+/// Validate poa block beneficiary
+pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusError> {
+    if header.beneficiary != Address::ZERO {
+        return Err(ConsensusError::BlockBeneficiaryIsNotBurnAddress);
+    }
+
+    Ok(())
+}
+
+/// Check authorities in EDH match and are in the same order and the genesis authorities
+pub fn validate_extra_data_header_authorities(
+    header: &Header,
+    genesis_authorities: &[secp256k1::PublicKey],
+) -> Result<(), ConsensusError> {
+    if header.is_poa_epoch() {
+        // Attempt to deserialize the extra data header
+        let edh = header.deserialize_extra_data_header().map_err(|e| {
+            error!("Failed to deserialize extra data header: {:?}", e);
+            ConsensusError::ExtraDataInvalid
+        })?;
+
+        // Validate the list of authorities matches the authorities in the genesis block
+        // This check is only for a static federation
+        if let Some(authority_signers) = edh.authority_signers.as_ref() {
+            if genesis_authorities != authority_signers {
+                error!("Genesis authorities: {:?}", genesis_authorities);
+                error!("EDH authorities: {:?}", edh.authority_signers);
+                return Err(ConsensusError::InvalidAuthorityList);
+            }
+        } else {
+            // error!("No authority signers in extra data header");
+            return Err(ConsensusError::MissingAuthorityList);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate against parent header errors
+#[derive(Debug)]
+pub enum ValidateAgainstParentError {
+    /// Signer limit exceeded
+    /// Could occur when signer is signings many blocks in the same turn
+    SignerLimitExceeded,
+    /// Failed to deserialize the extra data
+    FailedToDerserializeExtraData(RecoverAuthorityError),
+}
+
+impl From<ValidateAgainstParentError> for ConsensusError {
+    fn from(e: ValidateAgainstParentError) -> Self {
+        match e {
+            ValidateAgainstParentError::SignerLimitExceeded => ConsensusError::SignerLimitExceeded,
+            ValidateAgainstParentError::FailedToDerserializeExtraData(_) => {
+                ConsensusError::ExtraDataInvalid
+            }
+        }
+    }
+}
+
+/// Validate current PoA header against parent header
+pub fn validate_against_parent(
+    parent: Header,
+    current: Header,
+    block_time: u64,
+) -> Result<(), ValidateAgainstParentError> {
+    // Gensis block does not have a federation signature, skip
+    if parent.number == 0 {
+        return Ok(());
+    }
+    let parent_signer = parent
+        .recovered_signed_authorities()
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
+    let current_signer = current
+        .recovered_signed_authorities()
+        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
+    // Check if the parent block was mined in a different turn
+
+    // Convert timestamps to seconds
+    let parent_ts = parent.timestamp as f64;
+    let current_ts = current.timestamp as f64;
+
+    validate_current_signer_against_last(
+        (parent_signer, parent_ts),
+        (current_signer, current_ts),
+        block_time,
+    )?;
+
+    Ok(())
+}
+
+/// Validate current signer and its last block timestamp against the last signer and its last block
+/// timestamp Used to prevent a signer from signing multiple blocks in the same turn
+/// Assuming sane timestamps
+pub fn validate_current_signer_against_last(
+    last: (secp256k1::PublicKey, f64),
+    current: (secp256k1::PublicKey, f64),
+    block_time: u64,
+) -> Result<(), ValidateAgainstParentError> {
+    // Last block should be greater that `block_time` in the worst case
+    // Even in the case of > 2 federation members the worst case time between blocks for the same
+    // signer is 2 * block_time
+    if last.0 == current.0 && (current.1 - last.1) < (block_time * 2) as f64 {
+        return Err(ValidateAgainstParentError::SignerLimitExceeded);
+    }
+
+    Ok(())
+}
+
+/// Returns true if the authority is in turn
+pub fn is_inturn(authorities_len: u64, signer_index: u64, block_time: u64) -> bool {
+    let timestamp = unix_timestamp(); // Keep the timestamp in seconds
+    let cycle_length = authorities_len * block_time; // Full cycle length in seconds
+
+    // Calculate the position in the current cycle
+    let position_in_cycle = timestamp % cycle_length;
+
+    // Determine the current signer index based on the position in the cycle
+    // Each signer's turn lasts for `block_time` seconds
+    (position_in_cycle / block_time) % authorities_len == signer_index
+}
+
+/// Typedef for (start of current turn, end of current turn, time taken, time remaining)
+pub type CoordinatorInterval = (u64, u64, u64, u64);
+
+/// Returns the inturn interval for a signer index based on the seconds passed
+pub fn get_in_turn_interval(
+    authorities_len: u64,
+    signer_index: u64,
+    reference_timestamp: u64,
+    block_time: u64,
+) -> CoordinatorInterval {
+    assert!(block_time > 0, "block_time must be greater than 0");
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * block_time;
+
+    // Calculate how many complete cycles have passed since the epoch
+    let cycles_since_epoch = reference_timestamp / cycle_length;
+
+    // Calculate the start time of the current cycle
+    let current_cycle_start = cycles_since_epoch * cycle_length;
+
+    // Calculate the start time of the current turn for the given signer_index
+    let start_of_current_turn = current_cycle_start + (signer_index * block_time);
+
+    // End time of the current turn, ensuring full `block_time` seconds
+    let end_of_current_turn = start_of_current_turn + block_time - 1;
+
+    (
+        start_of_current_turn,
+        end_of_current_turn,
+        reference_timestamp - start_of_current_turn,
+        end_of_current_turn - reference_timestamp,
+    )
+}
+
+/// Returns the index of the authority which is currently in turn based on the seconds passed
+pub fn current_inturn_index(
+    authorities_len: u64,
+    reference_timestamp: u64,
+    block_time: u64,
+) -> u64 {
+    // Calculate the length of one complete cycle
+    let cycle_length = authorities_len * block_time;
+
+    // Calculate the position in the current cycle
+    let position_in_cycle = reference_timestamp % cycle_length;
+
+    // Determine the current signer index based on the position in the cycle
+    (position_in_cycle / block_time) % authorities_len
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
+
+    use super::*;
+
+    #[allow(dead_code)]
+    const EDH_DEFAULT_SIGHASH: &str =
+        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
+
+    #[allow(dead_code)]
+    const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+    #[allow(dead_code)]
+    const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+
+    #[allow(dead_code)]
+    const BLOCK_TIME_SECONDS: u64 = 5;
+
+    #[allow(dead_code)]
+    fn generate_secret_key(hex_string: &str) -> secp256k1::SecretKey {
+        secp256k1::SecretKey::from_str(hex_string).expect("Invalid hex string for SecretKey")
+    }
+    #[allow(dead_code)]
+    fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = generate_secret_key(SK1);
+        let sk2 = generate_secret_key(SK2);
+
+        edh.authority_signers = Some(vec![
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
+            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
+        ]);
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+
+        header.number = 1;
+        if let Some(sk_str) = signer_sk {
+            let sk = generate_secret_key(sk_str);
+            header.sign_block(&sk).unwrap();
+        } else {
+            header.sign_block(&sk1).unwrap();
+        }
+    }
+
+    #[test]
+    fn should_fail_on_missing_authorities() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let authority_signers = genesis_authorities.clone();
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        header.extra_data = Bytes::from(edh.serialize());
+        // NOTE: authority signers were not set in the header
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_on_invalid_authority_list_order() {
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk2 = secp256k1::SecretKey::from_str(SK2).unwrap();
+
+        let genesis_authorities =
+            vec![sk1.public_key(secp256k1::SECP256K1), sk2.public_key(secp256k1::SECP256K1)];
+        // authorities signers are in the wrong order
+        let mut authority_signers =
+            vec![sk2.public_key(secp256k1::SECP256K1), sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        // must be an epoch block
+        header.number = 3;
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_err());
+
+        // update authority signers to match genesis authorities
+        authority_signers = genesis_authorities.clone();
+        edh.authority_signers = Some(authority_signers.clone());
+        edh.set_optional_fields_bitmask();
+        header.extra_data = Bytes::from(edh.serialize());
+        let result = validate_extra_data_header_authorities(&header, &genesis_authorities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn unix_timestamp() {
+        let timestamp = super::unix_timestamp();
+        assert!(timestamp > 0);
+    }
+
+    #[test]
+    fn should_validate_poa_block_beneficiary() {
+        // default beneficiary is the burn address
+        let header = Header::default();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_validate_poa_block_beneficiary() {
+        let mut header = Header::default();
+        header.beneficiary =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        let result = validate_poa_block_beneficiary(&header);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_against_parent_skip_gensis() {
+        let mut parent = Header::default();
+        parent.number = 0;
+        let current = Header::default();
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_fail_with_same_signer() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+
+        parent.number = 1;
+        current.number = 2;
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, None);
+
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_pass_after_sufficient_time() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+
+        parent.number = 1;
+        parent.timestamp = 1704834442_u64;
+        current.number = 2;
+        current.timestamp = 1704834442_u64 + (BLOCK_TIME_SECONDS * 2);
+        println!("parent ts = {:?}, current ts = {:?}", parent.timestamp, current.timestamp);
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, None);
+
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
+        println!("{:?}", result);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn should_pass_with_different_signer() {
+        let mut parent = Header::default();
+        let mut current = Header::default();
+        parent.number = 1;
+        current.number = 2;
+
+        sign_block_helper(&mut parent, None);
+        sign_block_helper(&mut current, Some(SK2));
+
+        let result = validate_against_parent(parent, current, BLOCK_TIME_SECONDS);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_inturn_true() {
+        let authorities_len = 1;
+        let signer_index = 0;
+        assert!(is_inturn(authorities_len, signer_index, BLOCK_TIME_SECONDS));
+    }
+
+    #[test]
+    fn is_inturn_false() {
+        let authorities_len = 1;
+        let signer_index = 1;
+        assert!(!is_inturn(authorities_len, signer_index, BLOCK_TIME_SECONDS));
+    }
+
+    #[test]
+    fn should_split_rewards() {
+        let base_block_reward = 100;
+        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
+        assert_eq!(botanix_reward, 20);
+        assert_eq!(beneficiary_reward, 80);
+    }
+
+    #[test]
+    fn should_get_block_producer_address_from_header() {
+        let mut header = Header::default();
+        sign_block_helper(&mut header, None);
+        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
+        let block_producer_address = get_block_producer_address(&header);
+        assert_eq!(
+            block_producer_address,
+            public_key_to_address(edh.authority_signers.unwrap()[0])
+        );
+    }
+
+    #[test]
+    fn get_inturn_interval_secs_based() {
+        let current_ts = super::unix_timestamp();
+        let authorities_len = 10;
+        let current_in_turn_signer =
+            current_inturn_index(authorities_len, current_ts, BLOCK_TIME_SECONDS);
+        let (start, end, time_passed, time_remaining) = get_in_turn_interval(
+            authorities_len,
+            current_in_turn_signer,
+            current_ts,
+            BLOCK_TIME_SECONDS,
+        );
+
+        println!(
+            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
+            current_in_turn_signer,
+            start,
+            end,
+            current_ts,
+            time_passed,
+            time_remaining,
+        );
+        assert!(current_ts >= start);
+        assert!(current_ts <= end);
+    }
+}

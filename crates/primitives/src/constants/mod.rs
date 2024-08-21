@@ -1,11 +1,14 @@
 //! Ethereum protocol-related constants
 
+#[cfg(feature = "optimism")]
+use crate::BaseFeeParams;
 use crate::{
     revm_primitives::{address, b256},
     Address, B256, U256,
 };
 use std::time::Duration;
 
+pub mod eip225;
 /// [EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#parameters) constants.
 pub mod eip4844;
 
@@ -16,7 +19,10 @@ pub const RETH_CLIENT_VERSION: &str = concat!("reth/v", env!("CARGO_PKG_VERSION"
 pub const SELECTOR_LEN: usize = 4;
 
 /// Maximum extra data size in a block after genesis
-pub const MAXIMUM_EXTRA_DATA_SIZE: usize = 32;
+pub const MAXIMUM_EXTRA_DATA_SIZE: usize = 256;
+
+/// Fixed number of extra-data suffix bytes reserved for signer seal.
+pub const MAXIMUM_EXTRA_SEAL_SIZE: usize = 65;
 
 /// An EPOCH is a series of 32 slots.
 pub const EPOCH_SLOTS: u64 = 32;
@@ -34,8 +40,7 @@ pub const EPOCH_DURATION: Duration = Duration::from_secs(12 * EPOCH_SLOTS);
 pub const BEACON_NONCE: u64 = 0u64;
 
 /// The default Ethereum block gas limit.
-///
-/// TODO: This should be a chain spec parameter.
+// TODO: This should be a chain spec parameter.
 /// See <https://github.com/paradigmxyz/reth/issues/3233>.
 pub const ETHEREUM_BLOCK_GAS_LIMIT: u64 = 30_000_000;
 
@@ -47,7 +52,7 @@ pub const ETHEREUM_BLOCK_GAS_LIMIT: u64 = 30_000_000;
 /// 12.5% of 7 is less than 1.
 ///
 /// Note that min base fee under different 1559 parameterizations may differ, but there's no
-/// signifant harm in leaving this setting as is.
+/// significant harm in leaving this setting as is.
 pub const MIN_PROTOCOL_BASE_FEE: u64 = 7;
 
 /// Same as [MIN_PROTOCOL_BASE_FEE] but as a U256.
@@ -65,35 +70,66 @@ pub const EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 8;
 /// Elasticity multiplier as defined in [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559)
 pub const EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u64 = 2;
 
+/// Minimum gas limit allowed for transactions.
+pub const MINIMUM_GAS_LIMIT: u64 = 5000;
+
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 50;
+pub const OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u128 = 50;
 
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism Canyon
 /// hardfork.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u64 = 250;
+pub const OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u128 = 250;
 
 /// Base fee max change denominator for Optimism Mainnet as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u64 = 6;
+pub const OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 6;
 
-/// Base fee max change denominator for Optimism Goerli as defined in the Optimism
+/// Base fee max change denominator for Optimism Sepolia as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_GOERLI_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 50;
+pub const OP_SEPOLIA_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u128 = 50;
 
-/// Base fee max change denominator for Optimism Goerli as defined in the Optimism Canyon
+/// Base fee max change denominator for Optimism Sepolia as defined in the Optimism Canyon
 /// hardfork.
 #[cfg(feature = "optimism")]
-pub const OP_GOERLI_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u64 = 250;
+pub const OP_SEPOLIA_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON: u128 = 250;
 
-/// Base fee max change denominator for Optimism Goerli as defined in the Optimism
+/// Base fee max change denominator for Optimism Sepolia as defined in the Optimism
 /// [transaction costs](https://community.optimism.io/docs/developers/build/differences/#transaction-costs) doc.
 #[cfg(feature = "optimism")]
-pub const OP_GOERLI_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u64 = 10;
+pub const OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 10;
+
+/// Get the base fee parameters for Optimism Sepolia.
+#[cfg(feature = "optimism")]
+pub const OP_SEPOLIA_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_SEPOLIA_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR,
+    elasticity_multiplier: OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Sepolia (post Canyon).
+#[cfg(feature = "optimism")]
+pub const OP_SEPOLIA_CANYON_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_SEPOLIA_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON,
+    elasticity_multiplier: OP_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Mainnet.
+#[cfg(feature = "optimism")]
+pub const OP_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_MAINNET_EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR,
+    elasticity_multiplier: OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
+
+/// Get the base fee parameters for Optimism Mainnet (post Canyon).
+#[cfg(feature = "optimism")]
+pub const OP_CANYON_BASE_FEE_PARAMS: BaseFeeParams = BaseFeeParams {
+    max_change_denominator: OP_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON,
+    elasticity_multiplier: OP_MAINNET_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER,
+};
 
 /// Multiplier for converting gwei to wei.
 pub const GWEI_TO_WEI: u64 = 1_000_000_000;
@@ -131,14 +167,6 @@ pub const DEV_GENESIS_HASH: B256 =
 /// Botanix Testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: B256 =
     b256!("25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9");
-
-/// Optimism goerli genesis hash.
-pub const GOERLI_OP_GENESIS: B256 =
-    b256!("c1fc15cd51159b1f1e5cbc4b82e85c1447ddfa33c52cf1d98d14fba0d6354be1");
-
-/// Base goerli genesis hash.
-pub const GOERLI_BASE_GENESIS: B256 =
-    b256!("a3ab140f15ea7f7443a4702da64c10314eb04d488e72974e02e2d728096b4f76");
 
 /// Keccak256 over empty array.
 pub const KECCAK_EMPTY: B256 =
@@ -186,6 +214,24 @@ pub const BEACON_ROOTS_ADDRESS: Address = address!("000F3df6D732807Ef1319fB7B8bB
 /// The caller to be used when calling the EIP-4788 beacon roots contract at the beginning of the
 /// block.
 pub const SYSTEM_ADDRESS: Address = address!("fffffffffffffffffffffffffffffffffffffffe");
+
+/// "nothing up my sleve" NUMS point for the secp256k1 curve.
+/// Used as the first aggregate key for the botanix gensis block
+/// consensus should check that this key is being used in genesis and post genesis block is not
+/// being used
+// Pulled from secp256k1 crate `secp256k1::constants::GENERATOR_X`
+#[inline]
+pub fn nums_secp256k1_pk() -> secp256k1::PublicKey {
+    let nums_point = [
+        121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252,
+        219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
+    ];
+    let pk = secp256k1::XOnlyPublicKey::from_slice(&nums_point)
+        .expect("valid nums point")
+        .public_key(secp256k1::Parity::Even);
+
+    pk
+}
 
 #[cfg(test)]
 mod tests {

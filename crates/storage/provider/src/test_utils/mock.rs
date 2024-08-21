@@ -1,24 +1,33 @@
 use crate::{
-    bundle_state::BundleStateWithReceipts,
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     BundleStateDataProvider, ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider,
     ReceiptProviderIdExt, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
     TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
+use itertools::Itertools;
 use parking_lot::Mutex;
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
-use reth_interfaces::provider::{ProviderError, ProviderResult};
+use reth_evm::ConfigureEvmEnv;
+use reth_interfaces::{
+    blockchain_tree::BlockchainTreeViewer,
+    provider::{ProviderError, ProviderResult},
+};
+
 use reth_primitives::{
     keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
-    BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header, Receipt,
-    SealedBlock, SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue, TransactionMeta,
-    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, B256, U256,
+    BlockNumHash, BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header,
+    Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue,
+    TransactionMeta, TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal,
+    Withdrawals, B256, U256,
 };
 use reth_trie::updates::TrieUpdates;
-use revm::primitives::{BlockEnv, CfgEnv};
+use revm::{
+    db::BundleState,
+    primitives::{BlockEnv, CfgEnvWithHandlerCfg},
+};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
 };
@@ -243,8 +252,9 @@ impl TransactionsProvider for MockEthProvider {
                         block_number: block.header.number,
                         base_fee: block.header.base_fee_per_gas,
                         excess_blob_gas: block.header.excess_blob_gas,
+                        timestamp: block.header.timestamp,
                     };
-                    return Ok(Some((tx.clone(), meta)))
+                    return Ok(Some((tx.clone(), meta)));
                 }
             }
         }
@@ -256,7 +266,7 @@ impl TransactionsProvider for MockEthProvider {
         let mut current_tx_number: TxNumber = 0;
         for block in lock.values() {
             if current_tx_number + (block.body.len() as TxNumber) > id {
-                return Ok(Some(block.header.number))
+                return Ok(Some(block.header.number));
             }
             current_tx_number += block.body.len() as TxNumber;
         }
@@ -343,6 +353,13 @@ impl ReceiptProvider for MockEthProvider {
 
     fn receipts_by_block(&self, _block: BlockHashOrNumber) -> ProviderResult<Option<Vec<Receipt>>> {
         Ok(None)
+    }
+
+    fn receipts_by_tx_range(
+        &self,
+        _range: impl RangeBounds<TxNumber>,
+    ) -> ProviderResult<Vec<Receipt>> {
+        Ok(vec![])
     }
 }
 
@@ -471,13 +488,20 @@ impl BlockReader for MockEthProvider {
 
         Ok(blocks)
     }
+
+    fn block_with_senders_range(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<BlockWithSenders>> {
+        Ok(vec![])
+    }
 }
 
 impl BlockReaderIdExt for MockEthProvider {
     fn block_by_id(&self, id: BlockId) -> ProviderResult<Option<Block>> {
         match id {
             BlockId::Number(num) => self.block_by_number_or_tag(num),
-            BlockId::Hash(hash) => self.block_by_hash(hash.block_hash),
+            BlockId::Hash(hash) => BlockReader::block_by_hash(self, hash.block_hash),
         }
     }
 
@@ -507,13 +531,13 @@ impl AccountReader for MockEthProvider {
 }
 
 impl StateRootProvider for MockEthProvider {
-    fn state_root(&self, _bundle_state: &BundleStateWithReceipts) -> ProviderResult<B256> {
+    fn state_root(&self, _bundle_state: &BundleState) -> ProviderResult<B256> {
         Ok(B256::default())
     }
 
     fn state_root_with_updates(
         &self,
-        _bundle_state: &BundleStateWithReceipts,
+        _bundle_state: &BundleState,
     ) -> ProviderResult<(B256, TrieUpdates)> {
         Ok((B256::default(), Default::default()))
     }
@@ -547,21 +571,29 @@ impl StateProvider for MockEthProvider {
 }
 
 impl EvmEnvProvider for MockEthProvider {
-    fn fill_env_at(
+    fn fill_env_at<EvmConfig>(
         &self,
-        _cfg: &mut CfgEnv,
+        _cfg: &mut CfgEnvWithHandlerCfg,
         _block_env: &mut BlockEnv,
         _at: BlockHashOrNumber,
-    ) -> ProviderResult<()> {
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
-    fn fill_env_with_header(
+    fn fill_env_with_header<EvmConfig>(
         &self,
-        _cfg: &mut CfgEnv,
+        _cfg: &mut CfgEnvWithHandlerCfg,
         _block_env: &mut BlockEnv,
         _header: &Header,
-    ) -> ProviderResult<()> {
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
@@ -581,11 +613,27 @@ impl EvmEnvProvider for MockEthProvider {
         Ok(())
     }
 
-    fn fill_cfg_env_at(&self, _cfg: &mut CfgEnv, _at: BlockHashOrNumber) -> ProviderResult<()> {
+    fn fill_cfg_env_at<EvmConfig>(
+        &self,
+        _cfg: &mut CfgEnvWithHandlerCfg,
+        _at: BlockHashOrNumber,
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
-    fn fill_cfg_env_with_header(&self, _cfg: &mut CfgEnv, _header: &Header) -> ProviderResult<()> {
+    fn fill_cfg_env_with_header<EvmConfig>(
+        &self,
+        _cfg: &mut CfgEnvWithHandlerCfg,
+        _header: &Header,
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 }
@@ -623,48 +671,15 @@ impl StateProviderFactory for MockEthProvider {
     }
 }
 
-impl StateProviderFactory for Arc<MockEthProvider> {
-    fn latest(&self) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn history_by_block_number(&self, _block: BlockNumber) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn history_by_block_hash(&self, _block: BlockHash) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn state_by_block_hash(&self, _block: BlockHash) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn pending(&self) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-
-    fn pending_state_by_hash(&self, _block_hash: B256) -> ProviderResult<Option<StateProviderBox>> {
-        Ok(Some(Box::new(self.clone())))
-    }
-
-    fn pending_with_provider<'a>(
-        &'a self,
-        _bundle_state_data: Box<dyn BundleStateDataProvider + 'a>,
-    ) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
-    }
-}
-
 impl WithdrawalsProvider for MockEthProvider {
-    fn latest_withdrawal(&self) -> ProviderResult<Option<reth_primitives::Withdrawal>> {
-        Ok(None)
-    }
     fn withdrawals_by_block(
         &self,
         _id: BlockHashOrNumber,
         _timestamp: u64,
-    ) -> ProviderResult<Option<Vec<reth_primitives::Withdrawal>>> {
+    ) -> ProviderResult<Option<Withdrawals>> {
+        Ok(None)
+    }
+    fn latest_withdrawal(&self) -> ProviderResult<Option<Withdrawal>> {
         Ok(None)
     }
 }
@@ -675,5 +690,95 @@ impl ChangeSetReader for MockEthProvider {
         _block_number: BlockNumber,
     ) -> ProviderResult<Vec<AccountBeforeTx>> {
         Ok(Vec::default())
+    }
+}
+
+impl BlockchainTreeViewer for MockEthProvider {
+    fn blocks(&self) -> BTreeMap<BlockNumber, HashSet<BlockHash>> {
+        let lock = self.blocks.lock();
+        let mut map = BTreeMap::new();
+        for (block_hash, block) in lock.clone().into_iter() {
+            map.entry(block.number).or_insert_with(HashSet::new).insert(block_hash);
+        }
+
+        map
+    }
+
+    fn header_by_hash(&self, hash: BlockHash) -> Option<SealedHeader> {
+        let header = self.headers.lock().get(&hash).cloned();
+        header.map(|h| h.seal(hash))
+    }
+
+    fn block_by_hash(&self, hash: BlockHash) -> Option<SealedBlock> {
+        let block = self.blocks.lock().get(&hash).cloned();
+        block.map(|b| b.seal(hash))
+    }
+
+    fn block_with_senders_by_hash(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
+    }
+
+    fn buffered_block_by_hash(&self, _block_hash: BlockHash) -> Option<SealedBlock> {
+        None
+    }
+
+    fn buffered_header_by_hash(&self, _block_hash: BlockHash) -> Option<SealedHeader> {
+        None
+    }
+
+    fn canonical_blocks(&self) -> BTreeMap<BlockNumber, BlockHash> {
+        let lock = self.blocks.lock();
+        let mut map = BTreeMap::new();
+        for (block_hash, block) in lock.clone().into_iter() {
+            map.insert(block.number, block_hash);
+        }
+
+        map
+    }
+
+    fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
+        let blocks = self.blocks.lock();
+        if blocks.contains_key(&block_hash) {
+            let sorted_blocks = blocks
+                .iter()
+                .map(|b| b.1)
+                .sorted_by(|a, b| Ord::cmp(&a.number, &b.number))
+                .collect::<Vec<&Block>>();
+            // get the last element of the hashmap
+            let tip = sorted_blocks.last().expect("at least one block").hash_slow();
+            return Ok(*tip == block_hash);
+        }
+        Err(ProviderError::BlockHashNotFound(block_hash))
+    }
+
+    fn canonical_tip(&self) -> BlockNumHash {
+        let (num, hash) = self
+            .canonical_blocks()
+            .iter()
+            .max_by_key(|(num, _)| *num)
+            .map(|(num, hash)| (*num, *hash))
+            .unwrap_or_default();
+
+        BlockNumHash::new(num, hash)
+    }
+
+    fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {
+        (0, vec![])
+    }
+
+    fn pending_block_num_hash(&self) -> Option<BlockNumHash> {
+        None
+    }
+
+    fn pending_block_and_receipts(&self) -> Option<(SealedBlock, Vec<Receipt>)> {
+        None
+    }
+
+    fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
+        None
+    }
+
+    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
+        None
     }
 }

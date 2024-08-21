@@ -1,0 +1,105 @@
+[package]
+name = "reth-authority-consensus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+exclude.workspace = true
+description = "A PoA consensus engine"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# reth
+reth-consensus-common = { path = "../common" }
+reth-consensus.workspace = true
+reth-beacon-consensus = { path = "../beacon" }
+reth-primitives.workspace = true
+reth-interfaces.workspace = true
+reth-provider.workspace = true
+reth-stages = { path = "../../stages" }
+reth-revm = { path = "../../revm" }
+reth-payload-builder.workspace = true
+# reth-beacon-imports
+reth-tasks.workspace = true
+reth-network-api.workspace = true
+reth-rpc-types.workspace = true
+reth-network = { path = "../../net/network", features = ["serde"] }
+reth-node-ethereum.workspace = true
+reth-eth-wire = { path = "../../net/eth-wire" }
+reth-node-api.workspace = true
+reth-network-types.workspace = true
+
+ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
+
+# async
+futures-util.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+tokio-stream.workspace = true
+tracing.workspace = true
+
+## Botanix
+reth-botanix-lib.workspace = true
+reth-btc-wallet.workspace = true
+client = {path = "../../../bin/btc-server/client"}
+btc-server = {path = "../../../bin/btc-server"}
+
+# hex
+hex = "0.4.3"
+
+# uuid
+uuid = { version = "1.8.0", features = ["v4"] }
+
+# frost
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
+
+## Bitcoin
+bitcoin.workspace = true
+
+## Crypto
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
+
+### Grpc
+tonic = "0.11.0"
+
+## this error
+thiserror.workspace = true
+
+# compression
+async-compression = {version = "0.4.11", features = ["all"]}
+serde = { version = "1.0", features = ["derive"] }
+serde_json.workspace = true
+strum = { version = "0.26.3", features = ["derive"] }
+strum_macros = "0.26.4"
+
+# prost
+prost = "0.12.6"
+
+# paste
+paste = "1.0.15"
+
+# bytes
+bytes = "1.6.0"
+
+# displaydoc
+displaydoc = "0.2"
+
+# ser/deser
+bincode = "1.3.3"
+postcard = "1.0.8"
+
+[dev-dependencies]
+reth-interfaces = { workspace = true, features = ["test-utils"] }
+
+rand = "0.8.5"
+
+[features]
+# Included solely to ignore certain tests.
+optimism = []

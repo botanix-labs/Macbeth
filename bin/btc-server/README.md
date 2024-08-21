@@ -6,22 +6,9 @@ Bitcoin signer service that interacts with a database and performs transaction s
 
     Ensure you have Rust and Cargo installed on your system.
 
-    Install the required dependencies specified in your Cargo.toml file.
+    Run `make start-btc-server-1` from the project root directory
 
-    First copy the template key hex
-    `cp key.template.hex key.hex`
-
-    To run the application, execute the main function using the tokio runtime. For example:
-
-    ```bash
-        cargo run -- --pkey <private_key_path> --db <db_path> --network <network_name>
-    ```
-
-    For example:
-    ```bash
-        cargo run -- --network testnet --pkey key.hex --db "./db"
-    ```
 
     To just generate the client. run `cargo build`.
 
-Take a look at the example client for example on how to execute commands against the Bitcoin signer service.
+    Take a look at the integration test suite in `bin/test-suite` for examples of using the client.

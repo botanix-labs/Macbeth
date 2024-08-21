@@ -1,4 +1,5 @@
 //! Canonical chain state notification trait and types.
+
 use crate::{chain::BlockReceipts, Chain};
 use auto_impl::auto_impl;
 use reth_primitives::SealedBlockWithSenders;
@@ -62,13 +63,20 @@ impl Stream for CanonStateNotificationStream {
 /// and will return all [`crate::BundleStateWithReceipts`] and
 /// [`reth_primitives::SealedBlockWithSenders`] of both reverted and committed blocks.
 #[derive(Clone, Debug)]
-#[allow(missing_docs)]
 pub enum CanonStateNotification {
     /// Chain got extended without reorg and only new chain is returned.
-    Commit { new: Arc<Chain> },
+    Commit {
+        /// The newly extended chain.
+        new: Arc<Chain>,
+    },
     /// Chain reorgs and both old and new chain are returned.
     /// Revert is just a subset of reorg where the new chain is empty.
-    Reorg { old: Arc<Chain>, new: Arc<Chain> },
+    Reorg {
+        /// The old chain before reorganization.
+        old: Arc<Chain>,
+        /// The new chain after reorganization.
+        new: Arc<Chain>,
+    },
 }
 
 // For one reason or another, the compiler can't derive PartialEq for CanonStateNotification.
@@ -89,18 +97,18 @@ impl CanonStateNotification {
     /// Get old chain if any.
     pub fn reverted(&self) -> Option<Arc<Chain>> {
         match self {
-            Self::Reorg { old, .. } => Some(old.clone()),
             Self::Commit { .. } => None,
+            Self::Reorg { old, .. } => Some(old.clone()),
         }
     }
 
     /// Get the new chain if any.
     ///
     /// Returns the new committed [Chain] for [Self::Reorg] and [Self::Commit] variants.
-    pub fn committed(&self) -> Option<Arc<Chain>> {
+    pub fn committed(&self) -> Arc<Chain> {
         match self {
-            Self::Reorg { new, .. } => Some(new.clone()),
-            Self::Commit { new } => Some(new.clone()),
+            Self::Commit { new } => new.clone(),
+            Self::Reorg { new, .. } => new.clone(),
         }
     }
 
@@ -110,8 +118,8 @@ impl CanonStateNotification {
     /// new block.
     pub fn tip(&self) -> &SealedBlockWithSenders {
         match self {
-            Self::Reorg { new, .. } => new.tip(),
             Self::Commit { new } => new.tip(),
+            Self::Reorg { new, .. } => new.tip(),
         }
     }
 
@@ -127,10 +135,9 @@ impl CanonStateNotification {
                 .extend(old.receipts_with_attachment().into_iter().map(|receipt| (receipt, true)));
         }
         // get new receipts
-        if let Some(new) = self.committed() {
-            receipts
-                .extend(new.receipts_with_attachment().into_iter().map(|receipt| (receipt, false)));
-        }
+        receipts.extend(
+            self.committed().receipts_with_attachment().into_iter().map(|receipt| (receipt, false)),
+        );
         receipts
     }
 }

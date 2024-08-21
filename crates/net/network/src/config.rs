@@ -2,22 +2,26 @@
 
 use crate::{
     error::NetworkError,
+    frost::manager::FrostConfig,
     import::{BlockImport, ProofOfStakeBlockImport},
     peers::PeersConfig,
     session::SessionsConfig,
+    transactions::TransactionsManagerConfig,
     NetworkHandle, NetworkManager,
 };
 use reth_discv4::{Discv4Config, Discv4ConfigBuilder, DEFAULT_DISCOVERY_ADDRESS};
+use reth_discv5::NetworkStackId;
 use reth_dns_discovery::DnsDiscoveryConfig;
-use reth_ecies::util::pk2id;
 use reth_eth_wire::{HelloMessage, HelloMessageWithProtocols, Status};
+use reth_network_types::{pk2id, PeerId};
 use reth_primitives::{
-    mainnet_nodes, sepolia_nodes, ChainSpec, ForkFilter, Head, NodeRecord, PeerId, MAINNET,
+    mainnet_nodes, sepolia_nodes, ChainSpec, ForkFilter, Head, NodeRecord, MAINNET,
 };
 use reth_provider::{BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use secp256k1::SECP256K1;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+
 // re-export for convenience
 use crate::protocol::{IntoRlpxSubProtocol, RlpxSubProtocols};
 pub use secp256k1::SecretKey;
@@ -41,10 +45,12 @@ pub struct NetworkConfig<C> {
     pub boot_nodes: HashSet<NodeRecord>,
     /// How to set up discovery over DNS.
     pub dns_discovery_config: Option<DnsDiscoveryConfig>,
+    /// Address to use for discovery v4.
+    pub discovery_v4_addr: SocketAddr,
     /// How to set up discovery.
     pub discovery_v4_config: Option<Discv4Config>,
-    /// Address to use for discovery
-    pub discovery_addr: SocketAddr,
+    /// How to set up discovery version 5.
+    pub discovery_v5_config: Option<reth_discv5::Config>,
     /// Address to listen for incoming connections
     pub listener_addr: SocketAddr,
     /// How to instantiate peer manager.
@@ -74,12 +80,16 @@ pub struct NetworkConfig<C> {
     pub extra_protocols: RlpxSubProtocols,
     /// Whether to disable transaction gossip
     pub tx_gossip_disabled: bool,
+    /// How to instantiate transactions manager.
+    pub transactions_manager_config: TransactionsManagerConfig,
+    /// Frost configuration
+    pub frost_config: Option<FrostConfig>,
     /// Optimism Network Config
     #[cfg(feature = "optimism")]
     pub optimism_network_config: OptimismNetworkConfig,
 }
 
-/// Optimmism Network Config
+/// Optimism Network Config
 #[cfg(feature = "optimism")]
 #[derive(Debug, Clone, Default)]
 pub struct OptimismNetworkConfig {
@@ -108,6 +118,44 @@ impl<C> NetworkConfig<C> {
         self
     }
 
+    /// Sets the config to use for the discovery v5 protocol, with help of the
+    /// [`reth_discv5::ConfigBuilder`].
+    /// ```
+    /// use reth_network::NetworkConfigBuilder;
+    /// use secp256k1::{rand::thread_rng, SecretKey};
+    ///
+    /// let sk = SecretKey::new(&mut thread_rng());
+    /// let network_config = NetworkConfigBuilder::new(sk).build(());
+    /// let fork_id = network_config.status.forkid;
+    /// let network_config = network_config
+    ///     .discovery_v5_with_config_builder(|builder| builder.fork(b"eth", fork_id).build());
+    /// ```
+
+    pub fn discovery_v5_with_config_builder(
+        self,
+        f: impl FnOnce(reth_discv5::ConfigBuilder) -> reth_discv5::Config,
+    ) -> Self {
+        let rlpx_port = self.listener_addr.port();
+        let network_stack_id = NetworkStackId::id(&self.chain_spec);
+        let fork_id = self.chain_spec.latest_fork_id();
+        let boot_nodes = self.boot_nodes.clone();
+
+        let mut builder =
+            reth_discv5::Config::builder(rlpx_port).add_unsigned_boot_nodes(boot_nodes.into_iter());
+
+        if let Some(id) = network_stack_id {
+            builder = builder.fork(id, fork_id);
+        }
+
+        self.set_discovery_v5(f(builder))
+    }
+
+    /// Sets the config to use for the discovery v5 protocol.
+    pub fn set_discovery_v5(mut self, discv5_config: reth_discv5::Config) -> Self {
+        self.discovery_v5_config = Some(discv5_config);
+        self
+    }
+
     /// Sets the address for the incoming connection listener.
     pub fn set_listener_addr(mut self, listener_addr: SocketAddr) -> Self {
         self.listener_addr = listener_addr;
@@ -122,7 +170,7 @@ where
     /// Starts the networking stack given a [NetworkConfig] and returns a handle to the network.
     pub async fn start_network(self) -> Result<NetworkHandle, NetworkError> {
         let client = self.client.clone();
-        let (handle, network, _txpool, eth) =
+        let (handle, network, _txpool, eth, _) =
             NetworkManager::builder(self).await?.request_handler(client).split_with_handle();
 
         tokio::task::spawn(network);
@@ -135,14 +183,15 @@ where
 /// Builder for [`NetworkConfig`](struct.NetworkConfig.html).
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[allow(missing_docs)]
 pub struct NetworkConfigBuilder {
     /// The node's secret key, from which the node's identity is derived.
     secret_key: SecretKey,
     /// How to configure discovery over DNS.
     dns_discovery_config: Option<DnsDiscoveryConfig>,
-    /// How to set up discovery.
+    /// How to set up discovery version 4.
     discovery_v4_builder: Option<Discv4ConfigBuilder>,
+    /// Whether to enable discovery version 5. Disabled by default.
+    enable_discovery_v5: bool,
     /// All boot nodes to start network discovery with.
     boot_nodes: HashSet<NodeRecord>,
     /// Address to use for discovery
@@ -169,6 +218,14 @@ pub struct NetworkConfigBuilder {
     head: Option<Head>,
     /// Whether tx gossip is disabled
     tx_gossip_disabled: bool,
+    /// The block importer type
+    #[serde(skip)]
+    block_import: Option<Box<dyn BlockImport>>,
+    /// How to instantiate transactions manager.
+    transactions_manager_config: TransactionsManagerConfig,
+    /// Frost Configuration
+    #[serde(skip)]
+    frost_config: Option<FrostConfig>,
     /// Optimism Network Config Builder
     #[cfg(feature = "optimism")]
     optimism_network_config: OptimismNetworkConfigBuilder,
@@ -192,6 +249,7 @@ impl NetworkConfigBuilder {
             secret_key,
             dns_discovery_config: Some(Default::default()),
             discovery_v4_builder: Some(Default::default()),
+            enable_discovery_v5: false,
             boot_nodes: Default::default(),
             discovery_addr: None,
             listener_addr: None,
@@ -204,8 +262,11 @@ impl NetworkConfigBuilder {
             extra_protocols: Default::default(),
             head: None,
             tx_gossip_disabled: false,
+            block_import: None,
+            frost_config: None,
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfigBuilder::default(),
+            transactions_manager_config: Default::default(),
         }
     }
 
@@ -271,6 +332,11 @@ impl NetworkConfigBuilder {
         self
     }
 
+    pub fn transactions_manager_config(mut self, config: TransactionsManagerConfig) -> Self {
+        self.transactions_manager_config = config;
+        self
+    }
+
     /// Sets the discovery and listener address
     ///
     /// This is a convenience function for both [NetworkConfigBuilder::listener_addr] and
@@ -313,8 +379,15 @@ impl NetworkConfigBuilder {
     }
 
     /// Sets the discv4 config to use.
+    //
     pub fn discovery(mut self, builder: Discv4ConfigBuilder) -> Self {
         self.discovery_v4_builder = Some(builder);
+        self
+    }
+
+    /// Allows discv5 discovery.
+    pub fn discovery_v5(mut self) -> Self {
+        self.enable_discovery_v5 = true;
         self
     }
 
@@ -366,6 +439,12 @@ impl NetworkConfigBuilder {
         self
     }
 
+    /// Enable the Discv5 discovery.
+    pub fn enable_discv5_discovery(mut self) -> Self {
+        self.enable_discovery_v5 = true;
+        self
+    }
+
     /// Disable the DNS discovery if the given condition is true.
     pub fn disable_dns_discovery_if(self, disable: bool) -> Self {
         if disable {
@@ -396,11 +475,33 @@ impl NetworkConfigBuilder {
         self
     }
 
+    /// Sets the block import type.
+    pub fn block_import(mut self, block_import: Box<dyn BlockImport>) -> Self {
+        self.block_import = Some(block_import);
+        self
+    }
+
+    /// Sets the frost config.
+    pub fn frost_config(mut self, frost_config: Option<FrostConfig>) -> Self {
+        if frost_config.is_some() {
+            self.frost_config = frost_config;
+        }
+        self
+    }
+
     /// Sets the sequencer HTTP endpoint.
     #[cfg(feature = "optimism")]
     pub fn sequencer_endpoint(mut self, endpoint: Option<String>) -> Self {
         self.optimism_network_config.sequencer_endpoint = endpoint;
         self
+    }
+
+    /// Convenience function for creating a [NetworkConfig] with a noop provider that does nothing.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn build_with_noop_provider(
+        self,
+    ) -> NetworkConfig<reth_provider::test_utils::NoopProvider> {
+        self.build(reth_provider::test_utils::NoopProvider::default())
     }
 
     /// Consumes the type and creates the actual [`NetworkConfig`]
@@ -415,6 +516,7 @@ impl NetworkConfigBuilder {
             secret_key,
             mut dns_discovery_config,
             discovery_v4_builder,
+            enable_discovery_v5: _,
             boot_nodes,
             discovery_addr,
             listener_addr,
@@ -427,8 +529,11 @@ impl NetworkConfigBuilder {
             extra_protocols,
             head,
             tx_gossip_disabled,
+            block_import,
+            frost_config,
             #[cfg(feature = "optimism")]
                 optimism_network_config: OptimismNetworkConfigBuilder { sequencer_endpoint },
+            transactions_manager_config,
         } = self;
 
         let listener_addr = listener_addr.unwrap_or(DEFAULT_DISCOVERY_ADDRESS);
@@ -468,12 +573,13 @@ impl NetworkConfigBuilder {
             boot_nodes,
             dns_discovery_config,
             discovery_v4_config: discovery_v4_builder.map(|builder| builder.build()),
-            discovery_addr: discovery_addr.unwrap_or(DEFAULT_DISCOVERY_ADDRESS),
+            discovery_v5_config: None,
+            discovery_v4_addr: discovery_addr.unwrap_or(DEFAULT_DISCOVERY_ADDRESS),
             listener_addr,
             peers_config: peers_config.unwrap_or_default(),
             sessions_config: sessions_config.unwrap_or_default(),
             chain_spec,
-            block_import: Box::<ProofOfStakeBlockImport>::default(),
+            block_import: block_import.unwrap_or_else(|| Box::<ProofOfStakeBlockImport>::default()),
             network_mode,
             executor: executor.unwrap_or_else(|| Box::<TokioTaskExecutor>::default()),
             status,
@@ -481,8 +587,10 @@ impl NetworkConfigBuilder {
             extra_protocols,
             fork_filter,
             tx_gossip_disabled,
+            frost_config,
             #[cfg(feature = "optimism")]
             optimism_network_config: OptimismNetworkConfig { sequencer_endpoint },
+            transactions_manager_config,
         }
     }
 }
@@ -500,6 +608,8 @@ pub enum NetworkMode {
     /// Network is in proof-of-stake mode
     #[default]
     Stake,
+    /// Network is in PoA mode
+    Authority,
 }
 
 // === impl NetworkMode ===

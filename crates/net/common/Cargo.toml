@@ -8,9 +8,12 @@ homepage.workspace = true
 repository.workspace = true
 description = "Types shared across network code"
 
+[lints]
+workspace = true
+
 [dependencies]
 # reth
-reth-primitives.workspace = true
+reth-network-types.workspace = true
 
 # async
 pin-project.workspace = true

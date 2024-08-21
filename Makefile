@@ -1,3 +1,8 @@
+-include .env
+
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -o pipefail -e -c
+
 # Heavily inspired by Lighthouse: https://github.com/sigp/lighthouse/blob/693886b94176faa4cb450f024696cb69cda2fe58/Makefile
 .DEFAULT_GOAL := help
 
@@ -10,12 +15,12 @@ FULL_DB_TOOLS_DIR := $(shell pwd)/$(DB_TOOLS_DIR)/
 
 BUILD_PATH = "target"
 
-# List of features to use when building. Can be overriden via the environment.
+# List of features to use when building. Can be overridden via the environment.
 # No jemalloc on Windows
 ifeq ($(OS),Windows_NT)
     FEATURES ?=
 else
-    FEATURES ?= jemalloc
+    FEATURES ?= jemalloc asm-keccak
 endif
 
 # Cargo profile for builds. Default is for local builds, CI uses an override.
@@ -31,6 +36,9 @@ EF_TESTS_DIR := ./testing/ef-tests/ethereum-tests
 
 # The docker image name
 DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
+
+# Features in reth/op-reth binary crate other than "ethereum" and "optimism"
+BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
 ##@ Help
 
@@ -71,6 +79,17 @@ op-build-native-%:
 #
 # The resulting binaries will be created in the `target/` directory.
 
+# For aarch64, disable asm-keccak optimizations and set the page size for
+# jemalloc. When cross compiling, we must compile jemalloc with a large page
+# size, otherwise it will use the current system's page size which may not work
+# on other systems. JEMALLOC_SYS_WITH_LG_PAGE=16 tells jemalloc to use 64-KiB
+# pages. See: https://github.com/paradigmxyz/reth/issues/6742
+build-aarch64-unknown-linux-gnu: FEATURES := $(filter-out asm-keccak,$(FEATURES))
+build-aarch64-unknown-linux-gnu: export JEMALLOC_SYS_WITH_LG_PAGE=16
+
+op-build-aarch64-unknown-linux-gnu: FEATURES := $(filter-out asm-keccak,$(FEATURES))
+op-build-aarch64-unknown-linux-gnu: export JEMALLOC_SYS_WITH_LG_PAGE=16
+
 # No jemalloc on Windows
 build-x86_64-pc-windows-gnu: FEATURES := $(filter-out jemalloc jemalloc-prof,$(FEATURES))
 
@@ -78,11 +97,11 @@ build-x86_64-pc-windows-gnu: FEATURES := $(filter-out jemalloc jemalloc-prof,$(F
 # See: https://github.com/cross-rs/cross/wiki/FAQ#undefined-reference-with-build-std
 build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
- 		cross build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
+		cross build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
 op-build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
- 		cross build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
+		cross build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.
@@ -167,20 +186,28 @@ ef-tests: $(EF_TESTS_DIR) ## Runs Ethereum Foundation tests.
 #
 # `docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64`
 # `docker buildx create --use --driver docker-container --name cross-builder`
-.PHONY: docker-build-latest
-docker-build-latest: ## Build and push a cross-arch Docker image tagged with the latest git tag and `latest`.
-	$(call build_docker_image,$(GIT_TAG),latest)
+.PHONY: docker-build-push
+docker-build-push: ## Build and push a cross-arch Docker image tagged with the latest git tag.
+	$(call docker_build_push,$(GIT_TAG),$(GIT_TAG))
+
+# Note: This requires a buildx builder with emulation support. For example:
+#
+# `docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64`
+# `docker buildx create --use --driver docker-container --name cross-builder`
+.PHONY: docker-build-push-latest
+docker-build-push-latest: ## Build and push a cross-arch Docker image tagged with the latest git tag and `latest`.
+	$(call docker_build_push,$(GIT_TAG),latest)
 
 # Note: This requires a buildx builder with emulation support. For example:
 #
 # `docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64`
 # `docker buildx create --use --name cross-builder`
-.PHONY: docker-build-nightly
-docker-build-nightly: ## Build and push cross-arch Docker image tagged with the latest git tag with a `-nightly` suffix, and `latest-nightly`.
-	$(call build_docker_image,$(GIT_TAG)-nightly,latest-nightly)
+.PHONY: docker-build-push-nightly
+docker-build-push-nightly: ## Build and push cross-arch Docker image tagged with the latest git tag with a `-nightly` suffix, and `latest-nightly`.
+	$(call docker_build_push,$(GIT_TAG)-nightly,latest-nightly)
 
 # Create a cross-arch Docker image with the given tags and push it
-define build_docker_image
+define docker_build_push
 	$(MAKE) build-x86_64-unknown-linux-gnu
 	mkdir -p $(BIN_DIR)/amd64
 	cp $(BUILD_PATH)/x86_64-unknown-linux-gnu/$(PROFILE)/reth $(BIN_DIR)/amd64/reth
@@ -227,41 +254,309 @@ db-tools: ## Compile MDBX debugging tools.
 update-book-cli: ## Update book cli documentation.
 	cargo build --bin reth --features "$(FEATURES)" --profile "$(PROFILE)"
 	@echo "Updating book cli doc..."
-	@./book/cli/update.sh $(BUILD_PATH)
+	@./book/cli/update.sh $(BUILD_PATH)/$(PROFILE)/reth
 
 .PHONY: maxperf
-maxperf:
+maxperf: ## Builds `reth` with the most aggressive optimisations.
+	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc,asm-keccak
+
+.PHONY: maxperf-no-asm
+maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
 
 fmt:
-	@cargo fmt --all --
+	cargo +nightly fmt
 
-fmt-check:
-	@cargo fmt --all -- --check
+lint-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "ethereum $(BIN_OTHER_FEATURES)" \
+	-- -D warnings
+
+lint-op-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "op-reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "optimism $(BIN_OTHER_FEATURES)" \
+	-- -D warnings
+
+lint-other-targets:
+	cargo +nightly clippy \
+	--workspace \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--all-features \
+	-- -D warnings
+
+lint-codespell: ensure-codespell
+	codespell
+
+ensure-codespell:
+	@if ! command -v codespell &> /dev/null; then \
+		echo "codespell not found. Please install it by running the command `pip install codespell` or refer to the following link for more information: https://github.com/codespell-project/codespell" \
+		exit 1; \
+    fi
 
 lint:
-	@cargo clippy --bins --lib --tests --examples --all-features --fix -- -D warnings
+	make fmt && \
+	make lint-reth && \
+	make lint-op-reth && \
+	make lint-other-targets && \
+	make lint-codespell
 
-doc:
-	@cargo doc --no-deps --open
+fix-lint-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "ethereum $(BIN_OTHER_FEATURES)" \
+	--fix \
+	--allow-staged \
+	--allow-dirty \
+	-- -D warnings
 
-start-btc-server:
+fix-lint-op-reth:
+	cargo +nightly clippy \
+	--workspace \
+	--bin "op-reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "optimism $(BIN_OTHER_FEATURES)" \
+	--fix \
+	--allow-staged \
+	--allow-dirty \
+	-- -D warnings
+
+fix-lint-other-targets:
+	cargo +nightly clippy \
+	--workspace \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--all-features \
+	--fix \
+	--allow-staged \
+	--allow-dirty \
+	-- -D warnings
+
+fix-lint:
+	make lint-reth && \
+	make lint-op-reth && \
+	make lint-other-targets && \
+	make fmt
+
+.PHONY: rustdocs
+rustdocs: ## Runs `cargo docs` to generate the Rust documents in the `target/doc` directory
+	RUSTDOCFLAGS="\
+	--cfg docsrs \
+	--show-type-layout \
+	--generate-link-to-definition \
+	--enable-index-page -Zunstable-options -D warnings" \
+	cargo +nightly docs \
+	--document-private-items
+
+test-reth:
+	cargo test \
+	--workspace \
+	--bin "reth" \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--features "ethereum $(BIN_OTHER_FEATURES)"
+
+test-op-reth:
+	cargo test \
+	--workspace \
+	--bin "op-reth" \
+	--lib --examples \
+	--tests \
+	--benches \
+	--features "optimism $(BIN_OTHER_FEATURES)"
+
+test-other-targets:
+	cargo test \
+	--workspace \
+	--lib \
+	--examples \
+	--tests \
+	--benches \
+	--all-features
+
+test-doc:
+	cargo test --doc --workspace --features "ethereum"
+
+test:
+	make test-reth && \
+	make test-op-reth && \
+	make test-doc && \
+	make test-other-targets
+
+cfg-check:
+	cargo +nightly -Zcheck-cfg c
+
+pr:
+	make cfg-check && \
+	make lint && \
+	make docs && \
+	make test
+
+start-test-suite:
+	cd ./bin/test-suite && \
+	cargo run --bin test-suite -- \
+	--test-to-run "${TEST_TO_RUN}" \
+	--config "./config.toml" \
+	--run-suite all \
+	--timeout 233333 \
+	--dry-run false \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind-url "${BITCOIND_URL}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
+	--min-signers 3 \
+	--max-signers 4
+
+start-btc-server-1:
 	cd ./bin/btc-server && \
-	cargo run --bin btc-server -- --network testnet --pkey ./key.hex --db "./db"
+	cargo run --bin btc-server -- \
+	--identifier 0 \
+	--address 0.0.0.0:8080 \
+	--db "./db1" \
+	--min-signers 2 \
+	--max-signers 2 \
+	--toml ./config.toml \
+	--fee-rate-diff-percentage 30 \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind-url "${BITCOIND_URL}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
+	--fall-back-fee-rate-sat-per-vbyte 5
 
-start-reth-server:
+start-btc-server-2:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- \
+	--identifier 1 \
+	--address 0.0.0.0:8081 \
+	--db "./db2" \
+	--min-signers 2 \
+	--max-signers 2 \
+	--toml ./config.toml \
+	--fee-rate-diff-percentage 30 \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind-url "${BITCOIND_URL}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
+	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
+	--fall-back-fee-rate-sat-per-vbyte 5
+
+start-poa-server-1:
 	cd ./bin/reth && \
-	cargo run --bin reth node \
-	--chain botanix_testnet \
-	--disable-discovery \
+	cargo run --bin reth -- poa \
+	--is-testnet \
+	--ntp-server "${NTP_SERVER_URL}" \
+	--federation-config-path "${NODE_1_DIR}/federation.toml" \
+	--federation-mode \
+	--datadir ${NODE_1_DIR} \
 	--http \
 	--http.corsdomain "*" \
+	--http.port 8545 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--metrics 127.0.0.1:9001 \
-	--authrpc.addr 127.0.0.1 \
-	--authrpc.port 8551 \
-	--datadir ${DB_DIR} \
-	--auto-mine \
-	--btc-server localhost:8080 \
-	--btc-block-source "https://esplora.botanixlabs.dev/signet/api" \
-	--btc-network "signet"
+	--btc-server "localhost:8080" \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
+	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
+	--port 30303
+
+start-poa-server-2:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--is-testnet \
+	--ntp-server "${NTP_SERVER_URL}" \
+	--federation-config-path "${NODE_2_DIR}/federation.toml" \
+	--federation-mode \
+	--datadir ${NODE_2_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8546 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--btc-server "localhost:8081" \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
+	--port 30304
+
+clean-poa-2:
+	cd ${NODE_2_DIR} && \
+	rm -rf "${NODE_2_DIR}/db" && \
+	rm -rf "${NODE_2_DIR}/static_files"
+
+clean-poa-1:
+	cd ${NODE_1_DIR} && \
+	rm -rf "${NODE_1_DIR}/db" && \
+	rm -rf "${NODE_1_DIR}/static_files"
+
+clean-rpc:
+	cd ${NON_FED_1_DIR} && \
+	rm -rf "${NON_FED_1_DIR}/db" && \
+	rm -rf "${NON_FED_1_DIR}/static_files"
+
+
+clean-btc-server-1:
+	cd bin/btc-server && \
+	rm -rf "db1"
+
+clean-btc-server-2:
+	cd bin/btc-server && \
+	rm -rf "db2"
+
+start-non-fed-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--is-testnet \
+	--ntp-server "${NTP_SERVER_URL}" \
+	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
+	--datadir ${NON_FED_1_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8547 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
+	--port 30305

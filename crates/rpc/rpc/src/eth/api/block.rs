@@ -7,21 +7,22 @@ use crate::{
     },
     EthApi,
 };
+use reth_evm::ConfigureEvm;
 use reth_network_api::NetworkInfo;
 use reth_primitives::{BlockId, TransactionMeta};
-
 use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
-use reth_rpc_types::{Index, RichBlock, TransactionReceipt};
-
+use reth_rpc_types::{AnyTransactionReceipt, Header, Index, RichBlock};
 use reth_rpc_types_compat::block::{from_block, uncle_block_from_header};
 use reth_transaction_pool::TransactionPool;
+use std::sync::Arc;
 
-impl<Provider, Pool, Network> EthApi<Provider, Pool, Network>
+impl<Provider, Pool, Network, EvmConfig> EthApi<Provider, Pool, Network, EvmConfig>
 where
     Provider:
         BlockReaderIdExt + ChainSpecProvider + StateProviderFactory + EvmEnvProvider + 'static,
     Pool: TransactionPool + Clone + 'static,
     Network: NetworkInfo + Send + Sync + 'static,
+    EvmConfig: ConfigureEvm + 'static,
 {
     /// Returns the uncle headers of the given block
     ///
@@ -61,11 +62,14 @@ where
     pub(crate) async fn block_receipts(
         &self,
         block_id: BlockId,
-    ) -> EthResult<Option<Vec<TransactionReceipt>>> {
+    ) -> EthResult<Option<Vec<AnyTransactionReceipt>>> {
         let mut block_and_receipts = None;
 
         if block_id.is_pending() {
-            block_and_receipts = self.provider().pending_block_and_receipts()?;
+            block_and_receipts = self
+                .provider()
+                .pending_block_and_receipts()?
+                .map(|(sb, receipts)| (sb, Arc::new(receipts)));
         } else if let Some(block_hash) = self.provider().block_hash_for_id(block_id)? {
             block_and_receipts = self.cache().get_block_and_receipts(block_hash).await?;
         }
@@ -73,21 +77,21 @@ where
         if let Some((block, receipts)) = block_and_receipts {
             let block_number = block.number;
             let base_fee = block.base_fee_per_gas;
-            let block_hash = block.hash;
+            let block_hash = block.hash();
             let excess_blob_gas = block.excess_blob_gas;
+            let timestamp = block.timestamp;
+            let block = block.unseal();
 
             #[cfg(feature = "optimism")]
             let (block_timestamp, l1_block_info) = {
-                let body = reth_revm::optimism::parse_l1_info_tx(
-                    &block.body.first().ok_or(EthApiError::InternalEthError)?.input()[4..],
-                );
+                let body = reth_revm::optimism::extract_l1_info(&block);
                 (block.timestamp, body.ok())
             };
 
             let receipts = block
                 .body
                 .into_iter()
-                .zip(receipts.clone())
+                .zip(receipts.iter())
                 .enumerate()
                 .map(|(idx, (tx, receipt))| {
                     let meta = TransactionMeta {
@@ -97,6 +101,7 @@ where
                         block_number,
                         base_fee,
                         excess_blob_gas,
+                        timestamp,
                     };
 
                     #[cfg(feature = "optimism")]
@@ -106,7 +111,7 @@ where
                     build_transaction_receipt_with_block_receipts(
                         tx,
                         meta,
-                        receipt,
+                        receipt.clone(),
                         &receipts,
                         #[cfg(feature = "optimism")]
                         op_tx_meta,
@@ -189,12 +194,21 @@ where
             Some(block) => block,
             None => return Ok(None),
         };
-        let block_hash = block.hash;
+        let block_hash = block.hash();
         let total_difficulty = self
             .provider()
             .header_td_by_number(block.number)?
             .ok_or(EthApiError::UnknownBlockNumber)?;
         let block = from_block(block.unseal(), total_difficulty, full.into(), Some(block_hash))?;
         Ok(Some(block.into()))
+    }
+
+    /// Returns the block header for the given block id.
+    pub(crate) async fn rpc_block_header(
+        &self,
+        block_id: impl Into<BlockId>,
+    ) -> EthResult<Option<Header>> {
+        let header = self.rpc_block(block_id, false).await?.map(|block| block.inner.header);
+        Ok(header)
     }
 }

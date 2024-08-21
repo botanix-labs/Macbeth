@@ -14,33 +14,33 @@
 //! configured to emit payload attributes events.
 //!
 //! See lighthouse beacon Node API: <https://lighthouse-book.sigmaprime.io/api-bn.html#beacon-node-api>
+
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
 use clap::Parser;
 use futures_util::stream::StreamExt;
 use mev_share_sse::{client::EventStream, EventClient};
 use reth::{
     cli::{
-        components::RethNodeComponents,
-        ext::{RethCliExt, RethNodeCommandConfig},
+        ext::{PoaNodeCommandConfig, RethNodeComponents},
         Cli,
     },
     rpc::types::beacon::events::PayloadAttributesEvent,
-    tasks::TaskSpawner,
 };
+use reth_node_ethereum::EthereumNode;
 use std::net::{IpAddr, Ipv4Addr};
 use tracing::{info, warn};
 
 fn main() {
-    Cli::<BeaconEventsExt>::parse().run().unwrap();
-}
+    Cli::<BeaconEventsConfig>::parse()
+        .run(|builder, args| async move {
+            let handle = builder.node(EthereumNode::default()).launch().await?;
 
-/// The type that tells the reth CLI what extensions to use
-#[derive(Debug, Default)]
-#[non_exhaustive]
-struct BeaconEventsExt;
+            handle.node.task_executor.spawn(Box::pin(args.run()));
 
-impl RethCliExt for BeaconEventsExt {
-    /// This tells the reth CLI to install additional CLI arguments
-    type Node = BeaconEventsConfig;
+            handle.wait_for_node_exit().await
+        })
+        .unwrap();
 }
 
 /// Our custom cli args extension that adds one flag to reth default CLI.
@@ -94,9 +94,8 @@ impl BeaconEventsConfig {
     }
 }
 
-impl RethNodeCommandConfig for BeaconEventsConfig {
-    fn on_node_started<Reth: RethNodeComponents>(&mut self, components: &Reth) -> eyre::Result<()> {
-        components.task_executor().spawn(Box::pin(self.clone().run()));
+impl PoaNodeCommandConfig for BeaconEventsConfig {
+    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
         Ok(())
     }
 }

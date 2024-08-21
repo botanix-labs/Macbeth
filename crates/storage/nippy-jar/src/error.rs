@@ -7,6 +7,8 @@ pub enum NippyJarError {
     Internal(#[from] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     Disconnect(#[from] std::io::Error),
+    #[error(transparent)]
+    FileSystem(#[from] reth_primitives::fs::FsPathError),
     #[error("{0}")]
     Custom(String),
     #[error(transparent)]
@@ -35,10 +37,19 @@ pub enum NippyJarError {
     PHFMissing,
     #[error("nippy jar was built without an index")]
     UnsupportedFilterQuery,
+    #[error("the size of an offset must be at most 8 bytes, got {offset_size}")]
+    OffsetSizeTooBig {
+        /// The read offset size in number of bytes.
+        offset_size: u64,
+    },
     #[error("compression or decompression requires a bigger destination output")]
     OutputTooSmall,
-    #[error("Dictionary is not loaded.")]
+    #[error("dictionary is not loaded.")]
     DictionaryNotLoaded,
-    #[error("It's not possible to generate a compressor after loading a dictionary.")]
+    #[error("it's not possible to generate a compressor after loading a dictionary.")]
     CompressorNotAllowed,
+    #[error("number of offsets ({0}) is smaller than prune request ({1}).")]
+    InvalidPruning(u64, u64),
+    #[error("jar has been frozen and cannot be modified.")]
+    FrozenJar,
 }

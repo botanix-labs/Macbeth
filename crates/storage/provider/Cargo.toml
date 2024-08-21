@@ -8,13 +8,19 @@ homepage.workspace = true
 repository.workspace = true
 description = "Reth storage provider."
 
+[lints]
+workspace = true
+
 [dependencies]
 # reth
 reth-primitives.workspace = true
 reth-interfaces.workspace = true
+reth-rpc-types.workspace = true
 reth-db.workspace = true
-reth-trie.workspace = true
+reth-trie = { workspace = true, features = ["metrics"] }
 reth-nippy-jar.workspace = true
+reth-codecs.workspace = true
+reth-evm.workspace = true
 
 revm.workspace = true
 
@@ -30,18 +36,16 @@ reth-metrics.workspace = true
 metrics.workspace = true
 
 # misc
-auto_impl = "1.0"
+auto_impl.workspace = true
 itertools.workspace = true
 pin-project.workspace = true
 parking_lot.workspace = true
 dashmap = { version = "5.5", features = ["inline"] }
+strum.workspace = true
 
 # test-utils
 alloy-rlp = { workspace = true, optional = true }
 
-
-## Bitcoin
-bitcoin = "0.30.0"
 # parallel utils
 rayon.workspace = true
 
@@ -58,8 +62,5 @@ assert_matches.workspace = true
 rand.workspace = true
 
 [features]
-test-utils = ["alloy-rlp", "reth-db/test-utils"]
-optimism = [
-  "reth-primitives/optimism",
-  "reth-interfaces/optimism"
-]
+test-utils = ["alloy-rlp", "reth-db/test-utils", "reth-nippy-jar/test-utils"]
+optimism = ["reth-primitives/optimism", "reth-interfaces/optimism"]

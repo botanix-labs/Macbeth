@@ -1,8 +1,6 @@
-use std::net::SocketAddr;
-
-use crate::RethRpcModule;
-use jsonrpsee::core::Error as JsonRpseeError;
-use std::{io, io::ErrorKind};
+use crate::{cors::CorsDomainError, RethRpcModule};
+use reth_ipc::server::IpcServerStartError;
+use std::{io, io::ErrorKind, net::SocketAddr};
 
 /// Rpc server kind.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -17,6 +15,18 @@ pub enum ServerKind {
     Auth(SocketAddr),
 }
 
+impl ServerKind {
+    /// Returns the appropriate flags for each variant.
+    pub fn flags(&self) -> &'static str {
+        match self {
+            ServerKind::Http(_) => "--http.port",
+            ServerKind::WS(_) => "--ws.port",
+            ServerKind::WsHttp(_) => "--ws.port and --http.port",
+            ServerKind::Auth(_) => "--authrpc.port",
+        }
+    }
+}
+
 impl std::fmt::Display for ServerKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -28,45 +38,46 @@ impl std::fmt::Display for ServerKind {
     }
 }
 
-/// Rpc Errors.
+/// Rpc Server related errors
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
-    /// Wrapper for `jsonrpsee::core::Error`.
-    #[error(transparent)]
-    RpcError(#[from] JsonRpseeError),
+    /// Thrown during server start.
+    #[error("Failed to start {kind} server: {error}")]
+    ServerError {
+        /// Server kind.
+        kind: ServerKind,
+        /// IO error.
+        error: io::Error,
+    },
     /// Address already in use.
-    #[error("address {kind} is already in use (os error 98)")]
+    #[error("address {kind} is already in use (os error 98). Choose a different port using {}", kind.flags())]
     AddressAlreadyInUse {
         /// Server kind.
         kind: ServerKind,
         /// IO error.
         error: io::Error,
     },
+    /// Cors parsing error.
+    #[error(transparent)]
+    Cors(#[from] CorsDomainError),
     /// Http and WS server configured on the same port but with conflicting settings.
     #[error(transparent)]
     WsHttpSamePortError(#[from] WsHttpSamePortError),
+    /// Thrown when IPC server fails to start.
+    #[error(transparent)]
+    IpcServerError(#[from] IpcServerStartError),
     /// Custom error.
     #[error("{0}")]
     Custom(String),
 }
 
 impl RpcError {
-    /// Converts a `jsonrpsee::core::Error` to a more descriptive `RpcError`.
-    pub fn from_jsonrpsee_error(err: JsonRpseeError, kind: ServerKind) -> RpcError {
-        match err {
-            JsonRpseeError::Transport(err) => {
-                if let Some(io_error) = err.downcast_ref::<io::Error>() {
-                    if io_error.kind() == ErrorKind::AddrInUse {
-                        return RpcError::AddressAlreadyInUse {
-                            kind,
-                            error: io::Error::from(io_error.kind()),
-                        }
-                    }
-                }
-                RpcError::RpcError(JsonRpseeError::Transport(err))
-            }
-            _ => err.into(),
+    /// Converts an [io::Error] to a more descriptive `RpcError`.
+    pub fn server_error(io_error: io::Error, kind: ServerKind) -> RpcError {
+        if io_error.kind() == ErrorKind::AddrInUse {
+            return RpcError::AddressAlreadyInUse { kind, error: io_error }
         }
+        RpcError::ServerError { kind, error: io_error }
     }
 }
 
@@ -95,4 +106,29 @@ pub enum WsHttpSamePortError {
         /// Ws modules.
         ws_modules: Vec<RethRpcModule>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    #[test]
+    fn test_address_in_use_message() {
+        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 1234));
+        let kinds = [
+            ServerKind::Http(addr),
+            ServerKind::WS(addr),
+            ServerKind::WsHttp(addr),
+            ServerKind::Auth(addr),
+        ];
+
+        for kind in &kinds {
+            let err = RpcError::AddressAlreadyInUse {
+                kind: *kind,
+                error: io::Error::from(ErrorKind::AddrInUse),
+            };
+
+            assert!(err.to_string().contains(kind.flags()));
+        }
+    }
 }

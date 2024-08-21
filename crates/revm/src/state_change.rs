@@ -1,11 +1,11 @@
-use reth_consensus_common::calc;
+use reth_consensus_common::{calc, utils};
 use reth_interfaces::executor::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{
     constants::SYSTEM_ADDRESS, revm::env::fill_tx_env_with_beacon_root_contract_call, Address,
     ChainSpec, Header, Withdrawal, B256, U256,
 };
-use revm::{Database, DatabaseCommit, EVM};
-use std::collections::HashMap;
+use revm::{interpreter::Host, Database, DatabaseCommit, Evm};
+use std::{collections::HashMap, str::FromStr};
 
 /// Collect all balance changes at the end of the block.
 ///
@@ -22,6 +22,8 @@ pub fn post_block_balance_increments(
     total_difficulty: U256,
     ommers: &[Header],
     withdrawals: Option<&[Withdrawal]>,
+    total_block_fees: Option<u128>,
+    block_builder_address: Option<Address>,
 ) -> HashMap<Address, u128> {
     let mut balance_increments = HashMap::new();
 
@@ -38,6 +40,34 @@ pub fn post_block_balance_increments(
         // Full block reward
         *balance_increments.entry(beneficiary).or_default() +=
             calc::block_reward(base_block_reward, ommers.len());
+    }
+
+    // split block fees between builder and botanix if total_block_fees exist and
+    // block_builder_address is not zero.
+    // need conditional statement so reth tests can pass:
+    // sometimes tests will pass None for fees (ie processor eip4788 tests)
+    // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
+    // choice tests) During normal operation, the block_builder address will never be zero: it
+    // will be an authority address
+    let fees = total_block_fees.unwrap_or(0);
+    let address = block_builder_address.unwrap_or(Address::ZERO);
+
+    if fees > 0 && address != Address::ZERO && chain_spec.botanix_fee_recipient.is_some() {
+        let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
+
+        *balance_increments
+            .entry(
+                Address::from_str(
+                    chain_spec
+                        .botanix_fee_recipient
+                        .clone()
+                        .expect("botanix fee recipient to exist")
+                        .as_str(),
+                )
+                .expect("Recipient to exist"),
+            )
+            .or_default() += botanix_fees;
+        *balance_increments.entry(address).or_default() += builder_fees;
     }
 
     // process withdrawals
@@ -57,18 +87,18 @@ pub fn post_block_balance_increments(
 /// If cancun is not activated or the block is the genesis block, then this is a no-op, and no
 /// state changes are made.
 #[inline]
-pub fn apply_beacon_root_contract_call<DB: Database + DatabaseCommit>(
+pub fn apply_beacon_root_contract_call<EXT, DB: Database + DatabaseCommit>(
     chain_spec: &ChainSpec,
     block_timestamp: u64,
     block_number: u64,
     parent_beacon_block_root: Option<B256>,
-    evm: &mut EVM<DB>,
+    evm: &mut Evm<'_, EXT, DB>,
 ) -> Result<(), BlockExecutionError>
 where
     DB::Error: std::fmt::Display,
 {
     if !chain_spec.is_cancun_active_at_timestamp(block_timestamp) {
-        return Ok(())
+        return Ok(());
     }
 
     let parent_beacon_block_root =
@@ -81,37 +111,36 @@ where
             return Err(BlockValidationError::CancunGenesisParentBeaconBlockRootNotZero {
                 parent_beacon_block_root,
             }
-            .into())
+            .into());
         }
-        return Ok(())
+        return Ok(());
     }
 
     // get previous env
-    let previous_env = evm.env.clone();
+    let previous_env = Box::new(evm.env().clone());
 
     // modify env for pre block call
-    fill_tx_env_with_beacon_root_contract_call(&mut evm.env, parent_beacon_block_root);
+    fill_tx_env_with_beacon_root_contract_call(&mut evm.context.evm.env, parent_beacon_block_root);
 
     let mut state = match evm.transact() {
         Ok(res) => res.state,
         Err(e) => {
-            evm.env = previous_env;
+            evm.context.evm.env = previous_env;
             return Err(BlockValidationError::BeaconRootContractCall {
                 parent_beacon_block_root: Box::new(parent_beacon_block_root),
                 message: e.to_string(),
             }
-            .into())
+            .into());
         }
     };
 
     state.remove(&SYSTEM_ADDRESS);
-    state.remove(&evm.env.block.coinbase);
+    state.remove(&evm.block().coinbase);
 
-    let db = evm.db().expect("db to not be moved");
-    db.commit(state);
+    evm.context.evm.db.commit(state);
 
     // re-set the previous env
-    evm.env = previous_env;
+    evm.context.evm.env = previous_env;
 
     Ok(())
 }
@@ -150,10 +179,10 @@ pub fn insert_post_block_withdrawals_balance_increments(
     // Process withdrawals
     if chain_spec.is_shanghai_active_at_timestamp(block_timestamp) {
         if let Some(withdrawals) = withdrawals {
-            for withdrawal in withdrawals {
+            for withdrawal in withdrawals.iter() {
                 if withdrawal.amount > 0 {
                     *balance_increments.entry(withdrawal.address).or_default() +=
-                        withdrawal.amount_wei();
+                        withdrawal.amount_wei().to::<u128>();
                 }
             }
         }

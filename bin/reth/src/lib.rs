@@ -9,6 +9,9 @@
 //!   and leak detection functionality. See [jemalloc's opt.prof](https://jemalloc.net/jemalloc.3.html#opt.prof)
 //!   documentation for usage details. This is **not recommended on Windows**. See [here](https://rust-lang.github.io/rfcs/1974-global-allocators.html#jemalloc)
 //!   for more info.
+//! - `asm-keccak`: replaces the default, pure-Rust implementation of Keccak256 with one implemented
+//!   in assembly; see [the `keccak-asm` crate](https://github.com/DaniPopes/keccak-asm) for more
+//!   details and supported targets
 //! - `min-error-logs`: Disables all logs below `error` level.
 //! - `min-warn-logs`: Disables all logs below `warn` level.
 //! - `min-info-logs`: Disables all logs below `info` level. This can speed up the node, since fewer
@@ -24,27 +27,58 @@
     html_favicon_url = "https://avatars0.githubusercontent.com/u/97369466?s=256",
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
-#![warn(missing_docs, unreachable_pub, rustdoc::all)]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-pub mod args;
-pub mod chain;
 pub mod cli;
-pub mod config;
-pub mod db;
-pub mod debug_cmd;
-pub mod dirs;
-pub mod init;
-pub mod node;
-pub mod p2p;
-pub mod prometheus_exporter;
-pub mod recover;
-pub mod runner;
-pub mod stage;
-pub mod test_vectors;
+pub mod commands;
 pub mod utils;
-pub mod version;
+
+/// Re-exported payload related types
+pub mod payload {
+    pub use reth_payload_builder::*;
+    pub use reth_payload_validator::ExecutionPayloadValidator;
+}
+
+/// Re-exported from `reth_node_api`.
+pub mod api {
+    pub use reth_node_api::*;
+}
+
+/// Re-exported from `reth_node_core`.
+pub mod core {
+    pub use reth_node_core::*;
+}
+
+/// Re-exported from `reth_node_core`.
+pub mod prometheus_exporter {
+    pub use reth_node_core::prometheus_exporter::*;
+}
+
+/// Re-export of the `reth_node_core` types specifically in the `args` module.
+///
+/// This is re-exported because the types in `reth_node_core::args` originally existed in
+/// `reth::args` but were moved to the `reth_node_core` crate. This re-export avoids a breaking
+/// change.
+pub mod args {
+    pub use reth_node_core::args::*;
+}
+
+/// Re-exported from `reth_node_core`, also to prevent a breaking change. See the comment on
+/// the `reth_node_core::args` re-export for more details.
+pub mod version {
+    pub use reth_node_core::version::*;
+}
+
+/// Re-exported from `reth_node_builder`
+pub mod builder {
+    pub use reth_node_builder::*;
+}
+
+/// Re-exported from `reth_node_core`, also to prevent a breaking change. See the comment on
+/// the `reth_node_core::args` re-export for more details.
+pub mod dirs {
+    pub use reth_node_core::dirs::*;
+}
 
 /// Re-exported from `reth_provider`.
 pub mod providers {
@@ -124,8 +158,24 @@ pub mod rpc {
     }
 }
 
+// re-export for convenience
+#[doc(inline)]
+pub use reth_cli_runner::{tokio_runtime, CliContext, CliRunner};
+
+#[cfg(all(unix, any(target_env = "gnu", target_os = "macos")))]
+pub mod sigsegv_handler;
+
+/// Signal handler to extract a backtrace from stack overflow.
+///
+/// This is a no-op because this platform doesn't support our signal handler's requirements.
+#[cfg(not(all(unix, any(target_env = "gnu", target_os = "macos"))))]
+pub mod sigsegv_handler {
+    /// No-op function.
+    pub fn install() {}
+}
+
 #[cfg(all(feature = "jemalloc", unix))]
-use jemallocator as _;
+use tikv_jemallocator as _;
 
 // for rendering diagrams
 use aquamarine as _;

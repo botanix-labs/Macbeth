@@ -3,12 +3,13 @@ use std::io::Write;
 use bitcoin::{
     absolute::LockTime,
     hashes::{sha256, Hash},
+    key::TweakedPublicKey,
     opcodes,
     script::Builder,
-    taproot::{Error, TaprootBuilder, TaprootSpendInfo},
+    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification},
+    taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
-use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -22,7 +23,7 @@ impl EthAddress for ethers::types::Address {
 
 impl EthAddress for Vec<u8> {
     fn as_slice(&self) -> &[u8] {
-        &self
+        self
     }
 }
 
@@ -46,7 +47,9 @@ lazy_static::lazy_static! {
 
 #[derive(Debug)]
 enum SafeSpendPathError {
+    #[allow(dead_code)]
     InvalidLengthOfPublicKeys,
+    #[allow(dead_code)]
     QuorumCannotBeLessThanPublicKeys,
 }
 
@@ -54,28 +57,28 @@ enum SafeSpendPathError {
 /// Timelocks are relative
 fn _build_safe_spend_path_script_check_sig_add(
     lock_time: LockTime,
-    public_keys: &Vec<PublicKey>,
+    public_keys: &[PublicKey],
     quorum: i64,
 ) -> Result<ScriptBuf, SafeSpendPathError> {
     if public_keys.len() < 2 {
-        return Err(SafeSpendPathError::InvalidLengthOfPublicKeys)
+        return Err(SafeSpendPathError::InvalidLengthOfPublicKeys);
     }
 
     if public_keys.len() > usize::try_from(quorum).expect("Quorum should always be a valid usize") {
-        return Err(SafeSpendPathError::QuorumCannotBeLessThanPublicKeys)
+        return Err(SafeSpendPathError::QuorumCannotBeLessThanPublicKeys);
     }
 
     let mut script = Builder::new()
         .push_lock_time(lock_time)
         .push_key(&bitcoin::PublicKey::new(
-            *public_keys.get(0).expect("There is always a 0th public key"),
+            *public_keys.first().expect("There is always a 0th public key"),
         ))
         .push_opcode(opcodes::all::OP_CHECKSIG);
 
     for i in 1..public_keys.len() {
         script = script
             .push_key(&bitcoin::PublicKey::new(
-                *(public_keys.get(i).expect(format!("should find pubkey at {}", i).as_str())),
+                *(public_keys.get(i).unwrap_or_else(|| panic!("should find pubkey at {}", i))),
             ))
             .push_opcode(opcodes::all::OP_CHECKSIGADD);
     }
@@ -100,7 +103,7 @@ fn build_safe_spend_path_script_check_sig_verify(
 pub fn generate_taproot_spend_info(
     secp: &Secp256k1<impl Verification>,
     tweaked_public_key: &PublicKey,
-) -> Result<TaprootSpendInfo, Error> {
+) -> Result<TaprootSpendInfo, TaprootError> {
     let lock_time = LockTime::from_time(SAFE_SPEND_TIMELOCK_SECOND).expect("valid time");
     let builder = TaprootBuilder::new()
         .add_leaf(
@@ -110,51 +113,34 @@ pub fn generate_taproot_spend_info(
         .expect("Couldn't add timelock leaf");
 
     let finalized_taproot =
-        builder.finalize(&secp, tweaked_public_key.x_only_public_key().0).unwrap();
+        builder.finalize(secp, tweaked_public_key.x_only_public_key().0).unwrap();
 
     Ok(finalized_taproot)
 }
 
-pub fn generate_taproot_scriptpubkey(
-    secp: &Secp256k1<impl Verification>,
-    tweaked_public_key: &PublicKey,
-) -> ScriptBuf {
-    let taproot_spend_info =
-        generate_taproot_spend_info(secp, tweaked_public_key).expect("Valid spend info");
-    ScriptBuf::new_v1_p2tr(
-        secp,
-        tweaked_public_key.x_only_public_key().0,
-        taproot_spend_info.merkle_root(),
-    )
-}
-
-pub fn generate_taproot_address(
-    secp: &Secp256k1<impl Verification>,
-    tweaked_public_key: &PublicKey,
-    network: Network,
-) -> Address {
-    let script = generate_taproot_scriptpubkey(&secp, tweaked_public_key);
+pub fn generate_taproot_address(tweaked_public_key: &PublicKey, network: Network) -> Address {
+    let script = generate_taproot_scriptpubkey(tweaked_public_key);
     Address::from_script(&script, network).expect("valid address")
 }
 
+/// Deprecated
 fn generate_tweak<T>(eth_address: &T, aggregate_key: &PublicKey) -> Scalar
 where
     T: EthAddress,
 {
     let eth = eth_address.as_slice();
-    let eth_address_tweak = sha256::Hash::hash(&eth);
-    let tweak = {
+    let eth_address_tweak = sha256::Hash::hash(eth);
+    {
         let mut eng = sha256::Hash::engine();
         eng.write_all(&aggregate_key.serialize()).unwrap();
         eng.write_all(&eth_address_tweak[..]).unwrap();
         let hash = sha256::Hash::from_engine(eng);
         secp256k1::Scalar::from_be_bytes(hash.to_byte_array())
             .expect("safe hash values should be under the curve order")
-    };
-
-    tweak
+    }
 }
 
+/// Deprecated
 pub fn generate_tweaked_public_key<T>(
     secp: &Secp256k1<impl Verification>,
     eth_address: &T,
@@ -169,6 +155,7 @@ where
         .expect("if you hash the point into the tweak, this can't really happen")
 }
 
+/// Deprecated
 pub fn generate_tweaked_secret_key<T>(
     eth_address: &T,
     aggregate_key: &PublicKey,
@@ -178,72 +165,72 @@ where
     T: EthAddress,
 {
     let tweak = generate_tweak(eth_address, aggregate_key);
-    let internal_sk = secret_key.add_tweak(&tweak).expect("legal tweak");
-
-    internal_sk
+    secret_key.add_tweak(&tweak).expect("legal tweak")
 }
 
-pub fn generate_taproot_change_scriptpubkey(
-    secp: &Secp256k1<impl Verification>,
-    public_key: &PublicKey,
-) -> ScriptBuf {
-    // Address::p2tr(secp, public_key.x_only_public_key().0, None, network).script_pubkey()
-    let taproot_spend_info =
-        generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
-    bitcoin::ScriptBuf::new_v1_p2tr(secp, (*public_key).into(), taproot_spend_info.merkle_root())
+pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> ScriptBuf {
+    // This is commented out for now b/c the frost library only supports empty merkel root
+    // let taproot_spend_info =
+    //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
+
+    // Note that the public key is already tweaked with the eth address and the taptree merkel root
+    // so we can use the dangerous_assume_tweaked method to create the script
+    // In the case of a change output being created no eth address tweak is provided
+    let tweaked_pk = TweakedPublicKey::dangerous_assume_tweaked(public_key.x_only_public_key().0);
+    bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
 }
 
-pub fn gateway_address<T>(
-    secp: &Secp256k1<impl Verification>,
-    frost_pubkey: &PublicKey,
-    eth_addr: &T,
-    network: Network,
-) -> anyhow::Result<Address>
-where
-    T: EthAddress,
-{
-    let tweaked_pk = generate_tweaked_public_key(&secp, eth_addr, frost_pubkey);
+pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
+    // This is commented out for now b/c the frost library only supports empty merkel root
+    // let taproot_spend_info =
+    //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
 
-    Ok(generate_taproot_address(secp, &tweaked_pk, network))
+    bitcoin::ScriptBuf::new_p2tr(
+        bitcoin::secp256k1::SECP256K1,
+        public_key.x_only_public_key().0,
+        None,
+    )
+}
+
+/// Note: pk provided to this address is the frost public key already tweaked
+/// with the eth address and the taptree merkel root.
+pub fn gateway_address(pk: &PublicKey, network: Network) -> anyhow::Result<Address> {
+    Ok(generate_taproot_address(pk, network))
 }
 
 #[cfg(test)]
 mod tests {
-    lazy_static::lazy_static! {
-        static ref SECP: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-    }
-
     use super::*;
-    use crate::key::generate_bip340_keypair;
-    use hex;
-    use secp256k1::KeyPair;
+    use secp256k1::{rand::rngs::OsRng, Keypair};
+    fn generate_key_pair() -> Keypair {
+        let (secret_key, _) = secp256k1::SECP256K1.generate_keypair(&mut OsRng);
+        let keypair = Keypair::from_secret_key(secp256k1::SECP256K1, &secret_key);
+
+        keypair
+    }
 
     #[test]
     fn correct_eth_address() {
-        let secp = Secp256k1::new();
         let network: Network = Network::Testnet;
-        let eth_addr = ethers::abi::Address::from_slice(
-            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").expect("hex decode").as_slice(),
-        );
-        let key_pair = KeyPair::from_seckey_str(
-            &SECP,
+        let key_pair = Keypair::from_seckey_str(
+            secp256k1::SECP256K1,
             "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
         )
         .unwrap();
 
-        let gateway = gateway_address(&secp, &key_pair.public_key(), &eth_addr, network).unwrap();
+        let gateway = gateway_address(&key_pair.public_key(), network).unwrap();
         assert_eq!(
             gateway.to_string(),
-            "tb1pjutmjkwrwjejxn988mt35528schetrrsgexhv24fxhn7nk6pvs7qd66dne"
+            "tb1ptn6uxgn7euat3hkqdxx2x0h9ynhvzkjkwnee2smlzx6fvnyn2ejqjyman0"
         );
     }
 
     #[test]
     fn it_should_produce_a_testnet_taproot_address() {
         let network: Network = Network::Testnet;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
-        let address = generate_taproot_address(&SECP, &key_pair.public_key(), network);
+        let address = generate_taproot_address(&key_pair.public_key(), network);
         assert!(address.to_string().starts_with("tb1p"));
         assert!(Address::is_spend_standard(&address));
     }
@@ -251,9 +238,9 @@ mod tests {
     #[test]
     fn it_should_produce_a_mainnet_taproot_address() {
         let network = Network::Bitcoin;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
-        let address = generate_taproot_address(&SECP, &key_pair.public_key(), network);
+        let address = generate_taproot_address(&key_pair.public_key(), network);
 
         assert!(address.to_string().starts_with("bc1p"));
         assert!(Address::is_spend_standard(&address));
@@ -262,9 +249,9 @@ mod tests {
     #[test]
     fn it_should_produce_34_byte_script_pubkey() {
         let network = Network::Bitcoin;
-        let key_pair = generate_bip340_keypair();
+        let key_pair = generate_key_pair();
         // Here we use a untweaked key, but that is fine, generate address doesn't know any better
-        let address = generate_taproot_address(&SECP, &key_pair.public_key(), network);
+        let address = generate_taproot_address(&key_pair.public_key(), network);
 
         assert_eq!(address.script_pubkey().len(), 34);
     }

@@ -1,8 +1,8 @@
-use crate::blobstore::{BlobStore, BlobStoreError, BlobTransactionSidecar};
+use crate::blobstore::{BlobStore, BlobStoreCleanupStat, BlobStoreError, BlobTransactionSidecar};
 use reth_primitives::B256;
 
 /// A blobstore implementation that does nothing
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub struct NoopBlobStore;
 
@@ -21,6 +21,10 @@ impl BlobStore for NoopBlobStore {
 
     fn delete_all(&self, _txs: Vec<B256>) -> Result<(), BlobStoreError> {
         Ok(())
+    }
+
+    fn cleanup(&self) -> BlobStoreCleanupStat {
+        BlobStoreCleanupStat::default()
     }
 
     fn get(&self, _tx: B256) -> Result<Option<BlobTransactionSidecar>, BlobStoreError> {

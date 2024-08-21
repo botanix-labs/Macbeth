@@ -1,5 +1,6 @@
+//! Types for the Ethereum 2.0 RPC protocol (beacon chain).
+
 #![allow(missing_docs)]
-//! Types for the Ethereum 2.0 RPC protocol (beacon chain)
 
 use alloy_primitives::FixedBytes;
 use constants::{BLS_PUBLIC_KEY_BYTES_LEN, BLS_SIGNATURE_BYTES_LEN};
@@ -7,6 +8,7 @@ use constants::{BLS_PUBLIC_KEY_BYTES_LEN, BLS_SIGNATURE_BYTES_LEN};
 pub mod constants;
 /// Beacon API events support.
 pub mod events;
+pub mod header;
 pub mod payload;
 pub mod withdrawals;
 

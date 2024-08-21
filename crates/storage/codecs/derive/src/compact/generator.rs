@@ -52,18 +52,13 @@ pub fn generate_from_to(ident: &Ident, fields: &FieldList, is_zstd: bool) -> Tok
 /// Generates code to implement the `Compact` trait method `to_compact`.
 fn generate_from_compact(fields: &FieldList, ident: &Ident, is_zstd: bool) -> TokenStream2 {
     let mut lines = vec![];
-    let mut known_types = vec!["B256", "Address", "Bloom", "Vec", "TxHash"];
+    let mut known_types = vec!["B256", "Address", "Bloom", "Vec", "TxHash", "BlockHash"];
 
     // Only types without `Bytes` should be added here. It's currently manually added, since
     // it's hard to figure out with derive_macro which types have Bytes fields.
     //
     // This removes the requirement of the field to be placed last in the struct.
-    known_types.extend_from_slice(&[
-        "TransactionKind",
-        "AccessList",
-        "Signature",
-        "CheckpointBlockRange",
-    ]);
+    known_types.extend_from_slice(&["TxKind", "AccessList", "Signature", "CheckpointBlockRange"]);
 
     // let mut handle = FieldListHandler::new(fields);
     let is_enum = fields.iter().any(|field| matches!(field, FieldTypes::EnumVariant(_)));
@@ -115,20 +110,11 @@ fn generate_from_compact(fields: &FieldList, ident: &Ident, is_zstd: bool) -> To
             quote! {
                 if flags.__zstd() != 0 {
                     #decompressor.with(|decompressor| {
-                        let mut decompressor = decompressor.borrow_mut();
-
-                        let mut tmp: Vec<u8> = Vec::with_capacity(300);
-
-                        while let Err(err) = decompressor.decompress_to_buffer(&buf[..], &mut tmp) {
-                            let err = err.to_string();
-                            if !err.contains("Destination buffer is too small") {
-                                panic!("Failed to decompress: {}", err);
-                            }
-                            tmp.reserve(tmp.capacity() + 10_000);
-                        }
+                        let decompressor = &mut decompressor.borrow_mut();
+                        let decompressed = decompressor.decompress(buf);
                         let mut original_buf = buf;
 
-                        let mut buf: &[u8] = tmp.as_slice();
+                        let mut buf: &[u8] = decompressed;
                         #(#lines)*
                         (obj, original_buf)
                     })

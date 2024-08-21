@@ -1,0 +1,73 @@
+name: "Mint Contract Check"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - feature/poA-consensus
+
+jobs:
+  contract-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Build contract 
+        working-directory: ./contracts
+        run: forge build --sizes
+
+      - name: Add build summary
+        working-directory: ./contracts
+        run: |
+          echo "## Build result" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
+
+  contract-test:
+    needs: ["contract-build"]
+    runs-on: "ubuntu-latest"
+    env:
+      MINTING_CONTRACT_ADDRESS: "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@v1"
+
+      - name: "Install Bun"
+        uses: "oven-sh/setup-bun@v1"
+
+
+      - name: "Show the Foundry config"
+        working-directory: "./contracts"
+        run: "forge config"
+
+      - name: "Generate a fuzz seed that changes weekly to avoid burning through RPC allowance"
+        working-directory: "./contracts"
+        run: >
+          echo "FOUNDRY_FUZZ_SEED=$(
+            echo $(($EPOCHSECONDS - $EPOCHSECONDS % 604800))
+          )" >> $GITHUB_ENV
+
+      - name: "Run the mint tests"
+        working-directory: "./contracts"
+        run: |
+            forge test --match-contract Minting -vvv
+
+      - name: "Run the faucet tests"
+        working-directory: "./contracts"
+        run: |
+            forge test --match-contract Faucet -vvv
+
+      - name: "Add test summary"
+        working-directory: "./contracts"
+        run: |
+          echo "## Tests result" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Passed" >> $GITHUB_STEP_SUMMARY

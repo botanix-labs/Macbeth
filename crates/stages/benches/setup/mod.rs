@@ -1,3 +1,4 @@
+#![allow(unreachable_pub)]
 use itertools::concat;
 use reth_db::{
     cursor::DbCursorRO,
@@ -10,26 +11,23 @@ use reth_interfaces::test_utils::{
     generators,
     generators::{
         random_block_range, random_changeset_range, random_contract_account_range,
-        random_eoa_account_range,
+        random_eoa_accounts,
     },
 };
-use reth_primitives::{Account, Address, SealedBlock, B256, U256};
+use reth_primitives::{fs, Account, Address, SealedBlock, B256, U256};
 use reth_stages::{
     stages::{AccountHashingStage, StorageHashingStage},
-    test_utils::TestStageDB,
-    ExecInput, Stage, UnwindInput,
+    test_utils::{StorageKind, TestStageDB},
 };
 use reth_trie::StateRoot;
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
+use tokio::runtime::Handle;
 
 mod constants;
 
 mod account_hashing;
 pub use account_hashing::*;
+use reth_stages_api::{ExecInput, Stage, UnwindInput};
 
 pub(crate) type StageRange = (ExecInput, UnwindInput);
 
@@ -40,12 +38,14 @@ pub(crate) fn stage_unwind<S: Clone + Stage<Arc<TempDatabase<DatabaseEnv>>>>(
 ) {
     let (_, unwind) = range;
 
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let mut stage = stage.clone();
-        let provider = db.factory.provider_rw().unwrap();
+    // NOTE(onbjerg): This is unfortunately needed because Criterion does not support async setup
+    tokio::task::block_in_place(move || {
+        Handle::current().block_on(async move {
+            let mut stage = stage.clone();
+            let provider = db.factory.provider_rw().unwrap();
 
-        // Clear previous run
-        stage
+            // Clear previous run
+            stage
             .unwind(&provider, unwind)
             .map_err(|e| {
                 format!(
@@ -55,7 +55,8 @@ pub(crate) fn stage_unwind<S: Clone + Stage<Arc<TempDatabase<DatabaseEnv>>>>(
             })
             .unwrap();
 
-        provider.commit().unwrap();
+            provider.commit().unwrap();
+        })
     });
 }
 
@@ -66,7 +67,7 @@ pub(crate) fn unwind_hashes<S: Clone + Stage<Arc<TempDatabase<DatabaseEnv>>>>(
 ) {
     let (input, unwind) = range;
 
-    let mut stage = stage.clone();
+    let mut stage = stage;
     let provider = db.factory.provider_rw().unwrap();
 
     StorageHashingStage::default().unwind(&provider, unwind).unwrap();
@@ -83,8 +84,7 @@ pub(crate) fn unwind_hashes<S: Clone + Stage<Arc<TempDatabase<DatabaseEnv>>>>(
 
 // Helper for generating testdata for the benchmarks.
 // Returns the path to the database file.
-pub(crate) fn txs_testdata(num_blocks: u64) -> PathBuf {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata").join("txs-bench");
+pub(crate) fn txs_testdata(num_blocks: u64) -> TestStageDB {
     let txs_range = 100..150;
 
     // number of storage changes per transition
@@ -100,14 +100,17 @@ pub(crate) fn txs_testdata(num_blocks: u64) -> PathBuf {
     // rng
     let mut rng = generators::rng();
 
-    if !path.exists() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata").join("txs-bench");
+    let exists = path.exists();
+    let db = TestStageDB::new(&path);
+
+    if !exists {
         // create the dirs
-        std::fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(&path).unwrap();
         println!("Transactions testdata not found, generating to {:?}", path.display());
-        let db = TestStageDB::new(&path);
 
         let accounts: BTreeMap<Address, Account> = concat([
-            random_eoa_account_range(&mut rng, 0..n_eoa),
+            random_eoa_accounts(&mut rng, n_eoa),
             random_contract_account_range(&mut rng, &mut (0..n_contract)),
         ])
         .into_iter()
@@ -126,8 +129,9 @@ pub(crate) fn txs_testdata(num_blocks: u64) -> PathBuf {
         db.insert_accounts_and_storages(start_state.clone()).unwrap();
 
         // make first block after genesis have valid state root
-        let (root, updates) =
-            StateRoot::new(db.factory.provider_rw().unwrap().tx_ref()).root_with_updates().unwrap();
+        let (root, updates) = StateRoot::from_tx(db.factory.provider_rw().unwrap().tx_ref())
+            .root_with_updates()
+            .unwrap();
         let second_block = blocks.get_mut(1).unwrap();
         let cloned_second = second_block.clone();
         let mut updated_header = cloned_second.header.unseal();
@@ -154,7 +158,7 @@ pub(crate) fn txs_testdata(num_blocks: u64) -> PathBuf {
         // make last block have valid state root
         let root = {
             let tx_mut = db.factory.provider_rw().unwrap();
-            let root = StateRoot::new(tx_mut.tx_ref()).root().unwrap();
+            let root = StateRoot::from_tx(tx_mut.tx_ref()).root().unwrap();
             tx_mut.commit().unwrap();
             root
         };
@@ -165,15 +169,15 @@ pub(crate) fn txs_testdata(num_blocks: u64) -> PathBuf {
         updated_header.state_root = root;
         *last_block = SealedBlock { header: updated_header.seal_slow(), ..cloned_last };
 
-        db.insert_blocks(blocks.iter(), None).unwrap();
+        db.insert_blocks(blocks.iter(), StorageKind::Static).unwrap();
 
         // initialize TD
         db.commit(|tx| {
             let (head, _) = tx.cursor_read::<tables::Headers>()?.first()?.unwrap_or_default();
-            Ok(tx.put::<tables::HeaderTD>(head, U256::from(0).into())?)
+            Ok(tx.put::<tables::HeaderTerminalDifficulties>(head, U256::from(0).into())?)
         })
         .unwrap();
     }
 
-    path
+    db
 }

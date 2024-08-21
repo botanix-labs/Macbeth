@@ -7,28 +7,43 @@
     html_favicon_url = "https://avatars0.githubusercontent.com/u/97369466?s=256",
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
-#![warn(missing_debug_implementations, missing_docs, unreachable_pub, rustdoc::all)]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-mod admin;
 pub mod beacon;
 mod botanix;
 mod eth;
 mod mev;
 mod net;
-mod otterscan;
 mod peer;
 pub mod relay;
 mod rpc;
-pub mod serde_helpers;
 
-pub use admin::*;
+// re-export for convenience
+pub use alloy_rpc_types::serde_helpers;
+
+// Ethereum specific rpc types coming from alloy.
+pub use alloy_rpc_types::*;
+
+pub mod trace {
+    //! RPC types for trace endpoints and inspectors.
+    pub use alloy_rpc_types_trace::*;
+}
+
+// Anvil specific rpc types coming from alloy.
+pub use alloy_rpc_types_anvil as anvil;
+
+// Ethereum specific rpc types related to typed transaction requests and the engine API.
+pub use eth::{
+    engine,
+    engine::{
+        ExecutionPayload, ExecutionPayloadV1, ExecutionPayloadV2, ExecutionPayloadV3, PayloadError,
+    },
+    error::ToRpcError,
+    transaction::{self, TransactionRequest, TypedTransactionRequest},
+};
+
 pub use botanix::*;
-pub use eth::*;
 pub use mev::*;
 pub use net::*;
-pub use otterscan::*;
 pub use peer::*;
 pub use rpc::*;
-pub use serde_helpers::*;

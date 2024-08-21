@@ -1,14 +1,14 @@
 [book]
-authors = ["reth Core Contributors"]
+authors = ["reth Core Contributors + Botanix labs"]
 language = "en"
 multilingual = false
 src = "book"
-title = "reth Book"
-description = "A book on all things Reth"
+title = "Botanix Federation book"
+description = "Book desribing the Botanix Federation"
 
 [output.html]
 theme = "book/theme"
-git-repository-url = "https://github.com/paradigmxyz/reth"
+git-repository-url = "https://github.com/botanix-labs/macbeth/"
 default-theme = "ayu"
 no-section-label = true
 

@@ -1,5 +1,4 @@
 use crate::{
-    bundle_state::BundleStateWithReceipts,
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, PruneCheckpointReader,
@@ -8,17 +7,22 @@ use crate::{
     WithdrawalsProvider,
 };
 use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
+use reth_evm::ConfigureEvmEnv;
 use reth_interfaces::provider::ProviderResult;
 use reth_primitives::{
     stage::{StageCheckpoint, StageId},
     trie::AccountProof,
-    Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumber, Bytecode,
-    ChainInfo, ChainSpec, Header, PruneCheckpoint, PruneSegment, Receipt, SealedBlock,
+    Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumber, BlockWithSenders,
+    Bytecode, ChainInfo, ChainSpec, Header, PruneCheckpoint, PruneSegment, Receipt, SealedBlock,
     SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue, TransactionMeta,
-    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, B256, MAINNET, U256,
+    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256,
+    MAINNET, U256,
 };
 use reth_trie::updates::TrieUpdates;
-use revm::primitives::{BlockEnv, CfgEnv};
+use revm::{
+    db::BundleState,
+    primitives::{BlockEnv, CfgEnvWithHandlerCfg},
+};
 use std::{
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
@@ -112,6 +116,13 @@ impl BlockReader for NoopProvider {
     fn block_range(&self, _range: RangeInclusive<BlockNumber>) -> ProviderResult<Vec<Block>> {
         Ok(vec![])
     }
+
+    fn block_with_senders_range(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<BlockWithSenders>> {
+        Ok(vec![])
+    }
 }
 
 impl BlockReaderIdExt for NoopProvider {
@@ -191,17 +202,17 @@ impl TransactionsProvider for NoopProvider {
         Ok(Vec::default())
     }
 
-    fn senders_by_tx_range(
-        &self,
-        _range: impl RangeBounds<TxNumber>,
-    ) -> ProviderResult<Vec<Address>> {
-        Ok(Vec::default())
-    }
-
     fn transactions_by_tx_range(
         &self,
         _range: impl RangeBounds<TxNumber>,
     ) -> ProviderResult<Vec<reth_primitives::TransactionSignedNoHash>> {
+        Ok(Vec::default())
+    }
+
+    fn senders_by_tx_range(
+        &self,
+        _range: impl RangeBounds<TxNumber>,
+    ) -> ProviderResult<Vec<Address>> {
         Ok(Vec::default())
     }
 
@@ -221,6 +232,13 @@ impl ReceiptProvider for NoopProvider {
 
     fn receipts_by_block(&self, _block: BlockHashOrNumber) -> ProviderResult<Option<Vec<Receipt>>> {
         Ok(None)
+    }
+
+    fn receipts_by_tx_range(
+        &self,
+        _range: impl RangeBounds<TxNumber>,
+    ) -> ProviderResult<Vec<Receipt>> {
+        Ok(vec![])
     }
 }
 
@@ -276,13 +294,13 @@ impl ChangeSetReader for NoopProvider {
 }
 
 impl StateRootProvider for NoopProvider {
-    fn state_root(&self, _state: &BundleStateWithReceipts) -> ProviderResult<B256> {
+    fn state_root(&self, _state: &BundleState) -> ProviderResult<B256> {
         Ok(B256::default())
     }
 
     fn state_root_with_updates(
         &self,
-        _bundle_state: &BundleStateWithReceipts,
+        _bundle_state: &BundleState,
     ) -> ProviderResult<(B256, TrieUpdates)> {
         Ok((B256::default(), TrieUpdates::default()))
     }
@@ -307,21 +325,29 @@ impl StateProvider for NoopProvider {
 }
 
 impl EvmEnvProvider for NoopProvider {
-    fn fill_env_at(
+    fn fill_env_at<EvmConfig>(
         &self,
-        _cfg: &mut CfgEnv,
+        _cfg: &mut CfgEnvWithHandlerCfg,
         _block_env: &mut BlockEnv,
         _at: BlockHashOrNumber,
-    ) -> ProviderResult<()> {
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
-    fn fill_env_with_header(
+    fn fill_env_with_header<EvmConfig>(
         &self,
-        _cfg: &mut CfgEnv,
+        _cfg: &mut CfgEnvWithHandlerCfg,
         _block_env: &mut BlockEnv,
         _header: &Header,
-    ) -> ProviderResult<()> {
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
@@ -341,11 +367,27 @@ impl EvmEnvProvider for NoopProvider {
         Ok(())
     }
 
-    fn fill_cfg_env_at(&self, _cfg: &mut CfgEnv, _at: BlockHashOrNumber) -> ProviderResult<()> {
+    fn fill_cfg_env_at<EvmConfig>(
+        &self,
+        _cfg: &mut CfgEnvWithHandlerCfg,
+        _at: BlockHashOrNumber,
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 
-    fn fill_cfg_env_with_header(&self, _cfg: &mut CfgEnv, _header: &Header) -> ProviderResult<()> {
+    fn fill_cfg_env_with_header<EvmConfig>(
+        &self,
+        _cfg: &mut CfgEnvWithHandlerCfg,
+        _header: &Header,
+        _evm_config: EvmConfig,
+    ) -> ProviderResult<()>
+    where
+        EvmConfig: ConfigureEvmEnv,
+    {
         Ok(())
     }
 }
@@ -394,14 +436,14 @@ impl StageCheckpointReader for NoopProvider {
 }
 
 impl WithdrawalsProvider for NoopProvider {
-    fn latest_withdrawal(&self) -> ProviderResult<Option<reth_primitives::Withdrawal>> {
-        Ok(None)
-    }
     fn withdrawals_by_block(
         &self,
         _id: BlockHashOrNumber,
         _timestamp: u64,
-    ) -> ProviderResult<Option<Vec<reth_primitives::Withdrawal>>> {
+    ) -> ProviderResult<Option<Withdrawals>> {
+        Ok(None)
+    }
+    fn latest_withdrawal(&self) -> ProviderResult<Option<Withdrawal>> {
         Ok(None)
     }
 }

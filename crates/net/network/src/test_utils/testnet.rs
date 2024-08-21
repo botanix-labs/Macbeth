@@ -4,7 +4,9 @@ use crate::{
     builder::ETH_REQUEST_CHANNEL_CAPACITY,
     error::NetworkError,
     eth_requests::EthRequestHandler,
-    transactions::{TransactionsHandle, TransactionsManager},
+    peers::PeersHandle,
+    protocol::IntoRlpxSubProtocol,
+    transactions::{TransactionsHandle, TransactionsManager, TransactionsManagerConfig},
     NetworkConfig, NetworkConfigBuilder, NetworkEvent, NetworkEvents, NetworkHandle,
     NetworkManager,
 };
@@ -12,14 +14,15 @@ use futures::{FutureExt, StreamExt};
 use pin_project::pin_project;
 use reth_eth_wire::{protocol::Protocol, DisconnectReason, HelloMessageWithProtocols};
 use reth_network_api::{NetworkInfo, Peers};
-use reth_primitives::{PeerId, MAINNET};
+use reth_network_types::PeerId;
+use reth_primitives::MAINNET;
 use reth_provider::{
     test_utils::NoopProvider, BlockReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory,
 };
 use reth_tasks::TokioTaskExecutor;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore,
-    test_utils::{testing_pool, TestPool},
+    test_utils::{TestPool, TestPoolBuilder},
     EthTransactionPool, TransactionPool, TransactionValidationTaskExecutor,
 };
 use secp256k1::SecretKey;
@@ -94,6 +97,14 @@ where
     /// Return a slice of all peers.
     pub fn peers(&self) -> &[Peer<C, Pool>] {
         &self.peers
+    }
+
+    /// Remove a peer from the [`Testnet`] and return it.
+    ///
+    /// # Panics
+    /// If the index is out of bounds.
+    pub fn remove_peer(&mut self, index: usize) -> Peer<C, Pool> {
+        self.peers.remove(index)
     }
 
     /// Return a mutable iterator over all peers.
@@ -279,28 +290,34 @@ impl<C, Pool> TestnetHandle<C, Pool> {
         &self.peers
     }
 
-    /// Connects all peers with each other
+    /// Connects all peers with each other.
+    ///
+    /// This establishes sessions concurrently between all peers.
+    ///
+    /// Returns once all sessions are established.
     pub async fn connect_peers(&self) {
         if self.peers.len() < 2 {
             return
         }
 
-        let mut streams = Vec::with_capacity(self.peers.len());
-        let mut num_sessions = Vec::with_capacity(self.peers.len());
+        // add an event stream for _each_ peer
+        let streams =
+            self.peers.iter().map(|handle| NetworkEventStream::new(handle.event_listener()));
+
+        // add all peers to each other
         for (idx, handle) in self.peers.iter().enumerate().take(self.peers.len() - 1) {
-            streams.push(NetworkEventStream::new(handle.event_listener()));
-            let mut num = 0;
             for idx in (idx + 1)..self.peers.len() {
                 let neighbour = &self.peers[idx];
                 handle.network.add_peer(*neighbour.peer_id(), neighbour.local_addr());
-                num += 1;
             }
-            num_sessions.push(num);
         }
-        let fut = streams
-            .into_iter()
-            .zip(num_sessions)
-            .map(|(mut stream, num)| async move { stream.take_session_established(num).await });
+
+        // await all sessions to be established
+        let num_sessions_per_peer = self.peers.len() - 1;
+        let fut = streams.into_iter().map(|mut stream| async move {
+            stream.take_session_established(num_sessions_per_peer).await
+        });
+
         futures::future::join_all(fut).await;
     }
 }
@@ -332,6 +349,11 @@ where
         self.network.num_connected_peers()
     }
 
+    /// Adds an additional protocol handler to the peer.
+    pub fn add_rlpx_sub_protocol(&mut self, protocol: impl IntoRlpxSubProtocol) {
+        self.network.add_rlpx_sub_protocol(protocol);
+    }
+
     /// Returns a handle to the peer's network.
     pub fn peer_handle(&self) -> PeerHandle<Pool> {
         PeerHandle {
@@ -344,6 +366,16 @@ where
     /// The address that listens for incoming connections.
     pub fn local_addr(&self) -> SocketAddr {
         self.network.local_addr()
+    }
+
+    /// The [PeerId] of this peer.
+    pub fn peer_id(&self) -> PeerId {
+        *self.network.peer_id()
+    }
+
+    /// Returns mutable access to the network.
+    pub fn network_mut(&mut self) -> &mut NetworkManager<C> {
+        &mut self.network
     }
 
     /// Returns the [`NetworkHandle`] of this peer.
@@ -369,7 +401,12 @@ where
     pub fn install_transactions_manager(&mut self, pool: Pool) {
         let (tx, rx) = unbounded_channel();
         self.network.set_transactions(tx);
-        let transactions_manager = TransactionsManager::new(self.handle(), pool.clone(), rx);
+        let transactions_manager = TransactionsManager::new(
+            self.handle(),
+            pool.clone(),
+            rx,
+            TransactionsManagerConfig::default(),
+        );
         self.transactions_manager = Some(transactions_manager);
         self.pool = Some(pool);
     }
@@ -382,8 +419,12 @@ where
         let Self { mut network, request_handler, client, secret_key, .. } = self;
         let (tx, rx) = unbounded_channel();
         network.set_transactions(tx);
-        let transactions_manager =
-            TransactionsManager::new(network.handle().clone(), pool.clone(), rx);
+        let transactions_manager = TransactionsManager::new(
+            network.handle().clone(),
+            pool.clone(),
+            rx,
+            TransactionsManagerConfig::default(),
+        );
         Peer {
             network,
             request_handler,
@@ -399,9 +440,9 @@ impl<C> Peer<C>
 where
     C: BlockReader + HeaderProvider + Clone,
 {
-    /// Installs a new [testing_pool]
+    /// Installs a new [TestPool]
     pub fn install_test_pool(&mut self) {
-        self.install_transactions_manager(testing_pool())
+        self.install_transactions_manager(TestPoolBuilder::default().into())
     }
 }
 
@@ -451,6 +492,12 @@ impl<Pool> PeerHandle<Pool> {
         self.network.peer_id()
     }
 
+    /// Returns the [`PeersHandle`] from the network.
+    pub fn peer_handle(&self) -> &PeersHandle {
+        self.network.peers_handle()
+    }
+
+    /// Returns the local socket as configured for the network.
     pub fn local_addr(&self) -> SocketAddr {
         self.network.local_addr()
     }

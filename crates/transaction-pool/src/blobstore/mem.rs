@@ -1,10 +1,12 @@
-use crate::blobstore::{BlobStore, BlobStoreError, BlobStoreSize, BlobTransactionSidecar};
+use crate::blobstore::{
+    BlobStore, BlobStoreCleanupStat, BlobStoreError, BlobStoreSize, BlobTransactionSidecar,
+};
 use parking_lot::RwLock;
 use reth_primitives::B256;
 use std::{collections::HashMap, sync::Arc};
 
 /// An in-memory blob store.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct InMemoryBlobStore {
     inner: Arc<InMemoryBlobStoreInner>,
 }
@@ -14,6 +16,12 @@ struct InMemoryBlobStoreInner {
     /// Storage for all blob data.
     store: RwLock<HashMap<B256, BlobTransactionSidecar>>,
     size_tracker: BlobStoreSize,
+}
+
+impl PartialEq for InMemoryBlobStoreInner {
+    fn eq(&self, other: &Self) -> bool {
+        self.store.read().eq(&other.store.read())
+    }
 }
 
 impl BlobStore for InMemoryBlobStore {
@@ -59,6 +67,10 @@ impl BlobStore for InMemoryBlobStore {
         self.inner.size_tracker.sub_size(total_sub);
         self.inner.size_tracker.update_len(store.len());
         Ok(())
+    }
+
+    fn cleanup(&self) -> BlobStoreCleanupStat {
+        BlobStoreCleanupStat::default()
     }
 
     // Retrieves the decoded blob data for the given transaction hash.
@@ -116,7 +128,7 @@ fn remove_size(store: &mut HashMap<B256, BlobTransactionSidecar>, tx: &B256) -> 
     store.remove(tx).map(|rem| rem.size()).unwrap_or_default()
 }
 
-/// Inserts the given blob into the store and returns the size of the blob that was added
+/// Inserts the given blob into the store and returns the size of the blob that was added.
 ///
 /// We don't need to handle the size updates for replacements because transactions are unique.
 #[inline]
@@ -126,6 +138,6 @@ fn insert_size(
     blob: BlobTransactionSidecar,
 ) -> usize {
     let add = blob.size();
-    store.insert(tx, blob).map(|rem| rem.size());
+    store.insert(tx, blob);
     add
 }

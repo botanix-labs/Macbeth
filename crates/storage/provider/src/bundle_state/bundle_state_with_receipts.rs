@@ -1,25 +1,23 @@
-use crate::{StateChanges, StateReverts};
+use crate::{providers::StaticFileProviderRWRefMut, StateChanges, StateReverts};
 use reth_db::{
     cursor::{DbCursorRO, DbCursorRW},
     tables,
     transaction::{DbTx, DbTxMut},
 };
-use reth_interfaces::db::DatabaseError;
+use reth_interfaces::provider::{ProviderError, ProviderResult};
 use reth_primitives::{
-    keccak256, logs_bloom,
+    logs_bloom,
     revm::compat::{into_reth_acc, into_revm_acc},
-    Account, Address, BlockNumber, Bloom, Bytecode, Log, Receipt, Receipts, StorageEntry, B256,
-    U256,
+    Account, Address, BlockNumber, Bloom, Bytecode, Log, Receipt, Receipts, StaticFileSegment,
+    StorageEntry, B256, U256,
 };
-use reth_trie::{
-    hashed_cursor::{HashedPostState, HashedPostStateCursorFactory, HashedStorage},
-    updates::TrieUpdates,
-    StateRoot, StateRootError,
-};
-use revm::{db::states::BundleState, primitives::AccountInfo};
-use std::collections::HashMap;
-
+use reth_trie::HashedPostState;
 pub use revm::db::states::OriginalValuesKnown;
+use revm::{
+    db::{states::BundleState, BundleAccount},
+    primitives::AccountInfo,
+};
+use std::collections::HashMap;
 
 /// Bundle state of post execution changes and reverts
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -95,6 +93,11 @@ impl BundleStateWithReceipts {
         &self.bundle
     }
 
+    /// Returns mutable revm bundle state.
+    pub fn state_mut(&mut self) -> &mut BundleState {
+        &mut self.bundle
+    }
+
     /// Set first block.
     pub fn set_first_block(&mut self, first_block: BlockNumber) {
         self.first_block = first_block;
@@ -103,6 +106,11 @@ impl BundleStateWithReceipts {
     /// Return iterator over all accounts
     pub fn accounts_iter(&self) -> impl Iterator<Item = (Address, Option<&AccountInfo>)> {
         self.bundle.state().iter().map(|(a, acc)| (*a, acc.info.as_ref()))
+    }
+
+    /// Return iterator over all [BundleAccount]s in the bundle
+    pub fn bundle_accounts_iter(&self) -> impl Iterator<Item = (Address, &BundleAccount)> {
+        self.bundle.state().iter().map(|(a, acc)| (*a, acc))
     }
 
     /// Get account if account is known.
@@ -122,106 +130,10 @@ impl BundleStateWithReceipts {
         self.bundle.bytecode(code_hash).map(Bytecode)
     }
 
-    /// Hash all changed accounts and storage entries that are currently stored in the post state.
-    ///
-    /// # Returns
-    ///
-    /// The hashed post state.
+    /// Returns [HashedPostState] for this bundle state.
+    /// See [HashedPostState::from_bundle_state] for more info.
     pub fn hash_state_slow(&self) -> HashedPostState {
-        let mut hashed_state = HashedPostState::default();
-
-        for (address, account) in self.bundle.state() {
-            let hashed_address = keccak256(address);
-            if let Some(account) = &account.info {
-                hashed_state.insert_account(hashed_address, into_reth_acc(account.clone()))
-            } else {
-                hashed_state.insert_destroyed_account(hashed_address);
-            }
-
-            // insert storage.
-            let mut hashed_storage = HashedStorage::new(account.status.was_destroyed());
-
-            for (key, value) in account.storage.iter() {
-                let hashed_key = keccak256(B256::new(key.to_be_bytes()));
-                if value.present_value.is_zero() {
-                    hashed_storage.insert_zero_valued_slot(hashed_key);
-                } else {
-                    hashed_storage.insert_non_zero_valued_storage(hashed_key, value.present_value);
-                }
-            }
-            hashed_state.insert_hashed_storage(hashed_address, hashed_storage)
-        }
-        hashed_state.sorted()
-    }
-
-    /// Returns [StateRoot] calculator based on database and in-memory state.
-    pub fn state_root_calculator<'a, 'b, TX: DbTx>(
-        &self,
-        tx: &'a TX,
-        hashed_post_state: &'b HashedPostState,
-    ) -> StateRoot<'a, TX, HashedPostStateCursorFactory<'a, 'b, TX>> {
-        let (account_prefix_set, storage_prefix_set) = hashed_post_state.construct_prefix_sets();
-        let hashed_cursor_factory = HashedPostStateCursorFactory::new(tx, hashed_post_state);
-        StateRoot::new(tx)
-            .with_hashed_cursor_factory(hashed_cursor_factory)
-            .with_changed_account_prefixes(account_prefix_set)
-            .with_changed_storage_prefixes(storage_prefix_set)
-            .with_destroyed_accounts(hashed_post_state.destroyed_accounts())
-    }
-
-    /// Calculate the state root for this [BundleState].
-    /// Internally, function calls [Self::hash_state_slow] to obtain the [HashedPostState].
-    /// Afterwards, it retrieves the prefixsets from the [HashedPostState] and uses them to
-    /// calculate the incremental state root.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use reth_db::{database::Database, test_utils::create_test_rw_db};
-    /// use reth_primitives::{Account, Receipts, U256};
-    /// use reth_provider::BundleStateWithReceipts;
-    /// use std::collections::HashMap;
-    ///
-    /// // Initialize the database
-    /// let db = create_test_rw_db();
-    ///
-    /// // Initialize the bundle state
-    /// let bundle = BundleStateWithReceipts::new_init(
-    ///     HashMap::from([(
-    ///         [0x11; 20].into(),
-    ///         (
-    ///             None,
-    ///             Some(Account { nonce: 1, balance: U256::from(10), bytecode_hash: None }),
-    ///             HashMap::from([]),
-    ///         ),
-    ///     )]),
-    ///     HashMap::from([]),
-    ///     vec![],
-    ///     Receipts::new(),
-    ///     0,
-    /// );
-    ///
-    /// // Calculate the state root
-    /// let tx = db.tx().expect("failed to create transaction");
-    /// let state_root = bundle.state_root_slow(&tx);
-    /// ```
-    ///
-    /// # Returns
-    ///
-    /// The state root for this [BundleState].
-    pub fn state_root_slow<TX: DbTx>(&self, tx: &TX) -> Result<B256, StateRootError> {
-        let hashed_post_state = self.hash_state_slow();
-        self.state_root_calculator(tx, &hashed_post_state).root()
-    }
-
-    /// Calculates the state root for this [BundleState] and returns it alongside trie updates.
-    /// See [Self::state_root_slow] for more info.
-    pub fn state_root_slow_with_updates<TX: DbTx>(
-        &self,
-        tx: &TX,
-    ) -> Result<(B256, TrieUpdates), StateRootError> {
-        let hashed_post_state = self.hash_state_slow();
-        self.state_root_calculator(tx, &hashed_post_state).root_with_updates()
+        HashedPostState::from_bundle_state(&self.bundle.state)
     }
 
     /// Transform block number to the index of block.
@@ -250,8 +162,11 @@ impl BundleStateWithReceipts {
     /// Returns the receipt root for all recorded receipts.
     /// Note: this function calculated Bloom filters for every receipt and created merkle trees
     /// of receipt. This is a expensive operation.
-    #[cfg(not(feature = "optimism"))]
+    #[allow(unused_variables)]
     pub fn receipts_root_slow(&self, block_number: BlockNumber) -> Option<B256> {
+        #[cfg(feature = "optimism")]
+        panic!("This should not be called in optimism mode. Use `optimism_receipts_root_slow` instead.");
+        #[cfg(not(feature = "optimism"))]
         self.receipts.root_slow(self.block_number_to_index(block_number)?)
     }
 
@@ -259,18 +174,27 @@ impl BundleStateWithReceipts {
     /// Note: this function calculated Bloom filters for every receipt and created merkle trees
     /// of receipt. This is a expensive operation.
     #[cfg(feature = "optimism")]
-    pub fn receipts_root_slow(
+    pub fn optimism_receipts_root_slow(
         &self,
         block_number: BlockNumber,
         chain_spec: &reth_primitives::ChainSpec,
         timestamp: u64,
     ) -> Option<B256> {
-        self.receipts.root_slow(self.block_number_to_index(block_number)?, chain_spec, timestamp)
+        self.receipts.optimism_root_slow(
+            self.block_number_to_index(block_number)?,
+            chain_spec,
+            timestamp,
+        )
     }
 
-    /// Return reference to receipts.
+    /// Returns reference to receipts.
     pub fn receipts(&self) -> &Receipts {
         &self.receipts
+    }
+
+    /// Returns mutable reference to receipts.
+    pub fn receipts_mut(&mut self) -> &mut Receipts {
+        &mut self.receipts
     }
 
     /// Return all block receipts
@@ -294,11 +218,13 @@ impl BundleStateWithReceipts {
         self.first_block
     }
 
-    /// Revert to given block number.
+    /// Revert the state to the given block number.
     ///
-    /// If number is in future, or in the past return false
+    /// Returns false if the block number is not in the bundle state.
     ///
-    /// NOTE: Provided block number will stay inside the bundle state.
+    /// # Note
+    ///
+    /// The provided block number will stay inside the bundle state.
     pub fn revert_to(&mut self, block_number: BlockNumber) -> bool {
         let Some(index) = self.block_number_to_index(block_number) else { return false };
 
@@ -343,7 +269,7 @@ impl BundleStateWithReceipts {
 
     /// Extend one state from another
     ///
-    /// For state this is very sensitive opperation and should be used only when
+    /// For state this is very sensitive operation and should be used only when
     /// we know that other state was build on top of this one.
     /// In most cases this would be true.
     pub fn extend(&mut self, other: Self) {
@@ -367,15 +293,21 @@ impl BundleStateWithReceipts {
         std::mem::swap(&mut self.bundle, &mut other)
     }
 
-    /// Write bundle state to database.
+    /// Write the [BundleStateWithReceipts] to database and receipts to either database or static
+    /// files if `static_file_producer` is `Some`. It should be none if there is any kind of
+    /// pruning/filtering over the receipts.
     ///
-    /// `omit_changed_check` should be set to true of bundle has some of it data
-    /// detached, This would make some original values not known.
-    pub fn write_to_db<TX: DbTxMut + DbTx>(
+    /// `omit_changed_check` should be set to true if bundle has some of its data detached. This
+    /// would make some original values not known.
+    pub fn write_to_storage<TX>(
         self,
         tx: &TX,
+        mut static_file_producer: Option<StaticFileProviderRWRefMut<'_>>,
         is_value_known: OriginalValuesKnown,
-    ) -> Result<(), DatabaseError> {
+    ) -> ProviderResult<()>
+    where
+        TX: DbTxMut + DbTx,
+    {
         let (plain_state, reverts) = self.bundle.into_plain_state_and_reverts(is_value_known);
 
         StateReverts(reverts).write_to_db(tx, self.first_block)?;
@@ -384,16 +316,28 @@ impl BundleStateWithReceipts {
         let mut bodies_cursor = tx.cursor_read::<tables::BlockBodyIndices>()?;
         let mut receipts_cursor = tx.cursor_write::<tables::Receipts>()?;
 
-        for (idx, receipts) in self.receipts.into_iter().enumerate() {
-            if !receipts.is_empty() {
-                let block_number = self.first_block + idx as u64;
-                let (_, body_indices) =
-                    bodies_cursor.seek_exact(block_number)?.unwrap_or_else(|| {
-                        let last_available = bodies_cursor.last().ok().flatten().map(|(number, _)| number);
-                        panic!("body indices for block {block_number} must exist. last available block number: {last_available:?}");
-                    });
+        // ATTENTION: Any potential future refactor or change to how this loop works should keep in
+        // mind that the static file producer must always call `increment_block` even if the block
+        // has no receipts. Keeping track of the exact block range of the segment is needed for
+        // consistency, querying and file range segmentation.
+        let blocks = self.receipts.into_iter().enumerate();
+        for (idx, receipts) in blocks {
+            let block_number = self.first_block + idx as u64;
+            let first_tx_index = bodies_cursor
+                .seek_exact(block_number)?
+                .map(|(_, indices)| indices.first_tx_num())
+                .ok_or_else(|| ProviderError::BlockBodyIndicesNotFound(block_number))?;
 
-                let first_tx_index = body_indices.first_tx_num();
+            if let Some(static_file_producer) = &mut static_file_producer {
+                // Increment block on static file header.
+                static_file_producer.increment_block(StaticFileSegment::Receipts, block_number)?;
+
+                for (tx_idx, receipt) in receipts.into_iter().enumerate() {
+                    let receipt = receipt
+                        .expect("receipt should not be filtered when saving to static files.");
+                    static_file_producer.append_receipt(first_tx_index + tx_idx as u64, receipt)?;
+                }
+            } else if !receipts.is_empty() {
                 for (tx_idx, receipt) in receipts.into_iter().enumerate() {
                     if let Some(receipt) = receipt {
                         receipts_cursor.append(first_tx_index + tx_idx as u64, receipt)?;
@@ -411,31 +355,24 @@ impl BundleStateWithReceipts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_utils::create_test_provider_factory, AccountReader, BundleStateWithReceipts};
+    use crate::{test_utils::create_test_provider_factory, AccountReader};
     use reth_db::{
-        cursor::{DbCursorRO, DbDupCursorRO},
+        cursor::DbDupCursorRO,
         database::Database,
         models::{AccountBeforeTx, BlockNumberAddress},
-        tables,
         test_utils::create_test_rw_db,
-        transaction::DbTx,
     };
-    use reth_primitives::{
-        revm::compat::into_reth_acc, Address, Receipt, Receipts, StorageEntry, B256, U256,
-    };
-    use reth_trie::test_utils::state_root;
+    use reth_primitives::keccak256;
+    use reth_trie::{test_utils::state_root, StateRoot};
     use revm::{
         db::{
             states::{
-                bundle_state::{BundleRetention, OriginalValuesKnown},
-                changes::PlainStorageRevert,
-                PlainStorageChangeset,
+                bundle_state::BundleRetention, changes::PlainStorageRevert, PlainStorageChangeset,
             },
-            BundleState, EmptyDB,
+            EmptyDB,
         },
         primitives::{
-            Account as RevmAccount, AccountInfo as RevmAccountInfo, AccountStatus, HashMap,
-            StorageSlot,
+            Account as RevmAccount, AccountInfo as RevmAccountInfo, AccountStatus, StorageSlot,
         },
         DatabaseCommit, State,
     };
@@ -514,7 +451,7 @@ mod tests {
         // Check change set
         let mut changeset_cursor = provider
             .tx_ref()
-            .cursor_dup_read::<tables::AccountChangeSet>()
+            .cursor_dup_read::<tables::AccountChangeSets>()
             .expect("Could not open changeset cursor");
         assert_eq!(
             changeset_cursor.seek_exact(1).expect("Could not read account change set"),
@@ -637,7 +574,7 @@ mod tests {
         state.merge_transitions(BundleRetention::Reverts);
 
         BundleStateWithReceipts::new(state.take_bundle(), Receipts::new(), 1)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write bundle state to DB");
 
         // Check plain storage state
@@ -682,7 +619,7 @@ mod tests {
         // Check change set
         let mut changeset_cursor = provider
             .tx_ref()
-            .cursor_dup_read::<tables::StorageChangeSet>()
+            .cursor_dup_read::<tables::StorageChangeSets>()
             .expect("Could not open storage changeset cursor");
         assert_eq!(
             changeset_cursor.seek_exact(BlockNumberAddress((1, address_a))).unwrap(),
@@ -735,7 +672,7 @@ mod tests {
 
         state.merge_transitions(BundleRetention::Reverts);
         BundleStateWithReceipts::new(state.take_bundle(), Receipts::new(), 2)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write bundle state to DB");
 
         assert_eq!(
@@ -799,7 +736,7 @@ mod tests {
         )]));
         init_state.merge_transitions(BundleRetention::Reverts);
         BundleStateWithReceipts::new(init_state.take_bundle(), Receipts::new(), 0)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write init bundle state to DB");
 
         let mut state = State::builder().with_bundle_update().build();
@@ -931,7 +868,7 @@ mod tests {
             address1,
             RevmAccount {
                 status: AccountStatus::Touched,
-                info: account_info.clone(),
+                info: account_info,
                 // 0x00 => 0 => 9
                 storage: HashMap::from([(
                     U256::ZERO,
@@ -944,12 +881,12 @@ mod tests {
         let bundle = state.take_bundle();
 
         BundleStateWithReceipts::new(bundle, Receipts::new(), 1)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write bundle state to DB");
 
         let mut storage_changeset_cursor = provider
             .tx_ref()
-            .cursor_dup_read::<tables::StorageChangeSet>()
+            .cursor_dup_read::<tables::StorageChangeSets>()
             .expect("Could not open plain storage state cursor");
         let mut storage_changes = storage_changeset_cursor.walk_range(..).unwrap();
 
@@ -1107,7 +1044,7 @@ mod tests {
         )]));
         init_state.merge_transitions(BundleRetention::Reverts);
         BundleStateWithReceipts::new(init_state.take_bundle(), Receipts::new(), 0)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write init bundle state to DB");
 
         let mut state = State::builder().with_bundle_update().build();
@@ -1140,7 +1077,7 @@ mod tests {
             address1,
             RevmAccount {
                 status: AccountStatus::Touched,
-                info: account1.clone(),
+                info: account1,
                 // 0x01 => 0 => 5
                 storage: HashMap::from([(
                     U256::from(1),
@@ -1152,12 +1089,12 @@ mod tests {
         // Commit block #1 changes to the database.
         state.merge_transitions(BundleRetention::Reverts);
         BundleStateWithReceipts::new(state.take_bundle(), Receipts::new(), 1)
-            .write_to_db(provider.tx_ref(), OriginalValuesKnown::Yes)
+            .write_to_storage(provider.tx_ref(), None, OriginalValuesKnown::Yes)
             .expect("Could not write bundle state to DB");
 
         let mut storage_changeset_cursor = provider
             .tx_ref()
-            .cursor_dup_read::<tables::StorageChangeSet>()
+            .cursor_dup_read::<tables::StorageChangeSets>()
             .expect("Could not open plain storage state cursor");
         let range = BlockNumberAddress::range(1..=1);
         let mut storage_changes = storage_changeset_cursor.walk_range(range).unwrap();
@@ -1203,7 +1140,7 @@ mod tests {
         assert!(this.revert_to(16));
         assert_eq!(this.receipts.len(), 7);
 
-        let mut this = base.clone();
+        let mut this = base;
         assert!(!this.revert_to(17));
         assert_eq!(this.receipts.len(), 7);
     }
@@ -1226,9 +1163,9 @@ mod tests {
         db.update(|tx| {
             for (address, (account, storage)) in prestate.iter() {
                 let hashed_address = keccak256(address);
-                tx.put::<tables::HashedAccount>(hashed_address, *account).unwrap();
+                tx.put::<tables::HashedAccounts>(hashed_address, *account).unwrap();
                 for (slot, value) in storage {
-                    tx.put::<tables::HashedStorage>(
+                    tx.put::<tables::HashedStorages>(
                         hashed_address,
                         StorageEntry { key: keccak256(slot), value: *value },
                     )
@@ -1236,7 +1173,7 @@ mod tests {
                 }
             }
 
-            let (_, updates) = StateRoot::new(tx).root_with_updates().unwrap();
+            let (_, updates) = StateRoot::from_tx(tx).root_with_updates().unwrap();
             updates.flush(tx).unwrap();
         })
         .unwrap();
@@ -1247,7 +1184,8 @@ mod tests {
         let assert_state_root = |state: &State<EmptyDB>, expected: &PreState, msg| {
             assert_eq!(
                 BundleStateWithReceipts::new(state.bundle_state.clone(), Receipts::default(), 0)
-                    .state_root_slow(&tx)
+                    .hash_state_slow()
+                    .state_root(&tx)
                     .unwrap(),
                 state_root(expected.clone().into_iter().map(|(address, (account, storage))| (
                     address,

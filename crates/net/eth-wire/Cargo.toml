@@ -8,6 +8,9 @@ license.workspace = true
 homepage.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # reth
 reth-codecs.workspace = true
@@ -15,12 +18,15 @@ reth-primitives.workspace = true
 reth-ecies.workspace = true
 alloy-rlp = { workspace = true, features = ["derive"] }
 reth-discv4.workspace = true
+reth-eth-wire-types.workspace = true
+reth-network-types.workspace = true
 
 # metrics
 reth-metrics.workspace = true
 metrics.workspace = true
 
 bytes.workspace = true
+derive_more.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"] }
@@ -30,7 +36,6 @@ tokio-stream.workspace = true
 pin-project.workspace = true
 tracing.workspace = true
 snap = "1.0.5"
-async-trait.workspace = true
 
 # arbitrary utils
 arbitrary = { workspace = true, features = ["derive"], optional = true }
@@ -38,23 +43,33 @@ proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
+reth-net-common.workspace = true
 reth-primitives = { workspace = true, features = ["arbitrary"] }
 reth-tracing.workspace = true
-ethers-core = { workspace = true, default-features = false }
 
-test-fuzz = "4"
+test-fuzz.workspace = true
 tokio-util = { workspace = true, features = ["io", "codec"] }
 rand.workspace = true
-secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
 
 arbitrary = { workspace = true, features = ["derive"] }
 proptest.workspace = true
 proptest-derive.workspace = true
+async-stream.workspace = true
 
 [features]
 default = ["serde"]
 serde = ["dep:serde"]
-arbitrary = ["reth-primitives/arbitrary", "dep:arbitrary", "dep:proptest", "dep:proptest-derive"]
+arbitrary = [
+    "reth-primitives/arbitrary",
+    "dep:arbitrary",
+    "dep:proptest",
+    "dep:proptest-derive",
+]
 optimism = ["reth-primitives/optimism"]
 
 [[test]]

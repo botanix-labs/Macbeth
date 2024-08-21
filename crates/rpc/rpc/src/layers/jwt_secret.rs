@@ -1,3 +1,4 @@
+use client::jwt::JwtSecret as ClientJwtSecret;
 use jsonwebtoken::{decode, errors::ErrorKind, Algorithm, DecodingKey, Validation};
 use rand::Rng;
 use reth_primitives::{
@@ -15,24 +16,41 @@ use thiserror::Error;
 
 /// Errors returned by the [`JwtSecret`]
 #[derive(Error, Debug)]
-#[allow(missing_docs)]
 pub enum JwtError {
+    /// An error encountered while decoding the hexadecimal string for the JWT secret.
     #[error(transparent)]
     JwtSecretHexDecodeError(#[from] hex::FromHexError),
+
+    /// The JWT key length provided is invalid, expecting a specific length.
     #[error("JWT key is expected to have a length of {0} digits. {1} digits key provided")]
     InvalidLength(usize, usize),
+
+    /// The signature algorithm used in the JWT is not supported. Only HS256 is supported.
     #[error("unsupported signature algorithm. Only HS256 is supported")]
     UnsupportedSignatureAlgorithm,
+
+    /// The provided signature in the JWT is invalid.
     #[error("provided signature is invalid")]
     InvalidSignature,
+
+    /// The "iat" (issued-at) claim in the JWT is not within the allowed ±60 seconds from the
+    /// current time.
     #[error("IAT (issued-at) claim is not within ±60 seconds from the current time")]
     InvalidIssuanceTimestamp,
+
+    /// The Authorization header is missing or invalid in the context of JWT validation.
     #[error("Authorization header is missing or invalid")]
     MissingOrInvalidAuthorizationHeader,
+
+    /// An error occurred during JWT decoding.
     #[error("JWT decoding error: {0}")]
     JwtDecodingError(String),
+
+    /// An error related to file system path handling encountered during JWT operations.
     #[error(transparent)]
     JwtFsPathError(#[from] FsPathError),
+
+    /// An I/O error occurred during JWT operations.
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }
@@ -50,6 +68,12 @@ const JWT_MAX_IAT_DIFF: Duration = Duration::from_secs(60);
 /// The execution layer client MUST support at least the following alg HMAC + SHA256 (HS256)
 const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
 
+impl From<JwtSecret> for ClientJwtSecret {
+    fn from(jwt_secret: JwtSecret) -> Self {
+        ClientJwtSecret(jwt_secret.0)
+    }
+}
+
 /// Value-object holding a reference to a hex-encoded 256-bit secret key.
 /// A JWT secret key is used to secure JWT-based authentication. The secret key is
 /// a shared secret between the server and the client and is used to calculate a digital signature
@@ -57,7 +81,7 @@ const JWT_SIGNATURE_ALGO: Algorithm = Algorithm::HS256;
 ///
 /// See also: [Secret key - Engine API specs](https://github.com/ethereum/execution-apis/blob/main/src/engine/authentication.md#key-distribution)
 #[derive(Clone, PartialEq, Eq)]
-pub struct JwtSecret([u8; 32]);
+pub struct JwtSecret(pub [u8; 32]);
 
 impl JwtSecret {
     /// Creates an instance of [`JwtSecret`].
@@ -125,7 +149,7 @@ impl JwtSecret {
                 ErrorKind::InvalidSignature => Err(JwtError::InvalidSignature)?,
                 ErrorKind::InvalidAlgorithm => Err(JwtError::UnsupportedSignatureAlgorithm)?,
                 _ => {
-                    let detail = format!("{err:?}");
+                    let detail = format!("{err}");
                     Err(JwtError::JwtDecodingError(detail))?
                 }
             },
@@ -203,14 +227,8 @@ impl Claims {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layers::jwt_secret::JWT_MAX_IAT_DIFF;
     use assert_matches::assert_matches;
-    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-    use reth_primitives::fs::FsPathError;
-    use std::{
-        path::Path,
-        time::{Duration, SystemTime, UNIX_EPOCH},
-    };
+    use jsonwebtoken::{encode, EncodingKey, Header};
     use tempfile::tempdir;
 
     #[test]

@@ -1,0 +1,13 @@
+db="./db1"
+identifier=0
+address="0.0.0.0:8080"
+min_signers=2
+max_signers=2
+toml="./config.toml"
+fee_rate_diff_percentage=30
+jwt_secret="${NODE_1_DIR}/jwt.hex"
+fall_back_fee_rate_sat_per_vbyte=5
+bitcoind_url="http:127.0.0.1:18443"
+bitcoind_user="foo"
+bitcoind_pass="bar"
+btc_network="regtest"

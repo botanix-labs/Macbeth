@@ -1,35 +1,58 @@
-use crate::processor::{verify_receipt, EVMProcessor};
+use crate::processor::{compare_receipts_root_and_logs_bloom, EVMProcessor};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_evm::ConfigureEvm;
 use reth_interfaces::executor::{
     BlockExecutionError, BlockValidationError, OptimismBlockExecutionError,
 };
 use reth_primitives::{
-    revm::compat::into_reth_log, revm_primitives::ResultAndState, Address, Block, Hardfork,
-    Receipt, U256,
+    proofs::calculate_receipt_root_optimism, revm_primitives::ResultAndState, BlockWithSenders,
+    Bloom, ChainSpec, Hardfork, Receipt, ReceiptWithBloom, TxType, B256, U256,
 };
-use reth_provider::{BlockExecutor, BlockExecutorStats, BundleStateWithReceipts};
+use reth_provider::{BlockExecutor, BundleStateWithReceipts};
 use revm::DatabaseCommit;
 use std::time::Instant;
 use tracing::{debug, trace};
 
-impl<'a> BlockExecutor for EVMProcessor<'a> {
-    fn execute(
-        &mut self,
-        block: &Block,
-        total_difficulty: U256,
-        senders: Option<Vec<Address>>,
-    ) -> Result<(), BlockExecutionError> {
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
-        self.save_receipts(receipts)
-    }
+/// Verify the calculated receipts root against the expected receipts root.
+pub fn verify_receipt_optimism<'a>(
+    expected_receipts_root: B256,
+    expected_logs_bloom: Bloom,
+    receipts: impl Iterator<Item = &'a Receipt> + Clone,
+    chain_spec: &ChainSpec,
+    timestamp: u64,
+) -> Result<(), BlockExecutionError> {
+    // Calculate receipts root.
+    let receipts_with_bloom = receipts.map(|r| r.clone().into()).collect::<Vec<ReceiptWithBloom>>();
+    let receipts_root =
+        calculate_receipt_root_optimism(&receipts_with_bloom, chain_spec, timestamp);
+
+    // Create header log bloom.
+    let logs_bloom = receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | r.bloom);
+
+    compare_receipts_root_and_logs_bloom(
+        receipts_root,
+        logs_bloom,
+        expected_receipts_root,
+        expected_logs_bloom,
+    )?;
+
+    Ok(())
+}
+
+impl<'a, EvmConfig, BF> BlockExecutor for EVMProcessor<'a, EvmConfig, BF>
+where
+    EvmConfig: ConfigureEvm,
+    BF: BitcoindFactory,
+{
+    type Error = BlockExecutionError;
 
     fn execute_and_verify_receipt(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
     ) -> Result<(), BlockExecutionError> {
         // execute block
-        let receipts = self.execute_inner(block, total_difficulty, senders)?;
+        let receipts = self.execute_inner(block, total_difficulty)?;
 
         // TODO Before Byzantium, receipts contained state root that would mean that expensive
         // operation as hashing that is needed for state root got calculated in every
@@ -37,36 +60,33 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
         // See more about EIP here: https://eips.ethereum.org/EIPS/eip-658
         if self.chain_spec.fork(Hardfork::Byzantium).active_at_block(block.header.number) {
             let time = Instant::now();
-            if let Err(error) = verify_receipt(
+            if let Err(error) = verify_receipt_optimism(
                 block.header.receipts_root,
                 block.header.logs_bloom,
                 receipts.iter(),
                 self.chain_spec.as_ref(),
                 block.timestamp,
             ) {
-                debug!(target: "evm", ?error, ?receipts, "receipts verification failed");
-                return Err(error)
+                debug!(target: "evm", %error, ?receipts, "receipts verification failed");
+                return Err(error);
             };
             self.stats.receipt_root_duration += time.elapsed();
         }
 
-        self.save_receipts(receipts)
+        self.batch_record.save_receipts(receipts)
     }
 
     fn execute_transactions(
         &mut self,
-        block: &Block,
+        block: &BlockWithSenders,
         total_difficulty: U256,
-        senders: Option<Vec<Address>>,
-    ) -> Result<(Vec<Receipt>, u64), BlockExecutionError> {
+    ) -> Result<(Vec<Receipt>, u64, u128), BlockExecutionError> {
         self.init_env(&block.header, total_difficulty);
 
         // perf: do not execute empty blocks
         if block.body.is_empty() {
-            return Ok((Vec::new(), 0))
+            return Ok((Vec::new(), 0, 0));
         }
-
-        let senders = self.recover_senders(&block.body, senders)?;
 
         let is_regolith =
             self.chain_spec.fork(Hardfork::Regolith).active_at_timestamp(block.timestamp);
@@ -84,7 +104,7 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
 
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
-        for (transaction, sender) in block.body.iter().zip(senders) {
+        for (sender, transaction) in block.transactions_with_sender() {
             let time = Instant::now();
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -96,7 +116,14 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                     transaction_gas_limit: transaction.gas_limit(),
                     block_available_gas,
                 }
-                .into())
+                .into());
+            }
+
+            // An optimism block should never contain blob transactions.
+            if matches!(transaction.tx_type(), TxType::Eip4844) {
+                return Err(BlockExecutionError::OptimismBlockExecution(
+                    OptimismBlockExecutionError::BlobTransactionRejected,
+                ));
             }
 
             // Cache the depositor account prior to the state transition for the deposit nonce.
@@ -107,14 +134,18 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
             let depositor = (is_regolith && transaction.is_deposit())
                 .then(|| {
                     self.db_mut()
-                        .load_cache_account(sender)
+                        .load_cache_account(*sender)
                         .map(|acc| acc.account_info().unwrap_or_default())
                 })
                 .transpose()
-                .map_err(|_| BlockExecutionError::ProviderError)?;
+                .map_err(|_| {
+                    BlockExecutionError::OptimismBlockExecution(
+                        OptimismBlockExecutionError::AccountLoadFailed(*sender),
+                    )
+                })?;
 
             // Execute transaction.
-            let ResultAndState { result, state } = self.transact(transaction, sender)?;
+            let ResultAndState { result, state } = self.transact(transaction, *sender, None)?;
             trace!(
                 target: "evm",
                 ?transaction, ?result, ?state,
@@ -138,37 +169,235 @@ impl<'a> BlockExecutor for EVMProcessor<'a> {
                 success: result.is_success(),
                 cumulative_gas_used,
                 // convert to reth log
-                logs: result.into_logs().into_iter().map(into_reth_log).collect(),
+                logs: result.into_logs().into_iter().map(Into::into).collect(),
                 #[cfg(feature = "optimism")]
                 deposit_nonce: depositor.map(|account| account.nonce),
                 // The deposit receipt version was introduced in Canyon to indicate an update to how
                 // receipt hashes should be computed when set. The state transition process ensures
                 // this is only set for post-Canyon deposit transactions.
                 #[cfg(feature = "optimism")]
-                deposit_receipt_version: self
-                    .chain_spec()
-                    .is_fork_active_at_timestamp(Hardfork::Canyon, block.timestamp)
-                    .then_some(1),
+                deposit_receipt_version: (transaction.is_deposit() &&
+                    self.chain_spec()
+                        .is_fork_active_at_timestamp(Hardfork::Canyon, block.timestamp))
+                .then_some(1),
             });
         }
 
-        Ok((receipts, cumulative_gas_used))
+        // TODO total fees are not calculated
+        Ok((receipts, cumulative_gas_used, 0))
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
-        let receipts = std::mem::take(&mut self.receipts);
         BundleStateWithReceipts::new(
-            self.evm.db().unwrap().take_bundle(),
-            receipts,
-            self.first_block.unwrap_or_default(),
+            self.evm.context.evm.db.take_bundle(),
+            self.batch_record.take_receipts(),
+            self.batch_record.first_block().unwrap_or_default(),
         )
     }
 
-    fn stats(&self) -> BlockExecutorStats {
-        self.stats.clone()
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.evm.context.evm.db.bundle_size_hint())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        database::StateProviderDatabase,
+        test_utils::{StateProviderTest, TestEvmConfig},
+    };
+    use reth_primitives::{
+        b256, Account, Address, Block, ChainSpecBuilder, Header, Signature, StorageKey,
+        StorageValue, Transaction, TransactionSigned, TxEip1559, BASE_MAINNET,
+    };
+    use revm::L1_BLOCK_CONTRACT;
+    use std::{collections::HashMap, str::FromStr, sync::Arc};
+
+    fn create_op_state_provider() -> StateProviderTest {
+        let mut db = StateProviderTest::default();
+
+        let l1_block_contract_account =
+            Account { balance: U256::ZERO, bytecode_hash: None, nonce: 1 };
+
+        let mut l1_block_storage = HashMap::new();
+        // base fee
+        l1_block_storage.insert(StorageKey::with_last_byte(1), StorageValue::from(1000000000));
+        // l1 fee overhead
+        l1_block_storage.insert(StorageKey::with_last_byte(5), StorageValue::from(188));
+        // l1 fee scalar
+        l1_block_storage.insert(StorageKey::with_last_byte(6), StorageValue::from(684000));
+        // l1 free scalars post ecotone
+        l1_block_storage.insert(
+            StorageKey::with_last_byte(3),
+            StorageValue::from_str(
+                "0x0000000000000000000000000000000000001db0000d27300000000000000005",
+            )
+            .unwrap(),
+        );
+
+        db.insert_account(L1_BLOCK_CONTRACT, l1_block_contract_account, None, l1_block_storage);
+
+        db
     }
 
-    fn size_hint(&self) -> Option<usize> {
-        self.evm.db.as_ref().map(|db| db.bundle_size_hint())
+    fn create_op_evm_processor<'a>(
+        chain_spec: Arc<ChainSpec>,
+        db: StateProviderTest,
+    ) -> EVMProcessor<'a, TestEvmConfig> {
+        let mut executor = EVMProcessor::new_with_db(
+            chain_spec,
+            StateProviderDatabase::new(db),
+            TestEvmConfig::default(),
+        );
+        executor.evm.context.evm.db.load_cache_account(L1_BLOCK_CONTRACT).unwrap();
+        executor
+    }
+
+    #[test]
+    fn op_deposit_fields_pre_canyon() {
+        let header = Header {
+            timestamp: 1,
+            number: 1,
+            gas_limit: 1_000_000,
+            gas_used: 42_000,
+            receipts_root: b256!(
+                "83465d1e7d01578c0d609be33570f91242f013e9e295b0879905346abbd63731"
+            ),
+            ..Default::default()
+        };
+
+        let mut db = create_op_state_provider();
+
+        let addr = Address::ZERO;
+        let account = Account { balance: U256::MAX, ..Account::default() };
+        db.insert_account(addr, account, None, HashMap::new());
+
+        let chain_spec =
+            Arc::new(ChainSpecBuilder::from(&*BASE_MAINNET).regolith_activated().build());
+
+        let tx = TransactionSigned::from_transaction_and_signature(
+            Transaction::Eip1559(TxEip1559 {
+                chain_id: chain_spec.chain.id(),
+                nonce: 0,
+                gas_limit: 21_000,
+                to: addr.into(),
+                ..Default::default()
+            }),
+            Signature::default(),
+        );
+
+        let tx_deposit = TransactionSigned::from_transaction_and_signature(
+            Transaction::Deposit(reth_primitives::TxDeposit {
+                from: addr,
+                to: addr.into(),
+                gas_limit: 21_000,
+                ..Default::default()
+            }),
+            Signature::default(),
+        );
+
+        let mut executor = create_op_evm_processor(chain_spec, db);
+
+        // Attempt to execute a block with one deposit and one non-deposit transaction
+        executor
+            .execute_and_verify_receipt(
+                &BlockWithSenders {
+                    block: Block {
+                        header,
+                        body: vec![tx, tx_deposit],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![addr, addr],
+                },
+                U256::ZERO,
+            )
+            .unwrap();
+
+        let tx_receipt = executor.receipts()[0][0].as_ref().unwrap();
+        let deposit_receipt = executor.receipts()[0][1].as_ref().unwrap();
+
+        // deposit_receipt_version is not present in pre canyon transactions
+        assert!(deposit_receipt.deposit_receipt_version.is_none());
+        assert!(tx_receipt.deposit_receipt_version.is_none());
+
+        // deposit_nonce is present only in deposit transactions
+        assert!(deposit_receipt.deposit_nonce.is_some());
+        assert!(tx_receipt.deposit_nonce.is_none());
+    }
+
+    #[test]
+    fn op_deposit_fields_post_canyon() {
+        // ensure_create2_deployer will fail if timestamp is set to less then 2
+        let header = Header {
+            timestamp: 2,
+            number: 1,
+            gas_limit: 1_000_000,
+            gas_used: 42_000,
+            receipts_root: b256!(
+                "fffc85c4004fd03c7bfbe5491fae98a7473126c099ac11e8286fd0013f15f908"
+            ),
+            ..Default::default()
+        };
+
+        let mut db = create_op_state_provider();
+        let addr = Address::ZERO;
+        let account = Account { balance: U256::MAX, ..Account::default() };
+
+        db.insert_account(addr, account, None, HashMap::new());
+
+        let chain_spec =
+            Arc::new(ChainSpecBuilder::from(&*BASE_MAINNET).canyon_activated().build());
+
+        let tx = TransactionSigned::from_transaction_and_signature(
+            Transaction::Eip1559(TxEip1559 {
+                chain_id: chain_spec.chain.id(),
+                nonce: 0,
+                gas_limit: 21_000,
+                to: addr.into(),
+                ..Default::default()
+            }),
+            Signature::default(),
+        );
+
+        let tx_deposit = TransactionSigned::from_transaction_and_signature(
+            Transaction::Deposit(reth_primitives::TxDeposit {
+                from: addr,
+                to: addr.into(),
+                gas_limit: 21_000,
+                ..Default::default()
+            }),
+            Signature::optimism_deposit_tx_signature(),
+        );
+
+        let mut executor = create_op_evm_processor(chain_spec, db);
+
+        // attempt to execute an empty block with parent beacon block root, this should not fail
+        executor
+            .execute_and_verify_receipt(
+                &BlockWithSenders {
+                    block: Block {
+                        header,
+                        body: vec![tx, tx_deposit],
+                        ommers: vec![],
+                        withdrawals: None,
+                    },
+                    senders: vec![addr, addr],
+                },
+                U256::ZERO,
+            )
+            .expect("Executing a block while canyon is active should not fail");
+
+        let tx_receipt = executor.receipts()[0][0].as_ref().unwrap();
+        let deposit_receipt = executor.receipts()[0][1].as_ref().unwrap();
+
+        // deposit_receipt_version is set to 1 for post canyon deposit transactions
+        assert_eq!(deposit_receipt.deposit_receipt_version, Some(1));
+        assert!(tx_receipt.deposit_receipt_version.is_none());
+
+        // deposit_nonce is present only in deposit transactions
+        assert!(deposit_receipt.deposit_nonce.is_some());
+        assert!(tx_receipt.deposit_nonce.is_none());
     }
 }

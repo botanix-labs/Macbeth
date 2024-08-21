@@ -1,9 +1,10 @@
 //! Standalone Conversion Functions for Handling Different Versions of Execution Payloads in
 //! Ethereum's Engine
+
 use reth_primitives::{
-    constants::{EMPTY_OMMER_ROOT_HASH, MAXIMUM_EXTRA_DATA_SIZE, MIN_PROTOCOL_BASE_FEE_U256},
+    constants::{EMPTY_OMMER_ROOT_HASH, MIN_PROTOCOL_BASE_FEE_U256},
     proofs::{self},
-    Block, Header, SealedBlock, TransactionSigned, UintTryTo, Withdrawal, B256, U256,
+    Block, Header, SealedBlock, TransactionSigned, UintTryTo, Withdrawals, B256, U256,
 };
 use reth_rpc_types::engine::{
     payload::{ExecutionPayloadBodyV1, ExecutionPayloadFieldV2, ExecutionPayloadInputV2},
@@ -12,9 +13,10 @@ use reth_rpc_types::engine::{
 
 /// Converts [ExecutionPayloadV1] to [Block]
 pub fn try_payload_v1_to_block(payload: ExecutionPayloadV1) -> Result<Block, PayloadError> {
-    if payload.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
-        return Err(PayloadError::ExtraData(payload.extra_data))
-    }
+    // TODO (armins) add this back when we have a cap on extra data
+    // if payload.extra_data.len() > MAXIMUM_EXTRA_DATA_SIZE {
+    //     return Err(PayloadError::ExtraData(payload.extra_data))
+    // }
 
     if payload.base_fee_per_gas < MIN_PROTOCOL_BASE_FEE_U256 {
         return Err(PayloadError::BaseFee(payload.base_fee_per_gas))
@@ -64,13 +66,8 @@ pub fn try_payload_v2_to_block(payload: ExecutionPayloadV2) -> Result<Block, Pay
     // this performs the same conversion as the underlying V1 payload, but calculates the
     // withdrawals root and adds withdrawals
     let mut base_sealed_block = try_payload_v1_to_block(payload.payload_inner)?;
-    let withdrawals: Vec<_> = payload
-        .withdrawals
-        .iter()
-        .map(|w| convert_standalone_withdraw_to_withdrawal(w.clone()))
-        .collect();
-    let withdrawals_root = proofs::calculate_withdrawals_root(&withdrawals);
-    base_sealed_block.withdrawals = Some(withdrawals);
+    let withdrawals_root = proofs::calculate_withdrawals_root(&payload.withdrawals);
+    base_sealed_block.withdrawals = Some(payload.withdrawals.into());
     base_sealed_block.header.withdrawals_root = Some(withdrawals_root);
     Ok(base_sealed_block)
 }
@@ -103,15 +100,7 @@ pub fn try_block_to_payload(value: SealedBlock) -> ExecutionPayload {
 
 /// Converts [SealedBlock] to [ExecutionPayloadV1]
 pub fn try_block_to_payload_v1(value: SealedBlock) -> ExecutionPayloadV1 {
-    let transactions = value
-        .body
-        .iter()
-        .map(|tx| {
-            let mut encoded = Vec::new();
-            tx.encode_enveloped(&mut encoded);
-            encoded.into()
-        })
-        .collect();
+    let transactions = value.raw_transactions();
     ExecutionPayloadV1 {
         parent_hash: value.parent_hash,
         fee_recipient: value.beneficiary,
@@ -132,22 +121,7 @@ pub fn try_block_to_payload_v1(value: SealedBlock) -> ExecutionPayloadV1 {
 
 /// Converts [SealedBlock] to [ExecutionPayloadV2]
 pub fn try_block_to_payload_v2(value: SealedBlock) -> ExecutionPayloadV2 {
-    let transactions = value
-        .body
-        .iter()
-        .map(|tx| {
-            let mut encoded = Vec::new();
-            tx.encode_enveloped(&mut encoded);
-            encoded.into()
-        })
-        .collect();
-    let standalone_withdrawals: Vec<reth_rpc_types::engine::payload::Withdrawal> = value
-        .withdrawals
-        .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .map(convert_withdrawal_to_standalone_withdraw)
-        .collect();
+    let transactions = value.raw_transactions();
 
     ExecutionPayloadV2 {
         payload_inner: ExecutionPayloadV1 {
@@ -166,31 +140,17 @@ pub fn try_block_to_payload_v2(value: SealedBlock) -> ExecutionPayloadV2 {
             block_hash: value.hash(),
             transactions,
         },
-        withdrawals: standalone_withdrawals,
+        withdrawals: value.withdrawals.unwrap_or_default().into_inner(),
     }
 }
 
 /// Converts [SealedBlock] to [ExecutionPayloadV3]
 pub fn block_to_payload_v3(value: SealedBlock) -> ExecutionPayloadV3 {
-    let transactions = value
-        .body
-        .iter()
-        .map(|tx| {
-            let mut encoded = Vec::new();
-            tx.encode_enveloped(&mut encoded);
-            encoded.into()
-        })
-        .collect();
-
-    let withdrawals: Vec<reth_rpc_types::engine::payload::Withdrawal> = value
-        .withdrawals
-        .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .map(convert_withdrawal_to_standalone_withdraw)
-        .collect();
+    let transactions = value.raw_transactions();
 
     ExecutionPayloadV3 {
+        blob_gas_used: value.blob_gas_used.unwrap_or_default(),
+        excess_blob_gas: value.excess_blob_gas.unwrap_or_default(),
         payload_inner: ExecutionPayloadV2 {
             payload_inner: ExecutionPayloadV1 {
                 parent_hash: value.parent_hash,
@@ -208,11 +168,8 @@ pub fn block_to_payload_v3(value: SealedBlock) -> ExecutionPayloadV3 {
                 block_hash: value.hash(),
                 transactions,
             },
-            withdrawals,
+            withdrawals: value.withdrawals.unwrap_or_default().into_inner(),
         },
-
-        blob_gas_used: value.blob_gas_used.unwrap_or_default(),
-        excess_blob_gas: value.excess_blob_gas.unwrap_or_default(),
     }
 }
 
@@ -247,11 +204,8 @@ pub fn convert_payload_input_v2_to_payload(value: ExecutionPayloadInputV2) -> Ex
 
 /// Converts [SealedBlock] to [ExecutionPayloadInputV2]
 pub fn convert_block_to_payload_input_v2(value: SealedBlock) -> ExecutionPayloadInputV2 {
-    let withdraw = value.withdrawals.clone().map(|withdrawals| {
-        withdrawals.into_iter().map(convert_withdrawal_to_standalone_withdraw).collect::<Vec<_>>()
-    });
     ExecutionPayloadInputV2 {
-        withdrawals: withdraw,
+        withdrawals: value.withdrawals.clone().map(Withdrawals::into_inner),
         execution_payload: try_block_to_payload_v1(value),
     }
 }
@@ -304,6 +258,7 @@ pub fn try_into_sealed_block(
 ///
 /// If the provided block hash does not match the block hash computed from the provided block, this
 /// returns [PayloadError::BlockHash].
+#[inline]
 pub fn validate_block_hash(
     expected_block_hash: B256,
     block: Block,
@@ -319,30 +274,6 @@ pub fn validate_block_hash(
     Ok(sealed_block)
 }
 
-/// Converts [Withdrawal] to [reth_rpc_types::engine::payload::Withdrawal]
-pub fn convert_withdrawal_to_standalone_withdraw(
-    withdrawal: Withdrawal,
-) -> reth_rpc_types::engine::payload::Withdrawal {
-    reth_rpc_types::engine::payload::Withdrawal {
-        index: withdrawal.index,
-        validator_index: withdrawal.validator_index,
-        address: withdrawal.address,
-        amount: withdrawal.amount,
-    }
-}
-
-/// Converts [reth_rpc_types::engine::payload::Withdrawal] to [Withdrawal]
-pub fn convert_standalone_withdraw_to_withdrawal(
-    standalone: reth_rpc_types::engine::payload::Withdrawal,
-) -> Withdrawal {
-    Withdrawal {
-        index: standalone.index,
-        validator_index: standalone.validator_index,
-        address: standalone.address,
-        amount: standalone.amount,
-    }
-}
-
 /// Converts [Block] to [ExecutionPayloadBodyV1]
 pub fn convert_to_payload_body_v1(value: Block) -> ExecutionPayloadBodyV1 {
     let transactions = value.body.into_iter().map(|tx| {
@@ -350,27 +281,15 @@ pub fn convert_to_payload_body_v1(value: Block) -> ExecutionPayloadBodyV1 {
         tx.encode_enveloped(&mut out);
         out.into()
     });
-    let withdraw: Option<Vec<reth_rpc_types::engine::payload::Withdrawal>> =
-        value.withdrawals.map(|withdrawals| {
-            withdrawals
-                .into_iter()
-                .map(convert_withdrawal_to_standalone_withdraw)
-                .collect::<Vec<_>>()
-        });
-    ExecutionPayloadBodyV1 { transactions: transactions.collect(), withdrawals: withdraw }
+    ExecutionPayloadBodyV1 {
+        transactions: transactions.collect(),
+        withdrawals: value.withdrawals.map(Withdrawals::into_inner),
+    }
 }
 
 /// Transforms a [SealedBlock] into a [ExecutionPayloadV1]
 pub fn execution_payload_from_sealed_block(value: SealedBlock) -> ExecutionPayloadV1 {
-    let transactions = value
-        .body
-        .iter()
-        .map(|tx| {
-            let mut encoded = Vec::new();
-            tx.encode_enveloped(&mut encoded);
-            encoded.into()
-        })
-        .collect();
+    let transactions = value.raw_transactions();
     ExecutionPayloadV1 {
         parent_hash: value.parent_hash,
         fee_recipient: value.beneficiary,
@@ -391,9 +310,14 @@ pub fn execution_payload_from_sealed_block(value: SealedBlock) -> ExecutionPaylo
 
 #[cfg(test)]
 mod tests {
-    use super::{block_to_payload_v3, try_payload_v3_to_block};
-    use reth_primitives::{hex, Bytes, U256};
-    use reth_rpc_types::{engine::ExecutionPayloadV3, ExecutionPayloadV1, ExecutionPayloadV2};
+    use super::{
+        block_to_payload_v3, try_into_block, try_payload_v3_to_block, validate_block_hash,
+    };
+    use reth_primitives::{b256, hex, Bytes, U256};
+    use reth_rpc_types::{
+        engine::{CancunPayloadFields, ExecutionPayloadV3},
+        ExecutionPayload, ExecutionPayloadV1, ExecutionPayloadV2,
+    };
 
     #[test]
     fn roundtrip_payload_to_block() {
@@ -467,7 +391,152 @@ mod tests {
             excess_blob_gas: 0x580000,
         };
 
-        let _block = try_payload_v3_to_block(new_payload.clone())
+        let _block = try_payload_v3_to_block(new_payload)
             .expect_err("execution payload conversion requires typed txs without a rlp header");
+    }
+
+    #[test]
+    fn devnet_invalid_block_hash_repro() {
+        let deser_block = r#"
+        {
+            "parentHash": "0xae8315ee86002e6269a17dd1e9516a6cf13223e9d4544d0c32daff826fb31acc",
+            "feeRecipient": "0xf97e180c050e5ab072211ad2c213eb5aee4df134",
+            "stateRoot": "0x03787f1579efbaa4a8234e72465eb4e29ef7e62f61242d6454661932e1a282a1",
+            "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+            "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "prevRandao": "0x918e86b497dc15de7d606457c36ca583e24d9b0a110a814de46e33d5bb824a66",
+            "blockNumber": "0x6a784",
+            "gasLimit": "0x1c9c380",
+            "gasUsed": "0x0",
+            "timestamp": "0x65bc1d60",
+            "extraData": "0x9a726574682f76302e312e302d616c7068612e31362f6c696e7578",
+            "baseFeePerGas": "0x8",
+            "blobGasUsed": "0x0",
+            "excessBlobGas": "0x0",
+            "blockHash": "0x340c157eca9fd206b87c17f0ecbe8d411219de7188a0a240b635c88a96fe91c5",
+            "transactions": [],
+            "withdrawals": [
+                {
+                    "index": "0x5ab202",
+                    "validatorIndex": "0xb1b",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab203",
+                    "validatorIndex": "0xb1c",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x15892"
+                },
+                {
+                    "index": "0x5ab204",
+                    "validatorIndex": "0xb1d",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab205",
+                    "validatorIndex": "0xb1e",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab206",
+                    "validatorIndex": "0xb1f",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab207",
+                    "validatorIndex": "0xb20",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab208",
+                    "validatorIndex": "0xb21",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x15892"
+                },
+                {
+                    "index": "0x5ab209",
+                    "validatorIndex": "0xb22",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab20a",
+                    "validatorIndex": "0xb23",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab20b",
+                    "validatorIndex": "0xb24",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x17db2"
+                },
+                {
+                    "index": "0x5ab20c",
+                    "validatorIndex": "0xb25",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab20d",
+                    "validatorIndex": "0xb26",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                },
+                {
+                    "index": "0x5ab20e",
+                    "validatorIndex": "0xa91",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x15892"
+                },
+                {
+                    "index": "0x5ab20f",
+                    "validatorIndex": "0xa92",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x1c05d"
+                },
+                {
+                    "index": "0x5ab210",
+                    "validatorIndex": "0xa93",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x15892"
+                },
+                {
+                    "index": "0x5ab211",
+                    "validatorIndex": "0xa94",
+                    "address": "0x388ea662ef2c223ec0b047d41bf3c0f362142ad5",
+                    "amount": "0x19b3d"
+                }
+            ]
+        }
+        "#;
+
+        // deserialize payload
+        let payload: ExecutionPayload =
+            serde_json::from_str::<ExecutionPayloadV3>(deser_block).unwrap().into();
+
+        // NOTE: the actual block hash here is incorrect, it is a result of a bug, this was the
+        // fix:
+        // <https://github.com/paradigmxyz/reth/pull/6328>
+        let block_hash_with_blob_fee_fields =
+            b256!("a7cdd5f9e54147b53a15833a8c45dffccbaed534d7fdc23458f45102a4bf71b0");
+
+        let versioned_hashes = vec![];
+        let parent_beacon_block_root =
+            b256!("1162de8a0f4d20d86b9ad6e0a2575ab60f00a433dc70d9318c8abc9041fddf54");
+
+        // set up cancun payload fields
+        let cancun_fields = CancunPayloadFields { parent_beacon_block_root, versioned_hashes };
+
+        // convert into block
+        let block = try_into_block(payload, Some(cancun_fields.parent_beacon_block_root)).unwrap();
+
+        // Ensure the actual hash is calculated if we set the fields to what they should be
+        validate_block_hash(block_hash_with_blob_fee_fields, block).unwrap();
     }
 }

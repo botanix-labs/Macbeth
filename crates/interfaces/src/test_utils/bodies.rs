@@ -4,13 +4,10 @@ use crate::p2p::{
     error::PeerRequestResult,
     priority::Priority,
 };
-use futures::{future, Future, FutureExt};
-use reth_primitives::{BlockBody, WithPeerId, B256};
-use std::{
-    fmt::{Debug, Formatter},
-    pin::Pin,
-};
-use tokio::sync::oneshot::{self, Receiver};
+use futures::FutureExt;
+use reth_primitives::{BlockBody, B256};
+use std::fmt::{Debug, Formatter};
+use tokio::sync::oneshot;
 
 /// A test client for fetching bodies
 pub struct TestBodiesClient<F> {
@@ -25,7 +22,7 @@ impl<F> Debug for TestBodiesClient<F> {
 }
 
 impl<F: Sync + Send> DownloadClient for TestBodiesClient<F> {
-    fn report_bad_message(&self, _peer_id: reth_primitives::PeerId) {
+    fn report_bad_message(&self, _peer_id: reth_network_types::PeerId) {
         // noop
     }
 
@@ -46,7 +43,7 @@ where
         _priority: Priority,
     ) -> Self::Output {
         let (tx, rx) = oneshot::channel();
-        tx.send((self.responder)(hashes));
+        let _ = tx.send((self.responder)(hashes));
         Box::pin(rx.map(|x| match x {
             Ok(value) => value,
             Err(err) => Err(err.into()),

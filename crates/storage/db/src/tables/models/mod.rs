@@ -1,16 +1,18 @@
 //! Implements data structures specific to the database
+
 use crate::{
     table::{Decode, Encode},
     DatabaseError,
 };
 use reth_codecs::Compact;
 use reth_primitives::{
-    trie::{Nibbles, StoredNibblesSubKey},
+    trie::{StoredNibbles, StoredNibblesSubKey},
     Address, PruneSegment, B256,
 };
 
 pub mod accounts;
 pub mod blocks;
+pub mod client_version;
 pub mod integer_list;
 pub mod sharded_key;
 pub mod storage_sharded_key;
@@ -18,6 +20,8 @@ pub mod storage_sharded_key;
 pub use accounts::*;
 pub use blocks::*;
 pub use sharded_key::ShardedKey;
+
+use self::client_version::ClientVersion;
 
 /// Macro that implements [`Encode`] and [`Decode`] for uint types.
 macro_rules! impl_uints {
@@ -102,18 +106,18 @@ impl Decode for String {
     }
 }
 
-impl Encode for Nibbles {
+impl Encode for StoredNibbles {
     type Encoded = Vec<u8>;
 
     // Delegate to the Compact implementation
     fn encode(self) -> Self::Encoded {
-        let mut buf = Vec::with_capacity(self.len());
+        let mut buf = Vec::with_capacity(self.0.len());
         self.to_compact(&mut buf);
         buf
     }
 }
 
-impl Decode for Nibbles {
+impl Decode for StoredNibbles {
     fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
         let buf = value.as_ref();
         Ok(Self::from_compact(buf, buf.len()).0)
@@ -143,12 +147,31 @@ impl Encode for PruneSegment {
 
     fn encode(self) -> Self::Encoded {
         let mut buf = [0u8];
-        self.to_compact(&mut buf.as_mut());
+        // Note: need to use `as_mut_slice()` here b/c of conflicting types with rust bitcoin
+        self.to_compact(&mut buf.as_mut_slice());
         buf
     }
 }
 
 impl Decode for PruneSegment {
+    fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
+        let buf = value.as_ref();
+        Ok(Self::from_compact(buf, buf.len()).0)
+    }
+}
+
+impl Encode for ClientVersion {
+    type Encoded = Vec<u8>;
+
+    // Delegate to the Compact implementation
+    fn encode(self) -> Self::Encoded {
+        let mut buf = vec![];
+        self.to_compact(&mut buf);
+        buf
+    }
+}
+
+impl Decode for ClientVersion {
     fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
         let buf = value.as_ref();
         Ok(Self::from_compact(buf, buf.len()).0)

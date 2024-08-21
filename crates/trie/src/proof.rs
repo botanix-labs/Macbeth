@@ -2,12 +2,12 @@ use crate::{
     hashed_cursor::{HashedCursorFactory, HashedStorageCursor},
     node_iter::{AccountNode, AccountNodeIter, StorageNode, StorageNodeIter},
     prefix_set::PrefixSetMut,
-    trie_cursor::{AccountTrieCursor, StorageTrieCursor},
+    trie_cursor::{DatabaseAccountTrieCursor, DatabaseStorageTrieCursor},
     walker::TrieWalker,
-    StateRootError, StorageRootError,
 };
 use alloy_rlp::{BufMut, Encodable};
 use reth_db::{tables, transaction::DbTx};
+use reth_interfaces::trie::{StateRootError, StorageRootError};
 use reth_primitives::{
     constants::EMPTY_ROOT_HASH,
     keccak256,
@@ -51,7 +51,8 @@ where
         let mut account_proof = AccountProof::new(address);
 
         let hashed_account_cursor = self.hashed_cursor_factory.hashed_account_cursor()?;
-        let trie_cursor = AccountTrieCursor::new(self.tx.cursor_read::<tables::AccountsTrie>()?);
+        let trie_cursor =
+            DatabaseAccountTrieCursor::new(self.tx.cursor_read::<tables::AccountsTrie>()?);
 
         // Create the walker.
         let mut prefix_set = PrefixSetMut::default();
@@ -60,7 +61,7 @@ where
 
         // Create a hash builder to rebuild the root node since it is not available in the database.
         let mut hash_builder =
-            HashBuilder::default().with_proof_retainer(Vec::from([target_nibbles.clone()]));
+            HashBuilder::default().with_proof_retainer(Vec::from([target_nibbles]));
 
         let mut account_rlp = Vec::with_capacity(128);
         let mut account_node_iter = AccountNodeIter::new(walker, hashed_account_cursor);
@@ -119,7 +120,7 @@ where
 
         let target_nibbles = proofs.iter().map(|p| p.nibbles.clone()).collect::<Vec<_>>();
         let prefix_set = PrefixSetMut::from(target_nibbles.clone()).freeze();
-        let trie_cursor = StorageTrieCursor::new(
+        let trie_cursor = DatabaseStorageTrieCursor::new(
             self.tx.cursor_dup_read::<tables::StoragesTrie>()?,
             hashed_address,
         );
@@ -184,7 +185,7 @@ mod tests {
     */
     static TEST_SPEC: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         ChainSpec {
-            chain: Chain::Id(12345),
+            chain: Chain::from_id(12345),
             genesis: serde_json::from_str(include_str!("../testdata/proof-genesis.json"))
                 .expect("Can't deserialize test genesis json"),
             ..Default::default()
@@ -204,8 +205,10 @@ mod tests {
 
         // Hash accounts and insert them into hashing table.
         let genesis = chain_spec.genesis();
-        let alloc_accounts =
-            genesis.alloc.clone().into_iter().map(|(addr, account)| (addr, Some(account.into())));
+        let alloc_accounts = genesis
+            .alloc
+            .iter()
+            .map(|(addr, account)| (*addr, Some(Account::from_genesis_account(account))));
         provider.insert_account_for_hashing(alloc_accounts).unwrap();
 
         let alloc_storage = genesis.alloc.clone().into_iter().filter_map(|(addr, account)| {
@@ -221,7 +224,7 @@ mod tests {
         });
         provider.insert_storage_for_hashing(alloc_storage)?;
 
-        let (_, updates) = StateRoot::new(provider.tx_ref())
+        let (_, updates) = StateRoot::from_tx(provider.tx_ref())
             .root_with_updates()
             .map_err(Into::<reth_db::DatabaseError>::into)?;
         updates.flush(provider.tx_mut())?;
@@ -280,7 +283,7 @@ mod tests {
         for (target, expected_proof) in data {
             let target = Address::from_str(target).unwrap();
             let account_proof = Proof::new(provider.tx_ref()).account_proof(target, &[]).unwrap();
-            pretty_assertions::assert_eq!(
+            similar_asserts::assert_eq!(
                 account_proof.proof,
                 expected_proof,
                 "proof for {target:?} does not match"
@@ -328,7 +331,7 @@ mod tests {
 
         let provider = factory.provider().unwrap();
         let account_proof = Proof::new(provider.tx_ref()).account_proof(target, &[]).unwrap();
-        pretty_assertions::assert_eq!(account_proof.proof, expected_account_proof);
+        similar_asserts::assert_eq!(account_proof.proof, expected_account_proof);
     }
 
     #[test]
@@ -350,7 +353,7 @@ mod tests {
 
         let provider = factory.provider().unwrap();
         let account_proof = Proof::new(provider.tx_ref()).account_proof(target, &[]).unwrap();
-        pretty_assertions::assert_eq!(account_proof.proof, expected_account_proof);
+        similar_asserts::assert_eq!(account_proof.proof, expected_account_proof);
     }
 
     #[test]
@@ -435,6 +438,6 @@ mod tests {
 
         let provider = factory.provider().unwrap();
         let account_proof = Proof::new(provider.tx_ref()).account_proof(target, &slots).unwrap();
-        pretty_assertions::assert_eq!(account_proof, expected);
+        similar_asserts::assert_eq!(account_proof, expected);
     }
 }
