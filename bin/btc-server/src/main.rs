@@ -7,6 +7,7 @@ mod config;
 mod cordinator;
 mod database;
 mod dkg;
+mod pegout_id;
 mod pegout_scheduler;
 mod server;
 mod shutdown;
