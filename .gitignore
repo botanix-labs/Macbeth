@@ -71,3 +71,6 @@ rustc-ice-*
 
 # botanix federation chain toml
 chain.toml
+
+# Coverage files
+build_rs_cov.profraw

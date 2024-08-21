@@ -347,7 +347,7 @@ pub mod test_utils {
         tx: Transaction,
     }
 
-    fn create_header_metadata(nonce: Option<u32>, pk: &secp256k1::PublicKey) -> HeaderMetadata {
+    pub fn create_header_metadata(nonce: Option<u32>, pk: &secp256k1::PublicKey) -> HeaderMetadata {
         // create dummy transaction -- spending utxo that doesn't exist
         let temp_outpoint: OutPoint = OutPoint {
             txid: bitcoin::Txid::from_str(
@@ -402,7 +402,7 @@ pub mod test_utils {
         HeaderMetadata { header, merkle_proof, outpoint, tx }
     }
 
-    fn pegin_data_setup(
+    pub fn pegin_data_setup(
         version: Option<u32>,
         block_headers: Option<Vec<Header>>,
         pk: &secp256k1::PublicKey,
@@ -437,6 +437,7 @@ pub mod test_utils {
 pub mod tests {
     use super::{test_utils::create_header_metadata, *};
     use crate::peg_contract::test_utils::pegin_data_setup;
+    use secp256k1::rand::thread_rng;
     use std::str::FromStr;
 
     #[test]

@@ -1,0 +1,56 @@
+name: Botanix Coverage
+
+on:
+    pull_request:
+    merge_group:
+        branches: [main, feature/poA-consensus]
+    push:
+        branches: [feature/poA-consensus]
+
+env:
+  CARGO_TERM_COLOR: always
+  CLICOLOR: 1
+  CI: true
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+            target: x86_64-unknown-linux-gnu
+            components: rustfmt, clippy
+
+      - name: Install dependencies
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y libclang-dev curl protobuf-compiler
+
+      - name: Install Rustup
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+      - name: Install Tarpaulin (Pre-built Binary)
+        run: |
+          sudo mkdir -p /usr/local/bin
+          curl -L https://github.com/xd009642/tarpaulin/releases/download/0.31.1/cargo-tarpaulin-x86_64-unknown-linux-gnu.tar.gz | sudo tar xz -C /usr/local/bin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Generate Code Coverage
+        run: make coverage
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v4
+        with:
+          name: codecov-botanix
+          fail_ci_if_error: true
+          verbose: true
+          files: ./cov-reports/cobertura.xml ./cov-reports/tarpaulin-report.xml
+          token: ${{ secrets.CODECOV_TOKEN }}

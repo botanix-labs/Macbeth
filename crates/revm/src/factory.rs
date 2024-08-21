@@ -45,12 +45,6 @@ impl<EvmConfig: ConfigureEvm, BF> EvmProcessorFactory<EvmConfig, BF> {
         self
     }
 
-    /// adds bitcoin network information
-    pub fn with_bitcoin_config(mut self, btc_network: bitcoin::Network) -> Self {
-        self.btc_network = Some(btc_network);
-        self
-    }
-
     /// Sets the inspector stack for all generated executors using the provided config.
     pub fn with_stack_config(mut self, config: InspectorStackConfig) -> Self {
         self.stack = Some(InspectorStack::new(config));
