@@ -82,7 +82,7 @@ struct BlockInfo {
     relevant_inputs: Vec<OutPoint>,
 }
 
-pub struct TxIndex {
+pub struct PegoutScheduler {
     /// The number of blocks to track txs for.
     window: u32,
 
@@ -100,9 +100,9 @@ pub struct TxIndex {
     last_finalized: BlockHash,
 }
 
-impl TxIndex {
-    pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> TxIndex {
-        let mut ret = TxIndex {
+impl PegoutScheduler {
+    pub fn new(window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> PegoutScheduler {
+        let mut ret = PegoutScheduler {
             window,
             txs: HashMap::with_capacity(txs.len()),
             txs_by_input: HashMap::with_capacity(txs.iter().map(|t| t.tx.input.len()).sum()),
@@ -278,7 +278,7 @@ impl TxIndex {
         mut finalize_utxo: impl FnMut(database::Utxo) -> Result<(), database::Error>,
     ) -> Result<(), SyncError> {
         info!(
-            "Syncing TxIndex: last={}:{}, cp={}:{}",
+            "Syncing pegout scheduler: last={}:{}, cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
             print_safe!(bitcoind.get_block_header_info(&checkpoint).map(|r| r.height)),
