@@ -3,8 +3,8 @@ name: Docker Build Test for PoA Node
 on:
   pull_request:
     branches: 
-      - feature/poA-consensus
-    types: [opened, closed]
+      - main
+    types: [opened]
 
 jobs:
   build_poa_node:
