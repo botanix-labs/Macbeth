@@ -106,6 +106,15 @@ impl RpcApiExt for Client {
                 Ok(false)
             }
         }
+
+        // match self.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
+        //     Ok(blockchain_info_result) => Ok(!blockchain_info_result.initial_block_download),
+        //     Err(err) => {
+        //         // TODO (armins) use logger library
+        //         println!("error getting get_blockchain_info(): {:?}", err);
+        //         Ok(false)
+        //     }
+        // }
     }
 
     async fn wait_until_synced(&self) {
