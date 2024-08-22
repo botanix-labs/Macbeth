@@ -298,8 +298,7 @@ impl App {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
         let mut original_psbt = self
             .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
-            .await
-            .unwrap();
+            .await?;
 
         let hash_ty = bitcoin::sighash::TapSighashType::All;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
