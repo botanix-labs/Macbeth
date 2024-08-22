@@ -475,6 +475,30 @@ pr:
 	make update-book-cli && \
 	make test
 
+audit:
+	cargo audit
+
+audit-fix-test:
+	cargo audit fix --dry-run
+
+audit-fix:
+	cargo audit fix
+
+coverage:
+	 RUSTFLAGS="-Z threads=8" cargo +nightly tarpaulin \
+	 --locked \
+	 --timeout 120 \
+	 --count \
+	 --skip-clean \
+	 --all-features \
+	 --packages btc-server \
+	 --color Always \
+	 --out Html \
+	 --fail-immediately \
+	 --engine Llvm \
+	 --no-dead-code \
+	 --output-dir "./cov-reports"
+
 clean-unused-deps:
 	cargo machete --fix
 

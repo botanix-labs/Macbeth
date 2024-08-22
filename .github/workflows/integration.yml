@@ -4,9 +4,9 @@ name: Botanix Integration Tests
 on:
   pull_request:
   merge_group:
-    branches: [main, feature/poA-consensus]
+    branches: [main]
   push:
-    branches: [feature/poA-consensus]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always

@@ -4,9 +4,9 @@ name: book
 
 on:
   push:
-    branches: [feature/poA-consensus]
+    branches: [main]
   pull_request:
-    branches: [feature/poA-consensus]
+    branches: [main]
   merge_group:
 
 jobs:

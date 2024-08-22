@@ -3,7 +3,7 @@ name: Docker Build Test for BTC Server
 on:
   pull_request:
     branches:
-      - feature/poA-consensus
+      - main
     types: [opened, closed]
 
 jobs:
