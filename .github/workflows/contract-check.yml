@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     branches:
-      - feature/poA-consensus
+      - main
 
 jobs:
   contract-build:
@@ -71,3 +71,52 @@ jobs:
         run: |
           echo "## Tests result" >> $GITHUB_STEP_SUMMARY
           echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
+
+  eBurger-contract-analysis-check:
+    needs: ["contract-test"]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 
+      
+      - name: Run eburger contract analysis
+        id: eburger-contract-analysis
+        uses: forefy/eburger-action@main
+        with:
+          path: ./contracts
+
+      - name: Upload Sarif file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.eburger-contract-analysis.outputs.sarif }}
+
+  slither-contract-analysis-check:
+    needs: ["contract-test"]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4 
+      
+      - name: Run slither contract analysis
+        id: slither-contract-analysis
+        uses: crytic/slither-action@v0.4.0
+        with: 
+          target: ./contracts
+          sarif: results.sarif
+          fail-on: none
+      
+      - name: Upload Sarif file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.slither-contract-analysis.outputs.sarif }}
+
+
+
