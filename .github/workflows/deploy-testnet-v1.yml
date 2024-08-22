@@ -1,10 +1,10 @@
 name: Build, Tag, and Deploy Botanix Testnet v1
 
 on:
-  pull_request:
+  push:
     branches:
-      - feature/poA-consensus
-    types: [closed]
+      - main
+  
     
 jobs:
   build_and_deploy_btc_server:

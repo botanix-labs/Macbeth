@@ -4,9 +4,9 @@ name: book
 
 on:
   push:
-    branches: [feature/poA-consensus]
+    branches: [main]
   pull_request:
-    branches: [feature/poA-consensus]
+    branches: [main]
   merge_group:
 
 jobs:
@@ -116,7 +116,7 @@ jobs:
 
   deploy:
     # Only deploy if a push to the feature/poA-consensus branch triggered this workflow
-    if: github.ref_name == 'feature/poA-consensus' && github.event_name == 'push'
+    if: github.ref_name == 'main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [test, lint, build]
 
