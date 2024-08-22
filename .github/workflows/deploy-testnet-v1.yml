@@ -3,7 +3,7 @@ name: Build, Tag, and Deploy Botanix Testnet v1
 on:
   pull_request:
     branches:
-      - feature/poA-consensus
+      - main
     types: [closed]
     
 jobs:
