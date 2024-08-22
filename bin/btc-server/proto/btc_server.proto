@@ -11,6 +11,8 @@ service BtcServer {
 
     rpc NotifyPegins(NotifyPeginsRequest) returns (Empty) {}
 
+    rpc NotifyPegout(NotifyPegoutRequest) returns (Empty) {}
+
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
@@ -60,6 +62,13 @@ service BtcServer {
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
+}
+
+message NotifyPegoutRequest {
+    bytes pegout_id = 1;
+    bytes spk = 2;
+    uint64 amount = 3;
+    uint64 height = 4;
 }
 
 message SyncTxIndexRequest {
@@ -157,11 +166,10 @@ message Output {
 }
 
 message MakeTxRequest {
-    repeated Output outputs = 1;
     bytes signing_session_id = 2;
     // The checkpoint of the best finalized Bitcoin block hash.
     bytes checkpoint_block_hash = 3;
-    // The merkle root of our wallet's UTXO.
+    // The merkle root of our wallet's UTXOs.
     bytes utxo_merkle_root = 4;
 }
 
