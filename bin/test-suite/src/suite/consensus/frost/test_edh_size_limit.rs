@@ -28,10 +28,7 @@ use std::{str::FromStr, time::Duration};
 const NUM_PEGINS: u16 = 1000;
 
 // NOTE: this test cannot run as currently implemented
-// we need to send 1000 pegins and each pegin is in a different block
-// so the headers list is huge for the earlier pegins
-// and quickly fills a block to it's limit of 30 million gas
-// and to wait for all blocks to be mined is way too long
+// TODO: revist if test is needed after new consensus implementation
 
 pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
