@@ -133,12 +133,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            ) |
-            (
+            )
+            | (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -578,8 +578,8 @@ where
             let number_of_valid_sigs =
                 saved_block.header().check_authority_sig_add(&self.config.authorities)?;
             info!(target: "consensus::authority::pbft::init_block_proposal" ,"number of valid sigs: {}", number_of_valid_sigs);
-            if number_of_valid_sigs >=
-                PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+            if number_of_valid_sigs
+                >= PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
             {
                 info!(target: "consensus::authority::pbft::init_block_proposal" ,"We have enough commitments, time to produce a block");
                 // TODO (armins) need better error handling
@@ -756,8 +756,8 @@ where
             .unwrap_or_else(HashSet::new);
 
         // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() as u16 >=
-            PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
+        if pre_commits.len() as u16
+            >= PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
         {
             // Save that we processed this time slot from this peer
             let time_slot = block.header.timestamp / 60;
@@ -850,8 +850,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()? !=
-            block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()?
+            != block.header.segregated_signature_block_hash()?
         {
             warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -877,8 +877,8 @@ where
         info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
         info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
-        if number_of_valid_sigs >=
-            PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+        if number_of_valid_sigs
+            >= PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
         {
             info!(target: "consensus::authority::pbft::process_commitment" ,"We have enough commitments, time to produce a block");
             let block_witness =
@@ -959,10 +959,9 @@ pub(crate) mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
-                            PeerId::random(),
-                            vec![header],
-                        )));
+                        return futures_util::future::ready(PeerRequestResult::Ok(
+                            WithPeerId::new(PeerId::random(), vec![header]),
+                        ));
                     }
                 }
                 // Error is caught below
