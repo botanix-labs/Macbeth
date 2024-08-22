@@ -1,4 +1,5 @@
 use crate::{
+    abci::ABCIClientBuilder,
     block_fetcher::BlockFetcherTask,
     compressor::Compressor,
     epoch_manager::EpochManager,
@@ -31,7 +32,7 @@ use reth_provider::{
     StateProviderFactory,
 };
 
-use reth_tasks::TaskExecutor;
+use reth_tasks::{TaskExecutor, TaskSpawner};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -75,13 +76,13 @@ impl<EF, BF, DB, Engine, ToFrostMan, NetworkClient>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     Engine: EngineTypes + 'static,
+    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     DB: BlockReaderIdExt
         + StateProviderFactory
         + CanonChainTracker
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
@@ -223,6 +224,7 @@ where
         SyncController<Engine>,
         Option<PbftTask<EF, BF, DB, ToFrostMan, NetworkClient>>,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
+        Option<ABCIClientBuilder<EF, BF, DB>>,
     ) {
         let Self {
             btc_server_factory,
@@ -310,6 +312,7 @@ where
         let mut block_production_task = None;
         let mut pbft_task = None;
         let mut healthcheck_task = None;
+        let mut abci_client_builder = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -361,7 +364,7 @@ where
             let block_production = BlockProductionTask::new(
                 consensus.clone(),
                 to_engine,
-                storage,
+                storage.clone(),
                 btc_server_client.clone().expect("btc_server is available"),
                 bitcoin_block_header,
                 sk,
@@ -376,6 +379,8 @@ where
             );
 
             block_production_task = Some(block_production);
+
+            abci_client_builder = Some(ABCIClientBuilder::new(storage.clone()));
         }
 
         (
@@ -386,6 +391,7 @@ where
             sync_task,
             pbft_task,
             healthcheck_task,
+            abci_client_builder,
         )
     }
 }

@@ -747,6 +747,7 @@ where {
             mut sync_controller,
             pbft_task,
             healthcheck_task,
+            abci_client_builder,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
@@ -814,47 +815,51 @@ where {
         // TODO  we should structure which tasks are spawned based on the node type using two
         // different structs
         if is_fed_node {
-            executor.spawn_critical(
-                "PoA Block Production Task",
-                Box::pin(async move {
-                    block_production_task.expect("block production task exists").start_task().await;
-                }),
-            );
+            // executor.spawn_critical(
+            //     "PoA Block Production Task",
+            //     Box::pin(async move {
+            //         block_production_task.expect("block production task
+            // exists").start_task().await;     }),
+            // );
 
-            executor.spawn_critical(
-                "Frost Task",
-                Box::pin(async move {
-                    frost_task.expect("frost task exists").start_task().await;
-                }),
-            );
+            // executor.spawn_critical(
+            //     "Frost Task",
+            //     Box::pin(async move {
+            //         frost_task.expect("frost task exists").start_task().await;
+            //     }),
+            // );
 
-            executor.spawn_critical(
-                "Pbft Task",
-                Box::pin(async move {
-                    pbft_task.expect("pbft task exists").start_task().await;
-                }),
-            );
+            // executor.spawn_critical(
+            //     "Pbft Task",
+            //     Box::pin(async move {
+            //         pbft_task.expect("pbft task exists").start_task().await;
+            //     }),
+            // );
 
-            executor.spawn_critical(
-                "Healthcheck Task",
-                Box::pin(async move {
-                    healthcheck_task.expect("health check task exists").start_task().await;
-                }),
-            );
+            // executor.spawn_critical(
+            //     "Healthcheck Task",
+            //     Box::pin(async move {
+            //         healthcheck_task.expect("health check task exists").start_task().await;
+            //     }),
+            // );
+
+            abci_client_builder
+                .expect("abci client builder exists")
+                .start_server(&executor.clone());
         }
 
-        executor.spawn_critical(
-            "PoA Block Fetcher Task",
-            Box::pin(async move {
-                block_fetcher_task.start_task().await;
-            }),
-        );
-        executor.spawn_critical(
-            "PoA Block Sync Controller Task",
-            Box::pin(async move {
-                sync_controller.start_task().await;
-            }),
-        );
+        // executor.spawn_critical(
+        //     "PoA Block Fetcher Task",
+        //     Box::pin(async move {
+        //         block_fetcher_task.start_task().await;
+        //     }),
+        // );
+        // executor.spawn_critical(
+        //     "PoA Block Sync Controller Task",
+        //     Box::pin(async move {
+        //         sync_controller.start_task().await;
+        //     }),
+        // );
 
         let initial_target = node_config.initial_pipeline_target(genesis_hash);
         let hooks = EngineHooks::new();
