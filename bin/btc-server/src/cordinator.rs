@@ -173,7 +173,6 @@ impl App {
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,
         utxo_merkle_root: sha256::Hash,
-        max_allowed_inputs: usize,
     ) -> Result<Psbt, CoordinatorError> {
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
@@ -197,15 +196,8 @@ impl App {
                 Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
             })?;
         // Filter the ones that are still pending and conflict with pending txs.
-        let pending_inputs: HashSet<OutPoint> = self
-            .txindex
-            .lock()
-            .await
-            .pending_inputs()
-            .iter()
-            .take(max_allowed_inputs)
-            .cloned()
-            .collect();
+        let pending_inputs: HashSet<OutPoint> = self.txindex.lock().await.pending_inputs();
+
         let available_utxos = utxos
             .into_iter()
             .filter(|(p, _u)| !pending_inputs.contains(p))

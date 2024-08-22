@@ -13,7 +13,7 @@ use util::{parse_eth_address, VerifyingKeyExt};
 use crate::{
     database::Utxo,
     rpc,
-    util::{self, MAX_ALLOWED_TX_INPUTS},
+    util::{self},
     App,
 };
 
@@ -298,7 +298,7 @@ impl rpc::BtcServer for App {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self
-            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root, MAX_ALLOWED_TX_INPUTS)
+            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
             .await
             .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
