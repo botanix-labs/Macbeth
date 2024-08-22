@@ -17,7 +17,7 @@ use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+    psbt::{PegoutId, PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -168,7 +168,7 @@ impl App {
 
     pub(crate) async fn make_tx(
         &self,
-        outputs: Vec<TxOut>,
+        outputs: Vec<(TxOut, Option<PegoutId>)>,
         fee_rate: FeeRate,
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,
@@ -226,7 +226,7 @@ impl App {
         // Now we're going to hijack BDK coin selection real quick..
         let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
         let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-        let target_amount = outputs.iter().map(|o| o.value).sum::<Amount>();
+        let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
         // Try once with finalized, then add pending and try again.
         let selection = coin_select
@@ -263,7 +263,6 @@ impl App {
                 })
                 .collect(),
             outputs,
-            change.clone(),
         );
 
         // Sanity check that we created a valid PSBT

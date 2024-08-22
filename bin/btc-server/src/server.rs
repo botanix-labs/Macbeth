@@ -2,7 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use bitcoin::{
     hashes::{sha256, Hash},
     psbt::Psbt,
-    Amount, BlockHash, FeeRate, TxOut,
+    Amount, BlockHash, FeeRate, ScriptBuf, TxOut,
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
@@ -10,12 +10,7 @@ use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{
-    database::Utxo,
-    rpc,
-    util::{self},
-    App,
-};
+use crate::{database::Utxo, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, rpc, util, App};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -193,6 +188,29 @@ impl rpc::BtcServer for App {
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    async fn notify_pegout(
+        &self,
+        req: tonic::Request<rpc::NotifyPegoutRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let pegout_req = PegoutRequest {
+            id: PegoutId::from_bytes(&req.pegout_id).map_err(|e| {
+                error!("Failed to parse pegout id: {:?}", req.pegout_id);
+                badarg!("Failed to parse pegout id: {:?}", req.pegout_id)
+            })?,
+            // TODO there is no validation on this
+            spk: ScriptBuf::from_bytes(req.spk),
+            value: Amount::from_sat(req.amount),
+            botanix_height: req.height,
+        };
+
+        self.db.store_pending_pegout(&pegout_req)?;
+        self.db.flush()?;
+
+        Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
     /// Resets all utxos in the database
     async fn reset_all_utxos(
         &self,
@@ -270,19 +288,24 @@ impl rpc::BtcServer for App {
         }
 
         debug!("Cord Fee rate: {:?}", fee_rate);
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        let outputs = pending_pegouts.iter().map(|p| {TxOut {
+            value: p.value,
+            script_pubkey: p.spk.clone(),
+        }}).collect::<Vec<TxOut>>();
 
-        let outputs = req
-            .outputs
-            .into_iter()
-            .map(|o| {
-                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
-                    .map_err(|e| internal!("invalid address: {}", e))?
-                    .assume_checked()
-                    .script_pubkey();
+        // let outputs = req
+        //     .outputs
+        //     .into_iter()
+        //     .map(|o| {
+        //         let script_pubkey_result = bitcoin::Address::from_str(&o.address)
+        //             .map_err(|e| internal!("invalid address: {}", e))?
+        //             .assume_checked()
+        //             .script_pubkey();
 
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
-            })
-            .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
+        //         Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
+        //     })
+        //     .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
 
         // TODO this should live in coordinator.rs
         let pk_package = self
