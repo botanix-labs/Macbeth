@@ -8,8 +8,9 @@ use reth_transaction_pool::{EthPoolTransaction, EthPooledTransaction, EthTransac
 /// application state
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::v0_38::abci::{
-    Event, EventAttribute, RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestQuery,
-    ResponseCheckTx, ResponseCommit, ResponseFinalizeBlock, ResponseInfo, ResponseQuery,
+    Event, EventAttribute, RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain,
+    RequestQuery, ResponseCheckTx, ResponseCommit, ResponseFinalizeBlock, ResponseInfo,
+    ResponseInitChain, ResponseQuery,
 };
 use tracing::{error, info};
 
@@ -109,6 +110,23 @@ where
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         info!("info request: {:?}", request);
         ResponseInfo::default()
+    }
+
+    fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
+        info!("init_chain request: {:?}", _request);
+        // TODO lets get rid of blocking read here
+        let client = self.storage.inner.blocking_read().client.clone();
+        let state_root = client
+            .latest_header()
+            .expect("should have latest")
+            .expect("should have header")
+            .state_root;
+        let res = ResponseInitChain {
+            app_hash: bytes::Bytes::copy_from_slice(&state_root.0),
+            ..Default::default()
+        };
+
+        res
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
