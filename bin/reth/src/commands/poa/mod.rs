@@ -606,8 +606,11 @@ where {
                 .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 
         // Set up Transaction pool (mempool)
-        let transaction_pool =
-            reth_transaction_pool::Pool::eth_pool(validator, blob_store, self.txpool.pool_config());
+        let transaction_pool = reth_transaction_pool::Pool::eth_pool(
+            validator.clone(),
+            blob_store,
+            self.txpool.pool_config(),
+        );
 
         info!(target: "reth::cli", "Transaction pool initialized");
 
@@ -844,9 +847,10 @@ where {
             //     }),
             // );
 
+            let eth_tx_validator = validator.validator;
             abci_client_builder
                 .expect("abci client builder exists")
-                .start_server(&executor.clone());
+                .start_server(&executor.clone(), eth_tx_validator);
         }
 
         // executor.spawn_critical(
