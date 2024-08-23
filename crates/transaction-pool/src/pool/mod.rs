@@ -81,6 +81,7 @@ use crate::{
     CanonicalStateUpdate, ChangedAccount, PoolConfig, TransactionOrdering, TransactionValidator,
 };
 use best::BestTransactions;
+use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use reth_eth_wire_types::HandleMempoolData;
 use reth_primitives::{
@@ -426,6 +427,22 @@ where
                 transaction,
                 propagate,
             } => {
+                // send to CometBFT mempool
+                // NOTE: this leads to redundant validation:
+                // the tx is validated by this point but we also validate
+                // the same tx after receiving it from CometBFT with check_tx message
+                let comet_bft_rpc_client = HttpCometBFTRpcClientFactory::default()
+                    .build_and_connect()
+                    .expect("comet rpc client");
+
+                // create TransactionSigned from Transaction
+                let transaction_signed =
+                    transaction.transaction().to_recovered_transaction().into_signed();
+                let mut tx_bytes = Vec::new();
+                transaction_signed.encode_enveloped(&mut tx_bytes);
+
+                let _ = comet_bft_rpc_client.broadcast_tx_async(tx_bytes);
+
                 let sender_id = self.get_sender_id(transaction.sender());
                 let transaction_id = TransactionId::new(sender_id, transaction.nonce());
 

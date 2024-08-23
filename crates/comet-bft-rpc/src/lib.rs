@@ -1,4 +1,6 @@
 use tendermint_rpc::{client::HttpClient, Error};
+// re-export Client trait
+pub use tendermint_rpc::Client;
 
 const DEFAULT_RPC_URL: &str = "http://localhost:26657";
 
