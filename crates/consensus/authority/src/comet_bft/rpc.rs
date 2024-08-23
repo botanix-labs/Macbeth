@@ -8,14 +8,14 @@ pub(crate) trait CometBftRpcFactory: Clone + Send + Sync {
     fn build_and_connect(&self) -> Result<HttpClient, Error>;
 }
 
-#[derive(Clone)]
-pub(crate) struct HttpRpcClientFactory {
+#[derive(Clone, Debug)]
+pub(crate) struct HttpCometBFTRpcClientFactory {
     // storing as String so it works with HttpClient::new()
     // which needs a type that implements try_into()
     url: String,
 }
 
-impl CometBftRpcFactory for HttpRpcClientFactory {
+impl CometBftRpcFactory for HttpCometBFTRpcClientFactory {
     fn new(url: String) -> Self {
         Self { url }
     }
@@ -25,7 +25,7 @@ impl CometBftRpcFactory for HttpRpcClientFactory {
     }
 }
 
-impl Default for HttpRpcClientFactory {
+impl Default for HttpCometBFTRpcClientFactory {
     fn default() -> Self {
         Self { url: String::from(DEFAULT_RPC_URL) }
     }
@@ -36,14 +36,14 @@ mod tests {
 
     #[test]
     fn test_http_rpc_client_factory_new() {
-        let client_factory = HttpRpcClientFactory::new(String::from(DEFAULT_RPC_URL));
+        let client_factory = HttpCometBFTRpcClientFactory::new(String::from(DEFAULT_RPC_URL));
         let client = client_factory.build_and_connect();
         assert!(client.is_ok());
     }
 
     #[test]
     fn test_http_rpc_client_factory_default() {
-        let client_factory = HttpRpcClientFactory::default();
+        let client_factory = HttpCometBFTRpcClientFactory::default();
         let client = client_factory.build_and_connect();
         assert!(client.is_ok());
     }
