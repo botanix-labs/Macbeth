@@ -1,15 +1,12 @@
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_primitives::{Transaction, TransactionSigned, TxEip1559};
+use reth_primitives::TransactionSigned;
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_tasks::TaskSpawner;
-use reth_transaction_pool::{
-    EthPoolTransaction, EthPooledTransaction, EthTransactionValidator, PoolTransaction,
-};
-use serde::{Deserialize, Serialize};
+use reth_transaction_pool::{EthPoolTransaction, EthPooledTransaction, EthTransactionValidator};
 /// The purpose of this module is to provide a bridge between the CometBFT and the EVM
 /// application state
-use tendermint_abci::{Application, Server, ServerBuilder};
+use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::v0_38::abci::{
     Event, EventAttribute, RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestQuery,
     ResponseCheckTx, ResponseCommit, ResponseFinalizeBlock, ResponseInfo, ResponseQuery,
@@ -17,6 +14,8 @@ use tendermint_proto::v0_38::abci::{
 use tracing::{error, info};
 
 use crate::Storage;
+
+use super::rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 
 /// The size of the read buffer for each incoming connection to the ABCI
 /// server (1MB).
@@ -46,12 +45,13 @@ where
         Self { storage }
     }
 
-    pub fn start_server<T: EthPoolTransaction + Clone>(
+    pub fn start_server(
         &self,
         task_executor: &impl TaskSpawner,
-        validator: EthTransactionValidator<DB, T>,
+        validator: EthTransactionValidator<DB, EthPooledTransaction>,
     ) {
-        let app = ABCIClient::new(self.storage.clone(), validator);
+        let cbft_rpc_provider = HttpCometBFTRpcClientFactory::default();
+        let app = ABCIClient::new(self.storage.clone(), validator, cbft_rpc_provider);
         let server_builder = ServerBuilder::default();
         // server will always bind to default address
         // CometBFT will always run on the same machine and container
@@ -67,13 +67,14 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ABCIClient<EF, BF, DB, T> {
+#[derive(Debug, Clone)]
+pub struct ABCIClient<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
-    validator: EthTransactionValidator<DB, T>,
+    validator: EthTransactionValidator<DB, EthPooledTransaction>,
+    cbft_rpc_provider: HttpCometBFTRpcClientFactory,
 }
 
-impl<EF, BF, DB, T> ABCIClient<EF, BF, DB, T>
+impl<EF, BF, DB> ABCIClient<EF, BF, DB>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -83,14 +84,17 @@ where
         + 'static,
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
-    T: EthPoolTransaction + Clone + 'static,
 {
-    pub fn new(storage: Storage<EF, BF, DB>, validator: EthTransactionValidator<DB, T>) -> Self {
-        Self { storage, validator }
+    pub fn new(
+        storage: Storage<EF, BF, DB>,
+        validator: EthTransactionValidator<DB, EthPooledTransaction>,
+        cbft_rpc_provider: HttpCometBFTRpcClientFactory,
+    ) -> Self {
+        Self { storage, validator, cbft_rpc_provider }
     }
 }
 
-impl<EF, BF, DB, T> Application for ABCIClient<EF, BF, DB, T>
+impl<EF, BF, DB> Application for ABCIClient<EF, BF, DB>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -100,7 +104,6 @@ where
         + 'static,
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
-    T: EthPoolTransaction + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     fn info(&self, request: RequestInfo) -> ResponseInfo {
@@ -115,16 +118,14 @@ where
         // check of the tranasaction is required. CheckTx_Recheck types are used when the mempool is
         // initiating a normal recheck of a transaction.
         let _type = request.r#type;
-        let mut tx_bytes = request.tx.clone();
+        let tx_bytes = request.tx.clone();
 
         let mut error = (SUCCESS, "Ok");
         match TransactionSigned::decode_enveloped(&mut tx_bytes.to_vec().as_slice()) {
             Ok(tx) => {
                 if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
-                    let pool_tx = EthPooledTransaction::new(
-                        tx_ec_recover,
-                        tx_ec_recover.length_without_header(),
-                    );
+                    let length = tx_ec_recover.length_without_header();
+                    let pool_tx = EthPooledTransaction::new(tx_ec_recover, length);
 
                     let res = self.validator.validate_one(
                         reth_transaction_pool::TransactionOrigin::External,
@@ -148,7 +149,7 @@ where
                         }
                     }
                 } else {
-                    error = (ERROR, &format!("Error recovering tx signer. Invalid signature"));
+                    error = (ERROR, "Error recovering tx signer. Invalid signature");
                 }
             }
             Err(e) => {
