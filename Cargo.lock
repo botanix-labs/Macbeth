@@ -7935,6 +7935,7 @@ dependencies = [
  "reth-rpc-types",
  "reth-stages",
  "reth-tasks",
+ "reth-transaction-pool",
  "ruint",
  "secp256k1 0.28.2",
  "serde",
