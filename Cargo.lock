@@ -8036,6 +8036,7 @@ dependencies = [
  "reth-tasks",
  "reth-tokio-util",
  "revm-primitives",
+ "reth-transaction-pool",
  "ruint",
  "secp256k1 0.29.0",
  "serde",
