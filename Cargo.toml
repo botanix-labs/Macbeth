@@ -362,7 +362,7 @@ quote = "1.0"
 
 # Tendermint 
 tendermint-abci = "0.39.1"
-tendermint-rpc = "0.39.1"
+tendermint-rpc = { version = "0.39.1", features = ["http-client"] }
 tendermint-proto  = "0.39.1"
 
 # tokio
