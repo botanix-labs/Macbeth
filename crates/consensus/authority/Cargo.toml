@@ -75,6 +75,7 @@ thiserror.workspace = true
 # Tendermint 
 tendermint-abci.workspace = true
 tendermint-proto.workspace = true
+tendermint-rpc.workspace = true
 # compression
 async-compression = {version = "0.4.11", features = ["all"]}
 serde = { version = "1.0", features = ["derive"] }
