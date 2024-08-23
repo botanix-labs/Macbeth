@@ -2082,6 +2082,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b6a852b24ab71dffc585bcb46eaf7959d175cb865a7152e35b348d1b2960422"
 
 [[package]]
+name = "comet-bft-rpc"
+version = "0.1.0"
+dependencies = [
+ "tendermint-rpc",
+]
+
+[[package]]
 name = "comfy-table"
 version = "7.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7922,6 +7929,7 @@ dependencies = [
  "btc-server",
  "bytes",
  "client",
+ "comet-bft-rpc",
  "displaydoc",
  "frost-secp256k1-tr",
  "futures-util",
@@ -9556,6 +9564,7 @@ dependencies = [
  "assert_matches",
  "auto_impl",
  "bitflags 2.5.0",
+ "comet-bft-rpc",
  "criterion",
  "futures-util",
  "itertools 0.12.1",
