@@ -1,6 +1,6 @@
 use crate::{
-    abci::ABCIClientBuilder,
     block_fetcher::BlockFetcherTask,
+    comet_bft::abci::ABCIClientBuilder,
     compressor::Compressor,
     epoch_manager::EpochManager,
     frost_task::{FrostNotificationMessage, FrostTask},
