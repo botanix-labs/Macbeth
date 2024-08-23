@@ -1,2 +1,4 @@
 pub mod abci;
-pub mod rpc;
+
+// TODO remove mod once it's determined separate crate is the way to go
+// pub mod rpc;

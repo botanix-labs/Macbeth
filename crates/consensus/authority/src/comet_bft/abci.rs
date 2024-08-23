@@ -15,7 +15,7 @@ use tracing::{error, info};
 
 use crate::Storage;
 
-use super::rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
 /// The size of the read buffer for each incoming connection to the ABCI
 /// server (1MB).

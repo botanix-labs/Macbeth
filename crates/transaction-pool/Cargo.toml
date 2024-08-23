@@ -36,6 +36,9 @@ tokio-stream.workspace = true
 reth-metrics.workspace = true
 metrics.workspace = true
 
+# CometBFT
+comet-bft-rpc = { path = "../comet-bft-rpc" }
+
 # misc
 aquamarine.workspace = true
 thiserror.workspace = true
