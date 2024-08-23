@@ -608,6 +608,7 @@ where {
         // Set up Transaction pool (mempool)
         let transaction_pool =
             reth_transaction_pool::Pool::eth_pool(validator, blob_store, self.txpool.pool_config());
+
         info!(target: "reth::cli", "Transaction pool initialized");
 
         // spawn txpool maintenance task
