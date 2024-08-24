@@ -7,10 +7,13 @@ use reth_transaction_pool::{EthPoolTransaction, EthPooledTransaction, EthTransac
 /// The purpose of this module is to provide a bridge between the CometBFT and the EVM
 /// application state
 use tendermint_abci::{Application, ServerBuilder};
-use tendermint_proto::v0_38::abci::{
-    Event, EventAttribute, RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain,
-    RequestQuery, ResponseCheckTx, ResponseCommit, ResponseFinalizeBlock, ResponseInfo,
-    ResponseInitChain, ResponseQuery,
+use tendermint_proto::{
+    abci::{RequestPrepareProposal, ResponsePrepareProposal},
+    v0_38::abci::{
+        Event, EventAttribute, RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain,
+        RequestQuery, ResponseCheckTx, ResponseCommit, ResponseFinalizeBlock, ResponseInfo,
+        ResponseInitChain, ResponseQuery,
+    },
 };
 use tracing::{error, info};
 
@@ -106,12 +109,13 @@ where
     EF: ExecutorFactory + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
-    // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
+    /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         info!("info request: {:?}", request);
         ResponseInfo::default()
     }
 
+    // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
     fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
         info!("init_chain request: {:?}", _request);
         // TODO lets get rid of blocking read here
@@ -129,17 +133,37 @@ where
         res
     }
 
+    /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
+    fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
+        info!("prepare_proposal request: {:?}", request);
+        let txs_bytes = request.txs;
+        // TODO can the txs be an invalid format here? If so, how do we handle it
+        // let txs = txs_bytes
+        //     .iter()
+        //     .map(|tx| TransactionSigned::decode_enveloped(&mut tx.to_vec().as_slice()).unwrap())
+        //     .map(|tx| {
+        //         let length = tx.length_without_header();
+        //         let pool_tx = EthPooledTransaction::new(tx, length);
+        //         pool_tx
+        //     })
+        //     .collect::<Vec<_>>();
+
+        ResponsePrepareProposal::default()
+    }
+
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
     fn check_tx(&self, request: RequestCheckTx) -> ResponseCheckTx {
+        info!("check_tx request: {:?}", request);
         // We are ignore type for now
         // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a full
         // check of the tranasaction is required. CheckTx_Recheck types are used when the mempool is
         // initiating a normal recheck of a transaction.
         let _type = request.r#type;
         let tx_bytes = request.tx.clone();
+        let hex = hex::decode(tx_bytes.clone()).unwrap();
 
         let mut error = (SUCCESS, "Ok");
-        match TransactionSigned::decode_enveloped(&mut tx_bytes.to_vec().as_slice()) {
+        match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
             Ok(tx) => {
                 if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
                     let length = tx_ec_recover.length_without_header();
@@ -176,6 +200,12 @@ where
             }
         }
 
-        ResponseCheckTx { code: error.0, log: error.1.to_string(), ..Default::default() }
+        ResponseCheckTx {
+            code: error.0,
+            log: error.1.to_string(),
+            info: error.1.to_string(),
+            ..Default::default()
+        }
     }
 }
+
