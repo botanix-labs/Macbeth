@@ -85,7 +85,7 @@ use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use reth_eth_wire::HandleMempoolData;
 use reth_primitives::{
-    Address, BlobTransaction, BlobTransactionSidecar, IntoRecoveredTransaction,
+    hex, Address, BlobTransaction, BlobTransactionSidecar, IntoRecoveredTransaction,
     PooledTransactionsElement, TransactionSigned, TxHash, B256,
 };
 use std::{
@@ -437,8 +437,12 @@ where
                     transaction.transaction().to_recovered_transaction().into_signed();
                 let mut tx_bytes = Vec::new();
                 transaction_signed.encode_enveloped(&mut tx_bytes);
-
-                let _ = comet_bft_rpc_client.broadcast_tx_async(tx_bytes);
+                let hex = hex::encode(tx_bytes);
+                // TODO is this anti pattern? Should we send this req over a channel?
+                tokio::spawn(async move {
+                    // TODO remove this expect
+                    comet_bft_rpc_client.broadcast_tx_async(hex).await.expect("broadcast tx");
+                });
 
                 let sender_id = self.get_sender_id(transaction.sender());
                 let transaction_id = TransactionId::new(sender_id, transaction.nonce());
