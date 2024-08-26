@@ -38,6 +38,9 @@ reth-node-core.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
+# LRU Cache
+schnellru.workspace = true
+
 # async
 futures-util.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }

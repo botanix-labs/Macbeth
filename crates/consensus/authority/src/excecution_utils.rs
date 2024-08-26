@@ -15,9 +15,9 @@ pub(crate) mod authority_execution_utils {
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
-        proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber,
-        BlockWithSenders, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock,
-        SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+        proofs, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+        ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedBlockWithSenders, SealedHeader,
+        TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
         BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ExecutorFactory,
@@ -28,6 +28,7 @@ pub(crate) mod authority_execution_utils {
         processor::EVMProcessor, State,
     };
     use std::sync::Arc;
+    use tendermint_proto::google::protobuf::Timestamp;
 
     use tracing::{error, info, trace, warn};
 
@@ -40,24 +41,27 @@ pub(crate) mod authority_execution_utils {
     pub(crate) fn build_and_execute(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        sk: &secp256k1::SecretKey,
+        block_builder_address: &Address,
         evm_config: EthEvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
         bitcoind_factory: &impl BitcoindFactory,
         bitcoin_network: bitcoin::Network,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
+        bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
-    ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError> {
+        authority_signers: &Vec<secp256k1::PublicKey>,
+        timestamp: Timestamp,
+    ) -> Result<(SealedBlockWithSenders), BlockExecutionError> {
         // Construct block and header
         let header = build_header_template(
             &transactions,
             client,
-            bitcoin_checkpoint,
+            bitcoin_checkpoint_block_hash,
             chain_spec.clone(),
             agg_pk,
+            timestamp,
         )?;
 
-        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
+        let mut block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
@@ -66,80 +70,41 @@ pub(crate) mod authority_execution_utils {
 
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
-        // derive block builder address to receive block fees
-        let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
-        let block_builder_address = public_key_to_address(block_builder_pub_key);
         info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
         let (bundle_state, gas_used) = execute(
             &block_with_senders,
             client,
-            Some(block_builder_address),
+            Some(*block_builder_address),
             bitcoind_factory,
             bitcoin_network,
             chain_spec,
             evm_config,
         )?;
-
-        Ok((bundle_state, block, gas_used))
-    }
-
-    /// Builds and validates the current block header with the given transactions, on the provided
-    /// [Executor].
-    ///
-    /// This returns the current block header.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_validate_completed_header(
-        bundle_state: &BundleStateWithReceipts,
-        block: Block,
-        gas_used: u64,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
-        sk: &secp256k1::SecretKey,
-        authority_signers: &Vec<secp256k1::PublicKey>,
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
-        utxo_commitment: sha256::Hash,
-        consensus: &AuthorityConsensus,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        agg_pk: &secp256k1::PublicKey,
-        genesis_authorities: &Vec<secp256k1::PublicKey>,
-    ) -> Result<SealedHeader, BlockExecutionError> {
-        let Block { header, body, .. } = block;
-        let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
-
-        // fill in the rest of the fields
-        let header = complete_header(
-            header,
-            bundle_state,
+        // Now that we have the gas used, we can complete the header
+        // TODO pegin / pegout info should be stored in bundle state from here on
+        let completed_header = complete_header(
+            block_with_senders.header.clone(),
+            &bundle_state,
             gas_used,
-            sk,
-            witness_data,
-            bitcoin_checkpoint.clone(),
-            utxo_commitment,
+            // Witness Data
+            &None,
+            *bitcoin_checkpoint_block_hash,
+            // UTXO commitment
+            sha256::Hash::all_zeros(),
             client,
             agg_pk,
             &authority_signers,
         )?;
 
-        // Validate EDH authorities match genesis authorities
-        if let Err(e) = validate_extra_data_header_authorities(&header, genesis_authorities) {
-            error!(target: "consensus::authority", "failed to validate EDH authorities: {:?}", e);
-            return Err(BlockExecutionError::Validation(
-                BlockValidationError::InvalidExtraDataAuthorities,
-            ));
-        }
+        // Replace header with the one that is completed
+        block.header = completed_header.clone();
+        // Seal the block
+        let sealed_block = block.seal(completed_header.hash_slow());
+        // TODO handle unwrap
+        let sealed_block_with_senders = sealed_block.try_seal_with_senders().unwrap();
+        // TODO save pegin/pegouts in seal with senders struct
 
-        // Redundant check. Lets make sure the header is valid
-        consensus.validate_extra_data_header_single_signer(&header, authority_signers).map_err(
-            |e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            },
-        )?;
-
-        trace!(target: "consensus::authority", root=?header.state_root, ?body, "calculated root");
-        let block_hash = header.hash_slow();
-        let new_header = header.seal(block_hash);
-        Ok(new_header)
+        Ok(sealed_block_with_senders)
     }
 
     // Execute and run poa validation on the block without inserting it into the storage
@@ -213,6 +178,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_checkpoint: &bitcoin::BlockHash,
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
+        timestamp: Timestamp,
     ) -> Result<Header, BlockExecutionError> {
         let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
         let best_hash = client
@@ -221,7 +187,7 @@ pub(crate) mod authority_execution_utils {
             .unwrap_or_else(|| {
                 panic!("best block hash not found for block number: {}", best_block);
             });
-        let timestamp = unix_timestamp();
+        let timestamp = timestamp.seconds as u64;
 
         // check previous block for base fee
         let base_fee_per_gas = client
@@ -287,7 +253,6 @@ pub(crate) mod authority_execution_utils {
         mut header: Header,
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
-        sk: &secp256k1::SecretKey,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
         utxo_commitment: sha256::Hash,
@@ -345,10 +310,6 @@ pub(crate) mod authority_execution_utils {
             *agg_pk,
         );
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk).map_err(|e| {
-            warn!(target: "consensus::authority", "failed to sign block: {:?}", e);
-            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-        })?;
         Ok(header)
     }
 
