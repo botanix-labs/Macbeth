@@ -330,39 +330,6 @@ where
                         }
                     }
 
-                    // Need to decide if we accepting a forked block or not
-                    // There is a garuntee a quorum of signers will not sign an invalid fork
-                    let tip = client.best_block_number().expect("best block exists");
-                    let best_block = client
-                        .block_by_number(tip)
-                        .expect("best block exists")
-                        .expect("best block exists");
-                    if best_block.header.hash_slow() != header.parent_hash {
-                        warn!(target: "consensus::authority", "Recieved block is not a direct child of the best block");
-                        // need to retrieve this missing block from a peer
-                        let missing_block =
-                            full_block_client.get_full_block(header.parent_hash).await;
-                        if let Err(e) = client.insert_block_without_senders(
-                            missing_block.clone(),
-                            BlockValidationKind::Exhaustive,
-                        ) {
-                            error!(target: "consensus::authority", ?e, "Failed to insert forked block");
-                            continue;
-                        }
-                        client.set_canonical_head(missing_block.header.clone());
-                        client.set_safe(missing_block.header.clone());
-                        client.set_finalized(missing_block.header.clone());
-                        if let Err(e) = engine_util::send_fork_choice_update_payload(
-                            sealed_block.clone().hash(),
-                            self.to_engine.clone(),
-                        )
-                        .await
-                        {
-                            error!(target: "consensus::authority", ?e, "Failed to send fork choice update on forked block");
-                            continue;
-                        }
-                    }
-
                     // Notify engine api about new FCU
                     engine_util::send_fork_choice_update_payload(
                         sealed_block.clone().hash(),
