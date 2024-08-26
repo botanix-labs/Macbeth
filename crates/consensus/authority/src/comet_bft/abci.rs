@@ -98,13 +98,51 @@ where
     BF: BitcoindFactory + Clone + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
-    pub fn new(
+    fn new(
         storage: Storage<EF, BF, DB>,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         pool: Pool,
     ) -> Self {
         Self { storage, validator, cbft_rpc_provider, pool }
+    }
+
+    /// Returns the payload builder config
+    /// this method will block and wait for the storage lock
+    fn payload_builder_arguements(&self) -> PayloadConfig<EthPayloadBuilderAttributes> {
+        let storage = self.storage.inner.blocking_read();
+        let client = storage.client.clone();
+        let chain_spec = storage.chain_spec.clone();
+        drop(storage); // Drop the lock
+
+        let best_header =
+            client.latest_header().expect("should have latest").expect("should have header");
+        let best_block = BlockReaderIdExt::block_by_id(&client, BlockId::latest())
+            .expect("have latest")
+            .expect("have block")
+            .seal(best_header.hash());
+
+        // let builder_config = EthPayloadBuilderAttributes::new(best_block.hash(), );
+        let payload_attributes = PayloadAttributes {
+            // Attributes here dont really matter
+            // We just want to build a payload with the best txs
+            timestamp: unix_timestamp(),
+            prev_randao: FixedBytes::<32>::random(),
+            suggested_fee_recipient: Address::ZERO,
+            withdrawals: None,
+            parent_beacon_block_root: None,
+        };
+
+        let payload_builder_attributes =
+            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
+
+        let payload_config = PayloadConfig::new(
+            Arc::new(best_block),
+            reth_primitives::Bytes::default(),
+            payload_builder_attributes,
+            chain_spec,
+        );
+        payload_config
     }
 }
 
@@ -147,7 +185,7 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
         info!("prepare_proposal request: {:?}", request);
-        let txs_bytes = request.txs;
+        let _txs_bytes = request.txs;
         // TODO can the txs be an invalid format here? If so, how do we handle it
         // let txs = txs_bytes
         //     .iter()
@@ -166,38 +204,8 @@ where
         // should we add those Tx to the pool first?
 
         // info!("prepare_proposal response: {:?}", res);
-        let storage = self.storage.inner.blocking_read();
-        let client = storage.client.clone();
-        let chain_spec = storage.chain_spec.clone();
-        drop(storage); // Drop the lock
-
-        let best_header =
-            client.latest_header().expect("should have latest").expect("should have header");
-        let best_block = BlockReaderIdExt::block_by_id(&client, BlockId::latest())
-            .expect("have latest")
-            .expect("have block")
-            .seal(best_header.hash());
-
-        // let builder_config = EthPayloadBuilderAttributes::new(best_block.hash(), );
-        let payload_attributes = PayloadAttributes {
-            // Attributes here dont really matter
-            // We just want to build a payload with the best txs
-            timestamp: unix_timestamp(),
-            prev_randao: FixedBytes::<32>::random(),
-            suggested_fee_recipient: Address::ZERO,
-            withdrawals: None,
-            parent_beacon_block_root: None,
-        };
-
-        let payload_builder_attributes =
-            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
-
-        let payload_config = PayloadConfig::new(
-            Arc::new(best_block),
-            reth_primitives::Bytes::default(),
-            payload_builder_attributes,
-            chain_spec,
-        );
+        let payload_config = self.payload_builder_arguements();
+        let client = self.storage.inner.blocking_read().client.clone();
 
         let res = default_ethereum_payload_builder(BuildArguments {
             client,
