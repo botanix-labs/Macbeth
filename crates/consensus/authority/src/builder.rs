@@ -5,9 +5,7 @@ use crate::{
     epoch_manager::EpochManager,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
-    pbft_task::{PbftNotificationMessage, PbftTask},
     sync::SyncController,
-    task::BlockProductionTask,
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
 };
@@ -32,13 +30,16 @@ use reth_provider::{
     StateProviderFactory,
 };
 
-use reth_tasks::{TaskExecutor, TaskSpawner};
+use reth_tasks::TaskExecutor;
+use secp256k1::{PublicKey, Secp256k1};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
 use tracing::{error, info};
+
+pub type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<EF, BF, DB, Engine: EngineTypes, ToFrostMan, NetworkClient> {
@@ -94,7 +95,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server_factory: Option<GrpcClientFactory>,
-        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        bitcoin_block_header: BitcoinCheckpoint,
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
         network_client: NetworkClient,
@@ -168,6 +169,10 @@ where
                 return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
             }
         }
+
+        // TODO REMOVE LATER
+        let mut rng = &mut secp256k1::rand::thread_rng();
+        let agg_pk = secp256k1::generate_keypair(&mut rng).1;
         let pk = sk.public_key(secp256k1::SECP256K1);
 
         // Try to instantiate storage
@@ -179,7 +184,7 @@ where
             btc_network,
             // Aggregate pk to be filled out by the dkg state machine if we are still on genesis
             // block
-            agg_pk,
+            Some(agg_pk),
             authority_socket_addresses,
             evm_config.clone(),
             chain_spec.clone(),
@@ -218,11 +223,9 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockProductionTask<EF, BF, DB, Engine, ToFrostMan>>,
         BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController<Engine>,
-        Option<PbftTask<EF, BF, DB, ToFrostMan, NetworkClient>>,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
     ) {
@@ -309,8 +312,6 @@ where
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
         let mut frost_task = None;
-        let mut block_production_task = None;
-        let mut pbft_task = None;
         let mut healthcheck_task = None;
         let mut abci_client_builder = None;
         if is_fed_node {
@@ -336,60 +337,20 @@ where
             );
 
             frost_task = Some(task);
-
-            // Set up pbft notification message queue
-            // these are two mpsc channels that are used to communicate between the pbft task and
-            // the block production task
-            let (pbft_task_notifications1_tx, pbft_task_notifications1_rx) =
-                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
-            let (pbft_task_notifications2_tx, pbft_task_notifications2_rx) =
-                tokio::sync::mpsc::unbounded_channel::<PbftNotificationMessage>();
-
-            let pbft = PbftTask::new(
+            abci_client_builder = Some(ABCIClientBuilder::new(
                 storage.clone(),
-                frost_handle.clone().expect("Requires frost handle"),
-                frost_config.expect("valid frost config"),
-                sk,
-                pbft_task_notifications1_rx,
-                pbft_task_notifications2_tx,
-                task_executor.clone(),
-                network_client,
-                network_handle.clone(),
                 bitcoin_block_header.clone(),
+                network_handle.clone(),
+                btc_server_client.expect("to be defined").clone(),
                 consensus.clone(),
-                executor_factory.clone(),
-            );
-            pbft_task = Some(pbft);
-
-            let block_production = BlockProductionTask::new(
-                consensus.clone(),
-                to_engine,
-                storage.clone(),
-                btc_server_client.clone().expect("btc_server is available"),
-                bitcoin_block_header,
-                sk,
-                epoch_manager,
-                network_handle,
-                payload_builder,
-                frost_task_notifications2_rx,
-                frost_task_notifications1_tx,
-                pbft_task_notifications2_rx,
-                pbft_task_notifications1_tx,
-                utxo_sync.expect("utxo_sync exists").clone(),
-            );
-
-            block_production_task = Some(block_production);
-
-            abci_client_builder = Some(ABCIClientBuilder::new(storage.clone()));
+            ));
         }
 
         (
             consensus,
-            block_production_task,
             block_fetcher_task,
             frost_task,
             sync_task,
-            pbft_task,
             healthcheck_task,
             abci_client_builder,
         )

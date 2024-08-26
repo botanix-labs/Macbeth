@@ -532,17 +532,6 @@ where
         let block_with_senders = BlockWithSenders::new(block.clone().unseal(), senders.clone())
             .expect("senders are valid");
 
-        // validate before executing block
-        self.consensus
-            .validate_extra_data_header_single_signer(
-                &block.header.clone(),
-                &storage.get_authorities(),
-            )
-            .map_err(|e| {
-                warn!(target: "consensus::authority", "failed to validate POA header during PBFT: {:?}", e);
-                e
-            })?;
-
         let db = storage.client.latest().expect("get latest");
         let mut executor = storage.executor_factory.with_state(&db);
 
