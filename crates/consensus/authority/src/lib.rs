@@ -20,10 +20,10 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 
-use pbft::PbftCommitmentCriteria;
+// use pbft::PbftCommitmentCriteria;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::{
-    utils::{unix_timestamp, validate_chain_version, validate_extra_data_header_authorities},
+    utils::{validate_chain_version, validate_extra_data_header_authorities},
     validation::{self},
 };
 
@@ -37,7 +37,6 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
-mod block_builder;
 mod block_fetcher;
 mod builder;
 mod comet_bft;
@@ -52,7 +51,6 @@ mod pbft;
 mod pbft_task;
 mod signing;
 mod sync;
-mod task;
 pub mod utils;
 mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
@@ -124,7 +122,7 @@ impl Consensus for AuthorityConsensus {
     fn validate_extra_data_header(
         &self,
         header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
+        _authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
         aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
@@ -171,19 +169,19 @@ impl Consensus for AuthorityConsensus {
             ));
         }
 
+        // TODO this needs to be re-enabled to check for CBFT block signatures
         // Validate a quorum of authority signatures except during pbft
-        let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
+        // let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
+        //     error!("Failed to validate authority signature: {:?}", e);
+        //     ConsensusError::InvalidAuthoritySignature
+        // })?;
 
-        if valid_sigs < PbftCommitmentCriteria::min_commitments(authority_signers.len() as u16) {
-            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
-                authority_signers.len() as u16,
-                valid_sigs,
-            ));
-        }
-        // TODO (armins) in the future this is where we would validate federation votes
+        // if valid_sigs < PbftCommitmentCriteria::min_commitments(authority_signers.len() as u16) {
+        //     return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
+        //         authority_signers.len() as u16,
+        //         valid_sigs,
+        //     ));
+        // }
 
         Ok(())
     }
@@ -228,90 +226,6 @@ impl Consensus for AuthorityConsensus {
 
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
-
-        // Validate signer is in turn
-        // TODO just for simplicity lets pull block time from botanix testnet chainsepc
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-        header
-            .validate_inturn(authority_signers, leader_selection_window)
-            .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
-        // Place a tigher limit on the timestamp
-        let current_timestamp = unix_timestamp();
-        header.validate_timestamp(current_timestamp).map_err(|_| {
-            if header.timestamp > current_timestamp {
-                ConsensusError::TimestampIsInFuture {
-                    timestamp: header.timestamp,
-                    present_timestamp: current_timestamp,
-                }
-            } else {
-                ConsensusError::TimestampIsInPast {
-                    timestamp: header.timestamp,
-                    present_timestamp: current_timestamp,
-                }
-            }
-        })?;
-
-        Ok(())
-    }
-
-    /// Validate poa extra data header
-    /// This function will validate the extra data header and check for a quorum of signatures
-    /// from authorities memebers.
-    fn validate_extra_data_header_single_signer(
-        &self,
-        header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
-    ) -> Result<(), ConsensusError> {
-        // Skip over genesis
-        if header.number == 0 {
-            return Ok(());
-        }
-        // First run the basic validation
-        validation::validate_header_extradata(header)?;
-
-        // Attempt to deserialize the extra data header
-        let edh = header.deserialize_extra_data_header().map_err(|e| {
-            error!("Failed to deserialize extra data header: {:?}", e);
-            ConsensusError::ExtraDataInvalid
-        })?;
-
-        validate_chain_version(edh.chain_version)?;
-
-        if edh.aggregated_public_key == nums_secp256k1_pk() {
-            return Err(ConsensusError::InvalidAggregatedPublicKey(
-                InvalidAggregatedPublicKeyError::NumsAggregatePublicKeyPastGenesis,
-            ));
-        }
-
-        // Validate the authority signature and signature came from one of the authorities
-        header.validate_first_authority_signature(authority_signers).map_err(|e| {
-            error!("Failed to validate authority signature: {:?}", e);
-            ConsensusError::InvalidAuthoritySignature
-        })?;
-
-        // Validate fee benificiary
-        self.validate_block_beneficiary(header)?;
-
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-
-        // Validate signer is in turn
-        header
-            .validate_inturn(authority_signers, leader_selection_window)
-            .map_err(|_| ConsensusError::AuthorityNotInTurn)?;
-        // Place a tigher limit on the timestamp
-        let current_timestamp = unix_timestamp();
-        header.validate_timestamp(current_timestamp).map_err(|_| {
-            ConsensusError::TimestampIsInFuture {
-                timestamp: header.timestamp,
-                present_timestamp: current_timestamp,
-            }
-        })?;
 
         Ok(())
     }
