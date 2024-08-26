@@ -40,6 +40,10 @@ reth-node-api.workspace = true
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-transaction-pool.workspace = true
 reth-network-types.workspace = true
+reth-ethereum-payload-builder.workspace = true
+reth-basic-payload-builder.workspace = true
+reth-payload-builder.workspace = true
+reth-node-core.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 

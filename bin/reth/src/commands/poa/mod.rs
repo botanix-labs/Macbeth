@@ -800,9 +800,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             // );
 
             let eth_tx_validator = validator.validator;
-            abci_client_builder
-                .expect("abci client builder exists")
-                .start_server(&executor.clone(), eth_tx_validator);
+            abci_client_builder.expect("abci client builder exists").start_server(
+                &executor.clone(),
+                eth_tx_validator,
+                transaction_pool.clone(),
+            );
         }
 
         // executor.spawn_critical(
