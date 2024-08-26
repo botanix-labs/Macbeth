@@ -1,6 +1,9 @@
 /// The purpose of this module is to provide a bridge between the CometBFT and the EVM
 /// application state
-use std::sync::{Arc, RwLock};
+use std::{
+    io,
+    sync::{Arc, RwLock},
+};
 
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
@@ -12,6 +15,8 @@ use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
+use thiserror::Error;
+
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{Address, BlockHash, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
@@ -22,13 +27,15 @@ use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, Trans
 use ruint::Uint;
 use schnellru::{ByLength, LruMap};
 
+use bitcoin::consensus::encode::{self, Decodable, Encodable};
+
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponsePrepareProposal,
-        ResponseProcessProposal,
+        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseExtendVote,
+        ResponsePrepareProposal, ResponseProcessProposal,
     },
     v0_38::abci::{
         RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
@@ -43,6 +50,7 @@ use crate::{
     builder::BitcoinCheckpoint, engine_util,
     excecution_utils::authority_execution_utils::build_and_execute, AuthorityConsensus, Storage,
 };
+use crate::{comet_bft::extended_vote::ExtendedVote, Storage};
 
 /// Consts
 const SUCCESS: u32 = 0;
@@ -181,7 +189,7 @@ where
 
     /// Returns the payload builder config
     /// this method will block and wait for the storage lock
-    fn payload_builder_arguements(&self) -> PayloadConfig<EthPayloadBuilderAttributes> {
+    fn payload_builder_arguments(&self) -> PayloadConfig<EthPayloadBuilderAttributes> {
         let storage = self.storage.inner.blocking_read();
         let client = storage.client.clone();
         let chain_spec = storage.chain_spec.clone();
