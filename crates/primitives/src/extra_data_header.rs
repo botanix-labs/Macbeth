@@ -6,6 +6,7 @@ use bitcoin::{
     witness,
 };
 use reth_primitives_traits::constants::nums_secp256k1_pk;
+use revm_primitives::{Address, FixedBytes};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 
@@ -46,6 +47,8 @@ pub struct ExtraDataHeader {
     pub authority_signatures: Option<Vec<secp256k1::ecdsa::RecoverableSignature>>,
     /// Aggregated public key
     pub aggregated_public_key: secp256k1::PublicKey,
+    /// Block producer address
+    pub block_producer_address: Address,
 }
 
 impl Default for ExtraDataHeader {
@@ -62,6 +65,7 @@ impl Default for ExtraDataHeader {
             utxo_commitment: sha256::Hash::all_zeros(),
             authority_signatures: None,
             aggregated_public_key: nums_secp256k1_pk(),
+            block_producer_address: Address::ZERO,
         }
     }
 }
@@ -139,6 +143,8 @@ impl ExtraDataHeader {
         utxo_commitment: sha256::Hash,
         // Aggregated public key
         aggregated_public_key: secp256k1::PublicKey,
+        // Block producer address
+        block_producer_address: Address,
     ) -> Self {
         let mut optional_fields = 0u8;
         if authority_signers.is_some() {
@@ -164,6 +170,7 @@ impl ExtraDataHeader {
             utxo_commitment,
             authority_signatures,
             aggregated_public_key,
+            block_producer_address,
             optional_fields,
         }
     }
@@ -236,6 +243,8 @@ impl ExtraDataHeader {
         self.bitcoin_block_hash.consensus_encode(writer)?;
         self.utxo_commitment.consensus_encode(writer)?;
         self.aggregated_public_key.serialize().consensus_encode(writer)?;
+        let block_producer_address_bytes = self.block_producer_address.0 .0;
+        writer.write(&block_producer_address_bytes)?;
 
         if let Some(authorities) = &self.authority_signers {
             (authorities.len() as u32).consensus_encode(writer)?;
@@ -297,6 +306,9 @@ impl ExtraDataHeader {
             println!("Error: {:?}", e);
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
+        let mut block_producer_address_bytes: [u8; 20] = [0; 20];
+        reader.read_exact(&mut block_producer_address_bytes)?;
+        let block_producer_address = Address::from_slice(&block_producer_address_bytes);
 
         // Everything past the blockhash is optional and can be empty
         // use the optional bitmask field
@@ -364,6 +376,7 @@ impl ExtraDataHeader {
             authority_vote,
             witness_data,
             aggregated_public_key,
+            block_producer_address,
             authority_signatures: signatures,
         })
     }
@@ -416,6 +429,7 @@ mod tests {
             mainchain,
             utxo,
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
         assert_eq!(header.chain_version, CHAIN_VERSION);
@@ -436,6 +450,7 @@ mod tests {
         let (_, public_key) = secp.generate_keypair(&mut OsRng);
         authority_signers.push(public_key);
         let witness_data = vec![witness::Witness::default()];
+        let address = Address::random();
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
@@ -447,11 +462,10 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            address,
         );
         let mut buf: Vec<u8> = vec![];
         header.encode_into_without_signature(&mut buf).unwrap();
-        // Check version
-        println!("{:?}", buf);
         // serialize the same header
         let serialized =
             ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
@@ -469,6 +483,7 @@ mod tests {
 
         let message = Message::from_digest_slice("Hello World!".as_bytes()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+        let address = Address::random();
 
         let header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
@@ -480,6 +495,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            address,
         );
         let serialized = header.serialize();
 
@@ -494,6 +510,7 @@ mod tests {
         assert_eq!(deserialized_header.authority_vote, None);
         assert_eq!(deserialized_header.witness_data, None);
         assert_eq!(deserialized_header.authority_signatures.clone().unwrap(), vec![signature]);
+        assert_eq!(deserialized_header.block_producer_address, address);
 
         let recovered_pk = signature.recover(&message).unwrap();
         assert_eq!(recovered_pk, public_key);
@@ -529,6 +546,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             key,
+            Address::ZERO,
         );
 
         let serialized = header.serialize();
@@ -578,6 +596,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         let serialized = header.serialize();
@@ -623,6 +642,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         let serialized = header.serialize();
@@ -656,6 +676,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         let optional_fields = header.optional_fields;
@@ -677,6 +698,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         let serialized = header.serialize();
@@ -801,6 +823,7 @@ mod tests {
             BlockHash::hash(&[1]),
             sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         println!("serialized header: {}", hex::encode(extra_data_header.serialize()));
