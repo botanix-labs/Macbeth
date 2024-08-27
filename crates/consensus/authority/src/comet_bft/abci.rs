@@ -6,6 +6,7 @@ use std::{
 };
 
 use btcserverlib::extended_client::BtcServerExtendedClient;
+use bytes::Buf;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -35,7 +36,8 @@ use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
         ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestProcessProposal,
-        ResponseExtendVote, ResponsePrepareProposal, ResponseProcessProposal,
+        RequestVerifyVoteExtension, ResponseExtendVote, ResponsePrepareProposal,
+        ResponseProcessProposal, ResponseVerifyVoteExtension,
     },
     v0_38::abci::{
         RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
@@ -224,6 +226,14 @@ where
             chain_spec,
         );
         payload_config
+    }
+
+    pub fn aggregate_public_key(&self) -> secp256k1::PublicKey {
+        self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk exists")
+    }
+
+    pub fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
+        self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash()
     }
 }
 
@@ -490,14 +500,8 @@ where
     fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
         info!("extend_vote request: {:?}", _request);
 
-        let storage = self.storage.inner.blocking_read();
-        let agg_pk = storage.aggregate_public_key.expect("agg pk exists");
-        drop(storage);
-
-        let bitcoin_block_hash_read = self.bitcoin_checkpoint.blocking_read();
-        let bitcoin_block_hash =
-            bitcoin_block_hash_read.clone().expect("btc block hash to exist").0.block_hash();
-        drop(bitcoin_block_hash_read);
+        let agg_pk = self.aggregate_public_key();
+        let bitcoin_block_hash = self.bitcoin_blockhash();
 
         let extended_vote = ExtendedVote::new(bitcoin_block_hash, agg_pk);
 
@@ -505,6 +509,31 @@ where
             extended_vote.serialize().expect("extended_vote can be serialized").into();
 
         ResponseExtendVote { vote_extension }
+    }
+
+    fn verify_vote_extension(
+        &self,
+        request: RequestVerifyVoteExtension,
+    ) -> ResponseVerifyVoteExtension {
+        info!("verify_vote_extension request: {:?}", request);
+
+        let vote_extension = ExtendedVote::deserialize(&mut request.vote_extension.reader())
+            .expect("vote extension to be deserialized");
+
+        let agg_pk = self.aggregate_public_key();
+        let bitcoin_block_hash = self.bitcoin_blockhash();
+
+        if vote_extension.aggregated_public_key != agg_pk {
+            error!("Aggregated public key does not match");
+            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
+        }
+
+        if vote_extension.bitcoin_block_hash != bitcoin_block_hash {
+            error!("Bitcoin block hash does not match");
+            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
+        }
+
+        ResponseVerifyVoteExtension { status: VERIFY_ACCEPTED }
     }
 }
 
