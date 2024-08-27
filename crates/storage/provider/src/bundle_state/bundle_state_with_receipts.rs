@@ -1,4 +1,5 @@
 use crate::{providers::StaticFileProviderRWRefMut, StateChanges, StateReverts};
+use reth_botanix_lib::peg_contract::{PeginData, PegoutData};
 use reth_db::{
     cursor::{DbCursorRO, DbCursorRW},
     tables,
@@ -32,6 +33,10 @@ pub struct BundleStateWithReceipts {
     receipts: Receipts,
     /// First block of bundle state.
     first_block: BlockNumber,
+    /// Valid pegins in bundle
+    pegins: Vec<PeginData>,
+    /// Valid pegouts in bundle
+    pegouts: Vec<PegoutData>,
 }
 
 /// Type used to initialize revms bundle state.
@@ -47,7 +52,7 @@ pub type RevertsInit = HashMap<BlockNumber, HashMap<Address, AccountRevertInit>>
 impl BundleStateWithReceipts {
     /// Create Bundle State.
     pub fn new(bundle: BundleState, receipts: Receipts, first_block: BlockNumber) -> Self {
-        Self { bundle, receipts, first_block }
+        Self { bundle, receipts, first_block, pegins: Vec::new(), pegouts: Vec::new() }
     }
 
     /// Create new bundle state with receipts.
@@ -85,7 +90,17 @@ impl BundleStateWithReceipts {
             contracts_init.into_iter().map(|(code_hash, bytecode)| (code_hash, bytecode.0)),
         );
 
-        Self { bundle, receipts, first_block }
+        Self { bundle, receipts, first_block, pegins: Vec::new(), pegouts: Vec::new() }
+    }
+
+    /// set pegins
+    pub fn set_pegins(&mut self, pegins: Vec<PeginData>) {
+        self.pegins = pegins;
+    }
+
+    /// set pegouts
+    pub fn set_pegouts(&mut self, pegouts: Vec<PegoutData>) {
+        self.pegouts = pegouts;
     }
 
     /// Return revm bundle state.
@@ -1122,6 +1137,8 @@ mod tests {
             bundle: BundleState::default(),
             receipts: Receipts::from_vec(vec![vec![Some(Receipt::default()); 2]; 7]),
             first_block: 10,
+            pegins: vec![],
+            pegouts: vec![],
         };
 
         let mut this = base.clone();
@@ -1333,6 +1350,8 @@ mod tests {
             bundle: present_state,
             receipts: Receipts::from_vec(vec![vec![Some(Receipt::default()); 2]; 1]),
             first_block: 2,
+            pegins: vec![],
+            pegouts: vec![],
         };
 
         test.prepend_state(previous_state);

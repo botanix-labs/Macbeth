@@ -29,8 +29,11 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
-use reth_botanix_lib::mint_validation::{
-    try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
+use reth_botanix_lib::{
+    mint_validation::{
+        try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
+    },
+    peg_contract::{PeginData, PegoutData},
 };
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::get_block_producer_address;
@@ -69,6 +72,10 @@ pub struct EVMProcessor<'a, EvmConfig, BF> {
     _evm_config: EvmConfig,
     /// Bitcoin resouces in case processor is configured for botanix uses
     bitcoin_resource: Option<(BF, bitcoin::Network)>,
+    /// valid pegins being recorded in current block(s) execution
+    pegins: Vec<PeginData>,
+    /// valid pegouts being recorded in current block(s) execution
+    pegouts: Vec<PegoutData>,
 }
 
 impl<'a, EvmConfig, BF> EVMProcessor<'a, EvmConfig, BF>
@@ -115,7 +122,19 @@ where
             stats: BlockExecutorStats::default(),
             _evm_config: evm_config,
             bitcoin_resource: None,
+            pegins: vec![],
+            pegouts: vec![],
         }
+    }
+
+    /// Set valid pegins
+    pub fn set_pegins(&mut self, pegins: Vec<PeginData>) {
+        self.pegins = pegins;
+    }
+
+    /// Set valid pegouts
+    pub fn set_pegouts(&mut self, pegouts: Vec<PegoutData>) {
+        self.pegouts = pegouts;
     }
 
     /// Configures the executor with the given inspectors.
@@ -231,11 +250,13 @@ where
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         botanix_consensus_pkg: BotanixConsensusPackage,
-    ) -> Result<(), MintContractError> {
+    ) -> Result<(Vec<PeginData>, Vec<PegoutData>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
         // Check pegins.
+        let mut pegins = vec![];
+        let mut pegouts = vec![];
         for log in result.logs() {
             let pegin_data = match try_parse_mint_event(log)? {
                 None => continue,
@@ -277,14 +298,18 @@ where
                     });
                 }
             }
+
+            pegins.push(pegin_data);
         }
 
         // Check pegouts
         for log in result.logs() {
-            let _ = try_parse_burn_event(log, btc_network)?;
+            if let Some(pegout_data) = try_parse_burn_event(log, btc_network)? {
+                pegouts.push(pegout_data);
+            }
         }
 
-        Ok(())
+        Ok((pegins, pegouts))
     }
 
     /// Decrement an account by the specified amount and update state
@@ -361,7 +386,11 @@ where
                     // At this point if we do not have a consensus pkg defined we should panic as
                     // the node is not configured for handling botanix events
                     match Self::botanix_mint_contract_checks(&result, botanix_consensus_pkg.expect("Botanix consensus package not found. Executory factory probably not configured for botanix")) {
-                        Ok(()) => Ok(ResultAndState { result, state }),
+                        Ok((pegins, pegouts)) => {
+                            self.pegins.extend(pegins);
+                            self.pegouts.extend(pegouts);
+                            Ok(ResultAndState { result, state })
+                        },
                         Err(e) => {
                             error!("Botanix Minting contract event validation failed: {:?}", e);
                             // Update state for reverted pegins/pegouts:
@@ -584,11 +613,16 @@ where
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
         self.stats.log_debug();
-        BundleStateWithReceipts::new(
+        let mut bundle = BundleStateWithReceipts::new(
             self.evm.context.evm.db.take_bundle(),
             self.batch_record.take_receipts(),
             self.batch_record.first_block().unwrap_or_default(),
-        )
+        );
+
+        bundle.set_pegins(self.pegins.clone());
+        bundle.set_pegouts(self.pegouts.clone());
+
+        bundle
     }
 
     fn size_hint(&self) -> Option<usize> {

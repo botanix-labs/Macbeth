@@ -46,6 +46,9 @@ strum.workspace = true
 # test-utils
 alloy-rlp = { workspace = true, optional = true }
 
+# Botanix
+reth-botanix-lib.workspace = true
+
 # parallel utils
 rayon.workspace = true
 
