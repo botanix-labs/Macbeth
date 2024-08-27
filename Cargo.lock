@@ -9996,6 +9996,7 @@ dependencies = [
  "reth-blockchain-tree-api",
  "reth-chain-state",
  "reth-chainspec",
+ "reth-botanix-lib",
  "reth-codecs",
  "reth-db",
  "reth-db-api",

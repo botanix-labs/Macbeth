@@ -23,7 +23,7 @@ use crate::utils::AmountExt;
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeginData {
     pub account: Address,
     pub amount: U256,
@@ -117,7 +117,7 @@ impl PeginData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeginMeta {
     pub version: u32,
     pub merkle_proof: PartialMerkleTree,
@@ -133,7 +133,6 @@ pub struct PeginMeta {
 }
 
 impl PeginMeta {
-    // TODO serialize()
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.version.consensus_encode(&mut bytes).unwrap();
@@ -214,7 +213,7 @@ pub enum PegoutDataError {
     Invalid(&'static str),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PegoutData {
     pub amount: bitcoin::Amount,
     pub destination: bitcoin::Address,
