@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use alloy_eips::merge::ALLOWED_FUTURE_BLOCK_TIME_SECONDS;
 use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
+use revm_primitives::Address;
 use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
 
@@ -99,6 +100,9 @@ pub trait HeaderExt {
     fn get_utxo_set_merkle_root(
         &self,
     ) -> Result<bitcoin::hashes::sha256::Hash, ExtraDataHeaderDeserializeError>;
+
+    /// Get the block producer address
+    fn block_producer_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError>;
 }
 
 #[derive(Debug, Error)]
@@ -240,6 +244,12 @@ impl HeaderExt for Header {
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
         // TODO check if NUMS point is not aggregate key
         self.extra_data = Bytes::from(edh.serialize());
+    }
+
+    /// get block producer address
+    fn block_producer_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError> {
+        let edh = self.deserialize_extra_data_header()?;
+        Ok(edh.block_producer_address)
     }
 
     /// Provides block hash without extra data header bytes
