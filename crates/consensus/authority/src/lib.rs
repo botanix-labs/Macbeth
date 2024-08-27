@@ -88,17 +88,7 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-        reth_consensus_common::utils::validate_against_parent(
-            parent.header().clone(),
-            header.header().clone(),
-            leader_selection_window,
-        )?;
-        // TODO(armins) this was removed do we still need it?
-        // validation::validate_header_regarding_parent(parent, header, &self.chain_spec)?;
+        header.validate_against_parent(parent, &self.chain_spec).map_err(ConsensusError::from)?;
         Ok(())
     }
 
@@ -235,10 +225,12 @@ impl Consensus for AuthorityConsensus {
 /// All this struct does is provide a rwlock wrapper around the storage inner
 #[derive(Clone, Debug)]
 pub(crate) struct Storage<EF, BF, DB> {
+    pub(crate) client: DB,
+    // The inner storage, everything here is rw locked
     pub(crate) inner: Arc<RwLock<StorageInner<EF, BF, DB>>>,
 }
 
-impl<EF, BF, DB> Storage<EF, BF, DB> {
+impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
     /// Create a new instance of the storage
     pub(crate) fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
@@ -266,10 +258,10 @@ impl<EF, BF, DB> Storage<EF, BF, DB> {
             chain_spec,
             bitcoind_factory,
             executor_factory,
-            client,
+            client: client.clone(),
         };
 
-        Self { inner: Arc::new(RwLock::new(storage_inner)) }
+        Self { client, inner: Arc::new(RwLock::new(storage_inner)) }
     }
 
     /// Returns the write lock of the storage
@@ -315,12 +307,6 @@ pub(crate) struct StorageInner<EF, BF, DB> {
     executor_factory: EF,
     /// The db provider
     client: DB,
-}
-
-impl<EF, BF, DB> StorageInner<EF, BF, DB> {
-    fn get_authorities(&self) -> Vec<secp256k1::PublicKey> {
-        self.authorities.clone()
-    }
 }
 
 #[cfg(test)]
