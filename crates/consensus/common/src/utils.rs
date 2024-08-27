@@ -71,14 +71,10 @@ pub fn unix_timestamp() -> u64 {
 // not in authority utils because of circular dependency
 /// Get the authority address from the header
 pub fn get_block_producer_address(header: &Header) -> Address {
-    if let Ok(authorities) = header.recovered_signed_authorities() {
-        // TODO remove this unwrap
-        let block_builder_public_key =
-            authorities.first().expect("block producer authority to be present");
-        return public_key_to_address(*block_builder_public_key);
+    if let Ok(block_producer_address) = header.block_producer_address() {
+        return block_producer_address;
     }
 
-    // TODO this method should return a Result
     Address::ZERO
 }
 // not in authority utils because of circular dependency
@@ -174,18 +170,6 @@ pub fn validate_against_parent(
     let current_signer = current
         .recovered_signed_authorities()
         .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
-    // Check if the parent block was mined in a different turn
-
-    // Convert timestamps to seconds
-    let parent_ts = parent.timestamp as f64;
-    let current_ts = current.timestamp as f64;
-
-    validate_current_signer_against_last(
-        (parent_signer, parent_ts),
-        (current_signer, current_ts),
-        block_time,
-    )?;
-
     Ok(())
 }
 

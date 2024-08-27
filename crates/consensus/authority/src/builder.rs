@@ -42,10 +42,10 @@ use tracing::{error, info};
 pub type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<EF, BF, DB, Engine: EngineTypes, ToFrostMan, NetworkClient> {
+pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
-    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     canon_state_notification: CanonStateNotificationSender,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
@@ -72,11 +72,10 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, Engine, ToFrostMan, NetworkClient>
-    AuthorityConsensusBuilder<EF, BF, DB, Engine, ToFrostMan, NetworkClient>
+impl<EF, BF, DB, ToFrostMan, NetworkClient>
+    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
-    Engine: EngineTypes + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -92,7 +91,7 @@ where
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: DB,
-        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_block_header: BitcoinCheckpoint,
@@ -223,9 +222,9 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>,
+        BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
-        SyncController<Engine>,
+        SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
     ) {
@@ -343,6 +342,7 @@ where
                 network_handle.clone(),
                 btc_server_client.expect("to be defined").clone(),
                 consensus.clone(),
+                to_engine.clone(),
             ));
         }
 

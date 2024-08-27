@@ -744,12 +744,10 @@ where {
 
         // Build authority Consensus
         let (
-            _,
-            block_production_task,
+            _authority_consensus,
             mut block_fetcher_task,
             frost_task,
             mut sync_controller,
-            pbft_task,
             healthcheck_task,
             abci_client_builder,
         ) = AuthorityConsensusBuilder::try_new(
@@ -820,23 +818,9 @@ where {
         // different structs
         if is_fed_node {
             // executor.spawn_critical(
-            //     "PoA Block Production Task",
-            //     Box::pin(async move {
-            //         block_production_task.expect("block production task
-            // exists").start_task().await;     }),
-            // );
-
-            // executor.spawn_critical(
             //     "Frost Task",
             //     Box::pin(async move {
             //         frost_task.expect("frost task exists").start_task().await;
-            //     }),
-            // );
-
-            // executor.spawn_critical(
-            //     "Pbft Task",
-            //     Box::pin(async move {
-            //         pbft_task.expect("pbft task exists").start_task().await;
             //     }),
             // );
 
