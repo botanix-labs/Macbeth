@@ -515,7 +515,8 @@ start-poa-server-2:
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
-	--port 30304
+	--port 30304 \
+	--abci-port=36658
 
 clean-poa-2:
 	cd ${NODE_2_DIR} && \
