@@ -34,9 +34,8 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestPrepareProposal,
-        RequestProcessProposal, ResponseExtendVote, ResponseExtendVote, ResponsePrepareProposal,
-        ResponsePrepareProposal, ResponseProcessProposal,
+        ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestProcessProposal,
+        ResponseExtendVote, ResponsePrepareProposal, ResponseProcessProposal,
     },
     v0_38::abci::{
         RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
@@ -44,14 +43,13 @@ use tendermint_proto::{
     },
 };
 
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
 
 use crate::{
-    builder::BitcoinCheckpoint, engine_util,
+    builder::BitcoinCheckpoint, comet_bft::extended_vote::ExtendedVote, engine_util,
     excecution_utils::authority_execution_utils::build_and_execute, AuthorityConsensus, Storage,
 };
-use crate::{comet_bft::extended_vote::ExtendedVote, Storage};
 
 /// Consts
 const SUCCESS: u32 = 0;
@@ -106,7 +104,7 @@ where
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
-        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+        abci_port: u16,
     ) {
         let cbft_rpc_provider = HttpCometBFTRpcClientFactory::default();
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
@@ -130,7 +128,8 @@ where
         let server_builder = ServerBuilder::default();
         // server will always bind to default address
         // CometBFT will always run on the same machine and container
-        let server = server_builder.bind("127.0.0.1:26658", app).expect("build server");
+        let server =
+            server_builder.bind(format!("127.0.0.1:{abci_port}"), app).expect("build server");
 
         task_executor.spawn_critical(
             "ABCI Client",
@@ -282,7 +281,7 @@ where
         info!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
 
-        let payload_config = self.payload_builder_arguements();
+        let payload_config = self.payload_builder_arguments();
         let client = self.storage.inner.blocking_read().client.clone();
 
         let res = default_ethereum_payload_builder(BuildArguments {
@@ -488,11 +487,24 @@ where
         }
     }
 
-    fn extend_vote(
-        &self,
-        _request: tendermint_proto::abci::RequestExtendVote,
-    ) -> tendermint_proto::abci::ResponseExtendVote {
-        panic!("This method should not be called");
+    fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
+        info!("extend_vote request: {:?}", _request);
+
+        let storage = self.storage.inner.blocking_read();
+        let agg_pk = storage.aggregate_public_key.expect("agg pk exists");
+        drop(storage);
+
+        let bitcoin_block_hash_read = self.bitcoin_checkpoint.blocking_read();
+        let bitcoin_block_hash =
+            bitcoin_block_hash_read.clone().expect("btc block hash to exist").0.block_hash();
+        drop(bitcoin_block_hash_read);
+
+        let extended_vote = ExtendedVote::new(bitcoin_block_hash, agg_pk);
+
+        let vote_extension =
+            extended_vote.serialize().expect("extended_vote can be serialized").into();
+
+        ResponseExtendVote { vote_extension }
     }
 }
 
@@ -603,25 +615,5 @@ where
                 }
             }
         }
-    }
-
-    fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
-        info!("extend_vote request: {:?}", _request);
-
-        let storage = self.storage.inner.blocking_read();
-        let agg_pk = storage.aggregate_public_key.expect("agg pk exists");
-        drop(storage);
-
-        let bitcoin_block_hash_read = self.bitcoin_block_header.blocking_read();
-        let bitcoin_block_hash =
-            bitcoin_block_hash_read.clone().expect("btc block hash to exist").0.block_hash();
-        drop(bitcoin_block_hash_read);
-
-        let extended_vote = ExtendedVote::new(bitcoin_block_hash, agg_pk);
-
-        let vote_extension =
-            extended_vote.serialize().expect("extended_vote can be serialized").into();
-
-        ResponseExtendVote { vote_extension }
     }
 }
