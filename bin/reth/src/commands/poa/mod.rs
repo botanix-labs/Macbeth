@@ -185,6 +185,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// Additional cli arguments
     #[command(flatten, next_help_heading = "Extension")]
     pub ext: Ext,
+
+    /// ABCI client port to listen on
+    #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
+    pub abci_port: u16,
 }
 
 impl PoaNodeCommand {
@@ -225,6 +229,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             db,
             bitcoind_config_path,
             ext,
+            abci_port,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -788,7 +793,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 &executor.clone(),
                 eth_tx_validator,
                 transaction_pool.clone(),
-                bitcoin_block_header_clone,
+                *abci_port,
             );
         }
 
