@@ -9180,6 +9180,7 @@ dependencies = [
  "pin-project",
  "rand 0.8.5",
  "rayon",
+ "reth-botanix-lib",
  "reth-codecs",
  "reth-db",
  "reth-evm",
