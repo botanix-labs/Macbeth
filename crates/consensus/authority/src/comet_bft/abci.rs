@@ -239,7 +239,19 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         info!("info request: {:?}", request);
-        ResponseInfo::default()
+        let client = self.storage.client.clone();
+        let latest_header =
+            client.latest_header().expect("should have latest").expect("should have header");
+
+        let info = ResponseInfo {
+            data: String::default(),
+            version: "TODO".to_string(),
+            app_version: 1,
+            last_block_height: latest_header.number as i64,
+            last_block_app_hash: prost::bytes::Bytes::copy_from_slice(&latest_header.state_root.0),
+        };
+
+        info
     }
 
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
