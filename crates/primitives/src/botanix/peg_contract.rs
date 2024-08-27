@@ -13,12 +13,11 @@ use bitcoin::{
 
 use bitcoin::{self};
 use ethers::types::U256;
-use reth_primitives::Address;
 use thiserror::Error;
 
 use reth_btc_wallet::{address, key};
 
-use crate::utils::AmountExt;
+use crate::{botanix::utils::AmountExt, Address};
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
@@ -248,6 +247,7 @@ mod tests {
         absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
         BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
+    use revm_primitives::hex;
     use secp256k1::rand::thread_rng;
 
     use super::*;

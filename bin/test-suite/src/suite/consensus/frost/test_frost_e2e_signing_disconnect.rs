@@ -7,13 +7,15 @@ use ethers::{
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_botanix_lib::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::PeginMeta,
-    utils::AmountExt,
-};
 use reth_btc_wallet::address::EthAddress;
-use reth_primitives::Address;
+use reth_primitives::{
+    botanix::{
+        mint_validation::{BURN_TOPIC, MINT_TOPIC},
+        peg_contract::PeginMeta,
+        utils::AmountExt,
+    },
+    Address,
+};
 
 use crate::{
     it_info_print,

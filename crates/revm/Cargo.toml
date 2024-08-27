@@ -34,8 +34,6 @@ ethers = "2.0.9"
 # common
 tracing.workspace = true
 
-# Botanix
-reth-botanix-lib.workspace = true
 
 [dev-dependencies]
 reth-trie.workspace = true

@@ -1617,7 +1617,6 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "reth-botanix-lib",
 ]
 
 [[package]]
@@ -7865,7 +7864,6 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-cli-runner",
  "reth-config",
@@ -7940,7 +7938,6 @@ dependencies = [
  "rand 0.8.5",
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-consensus",
  "reth-consensus-common",
@@ -8106,25 +8103,6 @@ dependencies = [
  "reth-trie",
  "reth-trie-parallel",
  "tokio",
- "tracing",
-]
-
-[[package]]
-name = "reth-botanix-lib"
-version = "0.2.0-beta.6"
-dependencies = [
- "alloy-rlp",
- "bitcoin",
- "ethabi",
- "ethers",
- "hex",
- "lazy_static",
- "reth-btc-wallet",
- "reth-interfaces",
- "reth-primitives",
- "revm",
- "secp256k1 0.28.2",
- "thiserror",
  "tracing",
 ]
 
@@ -9134,8 +9112,11 @@ dependencies = [
  "clap",
  "criterion",
  "derive_more",
+ "ethabi",
+ "ethers",
  "hash-db",
  "itertools 0.12.1",
+ "lazy_static",
  "modular-bitfield",
  "nybbles",
  "once_cell",
@@ -9162,6 +9143,7 @@ dependencies = [
  "test-fuzz",
  "thiserror",
  "toml",
+ "tracing",
  "triehash",
  "zstd 0.13.1",
 ]
@@ -9180,7 +9162,6 @@ dependencies = [
  "pin-project",
  "rand 0.8.5",
  "rayon",
- "reth-botanix-lib",
  "reth-codecs",
  "reth-db",
  "reth-evm",
@@ -9228,7 +9209,6 @@ version = "0.2.0-beta.6"
 dependencies = [
  "bitcoin",
  "ethers",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-consensus-common",
  "reth-evm",
@@ -11323,7 +11303,6 @@ dependencies = [
  "rand_distr",
  "reth",
  "reth-authority-consensus",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-cli-runner",
  "reth-consensus",
