@@ -15,7 +15,7 @@ use reth_primitives::{
     constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
+    fs, Address, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
 };
 use url::Url;
 
@@ -113,6 +113,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
             bitcoin::hash_types::BlockHash::all_zeros(),
             sha256::Hash::all_zeros(),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
@@ -220,6 +221,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                         sha256::Hash::all_zeros(),
                         // Agg key in genesis should always be NUMS point
                         nums_secp256k1_pk(),
+                        Address::ZERO,
                     );
                     let edh = hex::encode(extra_data_header.serialize());
                     let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };

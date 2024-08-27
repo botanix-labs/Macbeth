@@ -2,6 +2,7 @@ use crate::engine_util;
 use futures_util::StreamExt;
 
 use reth_node_api::EngineTypes;
+use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::revm_primitives::FixedBytes;
 
 use reth_network::NetworkEvent;
@@ -11,20 +12,17 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
-pub struct SyncController<Engine: EngineTypes> {
+pub struct SyncController {
     network_event_listener: UnboundedReceiverStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
-    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
 }
 
-impl<Engine> SyncController<Engine>
-where
-    Engine: EngineTypes + 'static,
-{
+impl SyncController {
     pub fn new(
         network_event_listener: UnboundedReceiverStream<NetworkEvent>,
         peer_id: FixedBytes<64>,
-        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     ) -> Self {
         Self { network_event_listener, peer_id, to_engine }
     }
