@@ -112,6 +112,7 @@ pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan> {
 impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
+    DB: Clone,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
@@ -166,6 +167,7 @@ where
 impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone,
+    DB: Clone,
 {
     async fn get_round1_dkg_package(&mut self) -> Result<DkgPayload, Error> {
         let round1_payload = self.btc_client.get_round1_dkg_package(client::Empty {}).await;

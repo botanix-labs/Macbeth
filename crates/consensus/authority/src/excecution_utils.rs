@@ -58,6 +58,7 @@ pub(crate) mod authority_execution_utils {
             chain_spec.clone(),
             agg_pk,
             timestamp,
+            block_builder_address,
         )?;
 
         let block =
@@ -209,6 +210,7 @@ pub(crate) mod authority_execution_utils {
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
+        block_builder_address: &Address,
     ) -> Result<Header, BlockExecutionError> {
         let best_block = client.best_block_number().map_err(|e| {
             BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
@@ -246,6 +248,7 @@ pub(crate) mod authority_execution_utils {
             *bitcoin_checkpoint,
             sha256::Hash::all_zeros(),
             *agg_pk,
+            block_builder_address.clone(),
         );
         let mut header = Header {
             parent_hash: best_hash,
@@ -328,14 +331,15 @@ pub(crate) mod authority_execution_utils {
 
         // fail if witness data is empty
         // witness data will be None if no pegouts are being processed in this block
-        if let Some(witness_data) = witness_data {
-            if witness_data.is_empty() {
-                return Err(BlockExecutionError::Validation(
-                    BlockValidationError::MissingWitnessData,
-                ));
-            }
-        };
+        // if let Some(witness_data) = witness_data {
+        //     if witness_data.is_empty() {
+        //         return Err(BlockExecutionError::Validation(
+        //             BlockValidationError::MissingWitnessData,
+        //         ));
+        //     }
+        // };
 
+        let block_producer_address = header.block_producer_address().unwrap();
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
@@ -349,6 +353,7 @@ pub(crate) mod authority_execution_utils {
             recent_block_hash,
             utxo_commitment,
             *agg_pk,
+            block_producer_address,
         );
         header.extra_data = Bytes::from(edh.serialize());
         Ok(header)
