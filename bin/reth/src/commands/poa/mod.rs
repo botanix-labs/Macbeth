@@ -756,7 +756,7 @@ where {
             consensus_engine_tx.clone(),
             canon_state_notification_sender.clone(),
             btc_server_factory.clone(),
-            bitcoin_block_header_clone,
+            bitcoin_block_header_clone.clone(),
             secret_key,
             network_handle.clone(),
             network_client.clone(),
@@ -836,6 +836,7 @@ where {
                 &executor.clone(),
                 eth_tx_validator,
                 transaction_pool.clone(),
+                bitcoin_block_header_clone,
             );
         }
 

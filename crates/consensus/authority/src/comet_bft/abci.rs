@@ -34,7 +34,8 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseExtendVote,
+        ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestPrepareProposal,
+        RequestProcessProposal, ResponseExtendVote, ResponseExtendVote, ResponsePrepareProposal,
         ResponsePrepareProposal, ResponseProcessProposal,
     },
     v0_38::abci::{
@@ -43,7 +44,7 @@ use tendermint_proto::{
     },
 };
 
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tracing::{error, info};
 
 use crate::{
@@ -105,6 +106,7 @@ where
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
+        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     ) {
         let cbft_rpc_provider = HttpCometBFTRpcClientFactory::default();
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
@@ -601,5 +603,25 @@ where
                 }
             }
         }
+    }
+
+    fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
+        info!("extend_vote request: {:?}", _request);
+
+        let storage = self.storage.inner.blocking_read();
+        let agg_pk = storage.aggregate_public_key.expect("agg pk exists");
+        drop(storage);
+
+        let bitcoin_block_hash_read = self.bitcoin_block_header.blocking_read();
+        let bitcoin_block_hash =
+            bitcoin_block_hash_read.clone().expect("btc block hash to exist").0.block_hash();
+        drop(bitcoin_block_hash_read);
+
+        let extended_vote = ExtendedVote::new(bitcoin_block_hash, agg_pk);
+
+        let vote_extension =
+            extended_vote.serialize().expect("extended_vote can be serialized").into();
+
+        ResponseExtendVote { vote_extension }
     }
 }
