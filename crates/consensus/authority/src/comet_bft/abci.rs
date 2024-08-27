@@ -2,33 +2,27 @@
 /// application state
 use std::sync::{Arc, RwLock};
 
-use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_btc_wallet::{address::EthAddress, bitcoind::BitcoindFactory};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
-use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{Address, Block, BlockHash, SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{
-    BlockReaderIdExt, BundleStateWithReceipts, CanonChainTracker, ExecutorFactory,
-    StateProviderFactory,
-};
+use reth_primitives::{Address, BlockHash, SealedBlockWithSenders, TransactionSigned};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::TaskSpawner;
-use reth_transaction_pool::{
-    EthPooledTransaction, EthTransactionValidator, TransactionOrigin, TransactionPool,
-};
+use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use ruint::Uint;
 use schnellru::{ByLength, LruMap};
 
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
@@ -55,7 +49,7 @@ const SUCCESS: u32 = 0;
 const ERROR: u32 = 1;
 
 // https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#verifystatus
-const VERIFY_UNKNOWN: i32 = 0;
+const _VERIFY_UNKNOWN: i32 = 0;
 const VERIFY_ACCEPTED: i32 = 1;
 const VERIFY_REJECT: i32 = 2;
 
@@ -382,6 +376,7 @@ where
         }
     }
 
+    /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         info!("process_proposal request: {:?}", request);
         // Extract the actual txs
@@ -446,6 +441,7 @@ where
         ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
+    ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         info!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
@@ -467,7 +463,9 @@ where
             .expect("to send");
 
         let mut exec_results = vec![];
-        for tx in 0..sealed_block_with_senders.body.len() {
+        for _ in 0..sealed_block_with_senders.body.len() {
+            // TODO this needs to be populated with the actual results of the execution
+            // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
             exec_results.push(ExecTxResult::default());
         }
 
