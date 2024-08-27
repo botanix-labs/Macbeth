@@ -6,12 +6,12 @@ use ethers::{
     prelude::Provider,
     providers::{Http, PendingTransaction},
 };
-use reth_botanix_lib::{
+use reth_btc_wallet::address::EthAddress;
+use reth_primitives::botanix::{
     mint_validation::MINT_TOPIC,
     peg_contract::{PeginData, PeginMeta},
     utils::AmountExt,
 };
-use reth_btc_wallet::address::EthAddress;
 
 use reth_primitives::{Address, BOTANIX_TESTNET};
 

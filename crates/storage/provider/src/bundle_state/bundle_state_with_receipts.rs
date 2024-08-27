@@ -1,5 +1,4 @@
 use crate::{providers::StaticFileProviderRWRefMut, StateChanges, StateReverts};
-use reth_botanix_lib::peg_contract::{PeginData, PegoutData};
 use reth_db::{
     cursor::{DbCursorRO, DbCursorRW},
     tables,
@@ -7,6 +6,7 @@ use reth_db::{
 };
 use reth_interfaces::provider::{ProviderError, ProviderResult};
 use reth_primitives::{
+    botanix::peg_contract::{PeginData, PegoutData},
     logs_bloom,
     revm::compat::{into_reth_acc, into_revm_acc},
     Account, Address, BlockNumber, Bloom, Bytecode, Log, Receipt, Receipts, StaticFileSegment,

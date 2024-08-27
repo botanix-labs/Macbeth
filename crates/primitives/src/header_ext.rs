@@ -7,7 +7,7 @@ use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
 
 use crate::{
-    botanix::{BotanixConsensusPackage, RecentHeader},
+    botanix::consensus_package::{BotanixConsensusPackage, RecentHeader},
     extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
     Bytes, Header, B256,
 };

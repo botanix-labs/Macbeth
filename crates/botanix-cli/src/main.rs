@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 
-use reth_botanix_lib::peg_contract::PeginMeta;
+use reth_primitives::botanix::peg_contract::PeginMeta;
 
 #[derive(Parser)]
 #[command(version, about)]

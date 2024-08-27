@@ -48,7 +48,6 @@ tokio-stream.workspace = true
 tracing.workspace = true
 
 ## Botanix
-reth-botanix-lib.workspace = true
 reth-btc-wallet.workspace = true
 client = {path = "../../../bin/btc-server/client"}
 btc-server = {path = "../../../bin/btc-server"}

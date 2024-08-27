@@ -13,9 +13,9 @@ use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_network_types::pk2id;
 use reth_node_core::cli::config::BtcServerConfig;
+use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 

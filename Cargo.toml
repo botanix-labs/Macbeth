@@ -24,7 +24,6 @@ members = [
     "crates/exex/",
     "crates/interfaces/",
     "crates/metrics/",
-    "crates/botanix-lib",
     "crates/botanix-cli",
     "crates/metrics/metrics-derive/",
     "crates/net/common/",
@@ -227,7 +226,6 @@ reth-config = { path = "crates/config" }
 reth-consensus = { path = "crates/consensus/consensus" }
 reth-consensus-common = { path = "crates/consensus/common" }
 reth-btc-wallet = { path = "crates/btc-wallet" }
-reth-botanix-lib = { path = "crates/botanix-lib" }
 reth-db = { path = "crates/storage/db" }
 reth-discv4 = { path = "crates/net/discv4" }
 reth-discv5 = { path = "crates/net/discv5" }
