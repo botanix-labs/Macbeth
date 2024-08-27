@@ -1735,7 +1735,6 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "reth-botanix-lib",
 ]
 
 [[package]]
@@ -7933,7 +7932,6 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",
@@ -8021,7 +8019,6 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree-api",
- "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-chainspec",
  "reth-consensus",
@@ -8251,23 +8248,6 @@ dependencies = [
  "reth-primitives",
  "reth-storage-errors",
  "thiserror",
-]
-
-[[package]]
-name = "reth-botanix-lib"
-version = "1.0.5"
-dependencies = [
- "bitcoin",
- "ethabi",
- "ethers",
- "hex",
- "lazy_static",
- "reth-btc-wallet",
- "reth-primitives",
- "revm",
- "secp256k1 0.29.0",
- "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -9925,8 +9905,13 @@ dependencies = [
  "bytes",
  "c-kzg",
  "criterion",
- "derive_more 1.0.0",
  "k256",
+ "derive_more 1.0.0",
+ "ethabi",
+ "ethers",
+ "hash-db",
+ "itertools 0.12.1",
+ "lazy_static",
  "modular-bitfield",
  "once_cell",
  "pprof",
@@ -9996,7 +9981,6 @@ dependencies = [
  "reth-blockchain-tree-api",
  "reth-chain-state",
  "reth-chainspec",
- "reth-botanix-lib",
  "reth-codecs",
  "reth-db",
  "reth-db-api",
@@ -10075,8 +10059,6 @@ dependencies = [
 name = "reth-revm"
 version = "1.0.5"
 dependencies = [
- "alloy-eips",
- "reth-chainspec",
  "reth-consensus-common",
  "reth-ethereum-forks",
  "reth-execution-errors",
@@ -12438,7 +12420,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.8.5",
  "reth",
- "reth-botanix-lib",
+ "reth-authority-consensus",
  "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",

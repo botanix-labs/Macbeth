@@ -6,7 +6,7 @@ use bitcoin::{
     Witness,
 };
 use reth_blockchain_tree_api::BlockchainTreeEngine;
-use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
+use reth_primitives::botanix::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils;
 

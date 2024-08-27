@@ -12,7 +12,6 @@ use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
-use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};

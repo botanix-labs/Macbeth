@@ -29,18 +29,20 @@ use crate::{
     stack::{InspectorStack, InspectorStackConfig},
     state_change::{apply_beacon_root_contract_call, post_block_balance_increments},
 };
-use reth_botanix_lib::{
-    mint_validation::{
-        try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
-    },
-    peg_contract::{PeginData, PegoutData},
-};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::get_block_producer_address;
 use reth_primitives::{
-    botanix::BotanixConsensusPackage, header_ext::HeaderExt, Address, Block, BlockNumber,
-    BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork, Header, PruneModes, Receipt,
-    ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256, U256,
+    botanix::{
+        consensus_package::BotanixConsensusPackage,
+        mint_validation::{
+            try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
+        },
+        peg_contract::{PeginData, PegoutData},
+    },
+    header_ext::HeaderExt,
+    Address, Block, BlockNumber, BlockWithSenders, Bloom, Bytes, ChainSpec, GotExpected, Hardfork,
+    Header, PruneModes, Receipt, ReceiptWithBloom, Receipts, TransactionSigned, Withdrawals, B256,
+    U256,
 };
 
 /// EVMProcessor is a block executor that uses revm to execute blocks or multiple blocks.

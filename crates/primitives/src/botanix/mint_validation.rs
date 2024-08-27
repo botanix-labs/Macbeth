@@ -1,12 +1,15 @@
 use std::str::FromStr;
 
 use ethers::abi::decode;
-use reth_primitives::{keccak256, Address, B256};
+
 use thiserror::Error;
 
 use crate::{
-    peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
-    utils::AmountExt,
+    botanix::{
+        peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
+        utils::AmountExt,
+    },
+    keccak256, Address, B256,
 };
 
 use tracing::{error, info};
@@ -255,6 +258,8 @@ pub fn try_parse_burn_event(
 
 #[cfg(test)]
 mod test {
+    use revm_primitives::hex;
+
     use super::*;
 
     #[test]

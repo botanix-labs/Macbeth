@@ -3,8 +3,8 @@ use std::{str::FromStr, time::Duration};
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
-use reth_botanix_lib::{peg_contract::PeginMeta, utils::AmountExt};
 use reth_btc_wallet::address::EthAddress;
+use reth_primitives::botanix::{peg_contract::PeginMeta, utils::AmountExt};
 
 use reth_primitives::Address;
 

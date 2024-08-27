@@ -13,7 +13,7 @@ use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
+use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;

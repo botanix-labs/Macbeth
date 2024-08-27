@@ -53,7 +53,6 @@ members = [
     "crates/exex/test-utils/",
     "crates/exex/types/",
     "crates/metrics/",
-    "crates/botanix-lib",
     "crates/botanix-cli",
     "crates/metrics/metrics-derive/",
     "crates/net/banlist/",
@@ -295,7 +294,6 @@ reth-config = { path = "crates/config" }
 reth-consensus = { path = "crates/consensus/consensus", default-features = false }
 reth-consensus-common = { path = "crates/consensus/common" }
 reth-btc-wallet = { path = "crates/btc-wallet" }
-reth-botanix-lib = { path = "crates/botanix-lib" }
 reth-consensus-debug-client = { path = "crates/consensus/debug-client" }
 reth-db = { path = "crates/storage/db", default-features = false }
 reth-db-api = { path = "crates/storage/db-api" }

@@ -76,8 +76,6 @@ reth-optimism-cli = { workspace = true, optional = true }
 reth-discv4.workspace = true
 tokio-stream.workspace = true
 
-# botanix
-reth-botanix-lib.workspace = true
 
 # crypto
 alloy-rlp.workspace = true

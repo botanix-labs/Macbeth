@@ -26,6 +26,14 @@ reth-trie = { workspace = true, optional = true }
 revm.workspace = true
 # alloy
 alloy-eips.workspace = true
+revm-inspectors.workspace = true
+
+# ethers
+ethers = "2.0.9"
+
+# common
+tracing.workspace = true
+
 
 [dev-dependencies]
 reth-trie.workspace = true
