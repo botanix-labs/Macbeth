@@ -28,13 +28,13 @@ use tokio::sync::{
 };
 use tracing::{error, info, warn};
 
-pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient, ToFrostMan> {
+pub struct BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessage>,
     /// Channel to send new blocks to the engine
-    to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     /// Used to notify consumers of new blocks
     canon_state_notification: CanonStateNotificationSender,
     /// Btc Server client
@@ -52,8 +52,7 @@ pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient, ToFr
     utxo_sync: Option<UTXOSyncEngine<EF, BF, DB, ToFrostMan>>,
 }
 
-impl<EF, BF, DB, Engine, NetworkClient, ToFrostMan>
-    BlockFetcherTask<EF, BF, DB, Engine, NetworkClient, ToFrostMan>
+impl<EF, BF, DB, NetworkClient, ToFrostMan> BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -63,7 +62,6 @@ where
         + 'static,
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    Engine: EngineTypes + 'static,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
 {
@@ -71,7 +69,7 @@ where
     pub(crate) fn new(
         consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessage>,
-        to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
+        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
         storage: Storage<EF, BF, DB>,
@@ -98,7 +96,6 @@ where
         // only a federation node has a btc_server
         let is_fed_node = self.btc_server.is_some();
         let consensus = Arc::new(self.consensus.clone());
-        let full_block_client = FullBlockClient::new(self.network_client.clone(), consensus);
 
         loop {
             // ensure the node is not syncing

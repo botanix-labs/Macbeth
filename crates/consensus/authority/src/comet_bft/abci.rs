@@ -5,12 +5,14 @@ use std::sync::{Arc, RwLock};
 use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
+use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::{address::EthAddress, bitcoind::BitcoindFactory};
 use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 use reth_network::NetworkHandle;
+use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{Address, Block, BlockHash, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{
@@ -23,14 +25,15 @@ use reth_tasks::TaskSpawner;
 use reth_transaction_pool::{
     EthPooledTransaction, EthTransactionValidator, TransactionOrigin, TransactionPool,
 };
+use ruint::Uint;
 use schnellru::{ByLength, LruMap};
 
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
-use ruint::Uint;
+use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        RequestPrepareProposal, RequestProcessProposal, ResponsePrepareProposal,
+        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponsePrepareProposal,
         ResponseProcessProposal,
     },
     v0_38::abci::{
@@ -39,6 +42,7 @@ use tendermint_proto::{
     },
 };
 
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
 
 use crate::{
@@ -62,6 +66,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     network_handle: NetworkHandle,
     btc_server: BtcServerExtendedClient,
     authority_consensus: AuthorityConsensus,
+    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -81,8 +86,16 @@ where
         network_handle: NetworkHandle,
         btc_server: BtcServerExtendedClient,
         authority_consensus: AuthorityConsensus,
+        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     ) -> Self {
-        Self { storage, bitcoin_checkpoint, network_handle, btc_server, authority_consensus }
+        Self {
+            storage,
+            bitcoin_checkpoint,
+            network_handle,
+            btc_server,
+            authority_consensus,
+            to_engine,
+        }
     }
 
     pub fn start_server<Pool: TransactionPool + Clone + 'static>(
@@ -92,16 +105,24 @@ where
         tx_pool: Pool,
     ) {
         let cbft_rpc_provider = HttpCometBFTRpcClientFactory::default();
+        let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
         let app = ABCIClient::new(
             self.storage.clone(),
             validator,
-            cbft_rpc_provider,
             tx_pool,
             self.bitcoin_checkpoint.clone(),
+            driver_tx,
+        );
+        let mut abci_driver = ABCIDriver::new(
+            self.storage.clone(),
+            cbft_rpc_provider.clone(),
             self.authority_consensus.clone(),
             self.btc_server.clone(),
             self.network_handle.clone(),
+            driver_rx,
+            self.to_engine.clone(),
         );
+
         let server_builder = ServerBuilder::default();
         // server will always bind to default address
         // CometBFT will always run on the same machine and container
@@ -114,20 +135,24 @@ where
                 server.listen().expect("to start server");
             }),
         );
+
+        task_executor.spawn_critical(
+            "ABCI Driver",
+            Box::pin(async move {
+                abci_driver.start().await;
+            }),
+        );
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ABCIClient<EF, BF, DB, Pool> {
+pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     validator: EthTransactionValidator<DB, EthPooledTransaction>,
-    cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
-    authority_consensus: AuthorityConsensus,
-    btc_server: BtcServerExtendedClient,
-    network_handle: NetworkHandle,
     block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithSenders>>>,
+    driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -145,24 +170,18 @@ where
     fn new(
         storage: Storage<EF, BF, DB>,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
-        cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         pool: Pool,
         bitcoin_checkpoint: BitcoinCheckpoint,
-        authority_consensus: AuthorityConsensus,
-        btc_server: BtcServerExtendedClient,
-        network_handle: NetworkHandle,
+        driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     ) -> Self {
         Self {
             storage,
             validator,
-            cbft_rpc_provider,
             pool,
             bitcoin_checkpoint,
-            authority_consensus,
-            btc_server,
-            network_handle,
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
+            driver_tx,
         }
     }
 
@@ -226,15 +245,16 @@ where
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
     fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
         info!("init_chain request: {:?}", _request);
-        // TODO lets get rid of blocking read here
-        let client = self.storage.inner.blocking_read().client.clone();
+        let client = self.storage.client.clone();
         let state_root = client
             .latest_header()
             .expect("should have latest")
             .expect("should have header")
             .state_root;
+
+        println!("State root: {:?}", state_root);
         let res = ResponseInitChain {
-            app_hash: bytes::Bytes::copy_from_slice(&state_root.0),
+            app_hash: prost::bytes::Bytes::copy_from_slice(&state_root.0),
             ..Default::default()
         };
 
@@ -324,11 +344,11 @@ where
                             propagate: _,
                         } => {} // Do nothing
                         reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
-                            error!("Error validating transaction: {:?}", e);
+                            error!("Txinvalid: Error validating transaction: {:?}", e);
                             error = (ERROR, "Error occured while validating transaction");
                         }
                         reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
-                            error!("Error validating transaction: {:?}", e);
+                            error!("TxError: Error validating transaction: {:?}", e);
                             error = (ERROR, "Error occured while validating transaction");
                         }
                     }
@@ -354,11 +374,6 @@ where
         info!("process_proposal request: {:?}", request);
         // Extract the actual txs
         let txs_bytes = request.txs;
-
-        if txs_bytes.is_empty() {
-            // no need to execute anything
-            return ResponseProcessProposal { status: VERIFY_ACCEPTED };
-        }
         // Extract who built this block
         let block_builder_address = Address::new(
             FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
@@ -420,47 +435,153 @@ where
     }
 
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        // info!("finalize_block request: {:?}", request);
-        // let block_hash = request.hash;
-        // // If this block does not exist in the cache, we should panic
-        // let block = self.block_cache.read().get(&block_hash).expect("block to exist").clone();
+        info!("finalize_block request: {:?}", request);
+        let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
+        // If this block does not exist in the cache, we should panic
+        let sealed_block_with_senders = self
+            .block_cache
+            .write()
+            .unwrap()
+            .get(&cbft_block_hash)
+            .expect("block to exist")
+            .clone();
 
-        // let mut block_to_commit = Block {
-        //     header: sealed_header.clone().unseal(),
-        //     body: txs,
-        //     ommers: vec![],
-        //     withdrawals: None,
-        // };
-        // // TODOs
-        // // Send canon notif
-        // // send fcu
-        // // get block sigs via rpc and add to edh
-        // // TODO extract pegins and send to btc server here
-        // // TODO Extract block signatures via rpc
+        // We want to explicitly panic if we cannot send the finalize message
+        self.driver_tx
+            .blocking_send(ABCIDriverMessage::FinalizeBlock((
+                sealed_block_with_senders.clone(),
+                cbft_block_hash,
+            )))
+            .expect("to send");
 
-        // // Update canonical chain
-        // let sealed_block = block_to_commit.clone().seal(sealed_header.hash());
-        // let sealed_block_with_senders = sealed_block.try_seal_with_senders().unwrap();
+        let mut exec_results = vec![];
+        for tx in 0..sealed_block_with_senders.body.len() {
+            exec_results.push(ExecTxResult::default());
+        }
 
-        // match storage.client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
-        //     Ok(_) => {}
-        //     Err(e) => {
-        //         error!(target: "consensus::authority", ?e, "Failed to insert block");
-        //         // TODO handle error here
-        //     }
-        // }
-        // storage.client.set_canonical_head(sealed_block.header.clone());
-        // storage.client.set_safe(sealed_block.header.clone());
-        // storage.client.set_finalized(sealed_block.header.clone());
+        ResponseFinalizeBlock {
+            events: vec![],
+            tx_results: exec_results,
+            validator_updates: vec![],
+            consensus_param_updates: None,
+            app_hash: prost::bytes::Bytes::copy_from_slice(&sealed_block_with_senders.state_root.0),
+        }
+    }
 
-        // engine_util::send_fork_choice_update_payload(sealed_header.hash(), to_engine)
+    fn extend_vote(
+        &self,
+        _request: tendermint_proto::abci::RequestExtendVote,
+    ) -> tendermint_proto::abci::ResponseExtendVote {
+        panic!("This method should not be called");
+    }
+}
 
-        // // Annount to the network
+enum ABCIDriverMessage {
+    /// Finalize a block, message includes the sealed block and the CBFT block hash
+    FinalizeBlock((SealedBlockWithSenders, FixedBytes<32>)),
+    Exit,
+}
 
-        // let block_hash = sealed_header.hash();
-        // self.network_handle
-        //     .announce_block(NewBlock { block: block_to_commit, td: Uint::ZERO }, block_hash);
+// The driver is mainly responsible for driving block completion and finalization
+// Once a finalize block is recieved the drive is reponsible for
+// * Updating the canonical chain via DB
+// * Sending the finalized block to the network
+// * Sending the finalized block to the engine (FCU)
+// * Sending pegins / pegouts to the btc server
+// * Updating the [ExtraDataHeader] with the block witnesses
+pub(crate) struct ABCIDriver<EF, BF, DB> {
+    storage: Storage<EF, BF, DB>,
+    cbft_rpc_provider: HttpCometBFTRpcClientFactory,
+    authority_consensus: AuthorityConsensus,
+    btc_server: BtcServerExtendedClient,
+    network_handle: NetworkHandle,
+    driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+}
 
-        ResponseFinalizeBlock::default()
+impl<EF, BF, DB> ABCIDriver<EF, BF, DB>
+where
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
+    EF: ExecutorFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
+{
+    fn new(
+        storage: Storage<EF, BF, DB>,
+        cbft_rpc_provider: HttpCometBFTRpcClientFactory,
+        authority_consensus: AuthorityConsensus,
+        btc_server: BtcServerExtendedClient,
+        network_handle: NetworkHandle,
+        driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+    ) -> Self {
+        Self {
+            storage,
+            cbft_rpc_provider,
+            authority_consensus,
+            btc_server,
+            network_handle,
+            driver_rx,
+            to_engine,
+        }
+    }
+
+    async fn start(&mut self) {
+        loop {
+            if let Some(message) = self.driver_rx.recv().await {
+                match message {
+                    ABCIDriverMessage::FinalizeBlock((sealed_block_with_senders, cbft_hash)) => {
+                        let client = self.storage.client.clone();
+                        let sealed_header = sealed_block_with_senders.header.clone();
+                        let block_hash = sealed_header.hash();
+                        // TODO remove expect
+                        // let cbft_block =
+                        // self.cbft_rpc_provider.build_and_connect().unwrap().block_by_hash(
+                        // cbft_hash).await.expect("block to exist");
+                        // let block_witness =
+                        // cbft_block.block.unwrap().last_commit().unwrap().signatures
+                        // Update canonical chain
+                        match client.insert_block(
+                            sealed_block_with_senders.clone(),
+                            reth_interfaces::blockchain_tree::BlockValidationKind::Exhaustive,
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!(target: "consensus::authority", ?e, "Failed to insert block");
+                                // TODO handle error here
+                            }
+                        }
+                        client.set_canonical_head(sealed_block_with_senders.header.clone());
+                        client.set_safe(sealed_block_with_senders.header.clone());
+                        client.set_finalized(sealed_block_with_senders.header.clone());
+
+                        engine_util::send_fork_choice_update_payload(
+                            block_hash,
+                            self.to_engine.clone(),
+                        )
+                        .await
+                        .unwrap();
+                        // // TODOs
+                        // // get block sigs via rpc and add to edh
+                        // // TODO extract pegins and send to btc server here
+                        // // TODO Extract block signatures via rpc
+
+                        // Annount to the network
+                        let block_to_commit = sealed_block_with_senders.block.unseal();
+                        self.network_handle.announce_block(
+                            NewBlock { block: block_to_commit, td: Uint::ZERO },
+                            block_hash,
+                        );
+                    }
+                    ABCIDriverMessage::Exit => {
+                        break;
+                    }
+                }
+            }
+        }
     }
 }

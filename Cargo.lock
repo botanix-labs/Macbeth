@@ -8049,6 +8049,7 @@ dependencies = [
  "revm-primitives",
  "reth-transaction-pool",
  "ruint",
+ "schnellru",
  "secp256k1 0.29.0",
  "serde",
  "serde_json",

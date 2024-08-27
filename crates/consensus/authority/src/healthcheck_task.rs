@@ -38,6 +38,7 @@ pub struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
 impl<EF, BF, DB, ToFrostMan> HealthcheckTask<EF, BF, DB, ToFrostMan>
 where
     ToFrostMan: ToFrostManager + Clone + Send + 'static,
+    DB: Clone,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
