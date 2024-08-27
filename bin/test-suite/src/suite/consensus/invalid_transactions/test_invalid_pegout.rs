@@ -1,7 +1,6 @@
 use bitcoin::Amount;
-use reth_botanix_lib::utils::AmountExt;
 use reth_btc_wallet::address::EthAddress;
-use reth_primitives::Address;
+use reth_primitives::{botanix::utils::AmountExt, Address};
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 

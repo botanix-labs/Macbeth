@@ -7,12 +7,12 @@ use ethers::{
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_botanix_lib::{
+use reth_btc_wallet::address::EthAddress;
+use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::{PeginData, PeginMeta, PegoutData},
     utils::AmountExt,
 };
-use reth_btc_wallet::address::EthAddress;
 
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;

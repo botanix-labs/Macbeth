@@ -18,7 +18,7 @@ use ethers::{
     types::{NameOrAddress, U256},
 };
 use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
-use reth_botanix_lib::{
+use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
