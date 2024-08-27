@@ -5,6 +5,7 @@ use crate::{
     StateChangeWriter, StateWriter, TrieWriter,
 };
 use reth_chain_state::ExecutedBlock;
+use reth_botanix_lib::peg_contract::{PeginData, PegoutData};
 use reth_db::{
     cursor::DbCursorRO,
     models::CompactU256,
