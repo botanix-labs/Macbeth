@@ -168,10 +168,6 @@ where
                 return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
             }
         }
-
-        // TODO REMOVE LATER
-        let mut rng = &mut secp256k1::rand::thread_rng();
-        let agg_pk = secp256k1::generate_keypair(&mut rng).1;
         let pk = sk.public_key(secp256k1::SECP256K1);
 
         // Try to instantiate storage
@@ -183,7 +179,7 @@ where
             btc_network,
             // Aggregate pk to be filled out by the dkg state machine if we are still on genesis
             // block
-            Some(agg_pk),
+            agg_pk,
             authority_socket_addresses,
             evm_config.clone(),
             chain_spec.clone(),

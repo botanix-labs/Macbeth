@@ -37,19 +37,14 @@ impl ExtendedVote {
 
     pub fn serialize(&self) -> Result<Vec<u8>, io::Error> {
         let mut writer = Vec::new();
-        self.version.consensus_encode(&mut writer)?;
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
+        self.version.consensus_encode(&mut writer)?;
 
         Ok(writer.to_vec())
     }
 
     pub fn deserialize(reader: &mut impl io::Read) -> Result<Self, ExtendedVoteDeserializeError> {
-        let version = u16::consensus_decode(reader)?;
-        if version != ExtendedVote::version_default() {
-            return Err(ExtendedVoteDeserializeError::InvalidVersion);
-        }
-
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
 
         let pk_bytes = <[u8; 33]>::consensus_decode(reader)?;
@@ -57,6 +52,10 @@ impl ExtendedVote {
             println!("Error: {:?}", e);
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
+        let version = u16::consensus_decode(reader)?;
+        if version != ExtendedVote::version_default() {
+            return Err(ExtendedVoteDeserializeError::InvalidVersion);
+        }
 
         Ok(Self { version, bitcoin_block_hash, aggregated_public_key })
     }

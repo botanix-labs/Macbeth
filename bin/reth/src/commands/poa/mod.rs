@@ -824,12 +824,12 @@ where {
         // TODO  we should structure which tasks are spawned based on the node type using two
         // different structs
         if is_fed_node {
-            // executor.spawn_critical(
-            //     "Frost Task",
-            //     Box::pin(async move {
-            //         frost_task.expect("frost task exists").start_task().await;
-            //     }),
-            // );
+            executor.spawn_critical(
+                "Frost Task",
+                Box::pin(async move {
+                    frost_task.expect("frost task exists").start_task().await;
+                }),
+            );
 
             // executor.spawn_critical(
             //     "Healthcheck Task",
