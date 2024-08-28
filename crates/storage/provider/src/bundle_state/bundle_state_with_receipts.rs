@@ -103,6 +103,16 @@ impl BundleStateWithReceipts {
         self.pegouts = pegouts;
     }
 
+    /// Return pegins
+    pub fn pegins(&self) -> &[PeginData] {
+        &self.pegins
+    }
+
+    /// Return pegouts
+    pub fn pegouts(&self) -> &[PegoutData] {
+        &self.pegouts
+    }
+
     /// Return revm bundle state.
     pub fn state(&self) -> &BundleState {
         &self.bundle
