@@ -19,7 +19,10 @@ use reth_node_ethereum::EthEngineTypes;
 use thiserror::Error;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{Address, BlockHash, SealedBlockWithSenders, TransactionSigned};
+use reth_primitives::{
+    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlockWithSenders,
+    TransactionSigned,
+};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
@@ -50,7 +53,8 @@ use tracing::{error, info};
 
 use crate::{
     builder::BitcoinCheckpoint, comet_bft::extended_vote::ExtendedVote, engine_util,
-    excecution_utils::authority_execution_utils::build_and_execute, AuthorityConsensus, Storage,
+    excecution_utils::authority_execution_utils::build_and_execute, utils::call_notify_pegin,
+    AuthorityConsensus, Storage,
 };
 
 /// Consts
@@ -156,7 +160,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     validator: EthTransactionValidator<DB, EthPooledTransaction>,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
-    block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithSenders>>>,
+    block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
@@ -442,15 +446,13 @@ where
             &storage.authorities,
             block_time,
         ) {
-            Ok(sealed_block_with_senders) => {
+            Ok(sealed_block_with_peg) => {
                 info!(
                     "Block built successfully, resulting block hash: {:?}",
-                    sealed_block_with_senders.hash()
+                    sealed_block_with_peg.block().hash()
                 );
-                self.block_cache
-                    .write()
-                    .unwrap()
-                    .insert(cbft_block_hash, sealed_block_with_senders);
+
+                self.block_cache.write().unwrap().insert(cbft_block_hash, sealed_block_with_peg);
             }
             Err(e) => {
                 error!("Error building block: {:?}", e);
@@ -465,7 +467,7 @@ where
         info!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
         // If this block does not exist in the cache, we should panic
-        let sealed_block_with_senders = self
+        let sealed_block_with_peg = self
             .block_cache
             .write()
             .unwrap()
@@ -476,13 +478,13 @@ where
         // We want to explicitly panic if we cannot send the finalize message
         self.driver_tx
             .blocking_send(ABCIDriverMessage::FinalizeBlock((
-                sealed_block_with_senders.clone(),
+                sealed_block_with_peg.clone(),
                 cbft_block_hash,
             )))
             .expect("to send");
 
         let mut exec_results = vec![];
-        for _ in 0..sealed_block_with_senders.body.len() {
+        for _ in 0..sealed_block_with_peg.block().body.len() {
             // TODO this needs to be populated with the actual results of the execution
             // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
             exec_results.push(ExecTxResult::default());
@@ -493,7 +495,9 @@ where
             tx_results: exec_results,
             validator_updates: vec![],
             consensus_param_updates: None,
-            app_hash: prost::bytes::Bytes::copy_from_slice(&sealed_block_with_senders.state_root.0),
+            app_hash: prost::bytes::Bytes::copy_from_slice(
+                &sealed_block_with_peg.block().state_root.0,
+            ),
         }
     }
 
@@ -539,7 +543,7 @@ where
 
 enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    FinalizeBlock((SealedBlockWithSenders, FixedBytes<32>)),
+    FinalizeBlock((SealedBlockWithPeg, FixedBytes<32>)),
     Exit,
 }
 
@@ -595,8 +599,9 @@ where
         loop {
             if let Some(message) = self.driver_rx.recv().await {
                 match message {
-                    ABCIDriverMessage::FinalizeBlock((sealed_block_with_senders, cbft_hash)) => {
+                    ABCIDriverMessage::FinalizeBlock((sealed_block_with_peg, cbft_hash)) => {
                         let client = self.storage.client.clone();
+                        let sealed_block_with_senders = sealed_block_with_peg.block();
                         let sealed_header = sealed_block_with_senders.header.clone();
                         let block_hash = sealed_header.hash();
                         // TODO remove expect
@@ -626,17 +631,27 @@ where
                         )
                         .await
                         .unwrap();
-                        // // TODOs
-                        // // get block sigs via rpc and add to edh
-                        // // TODO extract pegins and send to btc server here
-                        // // TODO Extract block signatures via rpc
+
+                        // TODO get block sigs via rpc and add to edh
 
                         // Annount to the network
-                        let block_to_commit = sealed_block_with_senders.block.unseal();
+                        let block_to_commit = sealed_block_with_senders.block.clone().unseal();
                         self.network_handle.announce_block(
                             NewBlock { block: block_to_commit, td: Uint::ZERO },
                             block_hash,
                         );
+
+                        let pegins = sealed_block_with_peg
+                            .pegins()
+                            .iter()
+                            .map(|p| p.meta.clone())
+                            .flatten()
+                            .collect::<Vec<_>>();
+                        // TODO what happens if the pegins fail? Should we panic? Should this be
+                        // called in commit?
+                        call_notify_pegin(&mut self.btc_server, &pegins)
+                            .await
+                            .expect("Should notify pegins");
                     }
                     ABCIDriverMessage::Exit => {
                         break;

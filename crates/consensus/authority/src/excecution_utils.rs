@@ -13,6 +13,7 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
+        botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
@@ -129,9 +130,14 @@ pub(crate) mod authority_execution_utils {
         let sealed_block = block.seal(completed_header.hash_slow());
         // TODO handle unwrap
         let sealed_block_with_senders = sealed_block.try_seal_with_senders().unwrap();
-        // TODO save pegin/pegouts in seal with senders struct
 
-        Ok(sealed_block_with_senders)
+        let sealed_block_with_peg = SealedBlockWithPeg::new(
+            sealed_block_with_senders.clone(),
+            bundle_state.pegins().to_vec(),
+            bundle_state.pegouts().to_vec(),
+        );
+
+        Ok(sealed_block_with_peg)
     }
 
     // Execute and run poa validation on the block without inserting it into the storage
@@ -339,6 +345,7 @@ pub(crate) mod authority_execution_utils {
         //     }
         // };
 
+        // TODO remove this unwrap
         let block_producer_address = header.block_producer_address().unwrap();
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
