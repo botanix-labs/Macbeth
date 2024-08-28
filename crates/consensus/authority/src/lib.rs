@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn unix_timestamp() {
-        let timestamp = super::unix_timestamp();
+        let timestamp = reth_consensus_common::utils::unix_timestamp();
         assert!(timestamp > 0);
     }
 
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn get_inturn_interval_secs_based() {
-        let current_ts = super::unix_timestamp();
+        let current_ts = reth_consensus_common::utils::unix_timestamp();
         let authorities_len = 10;
         let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
         let (start, end, time_passed, time_remaining) =
