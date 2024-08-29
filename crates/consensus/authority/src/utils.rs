@@ -122,6 +122,9 @@ pub(crate) async fn call_notify_pegin(
     btc_server: &mut BtcServerExtendedClient,
     pegins: &[PeginMeta],
 ) -> Result<(), GrpcClientError> {
+    if pegins.is_empty() {
+        return Ok(());
+    }
     let utxos = pegins.iter().map(utxo_from_pegin_meta).collect();
     let request = NotifyPeginsRequest { utxos };
     btc_server.notify_pegins(request).await?;
@@ -150,14 +153,14 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 #[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
