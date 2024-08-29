@@ -39,7 +39,7 @@ use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
         ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestProcessProposal,
-        RequestVerifyVoteExtension, ResponseExtendVote, ResponsePrepareProposal,
+        RequestVerifyVoteExtension, ResponseCommit, ResponseExtendVote, ResponsePrepareProposal,
         ResponseProcessProposal, ResponseVerifyVoteExtension,
     },
     v0_38::abci::{
@@ -479,18 +479,10 @@ where
         let sealed_block_with_peg = self
             .block_cache
             .write()
-            .unwrap()
+            .expect("should get write lock")
             .get(&cbft_block_hash)
             .expect("block to exist")
             .clone();
-
-        // We want to explicitly panic if we cannot send the finalize message
-        self.driver_tx
-            .blocking_send(ABCIDriverMessage::FinalizeBlock((
-                sealed_block_with_peg.clone(),
-                cbft_block_hash,
-            )))
-            .expect("to send");
 
         let mut exec_results = vec![];
         for tx in sealed_block_with_peg.block().body.iter() {
@@ -507,13 +499,36 @@ where
             });
         }
 
+        let block_hash = sealed_block_with_peg.block().hash();
         ResponseFinalizeBlock {
             events: vec![],
             tx_results: exec_results,
             validator_updates: vec![],
             consensus_param_updates: None,
-            app_hash: self.application_hash(&self.storage.client),
+            app_hash: prost::bytes::Bytes::copy_from_slice(&block_hash.0),
         }
+    }
+
+    fn commit(&self) -> ResponseCommit {
+        let candidate_blocks = self.block_cache.write().unwrap();
+
+        let (cbft_block_hash, sealed_block_with_peg) =
+            candidate_blocks.peek_newest().expect("to have block");
+
+        // We want to explicitly panic if we cannot send the finalize message
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        self.driver_tx
+            .blocking_send(ABCIDriverMessage::CommitBlock((
+                sealed_block_with_peg.clone(),
+                *cbft_block_hash,
+                tx,
+            )))
+            .expect("to send");
+
+        rx.blocking_recv().expect("to receive");
+        info!("Block finalized: {:?}", cbft_block_hash);
+
+        ResponseCommit::default()
     }
 
     fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
@@ -568,7 +583,7 @@ where
 
 enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    FinalizeBlock((SealedBlockWithPeg, FixedBytes<32>)),
+    CommitBlock((SealedBlockWithPeg, FixedBytes<32>, tokio::sync::oneshot::Sender<()>)),
     Exit,
 }
 
@@ -624,7 +639,7 @@ where
         loop {
             if let Some(message) = self.driver_rx.recv().await {
                 match message {
-                    ABCIDriverMessage::FinalizeBlock((sealed_block_with_peg, cbft_hash)) => {
+                    ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, tx)) => {
                         let client = self.storage.client.clone();
                         let sealed_block_with_senders = sealed_block_with_peg.block();
                         let sealed_header = sealed_block_with_senders.header.clone();
@@ -677,6 +692,8 @@ where
                         call_notify_pegin(&mut self.btc_server, &pegins)
                             .await
                             .expect("Should notify pegins");
+
+                        tx.send(()).expect("to send");
                     }
                     ABCIDriverMessage::Exit => {
                         break;
