@@ -49,7 +49,7 @@ use tendermint_proto::{
 };
 
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     builder::BitcoinCheckpoint, comet_bft::extended_vote::ExtendedVote, engine_util,
@@ -405,6 +405,12 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         info!("process_proposal request: {:?}", request);
+        let storage = self.storage.inner.blocking_read();
+
+        if storage.aggregate_public_key.is_none() {
+            warn!("Aggregate public key is not set in process proposal");
+            return ResponseProcessProposal { status: VERIFY_REJECT };
+        }
         // Extract the actual txs
         let txs_bytes = request.txs;
         // Extract who built this block
@@ -426,7 +432,7 @@ where
                 signed_tx
             })
             .collect::<Vec<_>>();
-        let storage = self.storage.inner.blocking_read();
+
         // TODO This should be coming from the results of the vote for this block
         let bitcoin_checkpoint_block_hash = self
             .bitcoin_checkpoint
@@ -505,6 +511,8 @@ where
     fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
         info!("extend_vote request: {:?}", _request);
 
+        // Will panic if aggregate pk is not stored yet. Ideally we never start the abci application
+        // until dkg is done
         let agg_pk = self.aggregate_public_key();
         let bitcoin_block_hash = self.bitcoin_blockhash();
 
@@ -525,6 +533,14 @@ where
         let vote_extension = ExtendedVote::deserialize(&mut request.vote_extension.reader())
             .expect("vote extension to be deserialized");
 
+        let storage = self.storage.inner.blocking_read();
+        if storage.aggregate_public_key.is_none() {
+            warn!("Aggregate public key is not set in verify vote extension");
+            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
+        }
+        drop(storage);
+
+        // TODO Should these be two seperate locks?
         let agg_pk = self.aggregate_public_key();
         let bitcoin_block_hash = self.bitcoin_blockhash();
 
