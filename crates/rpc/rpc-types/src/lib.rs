@@ -10,7 +10,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-pub mod beacon;
+
 mod botanix;
 #[allow(hidden_glob_reexports)]
 mod eth;
@@ -61,8 +61,8 @@ pub use eth::{
     },
 };
 
-pub use botanix::*;
-pub use mev::*;
-pub use net::*;
-pub use peer::*;
-pub use rpc::*;
+// pub use botanix::*;
+// pub use mev::*;
+// pub use net::*;
+// pub use peer::*;
+// pub use rpc::*;

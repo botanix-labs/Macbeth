@@ -7,8 +7,7 @@ use bitcoin::{
 };
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
-
-use crate::constants::nums_secp256k1_pk;
+//use crate::constants::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;

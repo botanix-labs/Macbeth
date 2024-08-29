@@ -24,6 +24,8 @@ alloy-rpc-types-eth = { workspace = true, optional = true }
 derive_more.workspace = true
 revm-primitives = { workspace = true, features = ["serde"] }
 
+secp256k1 = { workspace = true, features = ["global-context", "recovery", "rand"] }
+
 # misc
 roaring = "0.10.2"
 byteorder = "1"

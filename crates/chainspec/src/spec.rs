@@ -1,7 +1,3 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{Display, Formatter},
-    sync::Arc,
 use crate::{constants::MAINNET_DEPOSIT_CONTRACT, EthChainSpec};
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
@@ -18,32 +14,17 @@ use reth_ethereum_forks::{
 use reth_network_peers::NodeRecord;
 use reth_primitives_traits::{
     constants::{
-        DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT,
-        HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
+        BOTANIX_INITIAL_BASE_FEE, DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT, HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH
     },
     Header, SealedHeader,
 };
 use reth_trie_common::root::state_root_ref_unhashed;
+use std::collections::BTreeMap;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
-use alloy_chains::ChainKind;
 use askama::Template;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    constants::{
-        BOTANIX_INITIAL_BASE_FEE, EIP1559_INITIAL_BASE_FEE, EMPTY_RECEIPTS, EMPTY_TRANSACTIONS,
-        EMPTY_WITHDRAWALS,
-    },
-    holesky_nodes,
-    net::{goerli_nodes, mainnet_nodes, sepolia_nodes},
-    proofs::state_root_ref_unhashed,
-    revm_primitives::{address, b256},
-    Address, BlockNumber, Chain, ForkFilter, ForkFilterKey, ForkHash, ForkId, Genesis, Hardfork,
-    Head, Header, NamedChain, NodeRecord, SealedHeader, B256, EMPTY_OMMER_ROOT_HASH, U256,
-};
 
 #[cfg(feature = "optimism")]
 use reth_ethereum_forks::OptimismHardfork;
@@ -74,57 +55,14 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        prune_delete_limit: 3500,
+        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+        prune_delete_limit: 20000,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
-    }
-    .into()
-});
-
-/// The Goerli spec
-pub static GOERLI: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
-    ChainSpec {
-        chain: Chain::goerli(),
-        genesis: serde_json::from_str(include_str!("../../res/genesis/goerli.json"))
-            .expect("Can't deserialize Goerli genesis json"),
-        genesis_hash: Some(b256!(
-            "bf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a"
-        )),
-        // <https://goerli.etherscan.io/block/7382818>
-        paris_block_and_final_difficulty: Some((7382818, U256::from(10_790_000))),
-        hardforks: BTreeMap::from([
-            (Hardfork::Frontier, ForkCondition::Block(0)),
-            (Hardfork::Homestead, ForkCondition::Block(0)),
-            (Hardfork::Dao, ForkCondition::Block(0)),
-            (Hardfork::Tangerine, ForkCondition::Block(0)),
-            (Hardfork::SpuriousDragon, ForkCondition::Block(0)),
-            (Hardfork::Byzantium, ForkCondition::Block(0)),
-            (Hardfork::Constantinople, ForkCondition::Block(0)),
-            (Hardfork::Petersburg, ForkCondition::Block(0)),
-            (Hardfork::Istanbul, ForkCondition::Block(1561651)),
-            (Hardfork::Berlin, ForkCondition::Block(4460644)),
-            (Hardfork::London, ForkCondition::Block(5062605)),
-            (
-                Hardfork::Paris,
-                ForkCondition::TTD { fork_block: None, total_difficulty: U256::from(10_790_000) },
-            ),
-            (Hardfork::Shanghai, ForkCondition::Timestamp(1678832736)),
-            (Hardfork::Cancun, ForkCondition::Timestamp(1705473120)),
-        ]),
-        // https://goerli.etherscan.io/tx/0xa3c07dc59bfdb1bfc2d50920fed2ef2c1c4e0a09fe2325dbc14e07702f965a78
-        deposit_contract: Some(DepositContract::new(
-            address!("ff50ed3d0ec03ac01d4c79aad74928bff48a7b2b"),
-            4367322,
-            b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
-        )),
-        base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        prune_delete_limit: 1700,
-        parent_confirmation_depth: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-    }
-    .into()
+    };
+    spec.genesis.config.dao_fork_support = true;
+    spec.into()
 });
 
 /// The Sepolia spec
@@ -144,12 +82,14 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        prune_delete_limit: 1700,
+        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+        prune_delete_limit: 10000,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
-    }
-    .into()
+    };
+    spec.genesis.config.dao_fork_support = true;
+    spec.into()
 });
 
 /// The Holesky spec
@@ -167,12 +107,14 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
             b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
         )),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        prune_delete_limit: 1700,
+        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+        prune_delete_limit: 10000,
         parent_confirmation_depth: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
-    }
-    .into()
+    };
+    spec.genesis.config.dao_fork_support = true;
+    spec.into()
 });
 
 /// Dev testnet specification
@@ -204,9 +146,9 @@ pub struct BotanixTestnetGenesisConfig<'a> {
 
 /// The Botanix Testnet
 pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
-    ChainSpec {
+    let mut spec = ChainSpec {
         chain: Chain::from_id(3636),
-        genesis: serde_json::from_str(include_str!("../../res/genesis/botanix_testnet.json"))
+        genesis: serde_json::from_str(include_str!("../res/genesis/botanix_testnet.json"))
             .expect("Can't deserialize Botanix Testnet genesis json"),
         genesis_hash: None,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
@@ -236,10 +178,12 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: Some(20),
         // TODO (armins) do we need this?
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
+        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 1700,
         botanix_fee_recipient: None,
-    }
-    .into()
+    };
+    spec.genesis.config.dao_fork_support = false;
+    spec.into()
 });
 
 /// Creates a new botanix chain spec using a custom genesis block
@@ -612,6 +556,15 @@ impl ChainSpec {
 
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
         self.hardforks.fork(EthereumHardfork::London).active_at_block(0).then_some(genesis_base_fee)
+    }
+
+    /// Returns the initial base fee based on chain id
+    pub fn initial_base_fee_by_chain_id(self) -> u64 {
+        if self.chain().id() == BOTANIX_TESTNET.chain().id() {
+            BOTANIX_INITIAL_BASE_FEE
+        } else {
+            EIP1559_INITIAL_BASE_FEE
+        }
     }
 
     /// Get the [`BaseFeeParams`] for the chain at the given timestamp.

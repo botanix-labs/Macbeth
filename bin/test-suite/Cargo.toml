@@ -10,7 +10,7 @@ path = "src/bin/test-suite.rs"
 [dependencies]
 
 eyre.workspace = true
-reth-interfaces = { workspace = true, features = ["test-utils"] }
+#reth-interfaces = { workspace = true, features = ["test-utils"] }
 reth.workspace = true
 reth-primitives.workspace = true
 reth-provider.workspace = true

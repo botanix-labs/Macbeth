@@ -11,6 +11,10 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+
+# askama
+askama = "0.12.1"
+
 # reth
 reth-ethereum-forks.workspace = true
 reth-network-peers.workspace = true
@@ -26,7 +30,6 @@ alloy-trie.workspace = true
 
 # op
 op-alloy-rpc-types = { workspace = true, optional = true }
-
 
 # misc
 auto_impl.workspace = true
