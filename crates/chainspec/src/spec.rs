@@ -19,7 +19,6 @@ use reth_primitives_traits::{
     Header, SealedHeader,
 };
 use reth_trie_common::root::state_root_ref_unhashed;
-use std::collections::BTreeMap;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
@@ -153,25 +152,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         genesis_hash: None,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         // TODO set hardfork configs
-        hardforks: BTreeMap::from([
-            (Hardfork::Frontier, ForkCondition::Block(0)),
-            (Hardfork::Homestead, ForkCondition::Block(0)),
-            (Hardfork::Dao, ForkCondition::Block(0)),
-            (Hardfork::Tangerine, ForkCondition::Block(0)),
-            (Hardfork::SpuriousDragon, ForkCondition::Block(0)),
-            (Hardfork::Byzantium, ForkCondition::Block(0)),
-            (Hardfork::Constantinople, ForkCondition::Block(0)),
-            (Hardfork::Petersburg, ForkCondition::Block(0)),
-            (Hardfork::Istanbul, ForkCondition::Block(0)),
-            (Hardfork::MuirGlacier, ForkCondition::Block(0)),
-            (Hardfork::Berlin, ForkCondition::Block(0)),
-            (Hardfork::London, ForkCondition::Block(0)),
-            (
-                Hardfork::Paris,
-                ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::from(0) },
-            ),
-            (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
-        ]),
+        hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // only relevant for PoS chains
         // Signet confirmation depth requirment
         parent_confirmation_depth: 1,
@@ -198,25 +179,7 @@ pub fn create_botanix_config_with_genesis(
         genesis_hash: None,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         // TODO set hardfork configs
-        hardforks: BTreeMap::from([
-            (Hardfork::Frontier, ForkCondition::Block(0)),
-            (Hardfork::Homestead, ForkCondition::Block(0)),
-            (Hardfork::Dao, ForkCondition::Block(0)),
-            (Hardfork::Tangerine, ForkCondition::Block(0)),
-            (Hardfork::SpuriousDragon, ForkCondition::Block(0)),
-            (Hardfork::Byzantium, ForkCondition::Block(0)),
-            (Hardfork::Constantinople, ForkCondition::Block(0)),
-            (Hardfork::Petersburg, ForkCondition::Block(0)),
-            (Hardfork::Istanbul, ForkCondition::Block(0)),
-            (Hardfork::MuirGlacier, ForkCondition::Block(0)),
-            (Hardfork::Berlin, ForkCondition::Block(0)),
-            (Hardfork::London, ForkCondition::Block(0)),
-            (
-                Hardfork::Paris,
-                ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::from(0) },
-            ),
-            (Hardfork::Shanghai, ForkCondition::Timestamp(0)),
-        ]),
+        hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // TODO: do we even have?
         parent_confirmation_depth: pegin_conf_depth,
         leader_selection_window: Some(5),

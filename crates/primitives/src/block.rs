@@ -489,13 +489,6 @@ impl From<SealedBlock> for Block {
     }
 }
 
-impl Deref for SealedBlock {
-    type Target = SealedHeader;
-    fn deref(&self) -> &Self::Target {
-        &self.header
-    }
-}
-
 /// Botanix protocol specific we need to covert sealed blocks in PoA consensus
 /// to execution payload for the execution engine.
 impl From<SealedBlock> for ExecutionPayload {

@@ -388,6 +388,33 @@ impl EthereumHardfork {
         ]
     }
 
+    /// Ethereum Botanix list of hardforks.
+    pub const fn botanix() -> [(Self, ForkCondition); 15] {
+        [
+            (Self::Frontier, ForkCondition::Block(0)),
+            (Self::Homestead, ForkCondition::Block(0)),
+            (Self::Dao, ForkCondition::Block(0)),
+            (Self::Tangerine, ForkCondition::Block(0)),
+            (Self::SpuriousDragon, ForkCondition::Block(0)),
+            (Self::Byzantium, ForkCondition::Block(0)),
+            (Self::Constantinople, ForkCondition::Block(0)),
+            (Self::Petersburg, ForkCondition::Block(0)),
+            (Self::Istanbul, ForkCondition::Block(0)),
+            (Self::MuirGlacier, ForkCondition::Block(0)),
+            (Self::Berlin, ForkCondition::Block(0)),
+            (Self::London, ForkCondition::Block(0)),
+            (
+                Self::Paris,
+                ForkCondition::TTD {
+                    fork_block: Some(0),
+                    total_difficulty: U256::ZERO,
+                },
+            ),
+            (Self::Shanghai, ForkCondition::Timestamp(0)),
+            (Self::Cancun, ForkCondition::Timestamp(0)),
+        ]
+    }
+
     /// Ethereum holesky list of hardforks.
     pub const fn holesky() -> [(Self, ForkCondition); 15] {
         [

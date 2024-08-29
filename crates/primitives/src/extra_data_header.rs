@@ -5,6 +5,7 @@ use bitcoin::{
     hashes::{sha256, Hash},
     secp256k1, witness,
 };
+use reth_primitives_traits::constants::nums_secp256k1_pk;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
 //use crate::constants::nums_secp256k1_pk;
