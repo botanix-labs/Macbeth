@@ -3,9 +3,9 @@ name: lint
 on:
     pull_request:
     merge_group:
-        branches: [main]
+        branches: [main, feature/poA-consensus]
     push:
-        branches: [main]
+        branches: [feature/poA-consensus]
 
 env:
     CARGO_TERM_COLOR: always
@@ -137,7 +137,7 @@ jobs:
         name: lint success
         runs-on: ubuntu-latest
         if: always()
-        needs: [fmt, grafana]
+        needs: [crate-checks, fmt, grafana]
         timeout-minutes: 30
         steps:
             - name: Decide whether the needed jobs succeeded or failed
