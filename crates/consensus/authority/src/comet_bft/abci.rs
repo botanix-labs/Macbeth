@@ -239,6 +239,11 @@ where
     pub fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
         self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash()
     }
+
+    pub fn application_hash(&self, db: &impl BlockReaderIdExt) -> prost::bytes::Bytes {
+        let header = db.latest_header().expect("should have latest").expect("should have header");
+        prost::bytes::Bytes::copy_from_slice(&header.hash().0)
+    }
 }
 
 impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
@@ -265,7 +270,7 @@ where
             version: "TODO".to_string(),
             app_version: 1,
             last_block_height: latest_header.number as i64,
-            last_block_app_hash: prost::bytes::Bytes::copy_from_slice(&latest_header.state_root.0),
+            last_block_app_hash: self.application_hash(&client),
         };
 
         info
@@ -282,10 +287,8 @@ where
             .state_root;
 
         println!("State root: {:?}", state_root);
-        let res = ResponseInitChain {
-            app_hash: prost::bytes::Bytes::copy_from_slice(&state_root.0),
-            ..Default::default()
-        };
+        let res =
+            ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() };
 
         res
     }
@@ -495,9 +498,7 @@ where
             tx_results: exec_results,
             validator_updates: vec![],
             consensus_param_updates: None,
-            app_hash: prost::bytes::Bytes::copy_from_slice(
-                &sealed_block_with_peg.block().state_root.0,
-            ),
+            app_hash: self.application_hash(&self.storage.client),
         }
     }
 
