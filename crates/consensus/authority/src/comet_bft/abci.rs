@@ -493,10 +493,18 @@ where
             .expect("to send");
 
         let mut exec_results = vec![];
-        for _ in 0..sealed_block_with_peg.block().body.len() {
-            // TODO this needs to be populated with the actual results of the execution
+        for tx in sealed_block_with_peg.block().body.iter() {
             // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
-            exec_results.push(ExecTxResult::default());
+            exec_results.push(ExecTxResult {
+                code: SUCCESS,
+                // From https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#gas
+                // In v0.34.x and earlier versions, CometBFT does not enforce anything about Gas in
+                // consensus, only in the mempool. ... The GasUsed field is ignored
+                // by CometBFT. CometBFT's genesis.json should have max_gas set to
+                // -1 as to not enforce any gas limit restrictions Gas and other
+                // block resource limits are enforced by the EVM/Reth
+                ..Default::default()
+            });
         }
 
         ResponseFinalizeBlock {
