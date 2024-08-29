@@ -2,11 +2,11 @@
 
 use clap::Parser;
 use reth::cli::Cli;
-use reth_node_builder::NodeHandle;
+use reth_node_builder::EngineNodeLauncher;
 use reth_node_optimism::{
-    args::RollupArgs, rpc::SequencerClient, OptimismEngineTypes, OptimismNode,
+    args::RollupArgs, node::OptimismAddOns, rpc::SequencerClient, OptimismNode,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_provider::providers::BlockchainProvider2;
 use std::sync::Arc;
 
 // We use jemalloc for performance reasons
@@ -19,7 +19,7 @@ compile_error!("Cannot build the `op-reth` binary with the `optimism` feature fl
 
 #[cfg(feature = "optimism")]
 fn main() {
-    reth::sigsegv_handler::install();
+    reth_cli_util::sigsegv_handler::install();
 
     // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
     if std::env::var_os("RUST_BACKTRACE").is_none() {

@@ -1,18 +1,22 @@
 //! Discovery v4 protocol implementation.
 
 use crate::{error::DecodePacketError, MAX_PACKET_SIZE, MIN_PACKET_SIZE};
-use alloy_rlp::{Decodable, Encodable, Error as RlpError, Header, RlpDecodable, RlpEncodable};
-use enr::Enr;
-use reth_network_types::{pk2id, PeerId};
-use reth_primitives::{
+use alloy_primitives::{
     bytes::{Buf, BufMut, Bytes, BytesMut},
-    keccak256, EnrForkIdEntry, ForkId, NodeRecord, B256,
+    keccak256, B256,
 };
+use alloy_rlp::{
+    Decodable, Encodable, Error as RlpError, Header, RlpDecodable, RlpEncodable,
+    RlpEncodableWrapper,
+};
+use enr::Enr;
+use reth_ethereum_forks::{EnrForkIdEntry, ForkId};
+use reth_network_peers::{pk2id, NodeRecord, PeerId};
 use secp256k1::{
     ecdsa::{RecoverableSignature, RecoveryId},
     SecretKey, SECP256K1,
 };
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 // Note: this is adapted from https://github.com/vorot93/discv4
 
@@ -38,14 +42,14 @@ pub enum MessageId {
 
 impl MessageId {
     /// Converts the byte that represents the message id to the enum.
-    fn from_u8(msg: u8) -> Result<Self, u8> {
+    const fn from_u8(msg: u8) -> Result<Self, u8> {
         Ok(match msg {
-            1 => MessageId::Ping,
-            2 => MessageId::Pong,
-            3 => MessageId::FindNode,
-            4 => MessageId::Neighbours,
-            5 => MessageId::EnrRequest,
-            6 => MessageId::EnrResponse,
+            1 => Self::Ping,
+            2 => Self::Pong,
+            3 => Self::FindNode,
+            4 => Self::Neighbours,
+            5 => Self::EnrRequest,
+            6 => Self::EnrResponse,
             _ => return Err(msg),
         })
     }
@@ -72,14 +76,14 @@ pub enum Message {
 
 impl Message {
     /// Returns the id for this type
-    pub fn msg_type(&self) -> MessageId {
+    pub const fn msg_type(&self) -> MessageId {
         match self {
-            Message::Ping(_) => MessageId::Ping,
-            Message::Pong(_) => MessageId::Pong,
-            Message::FindNode(_) => MessageId::FindNode,
-            Message::Neighbours(_) => MessageId::Neighbours,
-            Message::EnrRequest(_) => MessageId::EnrRequest,
-            Message::EnrResponse(_) => MessageId::EnrResponse,
+            Self::Ping(_) => MessageId::Ping,
+            Self::Pong(_) => MessageId::Pong,
+            Self::FindNode(_) => MessageId::FindNode,
+            Self::Neighbours(_) => MessageId::Neighbours,
+            Self::EnrRequest(_) => MessageId::EnrRequest,
+            Self::EnrResponse(_) => MessageId::EnrResponse,
         }
     }
 
@@ -101,12 +105,12 @@ impl Message {
 
         // Match the message type and encode the corresponding message into the payload
         match self {
-            Message::Ping(message) => message.encode(&mut payload),
-            Message::Pong(message) => message.encode(&mut payload),
-            Message::FindNode(message) => message.encode(&mut payload),
-            Message::Neighbours(message) => message.encode(&mut payload),
-            Message::EnrRequest(message) => message.encode(&mut payload),
-            Message::EnrResponse(message) => message.encode(&mut payload),
+            Self::Ping(message) => message.encode(&mut payload),
+            Self::Pong(message) => message.encode(&mut payload),
+            Self::FindNode(message) => message.encode(&mut payload),
+            Self::Neighbours(message) => message.encode(&mut payload),
+            Self::EnrRequest(message) => message.encode(&mut payload),
+            Self::EnrResponse(message) => message.encode(&mut payload),
         }
 
         // Sign the payload with the secret key using recoverable ECDSA
@@ -165,12 +169,12 @@ impl Message {
         let payload = &mut &packet[98..];
 
         let msg = match MessageId::from_u8(msg_type).map_err(DecodePacketError::UnknownMessage)? {
-            MessageId::Ping => Message::Ping(Ping::decode(payload)?),
-            MessageId::Pong => Message::Pong(Pong::decode(payload)?),
-            MessageId::FindNode => Message::FindNode(FindNode::decode(payload)?),
-            MessageId::Neighbours => Message::Neighbours(Neighbours::decode(payload)?),
-            MessageId::EnrRequest => Message::EnrRequest(EnrRequest::decode(payload)?),
-            MessageId::EnrResponse => Message::EnrResponse(EnrResponse::decode(payload)?),
+            MessageId::Ping => Self::Ping(Ping::decode(payload)?),
+            MessageId::Pong => Self::Pong(Pong::decode(payload)?),
+            MessageId::FindNode => Self::FindNode(FindNode::decode(payload)?),
+            MessageId::Neighbours => Self::Neighbours(Neighbours::decode(payload)?),
+            MessageId::EnrRequest => Self::EnrRequest(EnrRequest::decode(payload)?),
+            MessageId::EnrResponse => Self::EnrResponse(EnrResponse::decode(payload)?),
         };
 
         Ok(Packet { msg, node_id, hash: header_hash })
@@ -190,6 +194,53 @@ pub struct Packet {
     pub hash: B256,
 }
 
+/// Represents the `from` field in the `Ping` packet
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, RlpEncodableWrapper)]
+struct PingNodeEndpoint(NodeEndpoint);
+
+impl alloy_rlp::Decodable for PingNodeEndpoint {
+    #[inline]
+    fn decode(b: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let alloy_rlp::Header { list, payload_length } = alloy_rlp::Header::decode(b)?;
+        if !list {
+            return Err(alloy_rlp::Error::UnexpectedString);
+        }
+        let started_len = b.len();
+        if started_len < payload_length {
+            return Err(alloy_rlp::Error::InputTooShort);
+        }
+
+        // Geth allows the ipaddr to be possibly empty:
+        // <https://github.com/ethereum/go-ethereum/blob/380688c636a654becc8f114438c2a5d93d2db032/p2p/discover/v4_udp.go#L206-L209>
+        // <https://github.com/ethereum/go-ethereum/blob/380688c636a654becc8f114438c2a5d93d2db032/p2p/enode/node.go#L189-L189>
+        //
+        // Therefore, if we see an empty list instead of a properly formed `IpAddr`, we will
+        // instead use `IpV4Addr::UNSPECIFIED`
+        let address =
+            if *b.first().ok_or(alloy_rlp::Error::InputTooShort)? == alloy_rlp::EMPTY_STRING_CODE {
+                let addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+                b.advance(1);
+                addr
+            } else {
+                alloy_rlp::Decodable::decode(b)?
+            };
+
+        let this = NodeEndpoint {
+            address,
+            udp_port: alloy_rlp::Decodable::decode(b)?,
+            tcp_port: alloy_rlp::Decodable::decode(b)?,
+        };
+        let consumed = started_len - b.len();
+        if consumed != payload_length {
+            return Err(alloy_rlp::Error::ListLengthMismatch {
+                expected: payload_length,
+                got: consumed,
+            });
+        }
+        Ok(Self(this))
+    }
+}
+
 /// Represents the `from`, `to` fields in the packets
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, RlpEncodable, RlpDecodable)]
 pub struct NodeEndpoint {
@@ -197,7 +248,7 @@ pub struct NodeEndpoint {
     pub address: IpAddr,
     /// The UDP port used for communication in the discovery protocol.
     pub udp_port: u16,
-    /// The TCP port used for communication in the RLPx protocol.
+    /// The TCP port used for communication in the `RLPx` protocol.
     pub tcp_port: u16,
 }
 
@@ -209,13 +260,13 @@ impl From<NodeRecord> for NodeEndpoint {
 
 impl NodeEndpoint {
     /// Creates a new [`NodeEndpoint`] from a given UDP address and TCP port.
-    pub fn from_udp_address(udp_address: &std::net::SocketAddr, tcp_port: u16) -> Self {
-        NodeEndpoint { address: udp_address.ip(), udp_port: udp_address.port(), tcp_port }
+    pub const fn from_udp_address(udp_address: &std::net::SocketAddr, tcp_port: u16) -> Self {
+        Self { address: udp_address.ip(), udp_port: udp_address.port(), tcp_port }
     }
 }
 
 /// A [FindNode packet](https://github.com/ethereum/devp2p/blob/master/discv4.md#findnode-packet-0x03).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, RlpEncodable, RlpDecodable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, RlpEncodable)]
 pub struct FindNode {
     /// The target node's ID, a 64-byte secp256k1 public key.
     pub id: PeerId,
@@ -223,8 +274,41 @@ pub struct FindNode {
     pub expire: u64,
 }
 
+impl Decodable for FindNode {
+    // NOTE(onbjerg): Manual implementation to satisfy EIP-8.
+    //
+    // See https://eips.ethereum.org/EIPS/eip-8
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let b = &mut &**buf;
+        let rlp_head = Header::decode(b)?;
+        if !rlp_head.list {
+            return Err(RlpError::UnexpectedString)
+        }
+        let started_len = b.len();
+
+        let this = Self { id: Decodable::decode(b)?, expire: Decodable::decode(b)? };
+
+        // NOTE(onbjerg): Because of EIP-8, we only check that we did not consume *more* than the
+        // payload length, i.e. it is ok if payload length is greater than what we consumed, as we
+        // just discard the remaining list items
+        let consumed = started_len - b.len();
+        if consumed > rlp_head.payload_length {
+            return Err(RlpError::ListLengthMismatch {
+                expected: rlp_head.payload_length,
+                got: consumed,
+            })
+        }
+
+        let rem = rlp_head.payload_length - consumed;
+        b.advance(rem);
+        *buf = *b;
+
+        Ok(this)
+    }
+}
+
 /// A [Neighbours packet](https://github.com/ethereum/devp2p/blob/master/discv4.md#neighbors-packet-0x04).
-#[derive(Clone, Debug, Eq, PartialEq, RlpEncodable, RlpDecodable)]
+#[derive(Clone, Debug, Eq, PartialEq, RlpEncodable)]
 pub struct Neighbours {
     /// The list of nodes containing IP, UDP port, TCP port, and node ID.
     pub nodes: Vec<NodeRecord>,
@@ -232,23 +316,89 @@ pub struct Neighbours {
     pub expire: u64,
 }
 
+impl Decodable for Neighbours {
+    // NOTE(onbjerg): Manual implementation to satisfy EIP-8.
+    //
+    // See https://eips.ethereum.org/EIPS/eip-8
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let b = &mut &**buf;
+        let rlp_head = Header::decode(b)?;
+        if !rlp_head.list {
+            return Err(RlpError::UnexpectedString)
+        }
+        let started_len = b.len();
+
+        let this = Self { nodes: Decodable::decode(b)?, expire: Decodable::decode(b)? };
+
+        // NOTE(onbjerg): Because of EIP-8, we only check that we did not consume *more* than the
+        // payload length, i.e. it is ok if payload length is greater than what we consumed, as we
+        // just discard the remaining list items
+        let consumed = started_len - b.len();
+        if consumed > rlp_head.payload_length {
+            return Err(RlpError::ListLengthMismatch {
+                expected: rlp_head.payload_length,
+                got: consumed,
+            })
+        }
+
+        let rem = rlp_head.payload_length - consumed;
+        b.advance(rem);
+        *buf = *b;
+
+        Ok(this)
+    }
+}
+
 /// A [ENRRequest packet](https://github.com/ethereum/devp2p/blob/master/discv4.md#enrrequest-packet-0x05).
 ///
 /// This packet is used to request the current version of a node's Ethereum Node Record (ENR).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, RlpEncodable, RlpDecodable)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, RlpEncodable)]
 pub struct EnrRequest {
     /// The expiration timestamp for the request. No reply should be sent if it refers to a time in
     /// the past.
     pub expire: u64,
 }
 
+impl Decodable for EnrRequest {
+    // NOTE(onbjerg): Manual implementation to satisfy EIP-8.
+    //
+    // See https://eips.ethereum.org/EIPS/eip-8
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let b = &mut &**buf;
+        let rlp_head = Header::decode(b)?;
+        if !rlp_head.list {
+            return Err(RlpError::UnexpectedString)
+        }
+        let started_len = b.len();
+
+        let this = Self { expire: Decodable::decode(b)? };
+
+        // NOTE(onbjerg): Because of EIP-8, we only check that we did not consume *more* than the
+        // payload length, i.e. it is ok if payload length is greater than what we consumed, as we
+        // just discard the remaining list items
+        let consumed = started_len - b.len();
+        if consumed > rlp_head.payload_length {
+            return Err(RlpError::ListLengthMismatch {
+                expected: rlp_head.payload_length,
+                got: consumed,
+            })
+        }
+
+        let rem = rlp_head.payload_length - consumed;
+        b.advance(rem);
+        *buf = *b;
+
+        Ok(this)
+    }
+}
+
 /// A [ENRResponse packet](https://github.com/ethereum/devp2p/blob/master/discv4.md#enrresponse-packet-0x06).
 ///
-/// This packet is used to respond to an ENRRequest packet and includes the requested ENR along with
-/// the hash of the original request.
+/// This packet is used to respond to an `ENRRequest` packet and includes the requested ENR along
+/// with the hash of the original request.
 #[derive(Clone, Debug, Eq, PartialEq, RlpEncodable, RlpDecodable)]
 pub struct EnrResponse {
-    /// The hash of the ENRRequest packet being replied to.
+    /// The hash of the `ENRRequest` packet being replied to.
     pub request_hash: B256,
     /// The ENR (Ethereum Node Record) for the responding node.
     pub enr: Enr<SecretKey>,
@@ -277,7 +427,7 @@ pub struct Ping {
     pub to: NodeEndpoint,
     /// The expiration timestamp.
     pub expire: u64,
-    /// Optional enr_seq for <https://eips.ethereum.org/EIPS/eip-868>
+    /// Optional `enr_seq` for <https://eips.ethereum.org/EIPS/eip-868>
     pub enr_sq: Option<u64>,
 }
 
@@ -333,12 +483,11 @@ impl Decodable for Ping {
         // <https://github.com/ethereum/devp2p/blob/master/discv4.md#ping-packet-0x01>
         let _version = u32::decode(b)?;
 
-        let mut this = Self {
-            from: Decodable::decode(b)?,
-            to: Decodable::decode(b)?,
-            expire: Decodable::decode(b)?,
-            enr_sq: None,
-        };
+        // see `Decodable` implementation in `PingNodeEndpoint` for why this is needed
+        let from = PingNodeEndpoint::decode(b)?.0;
+
+        let mut this =
+            Self { from, to: Decodable::decode(b)?, expire: Decodable::decode(b)?, enr_sq: None };
 
         // only decode the ENR sequence if there's more data in the datagram to decode else skip
         if b.has_remaining() {
@@ -370,7 +519,7 @@ pub struct Pong {
     pub echo: B256,
     /// The expiration timestamp.
     pub expire: u64,
-    /// Optional enr_seq for <https://eips.ethereum.org/EIPS/eip-868>
+    /// Optional `enr_seq` for <https://eips.ethereum.org/EIPS/eip-868>
     pub enr_sq: Option<u64>,
 }
 
@@ -443,8 +592,10 @@ mod tests {
         DEFAULT_DISCOVERY_PORT, SAFE_MAX_DATAGRAM_NEIGHBOUR_RECORDS,
     };
     use enr::{Enr, EnrPublicKey};
+    use alloy_primitives::hex;
+    use assert_matches::assert_matches;
     use rand::{thread_rng, Rng, RngCore};
-    use reth_primitives::{hex, ForkHash};
+    use reth_ethereum_forks::ForkHash;
 
     #[test]
     fn test_endpoint_ipv_v4() {
@@ -735,6 +886,21 @@ mod tests {
         assert!(enr.verify());
     }
 
+    // test for failing message decode
+    #[test]
+    fn decode_failing_packet() {
+        let packet = hex!("2467ab56952aedf4cfb8bb7830ddc8922d0f992185229919dad9de3841fe95d9b3a7b52459398235f6d3805644666d908b45edb3670414ed97f357afba51f71f7d35c1f45878ba732c3868b04ca42ff0ed347c99efcf3a5768afed68eb21ef960001db04c3808080c9840a480e8f82765f808466a9a06386019106833efe");
+
+        let _message = Message::decode(&packet[..]).unwrap();
+    }
+
+    // test for failing message decode
+    #[test]
+    fn decode_node() {
+        let packet = hex!("cb840000000082115c82115d");
+        let _message = NodeEndpoint::decode(&mut &packet[..]).unwrap();
+    }
+
     // test vector from the enr library rlp encoding tests
     // <https://github.com/sigp/enr/blob/e59dcb45ea07e423a7091d2a6ede4ad6d8ef2840/src/lib.rs#LL1206C35-L1206C35>
     #[test]
@@ -768,5 +934,98 @@ mod tests {
             key.public_key(secp256k1::SECP256K1).encode()
         );
         assert!(decoded_enr.verify());
+    }
+
+    mod eip8 {
+        use super::*;
+
+        fn junk_enr_request() -> Vec<u8> {
+            let mut buf = Vec::new();
+            // enr request is just an expiration
+            let expire: u64 = 123456;
+
+            // add some junk
+            let junk: u64 = 112233;
+
+            // rlp header encoding
+            let payload_length = expire.length() + junk.length();
+            alloy_rlp::Header { list: true, payload_length }.encode(&mut buf);
+
+            // fields
+            expire.encode(&mut buf);
+            junk.encode(&mut buf);
+
+            buf
+        }
+
+        // checks that junk data at the end of the packet is discarded according to eip-8
+        #[test]
+        fn eip8_decode_enr_request() {
+            let enr_request_with_junk = junk_enr_request();
+
+            let mut buf = enr_request_with_junk.as_slice();
+            let decoded = EnrRequest::decode(&mut buf).unwrap();
+            assert_eq!(decoded.expire, 123456);
+        }
+
+        // checks that junk data at the end of the packet is discarded according to eip-8
+        //
+        // test vector from eip-8: https://eips.ethereum.org/EIPS/eip-8
+        #[test]
+        fn eip8_decode_findnode() {
+            let findnode_with_junk = hex!("c7c44041b9f7c7e41934417ebac9a8e1a4c6298f74553f2fcfdcae6ed6fe53163eb3d2b52e39fe91831b8a927bf4fc222c3902202027e5e9eb812195f95d20061ef5cd31d502e47ecb61183f74a504fe04c51e73df81f25c4d506b26db4517490103f84eb840ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd31387574077f301b421bc84df7266c44e9e6d569fc56be00812904767bf5ccd1fc7f8443b9a35582999983999999280dc62cc8255c73471e0a61da0c89acdc0e035e260add7fc0c04ad9ebf3919644c91cb247affc82b69bd2ca235c71eab8e49737c937a2c396");
+
+            let buf = findnode_with_junk.as_slice();
+            let decoded = Message::decode(buf).unwrap();
+
+            let expected_id = hex!("ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd31387574077f301b421bc84df7266c44e9e6d569fc56be00812904767bf5ccd1fc7f");
+            assert_matches!(decoded.msg, Message::FindNode(FindNode { id, expire: 1136239445 }) if id == expected_id);
+        }
+
+        // checks that junk data at the end of the packet is discarded according to eip-8
+        //
+        // test vector from eip-8: https://eips.ethereum.org/EIPS/eip-8
+        #[test]
+        fn eip8_decode_neighbours() {
+            let neighbours_with_junk = hex!("c679fc8fe0b8b12f06577f2e802d34f6fa257e6137a995f6f4cbfc9ee50ed3710faf6e66f932c4c8d81d64343f429651328758b47d3dbc02c4042f0fff6946a50f4a49037a72bb550f3a7872363a83e1b9ee6469856c24eb4ef80b7535bcf99c0004f9015bf90150f84d846321163782115c82115db8403155e1427f85f10a5c9a7755877748041af1bcd8d474ec065eb33df57a97babf54bfd2103575fa829115d224c523596b401065a97f74010610fce76382c0bf32f84984010203040101b840312c55512422cf9b8a4097e9a6ad79402e87a15ae909a4bfefa22398f03d20951933beea1e4dfa6f968212385e829f04c2d314fc2d4e255e0d3bc08792b069dbf8599020010db83c4d001500000000abcdef12820d05820d05b84038643200b172dcfef857492156971f0e6aa2c538d8b74010f8e140811d53b98c765dd2d96126051913f44582e8c199ad7c6d6819e9a56483f637feaac9448aacf8599020010db885a308d313198a2e037073488203e78203e8b8408dcab8618c3253b558d459da53bd8fa68935a719aff8b811197101a4b2b47dd2d47295286fc00cc081bb542d760717d1bdd6bec2c37cd72eca367d6dd3b9df738443b9a355010203b525a138aa34383fec3d2719a0");
+
+            let buf = neighbours_with_junk.as_slice();
+            let decoded = Message::decode(buf).unwrap();
+
+            let _ = NodeRecord {
+                address: "99.33.22.55".parse().unwrap(),
+                tcp_port: 4444,
+                udp_port: 4445,
+                id: hex!("3155e1427f85f10a5c9a7755877748041af1bcd8d474ec065eb33df57a97babf54bfd2103575fa829115d224c523596b401065a97f74010610fce76382c0bf32").into(),
+            }.length();
+
+            let expected_nodes: Vec<NodeRecord> = vec![
+                NodeRecord {
+                    address: "99.33.22.55".parse().unwrap(),
+                    udp_port: 4444,
+                    tcp_port: 4445,
+                    id: hex!("3155e1427f85f10a5c9a7755877748041af1bcd8d474ec065eb33df57a97babf54bfd2103575fa829115d224c523596b401065a97f74010610fce76382c0bf32").into(),
+                },
+                NodeRecord {
+                    address: "1.2.3.4".parse().unwrap(),
+                    udp_port: 1,
+                    tcp_port: 1,
+                    id: hex!("312c55512422cf9b8a4097e9a6ad79402e87a15ae909a4bfefa22398f03d20951933beea1e4dfa6f968212385e829f04c2d314fc2d4e255e0d3bc08792b069db").into(),
+                },
+                NodeRecord {
+                    address: "2001:db8:3c4d:15::abcd:ef12".parse().unwrap(),
+                    udp_port: 3333,
+                    tcp_port: 3333,
+                    id: hex!("38643200b172dcfef857492156971f0e6aa2c538d8b74010f8e140811d53b98c765dd2d96126051913f44582e8c199ad7c6d6819e9a56483f637feaac9448aac").into(),
+                },
+                NodeRecord {
+                    address: "2001:db8:85a3:8d3:1319:8a2e:370:7348".parse().unwrap(),
+                    udp_port: 999,
+                    tcp_port: 1000,
+                    id: hex!("8dcab8618c3253b558d459da53bd8fa68935a719aff8b811197101a4b2b47dd2d47295286fc00cc081bb542d760717d1bdd6bec2c37cd72eca367d6dd3b9df73").into(),
+                },
+            ];
+            assert_matches!(decoded.msg, Message::Neighbours(Neighbours { nodes, expire: 1136239445 }) if nodes == expected_nodes);
+        }
     }
 }

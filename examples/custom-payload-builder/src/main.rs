@@ -20,7 +20,8 @@ use reth::{
     transaction_pool::TransactionPool,
 };
 use reth_basic_payload_builder::BasicPayloadJobGeneratorConfig;
-use reth_node_ethereum::{EthEngineTypes, EthereumNode};
+use reth_chainspec::ChainSpec;
+use reth_node_ethereum::{node::EthereumAddOns, EthEngineTypes, EthereumNode};
 use reth_payload_builder::PayloadBuilderService;
 
 pub mod generator;
@@ -32,7 +33,7 @@ pub struct CustomPayloadBuilder;
 
 impl<Node, Pool> PayloadServiceBuilder<Node, Pool> for CustomPayloadBuilder
 where
-    Node: FullNodeTypes<Engine = EthEngineTypes>,
+    Node: FullNodeTypes<Engine = EthEngineTypes, ChainSpec = ChainSpec>,
     Pool: TransactionPool + Unpin + 'static,
 {
     async fn spawn_payload_service(
@@ -47,8 +48,7 @@ where
             .interval(conf.interval())
             .deadline(conf.deadline())
             .max_payload_tasks(conf.max_payload_tasks())
-            .extradata(conf.extradata_bytes())
-            .max_gas_limit(conf.max_gas_limit());
+            .extradata(conf.extradata_bytes());
 
         let payload_generator = EmptyBlockPayloadJobGenerator::with_builder(
             ctx.provider().clone(),
@@ -79,6 +79,7 @@ fn main() {
                 .with_components(
                     EthereumNode::components().payload(CustomPayloadBuilder::default()),
                 )
+                .with_add_ons::<EthereumAddOns>()
                 .launch()
                 .await?;
 

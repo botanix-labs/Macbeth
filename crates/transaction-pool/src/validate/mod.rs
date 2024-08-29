@@ -5,9 +5,11 @@ use crate::{
     identifier::{SenderId, TransactionId},
     traits::{PoolTransaction, TransactionOrigin},
 };
+use futures_util::future::Either;
 use reth_primitives::{
-    Address, BlobTransactionSidecar, IntoRecoveredTransaction, SealedBlock,
-    TransactionSignedEcRecovered, TxHash, B256, U256,
+    Address, BlobTransactionSidecar, IntoRecoveredTransaction,
+    PooledTransactionsElementEcRecovered, SealedBlock, TransactionSignedEcRecovered, TxHash, B256,
+    U256,
 };
 use std::{fmt, future::Future, time::Instant};
 
@@ -37,7 +39,7 @@ pub enum TransactionValidationOutcome<T: PoolTransaction> {
         state_nonce: u64,
         /// The validated transaction.
         ///
-        /// See also [ValidTransaction].
+        /// See also [`ValidTransaction`].
         ///
         /// If this is a _new_ EIP-4844 blob transaction, then this must contain the extracted
         /// sidecar.
@@ -86,14 +88,14 @@ impl<T: PoolTransaction> TransactionValidationOutcome<T> {
 ///
 /// Note: Since blob transactions can be re-injected without their sidecar (after reorg), the
 /// validator can omit the sidecar if it is still in the blob store and return a
-/// [ValidTransaction::Valid] instead.
+/// [`ValidTransaction::Valid`] instead.
 #[derive(Debug)]
 pub enum ValidTransaction<T> {
     /// A valid transaction without a sidecar.
     Valid(T),
     /// A valid transaction for which a sidecar should be stored.
     ///
-    /// Caution: The [TransactionValidator] must ensure that this is only returned for EIP-4844
+    /// Caution: The [`TransactionValidator`] must ensure that this is only returned for EIP-4844
     /// transactions.
     ValidWithSidecar {
         /// The valid EIP-4844 transaction.
@@ -152,7 +154,7 @@ impl<T: PoolTransaction> ValidTransaction<T> {
 /// Provides support for validating transaction at any given state of the chain
 pub trait TransactionValidator: Send + Sync {
     /// The transaction type to validate.
-    type Transaction: PoolTransaction;
+    type Transaction: PoolTransaction<Pooled = PooledTransactionsElementEcRecovered>;
 
     /// Validates the transaction and returns a [`TransactionValidationOutcome`] describing the
     /// validity of the given transaction.
@@ -169,7 +171,7 @@ pub trait TransactionValidator: Send + Sync {
     ///    * nonce >= next nonce of the sender
     ///    * ...
     ///
-    /// See [InvalidTransactionError](reth_primitives::InvalidTransactionError) for common errors
+    /// See [`InvalidTransactionError`](reth_primitives::InvalidTransactionError) for common errors
     /// variants.
     ///
     /// The transaction pool makes no additional assumptions about the validity of the transaction
@@ -178,7 +180,7 @@ pub trait TransactionValidator: Send + Sync {
     /// example nonce or balance changes. Hence, any validation checks must be applied in this
     /// function.
     ///
-    /// See [TransactionValidationTaskExecutor] for a reference implementation.
+    /// See [`TransactionValidationTaskExecutor`] for a reference implementation.
     fn validate_transaction(
         &self,
         origin: TransactionOrigin,
@@ -189,7 +191,7 @@ pub trait TransactionValidator: Send + Sync {
     ///
     /// Must return all outcomes for the given transactions in the same order.
     ///
-    /// See also [Self::validate_transaction].
+    /// See also [`Self::validate_transaction`].
     fn validate_transactions(
         &self,
         transactions: Vec<(TransactionOrigin, Self::Transaction)>,
@@ -208,12 +210,48 @@ pub trait TransactionValidator: Send + Sync {
     fn on_new_head_block(&self, _new_tip_block: &SealedBlock) {}
 }
 
+impl<A, B> TransactionValidator for Either<A, B>
+where
+    A: TransactionValidator,
+    B: TransactionValidator<Transaction = A::Transaction>,
+{
+    type Transaction = A::Transaction;
+
+    async fn validate_transaction(
+        &self,
+        origin: TransactionOrigin,
+        transaction: Self::Transaction,
+    ) -> TransactionValidationOutcome<Self::Transaction> {
+        match self {
+            Self::Left(v) => v.validate_transaction(origin, transaction).await,
+            Self::Right(v) => v.validate_transaction(origin, transaction).await,
+        }
+    }
+
+    async fn validate_transactions(
+        &self,
+        transactions: Vec<(TransactionOrigin, Self::Transaction)>,
+    ) -> Vec<TransactionValidationOutcome<Self::Transaction>> {
+        match self {
+            Self::Left(v) => v.validate_transactions(transactions).await,
+            Self::Right(v) => v.validate_transactions(transactions).await,
+        }
+    }
+
+    fn on_new_head_block(&self, new_tip_block: &SealedBlock) {
+        match self {
+            Self::Left(v) => v.on_new_head_block(new_tip_block),
+            Self::Right(v) => v.on_new_head_block(new_tip_block),
+        }
+    }
+}
+
 /// A valid transaction in the pool.
 ///
 /// This is used as the internal representation of a transaction inside the pool.
 ///
 /// For EIP-4844 blob transactions this will _not_ contain the blob sidecar which is stored
-/// separately in the [BlobStore](crate::blobstore::BlobStore).
+/// separately in the [`BlobStore`](crate::blobstore::BlobStore).
 pub struct ValidPoolTransaction<T: PoolTransaction> {
     /// The transaction
     pub transaction: T,
@@ -341,7 +379,7 @@ impl<T: PoolTransaction> ValidPoolTransaction<T> {
 
 impl<T: PoolTransaction> IntoRecoveredTransaction for ValidPoolTransaction<T> {
     fn to_recovered_transaction(&self) -> TransactionSignedEcRecovered {
-        self.transaction.to_recovered_transaction()
+        self.transaction.clone().into()
     }
 }
 

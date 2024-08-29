@@ -2,20 +2,17 @@
 
 use alloy_rlp::{Decodable, Error as RlpError};
 use assert_matches::assert_matches;
-use reth_interfaces::test_utils::generators::{
-    self, random_block, random_block_range, random_header, Rng,
-};
 use reth_primitives::{
-    bytes::{Bytes, BytesMut},
-    proofs, Block, SealedBlock, TransactionSigned, Withdrawals, B256, U256,
+    proofs, Block, Bytes, SealedBlock, TransactionSigned, Withdrawals, B256, U256,
 };
 use reth_rpc_types::engine::{
     ExecutionPayload, ExecutionPayloadBodyV1, ExecutionPayloadV1, PayloadError,
 };
 use reth_rpc_types_compat::engine::payload::{
-    convert_to_payload_body_v1, try_block_to_payload, try_block_to_payload_v1,
-    try_into_sealed_block, try_payload_v1_to_block,
+    block_to_payload, block_to_payload_v1, convert_to_payload_body_v1, try_into_sealed_block,
+    try_payload_v1_to_block,
 };
+use reth_testing_utils::generators::{self, random_block, random_block_range, random_header, Rng};
 
 fn transform_block<F: FnOnce(Block) -> Block>(src: SealedBlock, f: F) -> ExecutionPayload {
     let unsealed = src.unseal();
@@ -23,18 +20,19 @@ fn transform_block<F: FnOnce(Block) -> Block>(src: SealedBlock, f: F) -> Executi
     // Recalculate roots
     transformed.header.transactions_root = proofs::calculate_transaction_root(&transformed.body);
     transformed.header.ommers_hash = proofs::calculate_ommers_root(&transformed.ommers);
-    try_block_to_payload(SealedBlock {
+    block_to_payload(SealedBlock {
         header: transformed.header.seal_slow(),
         body: transformed.body,
         ommers: transformed.ommers,
         withdrawals: transformed.withdrawals,
+        requests: transformed.requests,
     })
 }
 
 #[test]
 fn payload_body_roundtrip() {
     let mut rng = generators::rng();
-    for block in random_block_range(&mut rng, 0..=99, B256::default(), 0..2) {
+    for block in random_block_range(&mut rng, 0..=99, B256::default(), 0..2, None) {
         let unsealed = block.clone().unseal();
         let payload_body: ExecutionPayloadBodyV1 = convert_to_payload_body_v1(unsealed);
 
@@ -55,11 +53,11 @@ fn payload_body_roundtrip() {
 fn payload_validation() {
     let mut rng = generators::rng();
     let parent = rng.gen();
-    let block = random_block(&mut rng, 100, Some(parent), Some(3), Some(0));
+    let block = random_block(&mut rng, 100, Some(parent), Some(3), Some(0), None);
 
     // Valid extra data
     let block_with_valid_extra_data = transform_block(block.clone(), |mut b| {
-        b.header.extra_data = BytesMut::zeroed(32).freeze().into();
+        b.header.extra_data = Bytes::from_static(&[0; 32]);
         b
     });
 
@@ -67,16 +65,15 @@ fn payload_validation() {
 
     // Botanix exception test commented out as we have removed the extra data max byte check
     // Invalid extra data
-    // let block_with_invalid_extra_data: Bytes = BytesMut::zeroed(33).freeze();
-    // let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
-    //     b.header.extra_data = block_with_invalid_extra_data.clone().into();
-    //     b
-    // });
-    // assert_matches!(
-
-    //     try_into_sealed_block(invalid_extra_data_block,None),
-    //     Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
-    // );
+    let block_with_invalid_extra_data = Bytes::from_static(&[0; 33]);
+    let invalid_extra_data_block = transform_block(block.clone(), |mut b| {
+        b.header.extra_data = block_with_invalid_extra_data.clone();
+        b
+    });
+    assert_matches!(
+        try_into_sealed_block(invalid_extra_data_block,None),
+        Err(PayloadError::ExtraData(data)) if data == block_with_invalid_extra_data
+    );
 
     // Zero base fee
     let block_with_zero_base_fee = transform_block(block.clone(), |mut b| {
@@ -90,10 +87,10 @@ fn payload_validation() {
     );
 
     // Invalid encoded transactions
-    let mut payload_with_invalid_txs: ExecutionPayloadV1 = try_block_to_payload_v1(block.clone());
+    let mut payload_with_invalid_txs: ExecutionPayloadV1 = block_to_payload_v1(block.clone());
 
     payload_with_invalid_txs.transactions.iter_mut().for_each(|tx| {
-        *tx = Bytes::new().into();
+        *tx = Bytes::new();
     });
     let payload_with_invalid_txs = try_payload_v1_to_block(payload_with_invalid_txs);
     assert_matches!(payload_with_invalid_txs, Err(PayloadError::Decode(RlpError::InputTooShort)));

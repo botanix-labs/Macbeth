@@ -1,5 +1,8 @@
 use crate::traits::PayloadEnvelopeExt;
-use jsonrpsee::http_client::HttpClient;
+use jsonrpsee::{
+    core::client::ClientT,
+    http_client::{transport::HttpBackend, HttpClient},
+};
 use reth::{
     api::{EngineTypes, PayloadBuilderAttributes},
     providers::CanonStateNotificationStream,
@@ -10,22 +13,32 @@ use reth::{
 };
 use reth_payload_builder::PayloadId;
 use reth_primitives::B256;
+use reth_rpc_layer::AuthClientService;
 use std::marker::PhantomData;
 
 /// Helper for engine api operations
+#[derive(Debug)]
 pub struct EngineApiTestContext<E> {
     pub canonical_stream: CanonStateNotificationStream,
-    pub engine_api_client: HttpClient,
+    pub engine_api_client: HttpClient<AuthClientService<HttpBackend>>,
     pub _marker: PhantomData<E>,
 }
 
-impl<E: EngineTypes + 'static> EngineApiTestContext<E> {
+impl<E: EngineTypes> EngineApiTestContext<E> {
     /// Retrieves a v3 payload from the engine api
     pub async fn get_payload_v3(
         &self,
         payload_id: PayloadId,
     ) -> eyre::Result<E::ExecutionPayloadV3> {
         Ok(EngineApiClient::<E>::get_payload_v3(&self.engine_api_client, payload_id).await?)
+    }
+
+    /// Retrieves a v3 payload from the engine api as serde value
+    pub async fn get_payload_v3_value(
+        &self,
+        payload_id: PayloadId,
+    ) -> eyre::Result<serde_json::Value> {
+        Ok(self.engine_api_client.request("engine_getPayloadV3", (payload_id,)).await?)
     }
 
     /// Submits a payload to the engine api
@@ -51,7 +64,7 @@ impl<E: EngineTypes + 'static> EngineApiTestContext<E> {
         )
         .await?;
 
-        assert!(submission.status == expected_status);
+        assert_eq!(submission.status, expected_status);
 
         Ok(submission.latest_valid_hash.unwrap_or_default())
     }

@@ -13,6 +13,7 @@ jobs:
       test_result: ${{ steps.test_result.outputs.test_result }}
       test_status: ${{ steps.test_result.outputs.test_status }}
       failed_test_status: ${{ steps.test_result.outputs.failed_test_status }}
+    if: github.repository == 'paradigmxyz/reth'
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -29,11 +30,11 @@ jobs:
       id: services
       run: |
         export github_sha=${{ github.sha }}
-        export github_repository=${{ github.repository }} 
+        export github_repository=${{ github.repository }}
 
         cat etc/assertoor/assertoor-template.yaml | envsubst > etc/assertoor/assertoor.yaml
 
-        kurtosis run github.com/kurtosis-tech/ethereum-package --enclave assertoor-${{ github.run_id }} --args-file etc/assertoor/assertoor.yaml
+        kurtosis run github.com/ethpandaops/ethereum-package --enclave assertoor-${{ github.run_id }} --args-file etc/assertoor/assertoor.yaml
 
         enclave_dump=$(kurtosis enclave inspect assertoor-${{ github.run_id }})
 
@@ -92,7 +93,7 @@ jobs:
             elif [ "$task_result" == "failure" ]; then
               task_result="${RED}failure${NC}"
             fi
-            
+
             echo -e " $(printf '%-4s' "$task_id")\t$task_status\t$task_result\t$(printf '%-50s' "$task_graph$task_name") \t$task_title"
           done <<< $(echo "$tasks")
         }
@@ -153,7 +154,7 @@ jobs:
             echo "$task_lines"
           fi
 
-          if [ $failed_tests -gt 0 ]; then 
+          if [ $failed_tests -gt 0 ]; then
             final_test_result="failure"
             break
           fi
@@ -197,7 +198,7 @@ jobs:
       with:
         name: "kurtosis-enclave-dump-${{ github.run_id }}"
         path: ./temp/dump
-    
+
     - name: Return test result
       shell: bash
       run: |
@@ -227,4 +228,3 @@ jobs:
 
           exit 1 # fail action
         fi
-

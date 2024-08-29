@@ -3,12 +3,16 @@ use alloy_rlp::{
     length_of_length, Decodable, Encodable, Error as DecodeError, Header, EMPTY_STRING_CODE,
 };
 use bytes::Buf;
-use reth_codecs::{main_codec, Compact};
-use std::mem;
+use core::mem;
+#[cfg(any(test, feature = "reth-codec"))]
+use reth_codecs::Compact;
+use serde::{Deserialize, Serialize};
 
 /// Deposit transactions, also known as deposits are initiated on L1, and executed on L2.
-#[main_codec]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[cfg_attr(any(test, feature = "reth-codec"), derive(Compact))]
+#[cfg_attr(any(test, feature = "reth-codec"), reth_codecs::add_arbitrary_tests(compact))]
 pub struct TxDeposit {
     /// Hash that uniquely identifies the source of the deposit.
     pub source_hash: B256,
@@ -31,7 +35,7 @@ pub struct TxDeposit {
 }
 
 impl TxDeposit {
-    /// Calculates a heuristic for the in-memory size of the [TxDeposit] transaction.
+    /// Calculates a heuristic for the in-memory size of the [`TxDeposit`] transaction.
     #[inline]
     pub fn size(&self) -> usize {
         mem::size_of::<B256>() + // source_hash
@@ -44,7 +48,7 @@ impl TxDeposit {
         self.input.len() // input
     }
 
-    /// Decodes the inner [TxDeposit] fields from RLP bytes.
+    /// Decodes the inner [`TxDeposit`] fields from RLP bytes.
     ///
     /// NOTE: This assumes a RLP header has already been decoded, and _just_ decodes the following
     /// RLP fields in the following order:
@@ -137,7 +141,7 @@ impl TxDeposit {
     }
 
     /// Get the transaction type
-    pub(crate) fn tx_type(&self) -> TxType {
+    pub(crate) const fn tx_type(&self) -> TxType {
         TxType::Deposit
     }
 }

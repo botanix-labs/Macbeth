@@ -1,8 +1,10 @@
 //! OP transaction pool types
 use parking_lot::RwLock;
-use reth_primitives::{Block, ChainSpec, GotExpected, InvalidTransactionError, SealedBlock};
+use reth_chainspec::ChainSpec;
+use reth_evm_optimism::RethL1BlockInfo;
+use reth_primitives::{Block, GotExpected, InvalidTransactionError, SealedBlock};
 use reth_provider::{BlockReaderIdExt, StateProviderFactory};
-use reth_revm::{optimism::RethL1BlockInfo, L1BlockInfo};
+use reth_revm::L1BlockInfo;
 use reth_transaction_pool::{
     CoinbaseTipOrdering, EthPoolTransaction, EthPooledTransaction, EthTransactionValidator, Pool,
     TransactionOrigin, TransactionValidationOutcome, TransactionValidationTaskExecutor,
@@ -27,6 +29,10 @@ pub struct OpTransactionValidator<Client, Tx> {
     inner: EthTransactionValidator<Client, Tx>,
     /// Additional block info required for validation.
     block_info: Arc<OpL1BlockInfo>,
+    /// If true, ensure that the transaction's sender has enough balance to cover the L1 gas fee
+    /// derived from the tracked L1 block info that is extracted from the first transaction in the
+    /// L2 block.
+    require_l1_data_gas_fee: bool,
 }
 
 impl<Client, Tx> OpTransactionValidator<Client, Tx> {
@@ -39,6 +45,18 @@ impl<Client, Tx> OpTransactionValidator<Client, Tx> {
     fn block_timestamp(&self) -> u64 {
         self.block_info.timestamp.load(Ordering::Relaxed)
     }
+
+    /// Whether to ensure that the transaction's sender has enough balance to also cover the L1 gas
+    /// fee.
+    pub fn require_l1_data_gas_fee(self, require_l1_data_gas_fee: bool) -> Self {
+        Self { require_l1_data_gas_fee, ..self }
+    }
+
+    /// Returns whether this validator also requires the transaction's sender to have enough balance
+    /// to cover the L1 gas fee.
+    pub const fn requires_l1_data_gas_fee(&self) -> bool {
+        self.require_l1_data_gas_fee
+    }
 }
 
 impl<Client, Tx> OpTransactionValidator<Client, Tx>
@@ -46,7 +64,7 @@ where
     Client: StateProviderFactory + BlockReaderIdExt,
     Tx: EthPoolTransaction,
 {
-    /// Create a new [OpTransactionValidator].
+    /// Create a new [`OpTransactionValidator`].
     pub fn new(inner: EthTransactionValidator<Client, Tx>) -> Self {
         let this = Self::with_block_info(inner, OpL1BlockInfo::default());
         if let Ok(Some(block)) =
@@ -64,27 +82,27 @@ where
         this
     }
 
-    /// Create a new [OpTransactionValidator] with the given [OpL1BlockInfo].
+    /// Create a new [`OpTransactionValidator`] with the given [`OpL1BlockInfo`].
     pub fn with_block_info(
         inner: EthTransactionValidator<Client, Tx>,
         block_info: OpL1BlockInfo,
     ) -> Self {
-        Self { inner, block_info: Arc::new(block_info) }
+        Self { inner, block_info: Arc::new(block_info), require_l1_data_gas_fee: true }
     }
 
     /// Update the L1 block info.
     fn update_l1_block_info(&self, block: &Block) {
         self.block_info.timestamp.store(block.timestamp, Ordering::Relaxed);
-        if let Ok(cost_addition) = reth_revm::optimism::extract_l1_info(block) {
+        if let Ok(cost_addition) = reth_evm_optimism::extract_l1_info(block) {
             *self.block_info.l1_block_info.write() = cost_addition;
         }
     }
 
     /// Validates a single transaction.
     ///
-    /// See also [TransactionValidator::validate_transaction]
+    /// See also [`TransactionValidator::validate_transaction`]
     ///
-    /// This behaves the same as [EthTransactionValidator::validate_one], but in addition, ensures
+    /// This behaves the same as [`EthTransactionValidator::validate_one`], but in addition, ensures
     /// that the account has enough balance to cover the L1 gas cost.
     pub fn validate_one(
         &self,
@@ -100,6 +118,11 @@ where
 
         let outcome = self.inner.validate_one(origin, transaction);
 
+        if !self.requires_l1_data_gas_fee() {
+            // no need to check L1 gas fee
+            return outcome
+        }
+
         // ensure that the account has enough balance to cover the L1 gas cost
         if let TransactionValidationOutcome::Valid {
             balance,
@@ -110,8 +133,8 @@ where
         {
             let l1_block_info = self.block_info.l1_block_info.read().clone();
 
-            let mut encoded = Vec::new();
-            valid_tx.transaction().to_recovered_transaction().encode_enveloped(&mut encoded);
+            let mut encoded = Vec::with_capacity(valid_tx.transaction().encoded_length());
+            valid_tx.transaction().clone().into().encode_enveloped(&mut encoded);
 
             let cost_addition = match l1_block_info.l1_tx_data_fee(
                 &self.chain_spec(),
@@ -152,7 +175,7 @@ where
     ///
     /// Returns all outcomes for the given transactions in the same order.
     ///
-    /// See also [Self::validate_one]
+    /// See also [`Self::validate_one`]
     pub fn validate_all(
         &self,
         transactions: Vec<(TransactionOrigin, Tx)>,
@@ -201,9 +224,10 @@ pub struct OpL1BlockInfo {
 #[cfg(test)]
 mod tests {
     use crate::txpool::OpTransactionValidator;
+    use reth_chainspec::MAINNET;
     use reth_primitives::{
         Signature, Transaction, TransactionSigned, TransactionSignedEcRecovered, TxDeposit, TxKind,
-        MAINNET, U256,
+        U256,
     };
     use reth_provider::test_utils::MockEthProvider;
     use reth_transaction_pool::{

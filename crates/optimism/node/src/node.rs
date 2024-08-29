@@ -1,27 +1,35 @@
 //! Optimism Node types config.
 
-use crate::{
-    args::RollupArgs,
-    txpool::{OpTransactionPool, OpTransactionValidator},
-    OptimismEngineTypes,
-};
+use std::sync::Arc;
+
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
+use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
-use reth_evm_optimism::OptimismEvmConfig;
+use reth_evm_optimism::{OpExecutorProvider, OptimismEvmConfig};
 use reth_network::{NetworkHandle, NetworkManager};
+use reth_node_api::{FullNodeComponents, NodeAddOns};
 use reth_node_builder::{
     components::{
-        ComponentsBuilder, ExecutorBuilder, NetworkBuilder, PayloadServiceBuilder, PoolBuilder,
+        ComponentsBuilder, ConsensusBuilder, ExecutorBuilder, NetworkBuilder,
+        PayloadServiceBuilder, PoolBuilder,
     },
     node::{FullNodeTypes, NodeTypes},
     BuilderContext, Node, PayloadBuilderConfig,
 };
+use reth_optimism_consensus::OptimismBeaconConsensus;
+use reth_optimism_rpc::OpEthApi;
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
 use reth_provider::CanonStateSubscriptions;
 use reth_tracing::tracing::{debug, info};
 use reth_transaction_pool::{
     blobstore::DiskFileBlobStore, CoinbaseTipOrdering, TransactionPool,
     TransactionValidationTaskExecutor,
+};
+
+use crate::{
+    args::RollupArgs,
+    txpool::{OpTransactionPool, OpTransactionValidator},
+    OptimismEngineTypes,
 };
 
 /// Type configuration for a regular Optimism node.
@@ -38,7 +46,7 @@ impl OptimismNode {
         Self { args }
     }
 
-    /// Returns the components for the given [RollupArgs].
+    /// Returns the components for the given [`RollupArgs`].
     pub fn components<Node>(
         args: RollupArgs,
     ) -> ComponentsBuilder<
@@ -47,11 +55,12 @@ impl OptimismNode {
         OptimismPayloadBuilder,
         OptimismNetworkBuilder,
         OptimismExecutorBuilder,
+        OptimismConsensusBuilder,
     >
     where
-        Node: FullNodeTypes<Engine = OptimismEngineTypes>,
+        Node: FullNodeTypes<Engine = OptimismEngineTypes, ChainSpec = ChainSpec>,
     {
-        let RollupArgs { disable_txpool_gossip, compute_pending_block, .. } = args;
+        let RollupArgs { disable_txpool_gossip, compute_pending_block, discovery_v4, .. } = args;
         ComponentsBuilder::default()
             .node_types::<Node>()
             .pool(OptimismPoolBuilder::default())
@@ -59,14 +68,18 @@ impl OptimismNode {
                 compute_pending_block,
                 OptimismEvmConfig::default(),
             ))
-            .network(OptimismNetworkBuilder { disable_txpool_gossip })
+            .network(OptimismNetworkBuilder {
+                disable_txpool_gossip,
+                disable_discovery_v4: !discovery_v4,
+            })
             .executor(OptimismExecutorBuilder::default())
+            .consensus(OptimismConsensusBuilder::default())
     }
 }
 
 impl<N> Node<N> for OptimismNode
 where
-    N: FullNodeTypes<Engine = OptimismEngineTypes>,
+    N: FullNodeTypes<Engine = OptimismEngineTypes, ChainSpec = ChainSpec>,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -74,17 +87,29 @@ where
         OptimismPayloadBuilder,
         OptimismNetworkBuilder,
         OptimismExecutorBuilder,
+        OptimismConsensusBuilder,
     >;
 
-    fn components_builder(self) -> Self::ComponentsBuilder {
+    type AddOns = OptimismAddOns;
+
+    fn components_builder(&self) -> Self::ComponentsBuilder {
         let Self { args } = self;
-        Self::components(args)
+        Self::components(args.clone())
     }
 }
 
 impl NodeTypes for OptimismNode {
     type Primitives = ();
     type Engine = OptimismEngineTypes;
+    type ChainSpec = ChainSpec;
+}
+
+/// Add-ons w.r.t. optimism.
+#[derive(Debug, Clone)]
+pub struct OptimismAddOns;
+
+impl<N: FullNodeComponents> NodeAddOns<N> for OptimismAddOns {
+    type EthApi = OpEthApi<N>;
 }
 
 /// A regular optimism evm and executor builder.
@@ -94,12 +119,20 @@ pub struct OptimismExecutorBuilder;
 
 impl<Node> ExecutorBuilder<Node> for OptimismExecutorBuilder
 where
-    Node: FullNodeTypes,
+    Node: FullNodeTypes<ChainSpec = ChainSpec>,
 {
     type EVM = OptimismEvmConfig;
+    type Executor = OpExecutorProvider<Self::EVM>;
 
-    async fn build_evm(self, _ctx: &BuilderContext<Node>) -> eyre::Result<Self::EVM> {
-        Ok(OptimismEvmConfig::default())
+    async fn build_evm(
+        self,
+        ctx: &BuilderContext<Node>,
+    ) -> eyre::Result<(Self::EVM, Self::Executor)> {
+        let chain_spec = ctx.chain_spec();
+        let evm_config = OptimismEvmConfig::default();
+        let executor = OpExecutorProvider::new(chain_spec, evm_config);
+
+        Ok((evm_config, executor))
     }
 }
 
@@ -113,24 +146,29 @@ pub struct OptimismPoolBuilder;
 
 impl<Node> PoolBuilder<Node> for OptimismPoolBuilder
 where
-    Node: FullNodeTypes,
+    Node: FullNodeTypes<ChainSpec = ChainSpec>,
 {
     type Pool = OpTransactionPool<Node::Provider, DiskFileBlobStore>;
 
     async fn build_pool(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::Pool> {
-        let data_dir = ctx.data_dir();
-        let blob_store = DiskFileBlobStore::open(data_dir.blobstore_path(), Default::default())?;
+        let data_dir = ctx.config().datadir();
+        let blob_store = DiskFileBlobStore::open(data_dir.blobstore(), Default::default())?;
 
         let validator = TransactionValidationTaskExecutor::eth_builder(ctx.chain_spec())
             .with_head_timestamp(ctx.head().timestamp)
             .kzg_settings(ctx.kzg_settings()?)
-            .with_additional_tasks(1)
+            .with_additional_tasks(ctx.config().txpool.additional_validation_tasks)
             .build_with_tasks(
                 ctx.provider().clone(),
                 ctx.task_executor().clone(),
                 blob_store.clone(),
             )
-            .map(OpTransactionValidator::new);
+            .map(|validator| {
+                OpTransactionValidator::new(validator)
+                    // In --dev mode we can't require gas fees because we're unable to decode the L1
+                    // block info
+                    .require_l1_data_gas_fee(!ctx.config().dev.dev)
+            });
 
         let transaction_pool = reth_transaction_pool::Pool::new(
             validator,
@@ -139,7 +177,7 @@ where
             ctx.pool_config(),
         );
         info!(target: "reth::cli", "Transaction pool initialized");
-        let transactions_path = data_dir.txpool_transactions_path();
+        let transactions_path = data_dir.txpool_transactions();
 
         // spawn txpool maintenance task
         {
@@ -203,7 +241,7 @@ impl<EVM> OptimismPayloadBuilder<EVM> {
 
 impl<Node, EVM, Pool> PayloadServiceBuilder<Node, Pool> for OptimismPayloadBuilder<EVM>
 where
-    Node: FullNodeTypes<Engine = OptimismEngineTypes>,
+    Node: FullNodeTypes<Engine = OptimismEngineTypes, ChainSpec = ChainSpec>,
     Pool: TransactionPool + Unpin + 'static,
     EVM: ConfigureEvm,
 {
@@ -212,11 +250,9 @@ where
         ctx: &BuilderContext<Node>,
         pool: Pool,
     ) -> eyre::Result<PayloadBuilderHandle<Node::Engine>> {
-        let payload_builder = reth_optimism_payload_builder::OptimismPayloadBuilder::new(
-            ctx.chain_spec(),
-            self.evm_config,
-        )
-        .set_compute_pending_block(self.compute_pending_block);
+        let payload_builder =
+            reth_optimism_payload_builder::OptimismPayloadBuilder::new(self.evm_config)
+                .set_compute_pending_block(self.compute_pending_block);
         let conf = ctx.payload_builder_config();
 
         let payload_job_config = BasicPayloadJobGeneratorConfig::default()
@@ -224,8 +260,7 @@ where
             .deadline(conf.deadline())
             .max_payload_tasks(conf.max_payload_tasks())
             // no extradata for OP
-            .extradata(Default::default())
-            .max_gas_limit(conf.max_gas_limit());
+            .extradata(Default::default());
 
         let payload_generator = BasicPayloadJobGenerator::with_builder(
             ctx.provider().clone(),
@@ -249,11 +284,13 @@ where
 pub struct OptimismNetworkBuilder {
     /// Disable transaction pool gossip
     pub disable_txpool_gossip: bool,
+    /// Disable discovery v4
+    pub disable_discovery_v4: bool,
 }
 
 impl<Node, Pool> NetworkBuilder<Node, Pool> for OptimismNetworkBuilder
 where
-    Node: FullNodeTypes,
+    Node: FullNodeTypes<ChainSpec = ChainSpec>,
     Pool: TransactionPool + Unpin + 'static,
 {
     async fn build_network(
@@ -261,8 +298,34 @@ where
         ctx: &BuilderContext<Node>,
         pool: Pool,
     ) -> eyre::Result<NetworkHandle> {
-        let Self { disable_txpool_gossip } = self;
-        let mut network_config = ctx.network_config()?;
+        let Self { disable_txpool_gossip, disable_discovery_v4 } = self;
+
+        let args = &ctx.config().network;
+        let network_builder = ctx
+            .network_config_builder()?
+            // apply discovery settings
+            .apply(|mut builder| {
+                let rlpx_socket = (args.addr, args.port).into();
+                if disable_discovery_v4 || args.discovery.disable_discovery {
+                    builder = builder.disable_discv4_discovery();
+                }
+                if !args.discovery.disable_discovery {
+                    builder = builder.discovery_v5(
+                        args.discovery.discovery_v5_builder(
+                            rlpx_socket,
+                            ctx.config()
+                                .network
+                                .resolved_bootnodes()
+                                .or_else(|| ctx.chain_spec().bootnodes())
+                                .unwrap_or_default(),
+                        ),
+                    );
+                }
+
+                builder
+            });
+
+        let mut network_config = ctx.build_network_config(network_builder);
 
         // When `sequencer_endpoint` is configured, the node will forward all transactions to a
         // Sequencer node for execution and inclusion on L1, and disable its own txpool
@@ -274,5 +337,25 @@ where
         let handle = ctx.start_network(network, pool, None);
 
         Ok(handle)
+    }
+}
+
+/// A basic optimism consensus builder.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
+pub struct OptimismConsensusBuilder;
+
+impl<Node> ConsensusBuilder<Node> for OptimismConsensusBuilder
+where
+    Node: FullNodeTypes<ChainSpec = ChainSpec>,
+{
+    type Consensus = Arc<dyn reth_consensus::Consensus>;
+
+    async fn build_consensus(self, ctx: &BuilderContext<Node>) -> eyre::Result<Self::Consensus> {
+        if ctx.is_dev() {
+            Ok(Arc::new(reth_auto_seal_consensus::AutoSealConsensus::new(ctx.chain_spec())))
+        } else {
+            Ok(Arc::new(OptimismBeaconConsensus::new(ctx.chain_spec())))
+        }
     }
 }

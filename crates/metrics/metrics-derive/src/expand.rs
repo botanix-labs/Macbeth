@@ -1,6 +1,6 @@
-use once_cell::sync::Lazy;
 use quote::{quote, ToTokens};
 use regex::Regex;
+use std::sync::LazyLock;
 use syn::{
     punctuated::Punctuated, Attribute, Data, DeriveInput, Error, Expr, Field, Lit, LitBool, LitStr,
     Meta, MetaNameValue, Result, Token,
@@ -11,8 +11,8 @@ use crate::{metric::Metric, with_attrs::WithAttrs};
 /// Metric name regex according to Prometheus data model
 ///
 /// See <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>
-static METRIC_NAME_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z_:.][a-zA-Z0-9_:.]*$").unwrap());
+static METRIC_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z_:.][a-zA-Z0-9_:.]*$").unwrap());
 
 /// Supported metrics separators
 const SUPPORTED_SEPARATORS: &[&str] = &[".", "_", ":"];
@@ -23,7 +23,7 @@ enum MetricField<'a> {
 }
 
 impl<'a> MetricField<'a> {
-    fn field(&self) -> &'a Field {
+    const fn field(&self) -> &'a Field {
         match self {
             MetricField::Included(Metric { field, .. }) | MetricField::Skipped(field) => field,
         }
@@ -220,7 +220,7 @@ impl MetricsAttr {
     fn separator(&self) -> String {
         match &self.separator {
             Some(sep) => sep.value(),
-            None => MetricsAttr::DEFAULT_SEPARATOR.to_owned(),
+            None => Self::DEFAULT_SEPARATOR.to_owned(),
         }
     }
 }
@@ -299,7 +299,7 @@ fn parse_metric_fields(node: &DeriveInput) -> Result<Vec<MetricField<'_>>> {
     };
 
     let mut metrics = Vec::with_capacity(data.fields.len());
-    for field in data.fields.iter() {
+    for field in &data.fields {
         let (mut describe, mut rename, mut skip) = (None, None, false);
         if let Some(metric_attr) = parse_single_attr(field, "metric")? {
             let parsed =
@@ -404,7 +404,7 @@ fn parse_single_required_attr<'a, T: WithAttrs + ToTokens>(
 
 fn parse_docs_to_string<T: WithAttrs>(token: &T) -> Result<Option<String>> {
     let mut doc_str = None;
-    for attr in token.attrs().iter() {
+    for attr in token.attrs() {
         if let syn::Meta::NameValue(ref meta) = attr.meta {
             if let Expr::Lit(ref lit) = meta.value {
                 if let Lit::Str(ref doc) = lit.lit {

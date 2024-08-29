@@ -2,18 +2,16 @@
 
 use alloy_rlp::{RlpDecodableWrapper, RlpEncodableWrapper};
 use derive_more::{Constructor, Deref, IntoIterator};
-use reth_codecs::derive_arbitrary;
+use reth_codecs_derive::add_arbitrary_tests;
 use reth_primitives::{
     transaction::TransactionConversionError, PooledTransactionsElement, TransactionSigned, B256,
 };
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// A list of transaction hashes that the peer would like transaction bodies for.
-#[derive_arbitrary(rlp)]
 #[derive(Clone, Debug, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[add_arbitrary_tests(rlp)]
 pub struct GetPooledTransactions(
     /// The transaction hashes to request transaction bodies for.
     pub Vec<B256>,
@@ -24,7 +22,7 @@ where
     T: Into<B256>,
 {
     fn from(hashes: Vec<T>) -> Self {
-        GetPooledTransactions(hashes.into_iter().map(|h| h.into()).collect())
+        Self(hashes.into_iter().map(|h| h.into()).collect())
     }
 }
 
@@ -48,7 +46,7 @@ where
     Deref,
     Constructor,
 )]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PooledTransactions(
     /// The transaction bodies, each of which should correspond to a requested hash.
     pub Vec<PooledTransactionsElement>,
@@ -71,7 +69,7 @@ impl TryFrom<Vec<TransactionSigned>> for PooledTransactions {
 
 impl FromIterator<PooledTransactionsElement> for PooledTransactions {
     fn from_iter<I: IntoIterator<Item = PooledTransactionsElement>>(iter: I) -> Self {
-        PooledTransactions(iter.into_iter().collect())
+        Self(iter.into_iter().collect())
     }
 }
 
