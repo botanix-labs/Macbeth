@@ -439,10 +439,11 @@ where
                 transaction_signed.encode_enveloped(&mut tx_bytes);
                 let hex = hex::encode(tx_bytes);
                 // TODO is this anti pattern? Should we send this req over a channel?
-                tokio::spawn(async move {
-                    // TODO remove this expect
-                    comet_bft_rpc_client.broadcast_tx_async(hex).await.expect("broadcast tx");
-                });
+                // Commenting out this out for now as we prepare proposals from our mempool NOT
+                // CometBFT's tokio::spawn(async move {
+                //     // TODO remove this expect
+                //     comet_bft_rpc_client.broadcast_tx_async(hex).await.expect("broadcast tx");
+                // });
 
                 let sender_id = self.get_sender_id(transaction.sender());
                 let transaction_id = TransactionId::new(sender_id, transaction.nonce());
