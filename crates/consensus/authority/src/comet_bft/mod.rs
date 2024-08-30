@@ -1,4 +1,5 @@
 pub mod abci;
+pub mod light_client;
 pub mod non_deterministic_data;
 pub mod utils;
 
