@@ -3,12 +3,11 @@ use std::io;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::{sha256, Hash},
-    secp256k1, witness,
+    witness,
 };
 use reth_primitives_traits::constants::nums_secp256k1_pk;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
-//use crate::constants::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;

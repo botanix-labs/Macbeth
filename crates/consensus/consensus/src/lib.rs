@@ -166,16 +166,16 @@ pub trait Consensus: Debug + Send + Sync {
 }
 
 /// Invalid Aggregated Public Key Error
-#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, derive_more::Display)]
 pub enum InvalidAggregatedPublicKeyError {
     /// Aggregated public key does not match expected key
-    #[error("Aggregated public key does not match expected key")]
+    #[display("Aggregated public key does not match expected key")]
     InvalidAggregatedPublicKey,
     /// Aggregated public key is missing
-    #[error("Aggregated public key is missing")]
+    #[display("Aggregated public key is missing")]
     MissingAggregatedPublicKey,
     /// Aggregated public key should not be NUMS point past genesis block
-    #[error("Aggregated public key should not be NUMS point past genesis block")]
+    #[display("Aggregated public key should not be NUMS point past genesis block")]
     NumsAggregatePublicKeyPastGenesis,
 }
 
@@ -191,34 +191,39 @@ pub enum ConsensusError {
         gas_limit: u64,
     },
     /// PoA specific: missing quorum of authority signatures
-    #[error("Missing quorum of authority signatures, expected: {0}, got: {1}")]
-    MissingQuorumOfAuthoritySignatures(u16, u16),
+    #[display("Missing quorum of authority signatures, expected: {expected}, got: {actual}")]
+    MissingQuorumOfAuthoritySignatures {
+        /// The expected quorum of authority signatures.
+        expected: u16,
+        /// The actual quorum of authority signatures.
+        actual: u16 
+    },
     /// PoA specific: authority list is missing in the extra data header
-    #[error("Missing authority list")]
+    #[display("Missing authority list")]
     MissingAuthorityList,
     /// PoA specific: authority list does not match the genesis block authority list
-    #[error("Invalid authority list")]
+    #[display("Invalid authority list")]
     InvalidAuthorityList,
     /// PoA specific: Invalid block signature
-    #[error("Invalid authority signature")]
+    #[display("Invalid authority signature")]
     InvalidAuthoritySignature,
     /// PoA specific: extra data header does not follow consensus rules or is malformed
-    #[error("Invalid extra data")]
+    #[display("Invalid extra data")]
     ExtraDataInvalid,
     /// PoA specific: failed to recover authority from block signature
-    #[error("Failed to recover authority")]
+    #[display("Failed to recover authority")]
     FailedToRecoverAuthority,
     /// PoA specific: same signer as previous block
-    #[error("Same signer as previous block")]
+    #[display("Same signer as previous block")]
     SignerLimitExceeded,
     /// PoA specific: authority signer not in turn
-    #[error("Authority signer not in turn")]
+    #[display("Authority signer not in turn")]
     AuthorityNotInTurn,
     /// PoA specific: block beneficiary is not an authority
-    #[error("block beneficiary is not an authority")]
+    #[display("block beneficiary is not an authority")]
     BlockBeneficiaryIsNotAuthority,
     /// PoA specific: block beneficiary is not the burn address
-    #[error("block beneficiary is not the burn address")]
+    #[display("block beneficiary is not the burn address")]
     BlockBeneficiaryIsNotBurnAddress,
 
     /// Error when block gas used doesn't match expected value
@@ -306,7 +311,7 @@ pub enum ConsensusError {
     },
 
     /// Error when the block timestamp is in the past compared to our clock time.
-    #[error(
+    #[display(
         "block timestamp {timestamp} is in the past compared to our clock time {present_timestamp}"
     )]
     TimestampIsInPast {
@@ -330,6 +335,14 @@ pub enum ConsensusError {
         /// The length of the extra data.
         len: usize,
     },
+
+    /// Consensus error during PBFT
+    #[display("PBFT Consensus error")]
+    PBFTConsensusError,
+
+    /// TODO should pass error to this variant
+    #[display("Failed to construct Botanix Consensus Pkg")]
+    BotanixConsensusPkgError(),
 
     /// Error when the difficulty after a merge is not zero.
     #[display("difficulty after merge is not zero")]
@@ -429,20 +442,20 @@ pub enum ConsensusError {
     /// Error for a transaction that violates consensus.
     InvalidTransaction(InvalidTransactionError),
 
-    /// Error type transparently wrapping HeaderValidationError.
-    #[error(transparent)]
-    HeaderValidationError(#[from] HeaderValidationError),
+    // /// Error type transparently wrapping HeaderValidationError.
+    // #[display("failed to validate header: {_0}")]
+    // HeaderValidationError(HeaderValidationError),
 
     /// Inturn Validation Error
-    #[error("in turn validation error")]
+    #[display("in turn validation error")]
     ValidateInturnError,
 
     /// Invalid Aggregated Public key
-    #[error("invalid aggregated public key")]
-    InvalidAggregatedPublicKey(#[from] InvalidAggregatedPublicKeyError),
+    #[display("invalid aggregated public key: {_0}")]
+    InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError),
 
     /// Invalid Chain Version
-    #[error("invalid chain version")]
+    #[display("invalid chain version")]
     InvalidChainVersion,
     
     /// Error when the block's base fee is different from the expected base fee.
@@ -493,16 +506,9 @@ pub enum ConsensusError {
         child_gas_limit: u64,
     },
 
-    /// Error when the block timestamp is in the past compared to the parent timestamp.
-    #[display(
-        "block timestamp {timestamp} is in the past compared to the parent timestamp {parent_timestamp}"
-    )]
-    TimestampIsInPast {
-        /// The parent block's timestamp.
-        parent_timestamp: u64,
-        /// The block's timestamp.
-        timestamp: u64,
-    },
+    /// Cannot add and existing federation memeber to the federation
+    #[display("Cannot add and existing federation memeber to the federation")]
+    CannotAddExistingFederationMember,
 }
 
 #[cfg(feature = "std")]

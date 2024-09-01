@@ -20,6 +20,8 @@ use reth_codecs::{add_arbitrary_tests, Compact};
 use revm_primitives::{calc_blob_gasprice, calc_excess_blob_gas};
 use serde::{Deserialize, Serialize};
 
+use crate::constants::EPOCH_LENGTH;
+
 /// Block header
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Compact)]
 #[add_arbitrary_tests(rlp, 25)]
@@ -279,6 +281,12 @@ impl Header {
     pub fn seal_slow(self) -> SealedHeader {
         let hash = self.hash_slow();
         self.seal(hash)
+    }
+
+    /// Returns true if header repersents the start of an epoch
+    #[inline]
+    pub fn is_poa_epoch(&self) -> bool {
+        self.number % EPOCH_LENGTH == 0
     }
 
     /// Calculate a heuristic for the in-memory size of the [Header].

@@ -489,37 +489,37 @@ impl From<SealedBlock> for Block {
     }
 }
 
-/// Botanix protocol specific we need to covert sealed blocks in PoA consensus
-/// to execution payload for the execution engine.
-impl From<SealedBlock> for ExecutionPayload {
-    fn from(value: SealedBlock) -> Self {
-        let transactions = value
-            .body
-            .iter()
-            .map(|tx| {
-                let mut encoded = Vec::new();
-                tx.encode_enveloped(&mut encoded);
-                encoded.into()
-            })
-            .collect();
-        ExecutionPayload::V1(ExecutionPayloadV1 {
-            parent_hash: value.parent_hash,
-            fee_recipient: value.beneficiary,
-            state_root: value.state_root,
-            receipts_root: value.receipts_root,
-            logs_bloom: value.logs_bloom,
-            prev_randao: value.mix_hash,
-            block_number: value.number,
-            gas_limit: value.gas_limit,
-            gas_used: value.gas_used,
-            timestamp: value.timestamp,
-            extra_data: value.extra_data.clone(),
-            base_fee_per_gas: U256::from(value.base_fee_per_gas.unwrap_or_default()),
-            block_hash: value.hash(),
-            transactions,
-        })
-    }
-}
+// /// Botanix protocol specific we need to covert sealed blocks in PoA consensus
+// /// to execution payload for the execution engine.
+// impl From<SealedBlock> for ExecutionPayload {
+//     fn from(value: SealedBlock) -> Self {
+//         let transactions = value
+//             .body
+//             .iter()
+//             .map(|tx| {
+//                 let mut encoded = Vec::new();
+//                 tx.encode_enveloped(&mut encoded);
+//                 encoded.into()
+//             })
+//             .collect();
+//         ExecutionPayload::V1(ExecutionPayloadV1 {
+//             parent_hash: value.parent_hash,
+//             fee_recipient: value.beneficiary,
+//             state_root: value.state_root,
+//             receipts_root: value.receipts_root,
+//             logs_bloom: value.logs_bloom,
+//             prev_randao: value.mix_hash,
+//             block_number: value.number,
+//             gas_limit: value.gas_limit,
+//             gas_used: value.gas_used,
+//             timestamp: value.timestamp,
+//             extra_data: value.extra_data.clone(),
+//             base_fee_per_gas: U256::from(value.base_fee_per_gas.unwrap_or_default()),
+//             block_hash: value.hash(),
+//             transactions,
+//         })
+//     }
+// }
 
 #[cfg(any(test, feature = "test-utils"))]
 impl std::ops::DerefMut for SealedBlock {

@@ -13,7 +13,6 @@ workspace = true
 
 [dependencies]
 reth-codecs.workspace = true
-
 alloy-consensus = { workspace = true, features = ["serde"] }
 alloy-eips.workspace = true
 alloy-genesis.workspace = true

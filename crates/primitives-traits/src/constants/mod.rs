@@ -170,6 +170,20 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 /// <https://github.com/ethereum/go-ethereum/blob/a196f3e8a22b6ad22ced5c2e3baf32bc3ebd4ec9/consensus/ethash/consensus.go#L227-L229>
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
+/// EIP-225: Clique Proof-of-Authority consensus protocol.
+
+/// The number of blocks to reset pending votes.
+pub const EPOCH_LENGTH: u64 = 3;
+
+/// Minimum difference between two consecutive block’s timestamps.
+pub const BLOCK_PERIOD: u64 = 1000;
+
+/// Magic nonce number 0xffffffffffffffff to vote on adding a new signer. Used in PoA
+pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
+
+/// Magic nonce number 0x0000000000000000 to vote on removing a signer. Used in PoA
+pub const NONCE_DROP: u64 = 0x0000000000000000;
+
 /// "nothing up my sleve" NUMS point for the secp256k1 curve.
 /// Used as the first aggregate key for the botanix gensis block
 /// consensus should check that this key is being used in genesis and post genesis block is not

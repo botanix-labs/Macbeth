@@ -108,17 +108,32 @@ pub enum BlockValidationError {
         /// The error message.
         message: String,
     },
+
+    /// Missing aggregate public key
+    #[display("Missing aggregate public key")]
+    MissingAggregatePublicKey(),
+
     /// Poa specific error when Extra data header is invalid
-    #[error("Invalid extra header")]
+    #[display("Invalid extra header")]
     InvalidExtraData,
+
     /// Poa specific error when Extra data header is failed to deserialize
-    #[error("Failed to serialize extra header")]
+    #[display("Failed to serialize extra header")]
     ExtraDataSerializeError,
+
+    /// Bitcoin recent header is not available
+    #[display("Bitcoin recent header is not available")]
+    BitcoinRecentHeaderNotAvailable,
+
+    /// Failed to deserialize previous block header
+    #[display("Failed to deserialize previous block header")]
+    FailedToDeserializePreviousBlockHeader,
+
     /// Error when witness data is missing for a pegout psbt
-    #[error("Missing witness data for pegout psbt")]
+    #[display("Missing witness data for pegout psbt")]
     MissingWitnessData,
     /// Poa specific error when EDH authorities fail validation
-    #[error("Invalid authorities in EDH")]
+    #[display("Invalid authorities in EDH")]
     InvalidExtraDataAuthorities,
 
     /// Provider error during the [EIP-2935] block hash account loading.
@@ -175,29 +190,29 @@ pub enum BlockExecutionError {
     /// Internal, i.e. non consensus or validation related Block Executor Errors
     Internal(InternalBlockExecutionError),
 
-    /// Cannot add and existing federation memeber to the federation
-    #[error("Cannot add and existing federation memeber to the federation")]
-    CannotAddExistingFederationMember,
+    // /// Cannot add and existing federation memeber to the federation
+    // #[display("Cannot add and existing federation memeber to the federation")]
+    // CannotAddExistingFederationMember,
 
-    /// Failed to deserialize previous block header
-    #[error("Failed to deserialize previous block header")]
-    FailedToDeserializePreviousBlockHeader,
+    // /// Failed to deserialize previous block header
+    // #[display("Failed to deserialize previous block header")]
+    // FailedToDeserializePreviousBlockHeader,
 
-    /// Bitcoin recent header is not available
-    #[error("Bitcoin recent header is not available")]
-    BitcoinRecentHeaderNotAvailable,
+    // /// Bitcoin recent header is not available
+    // #[display("Bitcoin recent header is not available")]
+    // BitcoinRecentHeaderNotAvailable,
 
-    /// Consensus error during PBFT
-    #[error("PBFT Consensus error: {0}")]
-    PBFTConsensusError(#[from] ConsensusError),
+    // /// Consensus error during PBFT
+    // #[display("PBFT Consensus error: {_0}")]
+    // PBFTConsensusError(ConsensusError),
 
-    /// TODO should pass error to this variant
-    #[error("Failed to construct Botanix Consensus Pkg")]
-    BotanixConsensusPkgError(),
+    // /// TODO should pass error to this variant
+    // #[display("Failed to construct Botanix Consensus Pkg")]
+    // BotanixConsensusPkgError(),
 
-    /// Missing aggregate public key
-    #[error("Missing aggregate public key")]
-    MissingAggregatePublicKey(),
+    // /// Missing aggregate public key
+    // #[display("Missing aggregate public key")]
+    // MissingAggregatePublicKey(),
 }
 
 impl BlockExecutionError {
