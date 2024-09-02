@@ -148,7 +148,7 @@ impl Encode for PruneSegment {
 
     fn encode(self) -> Self::Encoded {
         let mut buf = [0u8];
-        self.to_compact(&mut buf.as_mut());
+        self.to_compact::<&mut [u8]>(&mut buf.as_mut());
         buf
     }
 }
