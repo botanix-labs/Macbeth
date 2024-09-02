@@ -11,6 +11,8 @@ use reth_rpc_server_types::constants::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::botanix_config::BotanixConfig;
+
 /// Default value for stale filter ttl
 pub const DEFAULT_STALE_FILTER_TTL: Duration = Duration::from_secs(5 * 60);
 

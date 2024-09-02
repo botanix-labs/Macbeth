@@ -12,7 +12,6 @@ pub use core::EthApi;
 pub use filter::EthFilter;
 pub use pubsub::EthPubSub;
 
-pub mod botanix_config;
 pub use helpers::signer::DevSigner;
 
 pub use reth_rpc_eth_api::{EthApiServer, RawTransactionForwarder};

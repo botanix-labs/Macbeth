@@ -54,6 +54,19 @@ schnellru.workspace = true
 rand.workspace = true
 tracing.workspace = true
 
+## Bitcoin
+bitcoin.workspace = true
+bitcoincore-rpc.workspace = true
+secp256k1.workspace = true
+reth-btc-wallet.workspace = true
+
+## url
+url = "2.2"
+
+# Botanix Btc server gRPC client
+client = {path = "../../../bin/btc-server/client"}
+btc-server = {path = "../../../bin/btc-server"}
+
 [dev-dependencies]
 serde_json.workspace = true
 

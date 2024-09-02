@@ -2,7 +2,7 @@
 
 use std::{fmt, str::FromStr};
 
-use alloy_primitives::hex;
+use revm_primitives::alloy_primitives::hex;
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::jwt::JwtSecret;
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};

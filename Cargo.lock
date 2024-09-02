@@ -10333,12 +10333,17 @@ name = "reth-rpc-eth-types"
 version = "1.0.5"
 dependencies = [
  "alloy-sol-types",
+ "bitcoin",
+ "bitcoincore-rpc",
+ "btc-server",
+ "client",
  "derive_more 1.0.0",
  "futures 0.3.30",
  "jsonrpsee-core",
  "jsonrpsee-types",
  "metrics",
  "rand 0.8.5",
+ "reth-btc-wallet",
  "reth-chain-state",
  "reth-chainspec",
  "reth-errors",
@@ -10358,12 +10363,14 @@ dependencies = [
  "revm-inspectors",
  "revm-primitives",
  "schnellru",
+ "secp256k1 0.29.0",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tokio-stream",
  "tracing",
+ "url",
 ]
 
 [[package]]

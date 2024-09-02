@@ -132,7 +132,7 @@ where
                     let ommers = vec![];
 
                     // Using mock here as we don't need to actually connect to a bitcoind instance
-                    match storage.build_and_execute::<_, MockBitcoindFactory>(
+                    match storage.build_and_execute(
                         transactions.clone(),
                         ommers.clone(),
                         &client,
