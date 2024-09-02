@@ -20,7 +20,7 @@ use reth_evm::{
 };
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
-    BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256,
+    BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256, Address,
 };
 use reth_prune_types::PruneModes;
 use reth_revm::{
@@ -168,6 +168,7 @@ where
         // execute transactions
         let mut total_block_fees = 0_u128;
         let mut cumulative_gas_used = 0;
+        let base_fee = block.base_fee_per_gas;
         let mut receipts = Vec::with_capacity(block.body.len());
         for (sender, transaction) in block.transactions_with_sender() {
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,

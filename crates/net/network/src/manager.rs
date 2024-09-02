@@ -53,7 +53,7 @@ use crate::{
     },
     import::{BlockImport, BlockImportOutcome, BlockValidation},
     listener::ConnectionListener,
-    message::{NewBlockMessage, PeerMessage, PeerRequest, PeerRequestSender},
+    message::{NewBlockMessage, PeerMessage, PeerRequestSender},
     metrics::{
         DisconnectMetrics, NetworkMetrics, NETWORK_FROST_SCOPE, NETWORK_POOL_TRANSACTIONS_SCOPE,
     },

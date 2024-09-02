@@ -3,7 +3,7 @@ use core::str::FromStr;
 use crate::precompile::HashMap;
 use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
 use reth_chainspec::{ChainSpec, EthereumHardforks};
-use reth_consensus_common::calc;
+use reth_consensus_common::{calc, utils};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_primitives::{Address, Block, Withdrawal, Withdrawals, B256, U256};
 use reth_storage_errors::provider::ProviderError;
