@@ -113,6 +113,7 @@ struct EthExecuteOutput {
     receipts: Vec<Receipt>,
     requests: Vec<Request>,
     gas_used: u64,
+    total_block_fees: u128,
 }
 
 /// Helper container type for EVM with chain spec.
@@ -165,6 +166,7 @@ where
         )?;
 
         // execute transactions
+        let mut total_block_fees = 0_u128;
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.len());
         for (sender, transaction) in block.transactions_with_sender() {
@@ -197,6 +199,11 @@ where
                 }
             })?;
             evm.db_mut().commit(state);
+
+            // calclaute the total block fees
+            let transaction_fee =
+                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
+            total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             // append gas used
             cumulative_gas_used += result.gas_used();
@@ -235,7 +242,7 @@ where
             vec![]
         };
 
-        Ok(EthExecuteOutput { receipts, requests, gas_used: cumulative_gas_used })
+        Ok(EthExecuteOutput { receipts, requests, gas_used: cumulative_gas_used, total_block_fees })
     }
 }
 
@@ -304,6 +311,7 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        block_builder_address: Option<Address>,
     ) -> Result<EthExecuteOutput, BlockExecutionError> {
         // 1. prepare state on new block
         self.on_new_block(&block.header);
@@ -316,7 +324,7 @@ where
         }?;
 
         // 3. apply post execution changes
-        self.post_execution(block, total_difficulty)?;
+        self.post_execution(block, total_difficulty, Some(output.total_block_fees), block_builder_address)?;
 
         Ok(output)
     }
@@ -334,9 +342,11 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        total_block_fees: Option<u128>,
+        block_builder_address: Option<Address>,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments =
-            post_block_balance_increments(self.chain_spec(), block, total_difficulty);
+            post_block_balance_increments(self.chain_spec(), block, total_difficulty, total_block_fees, block_builder_address);
 
         // Irregular state change at Ethereum DAO hardfork
         if self.chain_spec().fork(EthereumHardfork::Dao).transitions_at_block(block.number) {
@@ -376,8 +386,8 @@ where
     /// Returns an error if the block could not be executed or failed verification.
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
         let BlockExecutionInput { block, total_difficulty } = input;
-        let EthExecuteOutput { receipts, requests, gas_used } =
-            self.execute_without_verification(block, total_difficulty)?;
+        let EthExecuteOutput { receipts, requests, gas_used, total_block_fees } =
+            self.execute_without_verification(block, total_difficulty, None)?; // TODO: check block address
 
         // NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
@@ -423,8 +433,8 @@ where
             self.batch_record.set_first_block(block.number);
         }
 
-        let EthExecuteOutput { receipts, requests, gas_used: _ } =
-            self.executor.execute_without_verification(block, total_difficulty)?;
+        let EthExecuteOutput { receipts, requests, gas_used: _, total_block_fees: _ } =
+            self.executor.execute_without_verification(block, total_difficulty, None)?;  // TODO: check block address
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
@@ -589,6 +599,7 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
+                None,
             )
             .unwrap();
 

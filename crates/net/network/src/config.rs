@@ -152,7 +152,7 @@ where
     /// Starts the networking stack given a [`NetworkConfig`] and returns a handle to the network.
     pub async fn start_network(self) -> Result<NetworkHandle, NetworkError> {
         let client = self.client.clone();
-        let (handle, network, _txpool, eth, x) = NetworkManager::builder::<C>(self)
+        let (handle, network, _txpool, eth, _) = NetworkManager::builder::<C>(self)
             .await?
             .request_handler::<C>(client)
             .split_with_handle();

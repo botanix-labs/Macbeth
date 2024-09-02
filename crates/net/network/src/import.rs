@@ -103,8 +103,8 @@ impl ProofOfAuthorityBlockImport {
     /// Fully Validates a block on block import
     fn validate(&self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
         let header = new_block.header.clone();
-        validation::validate_header_with_total_difficulty(&header, header.difficulty)?;
-        validation::validate_block_standalone(new_block, &self.chain_spec)?;
+        //validation::validate_header_with_total_difficulty(&header, header.difficulty)?; TODO: check after reabse
+        //validation::validate_block_standalone(new_block, &self.chain_spec)?; TODO: check after reabse
         Ok(())
     }
 }

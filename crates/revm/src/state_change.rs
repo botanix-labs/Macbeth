@@ -1,3 +1,5 @@
+use core::str::FromStr;
+
 use crate::precompile::HashMap;
 use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
 use reth_chainspec::{ChainSpec, EthereumHardforks};
@@ -19,6 +21,8 @@ pub fn post_block_balance_increments(
     chain_spec: &ChainSpec,
     block: &Block,
     total_difficulty: U256,
+    total_block_fees: Option<u128>,
+    block_builder_address: Option<Address>,
 ) -> HashMap<Address, u128> {
     let mut balance_increments = HashMap::new();
 

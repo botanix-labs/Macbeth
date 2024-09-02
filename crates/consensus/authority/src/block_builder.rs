@@ -351,6 +351,7 @@ where
             body: transactions,
             ommers: vec![],
             withdrawals: None,
+            requests: None,
         };
         // Propose block to network for commitments
         self.pbft_task_tx

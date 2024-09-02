@@ -57,7 +57,7 @@ pub(crate) mod authority_execution_utils {
             agg_pk,
         )?;
 
-        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None };
+        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None, };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
@@ -103,7 +103,7 @@ pub(crate) mod authority_execution_utils {
         genesis_authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
-        let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None };
+        let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None, requests: None, };
 
         // fill in the rest of the fields
         let header = complete_header(
@@ -268,6 +268,7 @@ pub(crate) mod authority_execution_utils {
             excess_blob_gas: None,
             extra_data: Bytes::from(edh.serialize()),
             parent_beacon_block_root: None,
+            requests_root: None,
         };
 
         // TODO (armins) Poa shouldnt be minging empty blocks

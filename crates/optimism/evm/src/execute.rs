@@ -319,7 +319,7 @@ where
         total_difficulty: U256,
     ) -> Result<(), BlockExecutionError> {
         let balance_increments =
-            post_block_balance_increments(self.chain_spec(), block, total_difficulty);
+            post_block_balance_increments(self.chain_spec(), block, total_difficulty, None, None);
         // increment balances
         self.state
             .increment_balances(balance_increments)
