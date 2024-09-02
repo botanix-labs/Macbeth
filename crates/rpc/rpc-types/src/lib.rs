@@ -11,7 +11,7 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 
-mod botanix;
+pub mod botanix;
 #[allow(hidden_glob_reexports)]
 mod eth;
 

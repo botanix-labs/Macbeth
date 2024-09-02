@@ -10,14 +10,10 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
     transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
+use reth_rpc_eth_types::builder::botanix_config::{BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError};
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
-    serde_helpers::JsonStorageKey,
-    simulate::{SimBlock, SimulatedBlock},
-    state::{EvmOverrides, StateOverride},
-    AnyTransactionReceipt, Block, BlockOverrides, Bundle, EIP1186AccountProofResponse,
-    EthCallResponse, FeeHistory, Header, Index, RichBlock, StateContext, SyncStatus, Transaction,
-    TransactionRequest, Work, GatewayAddress
+    botanix::GatewayAddress, serde_helpers::JsonStorageKey, simulate::{SimBlock, SimulatedBlock}, state::{EvmOverrides, StateOverride}, AnyTransactionReceipt, Block, BlockOverrides, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Header, Index, RichBlock, StateContext, SyncStatus, Transaction, TransactionRequest, Work
 };
 
 use tracing::trace;
@@ -429,7 +425,7 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(&self, eth_address: Address) -> Result<Option<GatewayAddress>> {
+    async fn gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
         trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
         let address = match EthApi::get_gateway_address(self, eth_address).await {
             Ok(value) => Some(GatewayAddress {
@@ -443,7 +439,7 @@ where
     }
 
     /// Handler from `eth_getMerkleProof`
-    async fn merkle_proof(&self, txid: String, block_hash: String) -> Result<Bytes> {
+    async fn merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes> {
         trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
         let merkle_proof = match EthApi::get_merkle_proof(self, txid, block_hash).await {
             Ok(value) => Bytes::from(value),
@@ -453,7 +449,7 @@ where
     }
 
     /// Handler for: `eth_getBtcFeeRate`
-    async fn btc_fee_rate(&self) -> Result<Option<U256>> {
+    async fn btc_fee_rate(&self) -> RpcResult<Option<U256>> {
         trace!(target: "rpc::eth", "Serving eth_getBtcFeeRate");
         let fee_rate = match EthApi::get_btc_fee_rate(self).await {
             Ok(value) => Some(value),

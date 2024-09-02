@@ -10302,6 +10302,7 @@ dependencies = [
  "alloy-dyn-abi",
  "async-trait",
  "auto_impl",
+ "bitcoin",
  "dyn-clone",
  "futures 0.3.30",
  "jsonrpsee",
@@ -10324,6 +10325,7 @@ dependencies = [
  "revm",
  "revm-inspectors",
  "revm-primitives",
+ "secp256k1 0.29.0",
  "tokio",
  "tracing",
 ]
