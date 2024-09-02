@@ -28,7 +28,7 @@ pub struct NetworkBuilder<Tx, Eth> {
 
 impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
     /// Consumes the type and returns all fields.
-    pub fn split(self) -> (NetworkManager<C>, Tx, Eth, Option<FrostManager>) {
+    pub fn split(self) -> (NetworkManager, Tx, Eth, Option<FrostManager>) {
         let NetworkBuilder { network, transactions, request_handler, frost_manager } = self;
         (network, transactions, request_handler, frost_manager)
     }
@@ -51,14 +51,14 @@ impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
     /// Consumes the type and returns all fields and also return a [`NetworkHandle`].
     pub fn split_with_handle(
         self,
-    ) -> (NetworkHandle, NetworkManager<C>, Tx, Eth, Option<FrostManager>) {
+    ) -> (NetworkHandle, NetworkManager, Tx, Eth, Option<FrostManager>) {
         let NetworkBuilder { network, transactions, request_handler, frost_manager } = self;
         let handle = network.handle().clone();
         (handle, network, transactions, request_handler, frost_manager)
     }
 
     /// Creates a new [`FrostManager`] and wires it to the network.
-    pub fn frost(self, frost_config: Option<FrostConfig>) -> NetworkBuilder<C, Tx, Eth> {
+    pub fn frost(self, frost_config: Option<FrostConfig>) -> NetworkBuilder<Tx, Eth> {
         if frost_config.is_none() {
             self
         } else {

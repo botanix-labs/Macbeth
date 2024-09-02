@@ -1,12 +1,14 @@
 //! Module for block import.
 /// Allows other components to import blocks from the network
 use crate::message::NewBlockMessage;
+use reth_chainspec::ChainSpec;
 use reth_consensus::ConsensusError;
 use reth_consensus_common::validation;
-use reth_primitives::{ChainSpec, SealedBlock};
+use reth_network_api::PeerId;
+use reth_primitives::SealedBlock;
 use tokio::sync::mpsc::UnboundedSender;
 
-use reth_network_types::PeerId;
+// use reth_network_types::PeerId;
 use std::{
     collections::VecDeque,
     sync::Arc,

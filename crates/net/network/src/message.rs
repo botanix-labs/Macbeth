@@ -4,8 +4,7 @@
 //! Capabilities are exchanged via the `RLPx` `Hello` message as pairs of `(id, version)`, <https://github.com/ethereum/devp2p/blob/master/rlpx.md#capability-messaging>
 
 use std::{
-    sync::Arc,
-    task::{ready, Context, Poll},
+    fmt, sync::Arc, task::{ready, Context, Poll}
 };
 
 use futures::FutureExt;
@@ -16,10 +15,11 @@ use reth_eth_wire::{
 };
 use reth_network_api::PeerRequest;
 use reth_network_p2p::error::{RequestError, RequestResult};
+use reth_network_peers::PeerId;
 use reth_primitives::{
     BlockBody, Bytes, Header, PooledTransactionsElement, ReceiptWithBloom, B256,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc::{self, error::TrySendError}, oneshot};
 
 /// Internal form of a `NewBlock` message
 #[derive(Debug, Clone)]

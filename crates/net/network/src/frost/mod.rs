@@ -3,8 +3,8 @@
 use core::fmt;
 
 use reth_network_api::Direction;
+use reth_network_peers::PeerId;
 use reth_primitives::SealedBlock;
-use reth_rpc_types::PeerId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 

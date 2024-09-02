@@ -27,16 +27,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{Future, StreamExt};
-use parking_lot::Mutex;
-use reth_eth_wire::{capability::CapabilityMessage, Capabilities, DisconnectReason};
 use reth_fs_util::{self as fs, FsPathError};
 use reth_metrics::common::mpsc::UnboundedMeteredSender;
 use reth_network_api::{
     test_utils::PeersHandle, EthProtocolInfo, NetworkEvent, NetworkStatus, PeerInfo, PeerRequest,
 };
-use reth_network_peers::{NodeRecord, PeerId};
-use reth_network_types::ReputationChangeKind;
+use reth_network_peers::{pk2id, NodeRecord, PeerId};
 use reth_storage_api::BlockNumReader;
 use reth_tasks::shutdown::GracefulShutdown;
 use reth_tokio_util::EventSender;
@@ -74,16 +70,11 @@ use crate::{
 use futures::{pin_mut, Future, StreamExt};
 use parking_lot::Mutex;
 use reth_eth_wire::{
-    capability::{Capabilities, CapabilityMessage},
+    Capabilities, capability::CapabilityMessage,
     DisconnectReason, EthVersion, Status,
 };
-use reth_net_common::bandwidth_meter::BandwidthMeter;
 use reth_network_api::ReputationChangeKind;
-use reth_network_types::{pk2id, PeerId};
-use reth_primitives::{ForkId, NodeRecord};
-use reth_provider::{BlockNumReader, BlockReader};
-use reth_rpc_types::{admin::EthProtocolInfo, NetworkStatus};
-use reth_tokio_util::EventListeners;
+use reth_primitives::ForkId;
 
 #[cfg_attr(doc, aquamarine::aquamarine)]
 /// Manages the _entire_ state of the network.
@@ -305,7 +296,7 @@ impl NetworkManager {
 
         // add frost protocol
         let (from_frost_protocol_events, from_frost_peers_messages) =
-            NetworkManager::<C>::add_frost_protocol(&handle, frost_config);
+            NetworkManager::add_frost_protocol(&handle, frost_config);
 
         Ok(Self {
             swarm,
@@ -361,7 +352,7 @@ impl NetworkManager {
     }
 
     /// Create a [`NetworkBuilder`] to configure all components of the network
-    pub fn into_builder(self) -> NetworkBuilder<C, (), ()> {
+    pub fn into_builder(self) -> NetworkBuilder<(), ()> {
         NetworkBuilder { network: self, transactions: (), request_handler: (), frost_manager: None }
     }
 

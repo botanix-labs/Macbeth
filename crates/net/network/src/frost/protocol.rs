@@ -4,8 +4,8 @@ use reth_eth_wire::{
     capability::SharedCapabilities, multiplex::ProtocolConnection, protocol::Protocol,
 };
 use reth_network_api::Direction;
+use reth_network_peers::PeerId;
 use reth_primitives::BytesMut;
-use reth_rpc_types::PeerId;
 use std::{
     net::SocketAddr,
     pin::Pin,

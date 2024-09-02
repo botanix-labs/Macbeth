@@ -6,7 +6,7 @@ use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use rand::Rng;
 use reth_network_api::Peers;
-use reth_rpc_types::PeerId;
+use reth_network_peers::PeerId;
 use std::{
     collections::HashMap,
     net::SocketAddr,
