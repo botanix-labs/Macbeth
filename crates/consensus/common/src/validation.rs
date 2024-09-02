@@ -2,6 +2,7 @@
 
 use std::collections::{hash_map::Entry, HashMap};
 
+use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
     constants::{
@@ -64,7 +65,7 @@ pub fn validate_block_pre_execution(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     // TODO(armins) refactor this to be more readable
-    if chain_spec.fork(Hardfork::Shanghai).active_at_timestamp(block.timestamp) &&
+    if chain_spec.is_shanghai_active_at_timestamp(block.timestamp) &&
         chain_spec.chain.id() != 3636
     {
         let withdrawals =
@@ -231,7 +232,7 @@ pub const fn validate_against_parent_timestamp(
 ) -> Result<(), ConsensusError> {
     if header.is_timestamp_in_past(parent.timestamp) {
         return Err(ConsensusError::TimestampIsInPast {
-            parent_timestamp: parent.timestamp,
+            present_timestamp: parent.timestamp,
             timestamp: header.timestamp,
         })
     }

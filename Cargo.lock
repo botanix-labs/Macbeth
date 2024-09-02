@@ -8515,6 +8515,7 @@ version = "1.0.5"
 dependencies = [
  "mockall",
  "rand 0.8.5",
+ "reth-blockchain-tree-api",
  "reth-chainspec",
  "reth-consensus",
  "reth-primitives",
