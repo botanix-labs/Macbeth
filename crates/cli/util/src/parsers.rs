@@ -1,5 +1,6 @@
 use alloy_eips::BlockHashOrNumber;
 use alloy_primitives::B256;
+use url::Url;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
     str::FromStr,
@@ -37,6 +38,21 @@ pub fn hash_or_num_value_parser(value: &str) -> eyre::Result<BlockHashOrNumber, 
     }
 }
 
+/// Parse a [SocketAddr] from a `str` prefixing with http.
+///
+/// An error is returned if the value is empty or if non socket value is passed
+pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {
+    if value.is_empty() {
+        return Err(SocketAddressParsingError::Empty);
+    }
+    // TODO configuarable for https
+    let addr = format!("http://{}", value);
+    tonic::transport::Endpoint::try_from(addr.clone()).map_err(|_e| {
+        SocketAddressParsingError::Parse("Failed to parse as tonic endpoint".to_string())
+    })?;
+    Ok(addr)
+}
+
 /// Error thrown while parsing a socket address.
 #[derive(thiserror::Error, Debug)]
 pub enum SocketAddressParsingError {
@@ -52,6 +68,20 @@ pub enum SocketAddressParsingError {
     /// Failed to parse port
     #[error("could not parse port: {0}")]
     Port(#[from] std::num::ParseIntError),
+}
+
+/// Parse a [URL] from a `str` value
+pub fn parse_url(value: &str) -> eyre::Result<Url, UrlParsingError> {
+    let url = Url::parse(value).map_err(|_e| UrlParsingError::Parse(value.to_owned()))?;
+    Ok(url)
+}
+
+/// Error thrown while parsing a URL
+#[derive(thiserror::Error, Debug)]
+pub enum UrlParsingError {
+    /// Failed to parse the address
+    #[error("Could not parse URL from {0}")]
+    Parse(String),
 }
 
 /// Parse a [`SocketAddr`] from a `str`.

@@ -1,9 +1,8 @@
 use clap::Args;
 use reth_btc_wallet::bitcoind::BitcoindConfig;
+use reth_cli_util::parsers::parse_url;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-use super::utils::parse_url;
 
 /// Default bitcoind url
 pub(crate) const DEFAULT_BITCOIND_URL: &str = "localhost:18443";

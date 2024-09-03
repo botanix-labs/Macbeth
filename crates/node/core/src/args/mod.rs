@@ -48,6 +48,10 @@ pub use dev::DevArgs;
 mod pruning;
 pub use pruning::PruningArgs;
 
+/// BitcoindArgs for configuration settings of the bitcoind instance
+mod bitcoind_args;
+pub use bitcoind_args::BitcoindArgs;
+
 /// DatadirArgs for configuring data storage paths
 mod datadir_args;
 pub use datadir_args::DatadirArgs;

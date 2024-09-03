@@ -8451,6 +8451,8 @@ dependencies = [
  "reth-fs-util",
  "secp256k1 0.29.0",
  "thiserror",
+ "tonic",
+ "url",
 ]
 
 [[package]]

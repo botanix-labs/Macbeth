@@ -12,6 +12,7 @@ use clap::{
     Arg, Args, Command,
 };
 use rand::Rng;
+use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
 use url::Url;
 
@@ -19,6 +20,8 @@ use crate::args::{
     types::{MaxU32, ZeroAsNoneU64},
     GasPriceOracleArgs, RpcStateCacheArgs,
 };
+
+use super::{bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, BitcoindArgs};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
