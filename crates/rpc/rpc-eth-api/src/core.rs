@@ -2,8 +2,7 @@
 //! the `eth_` namespace.
 
 use crate::helpers::{
-    transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall, EthFees, EthState,
-    EthTransactions, FullEthApi,
+    botanix::EthBotanixApi, transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall, EthFees, EthState, EthTransactions, FullEthApi
 };
 use alloy_dyn_abi::TypedData;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
@@ -341,6 +340,23 @@ pub trait EthApi {
         keys: Vec<JsonStorageKey>,
         block_number: Option<BlockId>,
     ) -> RpcResult<EIP1186AccountProofResponse>;
+
+    #[method(name = "getGatewayAddress")]
+    async fn get_gateway_address(
+        &self,
+        eth_address: Address,
+    ) -> RpcResult<Option<GatewayAddress>>;
+
+    #[method(name = "getMerkleProof")]
+    async fn get_merkle_proof(
+        &self,
+        txid: String,
+        block_hash: String,
+    ) -> RpcResult<Bytes>;
+
+    #[method(name = "getBtcFeeRate")]
+    async fn get_btc_fee_rate(&self) -> RpcResult<Option<U256>>;
+
 }
 
 #[async_trait::async_trait]
@@ -386,28 +402,6 @@ where
         Ok(Some(EthApiSpec::chain_id(self)))
     }
 
-    async fn get_gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> RpcResult<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
-        let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address).await?;
-        Ok(pegin_info)
-    }
-
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> RpcResult<Vec<u8>, MerkleProofRPCError> {
-        let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
-        Ok(pegin_info)
-    }
-
-    async fn get_btc_fee_rate(&self) -> RpcResult<U256, BtcFeeRateRPCError> {
-        let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
-        Ok(fee_rate)
-    }
-
     /// Handler for: `eth_getBlockByHash`
     async fn block_by_hash(&self, hash: B256, full: bool) -> RpcResult<Option<RichBlock>> {
         trace!(target: "rpc::eth", ?hash, ?full, "Serving eth_getBlockByHash");
@@ -425,23 +419,25 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
+    async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
         trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
-        let address = match EthApi::get_gateway_address(self, eth_address).await {
-            Ok(value) => Some(GatewayAddress {
-                gateway_address: value.0.to_string(),
-                aggregate_public_key: value.1.to_string(),
-                eth_address,
-            }),
+        let address = match EthBotanixApi::get_gateway_address(self, eth_address).await {
+            Ok(value) => {
+                value.map(|value| GatewayAddress {
+                    gateway_address: value.0.to_string(),
+                    aggregate_public_key: value.1.to_string(),
+                    eth_address,
+                })
+            },
             Err(e) => return Err(internal_rpc_err(e)),
         };
         Ok(address)
     }
 
     /// Handler from `eth_getMerkleProof`
-    async fn merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes> {
+    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes> {
         trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
-        let merkle_proof = match EthApi::get_merkle_proof(self, txid, block_hash).await {
+        let merkle_proof = match EthBotanixApi::get_merkle_proof(self, txid, block_hash).await {
             Ok(value) => Bytes::from(value),
             Err(e) => return Err(internal_rpc_err(e)),
         };
@@ -449,9 +445,9 @@ where
     }
 
     /// Handler for: `eth_getBtcFeeRate`
-    async fn btc_fee_rate(&self) -> RpcResult<Option<U256>> {
+    async fn get_btc_fee_rate(&self) -> RpcResult<Option<U256>> {
         trace!(target: "rpc::eth", "Serving eth_getBtcFeeRate");
-        let fee_rate = match EthApi::get_btc_fee_rate(self).await {
+        let fee_rate = match EthBotanixApi::get_btc_fee_rate(self).await {
             Ok(value) => Some(value),
             Err(_) => None,
         };

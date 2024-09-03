@@ -14,6 +14,7 @@
 //! [`EthApiServer`](crate::EthApiServer), is implemented for any type that implements
 //! all the `Eth` traits, e.g. `reth_rpc::EthApi`.
 
+pub mod botanix;
 pub mod block;
 pub mod blocking_task;
 pub mod call;
@@ -30,6 +31,7 @@ pub mod types;
 
 pub use block::{EthBlocks, LoadBlock};
 pub use blocking_task::SpawnBlocking;
+use botanix::EthBotanixApi;
 pub use call::{Call, EthCall};
 pub use fee::{EthFees, LoadFee};
 pub use pending_block::LoadPendingBlock;
@@ -63,6 +65,7 @@ pub trait FullEthApi:
     + EthFees
     + Trace
     + LoadReceipt
+    + EthBotanixApi
 {
 }
 
@@ -76,5 +79,6 @@ impl<T> FullEthApi for T where
         + EthFees
         + Trace
         + LoadReceipt
+        + EthBotanixApi
 {
 }

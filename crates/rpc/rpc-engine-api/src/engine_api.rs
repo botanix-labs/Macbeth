@@ -16,6 +16,7 @@ use reth_primitives::{
     Block, BlockHash, BlockHashOrNumber, BlockNumber, EthereumHardfork, B256, U64,
 };
 use reth_rpc_api::EngineApiServer;
+use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ClientVersionV1, ExecutionPayload, ExecutionPayloadBodiesV1,
     ExecutionPayloadBodiesV2, ExecutionPayloadInputV2, ExecutionPayloadV1, ExecutionPayloadV3,
@@ -60,6 +61,8 @@ struct EngineApiInner<Provider, EngineT: EngineTypes> {
     client: ClientVersionV1,
     /// The list of all supported Engine capabilities available over the engine endpoint.
     capabilities: EngineCapabilities,
+    /// Botanix provider
+    botanix_provider: Botanix,
 }
 
 impl<Provider, EngineT> EngineApi<Provider, EngineT>
@@ -76,6 +79,7 @@ where
         task_spawner: Box<dyn TaskSpawner>,
         client: ClientVersionV1,
         capabilities: EngineCapabilities,
+        botanix_provider: Botanix,
     ) -> Self {
         let inner = Arc::new(EngineApiInner {
             provider,
@@ -86,8 +90,17 @@ where
             metrics: EngineApiMetrics::default(),
             client,
             capabilities,
+            botanix_provider,
         });
         Self { inner }
+    }
+
+    /// Fetches the botanix provider
+    pub fn get_botanix_provider(
+        &self,
+        _client: ClientVersionV1,
+    ) -> EngineApiResult<Botanix> {
+        Ok(self.inner.botanix_provider.clone())
     }
 
     /// Fetches the client version.
@@ -921,6 +934,7 @@ mod tests {
     use assert_matches::assert_matches;
     use reth_beacon_consensus::{BeaconConsensusEngineEvent, BeaconEngineMessage};
     use reth_ethereum_engine_primitives::EthEngineTypes;
+    use reth_rpc_eth_types::builder::botanix_config::BotanixConfig;
     use reth_testing_utils::generators::random_block;
 
     use reth_chainspec::MAINNET;
@@ -956,6 +970,7 @@ mod tests {
             task_executor,
             client,
             EngineCapabilities::default(),
+            Botanix::new(BotanixConfig::default())
         );
         let handle = EngineApiTestHandle { chain_spec, provider, from_api: engine_rx };
         (handle, api)

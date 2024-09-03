@@ -93,20 +93,4 @@ pub trait EthApiSpec: Send + Sync {
     fn chain_spec(&self) -> Arc<ChainSpec> {
         self.provider().chain_spec()
     }
-
-    /// Returns gateway address
-    async fn get_gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError>;
-
-    /// Returns the merkle proof for a given block hash
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError>;
-
-    /// Returns the BTC fee rate for a pegout transaction in sat/vb.
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError>;
 }
