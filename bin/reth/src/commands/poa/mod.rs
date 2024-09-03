@@ -5,6 +5,9 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use reth_db_common::init::init_genesis;
+use reth_discv4::NodeRecord;
+use reth_node_metrics::recorder::install_prometheus_recorder;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -35,7 +38,7 @@ use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, NetworkEvents, NetworkManager,
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEvents, NetworkManager
 };
 use reth_node_builder::{
     launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
@@ -236,9 +239,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
     }
 
     /// Execute `poa` command
-    pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()>
-where {
-        tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth");
+    pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
+        tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth with poa");
 
         let Self {
             datadir,
@@ -272,6 +274,7 @@ where {
         // set up node config
         // TODO should set up PoaConfig
         let mut node_config = NodeConfig {
+            datadir: datadir.clone(),
             config: network_config_path.clone(),
             chain: chain_arc.clone(),
             federation_mode: *federation_mode,
@@ -304,9 +307,9 @@ where {
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
-        let prometheus_handle = node_config.install_prometheus_recorder()?;
+        let prometheus_handle = install_prometheus_recorder();
 
-        let data_dir = datadir.unwrap_or_chain_default(node_config.chain.chain);
+        let data_dir = datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
         let db_path = data_dir.db_path();
         let executor = ctx.task_executor;
 
@@ -490,7 +493,7 @@ where {
             database.clone(),
             node_config.chain.clone(),
             data_dir.static_files_path(),
-        )?;
+        );
         let static_file_provider = provider_factory.static_file_provider();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
@@ -499,7 +502,6 @@ where {
         // Configure static file producer
         let static_file_producer = StaticFileProducer::new(
             provider_factory.clone(),
-            static_file_provider.clone(),
             PruneModes::default(),
         );
 
@@ -522,7 +524,7 @@ where {
         info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
             node_config.network.trusted_peers.iter().for_each(|peer| {
-                reth_config.peers.trusted_nodes.insert(*peer);
+                reth_config.peers.trusted_nodes.push(*peer);
             });
         }
 
@@ -790,7 +792,6 @@ where {
         // Configure pipeline
         let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
         let mut pipeline = build_networked_pipeline(
-            &node_config,
             &StageConfig::default(),
             network_client.clone(),
             Arc::new(consensus.clone()),
@@ -804,8 +805,7 @@ where {
             exex_manager,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
-        )
-        .await?;
+        )?;
 
         let pipeline_events = pipeline.events();
 
@@ -867,7 +867,6 @@ where {
             Box::new(executor.clone()),
             Box::new(network_handle.clone()),
             max_block,
-            node_config.debug.continuous,
             payload_builder.clone(),
             initial_target,
             MIN_BLOCKS_FOR_PIPELINE_RUN,
@@ -898,7 +897,6 @@ where {
                 Some(network_handle.clone()),
                 Some(head.number),
                 events,
-                database.clone(),
             ),
         );
 
@@ -915,7 +913,7 @@ where {
         );
 
         // generate deault jwt for the rpc server (as required by reth)
-        let default_jwt_path = data_dir.jwt_path();
+        let default_jwt_path = data_dir.jwt();
         let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
         let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
@@ -1028,8 +1026,7 @@ where {
             // don't add self
             let peer_id = pk2id(&authority.0);
             if self_peer_id != peer_id {
-                let peer = NodeRecord::new(authority.1, peer_id);
-                config.peers.trusted_nodes.insert(peer);
+                config.peers.trusted_nodes.push(NodeRecord::new(authority.1, peer_id).into());
             }
         }
     }

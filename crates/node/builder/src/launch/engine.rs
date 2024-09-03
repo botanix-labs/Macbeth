@@ -6,6 +6,7 @@ use reth_beacon_consensus::{
     BeaconConsensusEngineHandle,
 };
 use reth_blockchain_tree::BlockchainTreeConfig;
+use reth_btc_wallet::{bitcoind::{BitcoindConfig, BitcoindFactory}, test_utils::MockBitcoindFactory};
 use reth_chainspec::ChainSpec;
 use reth_engine_service::service::{ChainEvent, EngineService};
 use reth_engine_tree::{
@@ -183,6 +184,8 @@ where
             static_file_producer,
             ctx.components().block_executor().clone(),
             pipeline_exex_handle,
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            node_config.rpc.btc_network,
         )?;
 
         // The new engine writes directly to static files. This ensures that they're up to the tip.

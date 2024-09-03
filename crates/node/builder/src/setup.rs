@@ -26,7 +26,7 @@ use tokio::sync::watch;
 
 /// Constructs a [Pipeline] that's wired to the network
 #[allow(clippy::too_many_arguments)]
-pub fn build_networked_pipeline<DB, Client, Executor>(
+pub fn build_networked_pipeline<DB, Client, Executor, BF>(
     config: &StageConfig,
     client: Client,
     consensus: Arc<dyn Consensus>,
@@ -44,9 +44,8 @@ pub fn build_networked_pipeline<DB, Client, Executor>(
 where
     DB: Database + Unpin + Clone + 'static,
     Client: BlockClient + HeadersClient + BodiesClient + Clone + 'static,
-    EvmConfig: ConfigureEvm + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
     Executor: BlockExecutorProvider,
+    BF: BitcoindFactory + Clone + 'static,
 {
     // building network downloaders using the fetch client
     let header_downloader = ReverseHeadersDownloaderBuilder::new(config.headers)
@@ -78,7 +77,7 @@ where
 
 /// Builds the [Pipeline] with the given [`ProviderFactory`] and downloaders.
 #[allow(clippy::too_many_arguments)]
-pub fn build_pipeline<DB, H, B, Executor>(
+pub fn build_pipeline<DB, H, B, Executor, BF>(
     provider_factory: ProviderFactory<DB>,
     stage_config: &StageConfig,
     header_downloader: H,
