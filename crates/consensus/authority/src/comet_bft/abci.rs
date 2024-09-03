@@ -16,12 +16,12 @@ use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
+use tendermint_light_client::instance::Instance;
 use thiserror::Error;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlockWithSenders,
-    TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
@@ -30,8 +30,6 @@ use reth_tasks::TaskSpawner;
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use ruint::Uint;
 use schnellru::{ByLength, LruMap};
-
-use bitcoin::consensus::encode::{self, Decodable, Encodable};
 
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
@@ -56,6 +54,8 @@ use crate::{
     engine_util, excecution_utils::authority_execution_utils::build_and_execute,
     utils::call_notify_pegin, AuthorityConsensus, Storage,
 };
+
+use super::light_client::LightCBFTClientBuilder;
 
 /// Consts
 const SUCCESS: u32 = 0;
@@ -111,15 +111,19 @@ where
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_port: u16,
+        cometbft_rpc_port: u16,
     ) {
-        let cbft_rpc_provider = HttpCometBFTRpcClientFactory::default();
+        let cbft_rpc_provider =
+            HttpCometBFTRpcClientFactory::default().with_port(cometbft_rpc_port);
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
+
         let app = ABCIClient::new(
             self.storage.clone(),
             validator,
             tx_pool,
             self.bitcoin_checkpoint.clone(),
             driver_tx,
+            cbft_rpc_provider.clone(),
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
@@ -162,6 +166,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+    cbft_rpc_provider: HttpCometBFTRpcClientFactory,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -182,6 +187,7 @@ where
         pool: Pool,
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+        cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     ) -> Self {
         Self {
             storage,
@@ -191,6 +197,7 @@ where
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
             driver_tx,
+            cbft_rpc_provider,
         }
     }
 
@@ -258,6 +265,16 @@ where
     BF: BitcoindFactory + Clone + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
+    // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
+    fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
+        info!("init_chain request: {:?}", _request);
+        let client = self.storage.client.clone();
+        let res =
+            ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() };
+
+        res
+    }
+
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         info!("info request: {:?}", request);
@@ -265,7 +282,7 @@ where
         let latest_header =
             client.latest_header().expect("should have latest").expect("should have header");
 
-        let info = ResponseInfo {
+        let info_res = ResponseInfo {
             data: String::default(),
             version: "TODO".to_string(),
             app_version: 1,
@@ -273,24 +290,7 @@ where
             last_block_app_hash: self.application_hash(&client),
         };
 
-        info
-    }
-
-    // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
-    fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
-        info!("init_chain request: {:?}", _request);
-        let client = self.storage.client.clone();
-        let state_root = client
-            .latest_header()
-            .expect("should have latest")
-            .expect("should have header")
-            .state_root;
-
-        println!("State root: {:?}", state_root);
-        let res =
-            ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() };
-
-        res
+        info_res
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
@@ -538,7 +538,7 @@ where
             ExecTxResult { code: SUCCESS, data: non_deterministic_data_tx, ..Default::default() };
         exec_results.push(first_exec_tx_result);
 
-        for tx in sealed_block_with_peg.block().body.iter() {
+        for _tx in sealed_block_with_peg.block().body.iter() {
             // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
             exec_results.push(ExecTxResult {
                 code: SUCCESS,
@@ -648,12 +648,7 @@ where
                         let sealed_block_with_senders = sealed_block_with_peg.block();
                         let sealed_header = sealed_block_with_senders.header.clone();
                         let block_hash = sealed_header.hash();
-                        // TODO remove expect
-                        // let cbft_block =
-                        // self.cbft_rpc_provider.build_and_connect().unwrap().block_by_hash(
-                        // cbft_hash).await.expect("block to exist");
-                        // let block_witness =
-                        // cbft_block.block.unwrap().last_commit().unwrap().signatures
+
                         // Update canonical chain
                         match client.insert_block(
                             sealed_block_with_senders.clone(),
@@ -675,8 +670,6 @@ where
                         )
                         .await
                         .unwrap();
-
-                        // TODO get block sigs via rpc and add to edh
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
