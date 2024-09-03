@@ -61,7 +61,8 @@ pub trait EthBotanixApi: EthApiTypes {
         eth_address: Address,
     ) -> impl Future<Output = Result<Option<(bitcoin::Address, secp256k1::PublicKey)>, Self::Error>> + Send {
         async move {
-            let pegin_info = self.botanix_provider().get_gateway_address(eth_address).await?;
+            let pegin_info = self.botanix_provider().get_gateway_address(eth_address).await
+            .map_err(|_| EthApiError::GatewayAddress)?;
             Ok(Some(pegin_info))
         }
     }
@@ -72,14 +73,16 @@ pub trait EthBotanixApi: EthApiTypes {
         block_hash: String,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
         async move {
-            let pegin_info = self.botanix_provider().get_merkle_proof(txid, block_hash).await?;
+            let pegin_info = self.botanix_provider().get_merkle_proof(txid, block_hash).await
+            .map_err(|_| EthApiError::GetMerkleProof)?;
             Ok(pegin_info)
         }
     }
 
     fn get_btc_fee_rate(&self) -> impl Future<Output = Result<U256, Self::Error>> + Send {
         async move {
-            let fee_rate = self.botanix_provider().get_btc_fee_rate().await?;
+            let fee_rate = self.botanix_provider().get_btc_fee_rate().await
+            .map_err(|_| EthApiError::GetBtcFee)?;
             Ok(fee_rate)
         }
     }

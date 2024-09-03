@@ -1,13 +1,15 @@
 //! Clap parser utilities
 
 use alloy_genesis::Genesis;
-use reth_chainspec::ChainSpec;
+use reth_chainspec::{ChainSpec, BOTANIX_TESTNET};
 use reth_fs_util as fs;
-use std::{path::PathBuf, sync::Arc};
+use reth_primitives::{constants::nums_secp256k1_pk, extra_data_header::{CHAIN_VERSION, EXTRA_HEADER_VERSION}};
+use tracing::info;
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 use super::federation_args::FederationTomlConfig;
 use reth_chainspec::DEV;
 use askama::Template;
-
+use bitcoin::hashes::{sha256, Hash};
 
 // use askama::Template;
 // use bitcoin::hashes::{sha256, Hash};

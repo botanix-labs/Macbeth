@@ -13,6 +13,7 @@ use clap::{
 };
 use rand::Rng;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
+use url::Url;
 
 use crate::args::{
     types::{MaxU32, ZeroAsNoneU64},
@@ -343,6 +344,7 @@ impl Default for RpcServerArgs {
             rpc_eth_proof_window: constants::DEFAULT_ETH_PROOF_WINDOW,
             gas_price_oracle: GasPriceOracleArgs::default(),
             rpc_state_cache: RpcStateCacheArgs::default(),
+            rpc_proof_permits: constants::DEFAULT_PROOF_PERMITS,
             btc_server: Some(DEFAULT_BTC_SERVER.to_owned()),
             btc_signing_server_jwt_secret: None,
             bitcoind: BitcoindArgs {

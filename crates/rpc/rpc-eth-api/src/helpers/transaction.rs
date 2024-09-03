@@ -11,8 +11,7 @@ use reth_primitives::{
 };
 use reth_provider::{BlockReaderIdExt, ReceiptProvider, TransactionsProvider};
 use reth_rpc_eth_types::{
-    utils::recover_raw_transaction, EthApiError, EthResult, EthStateCache, SignError,
-    TransactionSource,
+    builder::botanix_config::Botanix, utils::recover_raw_transaction, EthApiError, EthResult, EthStateCache, SignError, TransactionSource
 };
 use reth_rpc_types::{
     transaction::{
@@ -58,6 +57,9 @@ pub trait EthTransactions: LoadTransaction {
     ///
     /// Data access in default (L1) trait method implementations.
     fn provider(&self) -> impl BlockReaderIdExt;
+
+    /// Returns a handle for reading data from botanix.
+    fn botanix_provider(&self) -> &Botanix ;
 
     /// Returns a handle for forwarding received raw transactions.
     ///

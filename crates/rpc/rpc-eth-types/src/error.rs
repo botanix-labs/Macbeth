@@ -19,6 +19,8 @@ use revm::primitives::{EVMError, ExecutionResult, HaltReason, OutOfGasError};
 use revm_inspectors::tracing::MuxError;
 use tracing::error;
 
+use crate::builder::botanix_config::GatewayAddressRPCError;
+
 /// Result alias
 pub type EthResult<T> = Result<T, EthApiError>;
 
@@ -69,6 +71,12 @@ pub enum EthApiError {
     #[error("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")]
     ConflictingFeeFieldsInRequest,
     /// Errors related to invalid transactions
+    #[error("error getting the gateway address")]
+    GatewayAddress,
+    #[error("error getting the merkle root of all utxos")]
+    GetMerkleProof,
+    #[error("error getting the btc fee")]
+    GetBtcFee,
     #[error(transparent)]
     InvalidTransaction(#[from] RpcInvalidTransactionError),
     /// Thrown when constructing an RPC block from primitive block data fails
@@ -187,6 +195,9 @@ impl From<EthApiError> for jsonrpsee_types::error::ErrorObject<'static> {
             err @ EthApiError::TransactionInputError(_) => invalid_params_rpc_err(err.to_string()),
             EthApiError::Other(err) => err.to_rpc_error(),
             EthApiError::MuxTracerError(msg) => internal_rpc_err(msg.to_string()),
+            EthApiError::GatewayAddress => internal_rpc_err(error.to_string()),
+            EthApiError::GetMerkleProof => internal_rpc_err(error.to_string()),
+            EthApiError::GetBtcFee => internal_rpc_err(error.to_string()),
         }
     }
 }

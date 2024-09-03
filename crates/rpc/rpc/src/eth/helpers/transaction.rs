@@ -25,7 +25,7 @@ where
     }
 
     #[inline]
-    fn provider(&self) -> &Botanix {
+    fn botanix_provider(&self) -> &Botanix {
         self.inner.botanix_provider()
     }
 
