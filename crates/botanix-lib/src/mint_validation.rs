@@ -231,6 +231,23 @@ pub fn try_parse_burn_event(
         .into_string()
         .ok_or(ParseBurnEventError::InvalidLog("pegout destination"))?;
 
+    // should be the pegout version which is a single byte
+    let metadata = params[2].clone().into_bytes().ok_or(ParseBurnEventError::InvalidPegoutData(
+        PegoutDataError::Invalid("invalid metadata"),
+    ))?;
+
+    if metadata.len() != 1 {
+        return Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid(
+            "invalid metadata length",
+        )));
+    }
+
+    if metadata[0] != PegoutData::version() {
+        return Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid(
+            "invalid metadata version",
+        )));
+    }
+
     Ok(Some(
         PegoutData::new(btc_amount, destination, btc_network)
             .map_err(ParseBurnEventError::InvalidPegoutData)?,
@@ -294,4 +311,7 @@ mod test {
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap()
         );
     }
+
+    // TODO: add decode_log_payload for pegout
+    // integration tests do cover this but unit test is nice to have
 }
