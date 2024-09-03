@@ -122,6 +122,7 @@ where
         abci_port: u16,
         cometbft_rpc_port: u16,
     ) {
+
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
 
         let app = ABCIClient::new(
