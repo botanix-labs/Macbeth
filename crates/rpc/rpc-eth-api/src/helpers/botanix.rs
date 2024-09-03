@@ -26,8 +26,7 @@ use reth_revm::{
     database::StateProviderDatabase, state_change::post_block_withdrawals_balance_increments,
 };
 use reth_rpc_eth_types::{
-    pending_block::pre_block_blockhashes_update, EthApiError, PendingBlock, PendingBlockEnv,
-    PendingBlockEnvOrigin,
+    builder::botanix_config::Botanix, pending_block::pre_block_blockhashes_update, EthApiError, PendingBlock, PendingBlockEnv, PendingBlockEnvOrigin
 };
 use reth_transaction_pool::{BestTransactionsAttributes, TransactionPool};
 use revm::{db::states::bundle_state::BundleRetention, DatabaseCommit, State};
@@ -53,13 +52,17 @@ pub trait EthBotanixApi: EthApiTypes {
            + ChainSpecProvider<ChainSpec = ChainSpec>
            + StateProviderFactory;
 
+    fn botanix_provider(
+        &self,
+    ) -> &Botanix;
+
     fn get_gateway_address(
         &self,
         eth_address: Address,
     ) -> impl Future<Output = Result<Option<(bitcoin::Address, secp256k1::PublicKey)>, Self::Error>> + Send {
         async move {
-            let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address).await?;
-            Ok(pegin_info)
+            let pegin_info = self.botanix_provider().get_gateway_address(eth_address).await?;
+            Ok(Some(pegin_info))
         }
     }
 
@@ -69,14 +72,14 @@ pub trait EthBotanixApi: EthApiTypes {
         block_hash: String,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
         async move {
-            let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
+            let pegin_info = self.botanix_provider().get_merkle_proof(txid, block_hash).await?;
             Ok(pegin_info)
         }
     }
 
     fn get_btc_fee_rate(&self) -> impl Future<Output = Result<U256, Self::Error>> + Send {
         async move {
-            let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
+            let fee_rate = self.botanix_provider().get_btc_fee_rate().await?;
             Ok(fee_rate)
         }
     }

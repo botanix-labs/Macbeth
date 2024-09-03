@@ -3,6 +3,7 @@ use reth_network_api::NetworkInfo;
 use reth_primitives::U256;
 use reth_provider::{BlockNumReader, ChainSpecProvider, StageCheckpointReader};
 use reth_rpc_eth_api::helpers::EthApiSpec;
+use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_transaction_pool::TransactionPool;
 
 use crate::EthApi;
@@ -20,6 +21,10 @@ where
     ) -> impl ChainSpecProvider<ChainSpec = ChainSpec> + BlockNumReader + StageCheckpointReader
     {
         self.inner.provider()
+    }
+
+    fn botanix_provider(&self) -> &Botanix {
+        self.inner.botanix_provider()
     }
 
     fn network(&self) -> impl NetworkInfo {

@@ -276,6 +276,12 @@ impl<Provider, Pool, Network, EvmConfig> EthApiInner<Provider, Pool, Network, Ev
         &self.provider
     }
 
+    /// Returns a handle to the botanix provider.
+    #[inline]
+    pub const fn botanix_provider(&self) -> &Botanix {
+        &self.botanix_provider
+    }
+
     /// Returns a handle to data in memory.
     #[inline]
     pub const fn cache(&self) -> &EthStateCache {

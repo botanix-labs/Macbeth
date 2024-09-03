@@ -23,6 +23,9 @@ pub trait EthApiSpec: Send + Sync {
         &self,
     ) -> impl ChainSpecProvider<ChainSpec = ChainSpec> + BlockNumReader + StageCheckpointReader;
 
+    /// Returns the Botanix provider.
+    fn botanix_provider(&self) -> &Botanix;
+
     /// Returns a handle for reading network data summary.
     fn network(&self) -> impl NetworkInfo;
 

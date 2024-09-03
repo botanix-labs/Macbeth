@@ -7,7 +7,7 @@ use reth_rpc_eth_api::{
     helpers::{EthSigner, EthTransactions, LoadTransaction, SpawnBlocking},
     RawTransactionForwarder,
 };
-use reth_rpc_eth_types::EthStateCache;
+use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthStateCache};
 use reth_transaction_pool::TransactionPool;
 
 use crate::EthApi;
@@ -22,6 +22,11 @@ where
     #[inline]
     fn provider(&self) -> impl BlockReaderIdExt {
         self.inner.provider()
+    }
+
+    #[inline]
+    fn provider(&self) -> &Botanix {
+        self.inner.botanix_provider()
     }
 
     #[inline]
@@ -100,6 +105,7 @@ mod tests {
             evm_config,
             None,
             DEFAULT_PROOF_PERMITS,
+            Botanix::default(),
         );
 
         // https://etherscan.io/tx/0xa694b71e6c128a2ed8e2e0f6770bddbe52e3bb8f10e8472f9a79ab81497a8b5d
