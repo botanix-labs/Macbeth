@@ -18,11 +18,10 @@ use reth_db_api::{
 };
 use reth_exex::ExExContext;
 use reth_network::frost::manager::FrostConfig;
-use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeTypes};
+use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes};
 use reth_network::{
     NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager,
 };
-use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes};
 use reth_node_core::{
     cli::config::{PayloadBuilderConfig, RethTransactionPoolConfig},
     dirs::{ChainPath, DataDirPath},
@@ -569,7 +568,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     /// Returns the default network config for the node.
     pub fn network_config(&self) -> eyre::Result<NetworkConfig<Node::Provider>> {
         self.config.network_config(
-            &self.reth_config,
+            &self.reth_config(),
             self.provider.clone(),
             self.executor.clone(),
             self.head,

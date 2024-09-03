@@ -7,6 +7,7 @@ pub(crate) mod engine;
 
 pub use common::LaunchContext;
 pub use exex::ExExLauncher;
+use reth_btc_wallet::{bitcoind::{BitcoindFactory, BitcoindConfig}, test_utils::MockBitcoindFactory};
 
 use std::{future::Future, sync::Arc};
 

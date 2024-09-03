@@ -1,5 +1,7 @@
 //! Helpers for setting up parts of the node.
 
+use std::sync::Arc;
+
 use crate::ConfigureEvm;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_config::{config::StageConfig, PruneConfig};
@@ -12,7 +14,7 @@ use reth_downloaders::{
 use reth_evm::execute::BlockExecutorProvider;
 use reth_exex::ExExManagerHandle;
 use reth_network_p2p::{
-    bodies::downloader::BodyDownloader, headers::downloader::HeaderDownloader, BlockClient,
+    bodies::downloader::BodyDownloader, headers::downloader::HeaderDownloader, BlockClient, BodiesClient, HeadersClient
 };
 use reth_node_core::primitives::{BlockNumber, B256};
 use reth_provider::ProviderFactory;
