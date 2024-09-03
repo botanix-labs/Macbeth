@@ -243,9 +243,8 @@ pub fn try_parse_burn_event(
     }
 
     if metadata[0] != PegoutData::version() {
-        return Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid(
-            "invalid metadata version",
-        )));
+        info!("Legacy pegout submitted, version: {}", metadata[0].to_string());
+        // Add support for legacy pegout versions
     }
 
     Ok(Some(
