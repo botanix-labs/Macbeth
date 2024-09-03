@@ -123,6 +123,8 @@ where
         cometbft_rpc_port: u16,
     ) {
 
+        let cbft_rpc_provider =
+            HttpCometBFTRpcClientFactory::default().with_port(cometbft_rpc_port);
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
 
         let app = ABCIClient::new(
