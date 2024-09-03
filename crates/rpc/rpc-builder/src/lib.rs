@@ -190,8 +190,6 @@ pub use reth_ipc::server::{
 pub use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
 pub use tower::layer::util::{Identity, Stack};
 
-use reth_rpc::eth::botanix_config::Botanix;
-
 /// Auth server utilities.
 pub mod auth;
 

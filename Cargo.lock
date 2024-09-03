@@ -9644,6 +9644,7 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "tempfile",
+ "thiserror",
  "tokio",
  "toml",
  "tonic",

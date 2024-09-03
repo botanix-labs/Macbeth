@@ -4,6 +4,10 @@
 mod network;
 pub use network::{DiscoveryArgs, NetworkArgs};
 
+/// Configuration for the genesis block (toml)
+mod federation_args;
+pub use federation_args::{FedMemberPubKey, FederationTomlConfig};
+
 /// RpcServerArg struct for configuring the RPC
 mod rpc_server;
 pub use rpc_server::RpcServerArgs;
@@ -51,6 +55,10 @@ pub use pruning::PruningArgs;
 /// BitcoindArgs for configuration settings of the bitcoind instance
 mod bitcoind_args;
 pub use bitcoind_args::BitcoindArgs;
+
+/// FrostArgs for configuration settings of the frost protocol
+mod frost_args;
+pub use frost_args::FrostArgs;
 
 /// DatadirArgs for configuring data storage paths
 mod datadir_args;

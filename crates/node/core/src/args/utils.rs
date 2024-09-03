@@ -1,35 +1,22 @@
 //! Clap parser utilities
 
 use alloy_genesis::Genesis;
-use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
+use reth_chainspec::{create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_TESTNET, DEV};
 use reth_fs_util as fs;
-use reth_primitives::{constants::nums_secp256k1_pk, extra_data_header::{CHAIN_VERSION, EXTRA_HEADER_VERSION}, B256};
+use reth_primitives::{constants::nums_secp256k1_pk, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, B256};
 use reth_rpc_types::BlockHashOrNumber;
 use tracing::info;
 use std::{path::PathBuf, str::FromStr, sync::Arc};
-use super::federation_args::FederationTomlConfig;
-use reth_chainspec::DEV;
 use askama::Template;
 use bitcoin::hashes::{sha256, Hash};
-
-// use askama::Template;
-// use bitcoin::hashes::{sha256, Hash};
-// use reth_primitives::{
-//     chain::spec::BotanixTestnetGenesisConfig,
-//     constants::nums_secp256k1_pk,
-//     create_botanix_config_with_genesis,
-//     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-//     fs, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,
-// };
-// use url::Url;
-
-// use tracing::info;
 
 #[cfg(feature = "optimism")]
 use reth_chainspec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
 
 #[cfg(not(feature = "optimism"))]
 use reth_chainspec::{HOLESKY, MAINNET, SEPOLIA};
+
+use super::FederationTomlConfig;
 
 #[cfg(feature = "optimism")]
 /// Chains supported by op-reth. First value should be used as the default.
@@ -199,47 +186,41 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             };
 
             // both serialized Genesis and ChainSpec structs supported
-            let genesis: Result<AllGenesisFormats, serde_json::Error> = serde_json::from_str(&raw);
-            match genesis {
-                Ok(genesis) => Arc::new(genesis.into()),
-                Err(_) => {
-                    // our own toml format
-                    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
-                    let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
+            // our own toml format
+            let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+            let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
 
-                    let public_keys = genesis_toml_config
-                        .federation_member_public_key
-                        .iter()
-                        .map(|key| {
-                            secp256k1::PublicKey::from_str(&key.key)
-                                .expect("Invalid hex string for PublicKey")
-                        })
-                        .collect::<Vec<secp256k1::PublicKey>>();
+            let public_keys = genesis_toml_config
+                .federation_member_public_key
+                .iter()
+                .map(|key| {
+                    secp256k1::PublicKey::from_str(&key.key)
+                        .expect("Invalid hex string for PublicKey")
+                })
+                .collect::<Vec<secp256k1::PublicKey>>();
 
-                    let extra_data_header = ExtraDataHeader::new(
-                        EXTRA_HEADER_VERSION,
-                        CHAIN_VERSION,
-                        None,
-                        Some(public_keys),
-                        None,
-                        None,
-                        bitcoin::hash_types::BlockHash::all_zeros(),
-                        sha256::Hash::all_zeros(),
-                        // Agg key in genesis should always be NUMS point
-                        nums_secp256k1_pk(),
-                    );
-                    let edh = hex::encode(extra_data_header.serialize());
-                    let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
-                    let rendered_json = botanix_testnet_config_genesis.render()?;
-                    let genesis = serde_json::from_str(&rendered_json)?;
-                    let botanix_testnet = create_botanix_config_with_genesis(
-                        genesis,
-                        BOTANIX_TESTNET.parent_confirmation_depth,
-                        botanix_fee_recipient,
-                    );
-                    Arc::new(botanix_testnet)
-                }
-            }
+            let extra_data_header = ExtraDataHeader::new(
+                EXTRA_HEADER_VERSION,
+                CHAIN_VERSION,
+                None,
+                Some(public_keys),
+                None,
+                None,
+                bitcoin::hash_types::BlockHash::all_zeros(),
+                sha256::Hash::all_zeros(),
+                // Agg key in genesis should always be NUMS point
+                nums_secp256k1_pk(),
+            );
+            let edh = hex::encode(extra_data_header.serialize());
+            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+            let rendered_json = botanix_testnet_config_genesis.render()?;
+            let genesis = serde_json::from_str(&rendered_json)?;
+            let botanix_testnet = create_botanix_config_with_genesis(
+                genesis,
+                BOTANIX_TESTNET.parent_confirmation_depth,
+                botanix_fee_recipient,
+            );
+            Arc::new(botanix_testnet)
         }
     })
 }

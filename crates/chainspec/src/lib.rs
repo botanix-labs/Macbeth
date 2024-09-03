@@ -13,7 +13,7 @@ pub use alloy_chains::{Chain, ChainKind, NamedChain};
 pub use info::ChainInfo;
 pub use spec::{
     create_botanix_config_with_genesis, BaseFeeParams, BaseFeeParamsKind,
-    ChainSpec, ChainSpecBuilder, ForkBaseFeeParams,
+    ChainSpec, ChainSpecBuilder, ForkBaseFeeParams, BotanixTestnetGenesisConfig,
     BOTANIX_TESTNET, ChainSpecProvider, DepositContract, DEV, HOLESKY, MAINNET, SEPOLIA,
 };
 #[cfg(feature = "optimism")]

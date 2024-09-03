@@ -8,12 +8,8 @@ use crate::{
     dirs::{ChainPath, DataDirPath},
     utils::get_single_header,
 };
-use discv5::ListenConfig;
-use metrics_exporter_prometheus::PrometheusHandle;
-use once_cell::sync::Lazy;
+use reth_discv5::discv5::ListenConfig;
 use reth_config::{config::PruneConfig, Config};
-use reth_db::{database::Database, database_metrics::DatabaseMetrics};
-use reth_interfaces::{p2p::headers::client::HeadersClient, RethResult};
 use reth_network::{
     config::NetworkMode, frost::manager::FrostConfig, import::BlockImport, NetworkBuilder,
     NetworkConfig, NetworkManager,

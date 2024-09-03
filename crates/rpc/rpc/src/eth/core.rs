@@ -12,17 +12,13 @@ use reth_rpc_eth_api::{
     EthApiTypes, RawTransactionForwarder,
 };
 use reth_rpc_eth_types::{
-    EthApiBuilderCtx, EthApiError, EthStateCache, FeeHistoryCache, GasCap, GasPriceOracle,
-    PendingBlock,
+    builder::botanix_config::Botanix, EthApiBuilderCtx, EthApiError, EthStateCache, FeeHistoryCache, GasCap, GasPriceOracle, PendingBlock
 };
 use reth_tasks::{
     pool::{BlockingTaskGuard, BlockingTaskPool},
     TaskExecutor, TaskSpawner, TokioTaskExecutor,
 };
 use tokio::sync::Mutex;
-use super::botanix_config::{
-    Botanix, BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError,
-};
 
 /// `Eth` API implementation.
 ///
