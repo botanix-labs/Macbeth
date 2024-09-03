@@ -170,7 +170,7 @@ use reth_rpc_eth_api::{
     },
     EthApiServer, FullEthApiServer, RawTransactionForwarder,
 };
-use reth_rpc_eth_types::{EthConfig, EthStateCache, EthSubscriptionIdProvider};
+use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthConfig, EthStateCache, EthSubscriptionIdProvider};
 use reth_rpc_layer::{AuthLayer, Claims, JwtAuthValidator, JwtSecret};
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
@@ -222,6 +222,7 @@ pub async fn launch<Provider, Pool, Network, Tasks, Events, EvmConfig, EthApi>(
     events: Events,
     evm_config: EvmConfig,
     eth: DynEthApiBuilder<Provider, Pool, EvmConfig, Network, Tasks, Events, EthApi>,
+    botanix_provider: Botanix,
 ) -> Result<RpcServerHandle, RpcError>
 where
     Provider: FullRpcProvider + AccountReader + ChangeSetReader,
@@ -236,7 +237,7 @@ where
     server_config
         .into()
         .start(
-            &RpcModuleBuilder::new(provider, pool, network, executor, events, evm_config)
+            &RpcModuleBuilder::new(provider, pool, network, executor, events, evm_config, botanix_provider)
                 .build(module_config, eth),
         )
         .await
@@ -259,6 +260,8 @@ pub struct RpcModuleBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig> {
     events: Events,
     /// Defines how the EVM should be configured before execution.
     evm_config: EvmConfig,
+    /// Botanix provider.
+    botanix_provider: Botanix,
 }
 
 // === impl RpcBuilder ===
@@ -274,8 +277,9 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
         executor: Tasks,
         events: Events,
         evm_config: EvmConfig,
+        botanix_provider: Botanix,
     ) -> Self {
-        Self { provider, pool, network, executor, events, evm_config }
+        Self { provider, pool, network, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure the provider instance.
@@ -286,8 +290,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         P: BlockReader + StateProviderFactory + EvmEnvProvider + 'static,
     {
-        let Self { pool, network, executor, events, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { pool, network, executor, events, evm_config, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure the transaction pool instance.
@@ -298,8 +302,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         P: TransactionPool + 'static,
     {
-        let Self { provider, network, executor, events, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { provider, network, executor, events, evm_config, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure a [`NoopTransactionPool`] instance.
@@ -310,7 +314,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     pub fn with_noop_pool(
         self,
     ) -> RpcModuleBuilder<Provider, NoopTransactionPool, Network, Tasks, Events, EvmConfig> {
-        let Self { provider, executor, events, network, evm_config, .. } = self;
+        let Self { provider, executor, events, network, evm_config, botanix_provider, .. } = self;
         RpcModuleBuilder {
             provider,
             executor,
@@ -318,6 +322,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
             network,
             evm_config,
             pool: NoopTransactionPool::default(),
+            botanix_provider,
         }
     }
 
@@ -329,8 +334,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         N: NetworkInfo + Peers + 'static,
     {
-        let Self { provider, pool, executor, events, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { provider, pool, executor, events, evm_config, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure a [`NoopNetwork`] instance.
@@ -341,7 +346,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     pub fn with_noop_network(
         self,
     ) -> RpcModuleBuilder<Provider, Pool, NoopNetwork, Tasks, Events, EvmConfig> {
-        let Self { provider, pool, executor, events, evm_config, .. } = self;
+        let Self { provider, pool, executor, events, evm_config, botanix_provider, .. } = self;
         RpcModuleBuilder {
             provider,
             pool,
@@ -349,6 +354,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
             events,
             network: NoopNetwork::default(),
             evm_config,
+            botanix_provider,
         }
     }
 
@@ -360,8 +366,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         T: TaskSpawner + 'static,
     {
-        let Self { pool, network, provider, events, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { pool, network, provider, events, evm_config, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure [`TokioTaskExecutor`] as the task executor to use for additional tasks.
@@ -371,7 +377,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     pub fn with_tokio_executor(
         self,
     ) -> RpcModuleBuilder<Provider, Pool, Network, TokioTaskExecutor, Events, EvmConfig> {
-        let Self { pool, network, provider, events, evm_config, .. } = self;
+        let Self { pool, network, provider, events, evm_config, botanix_provider, .. } = self;
         RpcModuleBuilder {
             provider,
             network,
@@ -379,6 +385,7 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
             events,
             executor: TokioTaskExecutor::default(),
             evm_config,
+            botanix_provider,
         }
     }
 
@@ -390,8 +397,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         E: CanonStateSubscriptions + 'static,
     {
-        let Self { provider, pool, executor, network, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { provider, pool, executor, network, evm_config, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 
     /// Configure the evm configuration type
@@ -402,8 +409,8 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     where
         E: ConfigureEvm + 'static,
     {
-        let Self { provider, pool, executor, network, events, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config }
+        let Self { provider, pool, executor, network, events, botanix_provider, .. } = self;
+        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 }
 
@@ -439,12 +446,12 @@ where
         EngineApi: EngineApiServer<EngineT>,
         EthApi: FullEthApiServer,
     {
-        let Self { provider, pool, network, executor, events, evm_config } = self;
+        let Self { provider, pool, network, executor, events, evm_config, botanix_provider } = self;
 
         let config = module_config.config.clone().unwrap_or_default();
 
         let mut registry = RpcRegistryInner::new(
-            provider, pool, network, executor, events, config, evm_config, eth,
+            provider, pool, network, executor, events, config, evm_config, eth, botanix_provider,
         );
 
         let modules = registry.create_transport_rpc_modules(module_config);
@@ -491,8 +498,8 @@ where
     where
         EthApi: 'static,
     {
-        let Self { provider, pool, network, executor, events, evm_config } = self;
-        RpcRegistryInner::new(provider, pool, network, executor, events, config, evm_config, eth)
+        let Self { provider, pool, network, executor, events, evm_config, botanix_provider } = self;
+        RpcRegistryInner::new(provider, pool, network, executor, events, config, evm_config, eth, botanix_provider)
     }
 
     /// Configures all [`RpcModule`]s specific to the given [`TransportRpcModuleConfig`] which can
@@ -507,7 +514,7 @@ where
     {
         let mut modules = TransportRpcModules::default();
 
-        let Self { provider, pool, network, executor, events, evm_config } = self;
+        let Self { provider, pool, network, executor, events, evm_config, botanix_provider } = self;
 
         if !module_config.is_empty() {
             let TransportRpcModuleConfig { http, ws, ipc, config } = module_config.clone();
@@ -521,6 +528,7 @@ where
                 config.unwrap_or_default(),
                 evm_config,
                 eth,
+                botanix_provider,
             );
 
             modules.config = module_config;
@@ -535,7 +543,7 @@ where
 
 impl Default for RpcModuleBuilder<(), (), (), (), (), ()> {
     fn default() -> Self {
-        Self::new((), (), (), (), (), ())
+        Self::new((), (), (), (), (), (), Botanix::default())
     }
 }
 
@@ -654,6 +662,7 @@ where
             Events,
             EthApi,
         >,
+        botanix_provider: Botanix,
     ) -> Self
     where
         EvmConfig: ConfigureEvm,
@@ -669,6 +678,7 @@ where
             executor.clone(),
             events.clone(),
             eth_api_builder,
+            botanix_provider,
         )
         .build();
 
@@ -1164,6 +1174,7 @@ impl Default for RpcServerConfig<Identity> {
             ipc_endpoint: None,
             jwt_secret: None,
             rpc_middleware: RpcServiceBuilder::new(),
+            btc_signing_server_jwt_secret: None,
         }
     }
 }
@@ -1227,6 +1238,7 @@ impl<RpcMiddleware> RpcServerConfig<RpcMiddleware> {
             ipc_endpoint: self.ipc_endpoint,
             jwt_secret: self.jwt_secret,
             rpc_middleware,
+            btc_signing_server_jwt_secret: self.btc_signing_server_jwt_secret,
         }
     }
 

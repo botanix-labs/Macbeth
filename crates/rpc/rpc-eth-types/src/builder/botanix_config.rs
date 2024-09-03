@@ -213,6 +213,12 @@ pub struct Botanix {
     pub botanix_rpc_config: BotanixConfig,
 }
 
+impl Default for Botanix {
+    fn default() -> Self {
+        Self { botanix_rpc_config: Default::default() }
+    }
+}
+
 impl Botanix {
     /// Creates and returns instance of [Botanix]
     pub fn new(config: BotanixConfig) -> Self {

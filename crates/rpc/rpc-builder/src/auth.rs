@@ -16,14 +16,7 @@ use reth_provider::{
 pub use jsonrpsee::server::ServerBuilder;
 pub use reth_ipc::server::Builder as IpcServerBuilder;
 use reth_rpc::{
-    eth::{
-        botanix_config::{Botanix, BotanixConfig},
-        cache::EthStateCache,
-        gas_oracle::GasPriceOracle,
-        EthFilterConfig, FeeHistoryCache, FeeHistoryCacheConfig,
-    },
-    AuthLayer, Claims, EngineEthApi, EthApi, EthFilter, EthSubscriptionIdProvider,
-    JwtAuthValidator, JwtSecret,
+    EngineEthApi, EthApi, EthFilter,
 };
 use reth_rpc_api::servers::*;
 use reth_rpc_eth_types::EthSubscriptionIdProvider;
