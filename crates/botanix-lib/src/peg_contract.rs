@@ -239,6 +239,11 @@ impl PegoutData {
 
         Ok(Self { amount, destination: network_checked_destination, network: btc_network })
     }
+
+    // current version of the pegout which is checked during validation
+    pub fn version() -> u8 {
+        0
+    }
 }
 
 #[cfg(test)]
