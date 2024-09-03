@@ -2,7 +2,7 @@ use reth_evm::ConfigureEvm;
 use reth_provider::{BlockReader, CanonStateSubscriptions, EvmEnvProvider, StateProviderFactory};
 use reth_rpc::{EthFilter, EthPubSub};
 use reth_rpc_eth_types::{
-    cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig, EthStateCache,
+    builder::botanix_config::Botanix, cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig, EthStateCache
 };
 use reth_tasks::TaskSpawner;
 
@@ -43,6 +43,7 @@ impl<Provider, Pool, Network, Events, EthApi> EthHandlers<Provider, Pool, Networ
             Events,
             EthApi,
         >,
+        botanix_provider: Botanix,
     ) -> EthHandlersBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig, EthApi> {
         EthHandlersBuilder {
             provider,
@@ -53,6 +54,7 @@ impl<Provider, Pool, Network, Events, EthApi> EthHandlers<Provider, Pool, Networ
             executor,
             events,
             eth_api_builder,
+            botanix_provider,
         }
     }
 }
@@ -68,6 +70,7 @@ pub struct EthHandlersBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig,
     executor: Tasks,
     events: Events,
     eth_api_builder: DynEthApiBuilder<Provider, Pool, EvmConfig, Network, Tasks, Events, EthApi>,
+    botanix_provider: Botanix,
 }
 
 impl<Provider, Pool, Network, Tasks, Events, EvmConfig, EthApi>
@@ -83,7 +86,7 @@ where
 {
     /// Returns a new instance with handlers for `eth` namespace.
     pub fn build(self) -> EthHandlers<Provider, Pool, Network, Events, EthApi> {
-        let Self { provider, pool, network, evm_config, config, executor, events, eth_api_builder } =
+        let Self { provider, pool, network, evm_config, config, executor, events, eth_api_builder, botanix_provider } =
             self;
 
         let cache = EthStateCache::spawn_with(
@@ -111,6 +114,7 @@ where
             executor,
             events,
             cache,
+            botanix_provider,
         };
 
         let api = eth_api_builder(&ctx);

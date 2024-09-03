@@ -389,7 +389,7 @@ where
     async fn get_gateway_address(
         &self,
         eth_address: Address,
-    ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
+    ) -> RpcResult<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         let pegin_info = self.inner.botanix_provider.get_gateway_address(eth_address).await?;
         Ok(pegin_info)
     }
@@ -398,12 +398,12 @@ where
         &self,
         txid: String,
         block_hash: String,
-    ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
+    ) -> RpcResult<Vec<u8>, MerkleProofRPCError> {
         let pegin_info = self.inner.botanix_provider.get_merkle_proof(txid, block_hash).await?;
         Ok(pegin_info)
     }
 
-    async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
+    async fn get_btc_fee_rate(&self) -> RpcResult<U256, BtcFeeRateRPCError> {
         let fee_rate = self.inner.botanix_provider.get_btc_fee_rate().await?;
         Ok(fee_rate)
     }

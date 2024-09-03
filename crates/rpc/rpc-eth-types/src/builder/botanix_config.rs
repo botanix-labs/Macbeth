@@ -207,7 +207,7 @@ impl fmt::Display for BtcFeeRateRPCError {
 }
 
 /// Botanix config
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Botanix {
     /// Botanix config
     pub botanix_rpc_config: BotanixConfig,

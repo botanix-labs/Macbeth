@@ -91,7 +91,6 @@ where
     /// Creates a new, shareable instance.
     pub fn with_spawner<Tasks, Events>(
         ctx: &EthApiBuilderCtx<Provider, Pool, EvmConfig, Network, Tasks, Events>,
-        botanix_provider: Botanix,
     ) -> Self
     where
         Tasks: TaskSpawner + Clone + 'static,
@@ -114,7 +113,7 @@ where
             ctx.executor.clone(),
             None,
             ctx.config.proof_permits,
-            botanix_provider,
+            ctx.botanix_provider.clone(),
         );
 
         Self { inner: Arc::new(inner) }

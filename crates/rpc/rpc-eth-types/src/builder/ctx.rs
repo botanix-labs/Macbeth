@@ -10,6 +10,8 @@ use crate::{
     GasPriceOracle,
 };
 
+use super::botanix_config::Botanix;
+
 /// Context for building the `eth` namespace API.
 #[derive(Debug, Clone)]
 pub struct EthApiBuilderCtx<Provider, Pool, EvmConfig, Network, Tasks, Events> {
@@ -29,6 +31,8 @@ pub struct EthApiBuilderCtx<Provider, Pool, EvmConfig, Network, Tasks, Events> {
     pub events: Events,
     /// RPC cache handle.
     pub cache: EthStateCache,
+    /// Botanix provider
+    pub botanix_provider: Botanix,
 }
 
 impl<Provider, Pool, EvmConfig, Network, Tasks, Events>
