@@ -70,16 +70,13 @@ reth-node-builder.workspace = true
 reth-node-events.workspace = true
 reth-node-metrics.workspace = true
 reth-consensus.workspace = true
-<<<<<<< HEAD
 reth-engine-util.workspace = true
 reth-prune.workspace = true
 reth-optimism-cli = { workspace = true, optional = true }
 reth-discv4.workspace = true
 tokio-stream.workspace = true
-=======
 thiserror.workspace = true
 comet-bft-rpc.workspace = true
->>>>>>> 0172af6b2 (chore: cbft rpc workspace dependency)
 
 
 # crypto

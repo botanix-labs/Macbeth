@@ -7934,11 +7934,8 @@ dependencies = [
  "btc-server",
  "clap",
  "client",
-<<<<<<< HEAD
-=======
  "comet-bft-rpc",
  "comfy-table",
->>>>>>> 0172af6b2 (chore: cbft rpc workspace dependency)
  "confy",
  "eyre",
  "fdlimit",
