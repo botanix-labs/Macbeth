@@ -5,13 +5,14 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt, TryFutureExt};
 use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
-    AuthorityConsensus, AuthorityConsensusBuilder,
+    AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
 };
 use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_cli_commands::node::NoArgs;
@@ -189,6 +190,15 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// ABCI client port to listen on
     #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
+
+    /// CometBFT RPC Port
+    #[arg(long, value_name = "COMETBFT_RPC_PORT", default_value_t = 26657)]
+    pub cometbft_rpc_port: u16,
+
+    // TODO parse to a better type
+    /// CometBFT RPC Host
+    #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
+    pub cometbft_rpc_host: String,
 }
 
 impl PoaNodeCommand {
@@ -230,6 +240,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             bitcoind_config_path,
             ext,
             abci_port,
+            cometbft_rpc_port,
+            cometbft_rpc_host,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -639,9 +651,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
             ))
-            .block_import(Box::new(block_import.clone()))
             .frost_config(frost_config.clone())
             .network_mode(reth_network::config::NetworkMode::Authority);
+
+        if !is_fed_node {
+            // block import is only needed for non-federation nodes
+            // federation nodes will recieve blocks via their consensus layer
+            network_cfg_builder = network_cfg_builder.block_import(Box::new(block_import.clone()))
+        }
 
         let network_config = network_cfg_builder.build(provider_factory.clone());
 
@@ -712,6 +729,25 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             // during this run.
             .maybe_store_messages(node_config.debug.engine_api_store.clone());
 
+        let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default()
+            .with_port(*cometbft_rpc_port)
+            .with_host(cometbft_rpc_host);
+
+        let light_client = {
+            if !is_fed_node {
+                let light_client = LightCBFTClientBuilder::new(
+                    HttpCometBFTRpcClientFactory::default()
+                        .with_port(*cometbft_rpc_port)
+                        .with_host(cometbft_rpc_host),
+                )
+                .build_and_verify()
+                .await;
+
+                Some(light_client)
+            } else {
+                None
+            }
+        };
         // Build authority Consensus
         let (
             _authority_consensus,
@@ -741,6 +777,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             executor_factory.clone(),
             bitcoind_factory.clone(),
             evm_config.clone(),
+            cometbft_rpc_factory,
+            light_client,
         )
         .expect("Failed to create authority consensus builder")
         .build()
@@ -794,21 +832,24 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 eth_tx_validator,
                 transaction_pool.clone(),
                 *abci_port,
+                *cometbft_rpc_port,
             );
         }
-
-        // executor.spawn_critical(
-        //     "PoA Block Fetcher Task",
-        //     Box::pin(async move {
-        //         block_fetcher_task.start_task().await;
-        //     }),
-        // );
-        // executor.spawn_critical(
-        //     "PoA Block Sync Controller Task",
-        //     Box::pin(async move {
-        //         sync_controller.start_task().await;
-        //     }),
-        // );
+        if !is_fed_node {
+            info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
+            executor.spawn_critical(
+                "PoA Block Fetcher Task",
+                Box::pin(async move {
+                    block_fetcher_task.expect("block fetcher task exists").start_task().await;
+                }),
+            );
+            executor.spawn_critical(
+                "PoA Block Sync Controller Task",
+                Box::pin(async move {
+                    sync_controller.start_task().await;
+                }),
+            );
+        }
 
         let initial_target = node_config.debug.tip;
         let hooks = EngineHooks::new();

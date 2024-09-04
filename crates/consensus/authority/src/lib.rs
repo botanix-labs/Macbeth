@@ -41,6 +41,8 @@ use tracing::{error, warn};
 mod block_fetcher;
 mod builder;
 mod comet_bft;
+
+pub use comet_bft::light_client::LightCBFTClientBuilder;
 mod compressor;
 mod dkg;
 mod engine_util;
