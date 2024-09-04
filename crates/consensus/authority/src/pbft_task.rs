@@ -13,7 +13,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{

@@ -14,7 +14,6 @@ use reth_botanix_lib::{
     peg_contract::{PeginMeta, PegoutData},
 };
 use reth_primitives::constants::EPOCH_LENGTH;
-use reth_interfaces::sync::SyncStateProvider;
 use reth_network::NetworkHandle;
 use reth_primitives::{Bloom, BloomInput};
 use reth_provider::BlockReaderIdExt;

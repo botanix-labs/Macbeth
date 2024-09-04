@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::EthEngineTypes;
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_stages::PipelineEvent;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},

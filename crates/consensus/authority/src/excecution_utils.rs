@@ -20,7 +20,7 @@ pub(crate) mod authority_execution_utils {
         SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ExecutorFactory,
+        BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts,
         StateProviderFactory,
     };
     use reth_revm::{

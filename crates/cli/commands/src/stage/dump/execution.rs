@@ -1,5 +1,4 @@
 use super::setup;
-use crate::reth_node_core::utils::DbTool;
 use eyre::Result;
 use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_db::{

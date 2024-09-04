@@ -199,6 +199,11 @@ impl<Ext: clap::Args + fmt::Debug> NodeCommand<Ext> {
     }
 }
 
+/// No Additional arguments
+#[derive(Debug, Clone, Copy, Default, Args)]
+#[non_exhaustive]
+pub struct NoArgs;
+
 #[cfg(test)]
 mod tests {
     use super::*;

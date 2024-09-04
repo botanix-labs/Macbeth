@@ -5,12 +5,12 @@ use bitcoin::{
     psbt::Psbt,
     Witness,
 };
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils;
 
 use reth_eth_wire::NewBlock;
-use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::EngineTypes;
@@ -396,7 +396,7 @@ where
                 .expect("senders are valid");
 
         // update canon chain
-        match client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
+        match client.insert_block(sealed_block_with_senders.clone(), reth_blockchain_tree_api::BlockValidationKind::Exhaustive) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");
