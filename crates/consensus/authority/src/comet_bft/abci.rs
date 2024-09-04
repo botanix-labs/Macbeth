@@ -79,6 +79,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     btc_server: BtcServerExtendedClient,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+    cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,  
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -99,6 +100,7 @@ where
         btc_server: BtcServerExtendedClient,
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+        cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     ) -> Self {
         Self {
             storage,
@@ -107,6 +109,7 @@ where
             btc_server,
             authority_consensus,
             to_engine,
+            cbft_rpc_client_factory,
         }
     }
 
@@ -118,8 +121,6 @@ where
         abci_port: u16,
         cometbft_rpc_port: u16,
     ) {
-        let cbft_rpc_provider =
-            HttpCometBFTRpcClientFactory::default().with_port(cometbft_rpc_port);
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
 
         let app = ABCIClient::new(
@@ -128,11 +129,11 @@ where
             tx_pool,
             self.bitcoin_checkpoint.clone(),
             driver_tx,
-            cbft_rpc_provider.clone(),
+            self.cbft_rpc_client_factory.clone(),
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
-            cbft_rpc_provider.clone(),
+            self.cbft_rpc_client_factory.clone(),
             self.authority_consensus.clone(),
             self.btc_server.clone(),
             self.network_handle.clone(),
