@@ -7850,6 +7850,7 @@ dependencies = [
  "btc-server",
  "clap",
  "client",
+ "comet-bft-rpc",
  "comfy-table",
  "confy",
  "crossterm",
