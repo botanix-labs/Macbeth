@@ -30,19 +30,14 @@ members = [
     "crates/consensus/beacon/",
     "crates/consensus/common/",
     "crates/consensus/consensus/",
-<<<<<<< HEAD
     "crates/consensus/debug-client/",
-=======
     "crates/comet-bft-rpc",
-    "crates/ethereum-forks/",
->>>>>>> 0172af6b2 (chore: cbft rpc workspace dependency)
     "crates/e2e-test-utils/",
     "crates/engine/primitives/",
     "crates/engine/service",
     "crates/engine/tree/",
     "crates/engine/util/",
     "crates/errors/",
-    "crates/ethereum-forks/",
     "crates/ethereum-forks/",
     "crates/ethereum/cli/",
     "crates/ethereum/consensus/",
