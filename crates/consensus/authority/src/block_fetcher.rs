@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::{sha256, Hash};
+use tokio::time::Instant;
+
 use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -109,9 +111,6 @@ where
     }
 
     pub async fn start_task(&mut self) {
-        // only a federation node has a btc_server
-        let is_fed_node = self.btc_server.is_some();
-        let consensus = Arc::new(self.consensus.clone());
         loop {
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
@@ -130,6 +129,7 @@ where
                     return;
                 }
             };
+            let start_time = Instant::now();
             let cbft_block = self
                 .light_client
                 .get_or_fetch_block(new_block.number().try_into().unwrap())
@@ -138,7 +138,6 @@ where
 
             let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
             self.light_client.light_client.verify_to_highest(&mut self.light_client.state).unwrap();
-            info!(">>>>>>>>>>> Latest trusted: {:?}", latest_trusted);
 
             let block = new_block.block.block.clone();
             let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
@@ -147,16 +146,14 @@ where
                 warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
                 continue;
             }
-
-            info!(target: "consensus::authority", "Recieved new block from peer {:?}", block.header.hash_slow());
+            let end_time = Instant::now();
+            info!(
+                "light_client.get_or_fetch_block took {:?}",
+                end_time.duration_since(start_time)
+            );
             let client = self.storage.client.clone();
-
-            let storage = self.storage.write().await;
-            info!(">>>>>>>>>>> storage");
-            let aggregate_public_key = storage.aggregate_public_key.clone();
-            let executor_factory = storage.executor_factory.clone();
-            let authorities = storage.authorities.clone();
-            let genesis_authorities = storage.genesis_authorities.clone();
+            let block_hash = block.header.hash_slow();
+            info!(target: "consensus::authority", "Recieved new block from peer {:?}", block_hash);
 
             let best_block = client.best_block_number().expect("best block number exists");
             let best_hash = client
@@ -165,64 +162,27 @@ where
                 .unwrap_or_else(|| {
                     panic!("best block hash is valid");
                 });
-            if block.header.hash_slow() == best_hash {
+            if block_hash == best_hash {
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
                 continue;
             }
             // Seal the block
             let sealed_block = block.clone().seal_slow();
-            info!(">>>>>>>>>>> sealed_block");
-
-            // if is_fed_node && storage.aggregate_public_key.is_none() {
-            //     warn!(target: "consensus::authority", "Do not have aggregate public key in
-            // memory, skipping block import");     continue;
-            // }
-
-            // Drop the storage lock as soon as possible to allow other tasks to run
-            drop(storage);
-
-            // TODO we hang here
-            // Notify the engine of the new block
-            // let _payload_status = match engine_util::send_beacon_new_payload(
-            //     sealed_block.clone(),
-            //     self.to_engine.clone(),
-            // )
-            // .await
-            // {
-            //     Ok(payload) => payload,
-            //     Err(err) => {
-            //         error!(target: "consensus::authority", ?err, "Block import failed to send new
-            // payload to engine");
-            //         continue;
-            //     }
-            // };
-            // info!(">>>>>>>>>>> send_beacon_new_payload");
-            // TODO Should be handling payload status here
-
-            let sealed_block_with_peg = match execute_imported_block(
-                &self.consensus,
-                sealed_block.clone(),
-                &client,
-                &executor_factory,
-                aggregate_public_key.as_ref(),
-                &authorities,
-                &genesis_authorities,
-            ) {
-                Ok(sealed_block_with_peg) => sealed_block_with_peg,
-                Err(err) => {
-                    error!(target: "consensus::authority", ?err, "Failed to exectute block
-            recieved by peer");
-                    continue;
-                }
-            };
-            info!(">>>>>>>>>>> execute_imported_block");
-
-            let sealed_block_with_senders = sealed_block_with_peg.block();
-            let header = sealed_block.header.clone();
+            let senders = new_block.block.block.senders().unwrap();
+            if senders.len() != new_block.block.block.body.len() {
+                warn!(target: "consensus::authority", "Senders length does not match transactions length");
+                continue;
+            }
+            let sealed_block_with_senders = SealedBlockWithSenders::new(sealed_block, senders)
+                .expect("senders length to match transactions length");
+            let header = sealed_block_with_senders.header.clone();
+            assert!(header.hash_slow() == block_hash);
 
             // Notify engine api about new FCU
+            let start_time = Instant::now();
+
             match engine_util::send_fork_choice_update_payload(
-                sealed_block_with_senders.clone().hash(),
+                header.hash(),
                 self.to_engine.clone(),
             )
             .await
@@ -234,12 +194,15 @@ where
                     continue;
                 }
             };
-            info!(">>>>>>>>>>> send_fork_choice_update_payload");
+            let end_time = Instant::now();
+            info!(
+                "send_fork_choice_update_payload took {:?}",
+                end_time.duration_since(start_time)
+            );
             // update canon chain for rpc
-            client.set_canonical_head(header);
-            client.set_safe(sealed_block.header.clone());
-            client.set_finalized(sealed_block.header.clone());
-            info!(">>>>>>>>>>> set_canonical_head");
+            client.set_canonical_head(header.clone());
+            client.set_safe(header.clone());
+            client.set_finalized(header.clone());
         }
     }
 }
