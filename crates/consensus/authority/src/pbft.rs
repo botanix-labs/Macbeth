@@ -1,5 +1,6 @@
 use crate::{utils::retry_exec, AuthorityConsensus, Storage};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
@@ -20,7 +21,7 @@ use reth_network::frost::{
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
     header_ext::{BlockWitness, HeaderExt, RecoverAuthorityError, ValidateAuthoritySignatureError},
-    BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, BOTANIX_TESTNET, U256,
+    BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
 use reth_provider::{
     BlockReader, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory,

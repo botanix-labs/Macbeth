@@ -25,7 +25,7 @@ reth-eth-wire.workspace = true
 reth-evm.workspace = true
 reth-exex.workspace = true
 reth-fs-util.workspace = true
-reth-network = { workspace = true, features = ["serde"] }
+reth-network = { workspace = true, features = ["serde", "test-utils"] }
 reth-network-p2p.workspace = true
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-builder.workspace = true
