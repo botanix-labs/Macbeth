@@ -1,11 +1,14 @@
-use tendermint_rpc::{client::HttpClient, Error};
+use std::str::FromStr;
+
+use tendermint_rpc::{client::HttpClient, Error, HttpClientUrl};
 // re-export Client trait
 pub use tendermint_rpc::Client;
 
-const DEFAULT_RPC_URL: &str = "http://localhost:26657";
+const DEFAULT_RPC_HOST: &str = "localhost";
+const DEFAULT_RPC_PORT: u16 = 26657;
 
 pub trait CometBftRpcFactory: Clone + Send + Sync {
-    fn new(url: String) -> Self;
+    fn new(host: String, port: u16) -> Self;
 
     fn build_and_connect(&self) -> Result<HttpClient, Error>;
 }
@@ -14,22 +17,38 @@ pub trait CometBftRpcFactory: Clone + Send + Sync {
 pub struct HttpCometBFTRpcClientFactory {
     // storing as String so it works with HttpClient::new()
     // which needs a type that implements try_into()
-    url: String,
+    host: String,
+    port: u16,
 }
 
 impl CometBftRpcFactory for HttpCometBFTRpcClientFactory {
-    fn new(url: String) -> Self {
-        Self { url }
+    fn new(host: String, port: u16) -> Self {
+        Self { host, port }
     }
 
     fn build_and_connect(&self) -> Result<HttpClient, Error> {
-        HttpClient::new(self.url.as_str())
+        let url = HttpClientUrl::from_str(
+            format!("http://{}:{}", self.host, self.port.to_string()).as_str(),
+        )?;
+        HttpClient::builder(url).compat_mode(tendermint_rpc::client::CompatMode::V0_34).build()
     }
 }
 
 impl Default for HttpCometBFTRpcClientFactory {
     fn default() -> Self {
-        Self { url: String::from(DEFAULT_RPC_URL) }
+        Self { host: DEFAULT_RPC_HOST.to_string(), port: DEFAULT_RPC_PORT }
+    }
+}
+
+impl HttpCometBFTRpcClientFactory {
+    pub fn with_port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    pub fn with_host(mut self, host: &str) -> Self {
+        self.host = host.to_string();
+        self
     }
 }
 
@@ -38,7 +57,8 @@ mod tests {
 
     #[test]
     fn test_http_rpc_client_factory_new() {
-        let client_factory = HttpCometBFTRpcClientFactory::new(String::from(DEFAULT_RPC_URL));
+        let client_factory =
+            HttpCometBFTRpcClientFactory::new(DEFAULT_RPC_HOST.to_string(), DEFAULT_RPC_PORT);
         let client = client_factory.build_and_connect();
         assert!(client.is_ok());
     }
