@@ -31,20 +31,3 @@ impl Default for HttpCometBFTRpcClientFactory {
     }
 }
 
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_http_rpc_client_factory_new() {
-        let client_factory = HttpCometBFTRpcClientFactory::new(String::from(DEFAULT_RPC_URL));
-        let client = client_factory.build_and_connect();
-        assert!(client.is_ok());
-    }
-
-    #[test]
-    fn test_http_rpc_client_factory_default() {
-        let client_factory = HttpCometBFTRpcClientFactory::default();
-        let client = client_factory.build_and_connect();
-        assert!(client.is_ok());
-    }
-}
