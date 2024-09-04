@@ -74,7 +74,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     btc_server: BtcServerExtendedClient,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
-    cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,  
+    cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -298,6 +298,11 @@ where
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
         info!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
+
+        if self.pool.pool_size().total == 0 {
+            info!("No transactions in pool, waiting...");
+            return ResponsePrepareProposal { txs: vec![] };
+        }
 
         let payload_config = self.payload_builder_arguments();
         let client = self.storage.inner.blocking_read().client.clone();
