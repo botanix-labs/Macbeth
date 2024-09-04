@@ -10,11 +10,8 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
-<<<<<<< HEAD
 use futures_util::StreamExt;
-=======
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
->>>>>>> 42546ddc8 (feature: allow block fetcher to verify recieved blocks against cbft light client)
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -25,11 +22,8 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkEventListenerProvider, NetworkHandle,
 };
-<<<<<<< HEAD
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
-=======
->>>>>>> 42546ddc8 (feature: allow block fetcher to verify recieved blocks against cbft light client)
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
