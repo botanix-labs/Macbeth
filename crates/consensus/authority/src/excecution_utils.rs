@@ -124,14 +124,14 @@ pub(crate) mod authority_execution_utils {
         agg_pk: Option<&secp256k1::PublicKey>,
         authorities: &Vec<secp256k1::PublicKey>,
         genesis_authorities: &Vec<secp256k1::PublicKey>,
-    ) -> Result<BundleStateWithReceipts, BlockExecutionError> {
+    ) -> Result<SealedBlockWithPeg, BlockExecutionError> {
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
         let senders =
             TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
                 BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
             )?;
 
-        let block_with_senders =
+        let sealed_block_with_senders =
             BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
                 .expect("senders are valid");
 
@@ -171,10 +171,15 @@ pub(crate) mod authority_execution_utils {
         let _block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let db = client.latest().map_err(|e| BlockExecutionError::LatestBlock(e))?;
         let mut executor = executor_factory.with_state(db);
-        executor.execute_and_verify_receipt(&block_with_senders, U256::ZERO)?;
+        executor.execute_and_verify_receipt(&sealed_block_with_senders.clone(), U256::ZERO)?;
         let bundle_state = executor.take_output_state();
+        let sealed_block_with_peg = SealedBlockWithPeg::new(
+            sealed_block_with_senders.seal_slow(),
+            bundle_state.pegins().to_vec(),
+            bundle_state.pegouts().to_vec(),
+        );
 
-        Ok(bundle_state)
+        Ok(sealed_block_with_peg)
     }
 
     /// Fills in pre-execution header fields based on the current best block and given

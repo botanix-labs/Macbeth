@@ -10,6 +10,7 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::{
@@ -21,7 +22,6 @@ use reth_network::{
     message::NewBlockMessage,
     NetworkEvents, NetworkHandle,
 };
-use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::{header_ext::HeaderExt, ChainSpec};
@@ -31,8 +31,8 @@ use reth_provider::{
 };
 
 use reth_tasks::TaskExecutor;
-use secp256k1::{PublicKey, Secp256k1};
 use std::{net::SocketAddr, sync::Arc};
+use tendermint_light_client::instance::Instance;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -58,8 +58,8 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
-    #[allow(dead_code)]
-    btc_network: bitcoin::Network,
+    light_client: Option<Instance>,
+    cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -109,6 +109,8 @@ where
         executor_factory: EF,
         bitcoind_factory: BF,
         evm_config: EthEvmConfig,
+        cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
+        light_client: Option<Instance>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -207,7 +209,8 @@ where
             task_executor,
             frost_config,
             payload_builder,
-            btc_network,
+            light_client,
+            cometbft_rpc_factory,
         })
     }
 
@@ -218,7 +221,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>,
+        Option<BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
@@ -240,7 +243,8 @@ where
             task_executor,
             frost_config,
             payload_builder,
-            btc_network: _,
+            light_client,
+            cometbft_rpc_factory,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let guard = storage.read().await;
@@ -284,19 +288,6 @@ where
             to_engine.clone(),
         );
 
-        let block_fetcher_task = BlockFetcherTask::new(
-            consensus.clone(),
-            block_import_rx,
-            to_engine.clone(),
-            canon_state_notification.clone(),
-            btc_server_client.clone(),
-            storage.clone(),
-            bitcoin_block_header.clone(),
-            network_client.clone(),
-            network_handle.clone(),
-            utxo_sync.clone(),
-        );
-
         // Set up frost notification message queue
         // these are two mpsc channels that are used to communicate between the frost task and the
         // block production task
@@ -309,6 +300,7 @@ where
         let mut frost_task = None;
         let mut healthcheck_task = None;
         let mut abci_client_builder = None;
+        let mut block_fetcher_task = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -339,6 +331,21 @@ where
                 btc_server_client.expect("to be defined").clone(),
                 consensus.clone(),
                 to_engine.clone(),
+                cometbft_rpc_factory.clone(),
+            ));
+        } else {
+            block_fetcher_task = Some(BlockFetcherTask::new(
+                consensus.clone(),
+                block_import_rx,
+                to_engine.clone(),
+                canon_state_notification.clone(),
+                btc_server_client.clone(),
+                storage.clone(),
+                bitcoin_block_header.clone(),
+                network_client.clone(),
+                network_handle.clone(),
+                utxo_sync.clone(),
+                light_client.unwrap(),
             ));
         }
 
