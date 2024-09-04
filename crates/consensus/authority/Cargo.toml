@@ -62,7 +62,7 @@ client = {path = "../../../bin/btc-server/client"}
 btc-server = {path = "../../../bin/btc-server"}
 
 # CometBFT
-comet-bft-rpc = { path = "../../comet-bft-rpc" }
+comet-bft-rpc.workspace = true
 
 # hex
 hex = "0.4.3"
