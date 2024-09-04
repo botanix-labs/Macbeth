@@ -5,13 +5,14 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt};
 use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
-    AuthorityConsensus, AuthorityConsensusBuilder,
+    AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
 };
 use reth_network_types::pk2id;
 use reth_node_core::cli::config::BtcServerConfig;
@@ -180,6 +181,15 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// ABCI client port to listen on
     #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
+
+    /// CometBFT RPC Port
+    #[arg(long, value_name = "COMETBFT_RPC_PORT", default_value_t = 26657)]
+    pub cometbft_rpc_port: u16,
+
+    // TODO parse to a better type
+    /// CometBFT RPC Host
+    #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
+    pub cometbft_rpc_host: String,
 }
 
 impl PoaNodeCommand {
@@ -218,6 +228,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             db,
             bitcoind_config_path,
             abci_port,
+            cometbft_rpc_port,
+            cometbft_rpc_host,
             ..
         } = self;
         PoaNodeCommand {
@@ -238,6 +250,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             bitcoind_config_path,
             ext,
             abci_port,
+            cometbft_rpc_port,
+            cometbft_rpc_host,
         }
     }
 
@@ -264,6 +278,8 @@ where {
             bitcoind_config_path,
             ext,
             abci_port,
+            cometbft_rpc_port,
+            cometbft_rpc_host,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -668,7 +684,7 @@ where {
         };
 
         let default_peers_path = data_dir.known_peers_path();
-        let network_cfg_builder = self
+        let mut network_cfg_builder = self
             .network
             .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
@@ -683,9 +699,14 @@ where {
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
             ))
-            .block_import(Box::new(block_import.clone()))
             .frost_config(frost_config.clone())
             .network_mode(reth_network::config::NetworkMode::Authority);
+
+        if !is_fed_node {
+            // block import is only needed for non-federation nodes
+            // federation nodes will recieve blocks via their consensus layer
+            network_cfg_builder = network_cfg_builder.block_import(Box::new(block_import.clone()))
+        }
 
         let network_config = network_cfg_builder.build(provider_factory.clone());
 
@@ -749,6 +770,25 @@ where {
         };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
+        let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default()
+            .with_port(*cometbft_rpc_port)
+            .with_host(cometbft_rpc_host);
+
+        let light_client = {
+            if !is_fed_node {
+                let light_client = LightCBFTClientBuilder::new(
+                    HttpCometBFTRpcClientFactory::default()
+                        .with_port(*cometbft_rpc_port)
+                        .with_host(cometbft_rpc_host),
+                )
+                .build_and_verify()
+                .await;
+
+                Some(light_client)
+            } else {
+                None
+            }
+        };
         // Build authority Consensus
         let (
             _authority_consensus,
@@ -778,6 +818,8 @@ where {
             executor_factory.clone(),
             bitcoind_factory.clone(),
             evm_config.clone(),
+            cometbft_rpc_factory,
+            light_client,
         )
         .expect("Failed to create authority consensus builder")
         .build()
@@ -844,21 +886,24 @@ where {
                 eth_tx_validator,
                 transaction_pool.clone(),
                 *abci_port,
+                *cometbft_rpc_port,
             );
         }
-
-        // executor.spawn_critical(
-        //     "PoA Block Fetcher Task",
-        //     Box::pin(async move {
-        //         block_fetcher_task.start_task().await;
-        //     }),
-        // );
-        // executor.spawn_critical(
-        //     "PoA Block Sync Controller Task",
-        //     Box::pin(async move {
-        //         sync_controller.start_task().await;
-        //     }),
-        // );
+        if !is_fed_node {
+            info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
+            executor.spawn_critical(
+                "PoA Block Fetcher Task",
+                Box::pin(async move {
+                    block_fetcher_task.expect("block fetcher task exists").start_task().await;
+                }),
+            );
+            executor.spawn_critical(
+                "PoA Block Sync Controller Task",
+                Box::pin(async move {
+                    sync_controller.start_task().await;
+                }),
+            );
+        }
 
         let initial_target = node_config.initial_pipeline_target(genesis_hash);
         let hooks = EngineHooks::new();
