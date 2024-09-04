@@ -1,18 +1,15 @@
 use crate::{utils::retry_exec, AuthorityConsensus, Storage};
+use reth_blockchain_tree_api::BlockchainTreeViewer;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
+use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
+use reth_network_p2p::HeadersClient;
 use reth_network_peers::pk2id;
 use frost_secp256k1_tr as frost;
-
 use reth_consensus_common::utils::current_inturn_index;
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeViewer,
-    executor::{BlockExecutionError, BlockValidationError},
-    p2p::headers::client::HeadersClient,
-};
 use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,

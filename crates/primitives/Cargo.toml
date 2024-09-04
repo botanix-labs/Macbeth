@@ -20,6 +20,7 @@ reth-trie-common.workspace = true
 revm-primitives = { workspace = true, features = ["serde"] }
 reth-chainspec = { workspace = true, optional = true }
 reth-codecs = { workspace = true, optional = true }
+alloy-rpc-types-engine.workspace = true
 
 # ethereum
 alloy-primitives = { workspace = true, features = ["rand", "rlp"] }

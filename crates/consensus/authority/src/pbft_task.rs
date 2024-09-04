@@ -1,10 +1,11 @@
 use std::{sync::Arc, time::Duration};
+use reth_blockchain_tree_api::BlockchainTreeEngine;
+use reth_network_p2p::HeadersClient;
 use tracing::{info, error, warn};
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
 };
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},

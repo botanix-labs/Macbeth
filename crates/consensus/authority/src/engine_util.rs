@@ -37,7 +37,7 @@ pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
     loop {
         let (tx, rx) = oneshot::channel();
         let payload = BeaconEngineMessage::NewPayload {
-            payload: sealed_block.into(),
+            payload: sealed_block.clone().into(),
             cancun_fields: None,
             tx,
         };

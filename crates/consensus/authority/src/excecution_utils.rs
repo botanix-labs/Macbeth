@@ -5,10 +5,7 @@ pub(crate) mod authority_execution_utils {
     use reth_consensus_common::utils::{
         get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
     };
-    use reth_interfaces::{
-        executor::{BlockExecutionError, BlockValidationError},
-        provider::ProviderError,
-    };
+    use reth_execution_errors::{BlockExecutionError, BlockValidationError};
     use reth_chainspec::ChainSpec;
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
@@ -20,8 +17,7 @@ pub(crate) mod authority_execution_utils {
         SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts,
-        StateProviderFactory,
+        BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ProviderError, StateProviderFactory
     };
     use reth_revm::{
         database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
