@@ -7,7 +7,9 @@ pub(crate) mod engine;
 
 pub use common::LaunchContext;
 pub use exex::ExExLauncher;
+use eyre::Context;
 use reth_btc_wallet::{bitcoind::{BitcoindFactory, BitcoindConfig}, test_utils::MockBitcoindFactory};
+use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 
 use std::{future::Future, sync::Arc};
 
@@ -24,10 +26,7 @@ use reth_exex::ExExManagerHandle;
 use reth_network::{BlockDownloaderProvider, NetworkEventListenerProvider};
 use reth_node_api::{FullNodeComponents, FullNodeTypes, NodeAddOns};
 use reth_node_core::{
-    dirs::{ChainPath, DataDirPath},
-    exit::NodeExitFuture,
-    rpc::eth::{helpers::AddDevSigners, FullEthApiServer},
-    version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA},
+    args::BitcoindArgs, cli::config::BtcServerConfig, dirs::{ChainPath, DataDirPath}, exit::NodeExitFuture, rpc::eth::{helpers::AddDevSigners, FullEthApiServer}, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}
 };
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_primitives::format_ether;
@@ -254,8 +253,7 @@ where
                 pipeline_exex_handle,
                 MockBitcoindFactory::new(BitcoindConfig::default()),
                 bitcoin::Network::Regtest,
-            )
-            .await?;
+            )?;
 
             let pipeline_events = pipeline.events();
             task.set_pipeline_events(pipeline_events);
@@ -278,8 +276,7 @@ where
                 pipeline_exex_handle,
                 MockBitcoindFactory::new(BitcoindConfig::default()),
                 bitcoin::Network::Regtest,
-            )
-            .await?;
+            )?;
 
             (pipeline, Either::Right(network_client.clone()))
         };
@@ -346,6 +343,22 @@ where
             version: CARGO_PKG_VERSION.to_string(),
             commit: VERGEN_GIT_SHA.to_string(),
         };
+
+        // create botanix client
+        let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
+        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
+        let botanix_config = BotanixConfig::default()
+            .btc_server(node_config.rpc.btc_server.clone())
+            .bitcoin_network(node_config.rpc.btc_network)
+            .bitcoind(
+                bitcoind_config.url().to_owned(),
+                bitcoind_config.username().to_owned(),
+                bitcoind_config.password().to_owned(),
+            )
+            .btc_server_jwt_secret(
+                btc_signing_server_jwt_secret
+            );
+
         let engine_api = EngineApi::new(
             ctx.blockchain_db().clone(),
             ctx.chain_spec(),
@@ -354,6 +367,7 @@ where
             Box::new(ctx.task_executor().clone()),
             client,
             EngineCapabilities::default(),
+            Botanix::new(botanix_config),
         );
         info!(target: "reth::cli", "Engine API handler initialized");
 

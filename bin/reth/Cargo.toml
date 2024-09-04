@@ -20,6 +20,7 @@ reth-primitives.workspace = true
 reth-fs-util.workspace = true
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-db-api.workspace = true
+reth-rpc-engine-api.workspace = true
 reth-exex.workspace = true
 reth-provider.workspace = true
 reth-evm.workspace = true
@@ -88,6 +89,9 @@ secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recov
 
 # tracing
 tracing.workspace = true
+
+# confy
+confy = "0.6"
 
 # io
 fdlimit.workspace = true

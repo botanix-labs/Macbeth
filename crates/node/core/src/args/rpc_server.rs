@@ -2,24 +2,28 @@
 
 use std::{
     ffi::OsStr,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 
-use alloy_rpc_types_engine::JwtSecret;
+use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
 };
 use rand::Rng;
 use reth_cli_util::parsers::parse_grpc_address;
+use reth_network::NetworkInfo;
+use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProviderFactory};
+use reth_rpc_eth_types::{builder::botanix_config::BotanixConfig, EthConfig, EthStateCacheConfig, GasPriceOracleConfig};
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
+use reth_transaction_pool::TransactionPool;
 use url::Url;
 
-use crate::args::{
+use crate::{args::{
     types::{MaxU32, ZeroAsNoneU64},
     GasPriceOracleArgs, RpcStateCacheArgs,
-};
+}, cli::config::BtcServerConfig, utils::get_or_create_jwt_secret_from_path};
 
 use super::{bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, BitcoindArgs};
 
@@ -313,7 +317,266 @@ impl RpcServerArgs {
         self = self.with_ipc_random_path();
         self
     }
+
+    // /// Convenience function for starting a rpc server with configs which extracted from cli args.
+    // pub async fn start_rpc_server<Provider, Pool, Network, Tasks, Events, EvmConfig>(
+    //     &self,
+    //     provider: Provider,
+    //     pool: Pool,
+    //     network: Network,
+    //     executor: Tasks,
+    //     events: Events,
+    //     evm_config: EvmConfig,
+    // ) -> Result<RpcServerHandle, RpcError>
+    // where
+    //     Provider: BlockReaderIdExt
+    //         + AccountReader
+    //         + HeaderProvider
+    //         + StateProviderFactory
+    //         + EvmEnvProvider
+    //         + ChainSpecProvider
+    //         + ChangeSetReader
+    //         + Clone
+    //         + Unpin
+    //         + 'static,
+    //     Pool: TransactionPool + Clone + 'static,
+    //     Network: NetworkInfo + Peers + Clone + 'static,
+    //     Tasks: TaskSpawner + Clone + 'static,
+    //     Events: CanonStateSubscriptions + Clone + 'static,
+    //     EvmConfig: ConfigureEvm + 'static,
+    // {
+    //     reth_rpc_builder::launch(
+    //         provider,
+    //         pool,
+    //         network,
+    //         self.transport_rpc_module_config(),
+    //         self.rpc_server_config(),
+    //         executor,
+    //         events,
+    //         evm_config,
+    //     )
+    //     .await
+    // }
+
+    // /// Create Engine API server.
+    // #[allow(clippy::too_many_arguments)]
+    // pub async fn start_auth_server<Provider, Pool, Network, Tasks, EngineT, EvmConfig>(
+    //     &self,
+    //     provider: Provider,
+    //     pool: Pool,
+    //     network: Network,
+    //     executor: Tasks,
+    //     engine_api: EngineApi<Provider, EngineT>,
+    //     jwt_secret: JwtSecret,
+    //     evm_config: EvmConfig,
+    // ) -> Result<AuthServerHandle, RpcError>
+    // where
+    //     Provider: BlockReaderIdExt
+    //         + ChainSpecProvider
+    //         + EvmEnvProvider
+    //         + HeaderProvider
+    //         + StateProviderFactory
+    //         + Clone
+    //         + Unpin
+    //         + 'static,
+    //     Pool: TransactionPool + Clone + 'static,
+    //     Network: NetworkInfo + Peers + Clone + 'static,
+    //     Tasks: TaskSpawner + Clone + 'static,
+    //     EngineT: EngineTypes + 'static,
+    //     EvmConfig: ConfigureEvm + 'static,
+    // {
+    //     let socket_address = SocketAddr::new(self.auth_addr, self.auth_port);
+    //     let mut botanix_config = BotanixConfig::default();
+    //     botanix_config = botanix_config
+    //         .btc_server(self.btc_server.clone())
+    //         .bitcoind(
+    //             self.bitcoind.url.clone(),
+    //             self.bitcoind.username.clone(),
+    //             self.bitcoind.password.clone(),
+    //         )
+    //         .btc_server_jwt_secret(
+    //             self.btc_signing_server_jwt_secret().ok().flatten().map(Into::into),
+    //         );
+
+    //     reth_rpc_builder::auth::launch(
+    //         provider,
+    //         pool,
+    //         network,
+    //         executor,
+    //         engine_api,
+    //         socket_address,
+    //         jwt_secret,
+    //         evm_config,
+    //         botanix_config,
+    //     )
+    //     .await
+    // }
 }
+
+
+impl BtcServerConfig for RpcServerArgs {
+    fn btc_signing_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError> {
+        self.btc_signing_server_jwt_secret
+            .as_ref()
+            .map(|jwt| {
+                tracing::info!(target: "reth::cli", user_path=?jwt, "Reading btc signing server JWT secret file");
+                JwtSecret::from_file(jwt)
+            })
+            .transpose()
+    }
+}
+
+// impl RethRpcConfig for RpcServerArgs {
+//     fn is_ipc_enabled(&self) -> bool {
+//         // By default IPC is enabled therefore it is enabled if the `ipcdisable` is false.
+//         !self.ipcdisable
+//     }
+
+//     fn ipc_path(&self) -> &str {
+//         self.ipcpath.as_str()
+//     }
+
+//     fn eth_config(&self) -> EthConfig {
+//         let mut botanix_config = BotanixConfig::default();
+//         botanix_config = botanix_config
+//             .btc_server(self.btc_server.clone())
+//             .bitcoin_network(self.btc_network)
+//             .bitcoind(
+//                 self.bitcoind.url.clone(),
+//                 self.bitcoind.username.clone(),
+//                 self.bitcoind.password.clone(),
+//             )
+//             .btc_server_jwt_secret(
+//                 self.btc_signing_server_jwt_secret().ok().flatten().map(Into::into),
+//             );
+
+//         EthConfig::default()
+//             .max_tracing_requests(self.rpc_max_tracing_requests)
+//             .max_blocks_per_filter(self.rpc_max_blocks_per_filter.unwrap_or_max())
+//             .max_logs_per_response(self.rpc_max_logs_per_response.unwrap_or_max() as usize)
+//             .rpc_gas_cap(self.rpc_gas_cap)
+//             .state_cache(self.state_cache_config())
+//             .gpo_config(self.gas_price_oracle_config())
+//             .botanix_config(botanix_config)
+//     }
+
+//     fn state_cache_config(&self) -> EthStateCacheConfig {
+//         EthStateCacheConfig {
+//             max_blocks: self.rpc_state_cache.max_blocks,
+//             max_receipts: self.rpc_state_cache.max_receipts,
+//             max_envs: self.rpc_state_cache.max_envs,
+//             max_concurrent_db_requests: self.rpc_state_cache.max_concurrent_db_requests,
+//         }
+//     }
+
+//     fn rpc_max_request_size_bytes(&self) -> u32 {
+//         self.rpc_max_request_size.get().saturating_mul(1024 * 1024)
+//     }
+
+//     fn rpc_max_response_size_bytes(&self) -> u32 {
+//         self.rpc_max_response_size.get().saturating_mul(1024 * 1024)
+//     }
+
+//     fn gas_price_oracle_config(&self) -> GasPriceOracleConfig {
+//         self.gas_price_oracle.gas_price_oracle_config()
+//     }
+
+//     fn transport_rpc_module_config(&self) -> TransportRpcModuleConfig {
+//         let mut config = TransportRpcModuleConfig::default()
+//             .with_config(RpcModuleConfig::new(self.eth_config()));
+
+//         if self.http {
+//             config = config.with_http(
+//                 self.http_api
+//                     .clone()
+//                     .unwrap_or_else(|| RpcModuleSelection::standard_modules().into()),
+//             );
+//         }
+
+//         if self.ws {
+//             config = config.with_ws(
+//                 self.ws_api
+//                     .clone()
+//                     .unwrap_or_else(|| RpcModuleSelection::standard_modules().into()),
+//             );
+//         }
+
+//         if self.is_ipc_enabled() {
+//             config = config.with_ipc(RpcModuleSelection::default_ipc_modules());
+//         }
+
+//         config
+//     }
+
+//     fn http_ws_server_builder(&self) -> ServerBuilder<Identity, Identity> {
+//         ServerBuilder::new()
+//             .max_connections(self.rpc_max_connections.get())
+//             .max_request_body_size(self.rpc_max_request_size_bytes())
+//             .max_response_body_size(self.rpc_max_response_size_bytes())
+//             .max_subscriptions_per_connection(self.rpc_max_subscriptions_per_connection.get())
+//     }
+
+//     fn ipc_server_builder(&self) -> IpcServerBuilder<Identity, Identity> {
+//         IpcServerBuilder::default()
+//             .max_subscriptions_per_connection(self.rpc_max_subscriptions_per_connection.get())
+//             .max_request_body_size(self.rpc_max_request_size_bytes())
+//             .max_response_body_size(self.rpc_max_response_size_bytes())
+//             .max_connections(self.rpc_max_connections.get())
+//     }
+
+//     fn rpc_server_config(&self) -> RpcServerConfig {
+//         let mut config = RpcServerConfig::default()
+//             .with_jwt_secret(self.rpc_secret_key())
+//             .with_btc_signing_server_jwt_secret(
+//                 self.btc_signing_server_jwt_secret().ok().flatten(),
+//             );
+
+//         if self.http {
+//             let socket_address = SocketAddr::new(self.http_addr, self.http_port);
+//             config = config
+//                 .with_http_address(socket_address)
+//                 .with_http(self.http_ws_server_builder())
+//                 .with_http_cors(self.http_corsdomain.clone())
+//                 .with_ws_cors(self.ws_allowed_origins.clone());
+//         }
+
+//         if self.ws {
+//             let socket_address = SocketAddr::new(self.ws_addr, self.ws_port);
+//             config = config.with_ws_address(socket_address).with_ws(self.http_ws_server_builder());
+//         }
+
+//         if self.is_ipc_enabled() {
+//             config =
+//                 config.with_ipc(self.ipc_server_builder()).with_ipc_endpoint(self.ipcpath.clone());
+//         }
+
+//         config
+//     }
+
+//     fn auth_server_config(&self, jwt_secret: JwtSecret) -> Result<AuthServerConfig, RpcError> {
+//         let address = SocketAddr::new(self.auth_addr, self.auth_port);
+
+//         let mut builder = AuthServerConfig::builder(jwt_secret).socket_addr(address);
+//         if self.auth_ipc {
+//             builder = builder.ipc_endpoint(self.auth_ipc_path.clone());
+//         }
+//         Ok(builder.build())
+//     }
+
+//     fn auth_jwt_secret(&self, default_jwt_path: PathBuf) -> Result<JwtSecret, JwtError> {
+//         match self.auth_jwtsecret.as_ref() {
+//             Some(fpath) => {
+//                 debug!(target: "reth::cli", user_path=?fpath, "Reading JWT auth secret file");
+//                 JwtSecret::from_file(fpath)
+//             }
+//             None => get_or_create_jwt_secret_from_path(&default_jwt_path),
+//         }
+//     }
+
+//     fn rpc_secret_key(&self) -> Option<JwtSecret> {
+//         self.rpc_jwtsecret.clone()
+//     }
+// }
 
 impl Default for RpcServerArgs {
     fn default() -> Self {

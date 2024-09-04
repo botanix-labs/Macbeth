@@ -337,95 +337,95 @@ where
     Ok((handles, registry))
 }
 
-/// Launch the poa rpc servers.
-#[allow(clippy::too_many_arguments)]
-pub async fn launch_poa_rpc_servers<Provider, Pool, Network, Tasks, EvmConfig, EngineT>(
-    rpc: &RpcServerArgs,
-    node_config: &NodeConfig,
-    provider: Provider,
-    pool: Pool,
-    network: Network,
-    executor: Tasks,
-    evm_config: EvmConfig,
-    engine_api: EngineApi<Provider, EngineT>,
-    jwt_secret: JwtSecret,
-) -> eyre::Result<(RpcServerHandle, Option<AuthServerHandle>)>
-where
-    Provider: BlockReaderIdExt
-        + AccountReader
-        + HeaderProvider
-        + StateProviderFactory
-        + EvmEnvProvider
-        + ChainSpecProvider
-        + ChangeSetReader
-        + CanonStateSubscriptions
-        + Clone
-        + Unpin
-        + 'static,
-    Pool: TransactionPool + Clone + 'static,
-    Network: NetworkInfo + Peers + Clone + 'static,
-    Tasks: TaskSpawner + Clone + 'static,
-    EvmConfig: ConfigureEvm + 'static,
-    EngineT: EngineTypes + 'static,
-{
-    let chain_id = node_config.chain.as_ref().chain.id();
-    let botanix_chain_id = BOTANIX_TESTNET.as_ref().chain.id();
+// /// Launch the poa rpc servers.
+// #[allow(clippy::too_many_arguments)]
+// pub async fn launch_poa_rpc_servers<Provider, Pool, Network, Tasks, EvmConfig, EngineT>(
+//     rpc: &RpcServerArgs,
+//     node_config: &NodeConfig,
+//     provider: Provider,
+//     pool: Pool,
+//     network: Network,
+//     executor: Tasks,
+//     evm_config: EvmConfig,
+//     engine_api: EngineApi<Provider, EngineT>,
+//     jwt_secret: JwtSecret,
+// ) -> eyre::Result<(RpcServerHandle, Option<AuthServerHandle>)>
+// where
+//     Provider: BlockReaderIdExt
+//         + AccountReader
+//         + HeaderProvider
+//         + StateProviderFactory
+//         + EvmEnvProvider
+//         + ChainSpecProvider
+//         + ChangeSetReader
+//         + CanonStateSubscriptions
+//         + Clone
+//         + Unpin
+//         + 'static,
+//     Pool: TransactionPool + Clone + 'static,
+//     Network: NetworkInfo + Peers + Clone + 'static,
+//     Tasks: TaskSpawner + Clone + 'static,
+//     EvmConfig: ConfigureEvm + 'static,
+//     EngineT: EngineTypes + 'static,
+// {
+//     let chain_id = node_config.chain.as_ref().chain.id();
+//     let botanix_chain_id = BOTANIX_TESTNET.as_ref().chain.id();
 
-    let (rpc_server_handle, auth_server_handle) = if chain_id == botanix_chain_id {
-        let rpc_server_handle = rpc
-            .start_rpc_server(
-                provider.clone(),
-                pool.clone(),
-                network.clone(),
-                executor.clone(),
-                provider.clone(),
-                evm_config.clone(),
-            )
-            .await?;
-        (rpc_server_handle, None)
-    } else {
-        let rpc_server = rpc
-            .start_rpc_server(
-                provider.clone(),
-                pool.clone(),
-                network.clone(),
-                executor.clone(),
-                provider.clone(),
-                evm_config.clone(),
-            )
-            .map_ok(|handle| {
-                if let Some(url) = handle.ipc_endpoint() {
-                    info!(target: "reth::cli", url=%url, "RPC IPC server started");
-                }
-                if let Some(addr) = handle.http_local_addr() {
-                    info!(target: "reth::cli", url=%addr, "RPC HTTP server started");
-                }
-                if let Some(addr) = handle.ws_local_addr() {
-                    info!(target: "reth::cli", url=%addr, "RPC WS server started");
-                }
-                handle
-            });
+//     let (rpc_server_handle, auth_server_handle) = if chain_id == botanix_chain_id {
+//         let rpc_server_handle = rpc
+//             .start_rpc_server(
+//                 provider.clone(),
+//                 pool.clone(),
+//                 network.clone(),
+//                 executor.clone(),
+//                 provider.clone(),
+//                 evm_config.clone(),
+//             )
+//             .await?;
+//         (rpc_server_handle, None)
+//     } else {
+//         let rpc_server = rpc
+//             .start_rpc_server(
+//                 provider.clone(),
+//                 pool.clone(),
+//                 network.clone(),
+//                 executor.clone(),
+//                 provider.clone(),
+//                 evm_config.clone(),
+//             )
+//             .map_ok(|handle| {
+//                 if let Some(url) = handle.ipc_endpoint() {
+//                     info!(target: "reth::cli", url=%url, "RPC IPC server started");
+//                 }
+//                 if let Some(addr) = handle.http_local_addr() {
+//                     info!(target: "reth::cli", url=%addr, "RPC HTTP server started");
+//                 }
+//                 if let Some(addr) = handle.ws_local_addr() {
+//                     info!(target: "reth::cli", url=%addr, "RPC WS server started");
+//                 }
+//                 handle
+//             });
 
-        // in case of not botanix networks build engine api and auth server
-        let auth_server = rpc.start_auth_server(provider.clone(), pool.clone(), network.clone(), executor.clone(), engine_api, jwt_secret, evm_config.clone()).map_ok(|handle| {
-            let addr = handle.local_addr();
-            if let Some(ipc_endpoint) = handle.ipc_endpoint() {
-                info!(target: "reth::cli", url=%addr, ipc_endpoint=%ipc_endpoint,"RPC auth server started");
-            } else {
-                info!(target: "reth::cli", url=%addr, "RPC auth server started");
-            }
-            handle
-        });
+//         // in case of not botanix networks build engine api and auth server
+//         let auth_server = rpc.start_auth_server(provider.clone(), pool.clone(), network.clone(), executor.clone(), engine_api, jwt_secret, evm_config.clone()).map_ok(|handle| {
+//             let addr = handle.local_addr();
+//             if let Some(ipc_endpoint) = handle.ipc_endpoint() {
+//                 info!(target: "reth::cli", url=%addr, ipc_endpoint=%ipc_endpoint,"RPC auth server started");
+//             } else {
+//                 info!(target: "reth::cli", url=%addr, "RPC auth server started");
+//             }
+//             handle
+//         });
 
-        // launch servers concurrently
-        let (rpc_server_handle, auth_server_handle) =
-            futures::future::try_join(rpc_server, auth_server).await?;
+//         // launch servers concurrently
+//         let (rpc_server_handle, auth_server_handle) =
+//             futures::future::try_join(rpc_server, auth_server).await?;
 
-        (rpc_server_handle, Some(auth_server_handle))
-    };
+//         (rpc_server_handle, Some(auth_server_handle))
+//     };
 
-    Ok((rpc_server_handle, auth_server_handle))
-}
+//     Ok((rpc_server_handle, auth_server_handle))
+// }
 
 /// Provides builder for the core `eth` API type.
 pub trait EthApiBuilderProvider<N: FullNodeComponents>: BuilderProvider<N> {

@@ -565,18 +565,18 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         self.config().builder.clone()
     }
 
-    /// Returns the default network config for the node.
-    pub fn network_config(&self) -> eyre::Result<NetworkConfig<Node::Provider>> {
-        self.config.network_config(
-            &self.reth_config(),
-            self.provider.clone(),
-            self.executor.clone(),
-            self.head,
-            self.data_dir(),
-            None,
-            None,
-        )
-    }
+    // /// Returns the default network config for the node.
+    // pub fn network_config(&self) -> eyre::Result<NetworkConfig<Node::Provider>> {
+    //     self.config().network_config(
+    //         &self.reth_config(),
+    //         self.provider.clone(),
+    //         self.executor.clone(),
+    //         self.head,
+    //         self.data_dir(),
+    //         None,
+    //         None,
+    //     )
+    // }
 
     /// Creates the [`NetworkBuilder`] for the node.
     pub async fn network_builder(&self) -> eyre::Result<NetworkBuilder<(), ()>> {

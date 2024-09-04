@@ -5,6 +5,7 @@ use reth_beacon_consensus::{
     hooks::{EngineHooks, StaticFileHook},
     BeaconConsensusEngineHandle,
 };
+use eyre::Context;
 use reth_blockchain_tree::BlockchainTreeConfig;
 use reth_btc_wallet::{bitcoind::{BitcoindConfig, BitcoindFactory}, test_utils::MockBitcoindFactory};
 use reth_chainspec::ChainSpec;
@@ -13,6 +14,9 @@ use reth_engine_tree::{
     engine::{EngineApiRequest, EngineRequestHandler},
     tree::TreeConfig,
 };
+use reth_node_core::args::BitcoindArgs;
+use reth_rpc_eth_types::builder::botanix_config::Botanix;
+use reth_rpc_eth_types::builder::botanix_config::BotanixConfig;
 use reth_engine_util::EngineMessageStreamExt;
 use reth_exex::ExExManagerHandle;
 use reth_network::{NetworkSyncUpdater, SyncState};
@@ -28,12 +32,14 @@ use reth_node_core::{
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_provider::providers::BlockchainProvider2;
 use reth_rpc_engine_api::{capabilities::EngineCapabilities, EngineApi};
+use reth_rpc_layer::JwtSecret;
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;
 use reth_tracing::tracing::{debug, error, info};
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use reth_node_core::cli::config::BtcServerConfig;
 
 use crate::{
     components::NodeComponents,
@@ -256,6 +262,23 @@ where
             version: CARGO_PKG_VERSION.to_string(),
             commit: VERGEN_GIT_SHA.to_string(),
         };
+
+        // create botanix client
+        let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
+        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
+      
+        let botanix_config = BotanixConfig::default()
+            .btc_server(node_config.rpc.btc_server.clone())
+            .bitcoin_network(node_config.rpc.btc_network)
+            .bitcoind(
+                bitcoind_config.url().to_owned(),
+                bitcoind_config.username().to_owned(),
+                bitcoind_config.password().to_owned(),
+            )
+            .btc_server_jwt_secret(
+                btc_signing_server_jwt_secret
+            );
+
         let engine_api = EngineApi::new(
             ctx.blockchain_db().clone(),
             ctx.chain_spec(),
@@ -264,6 +287,7 @@ where
             Box::new(ctx.task_executor().clone()),
             client,
             EngineCapabilities::default(),
+            Botanix::new(botanix_config),
         );
         info!(target: "reth::cli", "Engine API handler initialized");
 

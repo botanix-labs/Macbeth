@@ -7941,6 +7941,7 @@ dependencies = [
  "btc-server",
  "clap",
  "client",
+ "confy",
  "discv5",
  "displaydoc",
  "eyre",
@@ -8003,6 +8004,7 @@ dependencies = [
  "reth-rpc",
  "reth-rpc-api",
  "reth-rpc-builder",
+ "reth-rpc-engine-api",
  "reth-rpc-eth-types",
  "reth-rpc-server-types",
  "reth-rpc-types",
@@ -9539,6 +9541,7 @@ version = "1.0.5"
 dependencies = [
  "aquamarine",
  "bitcoin",
+ "confy",
  "eyre",
  "fdlimit",
  "futures 0.3.30",

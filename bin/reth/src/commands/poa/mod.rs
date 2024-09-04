@@ -8,6 +8,9 @@ use client::{Empty, SyncTxIndexRequest};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_node_metrics::recorder::install_prometheus_recorder;
+use reth_rpc_engine_api::capabilities::EngineCapabilities;
+use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
+use reth_rpc_types::engine::ClientVersionV1;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -18,7 +21,7 @@ use reth_authority_consensus::{
 };
 use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_network_types::pk2id;
-use reth_node_core::cli::config::BtcServerConfig;
+use reth_node_core::{cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -903,6 +906,27 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         // adjust rpc port numbers based on instance number
         node_config.adjust_instance_ports();
 
+        // build client
+        let client = ClientVersionV1 {
+            code: CLIENT_CODE,
+            name: NAME_CLIENT.to_string(),
+            version: CARGO_PKG_VERSION.to_string(),
+            commit: VERGEN_GIT_SHA.to_string(),
+        };
+
+        // create botanix client
+        let botanix_config = BotanixConfig::default()
+            .btc_server(node_config.rpc.btc_server.clone())
+            .bitcoin_network(node_config.rpc.btc_network)
+            .bitcoind(
+                bitcoind_config.url().to_owned(),
+                bitcoind_config.username().to_owned(),
+                bitcoind_config.password().to_owned(),
+            )
+            .btc_server_jwt_secret(
+                btc_signing_server_jwt_secret.clone().map(Into::into)
+            );
+
         // Start RPC servers
         let engine_api = EngineApi::new(
             blockchain_db.clone(),
@@ -910,6 +934,9 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             beacon_engine_handle,
             payload_builder.into(),
             Box::new(executor.clone()),
+            client,
+            EngineCapabilities::default(),
+            Botanix::new(botanix_config),
         );
 
         // generate deault jwt for the rpc server (as required by reth)
@@ -964,7 +991,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
                 if !self.network.trusted_peers.is_empty() {
                     info!(target: "reth::cli", "Adding trusted nodes");
                     self.network.trusted_peers.iter().for_each(|peer| {
-                        config.peers.trusted_nodes.insert(*peer);
+                        config.peers.trusted_nodes.push(*peer);
                     });
                 }
                 Ok(config)
@@ -1228,8 +1255,8 @@ mod tests {
         )
         .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
-        let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config_path());
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
         // assert doesn't apply anymore
@@ -1273,8 +1300,8 @@ mod tests {
             cmd.is_testnet,
         )
         .expect("chain is to exist");
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain);
-        let db_path = data_dir.db_path();
+        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }
 
