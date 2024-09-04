@@ -20,8 +20,8 @@ pub(crate) mod authority_execution_utils {
         BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ProviderError, StateProviderFactory
     };
     use reth_revm::{
-        database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-        processor::EVMProcessor, State,
+        database::StateProviderDatabase, db::{states::bundle_state::BundleRetention, State},
+        processor::EVMProcessor,
     };
     use std::sync::Arc;
 

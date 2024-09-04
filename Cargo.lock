@@ -8077,6 +8077,7 @@ dependencies = [
  "reth-stages",
  "reth-storage-errors",
  "reth-tasks",
+ "revm-primitives",
  "ruint",
  "secp256k1 0.29.0",
  "serde",
