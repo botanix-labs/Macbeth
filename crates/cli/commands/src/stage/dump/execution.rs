@@ -1,13 +1,10 @@
 use super::setup;
-use crate::utils::DbTool;
+use crate::reth_node_core::utils::DbTool;
 use eyre::Result;
 use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_db::{
     cursor::DbCursorRO, database::Database, table::TableImporter, tables, transaction::DbTx,
     DatabaseEnv
-};
-use reth_db_api::{
-    cursor::DbCursorRO, database::Database, table::TableImporter, transaction::DbTx,
 };
 use reth_db_common::DbTool;
 use reth_evm::{execute::BlockExecutorProvider, noop::NoopBlockExecutorProvider};

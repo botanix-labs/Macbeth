@@ -9,14 +9,14 @@ pub(crate) mod authority_execution_utils {
         executor::{BlockExecutionError, BlockValidationError},
         provider::ProviderError,
     };
-
+    use reth_chainspec::ChainSpec;
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
         proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber,
-        BlockWithSenders, Bloom, Bytes, ChainSpec, Header, ReceiptWithBloom, SealedBlock,
+        BlockWithSenders, Bloom, Bytes, Header, ReceiptWithBloom, SealedBlock,
         SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{

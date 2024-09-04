@@ -3,7 +3,7 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
-
+use reth_network_peers::pk2id;
 use frost_secp256k1_tr as frost;
 
 use reth_consensus_common::utils::current_inturn_index;
@@ -16,7 +16,6 @@ use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
-use reth_network_types::pk2id;
 
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
@@ -766,7 +765,7 @@ where
             mutable_header.sign_block(&self.secret_key)?;
             let signed_block = SealedBlock::new(
                 mutable_header.seal_slow(),
-                BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None },
+                BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None, requests: None, },
             );
             // Update sealed blocks
             self.sealed_blocks.write().await.insert(block_hash, signed_block.clone());

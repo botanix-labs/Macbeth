@@ -13,8 +13,8 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_network_peers::pk2id;
 use reth_network_api::Peers;
-use reth_network_types::pk2id;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;

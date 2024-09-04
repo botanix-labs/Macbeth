@@ -548,7 +548,7 @@ impl Default for RpcModuleBuilder<(), (), (), (), (), ()> {
 }
 
 /// Bundles settings for modules
-#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub struct RpcModuleConfig {
     /// `eth` namespace settings
     eth: EthConfig,

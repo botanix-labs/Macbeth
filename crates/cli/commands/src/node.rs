@@ -1,13 +1,13 @@
 //! Main node command for launching a node
 
 use crate::{
-    args::{
+    reth_node_core::args::{
         utils::{chain_help, genesis_value_parser, parse_socket_address, SUPPORTED_CHAINS},
         DatabaseArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs, PruningArgs,
         RpcServerArgs, TxPoolArgs,
     },
-    cli::ext::NoArgs,
-    dirs::{DataDirPath, MaybePlatformPath},
+    reth_node_core::cli::ext::NoArgs,
+    reth_node_core::dirs::{DataDirPath, MaybePlatformPath},
 };
 use clap::{value_parser, Args, Parser};
 use reth_chainspec::ChainSpec;

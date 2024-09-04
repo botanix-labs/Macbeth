@@ -21,7 +21,8 @@
 //! be mined.
 
 use pbft::PbftCommitmentCriteria;
-use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
+use reth_chainspec::ChainSpec;
+use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput};
 use reth_consensus_common::{
     utils::{unix_timestamp, validate_chain_version, validate_extra_data_header_authorities},
     validation::{self},
@@ -29,14 +30,14 @@ use reth_consensus_common::{
 
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
-    constants::nums_secp256k1_pk, header_ext::HeaderExt, Address, ChainSpec, Header, SealedBlock,
+    constants::nums_secp256k1_pk, header_ext::HeaderExt, Address, Header, SealedBlock,
     SealedHeader, U256,
 };
 
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-
+use reth_primitives::BlockWithSenders;
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -79,6 +80,19 @@ impl AuthorityConsensus {
 }
 
 impl Consensus for AuthorityConsensus {
+
+    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError>{
+        Ok(())
+    }
+
+    fn validate_block_post_execution(
+        &self,
+        block: &BlockWithSenders,
+        input: PostExecutionInput<'_>,
+    ) -> Result<(), ConsensusError> {
+        Ok(())
+    }
+
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?;
         Ok(())

@@ -17,7 +17,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::ChainSpec;
+use reth_chainspec::ChainSpec;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},

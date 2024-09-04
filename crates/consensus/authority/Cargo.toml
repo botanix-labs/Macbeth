@@ -17,7 +17,7 @@ reth-consensus-common = { path = "../common" }
 reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }
 reth-primitives.workspace = true
-#reth-interfaces.workspace = true
+reth-chainspec.workspace = true
 reth-provider.workspace = true
 reth-stages = { path = "../../stages/stages" }
 reth-revm = { path = "../../revm" }
@@ -31,6 +31,7 @@ reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 reth-network-types.workspace = true
+reth-network-peers = { workspace = true, features = ["secp256k1"] }
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 

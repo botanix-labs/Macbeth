@@ -10,6 +10,7 @@ use crate::{
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
 };
+use reth_chainspec::ChainSpec;
 use btcserverlib::extended_client::GrpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -25,7 +26,7 @@ use reth_network::{
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{header_ext::HeaderExt, ChainSpec};
+use reth_primitives::{header_ext::HeaderExt};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
     StateProviderFactory,

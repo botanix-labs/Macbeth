@@ -1,5 +1,5 @@
 use std::{sync::Arc, time::Duration};
-
+use tracing::{info, error, warn};
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
 };
@@ -12,8 +12,6 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_network_types::pk2id;
-
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use reth_rpc_types::PeerId;
@@ -22,8 +20,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{error, info, warn};
-
+use reth_network_peers::pk2id;
 /// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PbftNotificationMessage {
@@ -234,7 +231,7 @@ where
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
-                error!(target: "PBFT Task", "Error getting receiver handle = {:?}", e);
+                tracing::error!(target: "PBFT Task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
@@ -244,7 +241,7 @@ where
         loop {
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
-                warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
+                tracing::warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 break;
             }
@@ -255,7 +252,7 @@ where
             };
 
             if self.pbft_task_rx.is_closed() && peer_messages_rx.is_closed() {
-                info!(target: "consensus::authority", "pbft task shutting down");
+                tracing::info!(target: "consensus::authority", "pbft task shutting down");
                 break;
             }
         }

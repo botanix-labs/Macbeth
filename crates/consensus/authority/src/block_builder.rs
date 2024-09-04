@@ -16,7 +16,7 @@ use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::EngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSenders, B256};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, trace, warn};
