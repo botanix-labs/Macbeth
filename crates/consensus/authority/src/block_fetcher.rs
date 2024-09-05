@@ -139,14 +139,32 @@ where
             }
 
             let start_time = Instant::now();
-            let cbft_block = self
-                .light_client
-                .get_or_fetch_block(new_block.number().try_into().unwrap())
-                .unwrap();
+            // skip block adding if this fails
+            let block_number = match new_block.number().try_into() {
+                Ok(block_number) => block_number,
+                Err(_) => {
+                    warn!(target: "consensus::authority", "Block number does not fit in u64");
+                    continue;
+                }
+            };
+            let cbft_block = match self.light_client.get_or_fetch_block(block_number) {
+                Ok(cbft_block) => cbft_block,
+                Err(e) => {
+                    warn!(target: "consensus::authority", "Failed to get or fetch block from light client primary source: {:?}", e);
+                    continue;
+                }
+            };
             self.light_client.trust_block(&cbft_block);
 
             let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
-            self.light_client.light_client.verify_to_highest(&mut self.light_client.state).unwrap();
+            match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
+                Ok(_) => (),
+                Err(e) => {
+                    warn!(target: "consensus::authority", "Failed to verify block: {:?}", e);
+                    continue;
+                }
+            };
+            // self.light_client.state.light_store.remove(height, status);
             // TODO should ban peer if verification fails
 
             let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
