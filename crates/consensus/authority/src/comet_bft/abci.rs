@@ -52,12 +52,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
 
 use crate::{
-    builder::BitcoinCheckpoint,
-    comet_bft::transactions_envelope::{NonDeterministicData, TransactionsEnvelope},
-    engine_util,
-    excecution_utils::authority_execution_utils::build_and_execute,
-    utils::call_notify_pegin,
-    AuthorityConsensus, Storage,
+    builder::BitcoinCheckpoint, comet_bft::non_deterministic_data::NonDeterministicData,
+    engine_util, excecution_utils::authority_execution_utils::build_and_execute,
+    utils::call_notify_pegin, AuthorityConsensus, Storage,
 };
 
 /// Consts
@@ -329,22 +326,26 @@ where
                     } => {
                         let block = payload.block();
                         // These are bytes of [SignedTransaction]
-                        let txs = block
+                        let mut txs: Vec<_> = block
                             .raw_transactions()
                             .iter()
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
                         info!("prepare_proposal response: {:?}", txs);
 
-                        // wrap with non deterministic data so historical sync will pass verification
                         let non_deterministic_data = NonDeterministicData::new(
                             self.bitcoin_blockhash(),
                             self.aggregate_public_key(),
                         );
-                        let txs_envelope = TransactionsEnvelope::new(non_deterministic_data, txs);
 
-                        // convert envelope to Vec<u8>
-                        let txs = txs_envelope.serialize().expect("txs envelope to be serialized");
+                        // inject non-deterministic data tx at index 0 so historical sync will pass verification
+                        let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
+                            non_deterministic_data
+                                .serialize()
+                                .expect("non deterministic data to be serialized")
+                                .as_slice(),
+                        );
+                        txs.insert(0, non_deterministic_data_bytes);
 
                         ResponsePrepareProposal { txs }
                     }
@@ -425,11 +426,9 @@ where
             warn!("Aggregate public key is not set in process proposal");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
-        let txs_envelope = TransactionsEnvelope::deserialize(&request.txs)
-            .expect("txs envelope to be deserialized");
 
         // Extract the actual txs
-        let txs_bytes = txs_envelope.txs;
+        let txs_bytes = request.txs;
         // Extract who built this block
         let block_builder_address = Address::new(
             FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
@@ -440,15 +439,13 @@ where
         let block_time = request.time.expect("block time");
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
 
-        // TODO if we fail to decode the txs, we should reject the block
-        let txs = txs_bytes
-            .iter()
-            .map(|tx| {
-                let signed_tx =
-                    TransactionSigned::decode_enveloped(&mut tx.to_vec().as_slice()).unwrap();
-                signed_tx
-            })
-            .collect::<Vec<_>>();
+        // extract first tx which contains non-deterministic data and validate
+        let non_deterministic_data_bytes = txs_bytes.first().expect("bytes to exist").clone();
+        let reader_inner: Vec<u8> =
+            vec![non_deterministic_data_bytes].into_iter().flatten().collect();
+        let mut reader = &mut io::Cursor::new(reader_inner);
+        let non_deterministic_data = NonDeterministicData::deserialize(&mut reader)
+            .expect("non deterministic data to be deserialized");
 
         let bitcoin_checkpoint_block_hash = self
             .bitcoin_checkpoint
@@ -459,16 +456,27 @@ where
             .block_hash();
 
         // check non-deterministic data: btc block hash and aggregate public key
-        if bitcoin_checkpoint_block_hash != txs_envelope.non_deterministic_data.bitcoin_block_hash {
+        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
             warn!("Bitcoin block hash mismatch");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
         let agg_pk = storage.aggregate_public_key.expect("to be defined by now");
-        if agg_pk != txs_envelope.non_deterministic_data.aggregated_public_key {
+        if agg_pk != non_deterministic_data.aggregated_public_key {
             warn!("Aggregate public key mismatch");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
+
+        // TODO if we fail to decode the txs, we should reject the block
+        let txs = txs_bytes
+            .iter()
+            .skip(1) // skip non-deterministic data tx
+            .map(|tx| {
+                let signed_tx =
+                    TransactionSigned::decode_enveloped(&mut tx.to_vec().as_slice()).unwrap();
+                signed_tx
+            })
+            .collect::<Vec<_>>();
 
         match build_and_execute(
             txs,
