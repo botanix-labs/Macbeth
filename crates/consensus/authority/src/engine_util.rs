@@ -112,7 +112,7 @@ pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::Engin
                     ForkchoiceStatus::Syncing => {
                         trace!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
                         // wait for the next fork choice update
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         continue;
                     }
                 }
