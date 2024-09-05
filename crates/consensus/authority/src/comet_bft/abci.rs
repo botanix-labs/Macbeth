@@ -521,6 +521,12 @@ where
             .clone();
 
         let mut exec_results = vec![];
+        // insert non-deterministic data tx which is first in the block
+        let non_deterministic_data_tx = request.txs.first().expect("tx to exist").clone();
+        let first_exec_tx_result =
+            ExecTxResult { code: SUCCESS, data: non_deterministic_data_tx, ..Default::default() };
+        exec_results.push(first_exec_tx_result);
+
         for tx in sealed_block_with_peg.block().body.iter() {
             // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
             exec_results.push(ExecTxResult {
