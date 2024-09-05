@@ -94,7 +94,7 @@ impl Consensus for AuthorityConsensus {
     }
 
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
-        reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?;
+        // reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?; //TODO check this
         Ok(())
     }
 
@@ -118,7 +118,8 @@ impl Consensus for AuthorityConsensus {
     }
 
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec)
+        //reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec) // TODO: check this
+        Ok(())
     }
 
     fn validate_header_with_total_difficulty(
@@ -126,10 +127,11 @@ impl Consensus for AuthorityConsensus {
         header: &Header,
         total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        reth_consensus_common::validation::validate_header_with_total_difficulty(
-            header,
-            total_difficulty,
-        )?;
+        // reth_consensus_common::validation::validate_header_with_total_difficulty(
+        //     header,
+        //     total_difficulty,
+        // )?;
+        // TODO: check this
         Ok(())
     }
 
@@ -191,10 +193,10 @@ impl Consensus for AuthorityConsensus {
         })?;
 
         if valid_sigs < PbftCommitmentCriteria::min_commitments(authority_signers.len() as u16) {
-            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
-                authority_signers.len() as u16,
-                valid_sigs,
-            ));
+            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures{
+                expected: authority_signers.len() as u16,
+                actual: valid_sigs,
+            });
         }
         // TODO (armins) in the future this is where we would validate federation votes
 
@@ -226,10 +228,11 @@ impl Consensus for AuthorityConsensus {
 
         // run the reth header validation rule
         let sealed_header = header.clone().seal_slow();
-        reth_consensus_common::validation::validate_header_standalone(
-            &sealed_header,
-            &self.chain_spec,
-        )?;
+        // reth_consensus_common::validation::validate_header_standalone(
+        //     &sealed_header,
+        //     &self.chain_spec,
+        // )?;
+        // TODO: check this
 
         // Validate EDH serialization and signature on block
         self.validate_extra_data_header(

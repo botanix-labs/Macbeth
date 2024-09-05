@@ -7,12 +7,13 @@ use reth_primitives::revm_primitives::FixedBytes;
 use reth_network::NetworkEvent;
 
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_tokio_util::EventStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
 pub struct SyncController<Engine: EngineTypes> {
-    network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+    network_event_listener: EventStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 }
@@ -22,7 +23,7 @@ where
     Engine: EngineTypes + 'static,
 {
     pub fn new(
-        network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+        network_event_listener: EventStream<NetworkEvent>,
         peer_id: FixedBytes<64>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     ) -> Self {

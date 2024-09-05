@@ -5,7 +5,8 @@ pub(crate) mod authority_execution_utils {
     use reth_consensus_common::utils::{
         get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
     };
-    use reth_execution_errors::{BlockExecutionError, BlockValidationError};
+    use reth_evm::execute::BlockExecutorProvider;
+    use reth_execution_errors::{BlockExecutionError, BlockValidationError, InternalBlockExecutionError};
     use reth_chainspec::ChainSpec;
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
@@ -17,7 +18,7 @@ pub(crate) mod authority_execution_utils {
         SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ProviderError, StateProviderFactory
+        BlockReaderIdExt, BundleStateWithReceipts, ProviderError, StateProviderFactory
     };
     use reth_revm::{
         database::StateProviderDatabase, db::{states::bundle_state::BundleRetention, State},
@@ -143,7 +144,7 @@ pub(crate) mod authority_execution_utils {
         consensus: &AuthorityConsensus,
         sealed_block: SealedBlock,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
-        executor_factory: &impl ExecutorFactory,
+        executor_factory: &impl BlockExecutorProvider,
         // This is an option because the block fetcher may not be an authority
         agg_pk: Option<&secp256k1::PublicKey>,
         authorities: &Vec<secp256k1::PublicKey>,
@@ -193,7 +194,7 @@ pub(crate) mod authority_execution_utils {
             })?;
 
         let _block_builder_address = get_block_producer_address(&sealed_block.header.clone());
-        let db = client.latest().map_err(|e| BlockExecutionError::LatestBlock(e))?;
+        let db = client.latest().map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?;
         let mut executor = executor_factory.with_state(db);
         executor.execute_and_verify_receipt(&block_with_senders, U256::ZERO)?;
         let bundle_state = executor.take_output_state();
@@ -210,10 +211,10 @@ pub(crate) mod authority_execution_utils {
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
     ) -> Result<Header, BlockExecutionError> {
-        let best_block = client.best_block_number().map_err(BlockExecutionError::LatestBlock)?;
+        let best_block = client.best_block_number().map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?;
         let best_hash = client
             .block_hash(best_block)
-            .map_err(BlockExecutionError::LatestBlock)?
+            .map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?
             .unwrap_or_else(|| {
                 panic!("best block hash not found for block number: {}", best_block);
             });
@@ -309,9 +310,9 @@ pub(crate) mod authority_execution_utils {
         let state_root = client
             .latest()
             .map_err(|_| {
-                BlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
+                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
                     header.hash_slow(),
-                ))
+                )))
             })?
             .state_root(bundle_state.state())
             .unwrap();

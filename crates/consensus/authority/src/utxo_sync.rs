@@ -11,6 +11,7 @@ use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
     PeerMessageResponse,
 };
+use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
 use reth_provider::{BlockReaderIdExt, ProviderError};
 use tokio::sync::mpsc::error::SendError;
@@ -61,7 +62,7 @@ pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
 impl<EF, BF, DB, ToFrostMan> UTXOSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
 {
@@ -78,7 +79,7 @@ where
 impl<EF, BF, DB, ToFrostMan> UTXOSync for UTXOSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
 {

@@ -4,6 +4,7 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
+use reth_evm::execute::BlockExecutorProvider;
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
 use reth_network_p2p::HeadersClient;
@@ -21,7 +22,7 @@ use reth_primitives::{
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
 use reth_provider::{
-    BlockReader, BlockReaderIdExt, ExecutorFactory, ProviderError, StateProviderFactory,
+    BlockReader, BlockReaderIdExt, ProviderError, StateProviderFactory,
 };
 
 use reth_rpc_types::PeerId;
@@ -215,7 +216,7 @@ pub(crate) struct PbftStateMachine<EF, BF, DB, ToFrostMan: ToFrostManager, Netwo
 impl<EF, BF, DB, ToFrostMan: ToFrostManager, NetworkClient>
     PbftStateMachine<EF, BF, DB, ToFrostMan, NetworkClient>
 where
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
     #[allow(clippy::too_many_arguments)]
@@ -296,7 +297,7 @@ where
     BF: BitcoindFactory + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     NetworkClient: HeadersClient + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
 {
     pub(crate) async fn spawn_cleanup_task(&mut self) {
         let storage = self.storage.inner.read().await;

@@ -14,6 +14,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
+use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
@@ -62,7 +63,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,

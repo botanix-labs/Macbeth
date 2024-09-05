@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 use reth_blockchain_tree_api::BlockchainTreeEngine;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network_p2p::HeadersClient;
 use tracing::{info, error, warn};
 use crate::{
@@ -78,7 +79,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     /// Creates a new instance of the task

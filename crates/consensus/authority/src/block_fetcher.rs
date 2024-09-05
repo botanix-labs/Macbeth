@@ -18,7 +18,7 @@ use tokio::sync::{
     RwLock,
 };
 use tracing::{error, info, warn};
-
+use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
 use crate::{
     engine_util,
     excecution_utils::authority_execution_utils::execute_imported_block,
@@ -63,7 +63,7 @@ where
         + Clone
         + 'static,
     BF: BitcoindFactory + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     Engine: EngineTypes + 'static,
     NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,

@@ -20,6 +20,7 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, trace, warn};
+use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
 
 use crate::{
     engine_util,
@@ -42,7 +43,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,

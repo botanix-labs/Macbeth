@@ -10,16 +10,16 @@ use crate::{
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
 };
+use futures_util::StreamExt;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_chainspec::ChainSpec;
 use btcserverlib::extended_client::GrpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_network::{
-    frost::manager::{FrostConfig, ToFrostManager},
-    message::NewBlockMessage,
-    NetworkHandle,
+    frost::manager::{FrostConfig, ToFrostManager}, message::NewBlockMessage, NetworkEventListenerProvider, NetworkHandle
 };
+use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
@@ -81,7 +81,7 @@ where
         + Clone
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.
