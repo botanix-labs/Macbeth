@@ -440,12 +440,23 @@ where
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
 
         // extract first tx which contains non-deterministic data and validate
-        let non_deterministic_data_bytes = txs_bytes.first().expect("bytes to exist").clone();
+        let non_deterministic_data_bytes = match txs_bytes.first() {
+            Some(tx) => tx.clone(),
+            None => {
+                warn!("No non-deterministic tx in proposal request");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
         let reader_inner: Vec<u8> =
             vec![non_deterministic_data_bytes].into_iter().flatten().collect();
         let mut reader = &mut io::Cursor::new(reader_inner);
-        let non_deterministic_data = NonDeterministicData::deserialize(&mut reader)
-            .expect("non deterministic data to be deserialized");
+        let non_deterministic_data = match NonDeterministicData::deserialize(&mut reader) {
+            Ok(data) => data,
+            Err(e) => {
+                warn!("Error deserializing non-deterministic data: {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
 
         let bitcoin_checkpoint_block_hash = self
             .bitcoin_checkpoint
