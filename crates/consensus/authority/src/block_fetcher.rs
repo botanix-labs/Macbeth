@@ -105,7 +105,7 @@ where
             if is_active_sync_in_progress(&self.network_handle) {
                 warn!(target: "consensus::authority", "Node is still syncing, block fetcher task
             is awaiting fully synced status ...");
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_millis(250)).await;
                 return;
             }
 
@@ -118,32 +118,14 @@ where
                     return;
                 }
             };
-            let start_time = Instant::now();
-            let cbft_block = self
-                .light_client
-                .get_or_fetch_block(new_block.number().try_into().unwrap())
-                .unwrap();
-            self.light_client.trust_block(&cbft_block);
-
-            let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
-            self.light_client.light_client.verify_to_highest(&mut self.light_client.state).unwrap();
 
             let block = new_block.block.block.clone();
-            let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
-            if app_hash != &block.parent_hash.0 {
-                warn!(target: "consensus::authority", "App hash mismatch");
-                warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
-                continue;
-            }
-            let end_time = Instant::now();
-            info!(
-                "light_client.get_or_fetch_block took {:?}",
-                end_time.duration_since(start_time)
-            );
-            let client = self.storage.client.clone();
             let block_hash = block.header.hash_slow();
             info!(target: "consensus::authority", "Recieved new block from peer {:?}", block_hash);
 
+            // This shouldn't happen but check that the block we are importing is not already in the
+            // chain
+            let client = self.storage.client.clone();
             let best_block = client.best_block_number().expect("best block number exists");
             let best_hash = client
                 .block_hash(best_block)
@@ -155,6 +137,27 @@ where
                 warn!(target: "consensus::authority", "Recieved block is already in the chain");
                 continue;
             }
+
+            let start_time = Instant::now();
+            let cbft_block = self
+                .light_client
+                .get_or_fetch_block(new_block.number().try_into().unwrap())
+                .unwrap();
+            self.light_client.trust_block(&cbft_block);
+
+            let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
+            self.light_client.light_client.verify_to_highest(&mut self.light_client.state).unwrap();
+            // TODO should ban peer if verification fails
+
+            let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
+            if app_hash != &block.parent_hash.0 {
+                warn!(target: "consensus::authority", "App hash mismatch");
+                warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
+                continue;
+            }
+            let end_time = Instant::now();
+            info!("light_client.get_or_fetch_block took {:?}", end_time.duration_since(start_time));
+
             // Seal the block
             let sealed_block = block.clone().seal_slow();
             let senders = new_block.block.block.senders().unwrap();
@@ -184,10 +187,7 @@ where
                 }
             };
             let end_time = Instant::now();
-            info!(
-                "send_fork_choice_update_payload took {:?}",
-                end_time.duration_since(start_time)
-            );
+            info!("send_fork_choice_update_payload took {:?}", end_time.duration_since(start_time));
             // update canon chain for rpc
             client.set_canonical_head(header.clone());
             client.set_safe(header.clone());
