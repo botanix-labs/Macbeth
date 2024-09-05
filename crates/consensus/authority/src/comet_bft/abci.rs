@@ -52,8 +52,11 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
 
 use crate::{
-    builder::BitcoinCheckpoint, comet_bft::extended_vote::ExtendedVote, engine_util,
-    excecution_utils::authority_execution_utils::build_and_execute, utils::call_notify_pegin,
+    builder::BitcoinCheckpoint,
+    comet_bft::transactions_envelope::{NonDeterministicData, TransactionsEnvelope},
+    engine_util,
+    excecution_utils::authority_execution_utils::build_and_execute,
+    utils::call_notify_pegin,
     AuthorityConsensus, Storage,
 };
 
@@ -332,6 +335,17 @@ where
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
                         info!("prepare_proposal response: {:?}", txs);
+
+                        // wrap with non deterministic data so historical sync will pass verification
+                        let non_deterministic_data = NonDeterministicData::new(
+                            self.bitcoin_blockhash(),
+                            self.aggregate_public_key(),
+                        );
+                        let txs_envelope = TransactionsEnvelope::new(non_deterministic_data, txs);
+
+                        // convert envelope to Vec<u8>
+                        let txs = txs_envelope.serialize().expect("txs envelope to be serialized");
+
                         ResponsePrepareProposal { txs }
                     }
                 }
@@ -411,8 +425,11 @@ where
             warn!("Aggregate public key is not set in process proposal");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
+        let txs_envelope = TransactionsEnvelope::deserialize(&request.txs)
+            .expect("txs envelope to be deserialized");
+
         // Extract the actual txs
-        let txs_bytes = request.txs;
+        let txs_bytes = txs_envelope.txs;
         // Extract who built this block
         let block_builder_address = Address::new(
             FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
@@ -433,7 +450,6 @@ where
             })
             .collect::<Vec<_>>();
 
-        // TODO This should be coming from the results of the vote for this block
         let bitcoin_checkpoint_block_hash = self
             .bitcoin_checkpoint
             .blocking_read()
@@ -441,6 +457,18 @@ where
             .clone()
             .0
             .block_hash();
+
+        // check non-deterministic data: btc block hash and aggregate public key
+        if bitcoin_checkpoint_block_hash != txs_envelope.non_deterministic_data.bitcoin_block_hash {
+            warn!("Bitcoin block hash mismatch");
+            return ResponseProcessProposal { status: VERIFY_REJECT };
+        }
+
+        let agg_pk = storage.aggregate_public_key.expect("to be defined by now");
+        if agg_pk != txs_envelope.non_deterministic_data.aggregated_public_key {
+            warn!("Aggregate public key mismatch");
+            return ResponseProcessProposal { status: VERIFY_REJECT };
+        }
 
         match build_and_execute(
             txs,
@@ -451,7 +479,7 @@ where
             &storage.bitcoind_factory,
             storage.btc_network,
             &bitcoin_checkpoint_block_hash,
-            &storage.aggregate_public_key.expect("to be defined by now"),
+            &agg_pk,
             &storage.authorities,
             block_time,
         ) {
@@ -529,55 +557,6 @@ where
         info!("Block finalized: {:?}", cbft_block_hash);
 
         ResponseCommit::default()
-    }
-
-    fn extend_vote(&self, _request: RequestExtendVote) -> ResponseExtendVote {
-        info!("extend_vote request: {:?}", _request);
-
-        // Will panic if aggregate pk is not stored yet. Ideally we never start the abci application
-        // until dkg is done
-        let agg_pk = self.aggregate_public_key();
-        let bitcoin_block_hash = self.bitcoin_blockhash();
-
-        let extended_vote = ExtendedVote::new(bitcoin_block_hash, agg_pk);
-
-        let vote_extension =
-            extended_vote.serialize().expect("extended_vote can be serialized").into();
-
-        ResponseExtendVote { vote_extension }
-    }
-
-    fn verify_vote_extension(
-        &self,
-        request: RequestVerifyVoteExtension,
-    ) -> ResponseVerifyVoteExtension {
-        info!("verify_vote_extension request: {:?}", request);
-
-        let vote_extension = ExtendedVote::deserialize(&mut request.vote_extension.reader())
-            .expect("vote extension to be deserialized");
-
-        let storage = self.storage.inner.blocking_read();
-        if storage.aggregate_public_key.is_none() {
-            warn!("Aggregate public key is not set in verify vote extension");
-            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
-        }
-        drop(storage);
-
-        // TODO Should these be two seperate locks?
-        let agg_pk = self.aggregate_public_key();
-        let bitcoin_block_hash = self.bitcoin_blockhash();
-
-        if vote_extension.aggregated_public_key != agg_pk {
-            error!("Aggregated public key does not match");
-            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
-        }
-
-        if vote_extension.bitcoin_block_hash != bitcoin_block_hash {
-            error!("Bitcoin block hash does not match");
-            return ResponseVerifyVoteExtension { status: VERIFY_REJECT };
-        }
-
-        ResponseVerifyVoteExtension { status: VERIFY_ACCEPTED }
     }
 }
 
