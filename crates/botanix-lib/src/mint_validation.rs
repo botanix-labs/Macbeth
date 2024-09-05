@@ -243,7 +243,7 @@ pub fn try_parse_burn_event(
     }
 
     if metadata[0] != PegoutData::version() {
-        info!("Legacy pegout submitted, version: {}", metadata[0].to_string());
+        info!("unexpected pegout version submitted, version: {}", metadata[0].to_string());
         // Add support for legacy pegout versions
     }
 
