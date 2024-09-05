@@ -52,9 +52,14 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info, warn};
 
 use crate::{
-    builder::BitcoinCheckpoint, comet_bft::non_deterministic_data::NonDeterministicData,
-    engine_util, excecution_utils::authority_execution_utils::build_and_execute,
-    utils::call_notify_pegin, AuthorityConsensus, Storage,
+    builder::BitcoinCheckpoint,
+    comet_bft::{
+        non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
+    },
+    engine_util,
+    excecution_utils::authority_execution_utils::build_and_execute,
+    utils::call_notify_pegin,
+    AuthorityConsensus, Storage,
 };
 
 /// Consts
@@ -427,8 +432,6 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        // Extract the actual txs
-        let txs_bytes = request.txs;
         // Extract who built this block
         let block_builder_address = Address::new(
             FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
@@ -440,6 +443,7 @@ where
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
 
         // extract first tx which contains non-deterministic data and validate
+        let txs_bytes = request.txs;
         let non_deterministic_data_bytes = match txs_bytes.first() {
             Some(tx) => tx.clone(),
             None => {
@@ -478,16 +482,13 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        // TODO if we fail to decode the txs, we should reject the block
-        let txs = txs_bytes
-            .iter()
-            .skip(1) // skip non-deterministic data tx
-            .map(|tx| {
-                let signed_tx =
-                    TransactionSigned::decode_enveloped(&mut tx.to_vec().as_slice()).unwrap();
-                signed_tx
-            })
-            .collect::<Vec<_>>();
+        let txs = match transactions_signed_from_bytes(txs_bytes.iter().skip(1).cloned()) {
+            Ok(txs) => txs,
+            Err(e) => {
+                error!("Error decoding transactions: {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
 
         match build_and_execute(
             txs,
@@ -515,6 +516,7 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         }
+
         ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
@@ -523,13 +525,69 @@ where
         info!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
         // If this block does not exist in the cache, we should panic
-        let sealed_block_with_peg = self
-            .block_cache
-            .write()
-            .expect("should get write lock")
-            .get(&cbft_block_hash)
-            .expect("block to exist")
-            .clone();
+        let mut block_cache_write = self.block_cache.write().expect("should get write lock");
+        let sealed_block_with_peg = match block_cache_write.get(&cbft_block_hash) {
+            Some(block) => block.clone(),
+            None => {
+                // No block in cache: this happens during historical (block) sync
+                // Build the block
+
+                // get non-deterministic data
+                let txs_bytes = request.txs.clone();
+                let non_deterministic_data_bytes = match txs_bytes.clone().first() {
+                    Some(tx) => tx.clone(),
+                    None => panic!("No non-deterministic tx in finalize block request"),
+                };
+                let reader_inner: Vec<u8> =
+                    vec![non_deterministic_data_bytes].into_iter().flatten().collect();
+                let mut reader = &mut io::Cursor::new(reader_inner);
+                let non_deterministic_data = match NonDeterministicData::deserialize(&mut reader) {
+                    Ok(data) => data,
+                    Err(e) => panic!("Error deserializing non-deterministic data: {:?}", e),
+                };
+
+                let block_time = request.time.expect("block time");
+
+                // Extract who built this block
+                let block_builder_address = Address::new(
+                    FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
+                );
+
+                let txs =
+                    match transactions_signed_from_bytes(txs_bytes.clone().iter().skip(1).cloned())
+                    {
+                        Ok(txs) => txs,
+                        Err(e) => panic!("Error decoding transactions in finalize block: {:?}", e),
+                    };
+
+                let storage = self.storage.inner.blocking_read();
+                match build_and_execute(
+                    txs,
+                    storage.chain_spec.clone(),
+                    &block_builder_address,
+                    storage.evm_config,
+                    &storage.client,
+                    &storage.bitcoind_factory,
+                    storage.btc_network,
+                    &non_deterministic_data.bitcoin_block_hash,
+                    &non_deterministic_data.aggregated_public_key,
+                    &storage.authorities,
+                    block_time,
+                ) {
+                    Ok(sealed_block_with_peg) => {
+                        info!(
+                            "Block built successfully, resulting block hash: {:?}",
+                            sealed_block_with_peg.block().hash()
+                        );
+
+                        block_cache_write.insert(cbft_block_hash, sealed_block_with_peg.clone());
+
+                        sealed_block_with_peg
+                    }
+                    Err(e) => panic!("Error building block in finalize block: {:?}", e),
+                }
+            }
+        };
 
         let mut exec_results = vec![];
         // insert non-deterministic data tx which is first in the block
