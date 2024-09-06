@@ -244,15 +244,7 @@ pub(crate) mod authority_execution_utils {
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             CHAIN_VERSION,
-            // This will be filled out complete_header
-            None,
-            // This will be filled out complete_header
-            None,
-            None,
-            // This will be filled out complete_header
-            None,
             *bitcoin_checkpoint,
-            sha256::Hash::all_zeros(),
             *agg_pk,
             block_builder_address.clone(),
         );
@@ -335,30 +327,13 @@ pub(crate) mod authority_execution_utils {
             .unwrap();
         header.state_root = state_root;
 
-        // fail if witness data is empty
-        // witness data will be None if no pegouts are being processed in this block
-        // if let Some(witness_data) = witness_data {
-        //     if witness_data.is_empty() {
-        //         return Err(BlockExecutionError::Validation(
-        //             BlockValidationError::MissingWitnessData,
-        //         ));
-        //     }
-        // };
-
         // TODO remove this unwrap
         let block_producer_address = header.block_producer_address().unwrap();
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             CHAIN_VERSION,
-            // block signatures do not effect the block hash and are added after the pbft consensus
-            // rounds are completed
-            None,
-            if header.is_poa_epoch() { Some(authorities.clone()) } else { None },
-            None,
-            witness_data.clone(),
             recent_block_hash,
-            utxo_commitment,
             *agg_pk,
             block_producer_address,
         );
