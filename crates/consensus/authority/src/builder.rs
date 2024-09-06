@@ -19,7 +19,7 @@ use reth_interfaces::{
 };
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::NewBlockMessage,
+    message::{NewBlockMessage, NewBlockMessageWithPeerId},
     NetworkEvents, NetworkHandle,
 };
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
@@ -54,7 +54,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     network_handle: NetworkHandle,
     network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
-    block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -99,7 +99,7 @@ where
         network_handle: NetworkHandle,
         network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
-        block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
         task_executor: TaskExecutor,
         frost_config: Option<FrostConfig>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
