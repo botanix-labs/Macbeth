@@ -207,19 +207,6 @@ impl Header {
     /// Use [`Header::seal`], [`SealedHeader`] and unlock if you need hash to be persistent.
     pub fn hash_slow(&self) -> B256 {
         let mut this = self.clone();
-        if this.extra_data.len() > 0 {
-            // try to deserialize botanix edh. if extra data is a botanix edh
-            // remove the block signature before hashing
-            // This has the following effects:
-            // 1. block signers will all sign the same sighash regardless of who adds new signatures
-            // 2. signatures can be re-ordered without affecting the blockhash
-            if let Ok(mut extra_data) = this.deserialize_extra_data_header() {
-                extra_data.clear_signatures();
-
-                // Update extra data without the signatures present in edh
-                this.add_extra_data_header(&extra_data);
-            }
-        }
         let mut out = BytesMut::new();
         this.encode(&mut out);
         keccak256(&out)
