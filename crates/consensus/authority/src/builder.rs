@@ -19,8 +19,8 @@ use reth_chainspec::ChainSpec;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::NewBlockMessage,
-    NetworkEventListenerProvider, NetworkHandle,
+    message::{NewBlockMessage, NewBlockMessageWithPeerId},
+    NetworkHandle, NetworkEventListenerProvider
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
@@ -55,7 +55,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     network_handle: NetworkHandle,
     network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
-    block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -101,7 +101,7 @@ where
         network_handle: NetworkHandle,
         network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
-        block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
         task_executor: TaskExecutor,
         frost_config: Option<FrostConfig>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,

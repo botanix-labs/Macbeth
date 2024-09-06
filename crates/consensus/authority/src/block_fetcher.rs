@@ -35,7 +35,7 @@ pub struct BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
-    block_import_rx: UnboundedReceiver<NewBlockMessage>,
+    block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     /// Used to notify consumers of new blocks
@@ -73,7 +73,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         consensus: AuthorityConsensus,
-        block_import_rx: UnboundedReceiver<NewBlockMessage>,
+        block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         canon_state_notification: CanonStateNotificationSender,
         btc_server: Option<BtcServerExtendedClient>,
@@ -99,6 +99,12 @@ where
         }
     }
 
+    pub fn ban_peer(&self, peer_id: PeerId) {
+        self.network_handle
+            .peers_handle()
+            .reputation_change(peer_id, reth_network_api::ReputationChangeKind::BadBlock);
+    }
+
     pub async fn start_task(&mut self) {
         loop {
             // ensure the node is not syncing
@@ -109,7 +115,7 @@ where
                 return;
             }
 
-            let new_block = match self.block_import_rx.recv().await {
+            let new_block_with_peer_id = match self.block_import_rx.recv().await {
                 Some(b) => b,
                 None => {
                     info!(target: "consensus::authority",
@@ -118,6 +124,9 @@ where
                     return;
                 }
             };
+
+            let new_block = new_block_with_peer_id.message;
+            let peer_id = new_block_with_peer_id.peer_id;
 
             let block = new_block.block.block.clone();
             let block_hash = block.header.hash_slow();
@@ -144,6 +153,7 @@ where
                 Ok(block_number) => block_number,
                 Err(_) => {
                     warn!(target: "consensus::authority", "Block number does not fit in u64");
+                    self.ban_peer(peer_id);
                     continue;
                 }
             };
@@ -151,6 +161,7 @@ where
                 Ok(cbft_block) => cbft_block,
                 Err(e) => {
                     warn!(target: "consensus::authority", "Failed to get or fetch block from light client primary source: {:?}", e);
+                    self.ban_peer(peer_id);
                     continue;
                 }
             };
@@ -161,6 +172,7 @@ where
                 Ok(_) => (),
                 Err(e) => {
                     warn!(target: "consensus::authority", "Failed to verify block: {:?}", e);
+                    self.ban_peer(peer_id);
                     continue;
                 }
             };
@@ -171,6 +183,7 @@ where
             if app_hash != &block.parent_hash.0 {
                 warn!(target: "consensus::authority", "App hash mismatch");
                 warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
+                self.ban_peer(peer_id);
                 continue;
             }
             let end_time = Instant::now();
@@ -181,6 +194,7 @@ where
             let senders = new_block.block.block.senders().unwrap();
             if senders.len() != new_block.block.block.body.len() {
                 warn!(target: "consensus::authority", "Senders length does not match transactions length");
+                self.ban_peer(peer_id);
                 continue;
             }
             let sealed_block_with_senders = SealedBlockWithSenders::new(sealed_block, senders)

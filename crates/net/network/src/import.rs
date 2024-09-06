@@ -1,7 +1,7 @@
 //! Module for block import.
 /// Allows other components to import blocks from the network
-use crate::message::NewBlockMessage;
 use reth_chainspec::ChainSpec;
+use crate::message::{NewBlockMessage, NewBlockMessageWithPeerId};
 use reth_consensus::ConsensusError;
 use reth_network_api::PeerId;
 use reth_primitives::SealedBlock;
@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::info;
+use tracing::{info, warn};
 
 /// Abstraction over block import.
 pub trait BlockImport: std::fmt::Debug + Send + Sync {
@@ -87,14 +87,14 @@ pub struct ProofOfAuthorityBlockImport {
 
     chain_spec: Arc<ChainSpec>,
 
-    sender_stream: UnboundedSender<NewBlockMessage>,
+    sender_stream: UnboundedSender<NewBlockMessageWithPeerId>,
 }
 
 impl ProofOfAuthorityBlockImport {
     /// Creates Proof of Authority Block Import with the provided consensus mechanism
     pub fn new(
         chain_spec: Arc<ChainSpec>,
-        sender_stream: UnboundedSender<NewBlockMessage>,
+        sender_stream: UnboundedSender<NewBlockMessageWithPeerId>,
     ) -> Self {
         Self { queue: VecDeque::new(), chain_spec, sender_stream }
     }
@@ -129,9 +129,13 @@ impl BlockImport for ProofOfAuthorityBlockImport {
             // Notify listeners on valid events
             if let Ok(validation) = result.as_ref() {
                 if let BlockValidation::ValidBlock { block } = validation {
-                    self.sender_stream.send(block.clone()).unwrap();
+                    self.sender_stream
+                        .send(NewBlockMessageWithPeerId { peer_id: pair.0, message: block.clone() })
+                        .unwrap();
                 } else if let BlockValidation::ValidHeader { block } = validation {
-                    self.sender_stream.send(block.clone()).unwrap();
+                    self.sender_stream
+                        .send(NewBlockMessageWithPeerId { peer_id: pair.0, message: block.clone() })
+                        .unwrap();
                 }
             }
 
