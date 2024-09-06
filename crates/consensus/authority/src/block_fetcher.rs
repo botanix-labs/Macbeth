@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::{sha256, Hash};
+use reth_eth_wire::NewBlock;
+use ruint::Uint;
 use tokio::time::Instant;
 
 use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
@@ -175,8 +177,8 @@ where
                     continue;
                 }
             };
-            // self.light_client.state.light_store.remove(height, status);
             // TODO should ban peer if verification fails
+            // self.network_handle.peers_handle().reputation_change(peer_id, kind)
 
             let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
             if app_hash != &block.parent_hash.0 {
@@ -221,6 +223,8 @@ where
             client.set_canonical_head(header.clone());
             client.set_safe(header.clone());
             client.set_finalized(header.clone());
+
+            self.network_handle.announce_block(NewBlock { block, td: Uint::ZERO }, block_hash);
         }
     }
 }
