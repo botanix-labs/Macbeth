@@ -22,6 +22,12 @@ use std::{
 };
 use tokio::sync::{mpsc, mpsc::error::TrySendError, oneshot};
 
+/// New block message with peer id
+pub struct NewBlockMessageWithPeerId {
+    pub peer_id: PeerId,
+    pub message: NewBlockMessage,
+}
+
 /// Internal form of a `NewBlock` message
 #[derive(Debug, Clone)]
 pub struct NewBlockMessage {
