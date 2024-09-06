@@ -343,7 +343,7 @@ where
                             self.aggregate_public_key(),
                         );
 
-                        // inject non-deterministic data tx at index 0 so historical sync will pass verification
+                        // insert non-deterministic data tx at index 0 so historical sync will pass verification
                         let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
                             non_deterministic_data
                                 .serialize()
@@ -482,6 +482,7 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
+        // get txs skipping the first non-deterministic data tx
         let txs = match transactions_signed_from_bytes(txs_bytes.iter().skip(1).cloned()) {
             Ok(txs) => txs,
             Err(e) => {
@@ -524,7 +525,6 @@ where
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         info!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
-        // If this block does not exist in the cache, we should panic
         let mut block_cache_write = self.block_cache.write().expect("should get write lock");
         let sealed_block_with_peg = match block_cache_write.get(&cbft_block_hash) {
             Some(block) => block.clone(),
@@ -553,6 +553,7 @@ where
                     FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
                 );
 
+                // get txs skipping the first non-deterministic data tx
                 let txs =
                     match transactions_signed_from_bytes(txs_bytes.clone().iter().skip(1).cloned())
                     {
