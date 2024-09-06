@@ -15,14 +15,20 @@ use crate::{
 use tracing::{error, info};
 
 lazy_static::lazy_static! {
+    /// hash of the mint topic as it appears in the log
     pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
+    /// hash of the burn topic as it appears in the log
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
+    /// address of the mint contract
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
 }
 
+/// Two types of events that can be emitted by the mint contract.
 #[derive(Debug)]
 pub enum GenesisContractEventType {
+    /// Minting event
     MintingEvent,
+    /// Burn event
     BurnEvent,
 }
 
@@ -38,23 +44,32 @@ impl TryFrom<B256> for GenesisContractEventType {
     }
 }
 
+/// Error type for parsing mint event
 #[derive(Debug, Error)]
 pub enum ParseMintEventError {
+    /// Error parsing mint event log from minting contract
     #[error("error parsing Mint log from Minting contract")]
     InvalidLog(&'static str),
+    /// Invalid pegin metadata
     #[error("invalid pegin metadata")]
     InvalidPeginData {
+        /// Error parsing pegin data
         #[source]
         error: PeginDataError,
+        /// Address the pegin is sent from
         revert_address: Address,
+        /// Amount of the pegin to be reverted
         revert_amount: ethers::types::U256,
     },
 }
 
+/// Error type for parsing burn event
 #[derive(Debug, Error)]
 pub enum ParseBurnEventError {
+    /// Error parsing burn event log from minting contract
     #[error("error parsing Burn log from Minting contract")]
     InvalidLog(&'static str),
+    /// Invalid pegout metadata
     #[error("invalid pegout metadata")]
     InvalidPegoutData(#[from] PegoutDataError),
 }
@@ -62,10 +77,25 @@ pub enum ParseBurnEventError {
 /// Combined type of [ParseMintEventError] and [ParseBurnEventError].
 #[derive(Debug, Error)]
 pub enum MintContractError {
+    /// Error parsing event log from Minting contract
     #[error("error parsing event log from Minting contract")]
-    InvalidLog { event: &'static str, error: String },
+    InvalidLog {
+        /// Event type  
+        event: &'static str,
+        /// Error message
+        error: String,
+    },
+    /// Invalid pegin metadata
     #[error("invalid pegin metadata")]
-    InvalidPeginData { error: String, revert_address: Address, revert_amount: ethers::types::U256 },
+    InvalidPeginData {
+        /// Error message
+        error: String,
+        /// Address the pegin is sent from
+        revert_address: Address,
+        /// Amount of the pegin to be reverted
+        revert_amount: ethers::types::U256,
+    },
+    /// Invalid pegout metadata
     #[error("invalid pegout metadata")]
     InvalidPegoutData(#[from] PegoutDataError),
 }
