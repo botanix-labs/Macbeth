@@ -22,11 +22,16 @@ use crate::{botanix::utils::AmountExt, Address};
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
 
+/// Pegin data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeginData {
+    /// Account the pegin is sent from
     pub account: Address,
+    /// Amount of the pegin denominated in wei
     pub amount: U256,
+    /// Bitcoin block height the pegin is confirmed in
     pub bitcoin_block_height: u32,
+    /// Pegin metadata
     pub meta: Vec<PeginMeta>,
 }
 
@@ -116,22 +121,30 @@ impl PeginData {
     }
 }
 
+/// Pegin metadata structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeginMeta {
+    /// Version of the pegin metadata
     pub version: u32,
+    /// Merkle proof for the pegin tx
     pub merkle_proof: PartialMerkleTree,
+    /// Outpoint of the pegin tx
     pub outpoint: bitcoin::OutPoint,
+    /// final destination address of the pegin
     pub address: Address,
+    /// Aggregate public key the funds were sent to
     pub aggregate_publickey: secp256k1::PublicKey,
     /// Bitcoin block headers starting with the block the pegin is confirmed in,
     /// going up until at least the mainchain commitment or beyond.
     /// NB We need to allow to go beyond because between the user crafting the tx and
     /// it getting confirmed, the commitment might update.
     pub block_headers: Vec<Header>,
+    /// Pegin tx
     pub tx: bitcoin::Transaction,
 }
 
 impl PeginMeta {
+    /// Serialize a pegin meta
     pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.version.consensus_encode(&mut bytes).unwrap();
@@ -148,6 +161,7 @@ impl PeginMeta {
         bytes
     }
 
+    /// Deserialize a pegin meta
     pub fn deserialize(mut bytes: &[u8]) -> Result<(PeginMeta, usize), PeginDataError> {
         // bytes is a list of proofs
         let proofs_size = bytes.len();
@@ -184,6 +198,7 @@ impl PeginMeta {
         ))
     }
 
+    /// Get the txout for the pegin
     pub fn txout(&self) -> &TxOut {
         self.tx
             .output
@@ -192,34 +207,50 @@ impl PeginMeta {
     }
 }
 
+/// Error type for pegin data
 #[derive(Debug, Error)]
 pub enum PeginDataError {
+    /// Invalid data format
     #[error("invalid data format")]
     InvalidFormat(#[from] btcencode::Error),
+    /// Invalid pegin proof
     #[error("invalid pegin proof")]
     Invalid(&'static str),
+    /// Invalid public key format
     #[error("invalid public key format")]
     InvalidPublicKey(secp256k1::Error),
+    /// Invalid bitcoin block height
     #[error("invalid bitcoin block height")]
     InvalidBitcoinBlockHeight,
+    /// Invalid tweak: failed to tweak aggregate public key
     #[error("invalid tweak: failed to tweak aggregate public key")]
     InvalidTweak(),
 }
 
+/// Error type for pegout data
 #[derive(Debug, Error)]
 pub enum PegoutDataError {
+    /// Invalid pegout proof
     #[error("invalid pegout proof")]
     Invalid(&'static str),
+    /// Invalid bitcoin address
+    #[error("invalid bitcoin address")]
+    InvalidAddress(bitcoin::address::Error),
 }
 
+/// Pegout data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PegoutData {
+    /// Amount to be pegged out
     pub amount: bitcoin::Amount,
+    /// Destination address
     pub destination: bitcoin::Address,
+    /// Network the pegout should be performed on
     pub network: bitcoin::Network,
 }
 
 impl PegoutData {
+    /// Create a new pegout data
     pub fn new(
         amount: bitcoin::Amount,
         address: String,
