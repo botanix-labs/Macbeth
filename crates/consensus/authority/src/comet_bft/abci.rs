@@ -115,9 +115,7 @@ where
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
-        _cometbft_rpc_port: u16,
     ) {
-
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
 
         let app = ABCIClient::new(
@@ -564,18 +562,17 @@ where
                         Err(e) => panic!("Error decoding transactions in finalize block: {:?}", e),
                     };
 
-                let storage = self.storage.inner.blocking_read();
                 match build_and_execute(
                     txs,
-                    storage.chain_spec.clone(),
+                    self.storage.chain_spec.clone(),
                     &block_builder_address,
-                    storage.evm_config,
-                    &storage.client,
-                    &storage.bitcoind_factory,
-                    storage.btc_network,
+                    self.storage.evm_config,
+                    &self.storage.client,
+                    &self.storage.bitcoind_factory,
+                    self.storage.btc_network,
                     &non_deterministic_data.bitcoin_block_hash,
                     &non_deterministic_data.aggregated_public_key,
-                    &storage.authorities,
+                    &self.storage.genesis_authorities,
                     block_time,
                 ) {
                     Ok(sealed_block_with_peg) => {
