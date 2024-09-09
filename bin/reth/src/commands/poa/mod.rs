@@ -72,7 +72,7 @@ use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
     ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
 };
-use reth_revm::{primitives::EnvKzgSettings, EvmProcessorFactory};
+use reth_revm::primitives::EnvKzgSettings;
 use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};

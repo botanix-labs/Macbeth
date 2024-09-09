@@ -80,6 +80,7 @@ reth-engine-util.workspace = true
 reth-prune.workspace = true
 reth-stages-api.workspace = true
 reth-optimism-cli = { workspace = true, optional = true }
+reth-discv4.workspace = true
 
 # botanix
 reth-botanix-lib.workspace = true
