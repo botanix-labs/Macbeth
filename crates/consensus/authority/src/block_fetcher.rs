@@ -1,6 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use bitcoin::hashes::Hash;
 use reth_eth_wire::NewBlock;
 use ruint::Uint;
 use tokio::time::Instant;
@@ -8,62 +7,36 @@ use tokio::time::Instant;
 use comet_bft_rpc::Client;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine,
-    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
-};
-use reth_network::{
-    frost::manager::ToFrostManager, message::NewBlockMessageWithPeerId, NetworkHandle,
-};
+use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_network::{message::NewBlockMessageWithPeerId, NetworkHandle};
 use reth_network_types::PeerId;
 
 use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::{SealedBlockWithSenders, B256};
-use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
-    StateProviderFactory,
-};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
 use tendermint_light_client::instance::Instance;
 
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{error, info, warn};
 
-use crate::{
-    engine_util, utils::is_active_sync_in_progress, utxo_sync::UTXOSyncEngine, AuthorityConsensus,
-    Storage,
-};
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use crate::{engine_util, utils::is_active_sync_in_progress, AuthorityConsensus, Storage};
 
-pub struct BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan> {
+pub struct BlockFetcherTask<EF, BF, DB> {
     /// Authority consensus
     consensus: AuthorityConsensus,
     /// Channel to recieve new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
-    /// Used to notify consumers of new blocks
-    canon_state_notification: CanonStateNotificationSender,
-    /// Btc Server client
-    btc_server: Option<BtcServerExtendedClient>,
     /// Consensus cache
     storage: Storage<EF, BF, DB>,
-    /// Recent finalize bitcoin block checkpoint.
-    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-    /// Network Client, used to create [FullBlockClient]
-    network_client: NetworkClient,
-    /// Network Handle, used to create [FullBlockClient]
+    /// Network Handle
     network_handle: NetworkHandle,
-    /// Utxo set sync controller
-    /// Rpc servers will not have a utxo sync engine
-    utxo_sync: Option<UTXOSyncEngine<EF, BF, DB, ToFrostMan>>,
     /// Light client
     light_client: Instance,
 }
 
-impl<EF, BF, DB, NetworkClient, ToFrostMan> BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>
+impl<EF, BF, DB> BlockFetcherTask<EF, BF, DB>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -73,36 +46,17 @@ where
         + 'static,
     BF: BitcoindFactory + Clone + 'static,
     EF: ExecutorFactory + Clone + 'static,
-    NetworkClient: HeadersClient + BodiesClient + Clone + Unpin + 'static,
-    ToFrostMan: ToFrostManager + Clone + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         consensus: AuthorityConsensus,
         block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
-        canon_state_notification: CanonStateNotificationSender,
-        btc_server: Option<BtcServerExtendedClient>,
         storage: Storage<EF, BF, DB>,
-        bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
-        network_client: NetworkClient,
         network_handle: NetworkHandle,
-        utxo_sync: Option<UTXOSyncEngine<EF, BF, DB, ToFrostMan>>,
         light_client: Instance,
     ) -> Self {
-        Self {
-            consensus,
-            block_import_rx,
-            to_engine,
-            canon_state_notification,
-            btc_server,
-            storage,
-            bitcoin_block_header,
-            network_client,
-            network_handle,
-            utxo_sync,
-            light_client,
-        }
+        Self { consensus, block_import_rx, to_engine, storage, network_handle, light_client }
     }
 
     pub fn ban_peer(&self, peer_id: PeerId) {
@@ -183,8 +137,6 @@ where
                     continue;
                 }
             };
-            // TODO should ban peer if verification fails
-            // self.network_handle.peers_handle().reputation_change(peer_id, kind)
 
             let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
             if app_hash != &block.parent_hash.0 {
