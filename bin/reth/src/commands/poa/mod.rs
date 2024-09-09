@@ -889,7 +889,6 @@ where {
                 transaction_pool.clone(),
                 abci_host.to_string(),
                 *abci_port,
-                *cometbft_rpc_port,
             );
         }
         if !is_fed_node {
