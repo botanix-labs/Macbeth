@@ -881,7 +881,6 @@ where {
                 eth_tx_validator,
                 transaction_pool.clone(),
                 *abci_port,
-                *cometbft_rpc_port,
             );
         }
         if !is_fed_node {
