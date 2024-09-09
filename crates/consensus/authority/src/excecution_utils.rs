@@ -5,25 +5,22 @@ pub(crate) mod authority_execution_utils {
     use reth_consensus_common::utils::{
         get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
     };
-    use reth_evm::execute::BlockExecutorProvider;
+    use reth_evm::execute::{BatchExecutor, BlockExecutorProvider};
+    use reth_evm_ethereum::execute::{EthBatchExecutor, EthBlockExecutor};
     use reth_execution_errors::{BlockExecutionError, BlockValidationError, InternalBlockExecutionError};
     use reth_chainspec::ChainSpec;
-    use reth_node_ethereum::EthEvmConfig;
+    use reth_node_ethereum::{EthEvmConfig, EthExecutorProvider};
     use reth_primitives::{
-        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-        header_ext::HeaderExt,
-        proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber,
-        BlockWithSenders, Bloom, Bytes, Header, ReceiptWithBloom, SealedBlock,
-        SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT}, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, header_ext::HeaderExt, proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256
     };
     use reth_provider::{
-        BlockReaderIdExt, BundleStateWithReceipts, ProviderError, StateProviderFactory
+        BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome, ProviderError, StateProviderFactory
     };
     use reth_revm::{
-        database::StateProviderDatabase, db::{states::bundle_state::BundleRetention, State},
-        processor::EVMProcessor,
+        database::StateProviderDatabase, db::{states::bundle_state::BundleRetention, BundleState, State},
     };
+    use reth_evm::execute::Executor;
+
     use std::sync::Arc;
 
     use tracing::{error, info, trace, warn};
@@ -44,7 +41,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
-    ) -> Result<(BundleStateWithReceipts, Block, u64), BlockExecutionError> {
+    ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError> {
         // Construct block and header
         let header = build_header_template(
             &transactions,
@@ -67,7 +64,7 @@ pub(crate) mod authority_execution_utils {
         let block_builder_pub_key = secp256k1::PublicKey::from_secret_key_global(sk);
         let block_builder_address = public_key_to_address(block_builder_pub_key);
         info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
-        let (bundle_state, gas_used) = execute(
+        let block_exec_output = execute(
             &block_with_senders,
             client,
             Some(block_builder_address),
@@ -77,7 +74,7 @@ pub(crate) mod authority_execution_utils {
             evm_config,
         )?;
 
-        Ok((bundle_state, block, gas_used))
+        Ok((block_exec_output, block))
     }
 
     /// Builds and validates the current block header with the given transactions, on the provided
@@ -86,7 +83,7 @@ pub(crate) mod authority_execution_utils {
     /// This returns the current block header.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_and_validate_completed_header(
-        bundle_state: &BundleStateWithReceipts,
+        block_exec_output: &BlockExecutionOutput<Receipt>,
         block: Block,
         gas_used: u64,
         bitcoin_checkpoint: &bitcoin::BlockHash,
@@ -105,7 +102,7 @@ pub(crate) mod authority_execution_utils {
         // fill in the rest of the fields
         let header = complete_header(
             header,
-            bundle_state,
+            block_exec_output,
             gas_used,
             sk,
             witness_data,
@@ -149,7 +146,7 @@ pub(crate) mod authority_execution_utils {
         agg_pk: Option<&secp256k1::PublicKey>,
         authorities: &Vec<secp256k1::PublicKey>,
         genesis_authorities: &Vec<secp256k1::PublicKey>,
-    ) -> Result<BundleStateWithReceipts, BlockExecutionError> {
+    ) -> Result<ExecutionOutcome, BlockExecutionError> {
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
         let senders =
             TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
@@ -195,11 +192,13 @@ pub(crate) mod authority_execution_utils {
 
         let _block_builder_address = get_block_producer_address(&sealed_block.header.clone());
         let db = client.latest().map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?;
-        let mut executor = executor_factory.with_state(db);
-        executor.execute_and_verify_receipt(&block_with_senders, U256::ZERO)?;
-        let bundle_state = executor.take_output_state();
+        let db = StateProviderDatabase::new(db);
+        let mut batch_executor = executor_factory.batch_executor(db);
+        let input = BlockExecutionInput::new(&block_with_senders, U256::ZERO);
+        let _ = batch_executor.execute_and_verify_one(input);
+        let execution_outcome = batch_executor.finalize();
 
-        Ok(bundle_state)
+        Ok(execution_outcome)
     }
 
     /// Fills in pre-execution header fields based on the current best block and given
@@ -283,7 +282,7 @@ pub(crate) mod authority_execution_utils {
     #[allow(clippy::too_many_arguments)]
     fn complete_header(
         mut header: Header,
-        bundle_state: &BundleStateWithReceipts,
+        block_exec_result: &BlockExecutionOutput<Receipt>,
         gas_used: u64,
         sk: &secp256k1::SecretKey,
         witness_data: &Option<Vec<bitcoin::witness::Witness>>,
@@ -293,7 +292,8 @@ pub(crate) mod authority_execution_utils {
         agg_pk: &secp256k1::PublicKey,
         authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<Header, BlockExecutionError> {
-        let receipts = bundle_state.receipts_by_block(header.number);
+        let exec_outcome = ExecutionOutcome::new(block_exec_result.state.clone(), block_exec_result.receipts.clone().into(), header.number.into(), vec![Requests(block_exec_result.requests.clone())]);
+        let receipts = exec_outcome.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
             EMPTY_RECEIPTS
         } else {
@@ -314,7 +314,7 @@ pub(crate) mod authority_execution_utils {
                     header.hash_slow(),
                 )))
             })?
-            .state_root(bundle_state.state())
+            .state_root(&block_exec_result.state)
             .unwrap();
         header.state_root = state_root;
 
@@ -361,7 +361,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<ChainSpec>,
         evm_config: EthEvmConfig,
-    ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError> {
+    ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError> {
         // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
         // We must set those values on the executor after the execution
         // This is only an execution for the block builder, all other executing operations
@@ -371,32 +371,10 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
 
-        let mut executor = EVMProcessor::new_with_state(chain_spec, db, evm_config);
-        // This step is typically done by the EVMExecutorFactory
-        executor.with_bitcoind_factory(bitcoind_factory.clone(), bitcoin_network);
-
-        // The following is cloning what is done in execute.inner() in the processor
-        // set the first block to find the correct index in bundle state
-        executor.set_first_block(block.number);
-
-        let (receipts, gas_used, total_block_fees) =
-            executor.execute_transactions(block, U256::ZERO)?;
-
-        // Save receipts.
-        executor.save_receipts(receipts)?;
-
-        // add post execution state change
-        // Withdrawals, rewards etc.
-        executor.apply_post_execution_state_change(
-            block,
-            U256::ZERO,
-            Some(total_block_fees),
-            block_builder_address,
-        )?;
-
-        // merge transitions
-        executor.db_mut().merge_transitions(BundleRetention::Reverts);
-
-        Ok((executor.take_output_state(), gas_used))
+        // TODO: pass the block builder address down to the executor here
+        let executor = EthBlockExecutor::new(chain_spec, evm_config, db);
+        let input = BlockExecutionInput::new(block, U256::ZERO);
+        let exec_results = executor.execute(input)?;
+        Ok(exec_results)
     }
 }

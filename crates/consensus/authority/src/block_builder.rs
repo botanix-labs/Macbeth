@@ -168,7 +168,7 @@ where
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
-        let (bundle_state, block, gas_used) = match build_and_execute(
+        let (block_exec_output, block) = match build_and_execute(
             transactions.clone(),
             chain_spec.clone(),
             &self.sk,
@@ -190,37 +190,30 @@ where
 
         // Process pegins and pegouts from the [Minting] contract.
         let mut block_pegouts = Vec::new();
-        for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
-            for receipt in receipts {
-                if idx == 0 && receipt.is_none() {
-                    break; // Prunning block, skip
+        for (_idx, receipt) in block_exec_output.receipts.iter().enumerate() {
+            if !receipt.success {
+                continue;
+            }
+            for log in &receipt.logs {
+                // Mint event should have already been validated during evm execution (in
+                // processor.rs)
+                let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
+                if let Some(pegin_data) = pegin_match {
+                    info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
+                    //TODO(stevenroose) should this happen here?
+                    if let Err(e) =
+                        call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
+                    {
+                        error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
+                        return;
+                    }
+                    info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                 }
-                if let Some(receipt) = receipt {
-                    if !receipt.success {
-                        continue;
-                    }
-                    for log in &receipt.logs {
-                        // Mint event should have already been validated during evm execution (in
-                        // processor.rs)
-                        let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
-                        if let Some(pegin_data) = pegin_match {
-                            info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                            //TODO(stevenroose) should this happen here?
-                            if let Err(e) =
-                                call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
-                            {
-                                error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
-                                return;
-                            }
-                            info!(target: "consensus::authority", "notifying btc server about pegin utxo");
-                        }
 
-                        let pegout_match =
-                            try_parse_burn_event(log, bitcoin_network).expect("passed EVM check");
-                        if let Some(pegout) = pegout_match {
-                            block_pegouts.push(pegout);
-                        }
-                    }
+                let pegout_match =
+                    try_parse_burn_event(log, bitcoin_network).expect("passed EVM check");
+                if let Some(pegout) = pegout_match {
+                    block_pegouts.push(pegout);
                 }
             }
         }
@@ -326,9 +319,9 @@ where
 
         let storage = self.storage.inner.write().await;
         let new_header = match build_and_validate_completed_header(
-            &bundle_state,
+            &block_exec_output,
             block,
-            gas_used,
+            block_exec_output.gas_used,
             &bitcoin_checkpoint.0.block_hash(),
             &self.sk,
             &authority_signers,

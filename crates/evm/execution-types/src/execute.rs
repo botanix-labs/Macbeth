@@ -38,4 +38,6 @@ pub struct BlockExecutionOutput<T> {
     pub requests: Vec<Request>,
     /// The total gas used by the block.
     pub gas_used: u64,
+    /// Total block fees
+    pub total_block_fees: u128,
 }

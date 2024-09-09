@@ -48,6 +48,7 @@ reth-network = { workspace = true, features = ["serde"] }
 reth-network-p2p.workspace = true
 reth-network-api.workspace = true
 reth-network-types.workspace = true
+reth-network-peers.workspace = true
 reth-downloaders.workspace = true
 reth-tracing.workspace = true
 reth-tasks.workspace = true

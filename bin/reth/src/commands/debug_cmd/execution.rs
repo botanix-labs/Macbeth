@@ -3,7 +3,6 @@
 use std::{path::PathBuf, sync::Arc};
 use crate::{
     args::{
-        get_secret_key,
         utils::{chain_help, genesis_value_parser, SUPPORTED_CHAINS},
         DatabaseArgs, NetworkArgs,
     },
@@ -17,6 +16,7 @@ use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_beacon_consensus::EthBeaconConsensus;
 use reth_cli_commands::common::{AccessRights, Environment, EnvironmentArgs};
 use reth_cli_runner::CliContext;
+use reth_cli_util::get_secret_key;
 use reth_config::Config;
 use reth_consensus::Consensus;
 use reth_db::DatabaseEnv;

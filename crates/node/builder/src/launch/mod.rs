@@ -346,7 +346,7 @@ where
 
         // create botanix client
         let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
-        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
+        let bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
         let botanix_config = BotanixConfig::default()
             .btc_server(node_config.rpc.btc_server.clone())
             .bitcoin_network(node_config.rpc.btc_network)

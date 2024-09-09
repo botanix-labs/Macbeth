@@ -6,11 +6,7 @@ use crate::{
         LogArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig},
-    commands::{
-        config_cmd, db, debug_cmd, dump_genesis, import, init_cmd, init_state, node, p2p, poa,
-        recover, stage, test_vectors,
-    },
-    commands::debug_cmd,
+    commands::{debug_cmd, poa},
     macros::block_executor,
     version::{LONG_VERSION, SHORT_VERSION},
 };
@@ -48,7 +44,7 @@ pub mod ext;
 /// This is the entrypoint to the executable.
 #[derive(Debug, Parser)]
 #[command(author, version = SHORT_VERSION, long_version = LONG_VERSION, about = "Reth", long_about = None)]
-pub struct Cli<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig = NoArgs> {
+pub struct Cli<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig = ext::NoArgs> {
     /// The command to run
     #[command(subcommand)]
     command: Commands<Ext>,

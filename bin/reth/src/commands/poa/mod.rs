@@ -5,12 +5,18 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
+use reth_evm::builder::{EvmFactory, RethEvmBuilder};
+use reth_network_peers::pk2id;
 use reth_node_metrics::recorder::install_prometheus_recorder;
+use reth_prune::PruneModes;
+use reth_rpc_builder::config::RethRpcServerConfig;
 use reth_rpc_engine_api::capabilities::EngineCapabilities;
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
+use reth_stages::StageId;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -20,7 +26,7 @@ use reth_authority_consensus::{
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
-use reth_network_types::pk2id;
+//use reth_network_types::pk2id;
 use reth_node_core::{cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
@@ -41,7 +47,7 @@ use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEvents, NetworkManager
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEventListenerProvider, NetworkManager
 };
 use reth_node_builder::{
     launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
@@ -49,27 +55,24 @@ use reth_node_builder::{
 };
 use reth_node_core::{
     args::{
-        get_secret_key,
         utils::{get_chain_from_federation_config, load_federation_config_toml},
         BitcoindArgs,
     },
-    init::init_genesis,
     node_config::NodeConfig,
     version,
 };
-use reth_node_ethereum::EthEvmConfig;
+use reth_node_ethereum::{EthEvmConfig, EthExecutorProvider};
 use reth_node_events::node::handle_events;
 use reth_primitives::{
-    constants::{eip4844::MAINNET_KZG_TRUSTED_SETUP, ETHEREUM_BLOCK_GAS_LIMIT},
+    constants::ETHEREUM_BLOCK_GAS_LIMIT,
     kzg::KzgSettings,
-    stage::StageId,
-    Bytes, Head, PruneModes,
+    Bytes, Head,
 };
 use reth_provider::{
     providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
     ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
 };
-use reth_revm::EvmProcessorFactory;
+use reth_revm::{primitives::EnvKzgSettings, EvmProcessorFactory};
 use reth_rpc::EngineApi;
 use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
@@ -83,13 +86,12 @@ use tracing::{debug, error, info};
 
 use crate::{
     args::{
-        utils::parse_socket_address, DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
+        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
         RpcServerArgs, TxPoolArgs,
     },
     cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
-    rpc::types::NodeRecord,
 };
 
 /// Start the node
@@ -313,7 +315,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         let prometheus_handle = install_prometheus_recorder();
 
         let data_dir = datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
-        let db_path = data_dir.db_path();
+        let db_path = data_dir.db();
         let executor = ctx.task_executor;
 
         tracing::info!(target: "reth::cli", path = ?db_path, "Opening database");
@@ -492,12 +494,13 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         );
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
+        let static_file_provider = provider_factory.static_file_provider();
+
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
-            data_dir.static_files_path(),
+            static_file_provider,
         );
-        let static_file_provider = provider_factory.static_file_provider();
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
         info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
@@ -508,17 +511,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             PruneModes::default(),
         );
 
-        node_config
-            .start_metrics_endpoint(
-                prometheus_handle,
-                Arc::clone(&database),
-                static_file_provider.clone(),
-                executor.clone(),
-            )
-            .await?;
-
         let network_secret_path =
-            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret_path());
+            self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret());
 
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
@@ -557,8 +551,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EvmProcessorFactory::new(Arc::new(chain.clone()), evm_config)
-            .with_bitcoind_factory(bitcoind_factory.clone(), node_config.rpc.btc_network);
+        //let executor_factory = EvmFactory::new(Arc::new(chain.clone()), evm_config);
+        let executor_factory = EthExecutorProvider::new(Arc::new(chain.clone()), evm_config);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
@@ -573,7 +567,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         let tree = BlockchainTree::new(
             tree_externals,
             BlockchainTreeConfig::default(),
-            None, /* Prune mode */
+            PruneModes::none(), /* Prune mode */
         )?;
 
         let canon_state_notification_sender = tree.canon_state_notification_sender();
@@ -596,7 +590,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             .expect("Minting contract bytecode to exist");
         if let Err(e) = is_known_minting_contract(
             federation_config.minting_contract_bytecode,
-            &deployed_bytecode.bytecode,
+            &deployed_bytecode.bytecode(),
         ) {
             error!(target: "reth::cli", "{}", e);
             panic!("{}", e);
@@ -661,7 +655,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             None
         };
 
-        let default_peers_path = data_dir.known_peers_path();
+        let default_peers_path = data_dir.known_peers();
         let network_cfg_builder = self
             .network
             .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
@@ -716,8 +710,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             .interval(conf.interval())
             .deadline(conf.deadline())
             .max_payload_tasks(conf.max_payload_tasks())
-            .extradata(conf.extradata_bytes())
-            .max_gas_limit(conf.max_gas_limit());
+            .extradata(conf.extradata_bytes());
 
         let payload_generator = BasicPayloadJobGenerator::with_builder(
             blockchain_db.clone(),
@@ -804,7 +797,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             node_config.prune_config(),
             max_block,
             static_file_producer.clone(),
-            evm_config,
+            executor_factory.clone(),
             exex_manager,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
@@ -897,7 +890,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         executor.spawn_critical(
             "events task",
             handle_events(
-                Some(network_handle.clone()),
+                Some(Box::new(network_handle.clone())),
                 Some(head.number),
                 events,
             ),
@@ -991,7 +984,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
                 if !self.network.trusted_peers.is_empty() {
                     info!(target: "reth::cli", "Adding trusted nodes");
                     self.network.trusted_peers.iter().for_each(|peer| {
-                        config.peers.trusted_nodes.push(*peer);
+                        config.peers.trusted_nodes.push(peer.clone());
                     });
                 }
                 Ok(config)
@@ -1002,8 +995,8 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
 
     /// Loads `MAINNET_KZG_TRUSTED_SETUP`.
     /// TODO I dont think we need this for PoA
-    fn kzg_settings(&self) -> eyre::Result<Arc<KzgSettings>> {
-        Ok(Arc::clone(&MAINNET_KZG_TRUSTED_SETUP))
+    fn kzg_settings(&self) -> eyre::Result<EnvKzgSettings> {
+        Ok(EnvKzgSettings::Default)
     }
 
     /// Fetches the head block from the database.

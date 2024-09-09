@@ -393,7 +393,7 @@ where
         // NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
 
-        Ok(BlockExecutionOutput { state: self.state.take_bundle(), receipts, requests, gas_used })
+        Ok(BlockExecutionOutput { state: self.state.take_bundle(), receipts, requests, gas_used, total_block_fees })
     }
 }
 

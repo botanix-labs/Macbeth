@@ -4,7 +4,7 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::{is_inturn, unix_timestamp};
-use reth_evm::execute::BlockExecutorProvider;
+use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_network::frost::manager::{PeerData, ToFrostManager};
 use reth_network_p2p::HeadersClient;
@@ -22,9 +22,10 @@ use reth_primitives::{
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
 use reth_provider::{
-    BlockReader, BlockReaderIdExt, ProviderError, StateProviderFactory,
+    BlockExecutionInput, BlockReader, BlockReaderIdExt, ProviderError, StateProviderFactory
 };
 
+use reth_revm::database::StateProviderDatabase;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{
@@ -216,6 +217,8 @@ pub(crate) struct PbftStateMachine<EF, BF, DB, ToFrostMan: ToFrostManager, Netwo
 impl<EF, BF, DB, ToFrostMan: ToFrostManager, NetworkClient>
     PbftStateMachine<EF, BF, DB, ToFrostMan, NetworkClient>
 where
+    DB: StateProviderFactory + BlockReaderIdExt + BlockchainTreeViewer + Clone + 'static,
+    BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
 {
     /// Constructs a new state machine with the given params
@@ -541,10 +544,11 @@ where
                 e
             })?;
 
-        let db = storage.client.latest().expect("get latest");
-        let mut executor = storage.executor_factory.with_state(&db);
-
-        executor.execute_transactions(&block_with_senders, U256::ZERO)?;
+        //let db = storage.client.latest().expect("get latest");
+        let db = StateProviderDatabase::new(storage.client.latest().expect("get latest"));
+        let executor = storage.executor_factory.executor(db);
+        let input = BlockExecutionInput::new(&block_with_senders, U256::ZERO);
+        executor.execute(input)?;
 
         Ok(())
     }
