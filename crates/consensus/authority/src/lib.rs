@@ -23,7 +23,7 @@
 use reth_chainspec::ChainSpec;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput};
 use reth_consensus_common::{
-    utils::{validate_chain_version, validate_extra_data_header_authorities},
+    utils::validate_chain_version,
     validation::{self},
 };
 
@@ -46,12 +46,9 @@ pub use comet_bft::light_client::LightCBFTClientBuilder;
 mod compressor;
 mod dkg;
 mod engine_util;
-mod epoch_manager;
 mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
-mod pbft;
-mod pbft_task;
 mod signing;
 mod sync;
 pub mod utils;
@@ -131,8 +128,7 @@ impl Consensus for AuthorityConsensus {
     fn validate_extra_data_header(
         &self,
         header: &Header,
-        _authority_signers: &[secp256k1::PublicKey],
-        genesis_authorities: &[secp256k1::PublicKey],
+        _genesis_authorities: &[secp256k1::PublicKey],
         aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         // Skip over genesis
@@ -162,8 +158,6 @@ impl Consensus for AuthorityConsensus {
         })?;
 
         validate_chain_version(edh.chain_version)?;
-
-        validate_extra_data_header_authorities(header, genesis_authorities)?;
 
         // Past genesis NUMS point should never be used as the aggregated public key
         if edh.aggregated_public_key == nums_secp256k1_pk() {
@@ -208,7 +202,6 @@ impl Consensus for AuthorityConsensus {
     fn validate_header_standalone(
         &self,
         header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
         aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
@@ -227,12 +220,7 @@ impl Consensus for AuthorityConsensus {
         // TODO: check this
 
         // Validate EDH serialization and signature on block
-        self.validate_extra_data_header(
-            header,
-            authority_signers,
-            genesis_authorities,
-            aggregate_public_key,
-        )?;
+        self.validate_extra_data_header(header, genesis_authorities, aggregate_public_key)?;
 
         // Validate fee benificiary
         self.validate_block_beneficiary(header)?;
@@ -246,15 +234,33 @@ impl Consensus for AuthorityConsensus {
 #[derive(Clone, Debug)]
 pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) client: DB,
+    /// The authority list in the genesis block
+    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
+    /// keep track of my place among the signer
+    /// This will change as new signers are removed
+    pub(crate) signer_index: usize,
+    /// Authority Signer public key
+    pub(crate) authority: secp256k1::PublicKey,
+    /// Bitcoin network
+    pub(crate) btc_network: bitcoin::Network,
+    /// Authority socket addresses pulled from federation config
+    pub(crate) authority_socket_addresses: Vec<SocketAddr>,
+    /// Evm config
+    pub(crate) evm_config: EthEvmConfig,
+    /// Bitcoind Factory
+    pub(crate) bitcoind_factory: BF,
+    /// Chain spec
+    pub(crate) chain_spec: Arc<ChainSpec>,
+    /// Executor Factory
+    pub(crate) executor_factory: EF,
     // The inner storage, everything here is rw locked
-    pub(crate) inner: Arc<RwLock<StorageInner<EF, BF, DB>>>,
+    pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
 impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
     /// Create a new instance of the storage
     pub(crate) fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
-        authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,
         authority: secp256k1::PublicKey,
         btc_network: bitcoin::Network,
@@ -266,31 +272,30 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         executor_factory: EF,
         client: DB,
     ) -> Self {
-        let storage_inner = StorageInner {
+        let storage_inner = StorageInner { aggregate_public_key };
+
+        Self {
+            client,
             genesis_authorities,
-            authorities,
             signer_index,
             authority,
-            aggregate_public_key,
             btc_network,
             authority_socket_addresses,
             evm_config,
             chain_spec,
             bitcoind_factory,
             executor_factory,
-            client: client.clone(),
-        };
-
-        Self { client, inner: Arc::new(RwLock::new(storage_inner)) }
+            inner: Arc::new(RwLock::new(storage_inner)),
+        }
     }
 
     /// Returns the write lock of the storage
-    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner<EF, BF, DB>> {
+    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, StorageInner> {
         self.inner.write().await
     }
 
     /// Returns the read lock of the storage
-    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner<EF, BF, DB>> {
+    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
         self.inner.read().await
     }
 }
@@ -298,35 +303,10 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
 #[derive(Debug)]
 /// In-memory storage for the chain the authority seal engine is building.
 /// data shared amongst the different tasks should be stored here and protected by a rwlock
-pub(crate) struct StorageInner<EF, BF, DB> {
-    /// The authority list in the genesis block
-    pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
-    /// Keep track of the signers
-    /// This value is pulled from the latest epoch block EDH
-    /// and should be the same as genesis_authorities as long as the federation is static
-    pub(crate) authorities: Vec<secp256k1::PublicKey>,
-    /// keep track of my place among the signer
-    /// This will change as new signers are removed
-    pub(crate) signer_index: usize,
-    /// Authority Signer public key
-    pub(crate) authority: secp256k1::PublicKey,
+pub(crate) struct StorageInner {
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
-    /// Bitcoin network
-    btc_network: bitcoin::Network,
-    /// Authority socket addresses pulled from federation config
-    authority_socket_addresses: Vec<SocketAddr>,
-    /// Evm config
-    evm_config: EthEvmConfig,
-    /// Bitcoind Factory
-    bitcoind_factory: BF,
-    /// Chain spec
-    chain_spec: Arc<ChainSpec>,
-    /// Executor Factory
-    executor_factory: EF,
-    /// The db provider
-    client: DB,
 }
 
 #[cfg(test)]
@@ -343,41 +323,6 @@ mod tests {
 
     use super::*;
 
-    #[allow(dead_code)]
-    const EDH_DEFAULT_SIGHASH: &str =
-        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
-
-    #[allow(dead_code)]
-    const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
-    #[allow(dead_code)]
-    const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
-
-    #[allow(dead_code)]
-    fn generate_secret_key(hex_string: &str) -> secp256k1::SecretKey {
-        secp256k1::SecretKey::from_str(hex_string).expect("Invalid hex string for SecretKey")
-    }
-    #[allow(dead_code)]
-    fn sign_block_helper(header: &mut Header, signer_sk: Option<&str>) {
-        let mut edh = ExtraDataHeader::default();
-        let sk1 = generate_secret_key(SK1);
-        let sk2 = generate_secret_key(SK2);
-
-        edh.authority_signers = Some(vec![
-            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk1),
-            secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk2),
-        ]);
-        edh.set_optional_fields_bitmask();
-        header.extra_data = Bytes::from(edh.serialize());
-
-        header.number = 1;
-        if let Some(sk_str) = signer_sk {
-            let sk = generate_secret_key(sk_str);
-            header.sign_block(&sk).unwrap();
-        } else {
-            header.sign_block(&sk1).unwrap();
-        }
-    }
-
     // Tests for validating poa extra data header
     #[test]
     fn should_skip_over_genesis() {
@@ -389,12 +334,8 @@ mod tests {
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
 
-        let result = consensus.validate_extra_data_header(
-            &header,
-            &authority_signers,
-            &authority_signers,
-            Some(&dummy_agg_key),
-        );
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
 
         assert!(result.is_ok());
     }
@@ -426,12 +367,8 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk1).expect("valid sign");
 
-        let result = consensus.validate_extra_data_header(
-            &header,
-            authority_signers.as_slice(),
-            authority_signers.as_slice(),
-            Some(&dummy_agg_key),
-        );
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
@@ -456,12 +393,8 @@ mod tests {
         header.extra_data = Bytes::from(edh.serialize());
         header.sign_block(&sk1).expect("valid sign");
 
-        let result = consensus.validate_extra_data_header(
-            &header,
-            &authority_signers,
-            &authority_signers,
-            Some(&dummy_agg_key),
-        );
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
         assert_eq!(
             result.err().unwrap(),
             ConsensusError::InvalidAggregatedPublicKey(
@@ -469,6 +402,39 @@ mod tests {
             )
         );
     }
+
+    // TODO add this back in 
+    // #[test]
+    // fn should_not_accept_edh_with_invalid_agg_pk() {
+    //     let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
+    //     // By default edh will use the nums point
+    //     let mut edh = ExtraDataHeader::default();
+
+    //     // Just use the first key as the dummy agg key
+    //     let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+    //     let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
+
+    //     edh.aggregated_public_key = dummy_agg_key;
+
+    //     let different_key = secp256k1::SecretKey::from_str(SK2).unwrap();
+    //     let different_pk = different_key.public_key(secp256k1::SECP256K1);
+
+    //     let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+    //     let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+    //     let mut header = Header::default();
+    //     header.number = 1;
+    //     header.extra_data = Bytes::from(edh.serialize());
+    //     header.sign_block(&sk1).expect("valid sign");
+
+    //     let result =
+    //         consensus.validate_extra_data_header(&header, &authority_signers, Some(&different_pk));
+    //     assert_eq!(
+    //         result.err().unwrap(),
+    //         ConsensusError::InvalidAggregatedPublicKey(
+    //             InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey
+    //         )
+    //     );
+    // }
 
     #[test]
     fn unix_timestamp() {
@@ -496,37 +462,11 @@ mod tests {
     }
 
     #[test]
-    fn is_inturn_true() {
-        let authorities_len = 1;
-        let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index, 5));
-    }
-
-    #[test]
-    fn is_inturn_false() {
-        let authorities_len = 1;
-        let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index, 5));
-    }
-
-    #[test]
     fn should_split_rewards() {
         let base_block_reward = 100;
         let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
         assert_eq!(botanix_reward, 20);
         assert_eq!(beneficiary_reward, 80);
-    }
-
-    #[test]
-    fn should_get_block_producer_address_from_header() {
-        let mut header = Header::default();
-        sign_block_helper(&mut header, None);
-        let edh = ExtraDataHeader::deserialize(&mut header.extra_data.to_vec().as_slice()).unwrap();
-        let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(
-            block_producer_address,
-            public_key_to_address(edh.authority_signers.unwrap()[0])
-        );
     }
 
     #[test]

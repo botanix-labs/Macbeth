@@ -140,7 +140,6 @@ pub trait Consensus: Debug + Send + Sync {
     fn validate_extra_data_header(
         &self,
         header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
         aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;
@@ -152,7 +151,6 @@ pub trait Consensus: Debug + Send + Sync {
     fn validate_header_standalone(
         &self,
         header: &Header,
-        authority_signers: &[secp256k1::PublicKey],
         genesis_authorities: &[secp256k1::PublicKey],
         aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError>;

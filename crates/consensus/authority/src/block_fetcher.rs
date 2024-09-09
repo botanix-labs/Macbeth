@@ -2,10 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     engine_util,
-    excecution_utils::authority_execution_utils::execute_imported_block,
-    utils::{bloom_contains_pegin, call_notify_pegin, is_active_sync_in_progress},
-    utxo_sync::{UTXOSync, UTXOSyncEngine},
-    AuthorityConsensus, LightCBFTClientBuilder, Storage,
+    utils::{is_active_sync_in_progress},
+    utxo_sync::{UTXOSyncEngine},
+    AuthorityConsensus, Storage,
 };
 
 use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
@@ -13,9 +12,8 @@ use tendermint_light_client::instance::Instance;
 use tendermint_rpc::HttpClient;
 use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{FinalizeSignerRequest, Output};
 use reth_beacon_consensus::BeaconEngineMessage;
-use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};
@@ -167,7 +165,7 @@ where
             };
             self.light_client.trust_block(&cbft_block);
 
-            let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
+            let _latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
             match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
                 Ok(_) => (),
                 Err(e) => {

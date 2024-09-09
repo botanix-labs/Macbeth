@@ -1,17 +1,16 @@
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
-    hex::DisplayHex,
 };
-use bytes::Buf;
-use prost::bytes::Bytes;
-use reth_primitives::TransactionSigned;
-use reth_revm::primitives::bitvec::vec;
+
+
+
+
 use std::io;
 use thiserror::Error;
 
 /// Errors that can occur when deserializing NonDeterministicData
 #[derive(Debug, Error)]
-pub enum NonDeterministicDataDeserializeError {
+pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("I/O error")]
     /// I/O error
     Io(#[from] io::Error),
@@ -25,18 +24,18 @@ pub enum NonDeterministicDataDeserializeError {
 
 /// Type that encapsulates non-deterministic data needed for consensus
 #[derive(Debug, Clone)]
-pub struct NonDeterministicData {
-    pub version: u16,
-    pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
-    pub aggregated_public_key: secp256k1::PublicKey,
+pub(crate) struct NonDeterministicData {
+    pub(crate) version: u16,
+    pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    pub(crate) aggregated_public_key: secp256k1::PublicKey,
 }
 
 impl NonDeterministicData {
-    pub fn version_default() -> u16 {
+    pub(crate) fn version_default() -> u16 {
         0
     }
 
-    pub fn new(
+    pub(crate) fn new(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
     ) -> Self {
@@ -47,7 +46,7 @@ impl NonDeterministicData {
         }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, io::Error> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, io::Error> {
         let mut writer = Vec::new();
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
@@ -56,7 +55,7 @@ impl NonDeterministicData {
         Ok(writer.to_vec())
     }
 
-    pub fn deserialize(
+    pub(crate) fn deserialize(
         reader: &mut impl io::Read,
     ) -> Result<Self, NonDeterministicDataDeserializeError> {
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
