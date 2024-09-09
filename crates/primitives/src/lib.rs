@@ -48,7 +48,7 @@ pub mod transaction;
 pub mod trie;
 mod withdrawal;
 
-// Botanix specific stuff
+/// Botanix specific stuff
 pub mod botanix;
 
 /// Extra data header helpers

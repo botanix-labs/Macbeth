@@ -205,7 +205,7 @@ impl Header {
     /// Heavy function that will calculate hash of data and will *not* save the change to metadata.
     /// Use [`Header::seal`], [`SealedHeader`] and unlock if you need hash to be persistent.
     pub fn hash_slow(&self) -> B256 {
-        let mut this = self.clone();
+        let this = self.clone();
         let mut out = BytesMut::new();
         this.encode(&mut out);
         keccak256(&out)

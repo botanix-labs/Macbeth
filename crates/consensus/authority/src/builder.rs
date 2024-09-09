@@ -18,7 +18,7 @@ use reth_interfaces::{
 };
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::{NewBlockMessageWithPeerId},
+    message::NewBlockMessageWithPeerId,
     NetworkEvents, NetworkHandle,
 };
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
@@ -36,7 +36,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{info};
+use tracing::info;
 
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 

@@ -32,7 +32,7 @@ use reth_btc_wallet::bitcoind::{
 };
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
-use reth_consensus_common::{utils, utils::get_authority_signer_index};
+use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
@@ -575,6 +575,9 @@ where {
         let authorities_socket_addresses =
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
+        let authority_pk = secret_key.public_key(SECP256K1);
+        let authority_index = genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
+
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
         let sync_metrics_listener = reth_stages::MetricsListener::new(sync_metrics_rx);
@@ -668,18 +671,10 @@ where {
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
-            // create authority config
-            let (authority_index, authorities, authority_pk) = get_authority_signer_index(
-                blockchain_db.clone(),
-                Arc::clone(&chain_arc.clone()),
-                secp256k1::Secp256k1::new(),
-                secret_key,
-            )
-            .expect("Failed to get authority index");
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
-                authorities,
+                genesis_authorities.clone(),
                 node_config.rpc.min_signers.expect("min signers"),
                 node_config.rpc.max_signers.expect("max signers"),
             );
@@ -799,10 +794,10 @@ where {
         // Build authority Consensus
         let (
             _authority_consensus,
-            mut block_fetcher_task,
+            block_fetcher_task,
             frost_task,
             mut sync_controller,
-            healthcheck_task,
+            _healthcheck_task,
             abci_client_builder,
         ) = AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
@@ -820,7 +815,7 @@ where {
             frost_config,
             payload_builder.clone(),
             node_config.rpc.btc_network,
-            genesis_authorities,
+            genesis_authorities.clone(),
             authorities_socket_addresses,
             executor_factory.clone(),
             bitcoind_factory.clone(),

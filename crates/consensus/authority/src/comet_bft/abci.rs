@@ -17,8 +17,6 @@ use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 
-
-
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, TransactionSigned,
@@ -36,8 +34,8 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseCommit, ResponsePrepareProposal,
-        ResponseProcessProposal,
+        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseCommit,
+        ResponsePrepareProposal, ResponseProcessProposal,
     },
     v0_38::abci::{
         RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
@@ -58,8 +56,6 @@ use crate::{
     utils::call_notify_pegin,
     AuthorityConsensus, Storage,
 };
-
-
 
 /// Consts
 const SUCCESS: u32 = 0;
