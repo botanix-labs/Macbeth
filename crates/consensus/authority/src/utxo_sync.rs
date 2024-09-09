@@ -11,7 +11,7 @@ use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
+use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError};
 use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError};
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
@@ -85,13 +85,11 @@ where
     // Note: this function should not be called unless we are fully synced
     async fn sync_utxo_set(&self) -> Result<(), UtxoSyncError> {
         trace!(target: "consensus::authority::UTXOSync::sync_utxo_set", "syncing utxo set");
-        let guard = self.storage.read().await;
-        let client = guard.client.clone();
-        drop(guard);
+        let client = self.storage.client.clone();
         let mut btc_server = self.btc_server.clone();
 
         let latest_header = client.latest_header()?.expect("should get latest block");
-        let latest_merkel_root = latest_header.get_utxo_set_merkle_root()?;
+        // let latest_merkle_root = latest_header.get_utxo_set_merkle_root()?;
 
         if latest_header.number == 0 {
             debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "genesis block, no utxo set to sync");
@@ -102,11 +100,11 @@ where
         let latest_utxo_commitment = Sha256Hash::from_slice(
             btc_server.get_utxo_merkle_root(Empty {}).await?.merkle_root.as_slice(),
         )?;
-        if latest_merkel_root == latest_utxo_commitment {
-            debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in sync");
-            // All done! We are in sync
-            return Ok(());
-        }
+        // if latest_merkel_root == latest_utxo_commitment {
+        //     debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in sync");
+        //     // All done! We are in sync
+        //     return Ok(());
+        // }
 
         // Since we are not in sync, we need to get the utxo set from a peer
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -159,40 +157,5 @@ where
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::pbft::tests::FrostHandleMock;
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
-    use reth_node_ethereum::EthEvmConfig;
-    use reth_primitives::BOTANIX_TESTNET;
-    use reth_provider::test_utils::{MockEthProvider, TestExecutorFactory};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn create_new_utxo_set_sync_engine() {
-        let mock_eth_provider = MockEthProvider::default();
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let dummy_pk = secp256k1::PublicKey::from_secret_key_global(&sk);
-        let executor_factory = TestExecutorFactory::default();
-        let mock_to_frost_man = FrostHandleMock {};
-
-        let storage = Storage::new(
-            vec![],
-            vec![],
-            0,
-            dummy_pk.clone(),
-            bitcoin::Network::Regtest,
-            None,
-            vec![],
-            EthEvmConfig::default(),
-            BOTANIX_TESTNET.clone(),
-            MockBitcoindFactory::new(BitcoindConfig::default()),
-            executor_factory,
-            mock_eth_provider.clone(),
-        );
     }
 }

@@ -106,12 +106,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let extra_data_header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             CHAIN_VERSION,
-            None,
-            Some(public_keys),
-            None,
-            None,
             bitcoin::hash_types::BlockHash::all_zeros(),
-            sha256::Hash::all_zeros(),
             nums_secp256k1_pk(),
             Address::ZERO,
         );
@@ -213,13 +208,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     let extra_data_header = ExtraDataHeader::new(
                         EXTRA_HEADER_VERSION,
                         CHAIN_VERSION,
-                        None,
-                        Some(public_keys),
-                        None,
-                        None,
                         bitcoin::hash_types::BlockHash::all_zeros(),
-                        sha256::Hash::all_zeros(),
-                        // Agg key in genesis should always be NUMS point
+                        // Agg key in genesis should always be NUMS point for genesis block
                         nums_secp256k1_pk(),
                         Address::ZERO,
                     );
