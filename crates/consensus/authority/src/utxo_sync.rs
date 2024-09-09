@@ -12,7 +12,7 @@ use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError};
+use reth_primitives::extra_data_header::ExtraDataHeaderDeserializeError;
 use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError};
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
@@ -102,8 +102,8 @@ where
             btc_server.get_utxo_merkle_root(Empty {}).await?.merkle_root.as_slice(),
         )?;
         // if latest_merkel_root == latest_utxo_commitment {
-        //     debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in sync");
-        //     // All done! We are in sync
+        //     debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in
+        // sync");     // All done! We are in sync
         //     return Ok(());
         // }
 

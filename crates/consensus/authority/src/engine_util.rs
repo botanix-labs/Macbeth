@@ -16,6 +16,7 @@ use tracing::{debug, error, trace};
 
 #[derive(Debug, thiserror::Error)]
 /// Error type for sending a new payload to the engine
+#[allow(dead_code)]
 pub(crate) enum SendNewPayloadError {
     #[error("Engine error")]
     EngineError,
@@ -30,6 +31,7 @@ pub(crate) enum SendNewPayloadError {
 /// Sends a new payload to the engine.
 /// This function sends a new payload to the engine and waits for the response.
 /// It handles different payload status scenarios and returns an error if the payload is invalid.
+#[allow(dead_code)]
 pub(crate) async fn send_beacon_new_payload<Engine: reth_node_api::EngineTypes>(
     sealed_block: SealedBlock,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
@@ -143,6 +145,7 @@ pub(crate) enum StartNewPayloadError {
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_attributes` - The payload attributes.
 /// * `parent` - The parent block hash the payload will be built on.
+#[allow(dead_code)]
 pub(crate) async fn start_new_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_attributes: EthPayloadBuilderAttributes,
@@ -172,6 +175,7 @@ pub(crate) enum BestTransactionsError {
 /// # Arguments
 /// * `to_engine` - The sender to send the message to the Beacon Engine.
 /// * `payload_id` - The payload id to get the best transactions from.
+#[allow(dead_code)]
 pub(crate) async fn best_transactions_from_payload(
     payload_builder: &PayloadBuilderHandle<EthEngineTypes>,
     payload_id: PayloadId,

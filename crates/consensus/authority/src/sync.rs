@@ -1,7 +1,6 @@
 use crate::engine_util;
 use futures_util::StreamExt;
 
-
 use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::revm_primitives::FixedBytes;
 
