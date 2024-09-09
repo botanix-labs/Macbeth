@@ -204,7 +204,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan>>,
+        Option<BlockFetcherTask<EF, BF, DB>>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
@@ -215,7 +215,7 @@ where
             consensus,
             storage,
             to_engine,
-            canon_state_notification,
+            canon_state_notification: _,
             bitcoin_block_header,
             sk: _,
             network_handle,
@@ -248,7 +248,7 @@ where
         }
         .await;
 
-        let utxo_sync = {
+        let _utxo_sync = {
             if let Some(btc_server) = &btc_server_client {
                 let utxo_set_sync_engine = UTXOSyncEngine::new(
                     storage.clone(),
@@ -318,13 +318,8 @@ where
                 consensus.clone(),
                 block_import_rx,
                 to_engine.clone(),
-                canon_state_notification.clone(),
-                btc_server_client.clone(),
                 storage.clone(),
-                bitcoin_block_header.clone(),
-                network_client.clone(),
                 network_handle.clone(),
-                utxo_sync.clone(),
                 light_client.unwrap(),
             ));
         }
