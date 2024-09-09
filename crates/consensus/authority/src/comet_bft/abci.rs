@@ -304,9 +304,20 @@ where
         info!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
 
+        let non_deterministic_data =
+            NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
+
+        // insert non-deterministic data tx at index 0 so historical sync will pass verification
+        let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
+            non_deterministic_data
+                .serialize()
+                .expect("non deterministic data to be serialized")
+                .as_slice(),
+        );
         if self.pool.pool_size().total == 0 {
             info!("No transactions in pool, waiting...");
-            return ResponsePrepareProposal { txs: vec![] };
+
+            return ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
         }
 
         let payload_config = self.payload_builder_arguments();
@@ -344,18 +355,7 @@ where
                             .collect::<_>();
                         info!("prepare_proposal response: {:?}", txs);
 
-                        let non_deterministic_data = NonDeterministicData::new(
-                            self.bitcoin_blockhash(),
-                            self.aggregate_public_key(),
-                        );
-
                         // insert non-deterministic data tx at index 0 so historical sync will pass verification
-                        let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
-                            non_deterministic_data
-                                .serialize()
-                                .expect("non deterministic data to be serialized")
-                                .as_slice(),
-                        );
                         txs.insert(0, non_deterministic_data_bytes);
 
                         ResponsePrepareProposal { txs }
