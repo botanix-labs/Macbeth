@@ -2,7 +2,6 @@ use crate::{
     block_fetcher::BlockFetcherTask,
     comet_bft::abci::ABCIClientBuilder,
     compressor::Compressor,
-    epoch_manager::EpochManager,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
     sync::SyncController,
@@ -19,8 +18,8 @@ use reth_chainspec::ChainSpec;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::{NewBlockMessage, NewBlockMessageWithPeerId},
-    NetworkHandle, NetworkEventListenerProvider
+    message::{NewBlockMessageWithPeerId},
+    NetworkHandle, NetworkEventListenerProvider, NetworkEvents
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
@@ -38,9 +37,9 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{error, info};
+use tracing::{info};
 
-pub type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
+pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
 pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
@@ -51,7 +50,6 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
     sk: secp256k1::SecretKey,
-    epoch_manager: EpochManager<EF, BF, DB>,
     network_handle: NetworkHandle,
     network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
@@ -136,16 +134,6 @@ where
             }
         }
 
-        // Latest epoch header is the last header in the vector
-        // This header should include the authority list which is validated by consensus
-        let authorities = latest_header
-            .get_authority_list()
-            .map_err(|e| {
-                error!("Failed to retrieve authority list: {:?}", e);
-                AuthorityConsensusBuilderError::FailedToRecoverAuthorityList
-            })?
-            .expect("authority signer list in epoch block");
-
         let agg_pk = {
             if latest_header.number > 0 {
                 Some(
@@ -162,11 +150,11 @@ where
         // authority length represents a non federation node since it would be out of bounds
         // this prevents the node from signing blocks although there are other checks to stop this
         // as well
-        let mut signer_index = Some(authorities.len() + 1);
+        let mut signer_index = Some(genesis_authorities.len() + 1);
         // only a federation node has a btc_server
         if is_fed_node {
             signer_index =
-                authorities.iter().position(|a| *a == sk.public_key(secp256k1::SECP256K1));
+                genesis_authorities.iter().position(|a| *a == sk.public_key(secp256k1::SECP256K1));
 
             if signer_index.is_none() {
                 return Err(AuthorityConsensusBuilderError::FailedToFindSignerIndex);
@@ -177,7 +165,6 @@ where
         // Try to instantiate storage
         let storage = Storage::new(
             genesis_authorities,
-            authorities,
             signer_index.expect("valid index"),
             pk,
             btc_network,
@@ -192,9 +179,6 @@ where
             client.clone(),
         );
 
-        // Instantiate epoch manager
-        let epoch_manager = EpochManager::new(storage.clone());
-
         Ok(Self {
             storage,
             consensus: AuthorityConsensus::new(chain_spec),
@@ -203,7 +187,6 @@ where
             btc_server_factory,
             bitcoin_block_header,
             sk,
-            epoch_manager,
             network_handle,
             network_client,
             frost_handle,
@@ -236,23 +219,20 @@ where
             to_engine,
             canon_state_notification,
             bitcoin_block_header,
-            sk,
-            epoch_manager,
+            sk: _,
             network_handle,
             network_client,
             frost_handle,
             block_import_rx,
             task_executor,
             frost_config,
-            payload_builder,
+            payload_builder: _,
             light_client,
             cometbft_rpc_factory,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
-        let guard = storage.read().await;
-        let executor_factory = guard.executor_factory.clone();
-        let chain_spec = guard.chain_spec.clone();
-        drop(guard);
+        let _executor_factory = storage.executor_factory.clone();
+        let chain_spec = storage.chain_spec.clone();
         let compressor = Compressor::new();
 
         let btc_server_client = async {
@@ -293,9 +273,9 @@ where
         // Set up frost notification message queue
         // these are two mpsc channels that are used to communicate between the frost task and the
         // block production task
-        let (frost_task_notifications1_tx, frost_task_notifications1_rx) =
+        let (_frost_task_notifications1_tx, frost_task_notifications1_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
-        let (frost_task_notifications2_tx, frost_task_notifications2_rx) =
+        let (frost_task_notifications2_tx, _frost_task_notifications2_rx) =
             tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server

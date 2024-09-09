@@ -4,7 +4,7 @@ use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use tendermint_light_client::{
     builder::LightClientBuilder,
     instance::Instance,
-    light_client::{LightClient, Options},
+    light_client::{Options},
     store::{memory::MemoryStore, LightStore},
     types::{Height, TrustThreshold},
 };

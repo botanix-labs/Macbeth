@@ -62,11 +62,8 @@ where
 
         // get all authority peers in the federation (at this point we must be connected to all of
         // them)
-
-        let storage_lock = self.storage.read().await;
-
-        let authority_peers_sockets = storage_lock
-            .authorities
+        let authority_peers_sockets = self.storage
+            .genesis_authorities
             .iter()
             .enumerate()
             .filter_map(|(index, authority_pk)| {
@@ -74,15 +71,13 @@ where
                 if authority_peer_id != *self.network_handle.peer_id() {
                     // excluse our own peer_id
                     let authority_socket_addr =
-                        storage_lock.authority_socket_addresses.get(index).cloned();
+                        self.storage.authority_socket_addresses.get(index).cloned();
                     Some(authority_peer_id).zip(authority_socket_addr)
                 } else {
                     None
                 }
             })
             .collect::<Vec<(PeerId, SocketAddr)>>();
-
-        drop(storage_lock);
 
         // update the tracker for each authority peer_id and mark its state as healthy initially
         let mut guard = self.peers_healthcheck_tracker.write().await;
