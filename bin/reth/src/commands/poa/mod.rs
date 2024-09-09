@@ -178,6 +178,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[command(flatten, next_help_heading = "Extension")]
     pub ext: Ext,
 
+    /// ABCI client host to listen on
+    #[arg(long, value_name = "ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
+    pub abci_host: String,
+
     /// ABCI client port to listen on
     #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
@@ -227,6 +231,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             debug,
             db,
             bitcoind_config_path,
+            abci_host,
             abci_port,
             cometbft_rpc_port,
             cometbft_rpc_host,
@@ -249,6 +254,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             db,
             bitcoind_config_path,
             ext,
+            abci_host,
             abci_port,
             cometbft_rpc_port,
             cometbft_rpc_host,
@@ -277,6 +283,7 @@ where {
             db,
             bitcoind_config_path,
             ext,
+            abci_host,
             abci_port,
             cometbft_rpc_port,
             cometbft_rpc_host,
@@ -885,6 +892,7 @@ where {
                 &executor.clone(),
                 eth_tx_validator,
                 transaction_pool.clone(),
+                abci_host.to_string(),
                 *abci_port,
                 *cometbft_rpc_port,
             );
