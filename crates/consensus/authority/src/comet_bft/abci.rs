@@ -6,7 +6,7 @@ use std::{
 };
 
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use bytes::Buf;
+
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -16,8 +16,8 @@ use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
-use tendermint_light_client::instance::Instance;
-use thiserror::Error;
+
+
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
@@ -36,9 +36,8 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
     abci::{
-        ExecTxResult, RequestExtendVote, RequestPrepareProposal, RequestProcessProposal,
-        RequestVerifyVoteExtension, ResponseCommit, ResponseExtendVote, ResponsePrepareProposal,
-        ResponseProcessProposal, ResponseVerifyVoteExtension,
+        ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseCommit, ResponsePrepareProposal,
+        ResponseProcessProposal,
     },
     v0_38::abci::{
         RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
@@ -60,7 +59,7 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 
-use super::light_client::LightCBFTClientBuilder;
+
 
 /// Consts
 const SUCCESS: u32 = 0;
@@ -119,7 +118,7 @@ where
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_port: u16,
-        cometbft_rpc_port: u16,
+        _cometbft_rpc_port: u16,
     ) {
 
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
@@ -211,10 +210,8 @@ where
     /// Returns the payload builder config
     /// this method will block and wait for the storage lock
     fn payload_builder_arguments(&self) -> PayloadConfig<EthPayloadBuilderAttributes> {
-        let storage = self.storage.inner.blocking_read();
-        let client = storage.client.clone();
-        let chain_spec = storage.chain_spec.clone();
-        drop(storage); // Drop the lock
+        let client = self.storage.client.clone();
+        let chain_spec = self.storage.chain_spec.clone();
 
         let best_header =
             client.latest_header().expect("should have latest").expect("should have header");
@@ -246,15 +243,15 @@ where
         payload_config
     }
 
-    pub fn aggregate_public_key(&self) -> secp256k1::PublicKey {
+    pub(crate) fn aggregate_public_key(&self) -> secp256k1::PublicKey {
         self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk exists")
     }
 
-    pub fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
+    pub(crate) fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
         self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash()
     }
 
-    pub fn application_hash(&self, db: &impl BlockReaderIdExt) -> prost::bytes::Bytes {
+    pub(crate) fn application_hash(&self, db: &impl BlockReaderIdExt) -> prost::bytes::Bytes {
         let header = db.latest_header().expect("should have latest").expect("should have header");
         prost::bytes::Bytes::copy_from_slice(&header.hash().0)
     }
@@ -322,7 +319,7 @@ where
         }
 
         let payload_config = self.payload_builder_arguments();
-        let client = self.storage.inner.blocking_read().client.clone();
+        let client = self.storage.client.clone();
 
         let res = default_ethereum_payload_builder(BuildArguments {
             client,
@@ -433,11 +430,14 @@ where
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         info!("process_proposal request: {:?}", request);
         let storage = self.storage.inner.blocking_read();
+        let agg_pk = storage.aggregate_public_key;
 
-        if storage.aggregate_public_key.is_none() {
+        if agg_pk.is_none() {
             warn!("Aggregate public key is not set in process proposal");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
+        // Drop the lock
+        drop(storage);
 
         // Extract who built this block
         let block_builder_address = Address::new(
@@ -483,8 +483,7 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        let agg_pk = storage.aggregate_public_key.expect("to be defined by now");
-        if agg_pk != non_deterministic_data.aggregated_public_key {
+        if agg_pk.expect("agg pk to be defined") != non_deterministic_data.aggregated_public_key {
             warn!("Aggregate public key mismatch");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
@@ -500,15 +499,15 @@ where
 
         match build_and_execute(
             txs,
-            storage.chain_spec.clone(),
+            self.storage.chain_spec.clone(),
             &block_builder_address,
-            storage.evm_config,
-            &storage.client,
-            &storage.bitcoind_factory,
-            storage.btc_network,
+            self.storage.evm_config,
+            &self.storage.client,
+            &self.storage.bitcoind_factory,
+            self.storage.btc_network,
             &bitcoin_checkpoint_block_hash,
-            &agg_pk,
-            &storage.authorities,
+            &agg_pk.expect("agg pk to be defined"),
+            &self.storage.genesis_authorities,
             block_time,
         ) {
             Ok(sealed_block_with_peg) => {
@@ -709,7 +708,7 @@ where
         loop {
             if let Some(message) = self.driver_rx.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, tx)) => {
+                    ABCIDriverMessage::CommitBlock((sealed_block_with_peg, _cbft_hash, tx)) => {
                         let client = self.storage.client.clone();
                         let sealed_block_with_senders = sealed_block_with_peg.block();
                         let sealed_header = sealed_block_with_senders.header.clone();

@@ -1,66 +1,15 @@
 use reth_consensus::ConsensusError;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
-use reth_primitives::{
-    extra_data_header::CHAIN_VERSION,
-    header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
-    public_key_to_address, Address, ChainSpec, Header,
-};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 
-use secp256k1::{All, Secp256k1};
+use reth_primitives::{
+    extra_data_header::CHAIN_VERSION, header_ext::HeaderExt, Address, Header,
+};
+
+
+
 use std::{
-    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tracing::error;
 
-/// Returns
-/// - The index of the authority that is currently in turn
-/// - The list of all authorities
-/// - The public key of the authority
-pub fn get_authority_signer_index<Client>(
-    client: Client,
-    chain_spec: Arc<ChainSpec>,
-    secp: Secp256k1<All>,
-    sk: secp256k1::SecretKey,
-) -> Result<(usize, Vec<secp256k1::PublicKey>, secp256k1::PublicKey), GetAuthoritiesError>
-where
-    Client: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
-{
-    let mut latest_header =
-        client.latest_header().ok().flatten().unwrap_or_else(|| chain_spec.sealed_genesis_header());
-    let mut headers = vec![latest_header.clone()];
-
-    while !latest_header.header().is_poa_epoch() {
-        let parent_hash = latest_header.parent_hash;
-
-        if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
-            let old_latest_header = std::mem::replace(&mut latest_header, new_header.seal_slow());
-            headers.push(old_latest_header);
-        } else {
-            return Err(GetAuthoritiesError::FailedToRetrieveEpochHeader);
-        }
-    }
-
-    // Latest epoch header is the last header in the vector
-    // This header should include the authority list which is validated by consensus
-    let authorities =
-        latest_header.get_authority_list()?.expect("authority signer list in epoch block");
-
-    let authority_pk = sk.public_key(&secp);
-    let signer_index = authorities.iter().position(|a| *a == sk.public_key(&secp));
-
-    Ok((
-        signer_index.ok_or(GetAuthoritiesError::FailedToFindAuthoritySignerIndex)?,
-        authorities,
-        authority_pk,
-    ))
-}
 
 /// Returns the unix timestamp in seconds
 pub fn unix_timestamp() -> u64 {
@@ -95,97 +44,10 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
     Ok(())
 }
 
-/// Check authorities in EDH match and are in the same order and the genesis authorities
-pub fn validate_extra_data_header_authorities(
-    header: &Header,
-    genesis_authorities: &[secp256k1::PublicKey],
-) -> Result<(), ConsensusError> {
-    if header.is_poa_epoch() {
-        // Attempt to deserialize the extra data header
-        let edh = header.deserialize_extra_data_header().map_err(|e| {
-            error!("Failed to deserialize extra data header: {:?}", e);
-            ConsensusError::ExtraDataInvalid
-        })?;
-
-        // Validate the list of authorities matches the authorities in the genesis block
-        // This check is only for a static federation
-        if let Some(authority_signers) = edh.authority_signers.as_ref() {
-            if genesis_authorities != authority_signers {
-                error!("Genesis authorities: {:?}", genesis_authorities);
-                error!("EDH authorities: {:?}", edh.authority_signers);
-                return Err(ConsensusError::InvalidAuthorityList);
-            }
-        } else {
-            // error!("No authority signers in extra data header");
-            return Err(ConsensusError::MissingAuthorityList);
-        }
-    }
-
-    Ok(())
-}
-
 /// Check the extra data header field has the current chain version
 pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusError> {
     if edh_chain_version != CHAIN_VERSION {
         return Err(ConsensusError::InvalidChainVersion);
-    }
-
-    Ok(())
-}
-
-/// Validate against parent header errors
-#[derive(Debug)]
-pub enum ValidateAgainstParentError {
-    /// Signer limit exceeded
-    /// Could occur when signer is signings many blocks in the same turn
-    SignerLimitExceeded,
-    /// Failed to deserialize the extra data
-    FailedToDerserializeExtraData(RecoverAuthorityError),
-}
-
-impl From<ValidateAgainstParentError> for ConsensusError {
-    fn from(e: ValidateAgainstParentError) -> Self {
-        match e {
-            ValidateAgainstParentError::SignerLimitExceeded => ConsensusError::SignerLimitExceeded,
-            ValidateAgainstParentError::FailedToDerserializeExtraData(_) => {
-                ConsensusError::ExtraDataInvalid
-            }
-        }
-    }
-}
-
-/// Validate current PoA header against parent header
-pub fn validate_against_parent(
-    parent: Header,
-    current: Header,
-    block_time: u64,
-) -> Result<(), ValidateAgainstParentError> {
-    // Gensis block does not have a federation signature, skip
-    if parent.number == 0 {
-        return Ok(());
-    }
-    let parent_signer = parent
-        .recovered_signed_authorities()
-        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
-    let current_signer = current
-        .recovered_signed_authorities()
-        .map_err(ValidateAgainstParentError::FailedToDerserializeExtraData)?[0];
-    Ok(())
-}
-
-/// Validate current signer and its last block timestamp against the last signer and its last block
-/// timestamp Used to prevent a signer from signing multiple blocks in the same turn
-/// Assuming sane timestamps
-pub fn validate_current_signer_against_last(
-    last: (secp256k1::PublicKey, f64),
-    current: (secp256k1::PublicKey, f64),
-    block_time: u64,
-) -> Result<(), ValidateAgainstParentError> {
-    // Last block should be greater that `block_time` in the worst case
-    // Even in the case of > 2 federation members the worst case time between blocks for the same
-    // signer is 2 * block_time
-    if last.0 == current.0 && (current.1 - last.1) < (block_time * 2) as f64 {
-        return Err(ValidateAgainstParentError::SignerLimitExceeded);
     }
 
     Ok(())
@@ -261,6 +123,8 @@ mod tests {
     use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
 
     use super::*;
+
+    const BLOCK_TIME_SECONDS: u64 = 10;
 
     #[test]
     fn unix_timestamp() {

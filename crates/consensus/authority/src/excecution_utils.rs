@@ -2,9 +2,7 @@ pub(crate) mod authority_execution_utils {
     use bitcoin::hashes::{sha256, Hash};
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_consensus::Consensus;
-    use reth_consensus_common::utils::{
-        get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
-    };
+    use reth_consensus_common::utils::{get_block_producer_address};
     use reth_interfaces::{
         executor::{BlockExecutionError, BlockValidationError},
         provider::ProviderError,
@@ -16,8 +14,8 @@ pub(crate) mod authority_execution_utils {
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
-        proofs, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-        ChainSpec, Header, ReceiptWithBloom, SealedBlock, SealedBlockWithSenders, SealedHeader,
+        proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+        ChainSpec, Header, ReceiptWithBloom, SealedBlock,
         TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
@@ -31,7 +29,7 @@ pub(crate) mod authority_execution_utils {
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
 
-    use tracing::{error, info, trace, warn};
+    use tracing::{info, trace, warn};
 
     use crate::AuthorityConsensus;
 
@@ -51,7 +49,7 @@ pub(crate) mod authority_execution_utils {
         agg_pk: &secp256k1::PublicKey,
         authority_signers: &Vec<secp256k1::PublicKey>,
         timestamp: Timestamp,
-    ) -> Result<(SealedBlockWithPeg), BlockExecutionError> {
+    ) -> Result<SealedBlockWithPeg, BlockExecutionError> {
         // Construct block and header
         let header = build_header_template(
             &transactions,
@@ -114,7 +112,8 @@ pub(crate) mod authority_execution_utils {
         Ok(sealed_block_with_peg)
     }
 
-    // Execute and run poa validation on the block without inserting it into the storage
+    /// Execute and run poa validation on the block without inserting it into the storage
+    /// Currently un-used
     pub(crate) fn execute_imported_block(
         consensus: &AuthorityConsensus,
         sealed_block: SealedBlock,
@@ -122,7 +121,7 @@ pub(crate) mod authority_execution_utils {
         executor_factory: &impl ExecutorFactory,
         // This is an option because the block fetcher may not be an authority
         agg_pk: Option<&secp256k1::PublicKey>,
-        authorities: &Vec<secp256k1::PublicKey>,
+        _authorities: &Vec<secp256k1::PublicKey>,
         genesis_authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<SealedBlockWithPeg, BlockExecutionError> {
         trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
@@ -157,7 +156,6 @@ pub(crate) mod authority_execution_utils {
         consensus
             .validate_header_standalone(
                 &sealed_block.header.clone(),
-                &authorities,
                 &genesis_authorities,
                 // TODO(https://github.com/botanix-labs/botanix/issues/615) this shouldn't need to be an option
                 Some(&aggregate_public_key),
@@ -259,12 +257,12 @@ pub(crate) mod authority_execution_utils {
         mut header: Header,
         bundle_state: &BundleStateWithReceipts,
         gas_used: u64,
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
+        _witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
-        utxo_commitment: sha256::Hash,
+        _utxo_commitment: sha256::Hash,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
         agg_pk: &secp256k1::PublicKey,
-        authorities: &Vec<secp256k1::PublicKey>,
+        _authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<Header, BlockExecutionError> {
         let receipts = bundle_state.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {

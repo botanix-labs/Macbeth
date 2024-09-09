@@ -1,37 +1,36 @@
 use std::{sync::Arc, time::Duration};
 
-use bitcoin::hashes::{sha256, Hash};
+use bitcoin::hashes::{Hash};
 use reth_eth_wire::NewBlock;
 use ruint::Uint;
 use tokio::time::Instant;
 
-use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
+use comet_bft_rpc::{Client};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
     p2p::{
-        bodies::client::BodiesClient, full_block::FullBlockClient, headers::client::HeadersClient,
+        bodies::client::BodiesClient, headers::client::HeadersClient,
     },
 };
 use reth_network::{
     frost::manager::ToFrostManager,
-    message::{NewBlockMessage, NewBlockMessageWithPeerId},
+    message::{NewBlockMessageWithPeerId},
     NetworkHandle,
 };
-use reth_node_api::EngineTypes;
+use reth_network_types::PeerId;
+
 use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::{
-    botanix::mint_validation::{try_parse_burn_event, try_parse_mint_event},
-    header_ext::HeaderExt,
-    SealedBlockWithSenders, TransactionSigned, B256,
+    SealedBlockWithSenders, B256,
 };
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, ExecutorFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
     StateProviderFactory,
 };
 use tendermint_light_client::instance::Instance;
-use tendermint_rpc::HttpClient;
+
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -40,13 +39,12 @@ use tracing::{error, info, warn};
 
 use crate::{
     engine_util,
-    excecution_utils::authority_execution_utils::execute_imported_block,
-    utils::{bloom_contains_pegin, call_notify_pegin, is_active_sync_in_progress},
-    utxo_sync::{UTXOSync, UTXOSyncEngine},
-    AuthorityConsensus, LightCBFTClientBuilder, Storage,
+    utils::{is_active_sync_in_progress},
+    utxo_sync::{UTXOSyncEngine},
+    AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use client::{FinalizeSignerRequest, Output};
+
 
 pub struct BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan> {
     /// Authority consensus
@@ -184,7 +182,7 @@ where
             };
             self.light_client.trust_block(&cbft_block);
 
-            let latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
+            let _latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
             match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
                 Ok(_) => (),
                 Err(e) => {
