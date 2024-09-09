@@ -93,8 +93,9 @@ pub(crate) enum FrostParseError {
     InvalidSigningSessionId,
 }
 
-// send pegouts to the btc server and recieve a psbt
+/// send pegouts to the btc server and recieve a psbt
 // TODO better name for this function
+#[allow(dead_code)]
 pub(crate) async fn call_get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],
@@ -173,6 +174,7 @@ pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
 /// # Returns
 ///
 /// Returns the starting block number for the current epoch.
+#[allow(dead_code)]
 pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> u64 {
     let mut start_block_number = current_block_number;
     while start_block_number % epoch_length != 0 {
@@ -181,6 +183,7 @@ pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> 
     start_block_number
 }
 
+#[allow(dead_code)]
 pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
 }
@@ -236,6 +239,7 @@ pub(crate) enum EpochPegoutsError {
 /// # Returns
 ///
 /// A vector of [PegoutData] representing the pegouts in the epoch
+#[allow(dead_code)]
 pub(crate) async fn epoch_pegouts(
     best_block: u64,
     client: &impl BlockReaderIdExt,
@@ -291,7 +295,8 @@ pub(crate) enum GenerateSigningSesssionIdError {
     HashError(#[from] std::io::Error),
 }
 
-// Generates a signing session id using a uuid v4 generator
+/// Generates a signing session id using a uuid v4 generator
+#[allow(dead_code)]
 pub(crate) fn generate_signing_session_id(
 ) -> Result<SigningSessionId, GenerateSigningSesssionIdError> {
     let id = Uuid::new_v4();

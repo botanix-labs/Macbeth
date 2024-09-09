@@ -9,7 +9,7 @@ use std::{
 };
 
 use askama::Template;
-use bitcoin::hashes::{sha256, Hash};
+use bitcoin::hashes::Hash;
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
     constants::nums_secp256k1_pk,
@@ -95,7 +95,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
         info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
-        let public_keys = genesis_toml_config
+        let _public_keys = genesis_toml_config
             .federation_member_public_key
             .iter()
             .map(|key| {
@@ -196,7 +196,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                     let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
                     let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
 
-                    let public_keys = genesis_toml_config
+                    let _public_keys = genesis_toml_config
                         .federation_member_public_key
                         .iter()
                         .map(|key| {

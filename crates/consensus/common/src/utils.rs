@@ -1,15 +1,8 @@
 use reth_consensus::ConsensusError;
 
-use reth_primitives::{
-    extra_data_header::CHAIN_VERSION, header_ext::HeaderExt, Address, Header,
-};
+use reth_primitives::{extra_data_header::CHAIN_VERSION, header_ext::HeaderExt, Address, Header};
 
-
-
-use std::{
-    time::{SystemTime, UNIX_EPOCH},
-};
-
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Returns the unix timestamp in seconds
 pub fn unix_timestamp() -> u64 {

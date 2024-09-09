@@ -4,7 +4,7 @@ use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use tendermint_light_client::{
     builder::LightClientBuilder,
     instance::Instance,
-    light_client::{Options},
+    light_client::Options,
     store::{memory::MemoryStore, LightStore},
     types::{Height, TrustThreshold},
 };
@@ -19,17 +19,20 @@ pub struct LightCBFTClientBuilder {
 }
 
 impl LightCBFTClientBuilder {
+    /// Create a new light client builder
     pub fn new(rpc_client_factory: HttpCometBFTRpcClientFactory) -> Self {
         let light_store = Box::new(MemoryStore::new());
 
         Self { rpc_client_factory, light_store }
     }
 
+    /// Set the light store
     pub fn with_light_store(mut self, light_store: Box<dyn LightStore>) -> Self {
         self.light_store = light_store;
         self
     }
 
+    /// Build and verify the light client starting at block height 1
     pub async fn build_and_verify(&self) -> Instance {
         let light_store = Box::new(MemoryStore::new());
 

@@ -2,7 +2,7 @@ pub(crate) mod authority_execution_utils {
     use bitcoin::hashes::{sha256, Hash};
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_consensus::Consensus;
-    use reth_consensus_common::utils::{get_block_producer_address};
+    use reth_consensus_common::utils::get_block_producer_address;
     use reth_interfaces::{
         executor::{BlockExecutionError, BlockValidationError},
         provider::ProviderError,
@@ -14,9 +14,8 @@ pub(crate) mod authority_execution_utils {
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
-        proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-        ChainSpec, Header, ReceiptWithBloom, SealedBlock,
-        TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+        proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, ChainSpec,
+        Header, ReceiptWithBloom, SealedBlock, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
         BlockExecutor, BlockReaderIdExt, BundleStateWithReceipts, ExecutorFactory,
@@ -114,6 +113,7 @@ pub(crate) mod authority_execution_utils {
 
     /// Execute and run poa validation on the block without inserting it into the storage
     /// Currently un-used
+    #[allow(dead_code)]
     pub(crate) fn execute_imported_block(
         consensus: &AuthorityConsensus,
         sealed_block: SealedBlock,

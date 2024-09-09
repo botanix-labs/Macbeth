@@ -1,30 +1,24 @@
 use std::{sync::Arc, time::Duration};
 
-use bitcoin::hashes::{Hash};
+use bitcoin::hashes::Hash;
 use reth_eth_wire::NewBlock;
 use ruint::Uint;
 use tokio::time::Instant;
 
-use comet_bft_rpc::{Client};
+use comet_bft_rpc::Client;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_interfaces::{
     blockchain_tree::BlockchainTreeEngine,
-    p2p::{
-        bodies::client::BodiesClient, headers::client::HeadersClient,
-    },
+    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
 };
 use reth_network::{
-    frost::manager::ToFrostManager,
-    message::{NewBlockMessageWithPeerId},
-    NetworkHandle,
+    frost::manager::ToFrostManager, message::NewBlockMessageWithPeerId, NetworkHandle,
 };
 use reth_network_types::PeerId;
 
 use reth_node_ethereum::EthEngineTypes;
-use reth_primitives::{
-    SealedBlockWithSenders, B256,
-};
+use reth_primitives::{SealedBlockWithSenders, B256};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
     StateProviderFactory,
@@ -38,13 +32,10 @@ use tokio::sync::{
 use tracing::{error, info, warn};
 
 use crate::{
-    engine_util,
-    utils::{is_active_sync_in_progress},
-    utxo_sync::{UTXOSyncEngine},
-    AuthorityConsensus, Storage,
+    engine_util, utils::is_active_sync_in_progress, utxo_sync::UTXOSyncEngine, AuthorityConsensus,
+    Storage,
 };
 use btcserverlib::extended_client::BtcServerExtendedClient;
-
 
 pub struct BlockFetcherTask<EF, BF, DB, NetworkClient, ToFrostMan> {
     /// Authority consensus
@@ -182,7 +173,8 @@ where
             };
             self.light_client.trust_block(&cbft_block);
 
-            let _latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
+            let _latest_trusted =
+                self.light_client.latest_trusted().expect("to get latest trusted");
             match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
                 Ok(_) => (),
                 Err(e) => {
