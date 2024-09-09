@@ -118,6 +118,7 @@ where
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
+        abci_host: String,
         abci_port: u16,
         cometbft_rpc_port: u16,
     ) {
@@ -145,7 +146,7 @@ where
         // server will always bind to default address
         // CometBFT will always run on the same machine and container
         let server =
-            server_builder.bind(format!("127.0.0.1:{abci_port}"), app).expect("build server");
+            server_builder.bind(format!("{abci_host}:{abci_port}"), app).expect("build server");
 
         task_executor.spawn_critical(
             "ABCI Client",
