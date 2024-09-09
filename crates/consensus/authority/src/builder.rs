@@ -37,7 +37,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use tracing::{info};
+use tracing::info;
 
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 

@@ -1,9 +1,4 @@
-use bitcoin::{
-    consensus::encode::{self, Decodable, Encodable},
-};
-
-
-
+use bitcoin::consensus::encode::{self, Decodable, Encodable};
 
 use std::io;
 use thiserror::Error;

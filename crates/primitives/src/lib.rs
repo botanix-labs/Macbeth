@@ -43,7 +43,7 @@ pub use block::{
     ForkBlock, RpcBlockHash, SealedBlock, SealedBlockWithSenders,
 };
 
-// Botanix specific stuff
+/// Botanix specific stuff
 pub mod botanix;
 
 /// Extra data header helpers

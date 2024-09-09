@@ -1,10 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    engine_util,
-    utils::{is_active_sync_in_progress},
-    utxo_sync::{UTXOSyncEngine},
-    AuthorityConsensus, Storage,
+    engine_util, utils::is_active_sync_in_progress, utxo_sync::UTXOSyncEngine, AuthorityConsensus,
+    Storage,
 };
 
 use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
@@ -165,7 +163,8 @@ where
             };
             self.light_client.trust_block(&cbft_block);
 
-            let _latest_trusted = self.light_client.latest_trusted().expect("to get latest trusted");
+            let _latest_trusted =
+                self.light_client.latest_trusted().expect("to get latest trusted");
             match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
                 Ok(_) => (),
                 Err(e) => {

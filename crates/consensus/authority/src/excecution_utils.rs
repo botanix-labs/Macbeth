@@ -3,7 +3,7 @@ pub(crate) mod authority_execution_utils {
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::ChainSpec;
     use reth_consensus::Consensus;
-    use reth_consensus_common::utils::{get_block_producer_address};
+    use reth_consensus_common::utils::get_block_producer_address;
     use reth_interfaces::{
         executor::{BlockExecutionError, BlockValidationError},
         provider::ProviderError,
@@ -139,6 +139,7 @@ pub(crate) mod authority_execution_utils {
 
     /// Execute and run poa validation on the block without inserting it into the storage
     /// Currently un-used
+    #[allow(dead_code)]
     pub(crate) fn execute_imported_block(
         consensus: &AuthorityConsensus,
         sealed_block: SealedBlock,

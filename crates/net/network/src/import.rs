@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::{info, warn};
+use tracing::info;
 
 /// Abstraction over block import.
 pub trait BlockImport: std::fmt::Debug + Send + Sync {

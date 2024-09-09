@@ -62,7 +62,8 @@ where
 
         // get all authority peers in the federation (at this point we must be connected to all of
         // them)
-        let authority_peers_sockets = self.storage
+        let authority_peers_sockets = self
+            .storage
             .genesis_authorities
             .iter()
             .enumerate()

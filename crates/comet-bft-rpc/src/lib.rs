@@ -53,8 +53,6 @@ impl HttpCometBFTRpcClientFactory {
 }
 
 mod tests {
-    use super::*;
-
     #[test]
     fn test_http_rpc_client_factory_new() {
         let client_factory =
