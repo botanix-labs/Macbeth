@@ -5,6 +5,7 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
@@ -26,7 +27,6 @@ use reth_authority_consensus::{
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
-//use reth_network_types::pk2id;
 use reth_node_core::{cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
@@ -50,8 +50,7 @@ use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEventListenerProvider, NetworkManager
 };
 use reth_node_builder::{
-    launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethRpcConfig,
-    RethTransactionPoolConfig,
+    launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
 };
 use reth_node_core::{
     args::{
@@ -69,7 +68,7 @@ use reth_primitives::{
     Bytes, Head,
 };
 use reth_provider::{
-    providers::BlockchainProvider, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
+    providers::{BlockchainProvider, StaticFileProvider}, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
     ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
 };
 use reth_revm::primitives::EnvKzgSettings;
@@ -89,7 +88,6 @@ use crate::{
         DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
         RpcServerArgs, TxPoolArgs,
     },
-    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
     dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
 };
@@ -202,46 +200,7 @@ impl PoaNodeCommand {
     }
 }
 
-impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
-    /// Replaces the extension of the node command
-    pub fn with_ext<E: clap::Args + fmt::Debug>(self, ext: E) -> PoaNodeCommand<E> {
-        let Self {
-            datadir,
-            network_config_path,
-            is_testnet,
-            ntp_server,
-            federation_config_path,
-            federation_mode,
-            metrics,
-            instance,
-            with_unused_ports,
-            network,
-            rpc,
-            txpool,
-            debug,
-            db,
-            bitcoind_config_path,
-            ..
-        } = self;
-        PoaNodeCommand {
-            datadir,
-            network_config_path,
-            is_testnet,
-            ntp_server,
-            federation_config_path,
-            federation_mode,
-            metrics,
-            instance,
-            with_unused_ports,
-            network,
-            rpc,
-            txpool,
-            debug,
-            db,
-            bitcoind_config_path,
-            ext,
-        }
-    }
+impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
     /// Execute `poa` command
     pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
@@ -494,8 +453,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
         );
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
-        let static_file_provider = provider_factory.static_file_provider();
-
+        let static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
@@ -867,7 +825,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             initial_target,
             MIN_BLOCKS_FOR_PIPELINE_RUN,
             consensus_engine_tx,
-            consensus_engine_rx,
+            Box::pin(consensus_engine_rx),
             hooks,
         )?;
         info!(target: "reth::cli", "Consensus engine initialized");
@@ -957,7 +915,7 @@ impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> PoaNodeCommand<Ext> {
             let _ = tx.send(res);
         });
 
-        let _ = ext.on_node_started(components);
+        //let _ = ext.on_node_started(components);
 
         match rx.await? {
             Ok(()) => info!("Beacon consensus engine exited successfully"),

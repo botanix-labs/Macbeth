@@ -5,8 +5,7 @@ use crate::{
         utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
         LogArgs,
     },
-    cli::ext::{NoArgs, PoaNodeCommandConfig},
-    commands::{debug_cmd, poa},
+    commands::{debug_cmd, poa::{self, PoaNodeCommand}},
     macros::block_executor,
     version::{LONG_VERSION, SHORT_VERSION},
 };
@@ -31,7 +30,6 @@ use tracing::info;
 /// change.
 pub use crate::core::cli::*;
 
-pub mod ext;
 
 /// Default [Directive] for [EnvFilter] which disables high-frequency debug logs from `hyper` and
 /// `trust-dns`
@@ -44,7 +42,7 @@ pub mod ext;
 /// This is the entrypoint to the executable.
 #[derive(Debug, Parser)]
 #[command(author, version = SHORT_VERSION, long_version = LONG_VERSION, about = "Reth", long_about = None)]
-pub struct Cli<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig = ext::NoArgs> {
+pub struct Cli<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// The command to run
     #[command(subcommand)]
     command: Commands<Ext>,
@@ -98,7 +96,7 @@ impl Cli {
     }
 }
 
-impl<Ext: clap::Args + fmt::Debug + PoaNodeCommandConfig> Cli<Ext> {
+impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
     /// Execute the configured cli command.
     ///
     /// This accepts a closure that is used to launch the node via the
@@ -213,7 +211,7 @@ pub enum Commands<Ext: clap::Args + fmt::Debug = NoArgs> {
     Node(node::NodeCommand<Ext>),
     /// Start the POA node
     #[command(name = "poa")]
-    Poa(poa::PoaNodeCommand<Ext>),
+    Poa(PoaNodeCommand<Ext>),
     /// Initialize the database from a genesis file.
     #[command(name = "init")]
     Init(init_cmd::InitCommand),
