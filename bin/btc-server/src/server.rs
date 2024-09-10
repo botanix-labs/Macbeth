@@ -6,7 +6,7 @@ use bitcoin::{
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
-use std::{collections::BTreeMap, str::FromStr};
+use std::collections::BTreeMap;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
@@ -194,13 +194,18 @@ impl rpc::BtcServer for App {
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
+        let spk = ScriptBuf::from_bytes(req.spk);
+        // basic sanity check over spk
+        let _ = bitcoin::Address::from_script(&spk, self.btc_network).map_err(|e| {
+            error!("Failed to parse pegout spk for network: {:?}, error: {}", self.btc_network, e);
+            badarg!("Failed to parse pegout spk for network: {:?}, error: {}", self.btc_network, e)
+        })?;
         let pegout_req = PegoutRequest {
-            id: PegoutId::from_bytes(&req.pegout_id).map_err(|e| {
+            id: PegoutId::from_bytes(&req.pegout_id).map_err(|_e| {
                 error!("Failed to parse pegout id: {:?}", req.pegout_id);
                 badarg!("Failed to parse pegout id: {:?}", req.pegout_id)
             })?,
-            // TODO there is no validation on this
-            spk: ScriptBuf::from_bytes(req.spk),
+            spk,
             value: Amount::from_sat(req.amount),
             botanix_height: req.height,
         };
@@ -289,25 +294,13 @@ impl rpc::BtcServer for App {
 
         debug!("Cord Fee rate: {:?}", fee_rate);
         let pending_pegouts = self.db.get_pending_pegouts()?;
-        let outputs = pending_pegouts.iter().map(|p| {TxOut {
-            value: p.value,
-            script_pubkey: p.spk.clone(),
-        }}).collect::<Vec<TxOut>>();
+        let outputs = pending_pegouts
+            .iter()
+            .map(|p| {
+                (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id.as_bytes()))
+            })
+            .collect::<Vec<(TxOut, Option<[u8; 36]>)>>();
 
-        // let outputs = req
-        //     .outputs
-        //     .into_iter()
-        //     .map(|o| {
-        //         let script_pubkey_result = bitcoin::Address::from_str(&o.address)
-        //             .map_err(|e| internal!("invalid address: {}", e))?
-        //             .assume_checked()
-        //             .script_pubkey();
-
-        //         Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
-        //     })
-        //     .collect::<Result<Vec<TxOut>, tonic::Status>>()?;
-
-        // TODO this should live in coordinator.rs
         let pk_package = self
             .db
             .get_key_package()?
@@ -657,22 +650,10 @@ impl rpc::BtcServer for App {
                 fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
             }
         }
-        let outputs = req
-            .outputs
-            .into_iter()
-            .map(|o| {
-                let script_pubkey_result = bitcoin::Address::from_str(&o.address)
-                    .map_err(|e| internal!("invalid address: {}", e))?
-                    .assume_checked()
-                    .script_pubkey();
-
-                Ok(TxOut { script_pubkey: script_pubkey_result, value: Amount::from_sat(o.value) })
-            })
-            .collect::<Result<Vec<_>, tonic::Status>>()?;
 
         let witnesses = req.witness;
         let psbt = self
-            .finalize_signer(outputs, fee_rate, witnesses, checkpoint, utxo_root)
+            .finalize_signer(fee_rate, witnesses, checkpoint, utxo_root)
             .await
             .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())

@@ -384,22 +384,16 @@ pub mod btc_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::NotifyPegoutRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/NotifyPegout",
-            );
+            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/NotifyPegout");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "NotifyPegout"));
+            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "NotifyPegout"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_gateway_address(

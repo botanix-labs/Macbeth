@@ -285,7 +285,6 @@ impl App {
 
     pub(crate) async fn finalize_signer(
         &self,
-        outputs: Vec<TxOut>,
         fee_rate: FeeRate,
         witness: Vec<Vec<u8>>,
         checkpoint_block: BlockHash,
@@ -296,6 +295,15 @@ impl App {
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        let outputs = pending_pegouts
+            .iter()
+            .map(|p| {
+                (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id.as_bytes()))
+            })
+            .collect::<Vec<(TxOut, Option<[u8; 36]>)>>();
+
         let mut original_psbt = self
             .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
             .await?;
