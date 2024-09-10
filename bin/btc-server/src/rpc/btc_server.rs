@@ -560,15 +560,9 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/NotifyPegout" => {
                     #[allow(non_camel_case_types)]
                     struct NotifyPegoutSvc<T: BtcServer>(pub Arc<T>);
-                    impl<
-                        T: BtcServer,
-                    > tonic::server::UnaryService<super::NotifyPegoutRequest>
-                    for NotifyPegoutSvc<T> {
+                    impl<T: BtcServer> tonic::server::UnaryService<super::NotifyPegoutRequest> for NotifyPegoutSvc<T> {
                         type Response = super::Empty;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::NotifyPegoutRequest>,
