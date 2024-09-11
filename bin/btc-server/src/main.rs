@@ -376,7 +376,7 @@ mod test {
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, Rng, RngCore};
-    use tonic::{Code, Request, Status};
+    use tonic::{Code, Request};
 
     use reth_btc_wallet::psbt::PsbtInputExt;
     use url::Url;
@@ -480,6 +480,15 @@ mod test {
         let mut eth_addr = [0u8; 20];
         eth_addr.copy_from_slice(&eth);
         eth_addr
+    }
+
+    pub fn random_p2wpkh_script() -> ScriptBuf {
+        let mut rng = thread_rng();
+        let sk = bitcoin::PrivateKey::generate(NETWORK);
+        let pk = sk.public_key(SECP256K1);
+        let spk = Address::p2wpkh(&pk, NETWORK).unwrap().script_pubkey();
+
+        spk
     }
 
     pub fn setup() -> App<MockBitcoind> {
@@ -1132,10 +1141,7 @@ mod test {
         let tx_idx = rng.gen_range(0..u32::MAX);
         let pegout_id = PegoutId::new(tx_id, tx_idx);
 
-        let sk = bitcoin::PrivateKey::generate(app.btc_network);
-        let pk = sk.public_key(SECP256K1);
-        let spk =
-            Address::p2wpkh(&pk, app.btc_network).unwrap().script_pubkey().as_bytes().to_vec();
+        let spk = random_p2wpkh_script().as_bytes().to_vec();
 
         let request_1 = Request::new(rpc::NotifyPegoutRequest {
             pegout_id: pegout_id.as_bytes().to_vec(),
