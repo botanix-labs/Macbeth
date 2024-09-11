@@ -359,7 +359,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::{collections::BTreeMap, str::FromStr};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        str::FromStr,
+        time::UNIX_EPOCH,
+    };
 
     use bitcoin::{
         absolute::LockTime,
@@ -372,7 +376,7 @@ mod test {
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, Rng, RngCore};
-    use tonic::Request;
+    use tonic::{Code, Request, Status};
 
     use reth_btc_wallet::psbt::PsbtInputExt;
     use url::Url;
@@ -406,11 +410,60 @@ mod test {
             })
         }
 
+        fn get_blockchain_info(
+            &self,
+        ) -> bitcoincore_rpc::Result<bitcoincore_rpc::json::GetBlockchainInfoResult> {
+            Ok(bitcoincore_rpc::json::GetBlockchainInfoResult {
+                initial_block_download: false,
+                // Rest of the fields are unused in application code
+                chain: bitcoin::Network::Regtest,
+                blocks: 1,
+                headers: 1,
+                difficulty: 1.0,
+                pruned: false,
+                warnings: "".to_string(),
+                best_block_hash: bitcoin::BlockHash::all_zeros(),
+                median_time: 0,
+                verification_progress: 1.0,
+                chain_work: vec![],
+                size_on_disk: 0,
+                prune_height: None,
+                automatic_pruning: None,
+                prune_target_size: None,
+                softforks: HashMap::new(),
+            })
+        }
+
         fn call<T: for<'a> serde::de::Deserialize<'a>>(
             &self,
-            _method: &str,
+            method: &str,
             _params: &[serde_json::Value],
         ) -> Result<T, bitcoincore_rpc::Error> {
+            println!("call: {:?}, {:?}", method, _params);
+            if method == "getblockchaininfo" {
+                return Ok(serde_json::from_str("{\"initialblockdownload\": false}").unwrap());
+            }
+            if method == "getbestblockhash" {
+                let block_hash = bitcoin::BlockHash::all_zeros();
+                return Ok(serde_json::from_str(&format!("\"{block_hash}\"",)).unwrap());
+            }
+            if method == "getblockheaderinfo" {
+                let block_hash = bitcoin::BlockHash::all_zeros();
+                let current_time =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                return Ok(serde_json::from_str(
+                    &format!("{{\"hash\": \"{block_hash}\", \"confirmations\": 1, \"height\": 1, \"version\": 1, \"version_hex\": \"01000000\", \"merkleroot\": \"{block_hash}\", \"time\": {current_time}, \"mediantime\": {current_time}, \"nonce\": 1, \"bits\": \"1d00ffff\", \"difficulty\": 1, \"chainwork\": \"0000000000000000000000000000000000000000000000000000000000000001\", \"n_tx\": 1, \"previousblockhash\": \"{block_hash}\", \"nextblockhash\": \"{block_hash}\"}}",),
+                ).unwrap());
+            }
+            if method == "getblockheader" {
+                let block_hash = bitcoin::BlockHash::all_zeros();
+                let current_time =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                return Ok(serde_json::from_str(
+                    &format!("{{\"hash\": \"{block_hash}\", \"confirmations\": 1, \"height\": 1, \"version\": 1, \"version_hex\": \"01000000\", \"merkleroot\": \"{block_hash}\", \"time\": {current_time}, \"mediantime\": {current_time}, \"nonce\": 1, \"bits\": \"1d00ffff\", \"difficulty\": 1, \"chainwork\": \"0000000000000000000000000000000000000000000000000000000000000001\", \"nTx\": 1, \"previousblockhash\": \"{block_hash}\", \"nextblockhash\": \"{block_hash}\"}}",),
+                ).unwrap());
+            }
+
             unimplemented!()
         }
     }
@@ -551,7 +604,7 @@ mod test {
      */
     #[test]
     fn get_pk_should_fail_without_dkg() {
-        let mut app = setup();
+        let app = setup();
         let _eth = eth_vector_to_fixed_bytes(
             hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
         );
@@ -563,7 +616,7 @@ mod test {
 
     #[test]
     fn round1_dkg_should_fail_when_missing_keys() {
-        let mut app = setup();
+        let app = setup();
         let round1_dkg = app.get_round1_dkg();
         assert!(round1_dkg.is_err());
         assert_eq!(round1_dkg.err().unwrap().to_string(), "missing round1 dkg package");
@@ -571,7 +624,7 @@ mod test {
 
     #[test]
     fn round1_dkg_should_fail_pk_package_is_present() {
-        let mut app = setup();
+        let app = setup();
         let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
         let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
         // derive key package for some participant
@@ -684,7 +737,7 @@ mod test {
      */
     #[tokio::test]
     async fn round2_dkg_should_fail_when_missing_keys() {
-        let mut app = setup();
+        let app = setup();
         let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
         let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
         // derive key package for some participant
@@ -1059,5 +1112,87 @@ mod test {
         let request = Request::new(rpc::NotifyPeginsRequest { utxos: vec![] });
         let response = app.notify_pegins(request).await;
         assert!(response.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_notify_pegouts() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // generate 36 random bytes
+        let mut rng = thread_rng();
+        let mut tx_id = [0u8; 32];
+        rng.fill(&mut tx_id);
+        let tx_idx = rng.gen_range(0..u32::MAX);
+        let pegout_id = PegoutId::new(tx_id, tx_idx);
+
+        let sk = bitcoin::PrivateKey::generate(app.btc_network);
+        let pk = sk.public_key(SECP256K1);
+        let spk =
+            Address::p2wpkh(&pk, app.btc_network).unwrap().script_pubkey().as_bytes().to_vec();
+
+        let request_1 = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 100_000, // sats
+            height: 1,
+        });
+
+        app.notify_pegout(request_1).await.expect("valid pegout request");
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 1);
+        let pegout = pending_pegouts[0].clone();
+        assert_eq!(pegout.value, Amount::from_sat(100_000));
+        assert_eq!(pegout.spk.as_bytes().to_vec().clone(), spk);
+        assert_eq!(pegout.id, pegout_id);
+
+        let request_2 = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 100_000, // sats
+            height: 1,
+        });
+
+        // Notifying with the same pegout id shouldnt make a difference
+        app.notify_pegout(request_2).await.expect("valid pegout request");
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 1);
+
+        // getting psbt should return error as there is no UTXOs to spend
+        let request = Request::new(rpc::MakeTxRequest {
+            signing_session_id: [0u8; 32].to_vec(),
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            utxo_merkle_root: [0u8; 32].to_vec(),
+        });
+        let response = app.get_psbt(request).await;
+        assert!(response.is_err());
+        let error_response = response.unwrap_err();
+        assert_eq!(error_response.code(), Code::Internal);
+        assert_eq!(
+            error_response.message(),
+            "internal error: Failed to make tx: Coin Selection error: Insufficient funds: 0 sat available of 100000 sat needed"
+        );
+
+        // Same pegout with different id should add a new pegout
+        let mut tx_id = [0u8; 32];
+        rng.fill(&mut tx_id);
+        let pegout_id = PegoutId::new(tx_id, tx_idx);
+        let request_3 = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 100_000, // sats
+            height: 1,
+        });
+
+        app.notify_pegout(request_3).await.expect("valid pegout request");
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 2);
     }
 }
