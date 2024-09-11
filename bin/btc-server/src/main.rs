@@ -122,9 +122,11 @@ where
         pegin_conf_depth: u32,
     ) -> Result<PegoutScheduler, database::Error> {
         if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
-            let txs = db.get_pending_txs()?;
+            let txs = db.get_tracked_txs()?;
+            info!("Loaded pegout scheduler with {} pending txs", txs.len());
             Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest))
         } else {
+            info!("No finalized block found, using fallback checkpoint: {}", fallback_checkpoint);
             Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint))
         }
     }
@@ -284,6 +286,8 @@ where
         Ok(StopHandle { stop_cmd_sender: shutdown_send })
     }
 
+    /// Sync the pegout scheduler to the given checkpoint.
+    /// Typically the checkpoint will be a sufficiently deep block on L1.
     pub async fn sync_pegout_scheduler(
         &self,
         checkpoint: BlockHash,
@@ -292,6 +296,7 @@ where
 
         let db = &self.db;
         lock.sync_until(&self.bitcoind_client, checkpoint, move |utxo| {
+            // We want to store the change outputs of the pegout transactions as spendable UTXOs.
             db.store_utxos(&[&utxo])?;
             db.flush()?;
             Ok(())
@@ -302,7 +307,8 @@ where
         Ok(())
     }
 
-    pub async fn add_index_tx(
+    /// Add a tracked transaction to the pegout scheduler.
+    pub async fn add_tracked_tx(
         &self,
         tx: Transaction,
         targets: &[TxOut],
@@ -310,7 +316,7 @@ where
     ) -> Result<(), database::Error> {
         let mut txindex = self.pegout_scheduler.lock().await;
         let tx = txindex.add_tx(tx, targets, timestamp);
-        self.db.store_pending_tx(tx)?;
+        self.db.store_tracked_tx(tx)?;
         self.db.flush()?;
         Ok(())
     }

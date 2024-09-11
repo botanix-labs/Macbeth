@@ -41,12 +41,20 @@ impl HeaderExt for bitcoincore_rpc::json::GetBlockHeaderResult {
     }
 }
 
+/// Transaction with metadata about which outputs are pegouts and which are change.
+/// This is used to track pegouts and detect when they are confirmed or when they need
+/// to be retried.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Tx {
+    /// The transaction id on L1
     pub txid: Txid,
+    /// The broadcasted transaction on L1
     pub tx: Transaction,
+    /// Which indecies in `tx.output` are pegouts
     pub pegout_idxs: Vec<usize>,
+    /// Which indecies in `tx.output` are change back to the federation wallet
     pub change_idxs: Vec<usize>,
+    /// When this transaction was created
     pub created: SystemTime,
 }
 
@@ -82,14 +90,16 @@ struct BlockInfo {
     relevant_inputs: Vec<OutPoint>,
 }
 
+/// A pegout request from the federation wallet to a user defined scriptpubkey.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PegoutRequest {
+    /// A unique id to link back to L2 block
     pub id: PegoutId,
     /// The scriptpubkey of the pegout request.
     pub spk: bitcoin::ScriptBuf,
     /// The btc amount of pegout to deliver.
     pub value: Amount,
-    /// Botanix block height this pegout was requested at.
+    /// L2 block height this pegout was requested at.
     pub botanix_height: u64,
 }
 
@@ -138,8 +148,16 @@ pub struct PegoutScheduler {
     conf_window: u32,
 
     /// The set of txs we are tracking.
+    /// The purpose of tracking the txs is to detect when they have
+    /// suffciently deep confirmations on L1. Once they do change outputs may
+    /// be added to the UTXO set as a spendable output
+    /// If a tracked tx is reorged or dropped from the mempool the application must
+    /// Add the non-change outputs back to the pending pegouts set.
     txs: HashMap<Txid, Tx>,
+    /// A mapping of input to the txs that spend them.
+    /// This is used to detect when a tracked tx is reorged or dropped from the mempool.
     txs_by_input: HashMap<OutPoint, Vec<Txid>>,
+    /// A mapping of pegout output to the txs that produce them.
     txs_by_pegout: HashMap<TxOut, Vec<Txid>>,
     /// The txs that are confirmed but not finalized yet.
     confirmed_txs: HashSet<Txid>,
@@ -176,10 +194,12 @@ impl PegoutScheduler {
         ret
     }
 
+    /// Get the last finalized block hash.
     pub fn last_finalized(&self) -> BlockHash {
         self.last_finalized
     }
 
+    /// Track a new transaction if it's not already tracked.
     fn track_tx(&mut self, tx: Tx) {
         for input in tx.inputs() {
             self.txs_by_input.entry(input).or_default().push(tx.txid);
@@ -191,6 +211,8 @@ impl PegoutScheduler {
     }
 
     /// Add a new tx to the index for tracking.
+    /// Most of the work is being done in [Self::track_tx].
+    /// This should be called when a new pegout transaction is broadcasted on L1.
     ///
     /// Panics if [pegouts] isn't a strict subset of the transaction's outputs.
     pub fn add_tx(&mut self, tx: Transaction, pegouts: &[TxOut], timestamp: SystemTime) -> &Tx {
@@ -251,6 +273,8 @@ impl PegoutScheduler {
         }
     }
 
+    /// Finalize a block by adding the UTXOs that are deeply confirmed back to the database.
+    /// This is also where we remove tracked transactions
     fn finalize_block(
         &mut self,
         finalize_utxo: &mut impl FnMut(database::Utxo) -> Result<(), database::Error>,
@@ -262,6 +286,7 @@ impl PegoutScheduler {
         for txid in &block.relevant_txs {
             let tx = self.txs.get(txid).expect("corrupt db");
 
+            // TODO should we only be storing change outputs indexes here?
             for (idx, output) in tx.tx.output.iter().enumerate() {
                 finalize_utxo(database::Utxo {
                     outpoint: OutPoint::new(tx.txid, idx as u32),
