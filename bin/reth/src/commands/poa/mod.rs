@@ -9,6 +9,7 @@ use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
+use reth_engine_util::EngineMessageStreamExt;
 use reth_evm::builder::{EvmFactory, RethEvmBuilder};
 use reth_network_peers::pk2id;
 use reth_node_metrics::recorder::install_prometheus_recorder;
@@ -18,6 +19,7 @@ use reth_rpc_engine_api::capabilities::EngineCapabilities;
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_stages::StageId;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -50,7 +52,7 @@ use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEventListenerProvider, NetworkManager
 };
 use reth_node_builder::{
-    launch_poa_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
+    launch_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
 };
 use reth_node_core::{
     args::{
@@ -479,7 +481,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         info!(target: "reth::cli", "Adding trusted nodes");
         if !node_config.network.trusted_peers.is_empty() {
             node_config.network.trusted_peers.iter().for_each(|peer| {
-                reth_config.peers.trusted_nodes.push(*peer);
+                reth_config.peers.trusted_nodes.push(peer.clone());
             });
         }
 
@@ -686,13 +688,28 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
 
+        // TODO: check again
         // needed for on_node_started
-        let components = RethNodeComponents {
-            executor: executor.clone(),
-            db: blockchain_db.clone(),
-            network: network_handle.clone(),
-        };
+        // let components = RethNodeComponents {
+        //     executor: executor.clone(),
+        //     db: blockchain_db.clone(),
+        //     network: network_handle.clone(),
+        // };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
+
+        let consensus_engine_stream = UnboundedReceiverStream::from(consensus_engine_rx)
+        .maybe_skip_fcu(node_config.debug.skip_fcu)
+        .maybe_skip_new_payload(node_config.debug.skip_new_payload)
+        .maybe_reorg(
+            blockchain_db.clone(),
+            evm_config,
+            reth_payload_validator::ExecutionPayloadValidator::new(node_config.chain.clone()),
+            node_config.debug.reorg_frequency,
+        )
+        // Store messages _after_ skipping so that `replay-engine` command
+        // would replay only the messages that were observed by the engine
+        // during this run.
+        .maybe_store_messages(node_config.debug.engine_api_store.clone());
 
         // Build authority Consensus
         let (
@@ -729,23 +746,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         .build()
         .await;
 
-        // TODO do we need this?
-        // if let Some(store_path) = self.config.debug.engine_api_store.clone() {
-        //     let (engine_intercept_tx, engine_intercept_rx) = unbounded_channel();
-        //     let engine_api_store = EngineApiStore::new(store_path);
-        //     executor.spawn_critical(
-        //         "engine api interceptor",
-        //         engine_api_store.intercept(consensus_engine_rx, engine_intercept_tx),
-        //     );
-        //     consensus_engine_rx = engine_intercept_rx;
-        // };
-
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();
 
         // Configure pipeline
         let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
-        let mut pipeline = build_networked_pipeline(
+        let pipeline = build_networked_pipeline(
             &StageConfig::default(),
             network_client.clone(),
             Arc::new(consensus.clone()),
@@ -810,7 +816,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }),
         );
 
-        let initial_target = node_config.initial_pipeline_target(genesis_hash);
+        let initial_target = node_config.debug.tip;
         let hooks = EngineHooks::new();
 
         // Configure the consensus engine
@@ -825,7 +831,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             initial_target,
             MIN_BLOCKS_FOR_PIPELINE_RUN,
             consensus_engine_tx,
-            Box::pin(consensus_engine_rx),
+            Box::pin(consensus_engine_stream),
             hooks,
         )?;
         info!(target: "reth::cli", "Consensus engine initialized");
@@ -834,16 +840,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             network_handle.event_listener().map(Into::into),
             beacon_engine_handle.event_listener().map(Into::into),
             pipeline_events.map(Into::into),
-            // TODO do we need this?
-            // if self.config.debug.tip.is_none() {
-            //     Either::Left(
-            //         ConsensusLayerHealthEvents::new(Box::new(blockchain_db.clone()))
-            //             .map(Into::into),
-            //     )
-            // } else {
-            //     Either::Right(stream::empty())
-            // },
-            // pruner_events.map(Into::into)
         );
         executor.spawn_critical(
             "events task",
@@ -894,18 +890,20 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let default_jwt_path = data_dir.jwt();
         let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
-            rpc,
-            &node_config,
-            blockchain_db,
-            transaction_pool,
-            network_handle.clone(),
-            executor.clone(),
-            evm_config,
-            engine_api,
-            reth_auth_jwt_secret,
-        )
-        .await?;
+        // TODO: fix me
+        // before: launch_poa_rpc_servers
+        // let (_rpc_server_handle, _auth_server_handle) = launch_rpc_servers(
+        //     rpc,
+        //     &node_config,
+        //     blockchain_db,
+        //     transaction_pool,
+        //     network_handle.clone(),
+        //     executor.clone(),
+        //     evm_config,
+        //     engine_api,
+        //     reth_auth_jwt_secret,
+        // )
+        // .await?;
 
         // Run consensus engine to completion
         let (tx, rx) = oneshot::channel();
