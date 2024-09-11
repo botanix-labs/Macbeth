@@ -1,6 +1,7 @@
 use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
 
 use crate::{
+    pegout_id::PegoutId,
     pegout_scheduler,
     rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     util::{parse_eth_address, OutPointExt},
@@ -527,6 +528,14 @@ impl Db {
         }
         Ok(ret)
     }
+
+    /// Removes pending pegouts from the database.
+    pub fn remove_pending_pegout(&self, pegout_ids: &Vec<PegoutId>) -> Result<(), Error> {
+        for pegout_id in pegout_ids.iter() {
+            self.pegouts.remove(&pegout_id.as_bytes()[..]);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error)]
@@ -627,7 +636,7 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::create_tx;
+    use crate::test::{create_tx, random_p2wpkh_script};
 
     use super::*;
     use crate::pegout_id::PegoutId;
@@ -658,6 +667,31 @@ mod tests {
         assert_eq!(pegout_req.spk, req.spk);
         assert_eq!(pegout_req.value, req.value);
         assert_eq!(pegout_req.botanix_height, req.botanix_height);
+    }
+
+    #[test]
+    fn can_remove_pending_pegout() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a 10 random pegouts
+        for i in 0..10 {
+            let pegout_id = PegoutId::new([i as u8; 32], 0);
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: random_p2wpkh_script(),
+                value: Amount::from_sat(100_000),
+                botanix_height: 1,
+            };
+            db.store_pending_pegout(&req).unwrap();
+        }
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), 10);
+
+        let first_pegout_id = pegouts.get(0).unwrap().id;
+
+        db.remove_pending_pegout(&vec![first_pegout_id]).unwrap();
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), 9);
     }
 
     #[test]
