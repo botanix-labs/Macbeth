@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::SystemTime,
-};
+use std::{collections::HashMap, time::SystemTime};
 
 use bdk::{
     miniscript::psbt::Error as PsbtError,
@@ -77,7 +74,10 @@ pub enum CoordinatorError {
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
 }
 
-impl App {
+impl<BitcoindClient> App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     pub(crate) fn add_pegins(&self, utxos: &[&Utxo]) -> Result<(), CoordinatorError> {
         self.db.store_utxos(utxos)?;
         self.db.update_utxo_merkle_root()?;
@@ -377,12 +377,7 @@ impl App {
         self.add_index_tx(tx, &targets, tx_timestamp).await?;
 
         // Lets broadcast the tx
-        let tx_id = match self
-            .bitcoind_client
-            .as_ref()
-            .expect("bitcoind client")
-            .send_raw_transaction(&psbt.clone().extract_tx()?)
-        {
+        let tx_id = match self.bitcoind_client.send_raw_transaction(&psbt.clone().extract_tx()?) {
             Ok(tx_id) => Ok(Some(tx_id)),
             Err(err) => {
                 let err_msg = err.to_string();

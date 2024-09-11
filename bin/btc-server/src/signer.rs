@@ -7,7 +7,7 @@ use bitcoin::{
     taproot::SigFromSliceError,
     BlockHash, FeeRate, TxOut,
 };
-use bitcoincore_rpc::json::EstimateMode;
+use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::{
@@ -132,7 +132,10 @@ pub enum SigningAbortError {
     DbError(#[from] database::Error),
 }
 
-impl App {
+impl<BitcoindClient> App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     pub(crate) async fn abort_signing(&self) -> Result<(), SigningAbortError> {
         self.db.get_key_package()?.ok_or(SigningAbortError::MissingKeyPackage)?;
 
@@ -148,7 +151,6 @@ impl App {
         &self,
         psbt: &mut Psbt,
         _signing_session_id: &[u8; 32],
-        bitcoind_client: &impl bitcoincore_rpc::RpcApi,
     ) -> Result<(), SigningRound1Error> {
         self.db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
         // Check if have already provided nonces for the current session
@@ -163,7 +165,7 @@ impl App {
         debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
 
         // fetch fee rate from bitcoind
-        let fee_res = bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {

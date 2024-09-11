@@ -51,7 +51,10 @@ impl<T> ToStatus<T> for Result<T, crate::Error> {
     }
 }
 
-impl App {
+impl<BitcoindClient> App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
         let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
         match (request.metadata().get_bin(key), self.btc_signing_server_jwt_secret.as_ref()) {
@@ -99,7 +102,10 @@ impl App {
 }
 
 #[tonic::async_trait]
-impl rpc::BtcServer for App {
+impl<BitcoindClient> rpc::BtcServer for App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     async fn health_check(
         &self,
         request: tonic::Request<rpc::Empty>,
@@ -133,7 +139,6 @@ impl rpc::BtcServer for App {
         req: tonic::Request<rpc::GetSigningStatusRequest>,
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        //info!("Received get signing  status request");
         let req = req.into_inner();
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
@@ -283,8 +288,7 @@ impl rpc::BtcServer for App {
         let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
             .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
 
-        let bitcoind_rpc = self.bitcoind_client.as_ref().expect("bitcoind client");
-        let fee_res = bitcoind_rpc.estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
@@ -582,8 +586,7 @@ impl rpc::BtcServer for App {
         let mut psbt = Psbt::deserialize(req.psbt.as_slice())
             .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
-        let bitcoind = self.bitcoind_client.as_ref().expect("bitcoind client");
-        self.get_round1_signing_package(&mut psbt, &signing_session_id, bitcoind)
+        self.get_round1_signing_package(&mut psbt, &signing_session_id)
             .await
             .map_err(|e| internal!("Failed to get round1 signing package: {}", e))?;
 
@@ -639,11 +642,7 @@ impl rpc::BtcServer for App {
         let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
             .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
 
-        let fee_res = self
-            .bitcoind_client
-            .as_ref()
-            .expect("instatiated bitcoin rpc")
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative));
+        let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
