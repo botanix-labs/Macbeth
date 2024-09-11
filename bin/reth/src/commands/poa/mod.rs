@@ -27,7 +27,7 @@ use reth_authority_consensus::{
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
-use reth_node_core::{cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
+use reth_node_core::{args::DatadirArgs, cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -102,8 +102,8 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// - Linux: `$XDG_DATA_HOME/reth/` or `$HOME/.local/share/reth/`
     /// - Windows: `{FOLDERID_RoamingAppData}/reth/`
     /// - macOS: `$HOME/Library/Application Support/reth/`
-    #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
-    pub datadir: MaybePlatformPath<DataDirPath>,
+    #[command(flatten)]
+    pub datadir: DatadirArgs,
 
     /// The path to the configuration file to use for network properties.
     #[arg(long, value_name = "NETWORK_CONFIG_FILE", verbatim_doc_comment)]
@@ -156,23 +156,23 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub with_unused_ports: bool,
 
     /// All networking related arguments
-    #[clap(flatten)]
+    #[command(flatten)]
     pub network: NetworkArgs,
 
     /// All rpc related arguments
-    #[clap(flatten)]
+    #[command(flatten)]
     pub rpc: RpcServerArgs,
 
     /// All txpool related arguments with --txpool prefix
-    #[clap(flatten)]
+    #[command(flatten)]
     pub txpool: TxPoolArgs,
 
     /// All debug related arguments with --debug prefix
-    #[clap(flatten)]
+    #[command(flatten)]
     pub debug: DebugArgs,
 
     /// All database related arguments
-    #[clap(flatten)]
+    #[command(flatten)]
     pub db: DatabaseArgs,
 
     /// The path to the configuration file to use for network properties.
@@ -273,7 +273,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // because database init needs it to register metrics.
         let prometheus_handle = install_prometheus_recorder();
 
-        let data_dir = datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
+        let data_dir = datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
         let db_path = data_dir.db();
         let executor = ctx.task_executor;
 
