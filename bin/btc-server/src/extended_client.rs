@@ -159,7 +159,7 @@ impl GrpcClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use client::jwt::{Claims, JwtSecret};
+    use reth_rpc_layer::{Claims, JwtSecret};
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
@@ -195,7 +195,7 @@ mod tests {
             let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
 
             // validate the request token
-            assert!(jwt_secret.validate(jwt_stringified).is_ok());
+            assert!(jwt_secret.validate(&jwt_stringified).is_ok());
         }
     }
 }

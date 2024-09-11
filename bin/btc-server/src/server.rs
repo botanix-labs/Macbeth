@@ -78,7 +78,7 @@ impl App {
                                     error!("Failed to utf8 decode jwt value: {}", e);
                                     badarg!("Failed to utf8 decode jwt value: {}", e)
                                 })?;
-                            jwt_secret.validate(jwt_stringified).map_err(|e| {
+                            jwt_secret.validate(&jwt_stringified).map_err(|e| {
                                 error!("Request authentication failed {}", e);
                                 unauthenticated!("Request authentication failed")
                             })?;

@@ -523,13 +523,6 @@ impl From<SealedBlock> for ExecutionPayload {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-impl std::ops::DerefMut for SealedBlock {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.header
-    }
-}
-
 /// Sealed block with senders recovered from transactions.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Deref, DerefMut)]
 pub struct SealedBlockWithSenders {

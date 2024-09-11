@@ -9423,6 +9423,7 @@ dependencies = [
  "reth-network-types",
  "reth-primitives",
  "reth-provider",
+ "reth-rpc-types",
  "reth-storage-api",
  "reth-tasks",
  "reth-tokio-util",

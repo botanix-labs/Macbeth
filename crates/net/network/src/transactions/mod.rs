@@ -1770,7 +1770,7 @@ mod tests {
         let pool = testing_pool();
 
         let transactions_manager_config = config.transactions_manager_config.clone();
-        let (_network_handle, _network, transactions, _, _) = NetworkManager::new(config)
+        let (_network_handle, network, transactions, _, _) = NetworkManager::new(config)
             .await
             .unwrap()
             .into_builder()
