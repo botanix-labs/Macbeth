@@ -9,7 +9,7 @@ name = "btcserverlib"
 [dependencies]
 miniscript = "11.0.0"
 bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
-reth-rpc-layer.workspace = true
+alloy-rpc-types-engine = "0.3.6"
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
 client = {path = "./client"}
 bitcoincore-rpc = "0.18.0"

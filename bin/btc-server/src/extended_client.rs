@@ -8,7 +8,7 @@ use client::{
     SyncTxIndexRequest, ToSignRequest,
 };
 use displaydoc::Display as DisplayDoc;
-use reth_rpc_layer::{Claims, JwtSecret};
+use alloy_rpc_types_engine::{Claims, JwtSecret};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tonic::{
@@ -159,7 +159,7 @@ impl GrpcClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use reth_rpc_layer::{Claims, JwtSecret};
+    use alloy_rpc_types_engine::{Claims, JwtSecret};
 
     #[test]
     fn test_metadata_jwt_decode_encode() {

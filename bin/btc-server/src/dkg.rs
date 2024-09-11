@@ -1,6 +1,7 @@
 use crate::{database, App, Error};
 use std::collections::BTreeMap;
 
+use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 
 #[derive(Debug, Error)]
@@ -23,7 +24,10 @@ pub enum DKGError {
     Db(#[from] database::Error),
 }
 
-impl App {
+impl<BitcoindClient> App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     pub(crate) async fn get_round2_dkg(
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, DKGError> {

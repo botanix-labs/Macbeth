@@ -33,13 +33,13 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use bitcoin::{BlockHash, Transaction, TxOut};
 use bitcoincore_rpc::{Auth, RpcApi};
-use config::{load_config, Config};
+use config::Config;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
-use reth_rpc_layer::{JwtError, JwtSecret};
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
@@ -81,13 +81,10 @@ pub enum Error {
     FailedToReachCheckPoint(BlockHash),
 }
 
-#[allow(dead_code)]
-trait BitcoinRpcApi: bitcoincore_rpc::RpcApi + Sized {}
-
 type SigningNoncesCommitmentsMap =
     Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>;
 
-struct App {
+struct App<BitcoinRpcApi> {
     db: database::Db,
     btc_network: bitcoin::Network,
     pegout_scheduler: Mutex<PegoutScheduler>,
@@ -110,12 +107,15 @@ struct App {
     /// Btc signing server jwt secret
     btc_signing_server_jwt_secret: Option<JwtSecret>,
     /// bitcoind client
-    bitcoind_client: Option<bitcoincore_rpc::Client>,
+    bitcoind_client: BitcoinRpcApi,
     /// Fall back fee rate
     fall_back_fee_rate: bitcoin::FeeRate,
 }
 
-impl App {
+impl<BitcoindClient> App<BitcoindClient>
+where
+    BitcoindClient: RpcApi + Send + Sync + 'static,
+{
     fn load_pegout_scheduler(
         db: &database::Db,
         fallback_checkpoint: BlockHash,
@@ -137,7 +137,7 @@ impl App {
         }
     }
 
-    pub fn new(config: Config) -> Result<Self, Error> {
+    pub fn new(config: Config, bitcoind_client: BitcoindClient) -> Result<Self, Error> {
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
 
@@ -172,17 +172,6 @@ impl App {
             );
             info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
         }
-        let bitcoind_user = config.bitcoind_user.clone();
-        let bitcoind_pass = config.bitcoind_pass.clone();
-        let host = config.bitcoind_url.host_str().unwrap_or_default().to_owned();
-        let port = config.bitcoind_url.port_or_known_default().unwrap_or_default().to_owned();
-        let bitcoind_url = format!("{}:{}", host, port);
-
-        let bitcoind_client = bitcoincore_rpc::Client::new(
-            &bitcoind_url,
-            Auth::UserPass(bitcoind_user, bitcoind_pass),
-        )
-        .expect("bitcoind client");
 
         let fall_back_fee_rate =
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
@@ -215,7 +204,7 @@ impl App {
             btc_signing_server_jwt_secret,
             min_signers,
             max_signers,
-            bitcoind_client: Some(bitcoind_client),
+            bitcoind_client,
             fall_back_fee_rate,
         })
     }
@@ -268,13 +257,13 @@ impl App {
 
         // add health service
         let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-        health_reporter.set_serving::<rpc::BtcServerServer<App>>().await;
+        health_reporter.set_serving::<rpc::BtcServerServer<App<BitcoindClient>>>().await;
 
         let mut health_reporter = health_reporter.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                health_reporter.set_serving::<rpc::BtcServerServer<App>>().await;
+                health_reporter.set_serving::<rpc::BtcServerServer<App<BitcoindClient>>>().await;
             }
         });
 
@@ -300,9 +289,9 @@ impl App {
         checkpoint: BlockHash,
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
-        let bitcoind = self.bitcoind_client.as_ref().expect("should have bitcoind");
+
         let db = &self.db;
-        lock.sync_until(bitcoind, checkpoint, move |utxo| {
+        lock.sync_until(&self.bitcoind_client, checkpoint, move |utxo| {
             db.store_utxos(&[&utxo])?;
             db.flush()?;
             Ok(())
@@ -335,10 +324,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_module("bitcoincore_rpc::", log::LevelFilter::Trace)
         .init();
 
-    let config = load_config()?;
+    let config = config::load_config()?;
 
     // setup the grpc server
-    let btc_server = App::new(config.clone())?;
+    let bitcoind_client = bitcoincore_rpc::Client::new(
+        &config.bitcoind_url.to_string(),
+        Auth::UserPass(config.bitcoind_user.clone(), config.bitcoind_pass.clone()),
+    )
+    .expect("bitcoind client");
+    let btc_server: App<bitcoincore_rpc::Client> = App::new(config.clone(), bitcoind_client)?;
 
     // run grpc server in the background
     let grpc_stop_tx = match btc_server.serve_async().await {
@@ -372,6 +366,7 @@ mod test {
         blockdata::{script::Script, transaction::TxOut},
         hashes::Hash,
         psbt::Psbt,
+        secp256k1::SECP256K1,
         Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
     };
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
@@ -384,6 +379,7 @@ mod test {
 
     use crate::{
         database::Utxo,
+        pegout_id::PegoutId,
         rpc::{self, BtcServer},
     };
 
@@ -395,6 +391,7 @@ mod test {
         };
     }
 
+    #[derive(Clone, Debug)]
     struct MockBitcoind;
     impl bitcoincore_rpc::RpcApi for MockBitcoind {
         fn estimate_smart_fee(
@@ -432,13 +429,15 @@ mod test {
         eth_addr
     }
 
-    pub fn setup() -> App {
+    pub fn setup() -> App<MockBitcoind> {
+        let mock_bitcoind = MockBitcoind::new();
         let tmpdir = tempfile::tempdir().unwrap();
         let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
         let db = database::Db::open(&dbdir).unwrap();
-        let txindex =
-            Mutex::new(App::load_pegout_scheduler(&db, BlockHash::all_zeros(), 6).unwrap());
+        let txindex = Mutex::new(
+            App::<MockBitcoind>::load_pegout_scheduler(&db, BlockHash::all_zeros(), 6).unwrap(),
+        );
         let app = App {
             db,
             pegout_scheduler: txindex,
@@ -451,7 +450,7 @@ mod test {
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             btc_signing_server_jwt_secret: None,
-            bitcoind_client: None,
+            bitcoind_client: mock_bitcoind,
             fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
             // This config doesnt matter since we are setting app up manually
             // Normally this would be read from a config file
@@ -552,7 +551,7 @@ mod test {
      */
     #[test]
     fn get_pk_should_fail_without_dkg() {
-        let app = setup();
+        let mut app = setup();
         let _eth = eth_vector_to_fixed_bytes(
             hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
         );
@@ -564,7 +563,7 @@ mod test {
 
     #[test]
     fn round1_dkg_should_fail_when_missing_keys() {
-        let app = setup();
+        let mut app = setup();
         let round1_dkg = app.get_round1_dkg();
         assert!(round1_dkg.is_err());
         assert_eq!(round1_dkg.err().unwrap().to_string(), "missing round1 dkg package");
@@ -572,7 +571,7 @@ mod test {
 
     #[test]
     fn round1_dkg_should_fail_pk_package_is_present() {
-        let app = setup();
+        let mut app = setup();
         let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
         let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
         // derive key package for some participant
@@ -685,7 +684,7 @@ mod test {
      */
     #[tokio::test]
     async fn round2_dkg_should_fail_when_missing_keys() {
-        let app = setup();
+        let mut app = setup();
         let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
         let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
         // derive key package for some participant
@@ -820,10 +819,8 @@ mod test {
         // Add the utxo
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
         app.add_pegins(&[&utxo]).expect("valid pegin utxo");
-        let mock_bitcoind = MockBitcoind::new();
 
-        let nonce_commits =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
+        let nonce_commits = app.get_round1_signing_package(&mut psbt, &signing_session_id).await;
         assert!(nonce_commits.is_err());
         assert_eq!(nonce_commits.err().unwrap().to_string(), "missing key package");
     }
@@ -858,7 +855,6 @@ mod test {
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
             .expect("valid key package");
-        let mock_bitcoind = MockBitcoind::new();
 
         app.db.set_pubkey_package(pk_package).expect("set public key package");
         app.db.set_key_package(key_package).expect("set key package");
@@ -871,15 +867,14 @@ mod test {
             None,
         );
         app.add_pegins(&[&utxo]).expect("valid pegin utxo");
-        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+        app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .await
             .expect("valid nonce commits request");
         let sc1 = psbt.inputs[0].all_signing_commitments();
         assert_eq!(sc1.len(), 1);
 
         // Should not be able to get a new set of nonces
-        let res =
-            app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind).await;
+        let res = app.get_round1_signing_package(&mut psbt, &signing_session_id).await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "already in signing session");
 
@@ -895,7 +890,7 @@ mod test {
             None,
         );
         app.add_pegins(&[&utxo]).expect("valid pegin utxo");
-        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+        app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .await
             .expect("valid nonce commits request");
 
@@ -915,7 +910,6 @@ mod test {
             trusted_dealer_setup(app_signer.min_signers, app_signer.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app_signer.identifier].clone())
             .expect("valid key package");
-        let mock_bitcoind = MockBitcoind::new();
 
         // Add the key packages
         app_signer.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
@@ -942,7 +936,7 @@ mod test {
         assert_eq!(res.err().unwrap().to_string(), "Could not find participant information");
 
         app_signer
-            .get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+            .get_round1_signing_package(&mut psbt, &signing_session_id)
             .await
             .expect("valid nonce commits request");
         psbt.inputs[0].signing_commitments(app_signer.identifier).expect("valid sc1");
@@ -992,7 +986,6 @@ mod test {
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
             .expect("valid key package");
-        let mock_bitcoind = MockBitcoind::new();
 
         // Add the key packages
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
@@ -1009,7 +1002,7 @@ mod test {
         );
         app.add_pegins(&[&utxo]).expect("valid pegin utxo");
 
-        app.get_round1_signing_package(&mut psbt, &signing_session_id, &mock_bitcoind)
+        app.get_round1_signing_package(&mut psbt, &signing_session_id)
             .await
             .expect("valid nonce commits request");
 
@@ -1058,5 +1051,13 @@ mod test {
         assert!(response.is_ok());
         let response = response.unwrap().into_inner();
         assert_eq!(response.utxos.len(), 100, "Expected 100 UTXOs in the database");
+    }
+
+    #[tokio::test]
+    async fn test_notify_empty_pegins() {
+        let app = setup();
+        let request = Request::new(rpc::NotifyPeginsRequest { utxos: vec![] });
+        let response = app.notify_pegins(request).await;
+        assert!(response.is_ok());
     }
 }
