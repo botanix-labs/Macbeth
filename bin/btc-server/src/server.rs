@@ -300,10 +300,8 @@ where
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let outputs = pending_pegouts
             .iter()
-            .map(|p| {
-                (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id.as_bytes()))
-            })
-            .collect::<Vec<(TxOut, Option<[u8; 36]>)>>();
+            .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id)))
+            .collect::<Vec<(TxOut, Option<PegoutId>)>>();
 
         let pk_package = self
             .db

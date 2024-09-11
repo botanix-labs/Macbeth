@@ -14,13 +14,14 @@ use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PegoutId, PsbtExt as BtcPsbtExt, PsbtInputExt},
+    psbt::{PegoutId as PsbtPegoutId, PsbtExt as BtcPsbtExt, PsbtInputExt, PsbtOutputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
 
 use crate::{
     database::{Error as DbError, Utxo},
+    pegout_id::PegoutId,
     util::{
         validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
         NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
@@ -253,6 +254,17 @@ where
             bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
         };
 
+        let pegout_ids = outputs
+            .into_iter()
+            .map(|(txout, pegout_id)| {
+                if let Some(pegout_id) = pegout_id {
+                    (txout, Some(pegout_id.as_bytes()))
+                } else {
+                    (txout, None)
+                }
+            })
+            .collect::<Vec<_>>();
+
         let psbt = reth_btc_wallet::transaction::create_psbt(
             selected
                 .iter()
@@ -262,7 +274,7 @@ where
                     eth_address: s.eth_address,
                 })
                 .collect(),
-            outputs,
+            pegout_ids,
         );
 
         // Sanity check that we created a valid PSBT
@@ -375,6 +387,16 @@ where
             .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
         self.add_index_tx(tx, &targets, tx_timestamp).await?;
+
+        let pegout_ids = psbt
+            .outputs
+            .iter()
+            .map(|o| o.pegout_id())
+            .filter(|o| o.is_some())
+            .map(|o| PegoutId::from_bytes(&o.unwrap()).expect("valid pegout id"))
+            .collect::<Vec<_>>();
+        self.db.remove_pending_pegout(&pegout_ids)?;
+        self.db.flush()?;
 
         // Lets broadcast the tx
         let tx_id = match self.bitcoind_client.send_raw_transaction(&psbt.clone().extract_tx()?) {

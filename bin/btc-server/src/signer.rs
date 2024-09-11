@@ -18,6 +18,7 @@ use reth_btc_wallet::{
 use crate::{
     cordinator::CoordinatorError,
     database,
+    pegout_id::PegoutId,
     util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
@@ -301,10 +302,14 @@ where
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let outputs = pending_pegouts
             .iter()
-            .map(|p| {
-                (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id.as_bytes()))
-            })
-            .collect::<Vec<(TxOut, Option<[u8; 36]>)>>();
+            .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id)))
+            .collect::<Vec<(TxOut, Option<PegoutId>)>>();
+        let pegouts_ids = outputs
+            .iter()
+            .map(|o| o.1)
+            .filter(|o| o.is_some())
+            .map(|o| o.expect("valid pegout id"))
+            .collect::<Vec<_>>();
 
         let mut original_psbt = self
             .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
@@ -344,6 +349,8 @@ where
             .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
         self.add_index_tx(tx, &targets, tx_timestamp).await?;
+        self.db.remove_pending_pegout(&pegouts_ids)?;
+        self.db.flush()?;
 
         Ok(original_psbt)
     }
