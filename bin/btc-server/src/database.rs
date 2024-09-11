@@ -456,14 +456,16 @@ impl Db {
         Ok(utxos)
     }
 
-    pub fn store_pending_tx(&self, tx: &pegout_scheduler::Tx) -> Result<(), Error> {
+    /// Store list of txs that we are tracking for the pegout scheduler.
+    pub fn store_tracked_tx(&self, tx: &pegout_scheduler::Tx) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
         self.pending_txs.insert(tx.txid, &bytes[..])?;
         Ok(())
     }
 
-    pub fn get_pending_txs(&self) -> Result<Vec<pegout_scheduler::Tx>, Error> {
+    /// Get list of txs that we are tracking for the pegout scheduler.
+    pub fn get_tracked_txs(&self) -> Result<Vec<pegout_scheduler::Tx>, Error> {
         let mut ret = Vec::new();
         for res in self.pending_txs.iter() {
             let (_k, v) = res?;

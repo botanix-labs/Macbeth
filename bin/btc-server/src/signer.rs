@@ -348,7 +348,7 @@ where
             .cloned()
             .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        self.add_index_tx(tx, &targets, tx_timestamp).await?;
+        self.add_tracked_tx(tx, &targets, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegouts_ids)?;
         self.db.flush()?;
 
