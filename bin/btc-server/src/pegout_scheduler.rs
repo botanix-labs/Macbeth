@@ -496,3 +496,42 @@ pub enum BlockError {
     #[error("failed to connect block to the index")]
     CantConnectBlock,
 }
+
+mod tests {
+
+    use crate::test_utils::test_utils::{create_tx, random_txid};
+    use bitcoin::{ScriptBuf, Txid};
+
+    use super::*;
+    #[test]
+    fn tracked_tx_utils() {
+        let txid = random_txid();
+        let tx = Tx {
+            txid,
+            tx: bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            pegout_idxs: vec![],
+            change_idxs: vec![],
+            created: SystemTime::now(),
+        };
+
+        assert_eq!(tx.inputs().count(), 0);
+        assert_eq!(tx.pegouts().count(), 0);
+        assert_eq!(tx.change().count(), 0);
+
+        // let dummy_tx = create_tx(1);
+        // let tx2 = Tx {
+        //     txid,
+        //     tx: bitcoin::Transaction {
+        //         version: bitcoin::transaction::Version::TWO,
+        //         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+        //         input: vec![],
+        //         output: vec![],
+        //     },
+        // };
+    }
+}

@@ -325,7 +325,9 @@ mod util_tests {
 
     use crate::{
         database,
-        test::{create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup},
+        test_utils::test_utils::{
+            create_psbt, create_tx, eth_vector_to_fixed_bytes, trusted_dealer_setup,
+        },
         util::*,
     };
 
