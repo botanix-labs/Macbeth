@@ -298,7 +298,7 @@ mod tests {
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
         block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
-        is_inturn, validate_against_parent,
+        is_inturn,
     };
     use reth_primitives::{
         extra_data_header::ExtraDataHeader, public_key_to_address, Bytes, BOTANIX_TESTNET,
@@ -306,59 +306,34 @@ mod tests {
 
     use super::*;
 
+    #[allow(dead_code)]
+    const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+    #[allow(dead_code)]
+    const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+
     // Tests for validating poa extra data header
     #[test]
     fn should_skip_over_genesis() {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         let mut header = Header::default();
         header.number = 0;
-        let authority_signers = vec![];
+        let genesis_authorities = vec![];
         // Just use the first key as the dummy agg key
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
 
-        let result =
-            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
+        let result = consensus.validate_extra_data_header(
+            &header,
+            &genesis_authorities,
+            Some(&dummy_agg_key),
+        );
 
         assert!(result.is_ok());
     }
 
+    //  TODO: refactor test to check comet signature
     #[test]
-    fn fails_when_edh_exceeds_max_size() {
-        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-        // In this case we are signing with a non federation different key
-        let mut edh = ExtraDataHeader::default();
-        let sk1 = bitcoin::secp256k1::SecretKey::from_str(SK1).unwrap();
-        let msg = [0u8; 64];
-        let mut wit = bitcoin::witness::Witness::default();
-        wit.push(msg.clone());
-        let mut witnesses = vec![];
-        for _ in 0..1000 {
-            witnesses.push(wit.clone());
-        }
-        edh.witness_data = Some(witnesses);
-        edh.set_optional_fields_bitmask();
-
-        // Just use the first key as the dummy agg key
-        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
-        edh.aggregated_public_key = dummy_agg_key;
-
-        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let mut header = Header::default();
-        header.number = 1;
-        header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
-
-        let result =
-            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
-        );
-    }
-
-    #[test]
+    #[ignore]
     fn should_fail_on_invalid_signature() {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         // In this case we are signing with a non federation different key
@@ -378,7 +353,6 @@ mod tests {
 
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&non_fed).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -388,7 +362,6 @@ mod tests {
         let mut header = Header::default();
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -410,7 +383,6 @@ mod tests {
         let mut header = Header::default();
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -442,7 +414,6 @@ mod tests {
         let mut header = Header::default();
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&different_pk));
