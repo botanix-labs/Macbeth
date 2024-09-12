@@ -766,10 +766,16 @@ mod tests {
 
     use super::*;
     use crate::{builder::BitcoinCheckpoint, Storage};
+    use bitcoin::{
+        block::{BlockHash, Header, Version},
+        hashes::Hash,
+        CompactTarget, TxMerkleNode,
+    };
     use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use rand::thread_rng;
     use reth_blockchain_tree::noop::NoopBlockchainTree;
-    use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_btc_wallet::{bitcoind::BitcoindFactory, transaction};
     use reth_cli_runner::tokio_runtime;
     use reth_db::{
         init_db, mdbx::DatabaseArguments, models::client_version::ClientVersion, open_db_read_only,
@@ -787,9 +793,10 @@ mod tests {
         ExecutorFactory,
     };
     use reth_tasks::TaskManager;
-    use reth_transaction_pool::TransactionPool;
     use reth_transaction_pool::{
-        blobstore::InMemoryBlobStore, Pool as RethPool, TransactionValidationTaskExecutor,
+        blobstore::InMemoryBlobStore,
+        test_utils::{MockTransaction, TransactionGenerator},
+        Pool as RethPool, TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
     };
     use std::path::Path;
     use tempfile::tempdir;
@@ -860,7 +867,16 @@ mod tests {
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
-        let bitcoin_checkpoint: BitcoinCheckpoint = Arc::new(RwLock::new(None));
+        let bitcoin_header = Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+        let bitcoin_checkpoint: BitcoinCheckpoint =
+            Arc::new(RwLock::new(Some((bitcoin_header, 0))));
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
@@ -908,5 +924,60 @@ mod tests {
         assert_eq!(response.last_block_height, 0);
         let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+    }
+
+    #[test]
+    fn test_prepare_proposal_empty_mempool() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestPrepareProposal::default();
+        let response = abci_client.prepare_proposal(request);
+
+        let expected_ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
+        let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
+        let mut reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+
+        assert_eq!(response.txs.len(), 1);
+        assert_eq!(response_ndd, expected_ndd);
+    }
+
+    // TODO: figure out why tx isn't being added to mempool
+    #[test]
+    #[ignore]
+    fn test_prepare_proposal_tx_in_mempool() {
+        let abci_client = abci_client_builder();
+
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let pooled_tx = tx_generator.gen_eip1559_pooled();
+        {
+            let _ = async {
+                let _ = abci_client.pool.add_transaction(TransactionOrigin::Local, pooled_tx).await;
+            };
+        }
+
+        // wait for tx to be added to pool
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let request = RequestPrepareProposal::default();
+        let response = abci_client.prepare_proposal(request);
+
+        let expected_ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
+        let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
+        let mut reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+
+        // todo: deserialize tx
+
+        assert_eq!(response.txs.len(), 2);
+        assert_eq!(response_ndd, expected_ndd);
     }
 }

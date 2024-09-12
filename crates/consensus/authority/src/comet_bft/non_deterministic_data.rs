@@ -18,7 +18,7 @@ pub(crate) enum NonDeterministicDataDeserializeError {
 }
 
 /// Type that encapsulates non-deterministic data needed for consensus
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
     pub(crate) version: u16,
     pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
