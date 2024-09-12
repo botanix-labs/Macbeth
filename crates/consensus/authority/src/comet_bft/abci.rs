@@ -796,6 +796,9 @@ mod tests {
     use tendermint_abci::Application;
     use tokio::sync::RwLock;
 
+    const GENESIS_APP_HASH_HEX: &str =
+        "d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3";
+
     /// Build the db and the ABCI client
     fn abci_client_builder() -> ABCIClient<
         TestExecutorFactory,
@@ -881,7 +884,6 @@ mod tests {
 
         let request = RequestInitChain::default();
         let response = abci_client.init_chain(request);
-        println!("{:?}", response);
 
         let expected_consensus_params = None;
         let expected_validators = vec![];
@@ -889,6 +891,22 @@ mod tests {
 
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
-        assert_eq!(response.app_hash, expected_genesis_app_hash);
+        let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
+        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+    }
+
+    #[test]
+    fn test_info() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestInfo::default();
+        let response = abci_client.info(request);
+
+        assert_eq!(response.data, String::default());
+        assert_eq!(response.version, "TODO".to_string());
+        assert_eq!(response.app_version, 1);
+        assert_eq!(response.last_block_height, 0);
+        let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
+        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
     }
 }
