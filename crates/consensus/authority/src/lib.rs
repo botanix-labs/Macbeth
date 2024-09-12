@@ -525,8 +525,8 @@ mod tests {
 
         let result = consensus.validate_extra_data_header(
             &header,
-            &authority_signers,
-            &authority_signers,
+            authority_signers.as_slice(),
+            authority_signers.as_slice(),
             Some(&dummy_agg_key),
         );
         assert!(result.is_err());

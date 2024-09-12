@@ -908,12 +908,6 @@ pub(crate) mod tests {
     use rand;
     use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
     use reth_consensus_common::utils::unix_timestamp;
-    // use reth_interfaces::p2p::{
-    //     download::DownloadClient,
-    //     error::{PeerRequestResult, RequestError},
-    //     headers::client::HeadersRequest,
-    //     priority::Priority,
-    // };
     use reth_network::frost::manager::ToFrostManager;
     use reth_network_p2p::{download::DownloadClient, error::{PeerRequestResult, RequestError}, headers::client::HeadersRequest, priority::Priority};
     use reth_network_peers::WithPeerId;
