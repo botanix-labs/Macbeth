@@ -229,6 +229,18 @@ pub mod test_utils {
         }
     }
 
+    pub fn create_n_outputs_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
+        let mut tx = create_tx(num_inputs);
+        let mut outputs = vec![];
+        for _ in 0..num_outputs {
+            outputs.push(TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: random_p2wpkh_script(),
+            });
+        }
+        tx.output = outputs;
+        tx
+    }
     pub fn create_psbt(num_inputs: usize) -> Psbt {
         let tx = create_tx(num_inputs);
 

@@ -1,3 +1,10 @@
+/// This module is responsible for tracking pegout transactions and detecting when they are
+/// confirmed or when they need to be retried.
+/// Some vocab used in this file
+/// - tracked tx: a transaction that is being tracked by the pegout scheduler.
+/// - pending pegout: a pegout that is pending to be signed and broadcasted.
+/// - confirmed tx: a transaction that is confirmed.
+/// - finalized tx: a transaction that is deeply confirmed.
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     time::{Duration, SystemTime},
@@ -44,7 +51,7 @@ impl HeaderExt for bitcoincore_rpc::json::GetBlockHeaderResult {
 /// Transaction with metadata about which outputs are pegouts and which are change.
 /// This is used to track pegouts and detect when they are confirmed or when they need
 /// to be retried.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tx {
     /// The transaction id on L1
     pub txid: Txid,
@@ -74,7 +81,6 @@ impl Tx {
     }
 
     /// Get all change outputs of this tx.
-    #[allow(unused)]
     pub fn change(&self) -> impl ExactSizeIterator<Item = (OutPoint, &TxOut)> + '_ {
         self.change_idxs.iter().map(|i| {
             let point = OutPoint::new(self.txid, *i as u32);
@@ -216,32 +222,37 @@ impl PegoutScheduler {
     ///
     /// Panics if [pegouts] isn't a strict subset of the transaction's outputs.
     pub fn add_tx(&mut self, tx: Transaction, pegouts: &[TxOut], timestamp: SystemTime) -> &Tx {
-        let mut idxs = (0..tx.output.len()).collect::<Vec<_>>();
         let pegout_idxs = {
-            let mut ret = Vec::with_capacity(idxs.len());
+            let mut ret = Vec::with_capacity(pegouts.len());
             for pegout in pegouts {
-                let idx = idxs
+                let idx = tx
+                    .output
                     .iter()
-                    .find(|i| tx.output[**i] == *pegout)
+                    .position(|txout| *txout == *pegout)
                     .expect("tx doesn't contain all pegouts");
-                ret.push(*idx);
-                idxs.remove(*idx);
+                ret.push(idx);
+            }
+            ret
+        };
+        let change_idxs = {
+            let mut ret = Vec::with_capacity(pegout_idxs.len());
+            for (i, _) in tx.output.iter().enumerate() {
+                if pegout_idxs.contains(&i) {
+                    continue;
+                }
+                ret.push(i);
             }
             ret
         };
         let txid = tx.txid();
-        self.track_tx(Tx {
-            created: timestamp,
-            change_idxs: idxs, // leftover not pegouts is change
-            txid,
-            tx,
-            pegout_idxs,
-        });
+        self.track_tx(Tx { created: timestamp, change_idxs, txid, tx, pegout_idxs });
         self.txs.get(&txid).expect("just put it in")
     }
 
-    /// Get all input utxos that are spent by pending txs.
-    pub fn pending_inputs(&self) -> HashSet<OutPoint> {
+    /// Get all input utxos that are spent by tracked txs.
+    /// This is used by the coordinator to create pegouts that conflict with the inputs of tracked
+    /// txs.
+    pub fn tracked_inputs(&self) -> HashSet<OutPoint> {
         let mut ret = HashSet::with_capacity(self.txs.len() * 3);
         for tx in self.txs.values() {
             ret.extend(tx.inputs());
@@ -498,9 +509,9 @@ pub enum BlockError {
 }
 
 mod tests {
+    use bitcoin_hashes::Hash;
 
-    use crate::test_utils::test_utils::{create_tx, random_txid};
-    use bitcoin::{ScriptBuf, Txid};
+    use crate::test_utils::test_utils::{create_n_outputs_tx, random_txid};
 
     use super::*;
     #[test]
@@ -523,15 +534,66 @@ mod tests {
         assert_eq!(tx.pegouts().count(), 0);
         assert_eq!(tx.change().count(), 0);
 
-        // let dummy_tx = create_tx(1);
-        // let tx2 = Tx {
-        //     txid,
-        //     tx: bitcoin::Transaction {
-        //         version: bitcoin::transaction::Version::TWO,
-        //         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-        //         input: vec![],
-        //         output: vec![],
-        //     },
-        // };
+        // 5 inputs, 2 outputs
+        let dummy_tx = create_n_outputs_tx(5, 2);
+        assert_eq!(dummy_tx.input.len(), 5);
+        assert_eq!(dummy_tx.output.len(), 2);
+        let tx2 = Tx {
+            txid,
+            tx: dummy_tx.clone(),
+            pegout_idxs: vec![0],
+            change_idxs: vec![1],
+            created: SystemTime::now(),
+        };
+
+        assert_eq!(tx2.inputs().count(), 5);
+        assert_eq!(tx2.pegouts().count(), 1);
+        assert_eq!(tx2.change().count(), 1);
+
+        assert_eq!(dummy_tx.output[0], tx2.pegouts().next().unwrap().1.clone());
+        assert_eq!(dummy_tx.output[1], tx2.change().next().unwrap().1.clone());
+    }
+
+    #[test]
+    fn test_track_tx() {
+        let tx = create_n_outputs_tx(3, 3);
+        let pegout_idxs = vec![0, 1];
+        let change_idxs = vec![2];
+
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros());
+
+        let mut pegouts = vec![];
+        for i in pegout_idxs.iter() {
+            pegouts.push(tx.output[*i].clone());
+        }
+        assert_eq!(pegouts.len(), 2);
+        pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+
+        let pending_txs = pegout_scheduler.txs.clone();
+        assert_eq!(pending_txs.len(), 1);
+        let (pending_txid, pending_tx) = pending_txs.into_iter().next().unwrap();
+        assert_eq!(pending_txid, tx.txid());
+        assert_eq!(pending_tx.pegout_idxs, pegout_idxs);
+        assert_eq!(pending_tx.change_idxs, change_idxs);
+
+        // Check the mapping is correct
+        let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
+        assert_eq!(txs_by_pegout.len(), 2);
+        for pegout in pegouts.iter() {
+            assert_eq!(txs_by_pegout.get(pegout).unwrap(), &vec![tx.txid()]);
+        }
+
+        let tx_by_input = pegout_scheduler.txs_by_input.clone();
+        assert_eq!(tx_by_input.len(), 3);
+        for input in tx.input.iter() {
+            assert_eq!(tx_by_input.get(&input.previous_output).unwrap(), &vec![tx.txid()]);
+        }
+
+        let tracked_inputs = pegout_scheduler.tracked_inputs();
+        assert_eq!(tracked_inputs.len(), 3);
+        for input in tx.input.iter() {
+            assert!(tracked_inputs.contains(&input.previous_output));
+        }
     }
 }
