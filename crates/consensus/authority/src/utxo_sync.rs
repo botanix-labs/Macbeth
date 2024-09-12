@@ -167,8 +167,9 @@ where
 mod tests {
     use crate::pbft::tests::FrostHandleMock;
     use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_chainspec::BOTANIX_TESTNET;
     use reth_node_ethereum::EthEvmConfig;
-    use reth_primitives::BOTANIX_TESTNET;
+    //use reth_primitives::BOTANIX_TESTNET;
     use reth_provider::test_utils::{MockEthProvider, TestExecutorFactory};
 
     use super::*;

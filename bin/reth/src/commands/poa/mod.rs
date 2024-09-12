@@ -1073,6 +1073,7 @@ mod tests {
         path::Path,
     };
     use utils::unix_timestamp;
+    use secp256k1::rand;
 
     #[test]
     fn parse_help_node_command() {
@@ -1204,7 +1205,7 @@ mod tests {
         )
         .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let data_dir = cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
@@ -1249,7 +1250,7 @@ mod tests {
             cmd.is_testnet,
         )
         .expect("chain is to exist");
-        let data_dir = cmd.datadir.unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let data_dir = cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }

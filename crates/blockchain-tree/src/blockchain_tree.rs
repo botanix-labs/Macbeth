@@ -1381,11 +1381,12 @@ mod tests {
     use assert_matches::assert_matches;
     use linked_hash_set::LinkedHashSet;
     use reth_btc_wallet::test_utils::MockBitcoindFactory;
+    use reth_chainspec::{ChainSpecBuilder, MAINNET};
     use reth_consensus::test_utils::TestConsensus;
     use reth_db::{tables, test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::transaction::DbTxMut;
     use reth_evm::test_utils::MockExecutorProvider;
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::{execute::EthExecutorProvider, EthEvmConfig};
     #[cfg(not(feature = "optimism"))]
     use reth_primitives::proofs::calculate_receipt_root;
     #[cfg(feature = "optimism")]
@@ -1547,10 +1548,6 @@ mod tests {
         );
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         let consensus = Arc::new(TestConsensus::default());
-        let executor_factory = EvmProcessorFactory::<_, MockBitcoindFactory>::new(
-            chain_spec.clone(),
-            EthEvmConfig::default(),
-        );
         let executor_provider = EthExecutorProvider::ethereum(chain_spec.clone());
 
         {

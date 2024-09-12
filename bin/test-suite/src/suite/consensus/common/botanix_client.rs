@@ -12,7 +12,7 @@ use ethers::{
     types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
 };
-use reth_primitives::BOTANIX_TESTNET;
+use reth_chainspec::BOTANIX_TESTNET;
 use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
 

@@ -72,8 +72,7 @@ mod tests {
     use super::*;
     use reth_beacon_consensus::BeaconEngineMessage;
     use reth_eth_wire::{
-        capability::{Capabilities, Capability},
-        EthVersion, Status,
+        Capabilities, Capability, EthVersion, Status
     };
     use reth_network::{message::PeerRequestSender, PeerRequest};
     use reth_node_ethereum::EthEngineTypes;

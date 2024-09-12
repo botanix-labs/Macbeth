@@ -3,7 +3,8 @@ use reth::{
     consensus_common::utils::{current_inturn_index, unix_timestamp},
     primitives::public_key_to_address,
 };
-use reth_primitives::{header_ext::HeaderExt, BOTANIX_TESTNET, U256};
+use reth_chainspec::BOTANIX_TESTNET;
+use reth_primitives::{header_ext::HeaderExt, U256};
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
 

@@ -12406,6 +12406,7 @@ dependencies = [
  "reth-authority-consensus",
  "reth-botanix-lib",
  "reth-btc-wallet",
+ "reth-chainspec",
  "reth-cli-runner",
  "reth-consensus",
  "reth-ecies",

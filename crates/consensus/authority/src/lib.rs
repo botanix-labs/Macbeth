@@ -429,13 +429,14 @@ impl<EF, BF, DB> StorageInner<EF, BF, DB> {
 mod tests {
     use std::str::FromStr;
 
+    use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
         block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
         is_inturn, validate_against_parent,
     };
     use reth_primitives::{
-        extra_data_header::ExtraDataHeader, public_key_to_address, Bytes, BOTANIX_TESTNET,
+        extra_data_header::ExtraDataHeader, public_key_to_address, Bytes,
     };
 
     use super::*;

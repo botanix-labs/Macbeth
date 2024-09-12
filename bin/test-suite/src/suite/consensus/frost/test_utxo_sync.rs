@@ -11,8 +11,9 @@ use reth::{
     primitives::public_key_to_address,
 };
 use reth_btc_wallet::address::EthAddress;
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{
-    extra_data_header::ExtraDataHeader, header_ext::HeaderExt, BOTANIX_TESTNET, U256,
+    extra_data_header::ExtraDataHeader, header_ext::HeaderExt,U256,
 };
 
 use std::{collections::HashSet, str::FromStr, time::Duration};

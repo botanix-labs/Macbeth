@@ -50,7 +50,7 @@ mod tests {
     use reth_provider::test_utils::{ExtendedAccount, MockEthProvider, NoopProvider};
     use reth_rpc_eth_api::helpers::EthState;
     use reth_rpc_eth_types::{
-        EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle,
+        builder::botanix_config::Botanix, EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle
     };
     use reth_rpc_server_types::constants::{DEFAULT_ETH_PROOF_WINDOW, DEFAULT_PROOF_PERMITS};
     use reth_tasks::pool::BlockingTaskPool;
@@ -75,6 +75,7 @@ mod tests {
             evm_config,
             None,
             DEFAULT_PROOF_PERMITS,
+            Botanix::default(),
         )
     }
 
@@ -101,6 +102,7 @@ mod tests {
             evm_config,
             None,
             DEFAULT_PROOF_PERMITS,
+            Botanix::default(),
         )
     }
 

@@ -24,6 +24,9 @@ pub(crate) fn bsc_chain_spec() -> Arc<ChainSpec> {
         base_fee_params: reth_chainspec::BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: 140_000_000,
         prune_delete_limit: 0,
+        botanix_fee_recipient: None,
+        leader_selection_window: None,
+        parent_confirmation_depth: 0,
     }
     .into()
 }

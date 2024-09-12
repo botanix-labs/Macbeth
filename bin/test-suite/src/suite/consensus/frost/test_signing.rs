@@ -4,7 +4,7 @@ use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
 use client::{SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
-use reth_primitives::BOTANIX_TESTNET;
+use reth_chainspec::BOTANIX_TESTNET;
 
 use crate::{
     it_info_print,
