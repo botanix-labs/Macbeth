@@ -14,10 +14,7 @@ use clap::Parser;
 use futures_util::StreamExt;
 use reth::{
     builder::NodeHandle,
-    cli::{
-        ext::{PoaNodeCommandConfig, RethNodeComponents},
-        Cli,
-    },
+    cli::Cli,
     primitives::{Address, BlockNumberOrTag, IntoRecoveredTransaction},
     revm::{
         inspector_handle_register,
@@ -116,11 +113,6 @@ impl RethCliTxpoolExt {
     }
 }
 
-impl PoaNodeCommandConfig for RethCliTxpoolExt {
-    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
-        Ok(())
-    }
-}
 /// A dummy inspector that logs the opcodes and their corresponding program counter for a
 /// transaction
 #[derive(Default, Debug, Clone)]
