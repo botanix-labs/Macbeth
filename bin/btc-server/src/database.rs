@@ -638,7 +638,7 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::{create_tx, random_p2wpkh_script};
+    use crate::test_utils::test_utils::{create_tx, random_p2wpkh_script};
 
     use super::*;
     use crate::pegout_id::PegoutId;
