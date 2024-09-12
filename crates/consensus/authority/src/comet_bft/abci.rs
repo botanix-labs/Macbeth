@@ -759,3 +759,136 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::{builder::BitcoinCheckpoint, Storage};
+    use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use reth_blockchain_tree::noop::NoopBlockchainTree;
+    use reth_btc_wallet::bitcoind::BitcoindFactory;
+    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_cli_runner::tokio_runtime;
+    use reth_db::{
+        init_db, mdbx::DatabaseArguments, models::client_version::ClientVersion, open_db_read_only,
+    };
+    use reth_node_core::args::TxPoolArgs;
+    use reth_node_core::cli::config::RethTransactionPoolConfig;
+    use reth_node_core::init::init_genesis;
+    use reth_node_ethereum::EthEvmConfig;
+    use reth_primitives::{
+        constants::eip4844::MAINNET_KZG_TRUSTED_SETUP, ChainSpecBuilder, BOTANIX_TESTNET,
+    };
+    use reth_provider::{
+        providers::{BlockchainProvider, ProviderFactory},
+        test_utils::TestExecutorFactory,
+        ExecutorFactory,
+    };
+    use reth_tasks::TaskManager;
+    use reth_transaction_pool::TransactionPool;
+    use reth_transaction_pool::{
+        blobstore::InMemoryBlobStore, Pool as RethPool, TransactionValidationTaskExecutor,
+    };
+    use std::path::Path;
+    use tempfile::tempdir;
+    use tendermint_abci::Application;
+    use tokio::sync::RwLock;
+
+    /// Build the db and the ABCI client
+    fn abci_client_builder() -> ABCIClient<
+        TestExecutorFactory,
+        MockBitcoindFactory,
+        BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+        RethPool<
+            TransactionValidationTaskExecutor<
+                EthTransactionValidator<
+                    BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+                    EthPooledTransaction,
+                >,
+            >,
+            reth_transaction_pool::CoinbaseTipOrdering<EthPooledTransaction>,
+            InMemoryBlobStore,
+        >,
+    > {
+        let secp = secp256k1::Secp256k1::new();
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+
+        // setup db client
+        let temp_dir = tempdir().expect("to create temp dir");
+        let db_path = temp_dir.path().join("db");
+        let db_path = Path::new(&db_path);
+        let db =
+            Arc::new(init_db(db_path.clone(), DatabaseArguments::default()).expect("to init db"));
+        let spec = Arc::new(ChainSpecBuilder::mainnet().build());
+        let factory = ProviderFactory::new(db.clone(), spec.clone(), db_path.join("static_files"))
+            .expect("to create provider factory");
+        let _ = init_genesis(factory.clone()).expect("to init genesis");
+        let client = BlockchainProvider::new(factory, Arc::new(NoopBlockchainTree::default()))
+            .expect("to create blockchain provider");
+
+        let storage = Storage::new(
+            Vec::new(),
+            0,
+            pk,
+            bitcoin::Network::Regtest,
+            Some(pk),
+            Vec::new(),
+            EthEvmConfig::default(),
+            BOTANIX_TESTNET.clone(),
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            TestExecutorFactory::default(),
+            client.clone(),
+        );
+
+        // setup validator with task executor
+        let blob_store = InMemoryBlobStore::default();
+        let tokio_runtime: tokio::runtime::Runtime = tokio_runtime().expect("to create runtime");
+        let task_manager = TaskManager::new(tokio_runtime.handle().clone());
+        let task_executor = task_manager.executor();
+        let validator = TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.clone())
+            .with_head_timestamp(0)
+            .kzg_settings(Arc::clone(&MAINNET_KZG_TRUSTED_SETUP))
+            .with_additional_tasks(1)
+            .build_with_tasks(client, task_executor, blob_store.clone());
+
+        let transaction_pool =
+            RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
+
+        let bitcoin_checkpoint: BitcoinCheckpoint = Arc::new(RwLock::new(None));
+
+        let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
+
+        let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
+
+        let abci_client = ABCIClient::new(
+            storage,
+            validator.validator,
+            transaction_pool,
+            bitcoin_checkpoint,
+            driver_tx,
+            cometbft_rpc_factory,
+        );
+
+        abci_client
+    }
+
+    #[test]
+    fn test_init_chain() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestInitChain::default();
+        let response = abci_client.init_chain(request);
+        println!("{:?}", response);
+
+        let expected_consensus_params = None;
+        let expected_validators = vec![];
+        let expected_genesis_app_hash = abci_client.application_hash(&abci_client.storage.client);
+
+        assert_eq!(response.consensus_params, expected_consensus_params);
+        assert_eq!(response.validators, expected_validators);
+        assert_eq!(response.app_hash, expected_genesis_app_hash);
+    }
+}
