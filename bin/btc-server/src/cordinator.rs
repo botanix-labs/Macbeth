@@ -197,10 +197,10 @@ where
                 Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
             })?;
         // Filter the ones that are still pending and conflict with pending txs.
-        let pending_inputs = self.pegout_scheduler.lock().await.pending_inputs();
+        let tracked_inputs = self.pegout_scheduler.lock().await.tracked_inputs();
         let available_utxos = utxos
             .into_iter()
-            .filter(|(p, _u)| !pending_inputs.contains(p))
+            .filter(|(p, _u)| !tracked_inputs.contains(p))
             .collect::<HashMap<_, _>>();
 
         let to_bdk = |u: &Utxo| {
