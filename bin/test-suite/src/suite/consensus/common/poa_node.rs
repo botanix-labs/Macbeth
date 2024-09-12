@@ -9,18 +9,18 @@ use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus
 use ethers::core::types::Address as EtherAddress;
 use reth::{
     args::FedMemberPubKey,
-    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
+    cli::ext::{PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
-    network::{PeerInfo, PeerKind, Peers},
+    network::{PeerInfo, Peers},
 };
-use reth_network_types::pk2id;
+use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
+use reth_cli_commands::node::NoArgs;
+use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
-    create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    ChainSpec, BOTANIX_TESTNET,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -184,7 +184,7 @@ impl FederationMemberTestConfig {
 
     pub fn build_command(
         &self,
-        edh_authorities_list: Arc<Vec<PublicKey>>,
+        edh_authorities_list: Arc<Vec<PublicKey>>, 
     ) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));

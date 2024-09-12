@@ -4,7 +4,7 @@ use crate::{
 };
 use client::SigningStatus;
 use reth_primitives::{Receipt, B256};
-use reth_provider::chain::BlockReceipts;
+use reth_provider::BlockReceipts;
 use std::collections::HashMap;
 
 pub const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";

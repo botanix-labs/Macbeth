@@ -1060,8 +1060,6 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::ext::NoArgs;
-
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use reth_node_core::args::{

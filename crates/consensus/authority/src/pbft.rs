@@ -923,7 +923,7 @@ pub(crate) mod tests {
         Header, B256,
     };
     use reth_provider::{
-        test_utils::{MockEthProvider, TestExecutorFactory},
+        test_utils::MockEthProvider,
         HeaderProvider,
     };
     use secp256k1::SECP256K1;

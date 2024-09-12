@@ -99,7 +99,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
         .unwrap()
         .unwrap();
 
-    let mut eth_clients = suite.local_context.eth_providers.clone().unwrap();
+    let eth_clients = suite.local_context.eth_providers.clone().unwrap();
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
@@ -180,7 +180,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     assert_eq!(hash_set.len(), 1);
 
     // Lets comapre the merkel root of the utxo set from the btc server with the latest block header
-    let mut latest_extra_data = eth_clients[0].get_latest_block().await.unwrap().extra_data;
+    let latest_extra_data = eth_clients[0].get_latest_block().await.unwrap().extra_data;
 
     let latest_edh = ExtraDataHeader::deserialize(&mut latest_extra_data.reader()).unwrap();
     let latest_utxo_commitment = latest_edh.utxo_commitment;

@@ -249,7 +249,7 @@ mod tests {
         absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
         BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
-    use secp256k1::rand;
+    use bitcoin::secp256k1::rand;
     use super::*;
 
     #[test]

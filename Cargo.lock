@@ -3748,6 +3748,7 @@ name = "example-custom-inspector"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "futures-util",
  "reth",
  "reth-node-ethereum",
@@ -3859,6 +3860,7 @@ name = "example-node-custom-rpc"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "jsonrpsee",
  "reth",
  "reth-node-ethereum",
@@ -3929,6 +3931,7 @@ name = "example-txpool-tracing"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "eyre",
  "futures-util",
  "reth",
  "reth-node-ethereum",
@@ -12407,9 +12410,11 @@ dependencies = [
  "reth-botanix-lib",
  "reth-btc-wallet",
  "reth-chainspec",
+ "reth-cli-commands",
  "reth-cli-runner",
  "reth-consensus",
  "reth-ecies",
+ "reth-network-peers",
  "reth-network-types",
  "reth-node-core",
  "reth-primitives",
