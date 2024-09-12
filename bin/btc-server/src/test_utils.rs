@@ -8,9 +8,9 @@ pub mod test_utils {
     };
 
     use bitcoin::{
-        absolute::LockTime, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
-        secp256k1::SECP256K1, Address, Amount, BlockHash, FeeRate, OutPoint, ScriptBuf, Sequence,
-        Transaction, TxIn, Txid,
+        absolute::LockTime, block::Header, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
+        secp256k1::SECP256K1, Address, Amount, Block, BlockHash, FeeRate, OutPoint, ScriptBuf,
+        Sequence, Transaction, TxIn, Txid,
     };
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
@@ -227,6 +227,40 @@ pub mod test_utils {
             input: inputs,
             output: outputs,
         }
+    }
+
+    pub fn create_block(txs: Vec<Transaction>, prev_hash: bitcoin::BlockHash) -> Block {
+        let coin_base_input = TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([0u8; 32]), 0xFFFFFFFF),
+            script_sig: bitcoin::Script::builder()
+                .push_opcode(bitcoin::opcodes::all::OP_PUSHBYTES_3)
+                // This harcodes the height of the block. Could change in the future
+                .push_slice(&[10u8; 3])
+                .into_script(),
+            sequence: bitcoin::Sequence::MAX,
+            witness: bitcoin::Witness::default(),
+        };
+        let coinbase_tx = Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![coin_base_input],
+            output: vec![],
+        };
+        let mut txdata = vec![coinbase_tx];
+        txdata.extend(txs);
+        let block = Block {
+            header: Header {
+                version: bitcoin::blockdata::block::Version::TWO,
+                prev_blockhash: prev_hash,
+                merkle_root: bitcoin::TxMerkleNode::all_zeros(),
+                time: 100,
+                bits: bitcoin::CompactTarget::from_consensus(0),
+                nonce: 0,
+            },
+            txdata,
+        };
+
+        block
     }
 
     pub fn create_n_outputs_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
