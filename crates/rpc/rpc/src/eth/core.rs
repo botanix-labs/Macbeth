@@ -390,7 +390,7 @@ mod tests {
     };
     use reth_rpc_eth_api::EthApiServer;
     use reth_rpc_eth_types::{
-        EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle,
+        builder::botanix_config::Botanix, EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle
     };
     use reth_rpc_server_types::constants::{DEFAULT_ETH_PROOF_WINDOW, DEFAULT_PROOF_PERMITS};
     use reth_rpc_types::FeeHistory;

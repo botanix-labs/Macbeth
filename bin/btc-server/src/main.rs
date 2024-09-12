@@ -26,9 +26,7 @@ mod rpc {
 }
 
 use std::{
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, SystemTime},
+    net::SocketAddr, path::Path, sync::Arc, time::{Duration, SystemTime}
 };
 
 use bitcoin::{BlockHash, Transaction, TxOut};
@@ -127,6 +125,14 @@ impl App {
         }
     }
 
+    fn get_or_create_jwt_secret_from_path(path: &Path) -> Result<JwtSecret, JwtError> {
+        if path.exists() {
+            JwtSecret::from_file(path)
+        } else {
+            JwtSecret::try_create_random(path)
+        }
+    }
+
     pub fn new(config: Config) -> Result<Self, Error> {
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
@@ -148,7 +154,7 @@ impl App {
         let mut btc_signing_server_jwt_secret = None;
         if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
             btc_signing_server_jwt_secret = Some(
-                get_or_create_jwt_secret_from_path(btc_signing_server_jwt_path)
+                Self::get_or_create_jwt_secret_from_path(btc_signing_server_jwt_path)
                     .map_err(Error::Jwt)?,
             )
         };
