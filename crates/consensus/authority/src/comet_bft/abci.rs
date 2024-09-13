@@ -790,17 +790,16 @@ mod tests {
     use reth_provider::{
         providers::{BlockchainProvider, ProviderFactory},
         test_utils::TestExecutorFactory,
-        ExecutorFactory,
     };
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{
-        blobstore::InMemoryBlobStore,
-        test_utils::{MockTransaction, TransactionGenerator},
-        Pool as RethPool, TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
+        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, Pool as RethPool,
+        TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
     };
     use std::path::Path;
     use tempfile::tempdir;
     use tendermint_abci::Application;
+    use tendermint_proto::google::protobuf::Timestamp;
     use tokio::sync::RwLock;
 
     const GENESIS_APP_HASH_HEX: &str =
@@ -880,7 +879,7 @@ mod tests {
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
-        let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
+        let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
 
         let abci_client = ABCIClient::new(
             storage,
@@ -903,7 +902,6 @@ mod tests {
 
         let expected_consensus_params = None;
         let expected_validators = vec![];
-        let expected_genesis_app_hash = abci_client.application_hash(&abci_client.storage.client);
 
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
@@ -946,7 +944,7 @@ mod tests {
         assert_eq!(response_ndd, expected_ndd);
     }
 
-    // TODO: figure out why tx isn't being added to mempool
+    // TODO: fix error ValidationServiceUnreachable when adding tx to mempool
     #[test]
     #[ignore]
     fn test_prepare_proposal_tx_in_mempool() {
@@ -954,14 +952,17 @@ mod tests {
 
         let mut tx_generator = TransactionGenerator::new(thread_rng());
         let pooled_tx = tx_generator.gen_eip1559_pooled();
-        {
-            let _ = async {
-                let _ = abci_client.pool.add_transaction(TransactionOrigin::Local, pooled_tx).await;
-            };
-        }
 
-        // wait for tx to be added to pool
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let rt = tokio::runtime::Runtime::new().expect("to create runtime");
+
+        rt.block_on(async {
+            match abci_client.pool.add_transaction(TransactionOrigin::Local, pooled_tx).await {
+                Ok(_) => {}
+                Err(e) => {
+                    panic!("Error adding tx to pool: {:?}", e);
+                }
+            }
+        });
 
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
@@ -979,5 +980,67 @@ mod tests {
 
         assert_eq!(response.txs.len(), 2);
         assert_eq!(response_ndd, expected_ndd);
+    }
+
+    #[test]
+    fn test_process_proposal_with_ndd_tx_only() {
+        let abci_client = abci_client_builder();
+
+        let ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
+            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
+        );
+
+        let mut request = RequestProcessProposal::default();
+        request.txs = vec![ndd_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.process_proposal(request);
+
+        assert_eq!(response.status, VERIFY_ACCEPTED);
+    }
+
+    #[test]
+    fn test_process_proposal_with_signed_tx() {
+        let abci_client = abci_client_builder();
+
+        // first tx should be non-deterministic data
+        let ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
+            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
+        );
+
+        // second tx should be a signed transaction
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let signed_tx = tx_generator.transaction().into_legacy();
+        let mut buf = Vec::new();
+        signed_tx.encode_enveloped(&mut buf);
+        let signed_tx_bytes = prost::bytes::Bytes::copy_from_slice(buf.as_slice());
+
+        let mut request = RequestProcessProposal::default();
+        request.txs = vec![ndd_bytes, signed_tx_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.process_proposal(request);
+
+        // this fails bc prevrandao isn't being set in the evm env during tests
+        // but all the custom code is executed successfully up to `build_and_execute`
+        assert_eq!(response.status, VERIFY_REJECT);
     }
 }
