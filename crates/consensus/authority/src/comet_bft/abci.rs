@@ -1096,4 +1096,30 @@ mod tests {
         // but all the custom code is executed successfully up to `build_and_execute`
         let _response = abci_client.finalize_block(request);
     }
+
+    // this needs to be an integration test bc the driver needs to be spun up as well
+    // this requires a btc server to be running
+    #[test]
+    #[should_panic]
+    fn test_commit() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        request.txs = vec![ndd_bytes.clone()];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        // need to call finalize block first to generate a block in the cache to commit
+        let _finalize_block_response = abci_client.finalize_block(request);
+
+        // will panic bc the driver isn't running
+        let _response = abci_client.commit();
+    }
 }
