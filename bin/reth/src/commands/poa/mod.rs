@@ -52,7 +52,7 @@ use reth_network::{
     frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEventListenerProvider, NetworkManager
 };
 use reth_node_builder::{
-    launch_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
+    launch_poa_rpc_servers, launch_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
 };
 use reth_node_core::{
     args::{
@@ -688,13 +688,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
 
-        // TODO: check again
-        // needed for on_node_started
-        // let components = RethNodeComponents {
-        //     executor: executor.clone(),
-        //     db: blockchain_db.clone(),
-        //     network: network_handle.clone(),
-        // };
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
         let consensus_engine_stream = UnboundedReceiverStream::from(consensus_engine_rx)
@@ -891,19 +884,19 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
         // TODO: fix me
-        // before: launch_poa_rpc_servers
-        // let (_rpc_server_handle, _auth_server_handle) = launch_rpc_servers(
-        //     rpc,
-        //     &node_config,
-        //     blockchain_db,
-        //     transaction_pool,
-        //     network_handle.clone(),
-        //     executor.clone(),
-        //     evm_config,
-        //     engine_api,
-        //     reth_auth_jwt_secret,
-        // )
-        // .await?;
+        // original: launch_rpc_servers
+        let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
+            rpc,
+            &node_config,
+            blockchain_db,
+            transaction_pool,
+            network_handle.clone(),
+            executor.clone(),
+            evm_config,
+            engine_api,
+            reth_auth_jwt_secret,
+        )
+        .await?;
 
         // Run consensus engine to completion
         let (tx, rx) = oneshot::channel();
