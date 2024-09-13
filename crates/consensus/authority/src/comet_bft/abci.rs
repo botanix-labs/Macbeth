@@ -238,6 +238,15 @@ where
         payload_config
     }
 
+    pub(crate) fn non_deterministic_data_bytes(&self) -> prost::bytes::Bytes {
+        let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
+        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
+            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
+        );
+
+        ndd_bytes
+    }
+
     pub(crate) fn aggregate_public_key(&self) -> secp256k1::PublicKey {
         self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk exists")
     }
@@ -297,16 +306,8 @@ where
         info!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
 
-        let non_deterministic_data =
-            NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
-
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
-            non_deterministic_data
-                .serialize()
-                .expect("non deterministic data to be serialized")
-                .as_slice(),
-        );
+        let non_deterministic_data_bytes = self.non_deterministic_data_bytes();
         if self.pool.pool_size().total == 0 {
             info!("No transactions in pool, waiting...");
 
@@ -774,12 +775,10 @@ mod tests {
     use comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use rand::thread_rng;
     use reth_blockchain_tree::noop::NoopBlockchainTree;
+    use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
-    use reth_btc_wallet::{bitcoind::BitcoindFactory, transaction};
     use reth_cli_runner::tokio_runtime;
-    use reth_db::{
-        init_db, mdbx::DatabaseArguments, models::client_version::ClientVersion, open_db_read_only,
-    };
+    use reth_db::{init_db, mdbx::DatabaseArguments};
     use reth_node_core::args::TxPoolArgs;
     use reth_node_core::cli::config::RethTransactionPoolConfig;
     use reth_node_core::init::init_genesis;
@@ -986,15 +985,10 @@ mod tests {
     fn test_process_proposal_with_ndd_tx_only() {
         let abci_client = abci_client_builder();
 
-        let ndd = NonDeterministicData::new(
-            abci_client.bitcoin_blockhash(),
-            abci_client.aggregate_public_key(),
-        );
-        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
-            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
-        );
-
         let mut request = RequestProcessProposal::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
         request.txs = vec![ndd_bytes];
 
         let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
@@ -1013,13 +1007,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         // first tx should be non-deterministic data
-        let ndd = NonDeterministicData::new(
-            abci_client.bitcoin_blockhash(),
-            abci_client.aggregate_public_key(),
-        );
-        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
-            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
-        );
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
@@ -1042,5 +1030,70 @@ mod tests {
         // this fails bc prevrandao isn't being set in the evm env during tests
         // but all the custom code is executed successfully up to `build_and_execute`
         assert_eq!(response.status, VERIFY_REJECT);
+    }
+
+    #[test]
+    fn test_finalize_block_with_ndd_tx_only() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        request.txs = vec![ndd_bytes.clone()];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.finalize_block(request);
+
+        // get newly made block from cache to recreate expected app hash
+        let mut rw_lock = abci_client.block_cache.write().expect("should get lock");
+        let sealed_block_with_peg = rw_lock.pop_newest().expect("to have block");
+        let expected_app_hash =
+            prost::bytes::Bytes::copy_from_slice(&sealed_block_with_peg.1.block().hash().0);
+
+        let expected_response = ResponseFinalizeBlock {
+            events: vec![],
+            tx_results: vec![ExecTxResult { code: SUCCESS, data: ndd_bytes, ..Default::default() }],
+            validator_updates: vec![],
+            consensus_param_updates: None,
+            app_hash: expected_app_hash,
+        };
+
+        assert_eq!(response, expected_response);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_finalize_block_with_signed_tx() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        // first tx should be non-deterministic data
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        // second tx should be a signed transaction
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let signed_tx = tx_generator.transaction().into_legacy();
+        let mut buf = Vec::new();
+        signed_tx.encode_enveloped(&mut buf);
+        let signed_tx_bytes = prost::bytes::Bytes::copy_from_slice(buf.as_slice());
+
+        request.txs = vec![ndd_bytes.clone(), signed_tx_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        // this should panic bc prevrandao isn't being set in the evm env during tests
+        // but all the custom code is executed successfully up to `build_and_execute`
+        let _response = abci_client.finalize_block(request);
     }
 }
