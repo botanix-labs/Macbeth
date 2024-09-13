@@ -433,7 +433,7 @@ mod tests {
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
         block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
-        is_inturn, validate_against_parent,
+        is_inturn,
     };
     use reth_primitives::{
         extra_data_header::ExtraDataHeader, public_key_to_address, Bytes,

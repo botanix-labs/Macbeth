@@ -6,25 +6,26 @@ use std::{
 };
 
 use futures::TryFutureExt;
-use reth_chainspec::{ChainSpec, BOTANIX_TESTNET};
-use reth_evm::ConfigureEvm;
-use reth_network::{NetworkInfo, Peers};
-use reth_node_api::{BuilderProvider, EngineTypes, FullNodeComponents};
+use reth_chainspec::ChainSpec;
+use reth_network::NetworkInfo;
+use reth_node_api::{BuilderProvider, FullNodeComponents};
 use reth_node_core::{
-    args::RpcServerArgs, node_config::NodeConfig, rpc::{api::EngineApiServer, eth::FullEthApiServer}
+    node_config::NodeConfig, rpc::{api::EngineApiServer, eth::FullEthApiServer}
 };
 use reth_payload_builder::PayloadBuilderHandle;
+<<<<<<< HEAD
 use reth_provider::{AccountReader, BlockReaderIdExt, CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, StateProviderFactory};
 use reth_rpc::{EngineApi, EthApi};
+=======
+>>>>>>> 9a95925d5 (apply project wide import warning fixes via cargo --fix-all)
 use reth_rpc_builder::{
     auth::{AuthRpcModule, AuthServerHandle},
     config::RethRpcServerConfig,
     RpcModuleBuilder, RpcRegistryInner, RpcServerHandle, TransportRpcModules,
 };
 use reth_rpc_layer::JwtSecret;
-use reth_tasks::{TaskExecutor, TaskSpawner};
+use reth_tasks::TaskExecutor;
 use reth_tracing::tracing::{debug, info};
-use reth_transaction_pool::TransactionPool;
 
 use crate::{EthApiBuilderCtx, RpcAddOns};
 

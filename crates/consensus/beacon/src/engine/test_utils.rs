@@ -6,8 +6,6 @@ use crate::{
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
 };
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
-use reth_config::config::EtlConfig;
 use reth_chainspec::ChainSpec;
 use reth_config::config::StageConfig;
 use reth_consensus::{test_utils::TestConsensus, Consensus};

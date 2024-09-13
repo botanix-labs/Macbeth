@@ -9,7 +9,6 @@ use reth_network::NetworkEvent;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_tokio_util::EventStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
 pub struct SyncController<Engine: EngineTypes> {

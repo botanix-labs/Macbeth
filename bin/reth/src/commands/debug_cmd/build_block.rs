@@ -1,11 +1,4 @@
 //! Command for debugging block building.
-use crate::{
-    args::{
-        utils::{chain_help, genesis_value_parser, SUPPORTED_CHAINS},
-        DatabaseArgs,
-    },
-    dirs::{DataDirPath, MaybePlatformPath},
-};
 use crate::macros::block_executor;
 use alloy_rlp::Decodable;
 use clap::Parser;
@@ -17,7 +10,6 @@ use reth_beacon_consensus::EthBeaconConsensus;
 use reth_blockchain_tree::{
     BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
 };
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_commands::common::{AccessRights, Environment, EnvironmentArgs};
 use reth_cli_runner::CliContext;
 use reth_consensus::Consensus;

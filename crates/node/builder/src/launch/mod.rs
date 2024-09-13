@@ -7,7 +7,6 @@ pub(crate) mod engine;
 
 pub use common::LaunchContext;
 pub use exex::ExExLauncher;
-use eyre::Context;
 use reth_btc_wallet::{bitcoind::{BitcoindFactory, BitcoindConfig}, test_utils::MockBitcoindFactory};
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 
@@ -26,7 +25,7 @@ use reth_exex::ExExManagerHandle;
 use reth_network::{BlockDownloaderProvider, NetworkEventListenerProvider};
 use reth_node_api::{FullNodeComponents, FullNodeTypes, NodeAddOns};
 use reth_node_core::{
-    args::BitcoindArgs, cli::config::BtcServerConfig, dirs::{ChainPath, DataDirPath}, exit::NodeExitFuture, rpc::eth::{helpers::AddDevSigners, FullEthApiServer}, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}
+    cli::config::BtcServerConfig, dirs::{ChainPath, DataDirPath}, exit::NodeExitFuture, rpc::eth::{helpers::AddDevSigners, FullEthApiServer}, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}
 };
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_primitives::format_ether;

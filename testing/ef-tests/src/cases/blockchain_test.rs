@@ -6,9 +6,6 @@ use crate::{
 };
 use alloy_rlp::Decodable;
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
-use reth_db::test_utils::{create_test_rw_db, create_test_static_files_dir};
-use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{BlockBody, SealedBlock, StaticFileSegment};
 use reth_provider::{
     providers::StaticFileWriter, test_utils::create_test_provider_factory_with_chain_spec,

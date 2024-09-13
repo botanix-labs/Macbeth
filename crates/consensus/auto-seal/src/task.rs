@@ -1,7 +1,6 @@
 use crate::{mode::MiningMode, Storage};
 use futures_util::{future::BoxFuture, FutureExt};
 use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_chainspec::ChainSpec;
 use reth_engine_primitives::EngineTypes;
 use reth_evm::execute::BlockExecutorProvider;

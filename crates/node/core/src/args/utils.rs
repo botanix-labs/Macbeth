@@ -3,8 +3,7 @@
 use alloy_genesis::Genesis;
 use reth_chainspec::{create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_TESTNET, DEV};
 use reth_fs_util as fs;
-use reth_primitives::{constants::nums_secp256k1_pk, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, B256};
-use reth_rpc_types::BlockHashOrNumber;
+use reth_primitives::{constants::nums_secp256k1_pk, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}};
 use tracing::info;
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use askama::Template;

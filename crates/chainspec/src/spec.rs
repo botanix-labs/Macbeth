@@ -23,7 +23,6 @@ use reth_trie_common::root::state_root_ref_unhashed;
 use std::sync::Arc;
 
 use askama::Template;
-use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "optimism")]
 use reth_ethereum_forks::OptimismHardfork;

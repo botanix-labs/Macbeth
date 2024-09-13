@@ -1,14 +1,10 @@
 //! Collection of methods for block validation.
 
-use std::collections::{hash_map::Entry, HashMap};
 
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    constants::{
-        eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
-        MAXIMUM_EXTRA_DATA_SIZE,
-    },
+    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
     eip4844::calculate_excess_blob_gas,
     EthereumHardfork, GotExpected, Header, SealedBlock, SealedHeader,
 };

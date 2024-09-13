@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::ConfigureEvm;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;

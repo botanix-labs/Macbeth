@@ -9,7 +9,6 @@ use reth_rpc_server_types::constants::{
     default_max_tracing_requests, DEFAULT_ETH_PROOF_WINDOW, DEFAULT_MAX_BLOCKS_PER_FILTER,
     DEFAULT_MAX_LOGS_PER_RESPONSE, DEFAULT_PROOF_PERMITS,
 };
-use serde::{Deserialize, Serialize};
 
 use super::botanix_config::BotanixConfig;
 

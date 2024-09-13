@@ -9,7 +9,6 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
     transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
-use reth_rpc_eth_types::builder::botanix_config::{BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError};
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
     botanix::GatewayAddress, serde_helpers::JsonStorageKey, simulate::{SimBlock, SimulatedBlock}, state::{EvmOverrides, StateOverride}, AnyTransactionReceipt, Block, BlockOverrides, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Header, Index, RichBlock, StateContext, SyncStatus, Transaction, TransactionRequest, Work

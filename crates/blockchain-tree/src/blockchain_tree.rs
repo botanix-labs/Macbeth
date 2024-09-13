@@ -1380,13 +1380,13 @@ mod tests {
     use alloy_genesis::{Genesis, GenesisAccount};
     use assert_matches::assert_matches;
     use linked_hash_set::LinkedHashSet;
-    use reth_btc_wallet::test_utils::MockBitcoindFactory;
+    
     use reth_chainspec::{ChainSpecBuilder, MAINNET};
     use reth_consensus::test_utils::TestConsensus;
     use reth_db::{tables, test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::transaction::DbTxMut;
     use reth_evm::test_utils::MockExecutorProvider;
-    use reth_evm_ethereum::{execute::EthExecutorProvider, EthEvmConfig};
+    use reth_evm_ethereum::execute::EthExecutorProvider;
     #[cfg(not(feature = "optimism"))]
     use reth_primitives::proofs::calculate_receipt_root;
     #[cfg(feature = "optimism")]

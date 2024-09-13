@@ -1,8 +1,7 @@
 //! Contains RPC handler implementations specific to botanix.
 
-use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProviderFactory};
-use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, EthBlocks, LoadBlock, LoadPendingBlock, SpawnBlocking};
-use reth_rpc_eth_types::EthStateCache;
+use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
+use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, EthBlocks, LoadBlock, LoadPendingBlock};
 use reth_chainspec::ChainSpec;
 use crate::EthApi;
 

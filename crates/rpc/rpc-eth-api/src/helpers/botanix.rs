@@ -1,42 +1,21 @@
 //! Loads a pending block from database. Helper trait for `eth_` block, transaction, call and trace
 //! RPC methods.
 
-use std::time::{Duration, Instant};
 
 use futures::Future;
-use reth_chainspec::{ChainSpec, EthereumHardforks};
-use reth_evm::{system_calls::pre_block_beacon_root_contract_call, ConfigureEvm, ConfigureEvmEnv};
-use reth_execution_types::ExecutionOutcome;
-use reth_primitives::{
-    constants::{eip4844::MAX_DATA_GAS_PER_BLOCK, BEACON_NONCE, EMPTY_ROOT_HASH},
-    proofs::calculate_transaction_root,
-    revm_primitives::{
-        BlockEnv, CfgEnv, CfgEnvWithHandlerCfg, EVMError, Env, ExecutionResult, InvalidTransaction,
-        ResultAndState, SpecId,
-    },
-    Block, BlockNumber, Header, IntoRecoveredTransaction, Receipt, Requests,
-    SealedBlockWithSenders, SealedHeader, TransactionSignedEcRecovered, B256,
-    EMPTY_OMMER_ROOT_HASH, U256,
-};
+use reth_chainspec::ChainSpec;
+use reth_primitives::U256;
 use reth_provider::{
-    BlockReader, BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, ProviderError,
+    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider,
     StateProviderFactory,
 };
-use reth_revm::{
-    database::StateProviderDatabase, state_change::post_block_withdrawals_balance_increments,
-};
 use reth_rpc_eth_types::{
-    builder::botanix_config::Botanix, pending_block::pre_block_blockhashes_update, EthApiError, PendingBlock, PendingBlockEnv, PendingBlockEnvOrigin
+    builder::botanix_config::Botanix, EthApiError
 };
-use reth_transaction_pool::{BestTransactionsAttributes, TransactionPool};
-use revm::{db::states::bundle_state::BundleRetention, DatabaseCommit, State};
 use revm_primitives::Address;
-use tokio::sync::Mutex;
-use tracing::debug;
 
-use crate::{EthApiTypes, FromEthApiError, FromEvmError};
+use crate::EthApiTypes;
 
-use super::SpawnBlocking;
 
 /// Loads a pending block from database.
 ///

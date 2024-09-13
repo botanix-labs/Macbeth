@@ -53,7 +53,7 @@ use crate::{
     },
     import::{BlockImport, BlockImportOutcome, BlockValidation},
     listener::ConnectionListener,
-    message::{NewBlockMessage, PeerMessage, PeerRequestSender},
+    message::{NewBlockMessage, PeerMessage},
     metrics::{
         DisconnectMetrics, NetworkMetrics, NETWORK_FROST_SCOPE, NETWORK_POOL_TRANSACTIONS_SCOPE,
     },
@@ -67,14 +67,13 @@ use crate::{
     transactions::NetworkTransactionEvent,
     FetchClient, NetworkBuilder, NetworkProtocols,
 };
-use futures::{pin_mut, Future, StreamExt};
+use futures::{Future, StreamExt};
 use parking_lot::Mutex;
 use reth_eth_wire::{
     Capabilities, capability::CapabilityMessage,
-    DisconnectReason, EthVersion, Status,
+    DisconnectReason,
 };
 use reth_network_api::ReputationChangeKind;
-use reth_primitives::ForkId;
 
 #[cfg_attr(doc, aquamarine::aquamarine)]
 /// Manages the _entire_ state of the network.

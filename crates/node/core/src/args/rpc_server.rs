@@ -2,7 +2,7 @@
 
 use std::{
     ffi::OsStr,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr},
     path::PathBuf,
 };
 
@@ -13,17 +13,13 @@ use clap::{
 };
 use rand::Rng;
 use reth_cli_util::parsers::parse_grpc_address;
-use reth_network::NetworkInfo;
-use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProviderFactory};
-use reth_rpc_eth_types::{builder::botanix_config::BotanixConfig, EthConfig, EthStateCacheConfig, GasPriceOracleConfig};
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
-use reth_transaction_pool::TransactionPool;
 use url::Url;
 
 use crate::{args::{
     types::{MaxU32, ZeroAsNoneU64},
     GasPriceOracleArgs, RpcStateCacheArgs,
-}, cli::config::BtcServerConfig, utils::get_or_create_jwt_secret_from_path};
+}, cli::config::BtcServerConfig};
 
 use super::{bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, BitcoindArgs};
 

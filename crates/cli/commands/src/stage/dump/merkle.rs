@@ -1,6 +1,5 @@
 use super::setup;
 use eyre::Result;
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_config::config::EtlConfig;
 use reth_db::{tables, DatabaseEnv};
 use reth_db_api::{database::Database, table::TableImporter};

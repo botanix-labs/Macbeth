@@ -18,7 +18,7 @@ use tokio::sync::{
     RwLock,
 };
 use tracing::{error, info, warn};
-use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
+use reth_evm::execute::BlockExecutorProvider;
 use crate::{
     engine_util,
     excecution_utils::authority_execution_utils::execute_imported_block,

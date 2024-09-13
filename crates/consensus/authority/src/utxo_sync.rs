@@ -11,7 +11,7 @@ use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
+use reth_evm::execute::BlockExecutorProvider;
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
 use reth_provider::{BlockReaderIdExt, ProviderError};
 use tokio::sync::mpsc::error::SendError;

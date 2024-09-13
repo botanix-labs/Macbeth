@@ -6,18 +6,18 @@ pub(crate) mod authority_execution_utils {
         get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
     };
     use reth_evm::execute::{BatchExecutor, BlockExecutorProvider};
-    use reth_evm_ethereum::execute::{EthBatchExecutor, EthBlockExecutor};
+    use reth_evm_ethereum::execute::EthBlockExecutor;
     use reth_execution_errors::{BlockExecutionError, BlockValidationError, InternalBlockExecutionError};
     use reth_chainspec::ChainSpec;
-    use reth_node_ethereum::{EthEvmConfig, EthExecutorProvider};
+    use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
-        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT}, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, header_ext::HeaderExt, proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256
+        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT}, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, header_ext::HeaderExt, proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256
     };
     use reth_provider::{
         BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome, ProviderError, StateProviderFactory
     };
     use reth_revm::{
-        database::StateProviderDatabase, db::{states::bundle_state::BundleRetention, BundleState, State},
+        database::StateProviderDatabase, db::State,
     };
     use reth_evm::execute::Executor;
 

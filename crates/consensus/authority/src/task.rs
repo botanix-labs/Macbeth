@@ -14,7 +14,7 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
+use reth_evm::execute::BlockExecutorProvider;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{

@@ -8,12 +8,7 @@ use crate::{
     dirs::{ChainPath, DataDirPath},
     utils::get_single_header,
 };
-use reth_discv5::discv5::ListenConfig;
-use reth_config::{config::PruneConfig, Config};
-use reth_network::{
-    config::NetworkMode, frost::manager::FrostConfig, import::BlockImport, NetworkBuilder,
-    NetworkConfig, NetworkManager,
-};
+use reth_config::config::PruneConfig;
 use eyre::eyre;
 use reth_chainspec::{ChainSpec, MAINNET};
 use reth_db_api::database::Database;

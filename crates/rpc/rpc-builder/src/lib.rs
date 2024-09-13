@@ -174,7 +174,6 @@ use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthConfig, EthStateCa
 use reth_rpc_layer::{AuthLayer, Claims, JwtAuthValidator, JwtSecret};
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
-use serde::{Deserialize, Serialize};
 use tower::Layer;
 use tower_http::cors::CorsLayer;
 

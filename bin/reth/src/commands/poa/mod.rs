@@ -10,7 +10,6 @@ use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_engine_util::EngineMessageStreamExt;
-use reth_evm::builder::{EvmFactory, RethEvmBuilder};
 use reth_network_peers::pk2id;
 use reth_node_metrics::recorder::install_prometheus_recorder;
 use reth_prune::PruneModes;
@@ -66,12 +65,11 @@ use reth_node_ethereum::{EthEvmConfig, EthExecutorProvider};
 use reth_node_events::node::handle_events;
 use reth_primitives::{
     constants::ETHEREUM_BLOCK_GAS_LIMIT,
-    kzg::KzgSettings,
     Bytes, Head,
 };
 use reth_provider::{
     providers::{BlockchainProvider, StaticFileProvider}, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
-    ProviderFactory, StageCheckpointReader, StaticFileProviderFactory,
+    ProviderFactory, StageCheckpointReader,
 };
 use reth_revm::primitives::EnvKzgSettings;
 use reth_rpc::EngineApi;
@@ -90,7 +88,6 @@ use crate::{
         DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
         RpcServerArgs, TxPoolArgs,
     },
-    dirs::{DataDirPath, MaybePlatformPath},
     payload::PayloadBuilderService,
 };
 
@@ -1056,14 +1053,14 @@ mod tests {
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use reth_node_core::args::{
-        utils::{get_botanix_chain, SUPPORTED_CHAINS},
+        utils::get_botanix_chain,
         FedMemberPubKey, FederationTomlConfig,
     };
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
-    use utils::unix_timestamp;
+    
     use secp256k1::rand;
 
     #[test]

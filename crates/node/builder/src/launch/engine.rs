@@ -5,7 +5,6 @@ use reth_beacon_consensus::{
     hooks::{EngineHooks, StaticFileHook},
     BeaconConsensusEngineHandle,
 };
-use eyre::Context;
 use reth_blockchain_tree::BlockchainTreeConfig;
 use reth_btc_wallet::{bitcoind::{BitcoindConfig, BitcoindFactory}, test_utils::MockBitcoindFactory};
 use reth_chainspec::ChainSpec;
@@ -14,7 +13,6 @@ use reth_engine_tree::{
     engine::{EngineApiRequest, EngineRequestHandler},
     tree::TreeConfig,
 };
-use reth_node_core::args::BitcoindArgs;
 use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_rpc_eth_types::builder::botanix_config::BotanixConfig;
 use reth_engine_util::EngineMessageStreamExt;
@@ -32,7 +30,6 @@ use reth_node_core::{
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_provider::providers::BlockchainProvider2;
 use reth_rpc_engine_api::{capabilities::EngineCapabilities, EngineApi};
-use reth_rpc_layer::JwtSecret;
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;

@@ -8,7 +8,7 @@ use reth_errors::{RethError, RethResult};
 use reth_network_api::NetworkInfo;
 use reth_primitives::{Address, U256, U64};
 use reth_provider::{BlockNumReader, ChainSpecProvider, StageCheckpointReader};
-use reth_rpc_eth_types::builder::botanix_config::{Botanix, BtcFeeRateRPCError, GatewayAddressRPCError, MerkleProofRPCError};
+use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_rpc_types::{Stage, SyncInfo, SyncStatus};
 
 use super::EthSigner;

@@ -19,7 +19,7 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager}, message::NewBlockMessage, NetworkEventListenerProvider, NetworkHandle
 };
-use reth_evm::execute::{BlockExecutionOutput, BlockExecutorProvider, Executor};
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};

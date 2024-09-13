@@ -1,18 +1,10 @@
 //! Command for debugging merkle trie calculation.
 
 use std::{path::PathBuf, sync::Arc};
-use crate::{
-    args::{
-        utils::{chain_help, genesis_value_parser, SUPPORTED_CHAINS},
-        DatabaseArgs,
-    },
-    dirs::{DataDirPath, MaybePlatformPath},
-    utils::get_single_header,
-};
+use crate::utils::get_single_header;
 use backon::{ConstantBuilder, Retryable};
 use clap::Parser;
 use reth_beacon_consensus::EthBeaconConsensus;
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
 use reth_cli_commands::common::{AccessRights, Environment, EnvironmentArgs};
 use reth_cli_runner::CliContext;
 use reth_cli_util::get_secret_key;

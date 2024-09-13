@@ -7,17 +7,9 @@ use jsonrpsee::{
     Methods,
 };
 use reth_engine_primitives::EngineTypes;
-use reth_evm::ConfigureEvm;
-use reth_network_api::{NetworkInfo, Peers};
-use reth_provider::{
-    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, ReceiptProviderIdExt,
-    StateProviderFactory,
-};
+use reth_network_api::NetworkInfo;
 pub use jsonrpsee::server::ServerBuilder;
 pub use reth_ipc::server::Builder as IpcServerBuilder;
-use reth_rpc::{
-    EngineEthApi, EthApi, EthFilter,
-};
 use reth_rpc_api::servers::*;
 use reth_rpc_eth_types::EthSubscriptionIdProvider;
 use reth_rpc_layer::{

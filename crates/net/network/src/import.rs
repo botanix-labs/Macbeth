@@ -3,7 +3,6 @@
 use crate::message::NewBlockMessage;
 use reth_chainspec::ChainSpec;
 use reth_consensus::ConsensusError;
-use reth_consensus_common::validation;
 use reth_network_api::PeerId;
 use reth_primitives::SealedBlock;
 use tokio::sync::mpsc::UnboundedSender;
