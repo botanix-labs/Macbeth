@@ -82,8 +82,8 @@ mod tests {
     #[tokio::test]
     async fn test_start_task() {
         // create network stream
-        let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
-        let network_stream = UnboundedReceiverStream::new(rx);
+        let (network_tx, rx) = tokio::sync::broadcast::channel(16);
+        let network_stream = EventStream::new(rx);
         let peer_id = PeerId::random();
         let (engine_tx, mut engine_rx) =
             mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();

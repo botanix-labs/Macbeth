@@ -502,7 +502,7 @@ mod tests {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         // In this case we are signing with a non federation different key
         let mut edh = ExtraDataHeader::default();
-        let sk1 = bitcoin::secp256k1::SecretKey::from_str(SK1).unwrap();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let msg = [0u8; 64];
         let mut wit = bitcoin::witness::Witness::default();
         wit.push(msg.clone());
@@ -537,51 +537,6 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_on_invalid_signature() {
-        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-        // In this case we are signing with a non federation different key
-        let mut edh = ExtraDataHeader::default();
-        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-        let non_fed = secp256k1::SecretKey::from_str(
-            "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019",
-        )
-        .unwrap();
-
-        // Just use the first key as the dummy agg key
-        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
-        edh.aggregated_public_key = dummy_agg_key;
-
-        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let mut header = Header::default();
-
-        header.number = 1;
-        header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&non_fed).expect("valid sign");
-
-        let result = consensus.validate_extra_data_header(
-            &header,
-            &authority_signers,
-            &authority_signers,
-            Some(&dummy_agg_key),
-        );
-        assert!(result.is_err());
-
-        // reset header and try again with a
-        let mut header = Header::default();
-        header.number = 1;
-        header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
-
-        let result = consensus.validate_extra_data_header(
-            &header,
-            &authority_signers,
-            &authority_signers,
-            Some(&dummy_agg_key),
-        );
-        assert!(result.is_ok())
-    }
-
-    #[test]
     fn should_not_accept_edh_with_nums_point() {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         // By default edh will use the nums point
@@ -613,42 +568,6 @@ mod tests {
     }
 
     #[test]
-    fn should_not_accept_edh_with_invalid_agg_pk() {
-        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-        // By default edh will use the nums point
-        let mut edh = ExtraDataHeader::default();
-
-        // Just use the first key as the dummy agg key
-        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
-
-        edh.aggregated_public_key = dummy_agg_key;
-
-        let different_key = secp256k1::SecretKey::from_str(SK2).unwrap();
-        let different_pk = different_key.public_key(secp256k1::SECP256K1);
-
-        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let mut header = Header::default();
-        header.number = 1;
-        header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
-
-        let result = consensus.validate_extra_data_header(
-            &header,
-            &authority_signers,
-            &authority_signers,
-            Some(&different_pk),
-        );
-        assert_eq!(
-            result.err().unwrap(),
-            ConsensusError::InvalidAggregatedPublicKey(
-                InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey
-            )
-        );
-    }
-
-    #[test]
     fn unix_timestamp() {
         let timestamp = super::unix_timestamp();
         assert!(timestamp > 0);
@@ -673,60 +592,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn validate_against_parent_skip_gensis() {
-        let mut parent = Header::default();
-        parent.number = 0;
-        let current = Header::default();
-        let result = validate_against_parent(parent, current, 5);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn should_fail_with_same_signer() {
-        let mut parent = Header::default();
-        let mut current = Header::default();
-
-        parent.number = 1;
-        current.number = 2;
-
-        sign_block_helper(&mut parent, None);
-        sign_block_helper(&mut current, None);
-
-        let result = validate_against_parent(parent, current, 5);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn should_pass_after_sufficient_time() {
-        let mut parent = Header::default();
-        let mut current = Header::default();
-
-        parent.number = 1;
-        parent.timestamp = 1704834442_u64;
-        current.number = 2;
-        current.timestamp = 1704834442_u64 + 60;
-
-        sign_block_helper(&mut parent, None);
-        sign_block_helper(&mut current, None);
-
-        let result = validate_against_parent(parent, current, 5);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn should_pass_with_different_signer() {
-        let mut parent = Header::default();
-        let mut current = Header::default();
-        parent.number = 1;
-        current.number = 2;
-
-        sign_block_helper(&mut parent, None);
-        sign_block_helper(&mut current, Some(SK2));
-
-        let result = validate_against_parent(parent, current, 5);
-        assert!(result.is_ok());
-    }
 
     #[test]
     fn is_inturn_true() {

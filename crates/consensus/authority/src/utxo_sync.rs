@@ -162,39 +162,3 @@ where
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::pbft::tests::FrostHandleMock;
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
-    use reth_chainspec::BOTANIX_TESTNET;
-    use reth_node_ethereum::EthEvmConfig;
-    use reth_provider::test_utils::MockEthProvider;
-
-    use super::*;
-
-    // TODO: fix me
-    // #[tokio::test]
-    // async fn create_new_utxo_set_sync_engine() {
-    //     let mock_eth_provider = MockEthProvider::default();
-    //     let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-    //     let dummy_pk = secp256k1::PublicKey::from_secret_key_global(&sk);
-    //     let executor_factory = TestExecutorFactory::default();
-    //     let mock_to_frost_man = FrostHandleMock {};
-
-    //     let storage = Storage::new(
-    //         vec![],
-    //         vec![],
-    //         0,
-    //         dummy_pk.clone(),
-    //         bitcoin::Network::Regtest,
-    //         None,
-    //         vec![],
-    //         EthEvmConfig::default(),
-    //         BOTANIX_TESTNET.clone(),
-    //         MockBitcoindFactory::new(BitcoindConfig::default()),
-    //         executor_factory,
-    //         mock_eth_provider.clone(),
-    //     );
-    // }
-}
