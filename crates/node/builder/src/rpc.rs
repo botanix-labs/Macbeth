@@ -7,22 +7,18 @@ use std::{
 
 use futures::TryFutureExt;
 use reth_chainspec::ChainSpec;
-use reth_network::NetworkInfo;
 use reth_node_api::{BuilderProvider, FullNodeComponents};
 use reth_node_core::{
-    node_config::NodeConfig, rpc::{api::EngineApiServer, eth::FullEthApiServer}
+    node_config::NodeConfig,
+    rpc::{api::EngineApiServer, eth::FullEthApiServer},
 };
 use reth_payload_builder::PayloadBuilderHandle;
-<<<<<<< HEAD
-use reth_provider::{AccountReader, BlockReaderIdExt, CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, StateProviderFactory};
-use reth_rpc::{EngineApi, EthApi};
-=======
->>>>>>> 9a95925d5 (apply project wide import warning fixes via cargo --fix-all)
 use reth_rpc_builder::{
     auth::{AuthRpcModule, AuthServerHandle},
     config::RethRpcServerConfig,
     RpcModuleBuilder, RpcRegistryInner, RpcServerHandle, TransportRpcModules,
 };
+
 use reth_rpc_layer::JwtSecret;
 use reth_tasks::TaskExecutor;
 use reth_tracing::tracing::{debug, info};
@@ -334,85 +330,6 @@ where
     };
 
     on_rpc_started.on_rpc_started(ctx, handles.clone())?;
-
-    Ok((handles, registry))
-}
-
-// /// Launch the poa rpc servers.
-#[allow(clippy::too_many_arguments)]
-pub async fn launch_poa_rpc_servers<Provider, Pool, Network, Tasks, EvmConfig, Engine, EthApi>(
-    rpc: &RpcServerArgs,
-    node_config: &NodeConfig,
-    provider: Provider,
-    pool: Pool,
-    network: Network,
-    executor: Tasks,
-    evm_config: EvmConfig,
-    engine_api: Engine,
-    jwt_secret: JwtSecret,
-) -> eyre::Result<(RethRpcServerHandles, RpcRegistry<Node, EthApi>)>
-where
-    Provider: BlockReaderIdExt
-        + AccountReader
-        + HeaderProvider
-        + StateProviderFactory
-        + EvmEnvProvider
-        + ChainSpecProvider
-        + ChangeSetReader
-        + CanonStateSubscriptions
-        + Clone
-        + Unpin
-        + 'static,
-    Pool: TransactionPool + Clone + 'static,
-    Network: NetworkInfo + Peers + Clone + 'static,
-    Tasks: TaskSpawner + Clone + 'static,
-    EvmConfig: ConfigureEvm + 'static,
-    Node: FullNodeComponents<ChainSpec = ChainSpec> + Clone,
-    EngineT: EngineTypes + 'static,
-    EthApi: EthApiBuilderProvider<Node> + FullEthApiServer,
-{
-    let auth_config = rpc.auth_server_config(jwt_secret)?;
-    let module_config = rpc.transport_rpc_module_config();
-
-    let chain_id = node_config.chain.as_ref().chain.id();
-    let botanix_chain_id = BOTANIX_TESTNET.as_ref().chain.id();
-
-    let (mut modules, mut auth_module, registry) = RpcModuleBuilder::default()
-    .with_provider(provider.clone())
-    .with_pool(pool.clone())
-    .with_network(network.clone())
-    .with_events(provider.clone())
-    .with_executor(executor.clone())
-    .with_evm_config(evm_config.clone())
-    .build_with_auth_server(module_config, engine_api, EthApi::eth_api_builder());
-
-    let server_config = node_config.rpc.rpc_server_config();
-    let cloned_modules = modules.clone();
-    let launch_rpc = server_config.start(&cloned_modules).map_ok(|handle| {
-        if let Some(path) = handle.ipc_endpoint() {
-            info!(target: "reth::cli", %path, "RPC IPC server started");
-        }
-        if let Some(addr) = handle.http_local_addr() {
-            info!(target: "reth::cli", url=%addr, "RPC HTTP server started");
-        }
-        if let Some(addr) = handle.ws_local_addr() {
-            info!(target: "reth::cli", url=%addr, "RPC WS server started");
-        }
-        handle
-    });
-
-    let launch_auth = auth_module.clone().start_server(auth_config).map_ok(|handle| {
-        let addr = handle.local_addr();
-        if let Some(ipc_endpoint) = handle.ipc_endpoint() {
-            info!(target: "reth::cli", url=%addr, ipc_endpoint=%ipc_endpoint,"RPC auth server started");
-        } else {
-            info!(target: "reth::cli", url=%addr, "RPC auth server started");
-        }
-        handle
-    });
-
-    let (rpc, auth) = futures::future::try_join(launch_rpc, launch_auth).await?;
-    let handles = RethRpcServerHandles { rpc, auth };
 
     Ok((handles, registry))
 }

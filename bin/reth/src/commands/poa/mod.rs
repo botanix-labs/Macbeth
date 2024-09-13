@@ -5,32 +5,41 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
+use core::panic;
+use eyre::Context;
+use fdlimit::raise_fd_limit;
+use futures::{stream_select, StreamExt, TryFutureExt};
+use reth_authority_consensus::{
+    utils::{is_known_minting_contract, retry_exec},
+    AuthorityConsensus, AuthorityConsensusBuilder,
+};
+use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_engine_util::EngineMessageStreamExt;
 use reth_network_peers::pk2id;
+use reth_node_core::{
+    args::DatadirArgs,
+    cli::config::BtcServerConfig,
+    version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA},
+};
 use reth_node_metrics::recorder::install_prometheus_recorder;
+use reth_payload_builder::PayloadBuilderHandle;
 use reth_prune::PruneModes;
-use reth_rpc_builder::config::RethRpcServerConfig;
+use reth_rpc_builder::{
+    config::RethRpcServerConfig,
+    RpcModuleBuilder,
+};
 use reth_rpc_engine_api::capabilities::EngineCapabilities;
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_stages::StageId;
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use core::panic;
-use eyre::Context;
-use fdlimit::raise_fd_limit;
-use futures::{stream_select, StreamExt};
-use reth_authority_consensus::{
-    utils::{is_known_minting_contract, retry_exec},
-    AuthorityConsensus, AuthorityConsensusBuilder,
-};
-use reth_botanix_lib::mint_validation::MINT_CONTRACT_ADDRESS;
-use reth_node_core::{args::DatadirArgs, cli::config::BtcServerConfig, version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA}};
+use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::{
@@ -48,10 +57,11 @@ use reth_consensus_common::{utils, utils::get_authority_signer_index};
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider, NetworkEventListenerProvider, NetworkManager
+    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider,
+    NetworkEventListenerProvider, NetworkHandle, NetworkManager,
 };
 use reth_node_builder::{
-    launch_poa_rpc_servers, launch_rpc_servers, setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig
+    setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
 };
 use reth_node_core::{
     args::{
@@ -61,20 +71,20 @@ use reth_node_core::{
     node_config::NodeConfig,
     version,
 };
-use reth_node_ethereum::{EthEvmConfig, EthExecutorProvider};
+use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
 use reth_node_events::node::handle_events;
-use reth_primitives::{
-    constants::ETHEREUM_BLOCK_GAS_LIMIT,
-    Bytes, Head,
-};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
-    providers::{BlockchainProvider, StaticFileProvider}, BlockHashReader, CanonStateSubscriptions, HeaderProvider,
-    ProviderFactory, StageCheckpointReader,
+    providers::{BlockchainProvider, StaticFileProvider},
+    BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
+    StageCheckpointReader,
 };
 use reth_revm::primitives::EnvKzgSettings;
-use reth_rpc::EngineApi;
+use reth_rpc::{EngineApi, EthApi};
 use reth_static_file::StaticFileProducer;
-use reth_transaction_pool::{blobstore::InMemoryBlobStore, TransactionValidationTaskExecutor};
+use reth_transaction_pool::{
+    blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
+};
 use rsntp::AsyncSntpClient;
 use tokio::{
     sync::{mpsc::unbounded_channel, oneshot, RwLock},
@@ -84,10 +94,7 @@ use tokio::{
 use tracing::{debug, error, info};
 
 use crate::{
-    args::{
-        DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs,
-        RpcServerArgs, TxPoolArgs,
-    },
+    args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
     payload::PayloadBuilderService,
 };
 
@@ -200,7 +207,6 @@ impl PoaNodeCommand {
 }
 
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
-
     /// Execute `poa` command
     pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
         tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth with poa");
@@ -272,7 +278,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // because database init needs it to register metrics.
         let prometheus_handle = install_prometheus_recorder();
 
-        let data_dir = datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
+        let data_dir =
+            datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
         let db_path = data_dir.db();
         let executor = ctx.task_executor;
 
@@ -463,10 +470,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
 
         // Configure static file producer
-        let static_file_producer = StaticFileProducer::new(
-            provider_factory.clone(),
-            PruneModes::default(),
-        );
+        let static_file_producer =
+            StaticFileProducer::new(provider_factory.clone(), PruneModes::default());
 
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret());
@@ -688,18 +693,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
 
         let consensus_engine_stream = UnboundedReceiverStream::from(consensus_engine_rx)
-        .maybe_skip_fcu(node_config.debug.skip_fcu)
-        .maybe_skip_new_payload(node_config.debug.skip_new_payload)
-        .maybe_reorg(
-            blockchain_db.clone(),
-            evm_config,
-            reth_payload_validator::ExecutionPayloadValidator::new(node_config.chain.clone()),
-            node_config.debug.reorg_frequency,
-        )
-        // Store messages _after_ skipping so that `replay-engine` command
-        // would replay only the messages that were observed by the engine
-        // during this run.
-        .maybe_store_messages(node_config.debug.engine_api_store.clone());
+            .maybe_skip_fcu(node_config.debug.skip_fcu)
+            .maybe_skip_new_payload(node_config.debug.skip_new_payload)
+            .maybe_reorg(
+                blockchain_db.clone(),
+                evm_config,
+                reth_payload_validator::ExecutionPayloadValidator::new(node_config.chain.clone()),
+                node_config.debug.reorg_frequency,
+            )
+            // Store messages _after_ skipping so that `replay-engine` command
+            // would replay only the messages that were observed by the engine
+            // during this run.
+            .maybe_store_messages(node_config.debug.engine_api_store.clone());
 
         // Build authority Consensus
         let (
@@ -833,11 +838,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         );
         executor.spawn_critical(
             "events task",
-            handle_events(
-                Some(Box::new(network_handle.clone())),
-                Some(head.number),
-                events,
-            ),
+            handle_events(Some(Box::new(network_handle.clone())), Some(head.number), events),
         );
 
         // adjust rpc port numbers based on instance number
@@ -860,16 +861,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 bitcoind_config.username().to_owned(),
                 bitcoind_config.password().to_owned(),
             )
-            .btc_server_jwt_secret(
-                btc_signing_server_jwt_secret.clone().map(Into::into)
-            );
+            .btc_server_jwt_secret(btc_signing_server_jwt_secret.clone().map(Into::into));
 
         // Start RPC servers
-        let engine_api = EngineApi::new(
+        let _engine_api = EngineApi::new(
             blockchain_db.clone(),
             chain_arc.clone(),
             beacon_engine_handle,
-            payload_builder.into(),
+            payload_builder.clone().into(),
             Box::new(executor.clone()),
             client,
             EngineCapabilities::default(),
@@ -878,22 +877,46 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // generate deault jwt for the rpc server (as required by reth)
         let default_jwt_path = data_dir.jwt();
-        let reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
+        let _reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
-        // TODO: fix me
-        // original: launch_rpc_servers
-        let (_rpc_server_handle, _auth_server_handle) = launch_poa_rpc_servers(
-            rpc,
-            &node_config,
-            blockchain_db,
-            transaction_pool,
+        let node_components = PoaNodeComponents::new(
+            transaction_pool.clone(),
+            evm_config.clone(),
+            executor_factory.clone(),
             network_handle.clone(),
+            blockchain_db.clone(),
+            payload_builder.clone(),
             executor.clone(),
-            evm_config,
-            engine_api,
-            reth_auth_jwt_secret,
-        )
-        .await?;
+        );
+
+        let _rpc_handle = {
+            let module_config = self.rpc.transport_rpc_module_config();
+            let rpc_modules = RpcModuleBuilder::default()
+                .with_provider(node_components.provider.clone())
+                .with_pool(node_components.pool.clone())
+                .with_network(node_components.network.clone())
+                .with_events(node_components.provider.clone())
+                .with_executor(node_components.task_executor.clone())
+                .with_evm_config(node_components.evm_config.clone())
+                .build(module_config, Box::new(EthApi::with_spawner));
+
+            let server_config = self.rpc.rpc_server_config();
+            let cloned_modules = rpc_modules.clone();
+            let launch_rpc = server_config.start(&cloned_modules).map_ok(|handle| {
+                if let Some(path) = handle.ipc_endpoint() {
+                    info!(target: "reth::cli", %path, "RPC IPC server started");
+                }
+                if let Some(addr) = handle.http_local_addr() {
+                    info!(target: "reth::cli", url=%addr, "RPC HTTP server started");
+                }
+                if let Some(addr) = handle.ws_local_addr() {
+                    info!(target: "reth::cli", url=%addr, "RPC WS server started");
+                }
+                handle
+            });
+
+            launch_rpc.await?
+        };
 
         // Run consensus engine to completion
         let (tx, rx) = oneshot::channel();
@@ -998,6 +1021,72 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     }
 }
 
+#[derive(Clone)]
+pub struct PoaNodeComponents<P> {
+    pool: P,
+    evm_config: EthEvmConfig,
+    executor: EthExecutorProvider,
+    network: NetworkHandle,
+    provider: BlockchainProvider<Arc<DatabaseEnv>>,
+    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+    task_executor: TaskExecutor,
+}
+
+impl<P> PoaNodeComponents<P>
+where
+    P: TransactionPoolExt + 'static,
+{
+    pub(crate) fn new(
+        pool: P,
+        evm_config: EthEvmConfig,
+        executor: EthExecutorProvider,
+        network: NetworkHandle,
+        provider: BlockchainProvider<Arc<DatabaseEnv>>,
+        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+        task_executor: TaskExecutor,
+    ) -> Self {
+        Self { pool, evm_config, executor, network, provider, payload_builder, task_executor }
+    }
+}
+
+// impl FullNodeComponents for PoaNodeComponents {
+//     type Pool = TxPool<_>;
+
+//     type Evm = EthEvmConfig;
+
+//     type Executor = EthExecutorProvider;
+
+//     type Network = NetworkHandle;
+
+//     fn pool(&self) -> &Self::Pool {
+//         &self.pool
+//     }
+
+//     fn evm_config(&self) -> &Self::Evm {
+//         &self.evm
+//     }
+
+//     fn block_executor(&self) -> &Self::Executor {
+//         &self.executor
+//     }
+
+//     fn provider(&self) -> &Self::Provider {
+//         &self.provider
+//     }
+
+//     fn network(&self) -> &Self::Network {
+//         &self.network
+//     }
+
+//     fn payload_builder(&self) -> &reth_payload_builder::PayloadBuilderHandle<Self::Engine> {
+//         &self.payload_builder
+//     }
+
+//     fn task_executor(&self) -> &reth_tasks::TaskExecutor {
+//         &self.task_executor
+//     }
+// }
+
 /// Default PoA payload builder config
 struct DefaultPoAPayloadBuilderConfig {}
 impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
@@ -1052,15 +1141,12 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
 mod tests {
     use super::*;
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
-    use reth_node_core::args::{
-        utils::get_botanix_chain,
-        FedMemberPubKey, FederationTomlConfig,
-    };
+    use reth_node_core::args::{utils::get_botanix_chain, FedMemberPubKey, FederationTomlConfig};
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
-    
+
     use secp256k1::rand;
 
     #[test]
@@ -1193,7 +1279,8 @@ mod tests {
         )
         .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
-        let data_dir = cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let data_dir =
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
@@ -1238,7 +1325,8 @@ mod tests {
             cmd.is_testnet,
         )
         .expect("chain is to exist");
-        let data_dir = cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let data_dir =
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }
