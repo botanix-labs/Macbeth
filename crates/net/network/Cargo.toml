@@ -13,12 +13,6 @@ workspace = true
 
 [dependencies]
 
-# Grpc
-tonic = "0.11.0"
-
-# hex
-hex = "0.4.3"
-
 # frost
 # TODO update this to the zcash frost library when tr is merged in
 frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
@@ -52,7 +46,6 @@ reth-network-types.workspace = true
 # ethereum
 enr = { workspace = true, features = ["serde", "rust-secp256k1"] }
 alloy-rlp.workspace = true
-reth-consensus-common = {path = "../../consensus/common"}
 discv5.workspace = true
 
 # async/futures

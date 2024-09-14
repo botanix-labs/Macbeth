@@ -23,7 +23,6 @@ revm-primitives.workspace = true
 reth-evm-ethereum.workspace = true
 reth-provider.workspace = true
 reth-tokio-util.workspace = true
-reth-storage-errors.workspace = true
 reth-stages.workspace = true
 reth-revm.workspace = true
 reth-evm.workspace = true
@@ -38,7 +37,6 @@ reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
-reth-network-types.workspace = true
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }

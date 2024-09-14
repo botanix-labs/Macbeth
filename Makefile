@@ -475,6 +475,9 @@ pr:
 	make update-book-cli && \
 	make test
 
+clean-unused-deps:
+	cargo machete --fix
+
 start-test-suite:
 	cd ./bin/test-suite && \
 	cargo run --bin test-suite -- \

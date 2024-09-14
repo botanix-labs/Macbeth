@@ -19,12 +19,6 @@ reth-rpc-eth-api.workspace = true
 reth-engine-primitives.workspace = true
 reth-network-peers.workspace = true
 
-# bitcoin
-bitcoin.workspace = true
-
-# secp256k1
-secp256k1.workspace = true
-
 # misc
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 

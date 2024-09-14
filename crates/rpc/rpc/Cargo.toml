@@ -70,22 +70,9 @@ tracing.workspace = true
 tracing-futures = "0.2"
 futures.workspace = true
 derive_more.workspace = true
-dyn-clone.workspace = true
-reth-btc-wallet.workspace = true
 rand.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-
-## Bitcoin
-bitcoin.workspace = true
-bitcoincore-rpc.workspace = true
-
-## url
-url = "2.2"
-
-# Botanix Btc server gRPC client
-client = {path = "../../../bin/btc-server/client"}
-btc-server = {path = "../../../bin/btc-server"}
 
 [dev-dependencies]
 reth-evm-ethereum.workspace = true

@@ -8,7 +8,7 @@ use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
-    args::FedMemberPubKey,
+    args::{FedMemberPubKey, FederationTomlConfig},
     cli::ext::{PoaNodeCommandConfig, RethNodeComponents},
     commands::poa::PoaNodeCommand,
     consensus_common::utils::unix_timestamp,
@@ -17,7 +17,6 @@ use reth::{
 use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
 use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
-use reth_node_core::args::FederationTomlConfig;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},

@@ -15,7 +15,6 @@ workspace = true
 # reth
 reth-chainspec.workspace = true
 reth-beacon-consensus.workspace = true
-reth-btc-wallet.workspace = true
 reth-primitives.workspace = true
 reth-execution-errors.workspace = true
 reth-execution-types.workspace = true

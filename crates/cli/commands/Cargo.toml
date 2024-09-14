@@ -40,7 +40,6 @@ reth-static-file-types.workspace = true
 reth-static-file.workspace = true
 reth-trie = { workspace = true, features = ["metrics"] }
 reth-trie-db = { workspace = true, features = ["metrics"] }
-reth-btc-wallet.workspace = true
 
 itertools.workspace = true
 futures.workspace = true

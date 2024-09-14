@@ -22,23 +22,10 @@ reth-prune-types.workspace = true
 reth-storage-api.workspace = true
 reth-trie = { workspace = true, optional = true }
 
-# Botanix
-reth-btc-wallet.workspace = true
-bitcoin.workspace = true
-
 # revm
 revm.workspace = true
-
-# ethers
-ethers = "2.0.9"
-
-# common
-tracing.workspace = true
 # alloy
 alloy-eips.workspace = true
-
-# Botanix
-reth-botanix-lib.workspace = true
 
 [dev-dependencies]
 reth-trie.workspace = true

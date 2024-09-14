@@ -17,7 +17,6 @@ reth-chainspec = { workspace = true, optional = true }
 reth-codecs.workspace = true
 reth-config.workspace = true
 reth-consensus.workspace = true
-reth-btc-wallet.workspace = true
 reth-db.workspace = true
 reth-db-api.workspace = true
 reth-etl.workspace = true

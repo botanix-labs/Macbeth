@@ -36,7 +36,6 @@ reth-discv5.workspace = true
 reth-net-nat.workspace = true
 reth-network-peers.workspace = true
 reth-consensus-common.workspace = true
-reth-beacon-consensus.workspace = true
 reth-btc-wallet.workspace = true
 reth-prune-types.workspace = true
 reth-stages-types.workspace = true
@@ -88,9 +87,6 @@ displaydoc = "0.2.4"
 
 # hex
 hex = "0.4.3"
-
-### Grpc
-tonic = "0.11.0"
 
 # bitcoin
 bitcoin.workspace = true

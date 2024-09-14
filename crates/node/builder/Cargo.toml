@@ -81,7 +81,6 @@ aquamarine.workspace = true
 eyre.workspace = true
 fdlimit.workspace = true
 rayon.workspace = true
-confy = "0.6"
 
 # tracing
 tracing.workspace = true

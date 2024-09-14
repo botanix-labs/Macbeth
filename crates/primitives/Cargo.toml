@@ -39,9 +39,6 @@ k256.workspace = true
 # for eip-4844
 c-kzg = { workspace = true, features = ["serde"], optional = true }
 
-# askama
-askama = "0.12.1"
-
 # misc
 bytes.workspace = true
 derive_more.workspace = true
