@@ -28,10 +28,7 @@ use reth_node_core::{
 use reth_node_metrics::recorder::install_prometheus_recorder;
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_prune::PruneModes;
-use reth_rpc_builder::{
-    config::RethRpcServerConfig,
-    RpcModuleBuilder,
-};
+use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_engine_api::capabilities::EngineCapabilities;
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
@@ -864,6 +861,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .btc_server_jwt_secret(btc_signing_server_jwt_secret.clone().map(Into::into));
 
         // Start RPC servers
+        let botanix_provider = Botanix::new(botanix_config);
         let _engine_api = EngineApi::new(
             blockchain_db.clone(),
             chain_arc.clone(),
@@ -872,7 +870,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             Box::new(executor.clone()),
             client,
             EngineCapabilities::default(),
-            Botanix::new(botanix_config),
+            botanix_provider.clone(),
         );
 
         // generate deault jwt for the rpc server (as required by reth)
@@ -898,6 +896,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .with_events(node_components.provider.clone())
                 .with_executor(node_components.task_executor.clone())
                 .with_evm_config(node_components.evm_config.clone())
+                .with_botanix_provider(botanix_provider.clone())
                 .build(module_config, Box::new(EthApi::with_spawner));
 
             let server_config = self.rpc.rpc_server_config();
@@ -1048,44 +1047,6 @@ where
         Self { pool, evm_config, executor, network, provider, payload_builder, task_executor }
     }
 }
-
-// impl FullNodeComponents for PoaNodeComponents {
-//     type Pool = TxPool<_>;
-
-//     type Evm = EthEvmConfig;
-
-//     type Executor = EthExecutorProvider;
-
-//     type Network = NetworkHandle;
-
-//     fn pool(&self) -> &Self::Pool {
-//         &self.pool
-//     }
-
-//     fn evm_config(&self) -> &Self::Evm {
-//         &self.evm
-//     }
-
-//     fn block_executor(&self) -> &Self::Executor {
-//         &self.executor
-//     }
-
-//     fn provider(&self) -> &Self::Provider {
-//         &self.provider
-//     }
-
-//     fn network(&self) -> &Self::Network {
-//         &self.network
-//     }
-
-//     fn payload_builder(&self) -> &reth_payload_builder::PayloadBuilderHandle<Self::Engine> {
-//         &self.payload_builder
-//     }
-
-//     fn task_executor(&self) -> &reth_tasks::TaskExecutor {
-//         &self.task_executor
-//     }
-// }
 
 /// Default PoA payload builder config
 struct DefaultPoAPayloadBuilderConfig {}

@@ -170,7 +170,9 @@ use reth_rpc_eth_api::{
     },
     EthApiServer, FullEthApiServer, RawTransactionForwarder,
 };
-use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthConfig, EthStateCache, EthSubscriptionIdProvider};
+use reth_rpc_eth_types::{
+    builder::botanix_config::Botanix, EthConfig, EthStateCache, EthSubscriptionIdProvider,
+};
 use reth_rpc_layer::{AuthLayer, Claims, JwtAuthValidator, JwtSecret};
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
@@ -236,8 +238,16 @@ where
     server_config
         .into()
         .start(
-            &RpcModuleBuilder::new(provider, pool, network, executor, events, evm_config, botanix_provider)
-                .build(module_config, eth),
+            &RpcModuleBuilder::new(
+                provider,
+                pool,
+                network,
+                executor,
+                events,
+                evm_config,
+                botanix_provider,
+            )
+            .build(module_config, eth),
         )
         .await
 }
@@ -411,6 +421,23 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
         let Self { provider, pool, executor, network, events, botanix_provider, .. } = self;
         RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
+
+    /// Configure botanix provider
+    pub fn with_botanix_provider(
+        self,
+        botanix_provider: Botanix,
+    ) -> RpcModuleBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig> {
+        let Self { provider, pool, executor, network, events, evm_config, .. } = self;
+        RpcModuleBuilder {
+            provider,
+            network,
+            pool,
+            executor,
+            events,
+            evm_config,
+            botanix_provider,
+        }
+    }
 }
 
 impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
@@ -450,7 +477,15 @@ where
         let config = module_config.config.clone().unwrap_or_default();
 
         let mut registry = RpcRegistryInner::new(
-            provider, pool, network, executor, events, config, evm_config, eth, botanix_provider,
+            provider,
+            pool,
+            network,
+            executor,
+            events,
+            config,
+            evm_config,
+            eth,
+            botanix_provider,
         );
 
         let modules = registry.create_transport_rpc_modules(module_config);
@@ -498,7 +533,17 @@ where
         EthApi: 'static,
     {
         let Self { provider, pool, network, executor, events, evm_config, botanix_provider } = self;
-        RpcRegistryInner::new(provider, pool, network, executor, events, config, evm_config, eth, botanix_provider)
+        RpcRegistryInner::new(
+            provider,
+            pool,
+            network,
+            executor,
+            events,
+            config,
+            evm_config,
+            eth,
+            botanix_provider,
+        )
     }
 
     /// Configures all [`RpcModule`]s specific to the given [`TransportRpcModuleConfig`] which can
@@ -1323,9 +1368,9 @@ impl<RpcMiddleware> RpcServerConfig<RpcMiddleware> {
     ///
     /// If no server is configured, no server will be launched on [`RpcServerConfig::start`].
     pub const fn has_server(&self) -> bool {
-        self.http_server_config.is_some() ||
-            self.ws_server_config.is_some() ||
-            self.ipc_server_config.is_some()
+        self.http_server_config.is_some()
+            || self.ws_server_config.is_some()
+            || self.ipc_server_config.is_some()
     }
 
     /// Returns the [`SocketAddr`] of the http server
@@ -1390,9 +1435,9 @@ impl<RpcMiddleware> RpcServerConfig<RpcMiddleware> {
         }
 
         // If both are configured on the same port, we combine them into one server.
-        if self.http_addr == self.ws_addr &&
-            self.http_server_config.is_some() &&
-            self.ws_server_config.is_some()
+        if self.http_addr == self.ws_addr
+            && self.http_server_config.is_some()
+            && self.ws_server_config.is_some()
         {
             let cors = match (self.ws_cors_domains.as_ref(), self.http_cors_domains.as_ref()) {
                 (Some(ws_cors), Some(http_cors)) => {
@@ -1756,8 +1801,8 @@ impl RpcServerHandle {
                 "Bearer {}",
                 secret
                     .encode(&Claims {
-                        iat: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap() +
-                            Duration::from_secs(60))
+                        iat: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
+                            + Duration::from_secs(60))
                         .as_secs(),
                         exp: None,
                     })
