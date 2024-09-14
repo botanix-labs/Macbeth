@@ -2,7 +2,8 @@
 //! the `eth_` namespace.
 
 use crate::helpers::{
-    botanix::EthBotanixApi, transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall, EthFees, EthState, EthTransactions, FullEthApi
+    botanix::EthBotanixApi, transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall,
+    EthFees, EthState, EthTransactions, FullEthApi,
 };
 use alloy_dyn_abi::TypedData;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
@@ -11,7 +12,13 @@ use reth_primitives::{
 };
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
-    botanix::GatewayAddress, serde_helpers::JsonStorageKey, simulate::{SimBlock, SimulatedBlock}, state::{EvmOverrides, StateOverride}, AnyTransactionReceipt, Block, BlockOverrides, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory, Header, Index, RichBlock, StateContext, SyncStatus, Transaction, TransactionRequest, Work
+    botanix::GatewayAddress,
+    serde_helpers::JsonStorageKey,
+    simulate::{SimBlock, SimulatedBlock},
+    state::{EvmOverrides, StateOverride},
+    AnyTransactionReceipt, Block, BlockOverrides, Bundle, EIP1186AccountProofResponse,
+    EthCallResponse, FeeHistory, Header, Index, RichBlock, StateContext, SyncStatus, Transaction,
+    TransactionRequest, Work,
 };
 
 use tracing::trace;
@@ -341,21 +348,13 @@ pub trait EthApi {
     ) -> RpcResult<EIP1186AccountProofResponse>;
 
     #[method(name = "getGatewayAddress")]
-    async fn get_gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> RpcResult<Option<GatewayAddress>>;
+    async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>>;
 
     #[method(name = "getMerkleProof")]
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> RpcResult<Bytes>;
+    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes>;
 
     #[method(name = "getBtcFeeRate")]
     async fn get_btc_fee_rate(&self) -> RpcResult<Option<U256>>;
-
 }
 
 #[async_trait::async_trait]
@@ -420,12 +419,12 @@ where
     /// Handler for: `eth_getGatewayAddress`
     async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
         trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
-        let address = EthBotanixApi::get_gateway_address(self, eth_address)
-        .await?
-        .map(|value| GatewayAddress {
-            gateway_address: value.0.to_string(),
-            aggregate_public_key: value.1.to_string(),
-            eth_address,
+        let address = EthBotanixApi::get_gateway_address(self, eth_address).await?.map(|value| {
+            GatewayAddress {
+                gateway_address: value.0.to_string(),
+                aggregate_public_key: value.1.to_string(),
+                eth_address,
+            }
         });
         Ok(address)
     }
@@ -433,7 +432,8 @@ where
     /// Handler from `eth_getMerkleProof`
     async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes> {
         trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
-        let merkle_proof = Bytes::from(EthBotanixApi::get_merkle_proof(self, txid, block_hash).await?);
+        let merkle_proof =
+            Bytes::from(EthBotanixApi::get_merkle_proof(self, txid, block_hash).await?);
         Ok(merkle_proof)
     }
 

@@ -14,9 +14,9 @@
 //! [`EthApiServer`](crate::EthApiServer), is implemented for any type that implements
 //! all the `Eth` traits, e.g. `reth_rpc::EthApi`.
 
-pub mod botanix;
 pub mod block;
 pub mod blocking_task;
+pub mod botanix;
 pub mod call;
 pub mod error;
 pub mod fee;

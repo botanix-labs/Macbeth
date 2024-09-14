@@ -1,11 +1,10 @@
 use crate::{
     Address, Bytes, GotExpected, Header, SealedHeader, TransactionSigned,
-    TransactionSignedEcRecovered, Withdrawals, B256,
+    TransactionSignedEcRecovered, Withdrawals, B256, U256,
 };
 pub use alloy_eips::eip1898::{
     BlockHashOrNumber, BlockId, BlockNumHash, BlockNumberOrTag, ForkBlock, RpcBlockHash,
 };
-use crate::U256;
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use alloy_rpc_types_engine::{ExecutionPayload, ExecutionPayloadV1};
 use derive_more::{Deref, DerefMut};

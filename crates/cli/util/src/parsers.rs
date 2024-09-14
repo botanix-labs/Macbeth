@@ -1,11 +1,11 @@
 use alloy_eips::BlockHashOrNumber;
 use alloy_primitives::B256;
-use url::Url;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
     str::FromStr,
     time::Duration,
 };
+use url::Url;
 
 /// Helper to parse a [Duration] from seconds
 pub fn parse_duration_from_secs(arg: &str) -> eyre::Result<Duration, std::num::ParseIntError> {

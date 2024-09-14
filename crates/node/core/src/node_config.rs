@@ -8,9 +8,9 @@ use crate::{
     dirs::{ChainPath, DataDirPath},
     utils::get_single_header,
 };
-use reth_config::config::PruneConfig;
 use eyre::eyre;
 use reth_chainspec::{ChainSpec, MAINNET};
+use reth_config::config::PruneConfig;
 use reth_db_api::database::Database;
 use reth_network_p2p::headers::client::HeadersClient;
 use serde::{de::DeserializeOwned, Serialize};
@@ -458,8 +458,8 @@ impl NodeConfig {
     //     if !self.network.discovery.enable_discv5_discovery {
     //         return config;
     //     }
-    //     // work around since discv5 config builder can't be integrated into network config builder
-    //     // due to unsatisfied trait bounds
+    //     // work around since discv5 config builder can't be integrated into network config
+    // builder     // due to unsatisfied trait bounds
     //     config.discovery_v5_with_config_builder(|builder| {
     //         let DiscoveryArgs { discv5_addr, discv5_port, .. } = self.network.discovery;
     //         builder

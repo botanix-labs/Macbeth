@@ -12,6 +12,7 @@ use reth_consensus_common::utils;
 
 use reth_eth_wire::NewBlock;
 
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::EngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
@@ -20,7 +21,6 @@ use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, trace, warn};
-use reth_evm::execute::BlockExecutorProvider;
 
 use crate::{
     engine_util,
@@ -201,8 +201,7 @@ where
                 if let Some(pegin_data) = pegin_match {
                     info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
                     //TODO(stevenroose) should this happen here?
-                    if let Err(e) =
-                        call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
+                    if let Err(e) = call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
                     {
                         error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
                         return;
@@ -390,7 +389,10 @@ where
                 .expect("senders are valid");
 
         // update canon chain
-        match client.insert_block(sealed_block_with_senders.clone(), reth_blockchain_tree_api::BlockValidationKind::Exhaustive) {
+        match client.insert_block(
+            sealed_block_with_senders.clone(),
+            reth_blockchain_tree_api::BlockValidationKind::Exhaustive,
+        ) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");

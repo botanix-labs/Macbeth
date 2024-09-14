@@ -2,7 +2,8 @@ use reth_evm::ConfigureEvm;
 use reth_provider::{BlockReader, CanonStateSubscriptions, EvmEnvProvider, StateProviderFactory};
 use reth_rpc::{EthFilter, EthPubSub};
 use reth_rpc_eth_types::{
-    builder::botanix_config::Botanix, cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig, EthStateCache
+    builder::botanix_config::Botanix, cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig,
+    EthStateCache,
 };
 use reth_tasks::TaskSpawner;
 
@@ -86,8 +87,17 @@ where
 {
     /// Returns a new instance with handlers for `eth` namespace.
     pub fn build(self) -> EthHandlers<Provider, Pool, Network, Events, EthApi> {
-        let Self { provider, pool, network, evm_config, config, executor, events, eth_api_builder, botanix_provider } =
-            self;
+        let Self {
+            provider,
+            pool,
+            network,
+            evm_config,
+            config,
+            executor,
+            events,
+            eth_api_builder,
+            botanix_provider,
+        } = self;
 
         let cache = EthStateCache::spawn_with(
             provider.clone(),

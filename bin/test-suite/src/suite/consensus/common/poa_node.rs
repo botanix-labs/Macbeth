@@ -184,7 +184,7 @@ impl FederationMemberTestConfig {
 
     pub fn build_command(
         &self,
-        edh_authorities_list: Arc<Vec<PublicKey>>, 
+        edh_authorities_list: Arc<Vec<PublicKey>>,
     ) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));

@@ -7,11 +7,15 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_engine_primitives::EngineTypes;
 use reth_primitives::{Address, BlockHash, BlockId, BlockNumberOrTag, Bytes, B256, U256, U64};
 use reth_rpc_types::{
-    botanix::GatewayAddress, engine::{
+    botanix::GatewayAddress,
+    engine::{
         ClientVersionV1, ExecutionPayloadBodiesV1, ExecutionPayloadBodiesV2,
         ExecutionPayloadInputV2, ExecutionPayloadV1, ExecutionPayloadV3, ExecutionPayloadV4,
         ForkchoiceState, ForkchoiceUpdated, PayloadId, PayloadStatus, TransitionConfiguration,
-    }, state::StateOverride, BlockOverrides, EIP1186AccountProofResponse, Filter, JsonStorageKey, Log, RichBlock, SyncStatus, TransactionRequest
+    },
+    state::StateOverride,
+    BlockOverrides, EIP1186AccountProofResponse, Filter, JsonStorageKey, Log, RichBlock,
+    SyncStatus, TransactionRequest,
 };
 // NOTE: We can't use associated types in the `EngineApi` trait because of jsonrpsee, so we use a
 // generic here. It would be nice if the rpc macro would understand which types need to have serde.
@@ -275,21 +279,13 @@ pub trait EngineEthApi {
 
     /// Returns the gateway address
     #[method(name = "getGatewayAddress")]
-    async fn get_gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> RpcResult<Option<GatewayAddress>>;
+    async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>>;
 
     /// Returns the merkle root of the utxos
     #[method(name = "getMerkleProof")]
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> RpcResult<Bytes>;
+    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes>;
 
     /// Returns the btc fee rate
     #[method(name = "getBtcFeeRate")]
     async fn get_btc_fee_rate(&self) -> RpcResult<Option<U256>>;
-
 }

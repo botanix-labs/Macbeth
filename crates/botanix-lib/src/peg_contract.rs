@@ -245,12 +245,12 @@ impl PegoutData {
 mod tests {
     use std::str::FromStr;
 
-    use bitcoin::{
-        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
-        BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
-    };
-    use bitcoin::secp256k1::rand;
     use super::*;
+    use bitcoin::{
+        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash,
+        secp256k1::rand, Amount, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn,
+        TxOut, Txid,
+    };
 
     #[test]
     fn serialize_pegin_metadata() {

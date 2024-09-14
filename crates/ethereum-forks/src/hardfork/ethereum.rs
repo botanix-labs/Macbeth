@@ -403,13 +403,7 @@ impl EthereumHardfork {
             (Self::MuirGlacier, ForkCondition::Block(0)),
             (Self::Berlin, ForkCondition::Block(0)),
             (Self::London, ForkCondition::Block(0)),
-            (
-                Self::Paris,
-                ForkCondition::TTD {
-                    fork_block: Some(0),
-                    total_difficulty: U256::ZERO,
-                },
-            ),
+            (Self::Paris, ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::ZERO }),
             (Self::Shanghai, ForkCondition::Timestamp(0)),
             (Self::Cancun, ForkCondition::Timestamp(0)),
         ]

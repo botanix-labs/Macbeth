@@ -20,7 +20,7 @@ use reth_evm::{
 };
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
-    BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256, Address,
+    Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256,
 };
 use reth_prune_types::PruneModes;
 use reth_revm::{
@@ -325,7 +325,12 @@ where
         }?;
 
         // 3. apply post execution changes
-        self.post_execution(block, total_difficulty, Some(output.total_block_fees), block_builder_address)?;
+        self.post_execution(
+            block,
+            total_difficulty,
+            Some(output.total_block_fees),
+            block_builder_address,
+        )?;
 
         Ok(output)
     }
@@ -346,8 +351,13 @@ where
         total_block_fees: Option<u128>,
         block_builder_address: Option<Address>,
     ) -> Result<(), BlockExecutionError> {
-        let mut balance_increments =
-            post_block_balance_increments(self.chain_spec(), block, total_difficulty, total_block_fees, block_builder_address);
+        let mut balance_increments = post_block_balance_increments(
+            self.chain_spec(),
+            block,
+            total_difficulty,
+            total_block_fees,
+            block_builder_address,
+        );
 
         // Irregular state change at Ethereum DAO hardfork
         if self.chain_spec().fork(EthereumHardfork::Dao).transitions_at_block(block.number) {
@@ -393,7 +403,13 @@ where
         // NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
 
-        Ok(BlockExecutionOutput { state: self.state.take_bundle(), receipts, requests, gas_used, total_block_fees })
+        Ok(BlockExecutionOutput {
+            state: self.state.take_bundle(),
+            receipts,
+            requests,
+            gas_used,
+            total_block_fees,
+        })
     }
 }
 
@@ -435,7 +451,7 @@ where
         }
 
         let EthExecuteOutput { receipts, requests, gas_used: _, total_block_fees: _ } =
-            self.executor.execute_without_verification(block, total_difficulty, None)?;  // TODO: check block address
+            self.executor.execute_without_verification(block, total_difficulty, None)?; // TODO: check block address
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 

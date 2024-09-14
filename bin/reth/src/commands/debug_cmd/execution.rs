@@ -1,10 +1,6 @@
 //! Command for debugging execution.
 
-use std::{path::PathBuf, sync::Arc};
-use crate::{
-    args::NetworkArgs,
-    utils::get_single_header,
-};
+use crate::{args::NetworkArgs, utils::get_single_header};
 use clap::Parser;
 use futures::{stream::select as stream_select, StreamExt};
 use reth_beacon_consensus::EthBeaconConsensus;
@@ -34,6 +30,7 @@ use reth_stages::{
 };
 use reth_static_file::StaticFileProducer;
 use reth_tasks::TaskExecutor;
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::watch;
 use tracing::*;
 

@@ -96,10 +96,7 @@ where
     }
 
     /// Fetches the botanix provider
-    pub fn get_botanix_provider(
-        &self,
-        _client: ClientVersionV1,
-    ) -> EngineApiResult<Botanix> {
+    pub fn get_botanix_provider(&self, _client: ClientVersionV1) -> EngineApiResult<Botanix> {
         Ok(self.inner.botanix_provider.clone())
     }
 
@@ -970,7 +967,7 @@ mod tests {
             task_executor,
             client,
             EngineCapabilities::default(),
-            Botanix::new(BotanixConfig::default())
+            Botanix::new(BotanixConfig::default()),
         );
         let handle = EngineApiTestHandle { chain_spec, provider, from_api: engine_rx };
         (handle, api)

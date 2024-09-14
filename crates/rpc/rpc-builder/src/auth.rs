@@ -1,5 +1,6 @@
 use crate::error::{RpcError, ServerKind};
 use http::header::AUTHORIZATION;
+pub use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{
     core::RegisterMethodError,
     http_client::{transport::HttpBackend, HeaderMap},
@@ -7,9 +8,8 @@ use jsonrpsee::{
     Methods,
 };
 use reth_engine_primitives::EngineTypes;
-use reth_network_api::NetworkInfo;
-pub use jsonrpsee::server::ServerBuilder;
 pub use reth_ipc::server::Builder as IpcServerBuilder;
+use reth_network_api::NetworkInfo;
 use reth_rpc_api::servers::*;
 use reth_rpc_eth_types::EthSubscriptionIdProvider;
 use reth_rpc_layer::{
@@ -58,8 +58,8 @@ use tower::layer::util::Identity;
 //         evm_config.clone(),
 //     );
 
-//     let gas_oracle = GasPriceOracle::new(provider.clone(), Default::default(), eth_cache.clone());
-//     let botanix_provider = Botanix::new(botanix_config);
+//     let gas_oracle = GasPriceOracle::new(provider.clone(), Default::default(),
+// eth_cache.clone());     let botanix_provider = Botanix::new(botanix_config);
 
 //     let fee_history_cache =
 //         FeeHistoryCache::new(eth_cache.clone(), FeeHistoryCacheConfig::default());
@@ -116,7 +116,8 @@ use tower::layer::util::Identity;
 
 //     // Create auth middleware.
 //     let middleware =
-//         tower::ServiceBuilder::new().layer(AuthLayer::new(JwtAuthValidator::new(secret.clone())));
+//         tower::ServiceBuilder::new().layer(AuthLayer::new(JwtAuthValidator::new(secret.
+// clone())));
 
 //     // By default, both http and ws are enabled.
 //     let server = ServerBuilder::new()

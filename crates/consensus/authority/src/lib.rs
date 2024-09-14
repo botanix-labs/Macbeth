@@ -22,7 +22,9 @@
 
 use pbft::PbftCommitmentCriteria;
 use reth_chainspec::ChainSpec;
-use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput};
+use reth_consensus::{
+    Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
+};
 use reth_consensus_common::{
     utils::{unix_timestamp, validate_chain_version, validate_extra_data_header_authorities},
     validation::{self},
@@ -34,10 +36,10 @@ use reth_primitives::{
     SealedHeader, U256,
 };
 
+use reth_primitives::BlockWithSenders;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-use reth_primitives::BlockWithSenders;
 mod block_builder;
 mod block_fetcher;
 mod builder;
@@ -80,8 +82,7 @@ impl AuthorityConsensus {
 }
 
 impl Consensus for AuthorityConsensus {
-
-    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError>{
+    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
         Ok(())
     }
 
@@ -94,7 +95,8 @@ impl Consensus for AuthorityConsensus {
     }
 
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
-        // reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?; //TODO check this
+        // reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?;
+        // //TODO check this
         Ok(())
     }
 
@@ -118,7 +120,8 @@ impl Consensus for AuthorityConsensus {
     }
 
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        //reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec) // TODO: check this
+        //reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec) //
+        // TODO: check this
         Ok(())
     }
 
@@ -193,7 +196,7 @@ impl Consensus for AuthorityConsensus {
         })?;
 
         if valid_sigs < PbftCommitmentCriteria::min_commitments(authority_signers.len() as u16) {
-            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures{
+            return Err(ConsensusError::MissingQuorumOfAuthoritySignatures {
                 expected: authority_signers.len() as u16,
                 actual: valid_sigs,
             });
@@ -435,9 +438,7 @@ mod tests {
         block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
         is_inturn,
     };
-    use reth_primitives::{
-        extra_data_header::ExtraDataHeader, public_key_to_address, Bytes,
-    };
+    use reth_primitives::{extra_data_header::ExtraDataHeader, public_key_to_address, Bytes};
 
     use super::*;
 
@@ -591,7 +592,6 @@ mod tests {
         let result = consensus.validate_block_beneficiary(&header);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn is_inturn_true() {

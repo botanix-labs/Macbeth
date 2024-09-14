@@ -51,9 +51,15 @@ impl Default for BitcoindConfig {
 }
 
 impl BitcoindConfig {
-    pub fn url(&self) -> &Url { &self.url }
-    pub fn username(&self) -> &str { &self.username }
-    pub fn password(&self) -> &str { &self.password }
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+    pub fn password(&self) -> &str {
+        &self.password
+    }
 }
 
 impl BitcoindConfig {

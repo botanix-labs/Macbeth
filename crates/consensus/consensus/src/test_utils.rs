@@ -123,8 +123,8 @@ impl Consensus for TestConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
-    
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(),ConsensusError>  {
+
+    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         Ok(())
     }
 }

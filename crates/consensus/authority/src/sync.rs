@@ -70,10 +70,8 @@ mod tests {
 
     use super::*;
     use reth_beacon_consensus::BeaconEngineMessage;
-    use reth_eth_wire::{
-        Capabilities, Capability, EthVersion, Status
-    };
-    use reth_network::{PeerRequestSender, PeerRequest};
+    use reth_eth_wire::{Capabilities, Capability, EthVersion, Status};
+    use reth_network::{PeerRequest, PeerRequestSender};
     use reth_node_ethereum::EthEngineTypes;
     use reth_rpc_types::PeerId;
     use tokio::sync::mpsc;

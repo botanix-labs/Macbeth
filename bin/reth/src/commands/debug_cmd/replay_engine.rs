@@ -1,4 +1,3 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
 use clap::Parser;
 use eyre::Context;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
@@ -25,6 +24,7 @@ use reth_stages::Pipeline;
 use reth_static_file::StaticFileProducer;
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::noop::NoopTransactionPool;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 use tracing::*;
 

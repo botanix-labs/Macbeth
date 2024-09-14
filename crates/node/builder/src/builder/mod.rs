@@ -17,11 +17,11 @@ use reth_db_api::{
     database_metrics::{DatabaseMetadata, DatabaseMetrics},
 };
 use reth_exex::ExExContext;
-use reth_network::frost::manager::FrostConfig;
-use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes};
 use reth_network::{
-    NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager,
+    frost::manager::FrostConfig, NetworkBuilder, NetworkConfig, NetworkConfigBuilder,
+    NetworkHandle, NetworkManager,
 };
+use reth_node_api::{FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes};
 use reth_node_core::{
     cli::config::{PayloadBuilderConfig, RethTransactionPoolConfig},
     dirs::{ChainPath, DataDirPath},
@@ -589,7 +589,12 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     ///
     /// Spawns the configured network and associated tasks and returns the [`NetworkHandle`]
     /// connected to that network.
-    pub fn start_network<Pool>(&self, builder: NetworkBuilder<(), ()>, pool: Pool, frost_config: Option<FrostConfig>,) -> NetworkHandle
+    pub fn start_network<Pool>(
+        &self,
+        builder: NetworkBuilder<(), ()>,
+        pool: Pool,
+        frost_config: Option<FrostConfig>,
+    ) -> NetworkHandle
     where
         Pool: TransactionPool + Unpin + 'static,
     {

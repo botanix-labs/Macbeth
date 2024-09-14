@@ -1,24 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use bitcoin::hashes::{sha256, Hash};
-use reth_beacon_consensus::BeaconEngineMessage;
-use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
-use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};
-use reth_network_p2p::{full_block::FullBlockClient, BodiesClient, HeadersClient};
-use reth_node_api::EngineTypes;
-use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain,
-    StateProviderFactory,
-};
-use tokio::sync::{
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
-use tracing::{error, info, warn};
-use reth_evm::execute::BlockExecutorProvider;
 use crate::{
     engine_util,
     excecution_utils::authority_execution_utils::execute_imported_block,
@@ -26,8 +7,26 @@ use crate::{
     utxo_sync::{UTXOSync, UTXOSyncEngine},
     AuthorityConsensus, Storage,
 };
+use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{FinalizeSignerRequest, Output};
+use reth_beacon_consensus::BeaconEngineMessage;
+use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
+use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
+use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_evm::execute::BlockExecutorProvider;
+use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};
+use reth_network_p2p::{full_block::FullBlockClient, BodiesClient, HeadersClient};
+use reth_node_api::EngineTypes;
+use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
+};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
+use tracing::{error, info, warn};
 
 pub struct BlockFetcherTask<EF, BF, DB, Engine: EngineTypes, NetworkClient, ToFrostMan> {
     /// Authority consensus

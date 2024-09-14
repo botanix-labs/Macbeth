@@ -3,7 +3,7 @@ use core::fmt;
 use std::str::FromStr;
 
 use alloy_rlp::{Decodable, Encodable};
-use reth_eth_wire::{Capability, protocol::Protocol};
+use reth_eth_wire::{protocol::Protocol, Capability};
 use reth_network_peers::PeerId;
 use reth_primitives::{Buf, BufMut, BytesMut};
 use tracing::warn;

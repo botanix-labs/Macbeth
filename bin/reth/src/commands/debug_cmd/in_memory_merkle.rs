@@ -1,6 +1,5 @@
 //! Command for debugging in-memory merkle trie calculation.
 
-use std::{path::PathBuf, sync::Arc};
 use crate::{
     args::NetworkArgs,
     utils::{get_single_body, get_single_header},
@@ -28,6 +27,7 @@ use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use reth_trie::StateRoot;
 use reth_trie_db::DatabaseStateRoot;
+use std::{path::PathBuf, sync::Arc};
 use tracing::*;
 
 use crate::macros::block_executor;

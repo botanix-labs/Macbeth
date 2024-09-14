@@ -2,11 +2,11 @@
 
 use std::{fmt, str::FromStr};
 
-use reth_rpc_types::engine::JwtSecret;
-use revm_primitives::alloy_primitives::hex;
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
 use reth_primitives::U256;
+use reth_rpc_types::engine::JwtSecret;
+use revm_primitives::alloy_primitives::hex;
 use tracing::error;
 use url::Url;
 

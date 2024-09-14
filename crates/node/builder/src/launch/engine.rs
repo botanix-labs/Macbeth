@@ -6,21 +6,23 @@ use reth_beacon_consensus::{
     BeaconConsensusEngineHandle,
 };
 use reth_blockchain_tree::BlockchainTreeConfig;
-use reth_btc_wallet::{bitcoind::{BitcoindConfig, BitcoindFactory}, test_utils::MockBitcoindFactory};
+use reth_btc_wallet::{
+    bitcoind::{BitcoindConfig, BitcoindFactory},
+    test_utils::MockBitcoindFactory,
+};
 use reth_chainspec::ChainSpec;
 use reth_engine_service::service::{ChainEvent, EngineService};
 use reth_engine_tree::{
     engine::{EngineApiRequest, EngineRequestHandler},
     tree::TreeConfig,
 };
-use reth_rpc_eth_types::builder::botanix_config::Botanix;
-use reth_rpc_eth_types::builder::botanix_config::BotanixConfig;
 use reth_engine_util::EngineMessageStreamExt;
 use reth_exex::ExExManagerHandle;
 use reth_network::{NetworkSyncUpdater, SyncState};
 use reth_network_api::{BlockDownloaderProvider, NetworkEventListenerProvider};
 use reth_node_api::{BuiltPayload, FullNodeTypes, NodeAddOns};
 use reth_node_core::{
+    cli::config::BtcServerConfig,
     dirs::{ChainPath, DataDirPath},
     exit::NodeExitFuture,
     primitives::Head,
@@ -30,13 +32,13 @@ use reth_node_core::{
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_provider::providers::BlockchainProvider2;
 use reth_rpc_engine_api::{capabilities::EngineCapabilities, EngineApi};
+use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;
 use reth_tracing::tracing::{debug, error, info};
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use reth_node_core::cli::config::BtcServerConfig;
 
 use crate::{
     components::NodeComponents,
@@ -263,7 +265,7 @@ where
         // create botanix client
         let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
         let bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
-      
+
         let botanix_config = BotanixConfig::default()
             .btc_server(node_config.rpc.btc_server.clone())
             .bitcoin_network(node_config.rpc.btc_network)
@@ -272,9 +274,7 @@ where
                 bitcoind_config.username().to_owned(),
                 bitcoind_config.password().to_owned(),
             )
-            .btc_server_jwt_secret(
-                btc_signing_server_jwt_secret
-            );
+            .btc_server_jwt_secret(btc_signing_server_jwt_secret);
 
         let engine_api = EngineApi::new(
             ctx.blockchain_db().clone(),

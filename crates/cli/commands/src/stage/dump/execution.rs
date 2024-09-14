@@ -1,7 +1,7 @@
 use super::setup;
 use reth_db::{
     cursor::DbCursorRO, database::Database, table::TableImporter, tables, transaction::DbTx,
-    DatabaseEnv
+    DatabaseEnv,
 };
 use reth_db_common::DbTool;
 use reth_evm::{execute::BlockExecutorProvider, noop::NoopBlockExecutorProvider};

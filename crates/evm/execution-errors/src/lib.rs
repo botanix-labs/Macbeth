@@ -13,9 +13,9 @@
 extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, string::String};
-use core::fmt;
 use alloy_eips::BlockNumHash;
 use alloy_primitives::B256;
+use core::fmt;
 use derive_more::Display;
 use reth_consensus::ConsensusError;
 use reth_prune_types::PruneSegmentError;
@@ -189,7 +189,6 @@ pub enum BlockExecutionError {
     Consensus(ConsensusError),
     /// Internal, i.e. non consensus or validation related Block Executor Errors
     Internal(InternalBlockExecutionError),
-
     // /// Cannot add and existing federation memeber to the federation
     // #[display("Cannot add and existing federation memeber to the federation")]
     // CannotAddExistingFederationMember,

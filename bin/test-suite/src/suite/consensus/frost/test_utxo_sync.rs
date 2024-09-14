@@ -12,9 +12,7 @@ use reth::{
 };
 use reth_btc_wallet::address::EthAddress;
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{
-    extra_data_header::ExtraDataHeader, header_ext::HeaderExt,U256,
-};
+use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, U256};
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
 

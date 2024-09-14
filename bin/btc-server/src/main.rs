@@ -26,7 +26,10 @@ mod rpc {
 }
 
 use std::{
-    net::SocketAddr, path::Path, sync::Arc, time::{Duration, SystemTime}
+    net::SocketAddr,
+    path::Path,
+    sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 use bitcoin::{BlockHash, Transaction, TxOut};

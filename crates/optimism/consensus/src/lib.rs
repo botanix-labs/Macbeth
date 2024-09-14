@@ -134,7 +134,7 @@ impl Consensus for OptimismBeaconConsensus {
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
         validation::validate_block_standalone(block, &self.chain_spec)
     }
-    
+
     fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
         validate_block_pre_execution(block, &self.chain_spec)
     }

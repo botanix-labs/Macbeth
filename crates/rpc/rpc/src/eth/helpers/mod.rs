@@ -4,6 +4,7 @@
 pub mod signer;
 
 mod block;
+mod botanix;
 mod call;
 mod fees;
 mod pending_block;
@@ -12,4 +13,3 @@ mod spec;
 mod state;
 mod trace;
 mod transaction;
-mod botanix;

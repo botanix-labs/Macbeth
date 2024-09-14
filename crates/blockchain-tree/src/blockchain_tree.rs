@@ -1380,7 +1380,7 @@ mod tests {
     use alloy_genesis::{Genesis, GenesisAccount};
     use assert_matches::assert_matches;
     use linked_hash_set::LinkedHashSet;
-    
+
     use reth_chainspec::{ChainSpecBuilder, MAINNET};
     use reth_consensus::test_utils::TestConsensus;
     use reth_db::{tables, test_utils::TempDatabase, DatabaseEnv};

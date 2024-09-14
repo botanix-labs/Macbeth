@@ -4,6 +4,7 @@ use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{frost::manager::ToFrostManager, NetworkHandle};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::EthEngineTypes;
@@ -14,7 +15,6 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use reth_evm::execute::BlockExecutorProvider;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{

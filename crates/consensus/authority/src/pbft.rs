@@ -1,20 +1,18 @@
 use crate::{utils::retry_exec, AuthorityConsensus, Storage};
+use frost_secp256k1_tr as frost;
 use reth_blockchain_tree_api::BlockchainTreeViewer;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_consensus::Consensus;
-use reth_consensus_common::utils::{is_inturn, unix_timestamp};
+use reth_consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp};
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
-use reth_network::frost::manager::{PeerData, ToFrostManager};
-use reth_network_p2p::HeadersClient;
-use reth_network_peers::pk2id;
-use frost_secp256k1_tr as frost;
-use reth_consensus_common::utils::current_inturn_index;
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig},
+    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
+use reth_network_p2p::HeadersClient;
+use reth_network_peers::pk2id;
 
 use reth_primitives::{
     extra_data_header::ExtraDataHeaderDeserializeError,
@@ -22,7 +20,7 @@ use reth_primitives::{
     BlockBody, BlockHash, BlockWithSenders, SealedBlock, TransactionSigned, U256,
 };
 use reth_provider::{
-    BlockExecutionInput, BlockReader, BlockReaderIdExt, ProviderError, StateProviderFactory
+    BlockExecutionInput, BlockReader, BlockReaderIdExt, ProviderError, StateProviderFactory,
 };
 
 use reth_revm::database::StateProviderDatabase;
@@ -132,12 +130,12 @@ impl PartialEq for ValidateBlockError {
             (
                 ValidateBlockError::ParentBlockNotFound(a),
                 ValidateBlockError::ParentBlockNotFound(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::ForkDepthGreaterThanOne(a),
                 ValidateBlockError::ForkDepthGreaterThanOne(b),
-            )
-            | (
+            ) |
+            (
                 ValidateBlockError::BlockAlreadyInCanonChain(a),
                 ValidateBlockError::BlockAlreadyInCanonChain(b),
             ) => a == b,
@@ -580,8 +578,8 @@ where
             let number_of_valid_sigs =
                 saved_block.header().check_authority_sig_add(&self.config.authorities)?;
             info!(target: "consensus::authority::pbft::init_block_proposal" ,"number of valid sigs: {}", number_of_valid_sigs);
-            if number_of_valid_sigs
-                >= PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+            if number_of_valid_sigs >=
+                PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
             {
                 info!(target: "consensus::authority::pbft::init_block_proposal" ,"We have enough commitments, time to produce a block");
                 // TODO (armins) need better error handling
@@ -758,8 +756,8 @@ where
             .unwrap_or_else(HashSet::new);
 
         // if we have enough precommitments, we can move to the next state
-        if pre_commits.len() as u16
-            >= PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
+        if pre_commits.len() as u16 >=
+            PbftCommitmentCriteria::min_pre_commitments(self.config.authorities.len() as u16)
         {
             // Save that we processed this time slot from this peer
             let time_slot = block.header.timestamp / 60;
@@ -768,7 +766,12 @@ where
             mutable_header.sign_block(&self.secret_key)?;
             let signed_block = SealedBlock::new(
                 mutable_header.seal_slow(),
-                BlockBody { transactions: block.body.clone(), ommers: vec![], withdrawals: None, requests: None, },
+                BlockBody {
+                    transactions: block.body.clone(),
+                    ommers: vec![],
+                    withdrawals: None,
+                    requests: None,
+                },
             );
             // Update sealed blocks
             self.sealed_blocks.write().await.insert(block_hash, signed_block.clone());
@@ -852,8 +855,8 @@ where
         }
 
         // Check that the commited block is the same as the block we are tracking
-        if current_header.segregated_signature_block_hash()?
-            != block.header.segregated_signature_block_hash()?
+        if current_header.segregated_signature_block_hash()? !=
+            block.header.segregated_signature_block_hash()?
         {
             warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash recieved from peer does not match the block we are tracking");
             return Ok(None);
@@ -879,8 +882,8 @@ where
         info!(target: "consensus::authority::pbft::process_commitment", "number of valid sigs: {}", number_of_valid_sigs);
         info!(target: "consensus::authority::pbft::process_commitment", "max signers: {}", self.config.max_signers);
         // if we have enough commitments, we can move to the next state
-        if number_of_valid_sigs
-            >= PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
+        if number_of_valid_sigs >=
+            PbftCommitmentCriteria::min_commitments(self.config.authorities.len() as u16)
         {
             info!(target: "consensus::authority::pbft::process_commitment" ,"We have enough commitments, time to produce a block");
             let block_witness =
@@ -895,7 +898,7 @@ where
     }
 }
 
-/* 
+/*
 #[cfg(test)]
 pub(crate) mod tests {
     #![allow(unused_mut)]

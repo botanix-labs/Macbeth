@@ -16,12 +16,18 @@ use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
 use url::Url;
 
-use crate::{args::{
-    types::{MaxU32, ZeroAsNoneU64},
-    GasPriceOracleArgs, RpcStateCacheArgs,
-}, cli::config::BtcServerConfig};
+use crate::{
+    args::{
+        types::{MaxU32, ZeroAsNoneU64},
+        GasPriceOracleArgs, RpcStateCacheArgs,
+    },
+    cli::config::BtcServerConfig,
+};
 
-use super::{bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME}, BitcoindArgs};
+use super::{
+    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
+    BitcoindArgs,
+};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -314,8 +320,8 @@ impl RpcServerArgs {
         self
     }
 
-    // /// Convenience function for starting a rpc server with configs which extracted from cli args.
-    // pub async fn start_rpc_server<Provider, Pool, Network, Tasks, Events, EvmConfig>(
+    // /// Convenience function for starting a rpc server with configs which extracted from cli
+    // args. pub async fn start_rpc_server<Provider, Pool, Network, Tasks, Events, EvmConfig>(
     //     &self,
     //     provider: Provider,
     //     pool: Pool,
@@ -408,7 +414,6 @@ impl RpcServerArgs {
     //     .await
     // }
 }
-
 
 impl BtcServerConfig for RpcServerArgs {
     fn btc_signing_server_jwt_secret(&self) -> Result<Option<JwtSecret>, JwtError> {
@@ -538,13 +543,13 @@ impl BtcServerConfig for RpcServerArgs {
 
 //         if self.ws {
 //             let socket_address = SocketAddr::new(self.ws_addr, self.ws_port);
-//             config = config.with_ws_address(socket_address).with_ws(self.http_ws_server_builder());
-//         }
+//             config =
+// config.with_ws_address(socket_address).with_ws(self.http_ws_server_builder());         }
 
 //         if self.is_ipc_enabled() {
 //             config =
-//                 config.with_ipc(self.ipc_server_builder()).with_ipc_endpoint(self.ipcpath.clone());
-//         }
+//                 
+// config.with_ipc(self.ipc_server_builder()).with_ipc_endpoint(self.ipcpath.clone());         }
 
 //         config
 //     }

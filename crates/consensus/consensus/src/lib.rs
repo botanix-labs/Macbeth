@@ -196,7 +196,7 @@ pub enum ConsensusError {
         /// The expected quorum of authority signatures.
         expected: u16,
         /// The actual quorum of authority signatures.
-        actual: u16 
+        actual: u16,
     },
     /// PoA specific: authority list is missing in the extra data header
     #[display("Missing authority list")]
@@ -445,7 +445,6 @@ pub enum ConsensusError {
     // /// Error type transparently wrapping HeaderValidationError.
     // #[display("failed to validate header: {_0}")]
     // HeaderValidationError(HeaderValidationError),
-
     /// Inturn Validation Error
     #[display("in turn validation error")]
     ValidateInturnError,
@@ -457,7 +456,7 @@ pub enum ConsensusError {
     /// Invalid Chain Version
     #[display("invalid chain version")]
     InvalidChainVersion,
-    
+
     /// Error when the block's base fee is different from the expected base fee.
     #[display("block base fee mismatch: {_0}")]
     BaseFeeDiff(GotExpected<u64>),

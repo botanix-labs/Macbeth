@@ -5,7 +5,7 @@ use crate::{
         utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
         LogArgs,
     },
-    commands::{debug_cmd, poa::{PoaNodeCommand}},
+    commands::{debug_cmd, poa::PoaNodeCommand},
     macros::block_executor,
     version::{LONG_VERSION, SHORT_VERSION},
 };
@@ -29,7 +29,6 @@ use tracing::info;
 /// `reth::cli` but were moved to the `reth_node_core` crate. This re-export avoids a breaking
 /// change.
 pub use crate::core::cli::*;
-
 
 /// Default [Directive] for [EnvFilter] which disables high-frequency debug logs from `hyper` and
 /// `trust-dns`

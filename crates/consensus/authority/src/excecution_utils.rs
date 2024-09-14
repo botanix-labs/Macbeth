@@ -1,25 +1,30 @@
 pub(crate) mod authority_execution_utils {
     use bitcoin::hashes::{sha256, Hash};
     use reth_btc_wallet::bitcoind::BitcoindFactory;
+    use reth_chainspec::ChainSpec;
     use reth_consensus::Consensus;
     use reth_consensus_common::utils::{
         get_block_producer_address, unix_timestamp, validate_extra_data_header_authorities,
     };
-    use reth_evm::execute::{BatchExecutor, BlockExecutorProvider};
+    use reth_evm::execute::{BatchExecutor, BlockExecutorProvider, Executor};
     use reth_evm_ethereum::execute::EthBlockExecutor;
-    use reth_execution_errors::{BlockExecutionError, BlockValidationError, InternalBlockExecutionError};
-    use reth_chainspec::ChainSpec;
+    use reth_execution_errors::{
+        BlockExecutionError, BlockValidationError, InternalBlockExecutionError,
+    };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
-        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT}, extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, header_ext::HeaderExt, proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256
+        constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+        header_ext::HeaderExt,
+        proofs, public_key_to_address, Address, Block, BlockBody, BlockHashOrNumber,
+        BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock,
+        SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome, ProviderError, StateProviderFactory
+        BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome,
+        ProviderError, StateProviderFactory,
     };
-    use reth_revm::{
-        database::StateProviderDatabase, db::State,
-    };
-    use reth_evm::execute::Executor;
+    use reth_revm::{database::StateProviderDatabase, db::State};
 
     use std::sync::Arc;
 
@@ -51,7 +56,8 @@ pub(crate) mod authority_execution_utils {
             agg_pk,
         )?;
 
-        let block = Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None, };
+        let block =
+            Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
 
@@ -97,7 +103,8 @@ pub(crate) mod authority_execution_utils {
         genesis_authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<SealedHeader, BlockExecutionError> {
         let Block { header, body, .. } = block;
-        let body = BlockBody { transactions: body, ommers: vec![], withdrawals: None, requests: None, };
+        let body =
+            BlockBody { transactions: body, ommers: vec![], withdrawals: None, requests: None };
 
         // fill in the rest of the fields
         let header = complete_header(
@@ -191,7 +198,9 @@ pub(crate) mod authority_execution_utils {
             })?;
 
         let _block_builder_address = get_block_producer_address(&sealed_block.header.clone());
-        let db = client.latest().map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?;
+        let db = client.latest().map_err(|e| {
+            BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
+        })?;
         let db = StateProviderDatabase::new(db);
         let mut batch_executor = executor_factory.batch_executor(db);
         let input = BlockExecutionInput::new(&block_with_senders, U256::ZERO);
@@ -210,10 +219,14 @@ pub(crate) mod authority_execution_utils {
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
     ) -> Result<Header, BlockExecutionError> {
-        let best_block = client.best_block_number().map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?;
+        let best_block = client.best_block_number().map_err(|e| {
+            BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
+        })?;
         let best_hash = client
             .block_hash(best_block)
-            .map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e)))?
+            .map_err(|e| {
+                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
+            })?
             .unwrap_or_else(|| {
                 panic!("best block hash not found for block number: {}", best_block);
             });
@@ -292,7 +305,12 @@ pub(crate) mod authority_execution_utils {
         agg_pk: &secp256k1::PublicKey,
         authorities: &Vec<secp256k1::PublicKey>,
     ) -> Result<Header, BlockExecutionError> {
-        let exec_outcome = ExecutionOutcome::new(block_exec_result.state.clone(), block_exec_result.receipts.clone().into(), header.number.into(), vec![Requests(block_exec_result.requests.clone())]);
+        let exec_outcome = ExecutionOutcome::new(
+            block_exec_result.state.clone(),
+            block_exec_result.receipts.clone().into(),
+            header.number.into(),
+            vec![Requests(block_exec_result.requests.clone())],
+        );
         let receipts = exec_outcome.receipts_by_block(header.number);
         header.receipts_root = if receipts.is_empty() {
             EMPTY_RECEIPTS
@@ -310,9 +328,9 @@ pub(crate) mod authority_execution_utils {
         let state_root = client
             .latest()
             .map_err(|_| {
-                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(ProviderError::StateForHashNotFound(
-                    header.hash_slow(),
-                )))
+                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(
+                    ProviderError::StateForHashNotFound(header.hash_slow()),
+                ))
             })?
             .state_root(&block_exec_result.state)
             .unwrap();

@@ -1,12 +1,9 @@
-use std::{sync::Arc, time::Duration};
-use reth_blockchain_tree_api::BlockchainTreeEngine;
-use reth_evm::execute::BlockExecutorProvider;
-use reth_network_p2p::HeadersClient;
-use tracing::{info, error, warn};
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
 };
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -14,15 +11,18 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_network_p2p::HeadersClient;
+use reth_network_peers::pk2id;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
-use reth_network_peers::pk2id;
+use tracing::{error, info, warn};
 /// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PbftNotificationMessage {

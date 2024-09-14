@@ -69,10 +69,7 @@ use crate::{
 };
 use futures::{Future, StreamExt};
 use parking_lot::Mutex;
-use reth_eth_wire::{
-    Capabilities, capability::CapabilityMessage,
-    DisconnectReason,
-};
+use reth_eth_wire::{capability::CapabilityMessage, Capabilities, DisconnectReason};
 use reth_network_api::ReputationChangeKind;
 
 #[cfg_attr(doc, aquamarine::aquamarine)]

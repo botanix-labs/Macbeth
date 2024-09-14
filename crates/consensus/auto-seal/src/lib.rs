@@ -128,7 +128,7 @@ impl Consensus for AutoSealConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(),ConsensusError>  {
+    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         Ok(())
     }
 }
@@ -361,21 +361,21 @@ impl StorageInner {
 
     // /// Executes the block with the given block and senders, on the provided [EVMProcessor].
     // ///
-    // /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    // pub(crate) fn execute<EvmConfig, BF>(
+    // /// This returns the poststate from execution and post-block changes, as well as the gas
+    // used. pub(crate) fn execute<EvmConfig, BF>(
     //     &mut self,
     //     block: &BlockWithSenders,
     //     executor: &mut EVMProcessor<'_, EvmConfig, BF>,
     // ) -> Result<(BundleStateWithReceipts, u64), BlockExecutionError>
     // where
     //     EvmConfig: ConfigureEvm,
-    //     // B/c we have hijacked the eth processor the types (BitcoinFactory & BitcoinNetwork) need
-    //     // to be defined here
+    //     // B/c we have hijacked the eth processor the types (BitcoinFactory & BitcoinNetwork)
+    // need     // to be defined here
     //     BF: BitcoindFactory,
     // {
     //     trace!(target: "consensus::auto", transactions=?&block.body, "executing transactions");
-    //     // TODO: there isn't really a parent beacon block root here, so not sure whether or not to
-    //     // call the 4788 beacon contract
+    //     // TODO: there isn't really a parent beacon block root here, so not sure whether or not
+    // to     // call the 4788 beacon contract
 
     //     // set the first block to find the correct index in bundle state
     //     executor.set_first_block(block.number);
@@ -444,7 +444,6 @@ impl StorageInner {
     //     header.state_root = state_root;
     //     Ok(header)
     // }
-
 
     /// Builds and executes a new block with the given transactions, on the provided executor.
     ///

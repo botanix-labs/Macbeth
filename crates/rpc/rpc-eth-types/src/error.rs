@@ -19,7 +19,6 @@ use revm::primitives::{EVMError, ExecutionResult, HaltReason, OutOfGasError};
 use revm_inspectors::tracing::MuxError;
 use tracing::error;
 
-
 /// Result alias
 pub type EthResult<T> = Result<T, EthApiError>;
 

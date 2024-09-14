@@ -1,6 +1,5 @@
 //! Command for debugging merkle trie calculation.
 
-use std::{path::PathBuf, sync::Arc};
 use crate::utils::get_single_header;
 use backon::{ConstantBuilder, Retryable};
 use clap::Parser;
@@ -27,6 +26,7 @@ use reth_stages::{
     ExecInput, Stage, StageCheckpoint,
 };
 use reth_tasks::TaskExecutor;
+use std::{path::PathBuf, sync::Arc};
 use tracing::*;
 
 use crate::{args::NetworkArgs, macros::block_executor};

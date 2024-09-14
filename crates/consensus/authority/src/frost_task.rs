@@ -9,6 +9,7 @@ use crate::{
 };
 
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
         manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
@@ -17,7 +18,6 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_chainspec::ChainSpec;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},

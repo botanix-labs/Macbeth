@@ -4,7 +4,8 @@ use reth_rpc_api::{EngineEthApiServer, EthApiServer, EthFilterApiServer};
 /// Re-export for convenience
 pub use reth_rpc_engine_api::EngineApi;
 use reth_rpc_types::{
-    botanix::GatewayAddress, state::StateOverride, BlockOverrides, EIP1186AccountProofResponse, Filter, JsonStorageKey, Log, RichBlock, SyncStatus, TransactionRequest
+    botanix::GatewayAddress, state::StateOverride, BlockOverrides, EIP1186AccountProofResponse,
+    Filter, JsonStorageKey, Log, RichBlock, SyncStatus, TransactionRequest,
 };
 use tracing_futures::Instrument;
 
@@ -110,19 +111,12 @@ where
     }
 
     /// Handler for `eth_getGatewayAddress`
-    async fn get_gateway_address(
-        &self,
-        eth_address: Address,
-    ) -> Result<Option<GatewayAddress>> {
+    async fn get_gateway_address(&self, eth_address: Address) -> Result<Option<GatewayAddress>> {
         self.eth.get_gateway_address(eth_address).instrument(engine_span!()).await
     }
 
     /// Handler for `eth_getMerkleProof`
-    async fn get_merkle_proof(
-        &self,
-        txid: String,
-        block_hash: String,
-    ) -> Result<Bytes> {
+    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> Result<Bytes> {
         self.eth.get_merkle_proof(txid, block_hash).instrument(engine_span!()).await
     }
 
