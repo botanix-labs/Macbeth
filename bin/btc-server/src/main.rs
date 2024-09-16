@@ -27,17 +27,18 @@ mod rpc {
 
 use std::{
     net::SocketAddr,
+    path::Path,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 
 use bitcoin::{BlockHash, Transaction, TxOut};
 use bitcoincore_rpc::{Auth, RpcApi};
-use client::jwt::{get_or_create_jwt_secret_from_path, JwtError, JwtSecret};
 use config::{load_config, Config};
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
+use reth_rpc_layer::{JwtError, JwtSecret};
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
@@ -127,6 +128,14 @@ impl App {
         }
     }
 
+    fn get_or_create_jwt_secret_from_path(path: &Path) -> Result<JwtSecret, JwtError> {
+        if path.exists() {
+            JwtSecret::from_file(path)
+        } else {
+            JwtSecret::try_create_random(path)
+        }
+    }
+
     pub fn new(config: Config) -> Result<Self, Error> {
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
@@ -148,7 +157,7 @@ impl App {
         let mut btc_signing_server_jwt_secret = None;
         if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
             btc_signing_server_jwt_secret = Some(
-                get_or_create_jwt_secret_from_path(btc_signing_server_jwt_path)
+                Self::get_or_create_jwt_secret_from_path(btc_signing_server_jwt_path)
                     .map_err(Error::Jwt)?,
             )
         };

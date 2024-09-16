@@ -1,9 +1,9 @@
 use crate::EthPooledTransaction;
 use rand::Rng;
+use reth_chainspec::MAINNET;
 use reth_primitives::{
     constants::MIN_PROTOCOL_BASE_FEE, sign_message, AccessList, Address, Bytes, Transaction,
-    TransactionSigned, TryFromRecoveredTransaction, TxEip1559, TxEip4844, TxKind, TxLegacy, B256,
-    MAINNET, U256,
+    TransactionSigned, TxEip1559, TxEip4844, TxKind, TxLegacy, B256, U256,
 };
 
 /// A generator for transactions for testing purposes.
@@ -98,10 +98,7 @@ impl<R: Rng> TransactionGenerator<R> {
 
     /// Generates and returns a pooled EIP-1559 transaction with a random signer.
     pub fn gen_eip1559_pooled(&mut self) -> EthPooledTransaction {
-        EthPooledTransaction::try_from_recovered_transaction(
-            self.gen_eip1559().into_ecrecovered().unwrap(),
-        )
-        .unwrap()
+        self.gen_eip1559().into_ecrecovered().unwrap().try_into().unwrap()
     }
 
     /// Generates and returns a pooled EIP-4844 transaction with a random signer.
@@ -142,7 +139,7 @@ pub struct TransactionBuilder {
 impl TransactionBuilder {
     /// Converts the transaction builder into a legacy transaction format.
     pub fn into_legacy(self) -> TransactionSigned {
-        TransactionBuilder::signed(
+        Self::signed(
             TxLegacy {
                 chain_id: Some(self.chain_id),
                 nonce: self.nonce,
@@ -159,7 +156,7 @@ impl TransactionBuilder {
 
     /// Converts the transaction builder into a transaction format using EIP-1559.
     pub fn into_eip1559(self) -> TransactionSigned {
-        TransactionBuilder::signed(
+        Self::signed(
             TxEip1559 {
                 chain_id: self.chain_id,
                 nonce: self.nonce,
@@ -177,14 +174,18 @@ impl TransactionBuilder {
     }
     /// Converts the transaction builder into a transaction format using EIP-4844.
     pub fn into_eip4844(self) -> TransactionSigned {
-        TransactionBuilder::signed(
+        Self::signed(
             TxEip4844 {
                 chain_id: self.chain_id,
                 nonce: self.nonce,
                 gas_limit: self.gas_limit,
                 max_fee_per_gas: self.max_fee_per_gas,
                 max_priority_fee_per_gas: self.max_priority_fee_per_gas,
-                to: self.to,
+                placeholder: None,
+                to: match self.to {
+                    TxKind::Call(to) => to,
+                    TxKind::Create => Address::default(),
+                },
                 value: self.value,
                 access_list: self.access_list,
                 input: self.input,
@@ -221,13 +222,13 @@ impl TransactionBuilder {
     }
 
     /// Increments the nonce value of the transaction builder by 1.
-    pub fn inc_nonce(mut self) -> Self {
+    pub const fn inc_nonce(mut self) -> Self {
         self.nonce += 1;
         self
     }
 
     /// Decrements the nonce value of the transaction builder by 1, avoiding underflow.
-    pub fn decr_nonce(mut self) -> Self {
+    pub const fn decr_nonce(mut self) -> Self {
         self.nonce = self.nonce.saturating_sub(1);
         self
     }

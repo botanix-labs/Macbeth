@@ -1,33 +1,31 @@
 use crate::{
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
-    BundleStateDataProvider, ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider,
-    ReceiptProviderIdExt, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
+    ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, ReceiptProviderIdExt,
+    RequestsProvider, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
     TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
-use itertools::Itertools;
 use parking_lot::Mutex;
-use reth_db::models::{AccountBeforeTx, StoredBlockBodyIndices};
+use reth_chainspec::{ChainInfo, ChainSpec};
+use reth_db_api::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_evm::ConfigureEvmEnv;
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeViewer,
-    provider::{ProviderError, ProviderResult},
-};
-
 use reth_primitives::{
-    keccak256, trie::AccountProof, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId,
-    BlockNumHash, BlockNumber, BlockWithSenders, Bytecode, Bytes, ChainInfo, ChainSpec, Header,
-    Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue,
-    TransactionMeta, TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal,
-    Withdrawals, B256, U256,
+    keccak256, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumber,
+    BlockNumberOrTag, BlockWithSenders, Bytecode, Bytes, Header, Receipt, SealedBlock,
+    SealedBlockWithSenders, SealedHeader, StorageKey, StorageValue, TransactionMeta,
+    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256,
+    U256,
 };
-use reth_trie::updates::TrieUpdates;
-use revm::{
-    db::BundleState,
-    primitives::{BlockEnv, CfgEnvWithHandlerCfg},
+use reth_stages_types::{StageCheckpoint, StageId};
+use reth_storage_api::{StageCheckpointReader, StateProofProvider};
+use reth_storage_errors::provider::{ProviderError, ProviderResult};
+use reth_trie::{
+    prefix_set::TriePrefixSetsMut, updates::TrieUpdates, AccountProof, HashedPostState,
+    HashedStorage,
 };
+use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
 };
@@ -43,15 +41,18 @@ pub struct MockEthProvider {
     pub accounts: Arc<Mutex<HashMap<Address, ExtendedAccount>>>,
     /// Local chain spec
     pub chain_spec: Arc<ChainSpec>,
+    /// Local state roots
+    pub state_roots: Arc<Mutex<Vec<B256>>>,
 }
 
 impl Default for MockEthProvider {
-    fn default() -> MockEthProvider {
-        MockEthProvider {
+    fn default() -> Self {
+        Self {
             blocks: Default::default(),
             headers: Default::default(),
             accounts: Default::default(),
-            chain_spec: Arc::new(reth_primitives::ChainSpecBuilder::mainnet().build()),
+            chain_spec: Arc::new(reth_chainspec::ChainSpecBuilder::mainnet().build()),
+            state_roots: Default::default(),
         }
     }
 }
@@ -102,7 +103,7 @@ impl MockEthProvider {
 
     /// Add multiple blocks to local block store
     pub fn extend_blocks(&self, iter: impl IntoIterator<Item = (B256, Block)>) {
-        for (hash, block) in iter.into_iter() {
+        for (hash, block) in iter {
             self.add_header(hash, block.header.clone());
             self.add_block(hash, block)
         }
@@ -115,7 +116,7 @@ impl MockEthProvider {
 
     /// Add multiple headers to local header store
     pub fn extend_headers(&self, iter: impl IntoIterator<Item = (B256, Header)>) {
-        for (hash, header) in iter.into_iter() {
+        for (hash, header) in iter {
             self.add_header(hash, header)
         }
     }
@@ -127,9 +128,14 @@ impl MockEthProvider {
 
     /// Add account to local account store
     pub fn extend_accounts(&self, iter: impl IntoIterator<Item = (Address, ExtendedAccount)>) {
-        for (address, account) in iter.into_iter() {
+        for (address, account) in iter {
             self.add_account(address, account)
         }
+    }
+
+    /// Add state root to local state root store
+    pub fn add_state_root(&self, state_root: B256) {
+        self.state_roots.lock().push(state_root);
     }
 }
 
@@ -191,6 +197,8 @@ impl HeaderProvider for MockEthProvider {
 }
 
 impl ChainSpecProvider for MockEthProvider {
+    type ChainSpec = ChainSpec;
+
     fn chain_spec(&self) -> Arc<ChainSpec> {
         self.chain_spec.clone()
     }
@@ -254,7 +262,7 @@ impl TransactionsProvider for MockEthProvider {
                         excess_blob_gas: block.header.excess_blob_gas,
                         timestamp: block.header.timestamp,
                     };
-                    return Ok(Some((tx.clone(), meta)));
+                    return Ok(Some((tx.clone(), meta)))
                 }
             }
         }
@@ -266,7 +274,7 @@ impl TransactionsProvider for MockEthProvider {
         let mut current_tx_number: TxNumber = 0;
         for block in lock.values() {
             if current_tx_number + (block.body.len() as TxNumber) > id {
-                return Ok(Some(block.header.number));
+                return Ok(Some(block.header.number))
             }
             current_tx_number += block.body.len() as TxNumber;
         }
@@ -479,6 +487,14 @@ impl BlockReader for MockEthProvider {
         Ok(None)
     }
 
+    fn sealed_block_with_senders(
+        &self,
+        _id: BlockHashOrNumber,
+        _transaction_kind: TransactionVariant,
+    ) -> ProviderResult<Option<SealedBlockWithSenders>> {
+        Ok(None)
+    }
+
     fn block_range(&self, range: RangeInclusive<BlockNumber>) -> ProviderResult<Vec<Block>> {
         let lock = self.blocks.lock();
 
@@ -495,13 +511,20 @@ impl BlockReader for MockEthProvider {
     ) -> ProviderResult<Vec<BlockWithSenders>> {
         Ok(vec![])
     }
+
+    fn sealed_block_with_senders_range(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<SealedBlockWithSenders>> {
+        Ok(vec![])
+    }
 }
 
 impl BlockReaderIdExt for MockEthProvider {
     fn block_by_id(&self, id: BlockId) -> ProviderResult<Option<Block>> {
         match id {
             BlockId::Number(num) => self.block_by_number_or_tag(num),
-            BlockId::Hash(hash) => BlockReader::block_by_hash(self, hash.block_hash),
+            BlockId::Hash(hash) => self.block_by_hash(hash.block_hash),
         }
     }
 
@@ -530,16 +553,77 @@ impl AccountReader for MockEthProvider {
     }
 }
 
+impl StageCheckpointReader for MockEthProvider {
+    fn get_stage_checkpoint(&self, _id: StageId) -> ProviderResult<Option<StageCheckpoint>> {
+        Ok(None)
+    }
+
+    fn get_stage_checkpoint_progress(&self, _id: StageId) -> ProviderResult<Option<Vec<u8>>> {
+        Ok(None)
+    }
+
+    fn get_all_checkpoints(&self) -> ProviderResult<Vec<(String, StageCheckpoint)>> {
+        Ok(vec![])
+    }
+}
+
 impl StateRootProvider for MockEthProvider {
-    fn state_root(&self, _bundle_state: &BundleState) -> ProviderResult<B256> {
+    fn hashed_state_root(&self, _state: HashedPostState) -> ProviderResult<B256> {
+        Ok(self.state_roots.lock().pop().unwrap_or_default())
+    }
+
+    fn hashed_state_root_from_nodes(
+        &self,
+        _nodes: TrieUpdates,
+        _hashed_state: HashedPostState,
+        _prefix_sets: TriePrefixSetsMut,
+    ) -> ProviderResult<B256> {
+        Ok(self.state_roots.lock().pop().unwrap_or_default())
+    }
+
+    fn hashed_state_root_with_updates(
+        &self,
+        _state: HashedPostState,
+    ) -> ProviderResult<(B256, TrieUpdates)> {
+        let state_root = self.state_roots.lock().pop().unwrap_or_default();
+        Ok((state_root, Default::default()))
+    }
+
+    fn hashed_storage_root(
+        &self,
+        _address: Address,
+        _hashed_storage: HashedStorage,
+    ) -> ProviderResult<B256> {
         Ok(B256::default())
     }
 
-    fn state_root_with_updates(
+    fn hashed_state_root_from_nodes_with_updates(
         &self,
-        _bundle_state: &BundleState,
+        _nodes: TrieUpdates,
+        _hashed_state: HashedPostState,
+        _prefix_sets: TriePrefixSetsMut,
     ) -> ProviderResult<(B256, TrieUpdates)> {
-        Ok((B256::default(), Default::default()))
+        let state_root = self.state_roots.lock().pop().unwrap_or_default();
+        Ok((state_root, Default::default()))
+    }
+}
+
+impl StateProofProvider for MockEthProvider {
+    fn hashed_proof(
+        &self,
+        _hashed_state: HashedPostState,
+        address: Address,
+        _slots: &[B256],
+    ) -> ProviderResult<AccountProof> {
+        Ok(AccountProof::new(address))
+    }
+
+    fn witness(
+        &self,
+        _overlay: HashedPostState,
+        _target: HashedPostState,
+    ) -> ProviderResult<HashMap<B256, Bytes>> {
+        Ok(HashMap::default())
     }
 }
 
@@ -563,10 +647,6 @@ impl StateProvider for MockEthProvider {
                 _ => None,
             }
         }))
-    }
-
-    fn proof(&self, _address: Address, _keys: &[B256]) -> ProviderResult<AccountProof> {
-        Ok(AccountProof::default())
     }
 }
 
@@ -594,22 +674,6 @@ impl EvmEnvProvider for MockEthProvider {
     where
         EvmConfig: ConfigureEvmEnv,
     {
-        Ok(())
-    }
-
-    fn fill_block_env_at(
-        &self,
-        _block_env: &mut BlockEnv,
-        _at: BlockHashOrNumber,
-    ) -> ProviderResult<()> {
-        Ok(())
-    }
-
-    fn fill_block_env_with_header(
-        &self,
-        _block_env: &mut BlockEnv,
-        _header: &Header,
-    ) -> ProviderResult<()> {
         Ok(())
     }
 
@@ -655,19 +719,38 @@ impl StateProviderFactory for MockEthProvider {
         Ok(Box::new(self.clone()))
     }
 
+    fn state_by_block_number_or_tag(
+        &self,
+        number_or_tag: BlockNumberOrTag,
+    ) -> ProviderResult<StateProviderBox> {
+        match number_or_tag {
+            BlockNumberOrTag::Latest => self.latest(),
+            BlockNumberOrTag::Finalized => {
+                // we can only get the finalized state by hash, not by num
+                let hash =
+                    self.finalized_block_hash()?.ok_or(ProviderError::FinalizedBlockNotFound)?;
+
+                // only look at historical state
+                self.history_by_block_hash(hash)
+            }
+            BlockNumberOrTag::Safe => {
+                // we can only get the safe state by hash, not by num
+                let hash = self.safe_block_hash()?.ok_or(ProviderError::SafeBlockNotFound)?;
+
+                self.history_by_block_hash(hash)
+            }
+            BlockNumberOrTag::Earliest => self.history_by_block_number(0),
+            BlockNumberOrTag::Pending => self.pending(),
+            BlockNumberOrTag::Number(num) => self.history_by_block_number(num),
+        }
+    }
+
     fn pending(&self) -> ProviderResult<StateProviderBox> {
         Ok(Box::new(self.clone()))
     }
 
     fn pending_state_by_hash(&self, _block_hash: B256) -> ProviderResult<Option<StateProviderBox>> {
         Ok(Some(Box::new(self.clone())))
-    }
-
-    fn pending_with_provider<'a>(
-        &'a self,
-        _bundle_state_data: Box<dyn BundleStateDataProvider + 'a>,
-    ) -> ProviderResult<StateProviderBox> {
-        Ok(Box::new(self.clone()))
     }
 }
 
@@ -684,101 +767,21 @@ impl WithdrawalsProvider for MockEthProvider {
     }
 }
 
+impl RequestsProvider for MockEthProvider {
+    fn requests_by_block(
+        &self,
+        _id: BlockHashOrNumber,
+        _timestamp: u64,
+    ) -> ProviderResult<Option<reth_primitives::Requests>> {
+        Ok(None)
+    }
+}
+
 impl ChangeSetReader for MockEthProvider {
     fn account_block_changeset(
         &self,
         _block_number: BlockNumber,
     ) -> ProviderResult<Vec<AccountBeforeTx>> {
         Ok(Vec::default())
-    }
-}
-
-impl BlockchainTreeViewer for MockEthProvider {
-    fn blocks(&self) -> BTreeMap<BlockNumber, HashSet<BlockHash>> {
-        let lock = self.blocks.lock();
-        let mut map = BTreeMap::new();
-        for (block_hash, block) in lock.clone().into_iter() {
-            map.entry(block.number).or_insert_with(HashSet::new).insert(block_hash);
-        }
-
-        map
-    }
-
-    fn header_by_hash(&self, hash: BlockHash) -> Option<SealedHeader> {
-        let header = self.headers.lock().get(&hash).cloned();
-        header.map(|h| h.seal(hash))
-    }
-
-    fn block_by_hash(&self, hash: BlockHash) -> Option<SealedBlock> {
-        let block = self.blocks.lock().get(&hash).cloned();
-        block.map(|b| b.seal(hash))
-    }
-
-    fn block_with_senders_by_hash(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
-        None
-    }
-
-    fn buffered_block_by_hash(&self, _block_hash: BlockHash) -> Option<SealedBlock> {
-        None
-    }
-
-    fn buffered_header_by_hash(&self, _block_hash: BlockHash) -> Option<SealedHeader> {
-        None
-    }
-
-    fn canonical_blocks(&self) -> BTreeMap<BlockNumber, BlockHash> {
-        let lock = self.blocks.lock();
-        let mut map = BTreeMap::new();
-        for (block_hash, block) in lock.clone().into_iter() {
-            map.insert(block.number, block_hash);
-        }
-
-        map
-    }
-
-    fn is_canonical(&self, block_hash: BlockHash) -> Result<bool, ProviderError> {
-        let blocks = self.blocks.lock();
-        if blocks.contains_key(&block_hash) {
-            let sorted_blocks = blocks
-                .iter()
-                .map(|b| b.1)
-                .sorted_by(|a, b| Ord::cmp(&a.number, &b.number))
-                .collect::<Vec<&Block>>();
-            // get the last element of the hashmap
-            let tip = sorted_blocks.last().expect("at least one block").hash_slow();
-            return Ok(*tip == block_hash);
-        }
-        Err(ProviderError::BlockHashNotFound(block_hash))
-    }
-
-    fn canonical_tip(&self) -> BlockNumHash {
-        let (num, hash) = self
-            .canonical_blocks()
-            .iter()
-            .max_by_key(|(num, _)| *num)
-            .map(|(num, hash)| (*num, *hash))
-            .unwrap_or_default();
-
-        BlockNumHash::new(num, hash)
-    }
-
-    fn pending_blocks(&self) -> (BlockNumber, Vec<BlockHash>) {
-        (0, vec![])
-    }
-
-    fn pending_block_num_hash(&self) -> Option<BlockNumHash> {
-        None
-    }
-
-    fn pending_block_and_receipts(&self) -> Option<(SealedBlock, Vec<Receipt>)> {
-        None
-    }
-
-    fn receipts_by_block_hash(&self, _block_hash: BlockHash) -> Option<Vec<Receipt>> {
-        None
-    }
-
-    fn lowest_buffered_ancestor(&self, _hash: BlockHash) -> Option<SealedBlockWithSenders> {
-        None
     }
 }

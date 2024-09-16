@@ -11,6 +11,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+# reth
 reth-primitives.workspace = true
 
 secp256k1 = { workspace = true, features = [
@@ -21,7 +22,9 @@ secp256k1 = { workspace = true, features = [
 
 # misc
 auto_impl.workspace = true
-thiserror.workspace = true
+derive_more.workspace = true
 
 [features]
+default = ["std"]
+std = []
 test-utils = []

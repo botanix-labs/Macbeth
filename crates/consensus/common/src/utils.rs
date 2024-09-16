@@ -1,9 +1,10 @@
+use reth_blockchain_tree_api::BlockchainTreeEngine;
+use reth_chainspec::ChainSpec;
 use reth_consensus::ConsensusError;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
 use reth_primitives::{
     extra_data_header::CHAIN_VERSION,
     header_ext::{GetAuthoritiesError, HeaderExt, RecoverAuthorityError},
-    public_key_to_address, Address, ChainSpec, Header,
+    public_key_to_address, Address, Header,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 

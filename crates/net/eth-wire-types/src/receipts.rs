@@ -1,16 +1,14 @@
 //! Implements the `GetReceipts` and `Receipts` message types.
 
 use alloy_rlp::{RlpDecodableWrapper, RlpEncodableWrapper};
-use reth_codecs::derive_arbitrary;
+use reth_codecs_derive::add_arbitrary_tests;
 use reth_primitives::{ReceiptWithBloom, B256};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// A request for transaction receipts from the given block hashes.
-#[derive_arbitrary(rlp)]
 #[derive(Clone, Debug, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[add_arbitrary_tests(rlp)]
 pub struct GetReceipts(
     /// The block hashes to request receipts for.
     pub Vec<B256>,
@@ -18,17 +16,12 @@ pub struct GetReceipts(
 
 /// The response to [`GetReceipts`], containing receipt lists that correspond to each block
 /// requested.
-#[derive_arbitrary(rlp)]
 #[derive(Clone, Debug, PartialEq, Eq, RlpEncodableWrapper, RlpDecodableWrapper, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[add_arbitrary_tests(rlp)]
 pub struct Receipts(
     /// Each receipt hash should correspond to a block hash in the request.
-    #[cfg_attr(
-        any(test, feature = "arbitrary"),
-        proptest(
-            strategy = "proptest::collection::vec(proptest::collection::vec(proptest::arbitrary::any::<ReceiptWithBloom>(), 0..=50), 0..=5)"
-        )
-    )]
     pub Vec<Vec<ReceiptWithBloom>>,
 );
 
@@ -41,16 +34,7 @@ mod tests {
     #[test]
     fn roundtrip_eip1559() {
         let receipts = Receipts(vec![vec![ReceiptWithBloom {
-            receipt: Receipt {
-                tx_type: TxType::Eip1559,
-                success: false,
-                cumulative_gas_used: 0,
-                logs: vec![],
-                #[cfg(feature = "optimism")]
-                deposit_nonce: None,
-                #[cfg(feature = "optimism")]
-                deposit_receipt_version: None,
-            },
+            receipt: Receipt { tx_type: TxType::Eip1559, ..Default::default() },
             bloom: Default::default(),
         }]]);
 
@@ -96,8 +80,9 @@ mod tests {
         );
     }
 
-    #[test]
     // Test vector from: https://eips.ethereum.org/EIPS/eip-2481
+    #[test]
+    #[allow(clippy::needless_update)]
     fn encode_receipts() {
         let expected = hex!("f90172820457f9016cf90169f901668001b9010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f85ff85d940000000000000000000000000000000000000011f842a0000000000000000000000000000000000000000000000000000000000000deada0000000000000000000000000000000000000000000000000000000000000beef830100ff");
         let mut data = vec![];
@@ -119,10 +104,7 @@ mod tests {
                             ),
                         ],
                         success: false,
-                        #[cfg(feature = "optimism")]
-                        deposit_nonce: None,
-                        #[cfg(feature = "optimism")]
-                        deposit_receipt_version: None,
+                        ..Default::default()
                     },
                     bloom: hex!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").into(),
                 },
@@ -132,8 +114,9 @@ mod tests {
         assert_eq!(data, expected);
     }
 
-    #[test]
     // Test vector from: https://eips.ethereum.org/EIPS/eip-2481
+    #[test]
+    #[allow(clippy::needless_update)]
     fn decode_receipts() {
         let data = hex!("f90172820457f9016cf90169f901668001b9010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f85ff85d940000000000000000000000000000000000000011f842a0000000000000000000000000000000000000000000000000000000000000deada0000000000000000000000000000000000000000000000000000000000000beef830100ff");
         let request = RequestPair::<Receipts>::decode(&mut &data[..]).unwrap();
@@ -158,10 +141,7 @@ mod tests {
                                     ),
                                 ],
                                 success: false,
-                                #[cfg(feature = "optimism")]
-                                deposit_nonce: None,
-                                #[cfg(feature = "optimism")]
-                                deposit_receipt_version: None,
+                                ..Default::default()
                             },
                             bloom: hex!("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").into(),
                         },

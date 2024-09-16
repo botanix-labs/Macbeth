@@ -7,12 +7,12 @@ use reth_primitives::revm_primitives::FixedBytes;
 use reth_network::NetworkEvent;
 
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_tokio_util::EventStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info};
 
 pub struct SyncController<Engine: EngineTypes> {
-    network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+    network_event_listener: EventStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
 }
@@ -22,7 +22,7 @@ where
     Engine: EngineTypes + 'static,
 {
     pub fn new(
-        network_event_listener: UnboundedReceiverStream<NetworkEvent>,
+        network_event_listener: EventStream<NetworkEvent>,
         peer_id: FixedBytes<64>,
         to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
     ) -> Self {
@@ -70,11 +70,8 @@ mod tests {
 
     use super::*;
     use reth_beacon_consensus::BeaconEngineMessage;
-    use reth_eth_wire::{
-        capability::{Capabilities, Capability},
-        EthVersion, Status,
-    };
-    use reth_network::{message::PeerRequestSender, PeerRequest};
+    use reth_eth_wire::{Capabilities, Capability, EthVersion, Status};
+    use reth_network::{PeerRequest, PeerRequestSender};
     use reth_node_ethereum::EthEngineTypes;
     use reth_rpc_types::PeerId;
     use tokio::sync::mpsc;
@@ -82,8 +79,8 @@ mod tests {
     #[tokio::test]
     async fn test_start_task() {
         // create network stream
-        let (network_tx, rx) = mpsc::unbounded_channel::<NetworkEvent>();
-        let network_stream = UnboundedReceiverStream::new(rx);
+        let (network_tx, rx) = tokio::sync::broadcast::channel(16);
+        let network_stream = EventStream::new(rx);
         let peer_id = PeerId::random();
         let (engine_tx, mut engine_rx) =
             mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();

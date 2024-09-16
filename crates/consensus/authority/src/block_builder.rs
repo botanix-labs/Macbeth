@@ -5,18 +5,19 @@ use bitcoin::{
     psbt::Psbt,
     Witness,
 };
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_botanix_lib::mint_validation::{try_parse_burn_event, try_parse_mint_event};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils;
 
 use reth_eth_wire::NewBlock;
-use reth_interfaces::blockchain_tree::{BlockValidationKind::Exhaustive, BlockchainTreeEngine};
 
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::manager::ToFrostManager;
 use reth_node_api::EngineTypes;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{header_ext::HeaderExt, Address, Block, SealedBlockWithSenders, B256};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::engine::PayloadAttributes;
 use ruint::Uint;
 use tracing::{error, info, trace, warn};
@@ -42,7 +43,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Engine: EngineTypes + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
@@ -167,7 +168,7 @@ where
         let authority_signers = storage.authorities.clone();
 
         // Build and execute current block template
-        let (bundle_state, block, gas_used) = match build_and_execute(
+        let (block_exec_output, block) = match build_and_execute(
             transactions.clone(),
             chain_spec.clone(),
             &self.sk,
@@ -189,37 +190,29 @@ where
 
         // Process pegins and pegouts from the [Minting] contract.
         let mut block_pegouts = Vec::new();
-        for (idx, receipts) in bundle_state.receipts().iter().enumerate() {
-            for receipt in receipts {
-                if idx == 0 && receipt.is_none() {
-                    break; // Prunning block, skip
+        for (_idx, receipt) in block_exec_output.receipts.iter().enumerate() {
+            if !receipt.success {
+                continue;
+            }
+            for log in &receipt.logs {
+                // Mint event should have already been validated during evm execution (in
+                // processor.rs)
+                let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
+                if let Some(pegin_data) = pegin_match {
+                    info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
+                    //TODO(stevenroose) should this happen here?
+                    if let Err(e) = call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
+                    {
+                        error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
+                        return;
+                    }
+                    info!(target: "consensus::authority", "notifying btc server about pegin utxo");
                 }
-                if let Some(receipt) = receipt {
-                    if !receipt.success {
-                        continue;
-                    }
-                    for log in &receipt.logs {
-                        // Mint event should have already been validated during evm execution (in
-                        // processor.rs)
-                        let pegin_match = try_parse_mint_event(log).expect("passed EVM check");
-                        if let Some(pegin_data) = pegin_match {
-                            info!(target: "consensus::authority", "Parsing and sending minting event to btc_server");
-                            //TODO(stevenroose) should this happen here?
-                            if let Err(e) =
-                                call_notify_pegin(&mut self.btc_server, &pegin_data.meta).await
-                            {
-                                error!(target: "consensus::authority", ?e, "failed to notify btc_server of pegin");
-                                return;
-                            }
-                            info!(target: "consensus::authority", "notifying btc server about pegin utxo");
-                        }
 
-                        let pegout_match =
-                            try_parse_burn_event(log, bitcoin_network).expect("passed EVM check");
-                        if let Some(pegout) = pegout_match {
-                            block_pegouts.push(pegout);
-                        }
-                    }
+                let pegout_match =
+                    try_parse_burn_event(log, bitcoin_network).expect("passed EVM check");
+                if let Some(pegout) = pegout_match {
+                    block_pegouts.push(pegout);
                 }
             }
         }
@@ -325,9 +318,9 @@ where
 
         let storage = self.storage.inner.write().await;
         let new_header = match build_and_validate_completed_header(
-            &bundle_state,
+            &block_exec_output,
             block,
-            gas_used,
+            block_exec_output.gas_used,
             &bitcoin_checkpoint.0.block_hash(),
             &self.sk,
             &authority_signers,
@@ -351,6 +344,7 @@ where
             body: transactions,
             ommers: vec![],
             withdrawals: None,
+            requests: None,
         };
         // Propose block to network for commitments
         self.pbft_task_tx
@@ -395,7 +389,10 @@ where
                 .expect("senders are valid");
 
         // update canon chain
-        match client.insert_block(sealed_block_with_senders.clone(), Exhaustive) {
+        match client.insert_block(
+            sealed_block_with_senders.clone(),
+            reth_blockchain_tree_api::BlockValidationKind::Exhaustive,
+        ) {
             Ok(_) => {}
             Err(e) => {
                 error!(target: "consensus::authority", ?e, "Failed to insert block");

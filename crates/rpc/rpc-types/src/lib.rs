@@ -8,42 +8,60 @@
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-pub mod beacon;
-mod botanix;
+pub mod botanix;
+#[allow(hidden_glob_reexports)]
 mod eth;
-mod mev;
-mod net;
-mod peer;
-pub mod relay;
-mod rpc;
 
+/// Alias for a peer identifier
+pub type PeerId = B512;
+
+use alloy_primitives::B512;
 // re-export for convenience
 pub use alloy_rpc_types::serde_helpers;
 
 // Ethereum specific rpc types coming from alloy.
 pub use alloy_rpc_types::*;
 
+// Ethereum specific serde types coming from alloy.
+pub use alloy_serde::*;
+
 pub mod trace {
     //! RPC types for trace endpoints and inspectors.
     pub use alloy_rpc_types_trace::*;
 }
 
+// re-export admin
+pub use alloy_rpc_types_admin as admin;
+
 // Anvil specific rpc types coming from alloy.
 pub use alloy_rpc_types_anvil as anvil;
 
+// re-export mev
+pub use alloy_rpc_types_mev as mev;
+
+// re-export beacon
+#[cfg(feature = "jsonrpsee-types")]
+pub use alloy_rpc_types_beacon as beacon;
+
+// re-export txpool
+pub use alloy_rpc_types_txpool as txpool;
+
 // Ethereum specific rpc types related to typed transaction requests and the engine API.
+#[cfg(feature = "jsonrpsee-types")]
+pub use eth::error::ToRpcError;
+pub use eth::transaction::{self, TransactionRequest, TypedTransactionRequest};
+#[cfg(feature = "jsonrpsee-types")]
 pub use eth::{
     engine,
     engine::{
         ExecutionPayload, ExecutionPayloadV1, ExecutionPayloadV2, ExecutionPayloadV3, PayloadError,
     },
-    error::ToRpcError,
-    transaction::{self, TransactionRequest, TypedTransactionRequest},
 };
 
-pub use botanix::*;
-pub use mev::*;
-pub use net::*;
-pub use peer::*;
-pub use rpc::*;
+// pub use botanix::*;
+// pub use mev::*;
+// pub use net::*;
+// pub use peer::*;
+// pub use rpc::*;

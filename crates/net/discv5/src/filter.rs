@@ -19,8 +19,8 @@ pub enum FilterOutcome {
 
 impl FilterOutcome {
     /// Returns `true` for [`FilterOutcome::Ok`].
-    pub fn is_ok(&self) -> bool {
-        matches!(self, FilterOutcome::Ok)
+    pub const fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok)
     }
 }
 
@@ -35,13 +35,11 @@ impl MustIncludeKey {
     /// Returns [`FilterOutcome::Ok`] if [`Enr`](discv5::Enr) contains the configured kv-pair key.
     pub fn filter(&self, enr: &discv5::Enr) -> FilterOutcome {
         if enr.get_raw_rlp(self.key).is_none() {
-            return FilterOutcome::Ignore { reason: self.ignore_reason() }
+            return FilterOutcome::Ignore {
+                reason: format!("{} fork required", String::from_utf8_lossy(self.key)),
+            }
         }
         FilterOutcome::Ok
-    }
-
-    fn ignore_reason(&self) -> String {
-        format!("{} fork required", String::from_utf8_lossy(self.key))
     }
 }
 
@@ -60,27 +58,25 @@ impl MustNotIncludeKeys {
             _ = keys.insert(MustIncludeKey::new(key));
         }
 
-        MustNotIncludeKeys { keys }
+        Self { keys }
     }
 }
 
 impl MustNotIncludeKeys {
     /// Returns `true` if [`Enr`](discv5::Enr) passes filtering rules.
     pub fn filter(&self, enr: &discv5::Enr) -> FilterOutcome {
-        for key in self.keys.iter() {
+        for key in &self.keys {
             if matches!(key.filter(enr), FilterOutcome::Ok) {
-                return FilterOutcome::Ignore { reason: self.ignore_reason() }
+                return FilterOutcome::Ignore {
+                    reason: format!(
+                        "{} forks not allowed",
+                        self.keys.iter().map(|key| String::from_utf8_lossy(key.key)).format(",")
+                    ),
+                }
             }
         }
 
         FilterOutcome::Ok
-    }
-
-    fn ignore_reason(&self) -> String {
-        format!(
-            "{} forks not allowed",
-            self.keys.iter().map(|key| String::from_utf8_lossy(key.key)).format(",")
-        )
     }
 
     /// Adds a key that must not be present for any kv-pair in a node record.

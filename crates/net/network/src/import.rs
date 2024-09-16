@@ -1,12 +1,13 @@
 //! Module for block import.
 /// Allows other components to import blocks from the network
 use crate::message::NewBlockMessage;
+use reth_chainspec::ChainSpec;
 use reth_consensus::ConsensusError;
-use reth_consensus_common::validation;
-use reth_primitives::{ChainSpec, SealedBlock};
+use reth_network_api::PeerId;
+use reth_primitives::SealedBlock;
 use tokio::sync::mpsc::UnboundedSender;
 
-use reth_network_types::PeerId;
+// use reth_network_types::PeerId;
 use std::{
     collections::VecDeque,
     sync::Arc,
@@ -101,8 +102,9 @@ impl ProofOfAuthorityBlockImport {
     /// Fully Validates a block on block import
     fn validate(&self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
         let header = new_block.header.clone();
-        validation::validate_header_with_total_difficulty(&header, header.difficulty)?;
-        validation::validate_block_standalone(new_block, &self.chain_spec)?;
+        //validation::validate_header_with_total_difficulty(&header, header.difficulty)?; TODO:
+        // check after reabse validation::validate_block_standalone(new_block,
+        // &self.chain_spec)?; TODO: check after reabse
         Ok(())
     }
 }

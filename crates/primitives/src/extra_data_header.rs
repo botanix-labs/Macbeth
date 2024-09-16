@@ -3,12 +3,11 @@ use std::io;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::{sha256, Hash},
-    secp256k1, witness,
+    witness,
 };
+use reth_primitives_traits::constants::nums_secp256k1_pk;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use thiserror::Error;
-
-use crate::constants::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;
@@ -468,7 +467,7 @@ mod tests {
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
         authority_signers.push(public_key);
 
-        let message = Message::from_hashed_data::<sha256::Hash>("Hello World!".as_bytes());
+        let message = Message::from_digest_slice("Hello World!".as_bytes()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         let header = ExtraDataHeader::new(
@@ -513,7 +512,7 @@ mod tests {
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
         authority_signers.push(public_key);
 
-        let message = Message::from_hashed_data::<sha256::Hash>("Hello World!".as_bytes());
+        let message = Message::from_digest_slice("Hello World!".as_bytes()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         let (_, pubkey_to_vote) = secp.generate_keypair(&mut OsRng);
@@ -566,7 +565,7 @@ mod tests {
         let secp = Secp256k1::new();
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
 
-        let message = Message::from_hashed_data::<sha256::Hash>("Hello World!".as_bytes());
+        let message = Message::from_digest_slice("Hello World!".as_bytes()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         let header = ExtraDataHeader::new(
@@ -610,8 +609,8 @@ mod tests {
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
         authority_signers.push(public_key);
 
-        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes());
-        let message = Message::from(hello_world_hash);
+        let hello_world_hash = sha256::Hash::hash("Hello world!".as_bytes()).to_byte_array();
+        let message = Message::from_digest(hello_world_hash);
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         let header = ExtraDataHeader::new(
@@ -644,7 +643,7 @@ mod tests {
         let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
         authority_signers.push(public_key);
 
-        let message = Message::from_hashed_data::<sha256::Hash>("Hello World!".as_bytes());
+        let message = Message::from_digest_slice("Hello World!".as_bytes()).unwrap();
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         let header = ExtraDataHeader::new(
@@ -699,8 +698,8 @@ mod tests {
         let secp = Secp256k1::new();
         let (secret_key, _public_key) = secp.generate_keypair(&mut OsRng);
 
-        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes());
-        let message = Message::from(hello_world_hash);
+        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes()).to_byte_array();
+        let message = Message::from_digest(hello_world_hash);
         let signature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
         edh.add_signature(signature);
@@ -731,8 +730,8 @@ mod tests {
         let (secret_key1, _public_key1) = secp.generate_keypair(&mut OsRng);
         let (secret_key2, _public_key2) = secp.generate_keypair(&mut OsRng);
 
-        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes());
-        let message = Message::from(hello_world_hash);
+        let hello_world_hash = sha256::Hash::hash("foo bar".as_bytes()).to_byte_array();
+        let message = Message::from_digest(hello_world_hash);
         let signature1 = secp.sign_ecdsa_recoverable(&message, &secret_key1);
         let signature2 = secp.sign_ecdsa_recoverable(&message, &secret_key2);
 

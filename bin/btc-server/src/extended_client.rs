@@ -1,6 +1,5 @@
 //! Extended bitcoin server client with authentication
 use client::{
-    jwt::{Claims, JwtSecret},
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
     GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
@@ -9,6 +8,7 @@ use client::{
     SyncTxIndexRequest, ToSignRequest,
 };
 use displaydoc::Display as DisplayDoc;
+use reth_rpc_layer::{Claims, JwtSecret};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tonic::{
@@ -107,7 +107,7 @@ impl BtcServerExtendedClient {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();
-            jwt_secret.validate(jwt_token.clone()).unwrap();
+            jwt_secret.validate(&jwt_token.clone()).unwrap();
             jwt_token
         })
     }
@@ -159,7 +159,7 @@ impl GrpcClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use client::jwt::{Claims, JwtSecret};
+    use reth_rpc_layer::{Claims, JwtSecret};
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
@@ -195,7 +195,7 @@ mod tests {
             let jwt_stringified = String::from_utf8(jwt_token_base64_decoded).unwrap();
 
             // validate the request token
-            assert!(jwt_secret.validate(jwt_stringified).is_ok());
+            assert!(jwt_secret.validate(&jwt_stringified).is_ok());
         }
     }
 }

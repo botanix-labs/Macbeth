@@ -104,10 +104,10 @@ impl PeginData {
                 .iter()
                 .rev()
                 .skip_while(|h| h.block_hash() != commit_hash)
-                .count()
-                - 1; // minus one for the commitment itself
-                     // the latest block height minus the position of the user block in the list is the
-                     // height of the user block
+                .count() -
+                1; // minus one for the commitment itself
+                   // the latest block height minus the position of the user block in the list is the
+                   // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
@@ -250,13 +250,12 @@ impl PegoutData {
 mod tests {
     use std::str::FromStr;
 
-    use bitcoin::{
-        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
-        BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
-    };
-    use secp256k1::rand::thread_rng;
-
     use super::*;
+    use bitcoin::{
+        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash,
+        secp256k1::rand, Amount, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn,
+        TxOut, Txid,
+    };
 
     #[test]
     fn serialize_pegin_metadata() {
@@ -442,7 +441,7 @@ mod tests {
     #[test]
     fn validate_pegin_data() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let pegin_data = pegin_data_setup(None, None, &pk);
@@ -456,7 +455,7 @@ mod tests {
     #[should_panic(expected = "invalid meta version: only accepting version 0")]
     fn validate_pegin_data_with_incorrect_version() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let pegin_data = pegin_data_setup(Some(1_u32), None, &pk);
@@ -469,7 +468,7 @@ mod tests {
     #[should_panic(expected = "recent block hash mismatch")]
     fn validate_pegin_data_without_headers() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let pegin_data = pegin_data_setup(None, Some(Vec::new()), &pk);
@@ -482,7 +481,7 @@ mod tests {
     #[should_panic(expected = "recent block hash mismatch")]
     fn validate_pegin_data_with_incorrect_block_hash() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let pegin_data = pegin_data_setup(None, None, &pk);

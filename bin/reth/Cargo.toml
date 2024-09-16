@@ -14,19 +14,26 @@ workspace = true
 
 [dependencies]
 # reth
+reth-chainspec.workspace = true
 reth-config.workspace = true
-reth-primitives = { workspace = true, features = ["arbitrary", "clap"] }
+reth-primitives.workspace = true
+reth-fs-util.workspace = true
 reth-db = { workspace = true, features = ["mdbx"] }
+reth-db-api.workspace = true
+reth-rpc-engine-api.workspace = true
 reth-exex.workspace = true
-reth-provider = { workspace = true }
+reth-provider.workspace = true
+reth-evm.workspace = true
 reth-revm.workspace = true
 reth-stages.workspace = true
-reth-interfaces = { workspace = true, features = ["clap"] }
+reth-execution-types.workspace = true
+reth-errors.workspace = true
 reth-transaction-pool.workspace = true
 reth-beacon-consensus.workspace = true
-reth-auto-seal-consensus.workspace = true
 reth-authority-consensus.workspace = true
 reth-cli-runner.workspace = true
+reth-cli-commands.workspace = true
+reth-cli-util.workspace = true
 reth-consensus-common.workspace = true
 reth-blockchain-tree.workspace = true
 reth-rpc-builder.workspace = true
@@ -34,32 +41,40 @@ reth-rpc.workspace = true
 reth-rpc-types.workspace = true
 reth-rpc-types-compat.workspace = true
 reth-rpc-api = { workspace = true, features = ["client"] }
+reth-rpc-eth-types.workspace = true
+reth-rpc-server-types.workspace = true
 reth-network = { workspace = true, features = ["serde"] }
+reth-network-p2p.workspace = true
 reth-network-api.workspace = true
-reth-network-types.workspace = true
+reth-network-peers.workspace = true
 reth-downloaders.workspace = true
 reth-tracing.workspace = true
 reth-tasks.workspace = true
-reth-ethereum-payload-builder.workspace = true
 reth-payload-builder.workspace = true
+reth-payload-primitives.workspace = true
 reth-payload-validator.workspace = true
 reth-basic-payload-builder.workspace = true
-reth-discv4.workspace = true
-reth-prune.workspace = true
-reth-static-file = { workspace = true }
+reth-static-file.workspace = true
 reth-trie = { workspace = true, features = ["metrics"] }
-reth-nippy-jar.workspace = true
+reth-trie-db = { workspace = true, features = ["metrics"] }
 reth-btc-wallet.workspace = true
 reth-node-api.workspace = true
-reth-node-ethereum.workspace = true
 reth-node-optimism = { workspace = true, optional = true, features = [
     "optimism",
 ] }
 reth-node-core.workspace = true
+reth-ethereum-payload-builder.workspace = true
+reth-db-common.workspace = true
+reth-node-ethereum.workspace = true
 reth-node-builder.workspace = true
 reth-node-events.workspace = true
+reth-node-metrics.workspace = true
 reth-consensus.workspace = true
-thiserror.workspace = true
+reth-engine-util.workspace = true
+reth-prune.workspace = true
+reth-optimism-cli = { workspace = true, optional = true }
+reth-discv4.workspace = true
+tokio-stream.workspace = true
 
 # botanix
 reth-botanix-lib.workspace = true
@@ -71,27 +86,12 @@ secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recov
 # tracing
 tracing.workspace = true
 
+# confy
+confy = "0.6"
+
 # io
 fdlimit.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-confy.workspace = true
-toml = { workspace = true, features = ["display"] }
-
-# metrics
-metrics-process = "=1.0.14"
-
-# test vectors generation
-proptest.workspace = true
-rand.workspace = true
-
-# tui
-comfy-table = "7.0"
-crossterm = "0.27.0"
-ratatui = { version = "0.26", default-features = false, features = [
-    "crossterm",
-] }
-human_bytes = "0.4.1"
 
 # async
 tokio = { workspace = true, features = [
@@ -102,57 +102,38 @@ tokio = { workspace = true, features = [
 ] }
 futures.workspace = true
 
-pin-project.workspace = true
-
 # Botanix
 client = {path = "../btc-server/client"}
 btc-server = {path = "../btc-server"}
 
-# Grpc
-tonic = "0.11.0"
-
 ## Bitcoin
 bitcoin.workspace = true
 bitcoincore-rpc.workspace = true
-
-## Url
-url = "2.2"
-
-# displaydoc
-displaydoc = "0.2"
 
 # misc
 aquamarine.workspace = true
 eyre.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 tempfile.workspace = true
-backon = "0.4"
+backon.workspace = true
 similar-asserts.workspace = true
-humantime = "2.1.0"
-boyer-moore-magiclen = "0.2.16"
-itertools.workspace = true
-rayon.workspace = true
-lazy_static = "1.4.0"
 rsntp = "3.0.2"
-ahash = "0.8"
-
-# p2p
-discv5.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 tikv-jemallocator = { version = "0.5.0", optional = true }
 libc = "0.2"
 
 [dev-dependencies]
-jsonrpsee.workspace = true
-assert_matches = "1.5.0"
+reth-discv4.workspace = true
 
 [features]
 default = ["jemalloc"]
 
-asm-keccak = ["reth-primitives/asm-keccak"]
+dev = ["reth-cli-commands/dev"]
 
-jemalloc = ["dep:tikv-jemallocator", "reth-node-core/jemalloc"]
+asm-keccak = ["reth-node-core/asm-keccak", "reth-primitives/asm-keccak"]
+
+jemalloc = ["dep:tikv-jemallocator", "reth-node-core/jemalloc", "reth-node-metrics/jemalloc"]
 jemalloc-prof = ["jemalloc", "tikv-jemallocator?/profiling"]
 
 min-error-logs = ["tracing/release_max_level_error"]
@@ -164,15 +145,15 @@ min-trace-logs = ["tracing/release_max_level_trace"]
 ethereum = []
 
 optimism = [
-    "reth-primitives/optimism",
-    "reth-revm/optimism",
-    "reth-interfaces/optimism",
-    "reth-rpc/optimism",
-    "reth-provider/optimism",
+    "dep:reth-node-optimism",
+    "dep:reth-optimism-cli",
     "reth-beacon-consensus/optimism",
     "reth-blockchain-tree/optimism",
-    "dep:reth-node-optimism",
     "reth-node-core/optimism",
+    "reth-optimism-cli?/optimism",
+    "reth-primitives/optimism",
+    "reth-provider/optimism",
+    "reth-rpc/optimism",
 ]
 
 

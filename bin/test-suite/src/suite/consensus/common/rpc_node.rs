@@ -8,6 +8,8 @@ use crate::{
         GlobalContext,
     },
 };
+use reth_chainspec::BotanixTestnetGenesisConfig;
+use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
 use askama::Template;
@@ -23,9 +25,7 @@ use reth::{
     consensus_common::utils::unix_timestamp,
     network::Peers,
 };
-use reth_network_types::pk2id;
 use reth_primitives::{
-    chain::spec::BotanixTestnetGenesisConfig,
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,

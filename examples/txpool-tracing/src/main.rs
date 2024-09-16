@@ -14,10 +14,7 @@ use clap::Parser;
 use futures_util::StreamExt;
 use reth::{
     builder::NodeHandle,
-    cli::{
-        ext::{PoaNodeCommandConfig, RethNodeComponents},
-        Cli,
-    },
+    cli::Cli,
     primitives::{Address, IntoRecoveredTransaction},
     rpc::{
         compat::transaction::transaction_to_call_request,
@@ -31,7 +28,7 @@ fn main() {
     Cli::<RethCliTxpoolExt>::parse()
         .run(|builder, args| async move {
             // launch the node
-            let NodeHandle { mut node, node_exit_future } =
+            let NodeHandle { node, node_exit_future } =
                 builder.node(EthereumNode::default()).launch().await?;
 
             // create a new subscription to pending transactions
@@ -81,11 +78,5 @@ impl RethCliTxpoolExt {
     /// Check if the recipient is in the list of recipients to trace.
     pub fn is_match(&self, recipient: &Address) -> bool {
         self.recipients.is_empty() || self.recipients.contains(recipient)
-    }
-}
-
-impl PoaNodeCommandConfig for RethCliTxpoolExt {
-    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
-        Ok(())
     }
 }

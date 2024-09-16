@@ -14,7 +14,8 @@ use reth_botanix_lib::{
 };
 use reth_btc_wallet::address::EthAddress;
 
-use reth_primitives::{Address, BOTANIX_TESTNET};
+use reth_chainspec::BOTANIX_TESTNET;
+use reth_primitives::Address;
 
 use crate::{
     it_info_print,

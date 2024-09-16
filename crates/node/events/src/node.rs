@@ -1,21 +1,17 @@
 //! Support for handling events emitted by node components.
 
 use crate::cl::ConsensusLayerHealthEvent;
+use alloy_rpc_types_engine::ForkchoiceState;
 use futures::Stream;
 use reth_beacon_consensus::{
     BeaconConsensusEngineEvent, ConsensusEngineLiveSyncProgress, ForkchoiceStatus,
 };
-use reth_db::{database::Database, database_metrics::DatabaseMetadata};
-use reth_network::{NetworkEvent, NetworkHandle};
+use reth_network::NetworkEvent;
 use reth_network_api::PeersInfo;
-use reth_primitives::{
-    constants,
-    stage::{EntitiesCheckpoint, StageCheckpoint, StageId},
-    BlockNumber, B256,
-};
+use reth_primitives::{constants, BlockNumber, B256};
+use reth_primitives_traits::{format_gas, format_gas_throughput};
 use reth_prune::PrunerEvent;
-use reth_rpc_types::engine::ForkchoiceState;
-use reth_stages::{ExecOutput, PipelineEvent};
+use reth_stages::{EntitiesCheckpoint, ExecOutput, PipelineEvent, StageCheckpoint, StageId};
 use reth_static_file::StaticFileProducerEvent;
 use std::{
     fmt::{Display, Formatter},
@@ -34,13 +30,9 @@ const INFO_MESSAGE_INTERVAL: Duration = Duration::from_secs(25);
 /// connections, current processing stage, and the latest block information. It provides
 /// methods to handle different types of events that affect the node's state, such as pipeline
 /// events, network events, and consensus engine events.
-struct NodeState<DB> {
-    /// Database environment.
-    /// Used for freelist calculation reported in the "Status" log message.
-    /// See [EventHandler::poll].
-    db: DB,
-    /// Connection to the network.
-    network: Option<NetworkHandle>,
+struct NodeState {
+    /// Information about connected peers.
+    peers_info: Option<Box<dyn PeersInfo>>,
     /// The stage currently being executed.
     current_stage: Option<CurrentStage>,
     /// The latest block reached by either pipeline or consensus engine.
@@ -55,11 +47,13 @@ struct NodeState<DB> {
     finalized_block_hash: Option<B256>,
 }
 
-impl<DB> NodeState<DB> {
-    fn new(db: DB, network: Option<NetworkHandle>, latest_block: Option<BlockNumber>) -> Self {
+impl NodeState {
+    const fn new(
+        peers_info: Option<Box<dyn PeersInfo>>,
+        latest_block: Option<BlockNumber>,
+    ) -> Self {
         Self {
-            db,
-            network,
+            peers_info,
             current_stage: None,
             latest_block,
             latest_block_time: None,
@@ -70,7 +64,25 @@ impl<DB> NodeState<DB> {
     }
 
     fn num_connected_peers(&self) -> usize {
-        self.network.as_ref().map(|net| net.num_connected_peers()).unwrap_or_default()
+        self.peers_info.as_ref().map(|info| info.num_connected_peers()).unwrap_or_default()
+    }
+
+    fn build_current_stage(
+        &self,
+        stage_id: StageId,
+        checkpoint: StageCheckpoint,
+        target: Option<BlockNumber>,
+    ) -> CurrentStage {
+        let (eta, entities_checkpoint) = self
+            .current_stage
+            .as_ref()
+            .filter(|current_stage| current_stage.stage_id == stage_id)
+            .map_or_else(
+                || (Eta::default(), None),
+                |current_stage| (current_stage.eta, current_stage.entities_checkpoint),
+            );
+
+        CurrentStage { stage_id, eta, checkpoint, entities_checkpoint, target }
     }
 
     /// Processes an event emitted by the pipeline
@@ -78,23 +90,7 @@ impl<DB> NodeState<DB> {
         match event {
             PipelineEvent::Prepare { pipeline_stages_progress, stage_id, checkpoint, target } => {
                 let checkpoint = checkpoint.unwrap_or_default();
-                let current_stage = CurrentStage {
-                    stage_id,
-                    eta: match &self.current_stage {
-                        Some(current_stage) if current_stage.stage_id == stage_id => {
-                            current_stage.eta
-                        }
-                        _ => Eta::default(),
-                    },
-                    checkpoint,
-                    entities_checkpoint: match &self.current_stage {
-                        Some(current_stage) if current_stage.stage_id == stage_id => {
-                            current_stage.entities_checkpoint
-                        }
-                        _ => None,
-                    },
-                    target,
-                };
+                let current_stage = self.build_current_stage(stage_id, checkpoint, target);
 
                 info!(
                     pipeline_stages = %pipeline_stages_progress,
@@ -108,23 +104,7 @@ impl<DB> NodeState<DB> {
             }
             PipelineEvent::Run { pipeline_stages_progress, stage_id, checkpoint, target } => {
                 let checkpoint = checkpoint.unwrap_or_default();
-                let current_stage = CurrentStage {
-                    stage_id,
-                    eta: match &self.current_stage {
-                        Some(current_stage) if current_stage.stage_id == stage_id => {
-                            current_stage.eta
-                        }
-                        _ => Eta::default(),
-                    },
-                    checkpoint,
-                    entities_checkpoint: match &self.current_stage {
-                        Some(current_stage) if current_stage.stage_id == stage_id => {
-                            current_stage.entities_checkpoint
-                        }
-                        _ => None,
-                    },
-                    target,
-                };
+                let current_stage = self.build_current_stage(stage_id, checkpoint, target);
 
                 if let Some(stage_eta) = current_stage.eta.fmt_for_stage(stage_id) {
                     info!(
@@ -232,7 +212,7 @@ impl<DB> NodeState<DB> {
         }
     }
 
-    fn handle_network_event(&mut self, _: NetworkEvent) {
+    fn handle_network_event(&self, _: NetworkEvent) {
         // NOTE(onbjerg): This used to log established/disconnecting sessions, but this is already
         // logged in the networking component. I kept this stub in case we want to catch other
         // networking events later on.
@@ -279,7 +259,8 @@ impl<DB> NodeState<DB> {
                     hash=?block.hash(),
                     peers=self.num_connected_peers(),
                     txs=block.body.len(),
-                    mgas=%format!("{:.3}", block.header.gas_used as f64 / constants::MGAS_TO_GAS as f64),
+                    gas=%format_gas(block.header.gas_used),
+                    gas_throughput=%format_gas_throughput(block.header.gas_used, elapsed),
                     full=%format!("{:.1}%", block.header.gas_used as f64 * 100.0 / block.header.gas_limit as f64),
                     base_fee=%format!("{:.2}gwei", block.header.base_fee_per_gas.unwrap_or(0) as f64 / constants::GWEI_TO_WEI as f64),
                     blobs=block.header.blob_gas_used.unwrap_or(0) / constants::eip4844::DATA_GAS_PER_BLOB,
@@ -315,7 +296,7 @@ impl<DB> NodeState<DB> {
                     warn!("Beacon client online, but never received consensus updates. Please ensure your beacon client is operational to follow the chain!")
                 }
                 ConsensusLayerHealthEvent::HaveNotReceivedUpdatesForAWhile(period) => {
-                    warn!(?period, "Beacon client online, but no consensus updates received for a while. Please fix your beacon client to follow the chain!")
+                    warn!(?period, "Beacon client online, but no consensus updates received for a while. This may be because of a reth error, or an error in the beacon client! Please investigate reth and beacon client logs!")
                 }
             }
         }
@@ -341,12 +322,6 @@ impl<DB> NodeState<DB> {
                 info!(?targets, ?elapsed, "Static File Producer finished");
             }
         }
-    }
-}
-
-impl<DB: DatabaseMetadata> NodeState<DB> {
-    fn freelist(&self) -> Option<usize> {
-        self.db.metadata().freelist_size()
     }
 }
 
@@ -390,58 +365,59 @@ pub enum NodeEvent {
     ConsensusLayerHealth(ConsensusLayerHealthEvent),
     /// A pruner event
     Pruner(PrunerEvent),
-    /// A static_file_producer event
+    /// A `static_file_producer` event
     StaticFileProducer(StaticFileProducerEvent),
+    /// Used to encapsulate various conditions or situations that do not
+    /// naturally fit into the other more specific variants.
+    Other(String),
 }
 
 impl From<NetworkEvent> for NodeEvent {
-    fn from(event: NetworkEvent) -> NodeEvent {
-        NodeEvent::Network(event)
+    fn from(event: NetworkEvent) -> Self {
+        Self::Network(event)
     }
 }
 
 impl From<PipelineEvent> for NodeEvent {
-    fn from(event: PipelineEvent) -> NodeEvent {
-        NodeEvent::Pipeline(event)
+    fn from(event: PipelineEvent) -> Self {
+        Self::Pipeline(event)
     }
 }
 
 impl From<BeaconConsensusEngineEvent> for NodeEvent {
     fn from(event: BeaconConsensusEngineEvent) -> Self {
-        NodeEvent::ConsensusEngine(event)
+        Self::ConsensusEngine(event)
     }
 }
 
 impl From<ConsensusLayerHealthEvent> for NodeEvent {
     fn from(event: ConsensusLayerHealthEvent) -> Self {
-        NodeEvent::ConsensusLayerHealth(event)
+        Self::ConsensusLayerHealth(event)
     }
 }
 
 impl From<PrunerEvent> for NodeEvent {
     fn from(event: PrunerEvent) -> Self {
-        NodeEvent::Pruner(event)
+        Self::Pruner(event)
     }
 }
 
 impl From<StaticFileProducerEvent> for NodeEvent {
     fn from(event: StaticFileProducerEvent) -> Self {
-        NodeEvent::StaticFileProducer(event)
+        Self::StaticFileProducer(event)
     }
 }
 
 /// Displays relevant information to the user from components of the node, and periodically
 /// displays the high-level status of the node.
-pub async fn handle_events<E, DB>(
-    network: Option<NetworkHandle>,
+pub async fn handle_events<E>(
+    peers_info: Option<Box<dyn PeersInfo>>,
     latest_block_number: Option<BlockNumber>,
     events: E,
-    db: DB,
 ) where
     E: Stream<Item = NodeEvent> + Unpin,
-    DB: DatabaseMetadata + Database + 'static,
 {
-    let state = NodeState::new(db, network, latest_block_number);
+    let state = NodeState::new(peers_info, latest_block_number);
 
     let start = tokio::time::Instant::now() + Duration::from_secs(3);
     let mut info_interval = tokio::time::interval_at(start, INFO_MESSAGE_INTERVAL);
@@ -453,18 +429,17 @@ pub async fn handle_events<E, DB>(
 
 /// Handles events emitted by the node and logs them accordingly.
 #[pin_project::pin_project]
-struct EventHandler<E, DB> {
-    state: NodeState<DB>,
+struct EventHandler<E> {
+    state: NodeState,
     #[pin]
     events: E,
     #[pin]
     info_interval: Interval,
 }
 
-impl<E, DB> Future for EventHandler<E, DB>
+impl<E> Future for EventHandler<E>
 where
     E: Stream<Item = NodeEvent> + Unpin,
-    DB: DatabaseMetadata + Database + 'static,
 {
     type Output = ();
 
@@ -472,8 +447,6 @@ where
         let mut this = self.project();
 
         while this.info_interval.poll_tick(cx).is_ready() {
-            let freelist = OptionalField(this.state.freelist());
-
             if let Some(CurrentStage { stage_id, eta, checkpoint, entities_checkpoint, target }) =
                 &this.state.current_stage
             {
@@ -486,7 +459,6 @@ where
                         info!(
                             target: "reth::cli",
                             connected_peers = this.state.num_connected_peers(),
-                            %freelist,
                             stage = %stage_id,
                             checkpoint = checkpoint.block_number,
                             target = %OptionalField(*target),
@@ -499,7 +471,6 @@ where
                         info!(
                             target: "reth::cli",
                             connected_peers = this.state.num_connected_peers(),
-                            %freelist,
                             stage = %stage_id,
                             checkpoint = checkpoint.block_number,
                             target = %OptionalField(*target),
@@ -511,7 +482,6 @@ where
                         info!(
                             target: "reth::cli",
                             connected_peers = this.state.num_connected_peers(),
-                            %freelist,
                             stage = %stage_id,
                             checkpoint = checkpoint.block_number,
                             target = %OptionalField(*target),
@@ -523,7 +493,6 @@ where
                         info!(
                             target: "reth::cli",
                             connected_peers = this.state.num_connected_peers(),
-                            %freelist,
                             stage = %stage_id,
                             checkpoint = checkpoint.block_number,
                             target = %OptionalField(*target),
@@ -540,7 +509,6 @@ where
                     info!(
                         target: "reth::cli",
                         connected_peers = this.state.num_connected_peers(),
-                        %freelist,
                         %latest_block,
                         "Status"
                     );
@@ -549,7 +517,6 @@ where
                 info!(
                     target: "reth::cli",
                     connected_peers = this.state.num_connected_peers(),
-                    %freelist,
                     "Status"
                 );
             }
@@ -574,6 +541,9 @@ where
                 }
                 NodeEvent::StaticFileProducer(event) => {
                     this.state.handle_static_file_producer_event(event);
+                }
+                NodeEvent::Other(event_description) => {
+                    warn!("{event_description}");
                 }
             }
         }
@@ -633,8 +603,8 @@ impl Eta {
     /// Format ETA for a given stage.
     ///
     /// NOTE: Currently ETA is enabled only for the stages that have predictable progress.
-    /// It's not the case for network-dependent ([StageId::Headers] and [StageId::Bodies]) and
-    /// [StageId::Execution] stages.
+    /// It's not the case for network-dependent ([`StageId::Headers`] and [`StageId::Bodies`]) and
+    /// [`StageId::Execution`] stages.
     fn fmt_for_stage(&self, stage: StageId) -> Option<String> {
         if !self.is_available() ||
             matches!(stage, StageId::Headers | StageId::Bodies | StageId::Execution)

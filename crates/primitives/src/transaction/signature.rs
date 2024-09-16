@@ -1,9 +1,10 @@
 use crate::{transaction::util::secp256k1, Address, B256, U256};
 use alloy_primitives::Bytes;
 use alloy_rlp::{Decodable, Encodable, Error as RlpError};
-use bytes::Buf;
-use reth_codecs::{derive_arbitrary, Compact};
 use serde::{Deserialize, Serialize};
+
+#[cfg(test)]
+use reth_codecs::Compact;
 
 /// The order of the secp256k1 curve, divided by two. Signatures that should be checked according
 /// to EIP-2 should have an S value less than or equal to this.
@@ -17,14 +18,18 @@ const SECP256K1N_HALF: U256 = U256::from_be_bytes([
 /// r, s: Values corresponding to the signature of the
 /// transaction and used to determine the sender of
 /// the transaction; formally Tr and Ts. This is expanded in Appendix F of yellow paper.
-#[derive_arbitrary(compact)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
+#[cfg_attr(any(test, feature = "reth-codec"), reth_codecs::add_arbitrary_tests(compact))]
 pub struct Signature {
     /// The R field of the signature; the point on the curve.
     pub r: U256,
     /// The S field of the signature; the point on the curve.
     pub s: U256,
     /// yParity: Signature Y parity; formally Ty
+    ///
+    /// WARNING: if it's deprecated in favor of `alloy_primitives::Signature` be sure that parity
+    /// storage deser matches.
     pub odd_y_parity: bool,
 }
 
@@ -37,8 +42,9 @@ impl Signature {
     }
 }
 
-impl Compact for Signature {
-    fn to_compact<B>(self, buf: &mut B) -> usize
+#[cfg(any(test, feature = "reth-codec"))]
+impl reth_codecs::Compact for Signature {
+    fn to_compact<B>(&self, buf: &mut B) -> usize
     where
         B: bytes::BufMut + AsMut<[u8]>,
     {
@@ -48,6 +54,7 @@ impl Compact for Signature {
     }
 
     fn from_compact(mut buf: &[u8], identifier: usize) -> (Self, &[u8]) {
+        use bytes::Buf;
         assert!(buf.len() >= 64);
         let r = U256::from_le_slice(&buf[0..32]);
         let s = U256::from_le_slice(&buf[32..64]);
@@ -58,13 +65,13 @@ impl Compact for Signature {
 
 impl Signature {
     /// Output the length of the signature without the length of the RLP header, using the legacy
-    /// scheme with EIP-155 support depends on chain_id.
+    /// scheme with EIP-155 support depends on `chain_id`.
     pub(crate) fn payload_len_with_eip155_chain_id(&self, chain_id: Option<u64>) -> usize {
         self.v(chain_id).length() + self.r.length() + self.s.length()
     }
 
     /// Encode the `v`, `r`, `s` values without a RLP header.
-    /// Encodes the `v` value using the legacy scheme with EIP-155 support depends on chain_id.
+    /// Encodes the `v` value using the legacy scheme with EIP-155 support depends on `chain_id`.
     pub(crate) fn encode_with_eip155_chain_id(
         &self,
         out: &mut dyn alloy_rlp::BufMut,
@@ -75,8 +82,9 @@ impl Signature {
         self.s.encode(out);
     }
 
-    /// Output the `v` of the signature depends on chain_id
+    /// Output the `v` of the signature depends on `chain_id`
     #[inline]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn v(&self, chain_id: Option<u64>) -> u64 {
         if let Some(chain_id) = chain_id {
             // EIP-155: v = {0, 1} + CHAIN_ID * 2 + 35
@@ -191,15 +199,21 @@ impl Signature {
 
     /// Calculates a heuristic for the in-memory size of the [Signature].
     #[inline]
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<Self>()
+    pub const fn size(&self) -> usize {
+        core::mem::size_of::<Self>()
     }
 }
 
-/// Outputs (odd_y_parity, chain_id) from the `v` value.
+impl From<alloy_primitives::Signature> for Signature {
+    fn from(value: alloy_primitives::Signature) -> Self {
+        Self { r: value.r(), s: value.s(), odd_y_parity: value.v().y_parity() }
+    }
+}
+
+/// Outputs (`odd_y_parity`, `chain_id`) from the `v` value.
 /// This doesn't check validity of the `v` value for optimism.
 #[inline]
-pub fn extract_chain_id(v: u64) -> alloy_rlp::Result<(bool, Option<u64>)> {
+pub const fn extract_chain_id(v: u64) -> alloy_rlp::Result<(bool, Option<u64>)> {
     if v < 35 {
         // non-EIP-155 legacy scheme, v = 27 for even y-parity, v = 28 for odd y-parity
         if v != 27 && v != 28 {

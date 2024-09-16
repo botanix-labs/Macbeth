@@ -8,6 +8,7 @@ use crate::{
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
+use reth_chainspec::ChainSpec;
 use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
@@ -15,7 +16,6 @@ use reth_network::frost::{
     manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
-use reth_primitives::ChainSpec;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};

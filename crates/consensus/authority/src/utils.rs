@@ -13,9 +13,8 @@ use reth_botanix_lib::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
     peg_contract::{PeginMeta, PegoutData},
 };
-use reth_interfaces::sync::SyncStateProvider;
-use reth_network::NetworkHandle;
-use reth_primitives::{constants::eip225::EPOCH_LENGTH, Bloom, BloomInput};
+use reth_network::{NetworkHandle, NetworkInfo};
+use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput};
 use reth_provider::BlockReaderIdExt;
 use reth_rpc_types::BlockHashOrNumber;
 use std::time::Duration;
@@ -454,6 +453,9 @@ mod test {
                     receipts_root: b256!(
                         "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
                     ),
+                    requests_root: Some(b256!(
+                        "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+                    )),
                     logs_bloom,
                     difficulty: U256::from(0),
                     number: 0x30598,

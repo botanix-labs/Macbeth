@@ -11,24 +11,24 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
+use futures_util::StreamExt;
 use reth_beacon_consensus::BeaconEngineMessage;
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_interfaces::{
-    blockchain_tree::BlockchainTreeEngine,
-    p2p::{bodies::client::BodiesClient, headers::client::HeadersClient},
-};
+use reth_chainspec::ChainSpec;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessage,
-    NetworkEvents, NetworkHandle,
+    NetworkEventListenerProvider, NetworkHandle,
 };
+use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{header_ext::HeaderExt, ChainSpec};
+use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, ExecutorFactory,
-    StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -82,7 +82,7 @@ where
         + Clone
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     /// Creates a new builder instance to configure all parts.

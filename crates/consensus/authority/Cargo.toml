@@ -17,11 +17,18 @@ reth-consensus-common = { path = "../common" }
 reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }
 reth-primitives.workspace = true
-reth-interfaces.workspace = true
+reth-execution-errors.workspace = true
+reth-chainspec.workspace = true
+revm-primitives.workspace = true
+reth-evm-ethereum.workspace = true
 reth-provider.workspace = true
-reth-stages = { path = "../../stages" }
-reth-revm = { path = "../../revm" }
+reth-tokio-util.workspace = true
+reth-stages.workspace = true
+reth-revm.workspace = true
+reth-evm.workspace = true
 reth-payload-builder.workspace = true
+reth-blockchain-tree-api.workspace = true
+reth-network-p2p.workspace = true
 # reth-beacon-imports
 reth-tasks.workspace = true
 reth-network-api.workspace = true
@@ -30,7 +37,7 @@ reth-network = { path = "../../net/network", features = ["serde"] }
 reth-node-ethereum.workspace = true
 reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
-reth-network-types.workspace = true
+reth-network-peers = { workspace = true, features = ["secp256k1"] }
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
@@ -96,7 +103,7 @@ bincode = "1.3.3"
 postcard = "1.0.8"
 
 [dev-dependencies]
-reth-interfaces = { workspace = true, features = ["test-utils"] }
+#reth-interfaces = { workspace = true, features = ["test-utils"] }
 
 rand = "0.8.5"
 

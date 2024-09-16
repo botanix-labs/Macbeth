@@ -56,7 +56,7 @@ The networking component mainly lives in [`net/network`](../../crates/net/networ
 
 #### Common
 
-- [`net/common`](../../crates/net/common): Shared types used across multiple networking crates.
+- [`net/banlist`](../../crates/net/banlist): A simple peer banlist that can be used to ban peers or IP addresses.
   - Contains: Peer banlist.
 - [`net/network-api`](../../crates/net/network-api): Contains traits that define the networking component as a whole. Other components that interface with the network stack only need to depend on this crate for the relevant types.
 - [`net/nat`](../../crates/net/nat): A small helper crate that resolves the external IP of the running node using various methods (such as a manually provided IP, using UPnP etc.)
@@ -68,8 +68,8 @@ The networking component mainly lives in [`net/network`](../../crates/net/networ
 
 #### Protocol
 
-- [`net/eth-wire`](../../crates/net/eth-wire): Implements the `eth` wire protocol and the RLPx networking stack.
-- [`net/ecies`](../../crates/net/ecies): Implementation of the Elliptic Curve Integrated Encryption Scheme used in the RLPx handshake.
+- [`net/eth-wire`](../../crates/net/eth-wire): Implements the `eth` wire protocol and the ``RLPx`` networking stack.
+- [`net/ecies`](../../crates/net/ecies): Implementation of the Elliptic Curve Integrated Encryption Scheme used in the ``RLPx`` handshake.
 
 #### Downloaders
 
@@ -137,25 +137,20 @@ Crates related to building and validating payloads (blocks).
 
 ### Primitives
 
-These crates define primitive types or algorithms such as RLP.
+These crates define primitive types or algorithms.
 
 - [`primitives`](../../crates/primitives): Commonly used types in Reth.
-- [`rlp`](../../crates/rlp): An implementation of RLP, forked from an earlier Apache-licensed version of [`fastrlp`][fastrlp]
-- [`rlp/rlp-derive`](../../crates/rlp/rlp-derive): Forked from an earlier Apache licenced version of the [`fastrlp-derive`][fastrlp-derive] crate, before it changed licence to GPL.
 - [`trie`](../../crates/trie): An implementation of a Merkle Patricia Trie used for various roots (e.g. the state root) in Ethereum.
 
 ### Misc
 
 Small utility crates.
 
-- [`interfaces`](../../crates/interfaces): Traits containing common abstractions across the components used in the system. For ease of unit testing, each crate importing the interface is recommended to create mock/in-memory implementations of each trait.
 - [`tasks`](../../crates/tasks): An executor-agnostic task abstraction, used to spawn tasks on different async executors. Supports blocking tasks and handles panics gracefully. A tokio implementation is provided by default.
-- [`metrics/common`](../../crates/metrics/common): Common metrics types (e.g. metered channels)
+- [`metrics/common`](../../crates/metrics/src/common): Common metrics types (e.g. metered channels)
 - [`metrics/metrics-derive`](../../crates/metrics/metrics-derive): A derive-style API for creating metrics
 - [`tracing`](../../crates/tracing): A small utility crate to install a uniform [`tracing`][tracing] subscriber
 
-[fastrlp]: https://crates.io/crates/fastrlp
-[fastrlp-derive]: https://crates.io/crates/fastrlp-derive
 [libmdbx-rs]: https://crates.io/crates/libmdbx
 [discv4]: https://github.com/ethereum/devp2p/blob/master/discv4.md
 [jsonrpsee]: https://github.com/paritytech/jsonrpsee/

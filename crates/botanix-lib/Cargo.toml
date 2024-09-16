@@ -23,8 +23,6 @@ tracing.workspace = true
 
 ## Reth
 reth-primitives.workspace = true
-reth-interfaces.workspace = true
-alloy-rlp.workspace = true
 reth-btc-wallet.workspace = true
 revm.workspace = true
 

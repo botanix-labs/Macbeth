@@ -1,10 +1,9 @@
-use std::{sync::Arc, time::Duration};
-
 use crate::{
     pbft::PbftStateMachine, utils::is_active_sync_in_progress, AuthorityConsensus, Storage,
 };
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_interfaces::{blockchain_tree::BlockchainTreeEngine, p2p::headers::client::HeadersClient};
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::{
         manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -12,18 +11,18 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_network_types::pk2id;
-
+use reth_network_p2p::HeadersClient;
+use reth_network_peers::pk2id;
 use reth_primitives::{header_ext::BlockWitness, SealedBlock};
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
 use tracing::{error, info, warn};
-
 /// Enum defining possible frost message notifications
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PbftNotificationMessage {
@@ -80,7 +79,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     /// Creates a new instance of the task
@@ -234,7 +233,7 @@ where
         let mut peer_messages_rx = match peer_messages_rx.await {
             Ok(peer_messages_rx) => peer_messages_rx,
             Err(e) => {
-                error!(target: "PBFT Task", "Error getting receiver handle = {:?}", e);
+                tracing::error!(target: "PBFT Task", "Error getting receiver handle = {:?}", e);
                 panic!("Error getting receiver handle");
             }
         };
@@ -244,7 +243,7 @@ where
         loop {
             // ensure the node is not syncing
             if is_active_sync_in_progress(&self.network_handle) {
-                warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
+                tracing::warn!(target: "PBFT Task", "Node is still syncing, pbft task is awaiting fully synced status ...");
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 break;
             }
@@ -255,7 +254,7 @@ where
             };
 
             if self.pbft_task_rx.is_closed() && peer_messages_rx.is_closed() {
-                info!(target: "consensus::authority", "pbft task shutting down");
+                tracing::info!(target: "consensus::authority", "pbft task shutting down");
                 break;
             }
         }

@@ -3,9 +3,9 @@ use core::fmt;
 use std::str::FromStr;
 
 use alloy_rlp::{Decodable, Encodable};
-use reth_eth_wire::{capability::Capability, protocol::Protocol};
+use reth_eth_wire::{protocol::Protocol, Capability};
+use reth_network_peers::PeerId;
 use reth_primitives::{Buf, BufMut, BytesMut};
-use reth_rpc_types::PeerId;
 use tracing::warn;
 
 const MESSAGE_VERSION: usize = 0;

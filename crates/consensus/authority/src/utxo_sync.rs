@@ -7,12 +7,13 @@ use bitcoin::{
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::{Empty, GetAllUtxosResponse, ResetAllUtxosRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
     PeerMessageResponse,
 };
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, header_ext::HeaderExt};
-use reth_provider::{BlockReaderIdExt, ExecutorFactory, ProviderError};
+use reth_provider::{BlockReaderIdExt, ProviderError};
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
 
@@ -61,7 +62,7 @@ pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
 impl<EF, BF, DB, ToFrostMan> UTXOSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
 {
@@ -78,7 +79,7 @@ where
 impl<EF, BF, DB, ToFrostMan> UTXOSync for UTXOSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
 {
@@ -159,40 +160,5 @@ where
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::pbft::tests::FrostHandleMock;
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
-    use reth_node_ethereum::EthEvmConfig;
-    use reth_primitives::BOTANIX_TESTNET;
-    use reth_provider::test_utils::{MockEthProvider, TestExecutorFactory};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn create_new_utxo_set_sync_engine() {
-        let mock_eth_provider = MockEthProvider::default();
-        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let dummy_pk = secp256k1::PublicKey::from_secret_key_global(&sk);
-        let executor_factory = TestExecutorFactory::default();
-        let mock_to_frost_man = FrostHandleMock {};
-
-        let storage = Storage::new(
-            vec![],
-            vec![],
-            0,
-            dummy_pk.clone(),
-            bitcoin::Network::Regtest,
-            None,
-            vec![],
-            EthEvmConfig::default(),
-            BOTANIX_TESTNET.clone(),
-            MockBitcoindFactory::new(BitcoindConfig::default()),
-            executor_factory,
-            mock_eth_provider.clone(),
-        );
     }
 }

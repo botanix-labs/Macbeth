@@ -34,16 +34,16 @@
 //!
 //! In essence the transaction pool is made of three separate sub-pools:
 //!
-//!  - Pending Pool: Contains all transactions that are valid on the current state and satisfy
-//! (3. a)(1): _No_ nonce gaps. A _pending_ transaction is considered _ready_ when it has the lowest
-//! nonce of all transactions from the same sender. Once a _ready_ transaction with nonce `n` has
-//! been executed, the next highest transaction from the same sender `n + 1` becomes ready.
+//!  - Pending Pool: Contains all transactions that are valid on the current state and satisfy (3.
+//!    a)(1): _No_ nonce gaps. A _pending_ transaction is considered _ready_ when it has the lowest
+//!    nonce of all transactions from the same sender. Once a _ready_ transaction with nonce `n` has
+//!    been executed, the next highest transaction from the same sender `n + 1` becomes ready.
 //!
-//!  - Queued Pool: Contains all transactions that are currently blocked by missing
-//! transactions: (3. a)(2): _With_ nonce gaps or due to lack of funds.
+//!  - Queued Pool: Contains all transactions that are currently blocked by missing transactions:
+//!    (3. a)(2): _With_ nonce gaps or due to lack of funds.
 //!
-//!  - Basefee Pool: To account for the dynamic base fee requirement (3. b) which could render
-//! an EIP-1559 and all subsequent transactions of the sender currently invalid.
+//!  - Basefee Pool: To account for the dynamic base fee requirement (3. b) which could render an
+//!    EIP-1559 and all subsequent transactions of the sender currently invalid.
 //!
 //! The classification of transactions is always dependent on the current state that is changed as
 //! soon as a new block is mined. Once a new block is mined, the account changeset must be applied
@@ -82,7 +82,7 @@ use crate::{
 };
 use best::BestTransactions;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
-use reth_eth_wire::HandleMempoolData;
+use reth_eth_wire_types::HandleMempoolData;
 use reth_primitives::{
     Address, BlobTransaction, BlobTransactionSidecar, IntoRecoveredTransaction,
     PooledTransactionsElement, TransactionSigned, TxHash, B256,
@@ -120,8 +120,11 @@ pub(crate) mod state;
 pub mod txpool;
 mod update;
 
-const PENDING_TX_LISTENER_BUFFER_SIZE: usize = 2048;
-const NEW_TX_LISTENER_BUFFER_SIZE: usize = 1024;
+/// Bound on number of pending transactions from `reth_network::TransactionsManager` to buffer.
+pub const PENDING_TX_LISTENER_BUFFER_SIZE: usize = 2048;
+/// Bound on number of new transactions from `reth_network::TransactionsManager` to buffer.
+pub const NEW_TX_LISTENER_BUFFER_SIZE: usize = 1024;
+
 const BLOB_SIDECAR_LISTENER_BUFFER_SIZE: usize = 512;
 
 /// Transaction pool internals.
@@ -194,7 +197,7 @@ where
         self.pool.write().set_block_info(info)
     }
 
-    /// Returns the internal `SenderId` for this address
+    /// Returns the internal [`SenderId`] for this address
     pub(crate) fn get_sender_id(&self, addr: Address) -> SenderId {
         self.identifiers.write().sender_id_or_create(addr)
     }
@@ -233,7 +236,7 @@ where
     /// Adds a new transaction listener to the pool that gets notified about every new _pending_
     /// transaction inserted into the pool
     pub fn add_pending_listener(&self, kind: TransactionListenerKind) -> mpsc::Receiver<TxHash> {
-        let (sender, rx) = mpsc::channel(PENDING_TX_LISTENER_BUFFER_SIZE);
+        let (sender, rx) = mpsc::channel(self.config.pending_tx_listener_buffer_size);
         let listener = PendingTransactionHashListener { sender, kind };
         self.pending_transaction_listener.lock().push(listener);
         rx
@@ -244,7 +247,7 @@ where
         &self,
         kind: TransactionListenerKind,
     ) -> mpsc::Receiver<NewTransactionEvent<T::Transaction>> {
-        let (sender, rx) = mpsc::channel(NEW_TX_LISTENER_BUFFER_SIZE);
+        let (sender, rx) = mpsc::channel(self.config.new_tx_listener_buffer_size);
         let listener = TransactionListener { sender, kind };
         self.transaction_listener.lock().push(listener);
         rx
@@ -296,7 +299,7 @@ where
         self.get_pool_data().all().transactions_iter().filter(|tx| tx.propagate).collect()
     }
 
-    /// Returns the [BlobTransaction] for the given transaction if the sidecar exists.
+    /// Returns the [`BlobTransaction`] for the given transaction if the sidecar exists.
     ///
     /// Caution: this assumes the given transaction is eip-4844
     fn get_blob_transaction(&self, transaction: TransactionSigned) -> Option<BlobTransaction> {
@@ -308,7 +311,7 @@ where
         None
     }
 
-    /// Returns converted [PooledTransactionsElement] for the given transaction hashes.
+    /// Returns converted [`PooledTransactionsElement`] for the given transaction hashes.
     pub(crate) fn get_pooled_transaction_elements(
         &self,
         tx_hashes: Vec<TxHash>,
@@ -351,7 +354,7 @@ where
         elements
     }
 
-    /// Returns converted [PooledTransactionsElement] for the given transaction hash.
+    /// Returns converted [`PooledTransactionsElement`] for the given transaction hash.
     pub(crate) fn get_pooled_transaction_element(
         &self,
         tx_hash: TxHash,
@@ -530,7 +533,7 @@ where
 
         // It may happen that a newly added transaction is immediately discarded, so we need to
         // adjust the result here
-        for res in added.iter_mut() {
+        for res in &mut added {
             if let Ok(hash) = res {
                 if discarded.contains(hash) {
                     *res = Err(PoolError::new(*hash, PoolErrorKind::DiscardedOnInsert))
@@ -599,20 +602,18 @@ where
 
     /// Notifies transaction listeners about changes once a block was processed.
     fn notify_on_new_state(&self, outcome: OnNewCanonicalStateOutcome<T::Transaction>) {
-        // notify about promoted pending transactions
-        {
-            // emit hashes
-            let mut transaction_hash_listeners = self.pending_transaction_listener.lock();
-            transaction_hash_listeners.retain_mut(|listener| {
-                listener.send_all(outcome.pending_transactions(listener.kind))
-            });
+        trace!(target: "txpool", promoted=outcome.promoted.len(), discarded= outcome.discarded.len() ,"notifying listeners on state change");
 
-            // emit full transactions
-            let mut transaction_full_listeners = self.transaction_listener.lock();
-            transaction_full_listeners.retain_mut(|listener| {
-                listener.send_all(outcome.full_pending_transactions(listener.kind))
-            })
-        }
+        // notify about promoted pending transactions
+        // emit hashes
+        self.pending_transaction_listener
+            .lock()
+            .retain_mut(|listener| listener.send_all(outcome.pending_transactions(listener.kind)));
+
+        // emit full transactions
+        self.transaction_listener.lock().retain_mut(|listener| {
+            listener.send_all(outcome.full_pending_transactions(listener.kind))
+        });
 
         let OnNewCanonicalStateOutcome { mined, promoted, discarded, block_hash } = outcome;
 
@@ -722,12 +723,20 @@ where
         self.get_pool_data().get_transactions_by_sender(sender_id)
     }
 
-    /// Returns all transactions that where submitted with the given [TransactionOrigin]
+    /// Returns all transactions that where submitted with the given [`TransactionOrigin`]
     pub(crate) fn get_transactions_by_origin(
         &self,
         origin: TransactionOrigin,
     ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
         self.get_pool_data().all().transactions_iter().filter(|tx| tx.origin == origin).collect()
+    }
+
+    /// Returns all pending transactions filted by [`TransactionOrigin`]
+    pub(crate) fn get_pending_transactions_by_origin(
+        &self,
+        origin: TransactionOrigin,
+    ) -> Vec<Arc<ValidPoolTransaction<T::Transaction>>> {
+        self.get_pool_data().pending_transactions_iter().filter(|tx| tx.origin == origin).collect()
     }
 
     /// Returns all the transactions belonging to the hashes.
@@ -848,7 +857,7 @@ impl PendingTransactionHashListener {
     ///
     /// Returns false if the channel is closed (receiver dropped)
     fn send_all(&self, hashes: impl IntoIterator<Item = TxHash>) -> bool {
-        for tx_hash in hashes.into_iter() {
+        for tx_hash in hashes {
             match self.sender.try_send(tx_hash) {
                 Ok(()) => {}
                 Err(err) => {
@@ -889,7 +898,7 @@ impl<T: PoolTransaction> TransactionListener<T> {
     ///
     /// Returns false if the channel is closed (receiver dropped)
     fn send_all(&self, events: impl IntoIterator<Item = NewTransactionEvent<T>>) -> bool {
-        for event in events.into_iter() {
+        for event in events {
             match self.sender.try_send(event) {
                 Ok(()) => {}
                 Err(err) => {
@@ -931,9 +940,9 @@ pub struct AddedPendingTransaction<T: PoolTransaction> {
 
 impl<T: PoolTransaction> AddedPendingTransaction<T> {
     /// Returns all transactions that were promoted to the pending pool and adhere to the given
-    /// [TransactionListenerKind].
+    /// [`TransactionListenerKind`].
     ///
-    /// If the kind is [TransactionListenerKind::PropagateOnly], then only transactions that
+    /// If the kind is [`TransactionListenerKind::PropagateOnly`], then only transactions that
     /// are allowed to be propagated are returned.
     pub(crate) fn pending_transactions(
         &self,
@@ -1020,7 +1029,7 @@ impl<T: PoolTransaction> AddedTransaction<T> {
     /// Returns whether the transaction has been added to the pending pool.
     pub(crate) const fn as_pending(&self) -> Option<&AddedPendingTransaction<T>> {
         match self {
-            AddedTransaction::Pending(tx) => Some(tx),
+            Self::Pending(tx) => Some(tx),
             _ => None,
         }
     }
@@ -1028,16 +1037,16 @@ impl<T: PoolTransaction> AddedTransaction<T> {
     /// Returns the replaced transaction if there was one
     pub(crate) const fn replaced(&self) -> Option<&Arc<ValidPoolTransaction<T>>> {
         match self {
-            AddedTransaction::Pending(tx) => tx.replaced.as_ref(),
-            AddedTransaction::Parked { replaced, .. } => replaced.as_ref(),
+            Self::Pending(tx) => tx.replaced.as_ref(),
+            Self::Parked { replaced, .. } => replaced.as_ref(),
         }
     }
 
     /// Returns the discarded transactions if there were any
     pub(crate) fn discarded_transactions(&self) -> Option<&[Arc<ValidPoolTransaction<T>>]> {
         match self {
-            AddedTransaction::Pending(tx) => Some(&tx.discarded),
-            AddedTransaction::Parked { .. } => None,
+            Self::Pending(tx) => Some(&tx.discarded),
+            Self::Parked { .. } => None,
         }
     }
 
@@ -1049,18 +1058,18 @@ impl<T: PoolTransaction> AddedTransaction<T> {
     /// Returns the hash of the transaction
     pub(crate) fn hash(&self) -> &TxHash {
         match self {
-            AddedTransaction::Pending(tx) => tx.transaction.hash(),
-            AddedTransaction::Parked { transaction, .. } => transaction.hash(),
+            Self::Pending(tx) => tx.transaction.hash(),
+            Self::Parked { transaction, .. } => transaction.hash(),
         }
     }
 
     /// Converts this type into the event type for listeners
     pub(crate) fn into_new_transaction_event(self) -> NewTransactionEvent<T> {
         match self {
-            AddedTransaction::Pending(tx) => {
+            Self::Pending(tx) => {
                 NewTransactionEvent { subpool: SubPool::Pending, transaction: tx.transaction }
             }
-            AddedTransaction::Parked { transaction, subpool, .. } => {
+            Self::Parked { transaction, subpool, .. } => {
                 NewTransactionEvent { transaction, subpool }
             }
         }
@@ -1070,17 +1079,17 @@ impl<T: PoolTransaction> AddedTransaction<T> {
     #[cfg(test)]
     pub(crate) const fn subpool(&self) -> SubPool {
         match self {
-            AddedTransaction::Pending(_) => SubPool::Pending,
-            AddedTransaction::Parked { subpool, .. } => *subpool,
+            Self::Pending(_) => SubPool::Pending,
+            Self::Parked { subpool, .. } => *subpool,
         }
     }
 
-    /// Returns the [TransactionId] of the added transaction
+    /// Returns the [`TransactionId`] of the added transaction
     #[cfg(test)]
     pub(crate) fn id(&self) -> &TransactionId {
         match self {
-            AddedTransaction::Pending(added) => added.transaction.id(),
-            AddedTransaction::Parked { transaction, .. } => transaction.id(),
+            Self::Pending(added) => added.transaction.id(),
+            Self::Parked { transaction, .. } => transaction.id(),
         }
     }
 }
@@ -1100,9 +1109,9 @@ pub(crate) struct OnNewCanonicalStateOutcome<T: PoolTransaction> {
 
 impl<T: PoolTransaction> OnNewCanonicalStateOutcome<T> {
     /// Returns all transactions that were promoted to the pending pool and adhere to the given
-    /// [TransactionListenerKind].
+    /// [`TransactionListenerKind`].
     ///
-    /// If the kind is [TransactionListenerKind::PropagateOnly], then only transactions that
+    /// If the kind is [`TransactionListenerKind::PropagateOnly`], then only transactions that
     /// are allowed to be propagated are returned.
     pub(crate) fn pending_transactions(
         &self,
@@ -1113,9 +1122,9 @@ impl<T: PoolTransaction> OnNewCanonicalStateOutcome<T> {
     }
 
     /// Returns all FULL transactions that were promoted to the pending pool and adhere to the given
-    /// [TransactionListenerKind].
+    /// [`TransactionListenerKind`].
     ///
-    /// If the kind is [TransactionListenerKind::PropagateOnly], then only transactions that
+    /// If the kind is [`TransactionListenerKind::PropagateOnly`], then only transactions that
     /// are allowed to be propagated are returned.
     pub(crate) fn full_pending_transactions(
         &self,

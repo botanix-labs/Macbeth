@@ -1,5 +1,5 @@
 use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
-use reth_primitives::BOTANIX_TESTNET;
+use reth_chainspec::BOTANIX_TESTNET;
 
 use crate::{
     it_info_print,

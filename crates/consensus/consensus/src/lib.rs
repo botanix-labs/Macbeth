@@ -7,16 +7,44 @@
 )]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 use reth_primitives::{
-    BlockHash, BlockNumber, GotExpected, GotExpectedBoxed, Header, HeaderValidationError,
-    InvalidTransactionError, SealedBlock, SealedHeader, B256, U256,
+    constants::MINIMUM_GAS_LIMIT, BlockHash, BlockNumber, BlockWithSenders, Bloom, GotExpected,
+    GotExpectedBoxed, Header, InvalidTransactionError, Receipt, Request, SealedBlock, SealedHeader,
+    B256, U256,
 };
+
+#[cfg(feature = "std")]
 use std::fmt::Debug;
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(not(feature = "std"))]
+use alloc::{fmt::Debug, vec::Vec};
+
+/// A consensus implementation that does nothing.
+pub mod noop;
 
 #[cfg(any(test, feature = "test-utils"))]
 /// test helpers for mocking consensus
 pub mod test_utils;
+
+/// Post execution input passed to [`Consensus::validate_block_post_execution`].
+#[derive(Debug)]
+pub struct PostExecutionInput<'a> {
+    /// Receipts of the block.
+    pub receipts: &'a [Receipt],
+    /// EIP-7685 requests of the block.
+    pub requests: &'a [Request],
+}
+
+impl<'a> PostExecutionInput<'a> {
+    /// Creates a new instance of `PostExecutionInput`.
+    pub const fn new(receipts: &'a [Receipt], requests: &'a [Request]) -> Self {
+        Self { receipts, requests }
+    }
+}
 
 /// Consensus is a protocol that chooses canonical chain.
 #[auto_impl::auto_impl(&, Arc)]
@@ -85,6 +113,29 @@ pub trait Consensus: Debug + Send + Sync {
     /// Note: validating blocks does not include other validations of the Consensus
     fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError>;
 
+    /// Validate a block disregarding world state, i.e. things that can be checked before sender
+    /// recovery and execution.
+    ///
+    /// See the Yellow Paper sections 4.3.2 "Holistic Validity", 4.3.4 "Block Header Validity", and
+    /// 11.1 "Ommer Validation".
+    ///
+    /// **This should not be called for the genesis block**.
+    ///
+    /// Note: validating blocks does not include other validations of the Consensus
+    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError>;
+
+    /// Validate a block considering world state, i.e. things that can not be checked before
+    /// execution.
+    ///
+    /// See the Yellow Paper sections 4.3.2 "Holistic Validity".
+    ///
+    /// Note: validating blocks does not include other validations of the Consensus
+    fn validate_block_post_execution(
+        &self,
+        block: &BlockWithSenders,
+        input: PostExecutionInput<'_>,
+    ) -> Result<(), ConsensusError>;
+
     /// Validates extra data header
     fn validate_extra_data_header(
         &self,
@@ -115,24 +166,24 @@ pub trait Consensus: Debug + Send + Sync {
 }
 
 /// Invalid Aggregated Public Key Error
-#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, derive_more::Display)]
 pub enum InvalidAggregatedPublicKeyError {
     /// Aggregated public key does not match expected key
-    #[error("Aggregated public key does not match expected key")]
+    #[display("Aggregated public key does not match expected key")]
     InvalidAggregatedPublicKey,
     /// Aggregated public key is missing
-    #[error("Aggregated public key is missing")]
+    #[display("Aggregated public key is missing")]
     MissingAggregatedPublicKey,
     /// Aggregated public key should not be NUMS point past genesis block
-    #[error("Aggregated public key should not be NUMS point past genesis block")]
+    #[display("Aggregated public key should not be NUMS point past genesis block")]
     NumsAggregatePublicKeyPastGenesis,
 }
 
 /// Consensus Errors
-#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, derive_more::Display)]
 pub enum ConsensusError {
     /// Error when the gas used in the header exceeds the gas limit.
-    #[error("block used gas ({gas_used}) is greater than gas limit ({gas_limit})")]
+    #[display("block used gas ({gas_used}) is greater than gas limit ({gas_limit})")]
     HeaderGasUsedExceedsGasLimit {
         /// The gas used in the block header.
         gas_used: u64,
@@ -140,55 +191,85 @@ pub enum ConsensusError {
         gas_limit: u64,
     },
     /// PoA specific: missing quorum of authority signatures
-    #[error("Missing quorum of authority signatures, expected: {0}, got: {1}")]
-    MissingQuorumOfAuthoritySignatures(u16, u16),
+    #[display("Missing quorum of authority signatures, expected: {expected}, got: {actual}")]
+    MissingQuorumOfAuthoritySignatures {
+        /// The expected quorum of authority signatures.
+        expected: u16,
+        /// The actual quorum of authority signatures.
+        actual: u16,
+    },
     /// PoA specific: authority list is missing in the extra data header
-    #[error("Missing authority list")]
+    #[display("Missing authority list")]
     MissingAuthorityList,
     /// PoA specific: authority list does not match the genesis block authority list
-    #[error("Invalid authority list")]
+    #[display("Invalid authority list")]
     InvalidAuthorityList,
     /// PoA specific: Invalid block signature
-    #[error("Invalid authority signature")]
+    #[display("Invalid authority signature")]
     InvalidAuthoritySignature,
     /// PoA specific: extra data header does not follow consensus rules or is malformed
-    #[error("Invalid extra data")]
+    #[display("Invalid extra data")]
     ExtraDataInvalid,
     /// PoA specific: failed to recover authority from block signature
-    #[error("Failed to recover authority")]
+    #[display("Failed to recover authority")]
     FailedToRecoverAuthority,
     /// PoA specific: same signer as previous block
-    #[error("Same signer as previous block")]
+    #[display("Same signer as previous block")]
     SignerLimitExceeded,
     /// PoA specific: authority signer not in turn
-    #[error("Authority signer not in turn")]
+    #[display("Authority signer not in turn")]
     AuthorityNotInTurn,
     /// PoA specific: block beneficiary is not an authority
-    #[error("block beneficiary is not an authority")]
+    #[display("block beneficiary is not an authority")]
     BlockBeneficiaryIsNotAuthority,
     /// PoA specific: block beneficiary is not the burn address
-    #[error("block beneficiary is not the burn address")]
+    #[display("block beneficiary is not the burn address")]
     BlockBeneficiaryIsNotBurnAddress,
+
+    /// Error when block gas used doesn't match expected value
+    #[display(
+        "block gas used mismatch: {gas}; gas spent by each transaction: {gas_spent_by_tx:?}"
+    )]
+    BlockGasUsed {
+        /// The gas diff.
+        gas: GotExpected<u64>,
+        /// Gas spent by each transaction
+        gas_spent_by_tx: Vec<(u64, u64)>,
+    },
+
     /// Error when the hash of block ommer is different from the expected hash.
-    #[error("mismatched block ommer hash: {0}")]
+    #[display("mismatched block ommer hash: {_0}")]
     BodyOmmersHashDiff(GotExpectedBoxed<B256>),
 
     /// Error when the state root in the block is different from the expected state root.
-    #[error("mismatched block state root: {0}")]
+    #[display("mismatched block state root: {_0}")]
     BodyStateRootDiff(GotExpectedBoxed<B256>),
 
     /// Error when the transaction root in the block is different from the expected transaction
     /// root.
-    #[error("mismatched block transaction root: {0}")]
+    #[display("mismatched block transaction root: {_0}")]
     BodyTransactionRootDiff(GotExpectedBoxed<B256>),
+
+    /// Error when the receipt root in the block is different from the expected receipt root.
+    #[display("receipt root mismatch: {_0}")]
+    BodyReceiptRootDiff(GotExpectedBoxed<B256>),
+
+    /// Error when header bloom filter is different from the expected bloom filter.
+    #[display("header bloom filter mismatch: {_0}")]
+    BodyBloomLogDiff(GotExpectedBoxed<Bloom>),
 
     /// Error when the withdrawals root in the block is different from the expected withdrawals
     /// root.
-    #[error("mismatched block withdrawals root: {0}")]
+    #[display("mismatched block withdrawals root: {_0}")]
     BodyWithdrawalsRootDiff(GotExpectedBoxed<B256>),
 
+    /// Error when the requests root in the block is different from the expected requests
+    /// root.
+    #[display("mismatched block requests root: {_0}")]
+    BodyRequestsRootDiff(GotExpectedBoxed<B256>),
+
     /// Error when a block with a specific hash and number is already known.
-    #[error("block with [hash={hash}, number={number}] is already known")]
+    #[display("block with [hash={hash}, number={number}] is already known")]
     BlockKnown {
         /// The hash of the known block.
         hash: BlockHash,
@@ -197,14 +278,14 @@ pub enum ConsensusError {
     },
 
     /// Error when the parent hash of a block is not known.
-    #[error("block parent [hash={hash}] is not known")]
+    #[display("block parent [hash={hash}] is not known")]
     ParentUnknown {
         /// The hash of the unknown parent block.
         hash: BlockHash,
     },
 
     /// Error when the block number does not match the parent block number.
-    #[error(
+    #[display(
         "block number {block_number} does not match parent block number {parent_block_number}"
     )]
     ParentBlockNumberMismatch {
@@ -214,8 +295,14 @@ pub enum ConsensusError {
         block_number: BlockNumber,
     },
 
+    /// Error when the parent hash does not match the expected parent hash.
+    #[display("mismatched parent hash: {_0}")]
+    ParentHashMismatch(GotExpectedBoxed<B256>),
+
     /// Error when the block timestamp is in the future compared to our clock time.
-    #[error("block timestamp {timestamp} is in the future compared to our clock time {present_timestamp}")]
+    #[display(
+        "block timestamp {timestamp} is in the future compared to our clock time {present_timestamp}"
+    )]
     TimestampIsInFuture {
         /// The block's timestamp.
         timestamp: u64,
@@ -224,7 +311,7 @@ pub enum ConsensusError {
     },
 
     /// Error when the block timestamp is in the past compared to our clock time.
-    #[error(
+    #[display(
         "block timestamp {timestamp} is in the past compared to our clock time {present_timestamp}"
     )]
     TimestampIsInPast {
@@ -235,70 +322,90 @@ pub enum ConsensusError {
     },
 
     /// Error when the base fee is missing.
-    #[error("base fee missing")]
+    #[display("base fee missing")]
     BaseFeeMissing,
 
     /// Error when there is a transaction signer recovery error.
-    #[error("transaction signer recovery error")]
+    #[display("transaction signer recovery error")]
     TransactionSignerRecoveryError,
 
     /// Error when the extra data length exceeds the maximum allowed.
-    #[error("extra data {len} exceeds max length")]
+    #[display("extra data {len} exceeds max length")]
     ExtraDataExceedsMax {
         /// The length of the extra data.
         len: usize,
     },
 
+    /// Consensus error during PBFT
+    #[display("PBFT Consensus error")]
+    PBFTConsensusError,
+
+    /// TODO should pass error to this variant
+    #[display("Failed to construct Botanix Consensus Pkg")]
+    BotanixConsensusPkgError(),
+
     /// Error when the difficulty after a merge is not zero.
-    #[error("difficulty after merge is not zero")]
+    #[display("difficulty after merge is not zero")]
     TheMergeDifficultyIsNotZero,
 
     /// Error when the nonce after a merge is not zero.
-    #[error("nonce after merge is not zero")]
+    #[display("nonce after merge is not zero")]
     TheMergeNonceIsNotZero,
 
     /// Error when the ommer root after a merge is not empty.
-    #[error("ommer root after merge is not empty")]
+    #[display("ommer root after merge is not empty")]
     TheMergeOmmerRootIsNotEmpty,
 
     /// Error when the withdrawals root is missing.
-    #[error("missing withdrawals root")]
+    #[display("missing withdrawals root")]
     WithdrawalsRootMissing,
 
+    /// Error when the requests root is missing.
+    #[display("missing requests root")]
+    RequestsRootMissing,
+
     /// Error when an unexpected withdrawals root is encountered.
-    #[error("unexpected withdrawals root")]
+    #[display("unexpected withdrawals root")]
     WithdrawalsRootUnexpected,
 
+    /// Error when an unexpected requests root is encountered.
+    #[display("unexpected requests root")]
+    RequestsRootUnexpected,
+
     /// Error when withdrawals are missing.
-    #[error("missing withdrawals")]
+    #[display("missing withdrawals")]
     BodyWithdrawalsMissing,
 
+    /// Error when requests are missing.
+    #[display("missing requests")]
+    BodyRequestsMissing,
+
     /// Error when blob gas used is missing.
-    #[error("missing blob gas used")]
+    #[display("missing blob gas used")]
     BlobGasUsedMissing,
 
     /// Error when unexpected blob gas used is encountered.
-    #[error("unexpected blob gas used")]
+    #[display("unexpected blob gas used")]
     BlobGasUsedUnexpected,
 
     /// Error when excess blob gas is missing.
-    #[error("missing excess blob gas")]
+    #[display("missing excess blob gas")]
     ExcessBlobGasMissing,
 
     /// Error when unexpected excess blob gas is encountered.
-    #[error("unexpected excess blob gas")]
+    #[display("unexpected excess blob gas")]
     ExcessBlobGasUnexpected,
 
     /// Error when the parent beacon block root is missing.
-    #[error("missing parent beacon block root")]
+    #[display("missing parent beacon block root")]
     ParentBeaconBlockRootMissing,
 
     /// Error when an unexpected parent beacon block root is encountered.
-    #[error("unexpected parent beacon block root")]
+    #[display("unexpected parent beacon block root")]
     ParentBeaconBlockRootUnexpected,
 
     /// Error when blob gas used exceeds the maximum allowed.
-    #[error("blob gas used {blob_gas_used} exceeds maximum allowance {max_blob_gas_per_block}")]
+    #[display("blob gas used {blob_gas_used} exceeds maximum allowance {max_blob_gas_per_block}")]
     BlobGasUsedExceedsMaxBlobGasPerBlock {
         /// The actual blob gas used.
         blob_gas_used: u64,
@@ -307,7 +414,7 @@ pub enum ConsensusError {
     },
 
     /// Error when blob gas used is not a multiple of blob gas per blob.
-    #[error(
+    #[display(
         "blob gas used {blob_gas_used} is not a multiple of blob gas per blob {blob_gas_per_blob}"
     )]
     BlobGasUsedNotMultipleOfBlobGasPerBlob {
@@ -318,8 +425,8 @@ pub enum ConsensusError {
     },
 
     /// Error when excess blob gas is not a multiple of blob gas per blob.
-    #[error(
-    "excess blob gas {excess_blob_gas} is not a multiple of blob gas per blob {blob_gas_per_blob}"
+    #[display(
+        "excess blob gas {excess_blob_gas} is not a multiple of blob gas per blob {blob_gas_per_blob}"
     )]
     ExcessBlobGasNotMultipleOfBlobGasPerBlob {
         /// The actual excess blob gas.
@@ -329,38 +436,107 @@ pub enum ConsensusError {
     },
 
     /// Error when the blob gas used in the header does not match the expected blob gas used.
-    #[error("blob gas used mismatch: {0}")]
+    #[display("blob gas used mismatch: {_0}")]
     BlobGasUsedDiff(GotExpected<u64>),
 
     /// Error for a transaction that violates consensus.
-    #[error(transparent)]
-    InvalidTransaction(#[from] InvalidTransactionError),
+    InvalidTransaction(InvalidTransactionError),
 
-    /// Error type transparently wrapping HeaderValidationError.
-    #[error(transparent)]
-    HeaderValidationError(#[from] HeaderValidationError),
-
+    // /// Error type transparently wrapping HeaderValidationError.
+    // #[display("failed to validate header: {_0}")]
+    // HeaderValidationError(HeaderValidationError),
     /// Inturn Validation Error
-    #[error("in turn validation error")]
+    #[display("in turn validation error")]
     ValidateInturnError,
 
     /// Invalid Aggregated Public key
-    #[error("invalid aggregated public key")]
-    InvalidAggregatedPublicKey(#[from] InvalidAggregatedPublicKeyError),
+    #[display("invalid aggregated public key: {_0}")]
+    InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError),
 
     /// Invalid Chain Version
-    #[error("invalid chain version")]
+    #[display("invalid chain version")]
     InvalidChainVersion,
+
+    /// Error when the block's base fee is different from the expected base fee.
+    #[display("block base fee mismatch: {_0}")]
+    BaseFeeDiff(GotExpected<u64>),
+
+    /// Error when there is an invalid excess blob gas.
+    #[display(
+        "invalid excess blob gas: {diff}; \
+            parent excess blob gas: {parent_excess_blob_gas}, \
+            parent blob gas used: {parent_blob_gas_used}"
+    )]
+    ExcessBlobGasDiff {
+        /// The excess blob gas diff.
+        diff: GotExpected<u64>,
+        /// The parent excess blob gas.
+        parent_excess_blob_gas: u64,
+        /// The parent blob gas used.
+        parent_blob_gas_used: u64,
+    },
+
+    /// Error when the child gas limit exceeds the maximum allowed increase.
+    #[display("child gas_limit {child_gas_limit} max increase is {parent_gas_limit}/1024")]
+    GasLimitInvalidIncrease {
+        /// The parent gas limit.
+        parent_gas_limit: u64,
+        /// The child gas limit.
+        child_gas_limit: u64,
+    },
+
+    /// Error indicating that the child gas limit is below the minimum allowed limit.
+    ///
+    /// This error occurs when the child gas limit is less than the specified minimum gas limit.
+    #[display(
+        "child gas limit {child_gas_limit} is below the minimum allowed limit ({MINIMUM_GAS_LIMIT})"
+    )]
+    GasLimitInvalidMinimum {
+        /// The child gas limit.
+        child_gas_limit: u64,
+    },
+
+    /// Error when the child gas limit exceeds the maximum allowed decrease.
+    #[display("child gas_limit {child_gas_limit} max decrease is {parent_gas_limit}/1024")]
+    GasLimitInvalidDecrease {
+        /// The parent gas limit.
+        parent_gas_limit: u64,
+        /// The child gas limit.
+        child_gas_limit: u64,
+    },
+
+    /// Cannot add and existing federation memeber to the federation
+    #[display("Cannot add and existing federation memeber to the federation")]
+    CannotAddExistingFederationMember,
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ConsensusError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidTransaction(err) => std::error::Error::source(err),
+            _ => Option::None,
+        }
+    }
 }
 
 impl ConsensusError {
     /// Returns `true` if the error is a state root error.
-    pub fn is_state_root_error(&self) -> bool {
-        matches!(self, ConsensusError::BodyStateRootDiff(_))
+    pub const fn is_state_root_error(&self) -> bool {
+        matches!(self, Self::BodyStateRootDiff(_))
+    }
+}
+
+impl From<InvalidTransactionError> for ConsensusError {
+    fn from(value: InvalidTransactionError) -> Self {
+        Self::InvalidTransaction(value)
     }
 }
 
 /// `HeaderConsensusError` combines a `ConsensusError` with the `SealedHeader` it relates to.
-#[derive(thiserror::Error, Debug)]
-#[error("Consensus error: {0}, Invalid header: {1:?}")]
+#[derive(derive_more::Display, Debug)]
+#[display("Consensus error: {_0}, Invalid header: {_1:?}")]
 pub struct HeaderConsensusError(ConsensusError, SealedHeader);
+
+#[cfg(feature = "std")]
+impl std::error::Error for HeaderConsensusError {}

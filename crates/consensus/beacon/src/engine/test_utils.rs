@@ -1,13 +1,13 @@
 use crate::{
-    engine::hooks::PruneHook, hooks::EngineHooks, BeaconConsensus, BeaconConsensusEngine,
+    engine::hooks::PruneHook, hooks::EngineHooks, BeaconConsensusEngine,
     BeaconConsensusEngineError, BeaconConsensusEngineHandle, BeaconForkChoiceUpdateError,
-    BeaconOnNewPayloadError, MIN_BLOCKS_FOR_PIPELINE_RUN,
+    BeaconOnNewPayloadError, EthBeaconConsensus, MIN_BLOCKS_FOR_PIPELINE_RUN,
 };
 use reth_blockchain_tree::{
     config::BlockchainTreeConfig, externals::TreeExternals, BlockchainTree, ShareableBlockchainTree,
 };
-use reth_btc_wallet::test_utils::MockBitcoindFactory;
-use reth_config::config::EtlConfig;
+use reth_chainspec::ChainSpec;
+use reth_config::config::StageConfig;
 use reth_consensus::{test_utils::TestConsensus, Consensus};
 use reth_db::{test_utils::TempDatabase, DatabaseEnv as DE};
 use reth_downloaders::{
@@ -15,23 +15,18 @@ use reth_downloaders::{
     headers::reverse_headers::ReverseHeadersDownloaderBuilder,
 };
 use reth_ethereum_engine_primitives::EthEngineTypes;
-use reth_evm_ethereum::EthEvmConfig;
-use reth_interfaces::{
-    executor::BlockExecutionError,
-    p2p::{bodies::client::BodiesClient, either::EitherDownloader, headers::client::HeadersClient},
-    sync::NoopSyncStateUpdater,
-    test_utils::NoopFullBlockClient,
-};
+use reth_evm::{either::Either, test_utils::MockExecutorProvider};
+use reth_evm_ethereum::execute::EthExecutorProvider;
+use reth_exex_types::FinishedExExHeight;
+use reth_network_p2p::{sync::NoopSyncStateUpdater, test_utils::NoopFullBlockClient, BlockClient};
 use reth_payload_builder::test_utils::spawn_test_payload_service;
-use reth_primitives::{BlockNumber, ChainSpec, FinishedExExHeight, PruneModes, B256};
+use reth_primitives::{BlockNumber, B256};
 use reth_provider::{
-    providers::BlockchainProvider,
-    test_utils::{create_test_provider_factory_with_chain_spec, TestExecutorFactory},
-    BundleStateWithReceipts, ExecutorFactory, HeaderSyncMode, PrunableBlockExecutor,
-    StaticFileProviderFactory,
+    providers::BlockchainProvider, test_utils::create_test_provider_factory_with_chain_spec,
+    ExecutionOutcome, ProviderFactory,
 };
 use reth_prune::Pruner;
-use reth_revm::EvmProcessorFactory;
+use reth_prune_types::PruneModes;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ExecutionPayload, ForkchoiceState, ForkchoiceUpdated, PayloadStatus,
 };
@@ -46,7 +41,7 @@ type DatabaseEnv = TempDatabase<DE>;
 type TestBeaconConsensusEngine<Client> = BeaconConsensusEngine<
     Arc<DatabaseEnv>,
     BlockchainProvider<Arc<DatabaseEnv>>,
-    Arc<EitherDownloader<Client, NoopFullBlockClient>>,
+    Arc<Either<Client, NoopFullBlockClient>>,
     EthEngineTypes,
 >;
 
@@ -60,7 +55,7 @@ pub struct TestEnv<DB> {
 }
 
 impl<DB> TestEnv<DB> {
-    fn new(
+    const fn new(
         db: DB,
         tip_rx: watch::Receiver<B256>,
         engine_handle: BeaconConsensusEngineHandle<EthEngineTypes>,
@@ -115,7 +110,7 @@ impl<DB> TestEnv<DB> {
 }
 
 // TODO: add with_consensus in case we want to use the TestConsensus purposeful failure - this
-// would require similar patterns to how we use with_client and the EitherDownloader
+// would require similar patterns to how we use with_client and the downloader
 /// Represents either a real consensus engine, or a test consensus engine.
 #[derive(Debug, Default)]
 enum TestConsensusConfig {
@@ -145,7 +140,7 @@ impl Default for TestPipelineConfig {
 #[derive(Debug)]
 enum TestExecutorConfig {
     /// Test executor results.
-    Test(Vec<BundleStateWithReceipts>),
+    Test(Vec<ExecutionOutcome>),
     /// Real executor configuration.
     Real,
 }
@@ -153,31 +148,6 @@ enum TestExecutorConfig {
 impl Default for TestExecutorConfig {
     fn default() -> Self {
         Self::Test(Vec::new())
-    }
-}
-
-/// A type that represents one of two possible executor factories.
-#[derive(Debug, Clone)]
-pub enum EitherExecutorFactory<A: ExecutorFactory, B: ExecutorFactory> {
-    /// The first factory variant
-    Left(A),
-    /// The second factory variant
-    Right(B),
-}
-
-impl<A, B> ExecutorFactory for EitherExecutorFactory<A, B>
-where
-    A: ExecutorFactory,
-    B: ExecutorFactory,
-{
-    fn with_state<'a, SP: reth_provider::StateProvider + 'a>(
-        &'a self,
-        sp: SP,
-    ) -> Box<dyn PrunableBlockExecutor<Error = BlockExecutionError> + 'a> {
-        match self {
-            EitherExecutorFactory::Left(a) => a.with_state::<'a, SP>(sp),
-            EitherExecutorFactory::Right(b) => b.with_state::<'a, SP>(sp),
-        }
     }
 }
 
@@ -216,13 +186,13 @@ impl TestConsensusEngineBuilder {
     }
 
     /// Set the executor results to use for the test consensus engine.
-    pub fn with_executor_results(mut self, executor_results: Vec<BundleStateWithReceipts>) -> Self {
+    pub fn with_executor_results(mut self, executor_results: Vec<ExecutionOutcome>) -> Self {
         self.executor_config = TestExecutorConfig::Test(executor_results);
         self
     }
 
     /// Sets the max block for the pipeline to run.
-    pub fn with_max_block(mut self, max_block: BlockNumber) -> Self {
+    pub const fn with_max_block(mut self, max_block: BlockNumber) -> Self {
         self.max_block = Some(max_block);
         self
     }
@@ -240,23 +210,26 @@ impl TestConsensusEngineBuilder {
     }
 
     /// Uses a real consensus engine instead of a test consensus engine.
-    pub fn with_real_consensus(mut self) -> Self {
+    pub const fn with_real_consensus(mut self) -> Self {
         self.consensus = TestConsensusConfig::Real;
         self
     }
 
     /// Disables blockchain tree driven sync. This is the same as setting the pipeline run
     /// threshold to 0.
-    pub fn disable_blockchain_tree_sync(mut self) -> Self {
+    pub const fn disable_blockchain_tree_sync(mut self) -> Self {
         self.pipeline_run_threshold = Some(0);
         self
     }
 
     /// Sets the client to use for network operations.
     #[allow(dead_code)]
-    pub fn with_client<Client>(self, client: Client) -> NetworkedTestConsensusEngineBuilder<Client>
+    pub const fn with_client<Client>(
+        self,
+        client: Client,
+    ) -> NetworkedTestConsensusEngineBuilder<Client>
     where
-        Client: HeadersClient + BodiesClient + 'static,
+        Client: BlockClient + 'static,
     {
         NetworkedTestConsensusEngineBuilder { base_config: self, client: Some(client) }
     }
@@ -283,7 +256,7 @@ pub struct NetworkedTestConsensusEngineBuilder<Client> {
 
 impl<Client> NetworkedTestConsensusEngineBuilder<Client>
 where
-    Client: HeadersClient + BodiesClient + 'static,
+    Client: BlockClient + 'static,
 {
     /// Set the pipeline execution outputs to use for the test consensus engine.
     #[allow(dead_code)]
@@ -297,14 +270,14 @@ where
 
     /// Set the executor results to use for the test consensus engine.
     #[allow(dead_code)]
-    pub fn with_executor_results(mut self, executor_results: Vec<BundleStateWithReceipts>) -> Self {
+    pub fn with_executor_results(mut self, executor_results: Vec<ExecutionOutcome>) -> Self {
         self.base_config.executor_config = TestExecutorConfig::Test(executor_results);
         self
     }
 
     /// Sets the max block for the pipeline to run.
     #[allow(dead_code)]
-    pub fn with_max_block(mut self, max_block: BlockNumber) -> Self {
+    pub const fn with_max_block(mut self, max_block: BlockNumber) -> Self {
         self.base_config.max_block = Some(max_block);
         self
     }
@@ -326,7 +299,7 @@ where
     /// Disables blockchain tree driven sync. This is the same as setting the pipeline run
     /// threshold to 0.
     #[allow(dead_code)]
-    pub fn disable_blockchain_tree_sync(mut self) -> Self {
+    pub const fn disable_blockchain_tree_sync(mut self) -> Self {
         self.base_config.pipeline_run_threshold = Some(0);
         self
     }
@@ -338,7 +311,7 @@ where
         client: ClientType,
     ) -> NetworkedTestConsensusEngineBuilder<ClientType>
     where
-        ClientType: HeadersClient + BodiesClient + 'static,
+        ClientType: BlockClient + 'static,
     {
         NetworkedTestConsensusEngineBuilder { base_config: self.base_config, client: Some(client) }
     }
@@ -351,7 +324,7 @@ where
 
         let consensus: Arc<dyn Consensus> = match self.base_config.consensus {
             TestConsensusConfig::Real => {
-                Arc::new(BeaconConsensus::new(Arc::clone(&self.base_config.chain_spec)))
+                Arc::new(EthBeaconConsensus::new(Arc::clone(&self.base_config.chain_spec)))
             }
             TestConsensusConfig::Test => Arc::new(TestConsensus::default()),
         };
@@ -360,30 +333,24 @@ where
         // use either noop client or a user provided client (for example TestFullBlockClient)
         let client = Arc::new(
             self.client
-                .map(EitherDownloader::Left)
-                .unwrap_or_else(|| EitherDownloader::Right(NoopFullBlockClient::default())),
+                .map(Either::Left)
+                .unwrap_or_else(|| Either::Right(NoopFullBlockClient::default())),
         );
 
         // use either test executor or real executor
         let executor_factory = match self.base_config.executor_config {
             TestExecutorConfig::Test(results) => {
-                let executor_factory = TestExecutorFactory::default();
+                let executor_factory = MockExecutorProvider::default();
                 executor_factory.extend(results);
-                EitherExecutorFactory::Left(executor_factory)
+                Either::Left(executor_factory)
             }
             TestExecutorConfig::Real => {
-                EitherExecutorFactory::Right(EvmProcessorFactory::<_, MockBitcoindFactory>::new(
-                    self.base_config.chain_spec.clone(),
-                    EthEvmConfig::default(),
-                ))
+                Either::Right(EthExecutorProvider::ethereum(self.base_config.chain_spec.clone()))
             }
         };
 
-        let static_file_producer = StaticFileProducer::new(
-            provider_factory.clone(),
-            provider_factory.static_file_provider(),
-            PruneModes::default(),
-        );
+        let static_file_producer =
+            StaticFileProducer::new(provider_factory.clone(), PruneModes::default());
 
         // Setup pipeline
         let (tip_tx, tip_rx) = watch::channel(B256::default());
@@ -402,12 +369,13 @@ where
 
                 Pipeline::builder().add_stages(DefaultStages::new(
                     provider_factory.clone(),
-                    HeaderSyncMode::Tip(tip_rx.clone()),
+                    tip_rx.clone(),
                     Arc::clone(&consensus),
                     header_downloader,
                     body_downloader,
                     executor_factory.clone(),
-                    EtlConfig::default(),
+                    StageConfig::default(),
+                    PruneModes::default(),
                 ))
             }
         };
@@ -420,20 +388,24 @@ where
 
         // Setup blockchain tree
         let externals = TreeExternals::new(provider_factory.clone(), consensus, executor_factory);
-        let config = BlockchainTreeConfig::new(1, 2, 3, 2);
         let tree = Arc::new(ShareableBlockchainTree::new(
-            BlockchainTree::new(externals, config, None).expect("failed to create tree"),
+            BlockchainTree::new(
+                externals,
+                BlockchainTreeConfig::new(1, 2, 3, 2),
+                PruneModes::default(),
+            )
+            .expect("failed to create tree"),
         ));
-        let latest = self.base_config.chain_spec.genesis_header().seal_slow();
-        let blockchain_provider =
-            BlockchainProvider::with_latest(provider_factory.clone(), tree, latest);
+        let genesis_block = self.base_config.chain_spec.genesis_header().seal_slow();
 
-        let pruner = Pruner::new(
+        let blockchain_provider =
+            BlockchainProvider::with_blocks(provider_factory.clone(), tree, genesis_block, None);
+
+        let pruner = Pruner::<_, ProviderFactory<_>>::new(
             provider_factory.clone(),
             vec![],
             5,
             self.base_config.chain_spec.prune_delete_limit,
-            config.max_reorg_depth() as usize,
             None,
             watch::channel(FinishedExExHeight::NoExExs).1,
         );
@@ -448,7 +420,6 @@ where
             Box::<TokioTaskExecutor>::default(),
             Box::<NoopSyncStateUpdater>::default(),
             None,
-            false,
             payload_builder,
             None,
             self.base_config.pipeline_run_threshold.unwrap_or(MIN_BLOCKS_FOR_PIPELINE_RUN),
@@ -468,7 +439,7 @@ pub fn spawn_consensus_engine<Client>(
     engine: TestBeaconConsensusEngine<Client>,
 ) -> oneshot::Receiver<Result<(), BeaconConsensusEngineError>>
 where
-    Client: HeadersClient + BodiesClient + 'static,
+    Client: BlockClient + 'static,
 {
     let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {

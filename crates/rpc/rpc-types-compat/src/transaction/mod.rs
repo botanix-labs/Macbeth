@@ -1,7 +1,7 @@
 //! Compatibility functions for rpc `Transaction` type.
 
 use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
-use reth_primitives::{BlockNumber, TransactionSignedEcRecovered, TxKind, TxType, B256};
+use reth_primitives::{Address, BlockNumber, TransactionSignedEcRecovered, TxKind, TxType, B256};
 use reth_rpc_types::Transaction;
 use signature::from_primitive_signature;
 pub use typed::*;
@@ -42,15 +42,14 @@ fn fill(
     let signer = tx.signer();
     let signed_tx = tx.into_signed();
 
-    let to = match signed_tx.kind() {
+    let to: Option<Address> = match signed_tx.kind() {
         TxKind::Create => None,
-        TxKind::Call(to) => Some(*to),
+        TxKind::Call(to) => Some(Address(*to)),
     };
 
     #[allow(unreachable_patterns)]
     let (gas_price, max_fee_per_gas) = match signed_tx.tx_type() {
-        TxType::Legacy => (Some(signed_tx.max_fee_per_gas()), None),
-        TxType::Eip2930 => (Some(signed_tx.max_fee_per_gas()), None),
+        TxType::Legacy | TxType::Eip2930 => (Some(signed_tx.max_fee_per_gas()), None),
         TxType::Eip1559 | TxType::Eip4844 => {
             // the gas price field for EIP1559 is set to `min(tip, gasFeeCap - baseFee) +
             // baseFee`
@@ -74,6 +73,7 @@ fn fill(
     let chain_id = signed_tx.chain_id();
     let blob_versioned_hashes = signed_tx.blob_versioned_hashes();
     let access_list = signed_tx.access_list().cloned();
+    let authorization_list = signed_tx.authorization_list().map(|l| l.to_vec());
 
     let signature =
         from_primitive_signature(*signed_tx.signature(), signed_tx.tx_type(), signed_tx.chain_id());
@@ -101,11 +101,12 @@ fn fill(
         // EIP-4844 fields
         max_fee_per_blob_gas: signed_tx.max_fee_per_blob_gas(),
         blob_versioned_hashes,
+        authorization_list,
         // Optimism fields
         #[cfg(feature = "optimism")]
         other: reth_rpc_types::optimism::OptimismTransactionFields {
             source_hash: signed_tx.source_hash(),
-            mint: signed_tx.mint().map(reth_primitives::U128::from),
+            mint: signed_tx.mint(),
             is_system_tx: signed_tx.is_deposit().then_some(signed_tx.is_system_transaction()),
         }
         .into(),
@@ -114,7 +115,7 @@ fn fill(
     }
 }
 
-/// Convert [TransactionSignedEcRecovered] to [TransactionRequest]
+/// Convert [`TransactionSignedEcRecovered`] to [`TransactionRequest`]
 pub fn transaction_to_call_request(tx: TransactionSignedEcRecovered) -> TransactionRequest {
     let from = tx.signer();
     let to = Some(tx.transaction.to().into());
@@ -125,6 +126,7 @@ pub fn transaction_to_call_request(tx: TransactionSignedEcRecovered) -> Transact
     let chain_id = tx.transaction.chain_id();
     let access_list = tx.transaction.access_list().cloned();
     let max_fee_per_blob_gas = tx.transaction.max_fee_per_blob_gas();
+    let _authorization_list = tx.transaction.authorization_list();
     let blob_versioned_hashes = tx.transaction.blob_versioned_hashes();
     let tx_type = tx.transaction.tx_type();
 
