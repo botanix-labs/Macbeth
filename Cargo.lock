@@ -3970,7 +3970,7 @@ dependencies = [
 
 [[package]]
 name = "federation-utils-cli"
-version = "0.2.0-beta.6"
+version = "1.0.5"
 dependencies = [
  "clap",
  "ethers",
