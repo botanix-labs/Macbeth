@@ -35,7 +35,6 @@ futures-util.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 tokio-stream.workspace = true
 tracing.workspace = true
-
 secp256k1 = { workspace = true, features = [
     "global-context",
     "rand-std",

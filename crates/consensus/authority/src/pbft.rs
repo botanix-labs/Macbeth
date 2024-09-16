@@ -960,9 +960,10 @@ pub(crate) mod tests {
             match self.client.header_by_hash_or_number(request.start) {
                 Ok(header_res) => {
                     if let Some(header) = header_res {
-                        return futures_util::future::ready(PeerRequestResult::Ok(
-                            WithPeerId::new(PeerId::random(), vec![header]),
-                        ));
+                        return futures_util::future::ready(PeerRequestResult::Ok(WithPeerId::new(
+                            PeerId::random(),
+                            vec![header],
+                        )));
                     }
                 }
                 // Error is caught below

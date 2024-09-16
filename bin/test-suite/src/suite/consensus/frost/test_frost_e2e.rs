@@ -9,7 +9,7 @@ use ethers::{
 };
 use reth_botanix_lib::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta},
+    peg_contract::{PeginData, PeginMeta, PegoutData},
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
@@ -232,8 +232,8 @@ pub async fn frost_e2e_stable(
     // bitcoin address
     let pegout_destination =
         ethers::core::types::Bytes::from(btc_address.to_string().as_bytes().to_vec());
-    // use empty pegout data
-    let pegout_data = ethers::core::types::Bytes::new();
+    // set pegout version
+    let pegout_data = ethers::core::types::Bytes::from(vec![PegoutData::version()]);
     let pegout_amount = Amount::from_btc(0.5).unwrap();
     let tx_receipt =
         mint_contract.burn(pegout_destination, pegout_data, pegout_amount.to_wei()).await.unwrap();

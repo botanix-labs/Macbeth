@@ -10,7 +10,12 @@ use std::{collections::BTreeMap, str::FromStr};
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, rpc, util, App};
+use crate::{
+    database::Utxo,
+    rpc,
+    util::{self},
+    App,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 

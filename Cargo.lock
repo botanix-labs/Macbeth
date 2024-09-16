@@ -3969,6 +3969,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "federation-utils-cli"
+version = "0.2.0-beta.6"
+dependencies = [
+ "clap",
+ "ethers",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

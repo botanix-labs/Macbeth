@@ -20,6 +20,7 @@ members = [
     "crates/chainspec/",
     "crates/cli/cli/",
     "crates/cli/commands/",
+    "bin/federation-utils",
     "crates/cli/runner/",
     "crates/cli/util/",
     "crates/config/",

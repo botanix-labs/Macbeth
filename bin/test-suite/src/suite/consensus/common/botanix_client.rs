@@ -101,7 +101,7 @@ impl BotanixEthClient {
             )
             .unwrap()
             .gas_price(gas_price)
-            .gas(U256::from(1_000_000))
+            .gas(U256::from(2_000_000))
             .nonce(nonce);
         let prepared_tx = binding.send().await.map_err(Error::Contract)?;
 
@@ -196,6 +196,17 @@ impl BotanixEthClient {
             .map_err(Error::Provider)?;
 
         Ok(tx_receipt)
+    }
+
+    pub async fn get_pending_block(&self) -> Result<ethers::core::types::Block<TxHash>, Error> {
+        let block = self
+            .client
+            .get_block(BlockNumber::Pending)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        Ok(block)
     }
 
     pub async fn get_latest_block_hash(&self) -> Result<ethers::core::types::H256, Error> {

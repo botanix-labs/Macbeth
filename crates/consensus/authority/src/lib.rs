@@ -59,11 +59,11 @@ pub mod utils;
 mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
 
-/// Max EDH size, assuming max inputs spent are 100 and the only spends are keyspends
+/// Max EDH size, assuming max inputs spent are 1000 and the only spends are keyspends
 /// This was calulated with the following formula
 /// version + optional_fields bitmask + signers pk + witness (vec of sigs) + blockhash +
 /// utxo_commit + block_witness + agg_pk For specific details see [ExtraDataHeader]
-pub const MAX_EDH_SIZE: usize = 8005;
+pub const MAX_EDH_SIZE: usize = 80050;
 
 /// Ethereum authority consensus
 ///
@@ -508,7 +508,8 @@ mod tests {
         let mut wit = bitcoin::witness::Witness::default();
         wit.push(msg.clone());
         let mut witnesses = vec![];
-        for _ in 0..1000 {
+        // MAX_EDH_SIZE is 80050 which is ~1211 witnesses
+        for _ in 0..1211 {
             witnesses.push(wit.clone());
         }
         edh.witness_data = Some(witnesses);

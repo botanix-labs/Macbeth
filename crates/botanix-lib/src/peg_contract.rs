@@ -104,10 +104,10 @@ impl PeginData {
                 .iter()
                 .rev()
                 .skip_while(|h| h.block_hash() != commit_hash)
-                .count() -
-                1; // minus one for the commitment itself
-                   // the latest block height minus the position of the user block in the list is the
-                   // height of the user block
+                .count()
+                - 1; // minus one for the commitment itself
+                     // the latest block height minus the position of the user block in the list is the
+                     // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
@@ -238,6 +238,11 @@ impl PegoutData {
             .map_err(|_e| PegoutDataError::Invalid("Address not valid for network"))?;
 
         Ok(Self { amount, destination: network_checked_destination, network: btc_network })
+    }
+
+    // current version of the pegout data structure
+    pub fn version() -> u8 {
+        0
     }
 }
 
