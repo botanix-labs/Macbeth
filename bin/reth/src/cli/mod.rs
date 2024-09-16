@@ -96,57 +96,6 @@ impl Cli {
 }
 
 impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
-    /// Execute the configured cli command.
-    ///
-    /// This accepts a closure that is used to launch the node via the
-    /// [`NodeCommand`](node::NodeCommand).
-    ///
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use reth::cli::Cli;
-    /// use reth_node_ethereum::EthereumNode;
-    ///
-    /// Cli::parse_args()
-    ///     .run(|builder, _| async move {
-    ///         let handle = builder.launch_node(EthereumNode::default()).await?;
-    ///
-    ///         handle.wait_for_node_exit().await
-    ///     })
-    ///     .unwrap();
-    /// ```
-    ///
-    /// # Example
-    ///
-    /// Parse additional CLI arguments for the node command and use it to configure the node.
-    ///
-    /// ```no_run
-    /// use clap::Parser;
-    /// use reth::cli::{
-    ///     ext::{PoaNodeCommandConfig, RethNodeComponents},
-    ///     Cli,
-    /// };
-    ///
-    /// #[derive(Debug, Parser)]
-    /// pub struct MyArgs {
-    ///     pub enable: bool,
-    /// }
-    ///
-    /// impl PoaNodeCommandConfig for MyArgs {
-    ///     fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
-    ///         Ok(())
-    ///     }
-    /// }
-    ///
-    /// Cli::parse()
-    ///     .run(|builder, my_args: MyArgs| async move {
-    ///         // launch the node
-    ///
-    ///         Ok(())
-    ///     })
-    ///     .unwrap();
-    /// ````
     pub fn run<L, Fut>(mut self, launcher: L) -> eyre::Result<()>
     where
         L: FnOnce(WithLaunchContext<NodeBuilder<Arc<DatabaseEnv>>>, Ext) -> Fut,
