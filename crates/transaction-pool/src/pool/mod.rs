@@ -427,27 +427,6 @@ where
                 transaction,
                 propagate,
             } => {
-                // send to CometBFT mempool
-                // NOTE: this leads to redundant validation:
-                // the tx is validated by this point but we also validate
-                // the same tx after receiving it from CometBFT with check_tx message
-                let comet_bft_rpc_client = HttpCometBFTRpcClientFactory::default()
-                    .build_and_connect()
-                    .expect("comet rpc client");
-
-                // create TransactionSigned from Transaction
-                let transaction_signed =
-                    transaction.transaction().to_recovered_transaction().into_signed();
-                let mut tx_bytes = Vec::new();
-                transaction_signed.encode_enveloped(&mut tx_bytes);
-                let hex = hex::encode(tx_bytes);
-                // TODO is this anti pattern? Should we send this req over a channel?
-                // Commenting out this out for now as we prepare proposals from our mempool NOT
-                // CometBFT's tokio::spawn(async move {
-                //     // TODO remove this expect
-                //     comet_bft_rpc_client.broadcast_tx_async(hex).await.expect("broadcast tx");
-                // });
-
                 let sender_id = self.get_sender_id(transaction.sender());
                 let transaction_id = TransactionId::new(sender_id, transaction.nonce());
 
