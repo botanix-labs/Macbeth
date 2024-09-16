@@ -9,8 +9,8 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
-use futures_util::StreamExt;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use futures_util::StreamExt;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -18,8 +18,8 @@ use reth_chainspec::ChainSpec;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::{NewBlockMessageWithPeerId},
-    NetworkHandle, NetworkEventListenerProvider, NetworkEvents
+    message::NewBlockMessageWithPeerId,
+    NetworkEventListenerProvider, NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;

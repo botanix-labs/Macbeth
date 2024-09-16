@@ -46,7 +46,6 @@ impl Consensus for NoopConsensus {
     fn validate_extra_data_header(
         &self,
         _header: &Header,
-        _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
         _aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
@@ -60,18 +59,10 @@ impl Consensus for NoopConsensus {
     fn validate_header_standalone(
         &self,
         _header: &Header,
-        _authority_signers: &[secp256k1::PublicKey],
         _genesis_authorities: &[secp256k1::PublicKey],
         _aggregate_public_key: Option<&secp256k1::PublicKey>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
 
-    fn validate_extra_data_header_single_signer(
-        &self,
-        _header: &Header,
-        _authority_signers: &[secp256k1::PublicKey],
-    ) -> Result<(), ConsensusError> {
-        Ok(())
-    }
 }

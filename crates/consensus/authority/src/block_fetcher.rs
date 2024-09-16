@@ -1,26 +1,32 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::{
     engine_util, utils::is_active_sync_in_progress, utxo_sync::UTXOSyncEngine, AuthorityConsensus,
     Storage,
 };
 
-use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
-use tendermint_light_client::instance::Instance;
-use tendermint_rpc::HttpClient;
 use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
+use comet_bft_rpc::{Client, HttpCometBFTRpcClientFactory};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_eth_wire::NewBlock;
 use reth_evm::execute::BlockExecutorProvider;
+use reth_network::message::NewBlockMessageWithPeerId;
 use reth_network::{frost::manager::ToFrostManager, message::NewBlockMessage, NetworkHandle};
+use reth_network_api::PeerId;
 use reth_network_p2p::{full_block::FullBlockClient, BodiesClient, HeadersClient};
 use reth_node_api::EngineTypes;
+use reth_node_ethereum::EthEngineTypes;
+use reth_primitives::B256;
 use reth_primitives::{header_ext::HeaderExt, SealedBlockWithSenders, TransactionSigned};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, Chain, StateProviderFactory,
 };
+use ruint::Uint;
+use tendermint_light_client::instance::Instance;
+use tendermint_rpc::HttpClient;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,

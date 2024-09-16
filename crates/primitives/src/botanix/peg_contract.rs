@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bitcoin::{self};
 use bitcoin::{
     block::Header,
     consensus::{
@@ -9,15 +10,14 @@ use bitcoin::{
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
-
-use bitcoin::{self};
 use ethers::types::U256;
+use reth_btc_wallet::address;
 use secp256k1::PublicKey;
 use thiserror::Error;
 
-use reth_btc_wallet::{address, key, util::tweak_frost_verifying_key};
-
 use crate::{botanix::utils::AmountExt, Address};
+
+use super::utils::{generate_taproot_scriptpubkey, tweak_frost_verifying_key};
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
@@ -81,7 +81,7 @@ impl PeginData {
 
             let tpk = tweak_frost_verifying_key(aggregate_pk, &self.account.into())
                 .map_err(|_e| PeginDataError::InvalidTweak())?;
-            let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
+            let gateway_script = generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[pegin.outpoint.vout as usize];
             if gateway_script != output.script_pubkey {
@@ -281,9 +281,8 @@ mod tests {
 
     use super::*;
     use bitcoin::{
-        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash,
-        Amount, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn,
-        TxOut, Txid,
+        absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
+        BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
 
     #[test]
@@ -400,7 +399,7 @@ mod tests {
 
         let account = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
         let tpk = tweak_frost_verifying_key(pk, &account.into()).unwrap();
-        let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
+        let gateway_script = generate_taproot_scriptpubkey(&tpk);
 
         let tx_out = TxOut { value: Amount::from_sat(100), script_pubkey: gateway_script };
         let tx: Transaction = Transaction {

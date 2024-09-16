@@ -1,17 +1,15 @@
 use crate::engine_util;
 use futures_util::StreamExt;
 
+use reth_beacon_consensus::BeaconEngineMessage;
+use reth_network::NetworkEvent;
 use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::revm_primitives::FixedBytes;
-
-use reth_network::NetworkEvent;
-
-use reth_beacon_consensus::BeaconEngineMessage;
 use reth_tokio_util::EventStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
-pub struct SyncController<Engine: EngineTypes> {
+pub struct SyncController {
     network_event_listener: EventStream<NetworkEvent>,
     peer_id: FixedBytes<64>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,

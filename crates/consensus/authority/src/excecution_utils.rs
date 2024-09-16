@@ -4,19 +4,18 @@ pub(crate) mod authority_execution_utils {
     use reth_chainspec::ChainSpec;
     use reth_consensus::Consensus;
     use reth_consensus_common::utils::get_block_producer_address;
-    use reth_interfaces::{
-        executor::{BlockExecutionError, BlockValidationError},
-        provider::ProviderError,
-    };
+    use reth_evm::execute::BlockExecutorProvider;
+    use reth_evm_ethereum::execute::EthBlockExecutor;
+    use reth_execution_errors::InternalBlockExecutionError;
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
-        proofs, Address, Block, BlockBody, BlockHashOrNumber,
-        BlockWithSenders, Bloom, Bytes, Header, Receipt, ReceiptWithBloom, Requests, SealedBlock,
-        SealedHeader, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
+        proofs, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+        Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned,
+        EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
         BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome,
@@ -26,7 +25,6 @@ pub(crate) mod authority_execution_utils {
 
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
-
     use tracing::{info, trace, warn};
 
     use crate::AuthorityConsensus;
@@ -83,62 +81,9 @@ pub(crate) mod authority_execution_utils {
         Ok((block_exec_output, block))
     }
 
-    /// Builds and validates the current block header with the given transactions, on the provided
-    /// [Executor].
-    ///
-    /// This returns the current block header.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_validate_completed_header(
-        block_exec_output: &BlockExecutionOutput<Receipt>,
-        block: Block,
-        gas_used: u64,
-        bitcoin_checkpoint: &bitcoin::BlockHash,
-        sk: &secp256k1::SecretKey,
-        authority_signers: &Vec<secp256k1::PublicKey>,
-        witness_data: &Option<Vec<bitcoin::witness::Witness>>,
-        utxo_commitment: sha256::Hash,
-        consensus: &AuthorityConsensus,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        agg_pk: &secp256k1::PublicKey,
-        genesis_authorities: &Vec<secp256k1::PublicKey>,
-    ) -> Result<SealedHeader, BlockExecutionError> {
-        let Block { header, body, .. } = block;
-        let body =
-            BlockBody { transactions: body, ommers: vec![], withdrawals: None, requests: None };
-
-        // fill in the rest of the fields
-        let header = complete_header(
-            header,
-            block_exec_output,
-            gas_used,
-            // Witness Data
-            &None,
-            *bitcoin_checkpoint_block_hash,
-            // UTXO commitment
-            sha256::Hash::all_zeros(),
-            client,
-            agg_pk,
-            &authority_signers,
-        )?;
-
-        // Replace header with the one that is completed
-        block.header = completed_header.clone();
-        // Seal the block
-        let sealed_block = block.seal(completed_header.hash_slow());
-        // TODO handle unwrap
-        let sealed_block_with_senders = sealed_block.try_seal_with_senders().unwrap();
-
-        let sealed_block_with_peg = SealedBlockWithPeg::new(
-            sealed_block_with_senders.clone(),
-            bundle_state.pegins().to_vec(),
-            bundle_state.pegouts().to_vec(),
-        );
-
-        Ok(sealed_block_with_peg)
-    }
-
     /// Execute and run poa validation on the block without inserting it into the storage
     /// Currently un-used
+    /* 
     #[allow(dead_code)]
     pub(crate) fn execute_imported_block(
         consensus: &AuthorityConsensus,
@@ -204,6 +149,7 @@ pub(crate) mod authority_execution_utils {
 
         Ok(execution_outcome)
     }
+    */
 
     /// Fills in pre-execution header fields based on the current best block and given
     /// transactions.
@@ -360,7 +306,6 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
 
-        // TODO: pass the block builder address down to the executor here
         let executor = EthBlockExecutor::new(chain_spec, evm_config, db);
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;
