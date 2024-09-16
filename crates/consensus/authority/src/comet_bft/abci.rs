@@ -13,15 +13,16 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
-use reth_interfaces::blockchain_tree::BlockchainTreeEngine;
+use reth_evm::execute::BlockExecutorProvider;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 
+use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, TransactionSigned,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ExecutorFactory, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::TaskSpawner;
@@ -85,7 +86,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     pub fn new(
@@ -178,7 +179,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
@@ -260,7 +261,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
@@ -316,14 +317,16 @@ where
         let payload_config = self.payload_builder_arguments();
         let client = self.storage.client.clone();
 
-        let res = default_ethereum_payload_builder(BuildArguments {
+        let build_args = BuildArguments {
             client,
             pool: self.pool.clone(),
             cached_reads: Default::default(),
             config: payload_config,
             cancel: Default::default(),
             best_payload: None,
-        });
+        };
+        let res = default_ethereum_payload_builder(self.storage.evm_config, build_args)
+            .expect("payload builder should return best job");
 
         let response = match res {
             Ok(res) => {
@@ -675,7 +678,7 @@ where
         + BlockchainTreeEngine
         + Clone
         + 'static,
-    EF: ExecutorFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + 'static,
 {
     fn new(
@@ -711,7 +714,7 @@ where
                         // Update canonical chain
                         match client.insert_block(
                             sealed_block_with_senders.clone(),
-                            reth_interfaces::blockchain_tree::BlockValidationKind::Exhaustive,
+                            BlockValidationKind::Exhaustive,
                         ) {
                             Ok(_) => {}
                             Err(e) => {

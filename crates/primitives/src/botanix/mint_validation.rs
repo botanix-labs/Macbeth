@@ -137,7 +137,7 @@ fn topic_to_address(t: B256) -> Option<Address> {
 /// It returns an error if it's a mint event with problems, but
 /// returns [Ok(None)] if it's not a [Mint] event.
 pub fn try_parse_mint_event(
-    log: &revm::primitives::Log,
+    log: &revm_primitives::Log,
 ) -> Result<Option<PeginData>, ParseMintEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         info!("Log address is not mint contract address");
@@ -221,7 +221,7 @@ pub fn try_parse_mint_event(
 /// It returns an error if it's a burn event with problems, but
 /// returns [Ok(None)] if it's not a [Burn] event.
 pub fn try_parse_burn_event(
-    log: &revm::primitives::Log,
+    log: &revm_primitives::Log,
     btc_network: bitcoin::Network,
 ) -> Result<Option<PegoutData>, ParseBurnEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
