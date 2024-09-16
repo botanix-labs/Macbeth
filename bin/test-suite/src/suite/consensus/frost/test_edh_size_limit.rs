@@ -22,7 +22,8 @@ use reth_botanix_lib::{
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_primitives::{Address, BOTANIX_TESTNET};
+use reth_chainspec::BOTANIX_TESTNET;
+use reth_primitives::Address;
 use std::{str::FromStr, time::Duration};
 
 const NUM_PEGINS: u16 = 1000;

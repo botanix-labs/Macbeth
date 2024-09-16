@@ -548,7 +548,7 @@ impl BtcServerConfig for RpcServerArgs {
 
 //         if self.is_ipc_enabled() {
 //             config =
-//                 
+//
 // config.with_ipc(self.ipc_server_builder()).with_ipc_endpoint(self.ipcpath.clone());         }
 
 //         config
