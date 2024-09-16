@@ -3,7 +3,6 @@ extern crate thiserror;
 
 pub mod address;
 pub mod bitcoind;
-pub mod key;
 pub mod psbt;
 pub mod transaction;
 pub mod util;

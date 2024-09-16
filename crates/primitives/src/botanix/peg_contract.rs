@@ -7,15 +7,15 @@ use bitcoin::{
         Encodable, ReadExt,
     },
     merkle_tree::PartialMerkleTree,
-    secp256k1::{self, PublicKey},
     TxOut,
 };
 
 use bitcoin::{self};
 use ethers::types::U256;
+use secp256k1::PublicKey;
 use thiserror::Error;
 
-use reth_btc_wallet::{address, key};
+use reth_btc_wallet::{address, key, util::tweak_frost_verifying_key};
 
 use crate::{botanix::utils::AmountExt, Address};
 
@@ -79,7 +79,7 @@ impl PeginData {
                 return Err(PeginDataError::Invalid("invalid tx or outpoint: output idx"));
             }
 
-            let tpk = key::tweak_frost_verifying_key(aggregate_pk, &self.account.into())
+            let tpk = tweak_frost_verifying_key(aggregate_pk, &self.account.into())
                 .map_err(|_e| PeginDataError::InvalidTweak())?;
             let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
@@ -108,10 +108,10 @@ impl PeginData {
                 .iter()
                 .rev()
                 .skip_while(|h| h.block_hash() != commit_hash)
-                .count() -
-                1; // minus one for the commitment itself
-                   // the latest block height minus the position of the user block in the list is the
-                   // height of the user block
+                .count()
+                - 1; // minus one for the commitment itself
+                     // the latest block height minus the position of the user block in the list is the
+                     // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
@@ -282,7 +282,7 @@ mod tests {
     use super::*;
     use bitcoin::{
         absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash,
-        secp256k1::rand, Amount, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn,
+        Amount, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn,
         TxOut, Txid,
     };
 
@@ -399,7 +399,7 @@ mod tests {
         };
 
         let account = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
-        let tpk = key::tweak_frost_verifying_key(pk, &account.into()).unwrap();
+        let tpk = tweak_frost_verifying_key(pk, &account.into()).unwrap();
         let gateway_script = address::generate_taproot_scriptpubkey(&tpk);
 
         let tx_out = TxOut { value: Amount::from_sat(100), script_pubkey: gateway_script };
