@@ -7,3 +7,4 @@ pub enum ParsingError {
     #[error("invalid eth address: {0}")]
     InvalidEthAddress(&'static str),
 }
+

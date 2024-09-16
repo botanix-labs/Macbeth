@@ -6,10 +6,10 @@ use bitcoin::{
     key::TweakedPublicKey,
     opcodes,
     script::Builder,
-    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification},
     taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
+use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -118,9 +118,13 @@ pub fn generate_taproot_spend_info(
     Ok(finalized_taproot)
 }
 
+/// Generate a taproot address from a given tweaked public key
+/// Note this includes both the eth address tweak and the taproot merkel root tweak
 pub fn generate_taproot_address(tweaked_public_key: &PublicKey, network: Network) -> Address {
-    let script = generate_taproot_scriptpubkey(tweaked_public_key);
-    Address::from_script(&script, network).expect("valid address")
+    let tweaked_pk =
+        TweakedPublicKey::dangerous_assume_tweaked(tweaked_public_key.x_only_public_key().0);
+    let p2tr_script = bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk);
+    Address::from_script(&p2tr_script, network).expect("valid address")
 }
 
 /// Deprecated
@@ -166,18 +170,6 @@ where
 {
     let tweak = generate_tweak(eth_address, aggregate_key);
     secret_key.add_tweak(&tweak).expect("legal tweak")
-}
-
-pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> ScriptBuf {
-    // This is commented out for now b/c the frost library only supports empty merkel root
-    // let taproot_spend_info =
-    //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
-
-    // Note that the public key is already tweaked with the eth address and the taptree merkel root
-    // so we can use the dangerous_assume_tweaked method to create the script
-    // In the case of a change output being created no eth address tweak is provided
-    let tweaked_pk = TweakedPublicKey::dangerous_assume_tweaked(public_key.x_only_public_key().0);
-    bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
 }
 
 pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
