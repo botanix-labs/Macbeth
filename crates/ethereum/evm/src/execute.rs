@@ -26,13 +26,12 @@ use reth_evm::{
     ConfigureEvm,
 };
 use reth_execution_types::ExecutionOutcome;
-use reth_primitives::botanix::mint_validation::{
-    try_parse_burn_event, try_parse_mint_event, MINT_CONTRACT_ADDRESS,
-};
 use reth_primitives::{
     botanix::{
         consensus_package::BotanixConsensusPackage,
-        mint_validation::MintContractError,
+        mint_validation::{
+            try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
+        },
         peg_contract::{PeginData, PegoutData},
     },
     header_ext::HeaderExt,
@@ -66,7 +65,9 @@ pub struct EthExecutorProvider<BF, EvmConfig = EthEvmConfig> {
 }
 
 /// Create a noop executor provider with chain spec
-pub fn create_noop_executor_provider(chain_spec: Arc<ChainSpec>) -> EthExecutorProvider<MockBitcoindFactory> {
+pub fn create_noop_executor_provider(
+    chain_spec: Arc<ChainSpec>,
+) -> EthExecutorProvider<MockBitcoindFactory> {
     EthExecutorProvider::new(
         chain_spec,
         EthEvmConfig::default(),
@@ -294,7 +295,8 @@ where
                                     );
                                 }
                                 MintContractError::InvalidLog { .. } => {
-                                    // This means we could not parse what was emitted from the mint contract
+                                    // This means we could not parse what was emitted from the mint
+                                    // contract
                                     panic!("Invalid log emitted from botanix mint contract");
                                 }
                             }
@@ -339,7 +341,8 @@ where
             total_pegouts.extend(pegouts);
         }
 
-        // For eip-6110 we need to collect the deposit requests. This is irrelevant for poa consensus
+        // For eip-6110 we need to collect the deposit requests. This is irrelevant for poa
+        // consensus
         let requests = if self.chain_spec.is_prague_active_at_timestamp(block.timestamp) {
             // Collect all EIP-6110 deposits
             let deposit_requests =
@@ -753,7 +756,7 @@ mod tests {
         eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE, SYSTEM_ADDRESS},
         eip7002::{WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS, WITHDRAWAL_REQUEST_PREDEPLOY_CODE},
     };
-    use reth_chainspec::{ChainSpecBuilder, ForkCondition};
+    use reth_chainspec::{ChainSpecBuilder, ForkCondition, MAINNET};
     use reth_primitives::{
         constants::{EMPTY_ROOT_HASH, ETH_TO_WEI},
         keccak256, public_key_to_address, Account, Block, Transaction, TxKind, TxLegacy, B256,
@@ -873,7 +876,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                None,
             )
             .unwrap();
 

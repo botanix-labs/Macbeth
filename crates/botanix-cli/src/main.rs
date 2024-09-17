@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-
 use reth_primitives::botanix::peg_contract::PeginMeta;
 
 #[derive(Parser)]

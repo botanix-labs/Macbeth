@@ -113,8 +113,6 @@ pub fn current_inturn_index(
 mod tests {
     use std::str::FromStr;
 
-    
-
     use super::*;
 
     const BLOCK_TIME_SECONDS: u64 = 10;

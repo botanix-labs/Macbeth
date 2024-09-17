@@ -16,14 +16,16 @@ use ethers::{
     providers::{Http, PendingTransaction},
 };
 use hex::{self};
-use reth_botanix_lib::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta},
-    utils::AmountExt,
-};
 use reth_btc_wallet::address::EthAddress;
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address;
+use reth_primitives::{
+    botanix::{
+        mint_validation::BURN_TOPIC,
+        peg_contract::{PeginData, PeginMeta},
+        utils::AmountExt,
+    },
+    Address,
+};
 use std::{str::FromStr, time::Duration};
 
 const NUM_PEGINS: u16 = 1000;
@@ -49,7 +51,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address((101), &address).expect("generate to address");
+    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Print wallet balancee
@@ -113,7 +115,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
             gateway_address_response.aggregate_public_key.as_str(),
         )
         .expect("valid agg pk");
-        let blocks = bitcoind_rpc.generate_to_address((1), &address).expect("generate to address");
+        let blocks = bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
         pegin_txsids.push((
             pegin_txid,

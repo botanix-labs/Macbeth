@@ -1,5 +1,4 @@
-use bitcoin::key::TweakedPublicKey;
-use bitcoin::ScriptBuf;
+use bitcoin::{key::TweakedPublicKey, ScriptBuf};
 use ethabi::ethereum_types::U256;
 use frost_secp256k1_tr as frost;
 

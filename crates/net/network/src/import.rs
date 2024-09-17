@@ -1,7 +1,7 @@
 //! Module for block import.
+use crate::message::{NewBlockMessage, NewBlockMessageWithPeerId};
 /// Allows other components to import blocks from the network
 use reth_chainspec::ChainSpec;
-use crate::message::{NewBlockMessage, NewBlockMessageWithPeerId};
 use reth_consensus::ConsensusError;
 use reth_network_api::PeerId;
 use reth_primitives::SealedBlock;

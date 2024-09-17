@@ -1,4 +1,7 @@
-use reth_primitives::{botanix::peg_contract::{PeginData, PegoutData}, Request, U256};
+use reth_primitives::{
+    botanix::peg_contract::{PeginData, PegoutData},
+    Request, U256,
+};
 use revm::db::BundleState;
 
 /// A helper type for ethereum block inputs that consists of a block and the total difficulty.

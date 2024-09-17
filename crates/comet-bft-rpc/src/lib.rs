@@ -52,7 +52,12 @@ impl HttpCometBFTRpcClientFactory {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use crate::{
+        CometBftRpcFactory, HttpCometBFTRpcClientFactory, DEFAULT_RPC_HOST, DEFAULT_RPC_PORT,
+    };
+
     #[test]
     fn test_http_rpc_client_factory_new() {
         let client_factory =

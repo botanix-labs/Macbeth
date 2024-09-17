@@ -64,5 +64,4 @@ impl Consensus for NoopConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
-
 }
