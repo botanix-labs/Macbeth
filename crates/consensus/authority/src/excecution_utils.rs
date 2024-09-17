@@ -1,10 +1,10 @@
 pub(crate) mod authority_execution_utils {
-    use bitcoin::hashes::{sha256, Hash};
+    use bitcoin::hashes::sha256;
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::ChainSpec;
-    use reth_consensus::Consensus;
-    use reth_consensus_common::utils::get_block_producer_address;
-    use reth_evm::execute::BlockExecutorProvider;
+    
+    
+    
     use reth_evm::execute::Executor;
     use reth_evm_ethereum::execute::EthBlockExecutor;
     use reth_execution_errors::{
@@ -12,12 +12,11 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
-        botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
-        proofs, Address, Block, BlockBody, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
-        Header, Receipt, ReceiptWithBloom, Requests, SealedBlock, SealedHeader, TransactionSigned,
+        proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes,
+        Header, Receipt, ReceiptWithBloom, Requests, TransactionSigned,
         EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
@@ -28,9 +27,9 @@ pub(crate) mod authority_execution_utils {
 
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
-    use tracing::{info, trace, warn};
+    use tracing::{info, trace};
 
-    use crate::AuthorityConsensus;
+    
 
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///

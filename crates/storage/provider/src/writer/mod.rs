@@ -16,7 +16,6 @@ use reth_errors::{ProviderError, ProviderResult};
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
     BlockNumber, Header, SealedBlock, StaticFileSegment, TransactionSignedNoHash, B256, U256,
-    botanix::peg_contract::{PeginData, PegoutData},
 };
 use reth_stages_types::{StageCheckpoint, StageId};
 use reth_storage_api::{

@@ -143,7 +143,7 @@ mod tests {
     use reth_chainspec::{ChainSpecBuilder, MAINNET};
     use reth_engine_tree::test_utils::TestPipelineBuilder;
     use reth_ethereum_engine_primitives::EthEngineTypes;
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::create_noop_executor_provider;
     use reth_exex_types::FinishedExExHeight;
     use reth_network_p2p::test_utils::TestFullBlockClient;
     use reth_primitives::SealedHeader;
@@ -173,7 +173,7 @@ mod tests {
         let pipeline_task_spawner = Box::<TokioTaskExecutor>::default();
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
 
-        let executor_factory = EthExecutorProvider::ethereum(chain_spec.clone());
+        let executor_factory = create_noop_executor_provider(chain_spec.clone());
         let blockchain_db =
             BlockchainProvider2::with_latest(provider_factory.clone(), SealedHeader::default())
                 .unwrap();

@@ -16,7 +16,7 @@ use reth_downloaders::{
 };
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_evm::{either::Either, test_utils::MockExecutorProvider};
-use reth_evm_ethereum::execute::EthExecutorProvider;
+use reth_evm_ethereum::create_noop_executor_provider;
 use reth_exex_types::FinishedExExHeight;
 use reth_network_p2p::{sync::NoopSyncStateUpdater, test_utils::NoopFullBlockClient, BlockClient};
 use reth_payload_builder::test_utils::spawn_test_payload_service;
@@ -345,7 +345,7 @@ where
                 Either::Left(executor_factory)
             }
             TestExecutorConfig::Real => {
-                Either::Right(EthExecutorProvider::ethereum(self.base_config.chain_spec.clone()))
+                Either::Right(create_noop_executor_provider(self.base_config.chain_spec.clone()))
             }
         };
 

@@ -1,5 +1,3 @@
-use reth_blockchain_tree_api::BlockchainTreeEngine;
-use reth_chainspec::ChainSpec;
 use reth_consensus::ConsensusError;
 
 use reth_primitives::{extra_data_header::CHAIN_VERSION, header_ext::HeaderExt, Address, Header};
@@ -115,7 +113,7 @@ pub fn current_inturn_index(
 mod tests {
     use std::str::FromStr;
 
-    use reth_primitives::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Bytes};
+    
 
     use super::*;
 

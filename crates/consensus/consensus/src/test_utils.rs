@@ -28,6 +28,14 @@ impl TestConsensus {
 }
 
 impl Consensus for TestConsensus {
+    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+        if self.fail_validation() {
+            Err(ConsensusError::BaseFeeMissing)
+        } else {
+            Ok(())
+        }
+    }
+
     fn validate_header(&self, _header: &SealedHeader) -> Result<(), ConsensusError> {
         if self.fail_validation() {
             Err(ConsensusError::BaseFeeMissing)

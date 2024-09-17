@@ -146,8 +146,8 @@ mod tests {
     use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
 
     use super::*;
-    use crate::{Bytes, Header};
-    use std::str::FromStr;
+    use crate::Header;
+    
 
     #[test]
     fn deserialize_extension_trait() {

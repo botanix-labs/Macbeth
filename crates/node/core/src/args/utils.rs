@@ -2,7 +2,7 @@
 
 use alloy_genesis::Genesis;
 use askama::Template;
-use bitcoin::hashes::{sha256, Hash};
+use bitcoin::hashes::Hash;
 use reth_chainspec::{
     create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_TESTNET,
     DEV,

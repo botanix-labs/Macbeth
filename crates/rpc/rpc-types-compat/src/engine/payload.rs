@@ -2,7 +2,7 @@
 //! Ethereum's Engine
 
 use reth_primitives::{
-    constants::{EMPTY_OMMER_ROOT_HASH, MAXIMUM_EXTRA_DATA_SIZE},
+    constants::EMPTY_OMMER_ROOT_HASH,
     proofs::{self},
     Block, Header, Request, SealedBlock, TransactionSigned, UintTryTo, Withdrawals, B256, U256,
 };

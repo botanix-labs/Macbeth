@@ -55,7 +55,7 @@ mod tests {
         table::Table,
         transaction::{DbTx, DbTxMut},
     };
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::create_noop_executor_provider;
     use reth_exex::ExExManagerHandle;
     use reth_primitives::{
         address, hex_literal::hex, keccak256, Account, BlockNumber, Bytecode, SealedBlock,
@@ -144,7 +144,7 @@ mod tests {
             // Check execution and create receipts and changesets according to the pruning
             // configuration
             let mut execution_stage = ExecutionStage::new(
-                EthExecutorProvider::ethereum(Arc::new(
+                create_noop_executor_provider(Arc::new(
                     ChainSpecBuilder::mainnet().berlin_activated().build(),
                 )),
                 ExecutionStageThresholds {

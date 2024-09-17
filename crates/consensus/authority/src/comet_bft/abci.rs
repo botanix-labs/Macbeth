@@ -13,7 +13,6 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
-use reth_execution_errors::BlockValidationError;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 
