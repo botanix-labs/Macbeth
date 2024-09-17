@@ -21,16 +21,24 @@
 //! be mined.
 
 use reth_chainspec::ChainSpec;
-use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput};
+use reth_chainspec::{EthereumHardfork, EthereumHardforks};
+use reth_consensus::{
+    Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
+};
 use reth_consensus_common::{
     utils::validate_chain_version,
-    validation::{self},
+    validation::{
+        validate_against_parent_4844, validate_against_parent_eip1559_base_fee,
+        validate_against_parent_hash_number, validate_against_parent_timestamp,
+        validate_header_extradata,
+    },
 };
 
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
-    constants::nums_secp256k1_pk, header_ext::HeaderExt, Address, Header, SealedBlock,
-    SealedHeader, U256,
+    constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
+    header_ext::HeaderExt,
+    Address, Header, SealedBlock, SealedHeader, U256,
 };
 
 use reth_primitives::BlockWithSenders;
@@ -75,6 +83,54 @@ impl AuthorityConsensus {
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         Self { chain_spec }
     }
+
+    /// Checks the gas limit for consistency between parent and self headers.
+    ///
+    /// The maximum allowable difference between self and parent gas limits is determined by the
+    /// parent's gas limit divided by the elasticity multiplier (1024).
+    /// NOTE: copied from `crates/ethereum/consensus/src/lib.rs`
+    fn validate_against_parent_gas_limit(
+        &self,
+        header: &SealedHeader,
+        parent: &SealedHeader,
+    ) -> Result<(), ConsensusError> {
+        // Determine the parent gas limit, considering elasticity multiplier on the London fork.
+        let parent_gas_limit =
+            if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
+                parent.gas_limit
+                    * self
+                        .chain_spec
+                        .base_fee_params_at_timestamp(header.timestamp)
+                        .elasticity_multiplier as u64
+            } else {
+                parent.gas_limit
+            };
+
+        // Check for an increase in gas limit beyond the allowed threshold.
+        if header.gas_limit > parent_gas_limit {
+            if header.gas_limit - parent_gas_limit >= parent_gas_limit / 1024 {
+                return Err(ConsensusError::GasLimitInvalidIncrease {
+                    parent_gas_limit,
+                    child_gas_limit: header.gas_limit,
+                });
+            }
+        }
+        // Check for a decrease in gas limit beyond the allowed threshold.
+        else if parent_gas_limit - header.gas_limit >= parent_gas_limit / 1024 {
+            return Err(ConsensusError::GasLimitInvalidDecrease {
+                parent_gas_limit,
+                child_gas_limit: header.gas_limit,
+            });
+        }
+        // Check if the self gas limit is below the minimum required limit.
+        else if header.gas_limit < MINIMUM_GAS_LIMIT {
+            return Err(ConsensusError::GasLimitInvalidMinimum {
+                child_gas_limit: header.gas_limit,
+            });
+        }
+
+        Ok(())
+    }
 }
 
 impl Consensus for AuthorityConsensus {
@@ -101,7 +157,21 @@ impl Consensus for AuthorityConsensus {
         header: &SealedHeader,
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
-        header.validate_against_parent(parent, &self.chain_spec).map_err(ConsensusError::from)?;
+        validate_against_parent_hash_number(header, parent)?;
+
+        validate_against_parent_timestamp(header, parent)?;
+
+        // TODO Check difficulty increment between parent and self
+        // Ace age did increment it by some formula that we need to follow.
+        self.validate_against_parent_gas_limit(header, parent)?;
+
+        validate_against_parent_eip1559_base_fee(header, parent, &self.chain_spec)?;
+
+        // ensure that the blob gas fields for this block
+        if self.chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
+            validate_against_parent_4844(header, parent)?;
+        }
+
         Ok(())
     }
 
@@ -149,7 +219,7 @@ impl Consensus for AuthorityConsensus {
         }
 
         // First run the basic validation
-        validation::validate_header_extradata(header)?;
+        validate_header_extradata(header)?;
 
         // Attempt to deserialize the extra data header
         let edh = header.deserialize_extra_data_header().map_err(|e| {
@@ -403,7 +473,7 @@ mod tests {
         );
     }
 
-    // TODO add this back in 
+    // TODO add this back in
     // #[test]
     // fn should_not_accept_edh_with_invalid_agg_pk() {
     //     let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
