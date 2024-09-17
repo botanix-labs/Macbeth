@@ -6,7 +6,6 @@ use std::{
 };
 
 use btcserverlib::extended_client::BtcServerExtendedClient;
-
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -14,6 +13,7 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
+use reth_execution_errors::BlockValidationError;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 
@@ -87,7 +87,7 @@ where
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     pub fn new(
         storage: Storage<EF, BF, DB>,
@@ -180,7 +180,7 @@ where
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
     fn new(
@@ -262,7 +262,7 @@ where
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
@@ -691,7 +691,7 @@ where
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     fn new(
         storage: Storage<EF, BF, DB>,

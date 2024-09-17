@@ -24,6 +24,7 @@ mod config;
 pub use config::{revm_spec, revm_spec_by_timestamp_after_merge};
 
 pub mod execute;
+pub use execute::create_noop_executor_provider;
 
 /// Ethereum DAO hardfork state change data.
 pub mod dao_fork;

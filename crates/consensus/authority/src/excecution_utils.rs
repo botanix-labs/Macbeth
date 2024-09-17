@@ -5,8 +5,11 @@ pub(crate) mod authority_execution_utils {
     use reth_consensus::Consensus;
     use reth_consensus_common::utils::get_block_producer_address;
     use reth_evm::execute::BlockExecutorProvider;
+    use reth_evm::execute::Executor;
     use reth_evm_ethereum::execute::EthBlockExecutor;
-    use reth_execution_errors::InternalBlockExecutionError;
+    use reth_execution_errors::{
+        BlockExecutionError, BlockValidationError, InternalBlockExecutionError,
+    };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         botanix::block_with_peg::SealedBlockWithPeg,
@@ -33,7 +36,7 @@ pub(crate) mod authority_execution_utils {
     ///
     /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_execute(
+    pub(crate) fn build_and_execute<BF>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
         block_builder_address: &Address,
@@ -291,7 +294,7 @@ pub(crate) mod authority_execution_utils {
     /// Executes the block with the given block and senders, on the provided [Executor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    fn execute(
+    fn execute<BF>(
         block: &BlockWithSenders,
         client: &(impl StateProviderFactory + BlockReaderIdExt),
         block_builder_address: Option<Address>,
@@ -312,8 +315,13 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
 
-        let executor =
-            EthBlockExecutor::new(chain_spec, evm_config, db, bitcoind_factory, bitcoin_network);
+        let executor = EthBlockExecutor::new(
+            chain_spec,
+            evm_config,
+            db,
+            bitcoind_factory.clone(),
+            bitcoin_network,
+        );
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;
         Ok(exec_results)

@@ -84,7 +84,7 @@ where
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]

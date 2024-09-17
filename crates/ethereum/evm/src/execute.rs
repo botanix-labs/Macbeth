@@ -8,7 +8,10 @@ use core::fmt::Display;
 use ethers::types::U256 as EthersU256;
 use tracing::{error, info};
 
-use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_btc_wallet::{
+    bitcoind::{BitcoindConfig, BitcoindFactory},
+    test_utils::MockBitcoindFactory,
+};
 use reth_chainspec::{ChainSpec, EthereumHardforks, MAINNET};
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
@@ -60,6 +63,15 @@ pub struct EthExecutorProvider<BF, EvmConfig = EthEvmConfig> {
     evm_config: EvmConfig,
     bitcoind_factory: BF,
     bitcoin_network: bitcoin::Network,
+}
+
+pub fn create_noop_executor_provider() -> EthExecutorProvider<MockBitcoindFactory> {
+    EthExecutorProvider::new(
+        MAINNET.clone(),
+        EthEvmConfig::default(),
+        MockBitcoindFactory::new(BitcoindConfig::default()),
+        bitcoin::Network::Bitcoin,
+    )
 }
 
 impl<BF> EthExecutorProvider<BF> {
