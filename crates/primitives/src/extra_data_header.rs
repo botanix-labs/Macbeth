@@ -1,9 +1,9 @@
 use std::io;
 
+use crate::constants::nums_secp256k1_pk;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::Hash,
-    secp256k1,
 };
 use revm_primitives::Address;
 use thiserror::Error;
@@ -153,8 +153,9 @@ mod tests {
 
     use super::*;
     use bitcoin::BlockHash;
+    use rand::rngs::OsRng;
     use revm_primitives::hex;
-    use secp256k1::{rand::rngs::OsRng, Message, Secp256k1};
+    use secp256k1::Secp256k1;
 
     // Test case for creating a new ExtraDataHeader
     #[test]

@@ -11,7 +11,6 @@ use bitcoin::{
     TxOut,
 };
 use ethers::types::U256;
-use reth_btc_wallet::address;
 use secp256k1::PublicKey;
 use thiserror::Error;
 
@@ -269,7 +268,7 @@ impl PegoutData {
         Ok(Self { amount, destination: network_checked_destination, network: btc_network })
     }
 
-    // current version of the pegout data structure
+    /// current version of the pegout data structure
     pub fn version() -> u8 {
         0
     }

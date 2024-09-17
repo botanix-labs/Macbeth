@@ -14,7 +14,6 @@ use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
 };
-use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
@@ -28,6 +27,7 @@ use reth_node_core::{
 };
 use reth_node_metrics::recorder::install_prometheus_recorder;
 use reth_payload_builder::PayloadBuilderHandle;
+use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_engine_api::capabilities::EngineCapabilities;
@@ -536,7 +536,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Config executor factory
         let evm_config = EthEvmConfig::default();
         //let executor_factory = EvmFactory::new(Arc::new(chain.clone()), evm_config);
-        let executor_factory = EthExecutorProvider::new(Arc::new(chain.clone()), evm_config);
+        let executor_factory = EthExecutorProvider::new(
+            Arc::new(chain.clone()),
+            evm_config,
+            bitcoind_factory.clone(),
+            node_config.rpc.btc_network,
+        );
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
