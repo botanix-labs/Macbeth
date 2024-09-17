@@ -4,6 +4,7 @@ use crate::{
     engine_util, utils::is_active_sync_in_progress, utxo_sync::UTXOSyncEngine, AuthorityConsensus,
     Storage,
 };
+use reth_network_api::test_utils::PeersHandleProvider;
 
 use bitcoin::hashes::{sha256, Hash};
 use btcserverlib::extended_client::BtcServerExtendedClient;
