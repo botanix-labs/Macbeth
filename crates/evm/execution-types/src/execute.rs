@@ -1,4 +1,4 @@
-use reth_primitives::{Request, U256};
+use reth_primitives::{botanix::peg_contract::{PeginData, PegoutData}, Request, U256};
 use revm::db::BundleState;
 
 /// A helper type for ethereum block inputs that consists of a block and the total difficulty.
@@ -40,4 +40,8 @@ pub struct BlockExecutionOutput<T> {
     pub gas_used: u64,
     /// Total block fees
     pub total_block_fees: u128,
+    /// Pegins
+    pub pegins: Vec<PeginData>,
+    /// Pegouts
+    pub pegouts: Vec<PegoutData>,
 }

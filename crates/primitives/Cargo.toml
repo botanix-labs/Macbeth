@@ -70,6 +70,9 @@ reth-btc-wallet.workspace = true
 lazy_static = "1.4.0"
 ethers = "2.0.9"
 ethabi = "18.0.0"
+hex = "0.4.3"
+
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
 
 [dev-dependencies]
 # eth
