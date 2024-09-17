@@ -117,7 +117,8 @@ pub enum BlockValidationError {
     #[display("Invalid extra header")]
     InvalidExtraData,
 
-    /// Poa specific error when Extra data header is failed to deserialize
+    /// Poa specific error when Extra data header is failed to deserialize\
+    /// TODO sepcify which serilaize/deserialzie error
     #[display("Failed to serialize extra header")]
     ExtraDataSerializeError,
 

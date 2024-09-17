@@ -28,6 +28,16 @@ revm-primitives.workspace = true
 alloy-eips.workspace = true
 alloy-sol-types.workspace = true
 
+# Bitcoin
+bitcoin.workspace = true
+reth-btc-wallet.workspace = true
+
+# tracing
+tracing.workspace = true
+
+# Ethers
+ethers = "2.0.9"
+
 [dev-dependencies]
 reth-testing-utils.workspace = true
 reth-revm = { workspace = true, features = ["test-utils"] }

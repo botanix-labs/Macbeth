@@ -5,6 +5,10 @@ use crate::{
     EthEvmConfig,
 };
 use core::fmt::Display;
+use tracing::{error, info};
+use ethers::types::U256 as EthersU256;
+
+use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::{ChainSpec, EthereumHardforks, MAINNET};
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
@@ -19,7 +23,16 @@ use reth_evm::{
     ConfigureEvm,
 };
 use reth_execution_types::ExecutionOutcome;
+use reth_primitives::botanix::mint_validation::{
+    try_parse_burn_event, try_parse_mint_event, MINT_CONTRACT_ADDRESS,
+};
 use reth_primitives::{
+    botanix::{
+        consensus_package::BotanixConsensusPackage,
+        mint_validation::MintContractError,
+        peg_contract::{PeginData, PegoutData},
+    },
+    header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256,
 };
 use reth_prune_types::PruneModes;
@@ -31,7 +44,8 @@ use reth_revm::{
 };
 use revm_primitives::{
     db::{Database, DatabaseCommit},
-    BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ResultAndState,
+    BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ExecutionResult,
+    ResultAndState,
 };
 
 #[cfg(not(feature = "std"))]
@@ -41,35 +55,42 @@ use std::sync::Arc;
 
 /// Provides executors to execute regular ethereum blocks
 #[derive(Debug, Clone)]
-pub struct EthExecutorProvider<EvmConfig = EthEvmConfig> {
+pub struct EthExecutorProvider<BF, EvmConfig = EthEvmConfig> {
     chain_spec: Arc<ChainSpec>,
     evm_config: EvmConfig,
+    bitcoind_factory: BF,
+    bitcoin_network: bitcoin::Network,
 }
 
-impl EthExecutorProvider {
+impl<BF> EthExecutorProvider<BF> {
     /// Creates a new default ethereum executor provider.
-    pub fn ethereum(chain_spec: Arc<ChainSpec>) -> Self {
-        Self::new(chain_spec, Default::default())
-    }
-
-    /// Returns a new provider for the mainnet.
-    pub fn mainnet() -> Self {
-        Self::ethereum(MAINNET.clone())
+    pub fn ethereum(
+        chain_spec: Arc<ChainSpec>,
+        bitcoind_factory: BF,
+        bitcoin_network: bitcoin::Network,
+    ) -> Self {
+        Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network)
     }
 }
 
-impl<EvmConfig> EthExecutorProvider<EvmConfig> {
+impl<BF, EvmConfig> EthExecutorProvider<BF, EvmConfig> {
     /// Creates a new executor provider.
-    pub const fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
-        Self { chain_spec, evm_config }
+    pub const fn new(
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EvmConfig,
+        bitcoind_factory: BF,
+        bitcoin_network: bitcoin::Network,
+    ) -> Self {
+        Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network }
     }
 }
 
-impl<EvmConfig> EthExecutorProvider<EvmConfig>
+impl<BF, EvmConfig> EthExecutorProvider<BF, EvmConfig>
 where
+    BF: BitcoindFactory + Clone + Unpin + 'static,
     EvmConfig: ConfigureEvm,
 {
-    fn eth_executor<DB>(&self, db: DB) -> EthBlockExecutor<EvmConfig, DB>
+    fn eth_executor<DB>(&self, db: DB) -> EthBlockExecutor<EvmConfig, DB, BF>
     where
         DB: Database<Error: Into<ProviderError>>,
     {
@@ -77,19 +98,22 @@ where
             self.chain_spec.clone(),
             self.evm_config.clone(),
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
+            self.bitcoind_factory.clone(),
+            self.bitcoin_network.clone(),
         )
     }
 }
 
-impl<EvmConfig> BlockExecutorProvider for EthExecutorProvider<EvmConfig>
+impl<BF, EvmConfig> BlockExecutorProvider for EthExecutorProvider<BF, EvmConfig>
 where
+    BF: BitcoindFactory + Clone + Unpin + 'static,
     EvmConfig: ConfigureEvm,
 {
     type Executor<DB: Database<Error: Into<ProviderError> + Display>> =
-        EthBlockExecutor<EvmConfig, DB>;
+        EthBlockExecutor<EvmConfig, DB, BF>;
 
     type BatchExecutor<DB: Database<Error: Into<ProviderError> + Display>> =
-        EthBatchExecutor<EvmConfig, DB>;
+        EthBatchExecutor<EvmConfig, DB, BF>;
 
     fn executor<DB>(&self, db: DB) -> Self::Executor<DB>
     where
@@ -114,23 +138,31 @@ struct EthExecuteOutput {
     requests: Vec<Request>,
     gas_used: u64,
     total_block_fees: u128,
+    pegins: Vec<PeginData>,
+    pegouts: Vec<PegoutData>,
 }
 
 /// Helper container type for EVM with chain spec.
 #[derive(Debug, Clone)]
-struct EthEvmExecutor<EvmConfig> {
+struct EthEvmExecutor<EvmConfig, BF> {
     /// The chainspec
     chain_spec: Arc<ChainSpec>,
     /// How to create an EVM.
     evm_config: EvmConfig,
+    /// The bitcoind factory used to connect to the L1 bitcoind RPC
+    bitcoind_factory: BF,
+    /// The L1 bitcoin network
+    bitcoin_network: bitcoin::Network,
 }
 
-impl<EvmConfig> EthEvmExecutor<EvmConfig>
+impl<EvmConfig, BF> EthEvmExecutor<EvmConfig, BF>
 where
     EvmConfig: ConfigureEvm,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     /// Executes the transactions in the block and returns the receipts of the transactions in the
     /// block, the total gas used and the list of EIP-7685 [requests](Request).
+    /// As well as pegins and pegouts
     ///
     /// This applies the pre-execution and post-execution changes that require an [EVM](Evm), and
     /// executes the transactions.
@@ -143,6 +175,7 @@ where
         &self,
         block: &BlockWithSenders,
         mut evm: Evm<'_, Ext, &mut State<DB>>,
+        botanix_consensus_pkg: BotanixConsensusPackage,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -166,10 +199,14 @@ where
         )?;
 
         // execute transactions
+        let mut total_pegins = vec![];
+        let mut total_pegouts = vec![];
+
         let mut total_block_fees = 0_u128;
         let mut cumulative_gas_used = 0;
         let base_fee = block.base_fee_per_gas;
         let mut receipts = Vec::with_capacity(block.body.len());
+
         for (sender, transaction) in block.transactions_with_sender() {
             // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
             // must be no greater than the block’s gasLimit.
@@ -185,7 +222,7 @@ where
             self.evm_config.fill_tx_env(evm.tx_mut(), transaction, *sender);
 
             // Execute transaction.
-            let ResultAndState { result, state } = evm.transact().map_err(move |err| {
+            let ResultAndState { mut result, mut state } = evm.transact().map_err(move |err| {
                 let new_err = match err {
                     EVMError::Transaction(e) => EVMError::Transaction(e),
                     EVMError::Header(e) => EVMError::Header(e),
@@ -199,7 +236,6 @@ where
                     error: Box::new(new_err),
                 }
             })?;
-            evm.db_mut().commit(state);
 
             // calclaute the total block fees
             let transaction_fee =
@@ -208,6 +244,87 @@ where
 
             // append gas used
             cumulative_gas_used += result.gas_used();
+
+            // ***** Botanix specific checks ******
+            let pegout_amount = transaction.value();
+            let mut pegins = vec![];
+            let mut pegouts = vec![];
+
+            let new_result = {
+                if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                    match Self::botanix_mint_contract_checks(&result, &botanix_consensus_pkg) {
+                        Ok((new_pegins, new_pegouts)) => {
+                            pegins.extend(new_pegins);
+                            pegouts.extend(new_pegouts);
+                            result
+                        }
+                        Err(e) => {
+                            error!("Botanix Minting contract event validation failed: {:?}", e);
+                            // Update state for reverted pegins/pegouts:
+                            // balances have been updated since tx was successful according to EVM
+                            // and we are reverting according to botanix validation
+                            match e {
+                                MintContractError::InvalidPeginData {
+                                    revert_address,
+                                    revert_amount,
+                                    ..
+                                } => {
+                                    info!(
+                                        "Decrementing address: {:?} by {:?}",
+                                        revert_address, revert_amount
+                                    );
+                                    let mut account_info =
+                                        state.get(&revert_address).expect("should exist").clone();
+                                    account_info.info.balance = account_info
+                                        .info
+                                        .balance
+                                        .checked_sub(U256::from_be_bytes(revert_amount.into()))
+                                        .expect("No overflow for checked_sub");
+                                    state.insert(revert_address, account_info.clone());
+                                }
+                                MintContractError::InvalidPegoutData(_) => {
+                                    let sender_address = sender.clone();
+                                    let amount = EthersU256::from_little_endian(pegout_amount.as_le_slice());
+                                    info!(
+                                        "Incrementing address: {:?} by {:?}",
+                                        sender_address, amount
+                                    );
+                                    let mut account_info =
+                                        state.get(&sender_address).expect("should exist").clone();
+                                    account_info.info.balance = account_info
+                                        .info
+                                        .balance
+                                        .checked_add(pegout_amount)
+                                        .expect("No overflow for checked_add");
+                                    state.insert(sender_address, account_info.clone());
+                                }
+                                MintContractError::InvalidLog { .. } => {
+                                    // This means we could not parse what was emitted from the mint contract
+                                    panic!("Invalid log emitted from botanix mint contract");
+                                }
+                            }
+
+                            let new_result = ExecutionResult::Revert {
+                                gas_used: result.gas_used(),
+                                output: match result {
+                                    ExecutionResult::Success { output, .. } => {
+                                        output.clone().into_data()
+                                    }
+                                    ExecutionResult::Revert { output, .. } => output.clone(),
+                                    ExecutionResult::Halt { .. } => Bytes::new(),
+                                },
+                            };
+                            new_result
+                        }
+                    }
+                } else {
+                    result
+                }
+            };
+
+            result = new_result;
+
+            evm.db_mut().commit(state);
 
             // Push transaction changeset and calculate header bloom filter for receipt.
             receipts.push(
@@ -223,8 +340,11 @@ where
                     ..Default::default()
                 },
             );
+            total_pegins.extend(pegins);
+            total_pegouts.extend(pegouts);
         }
 
+        // For eip-6110 we need to collect the deposit requests. This is irrelevant for poa consensus
         let requests = if self.chain_spec.is_prague_active_at_timestamp(block.timestamp) {
             // Collect all EIP-6110 deposits
             let deposit_requests =
@@ -243,7 +363,80 @@ where
             vec![]
         };
 
-        Ok(EthExecuteOutput { receipts, requests, gas_used: cumulative_gas_used, total_block_fees })
+        Ok(EthExecuteOutput {
+            receipts,
+            requests,
+            gas_used: cumulative_gas_used,
+            total_block_fees,
+            pegins: total_pegins,
+            pegouts: total_pegouts,
+        })
+    }
+
+    /// Performs additional checks on mint contract transactions.
+    fn botanix_mint_contract_checks(
+        result: &ExecutionResult,
+        botanix_consensus_pkg: &BotanixConsensusPackage,
+    ) -> Result<(Vec<PeginData>, Vec<PegoutData>), MintContractError> {
+        let consensus_pkg = botanix_consensus_pkg;
+        let btc_network = consensus_pkg.btc_network;
+
+        // Check pegins.
+        let mut pegins = vec![];
+        let mut pegouts = vec![];
+        for log in result.logs() {
+            let pegin_data = match try_parse_mint_event(log)? {
+                None => continue,
+                Some(p) => p,
+            };
+
+            let bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
+            // the pegin height must be equal or less than the required block depth (checkpoint)
+            if pegin_data.bitcoin_block_height > bitcoin_checkpoint.1 {
+                return Err(MintContractError::InvalidPeginData {
+                    error: format!(
+                        "pegin height {} greater than checkpoint of {}",
+                        pegin_data.bitcoin_block_height, bitcoin_checkpoint.1,
+                    ),
+                    revert_address: pegin_data.account,
+                    revert_amount: pegin_data.amount,
+                });
+            }
+            let aggregate_public_key = consensus_pkg.aggregate_public_key;
+            match pegin_data.validate(&bitcoin_checkpoint, &aggregate_public_key) {
+                Ok(aggregate_value) => {
+                    if pegin_data.amount >= aggregate_value {
+                        return Err(MintContractError::InvalidPeginData {
+                            error: format!(
+                                "pegin amount should be less than aggregate value: \
+                                    pegin aggregate value: {}; pegin amount: {}",
+                                aggregate_value, pegin_data.amount,
+                            ),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        });
+                    }
+                }
+                Err(e) => {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: format!("pegin validation failed: {}", e),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    });
+                }
+            }
+
+            pegins.push(pegin_data);
+        }
+
+        // Check pegouts
+        for log in result.logs() {
+            if let Some(pegout_data) = try_parse_burn_event(log, btc_network)? {
+                pegouts.push(pegout_data);
+            }
+        }
+
+        Ok((pegins, pegouts))
     }
 }
 
@@ -253,17 +446,26 @@ where
 /// - Create a new instance of the executor.
 /// - Execute the block.
 #[derive(Debug)]
-pub struct EthBlockExecutor<EvmConfig, DB> {
+pub struct EthBlockExecutor<EvmConfig, DB, BF> {
     /// Chain specific evm config that's used to execute a block.
-    executor: EthEvmExecutor<EvmConfig>,
+    executor: EthEvmExecutor<EvmConfig, BF>,
     /// The state to use for execution
     state: State<DB>,
 }
 
-impl<EvmConfig, DB> EthBlockExecutor<EvmConfig, DB> {
+impl<EvmConfig, DB, BF> EthBlockExecutor<EvmConfig, DB, BF> {
     /// Creates a new Ethereum block executor.
-    pub const fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig, state: State<DB>) -> Self {
-        Self { executor: EthEvmExecutor { chain_spec, evm_config }, state }
+    pub const fn new(
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EvmConfig,
+        state: State<DB>,
+        bitcoind_factory: BF,
+        bitcoin_network: bitcoin::Network,
+    ) -> Self {
+        Self {
+            executor: EthEvmExecutor { chain_spec, evm_config, bitcoind_factory, bitcoin_network },
+            state,
+        }
     }
 
     #[inline]
@@ -278,10 +480,11 @@ impl<EvmConfig, DB> EthBlockExecutor<EvmConfig, DB> {
     }
 }
 
-impl<EvmConfig, DB> EthBlockExecutor<EvmConfig, DB>
+impl<EvmConfig, DB, BF> EthBlockExecutor<EvmConfig, DB, BF>
 where
     EvmConfig: ConfigureEvm,
     DB: Database<Error: Into<ProviderError> + Display>,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     /// Configures a new evm configuration and block environment for the given block.
     ///
@@ -312,17 +515,36 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        block_builder_address: Option<Address>,
     ) -> Result<EthExecuteOutput, BlockExecutionError> {
         // 1. prepare state on new block
         self.on_new_block(&block.header);
 
+        let header = block.header.clone();
+        let edh = block.header.deserialize_extra_data_header().map_err(|_| {
+            BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
+        })?;
+
+        let botanix_consensus_pkg = header
+            .botanix_consensus_package(
+                self.executor.bitcoin_network,
+                self.executor.bitcoind_factory.clone(),
+            )
+            .map_err(|e| {
+                error!("Failed to get botanix consensus package: {:?}", e);
+                BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
+            })?;
+
+        let block_builder_address = edh.block_producer_address;
+
         // 2. configure the evm and execute
         let env = self.evm_env_for_block(&block.header, total_difficulty);
-        let output = {
+        let output: EthExecuteOutput = {
             let evm = self.executor.evm_config.evm_with_env(&mut self.state, env);
-            self.executor.execute_state_transitions(block, evm)
+            self.executor.execute_state_transitions(block, evm, botanix_consensus_pkg)
         }?;
+
+        // TODO check for pegins and pegouts
+        // TODO save pegins / pegouts
 
         // 3. apply post execution changes
         self.post_execution(
@@ -349,14 +571,14 @@ where
         block: &BlockWithSenders,
         total_difficulty: U256,
         total_block_fees: Option<u128>,
-        block_builder_address: Option<Address>,
+        block_builder_address: Address,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments = post_block_balance_increments(
             self.chain_spec(),
             block,
             total_difficulty,
             total_block_fees,
-            block_builder_address,
+            Some(block_builder_address),
         );
 
         // Irregular state change at Ethereum DAO hardfork
@@ -381,10 +603,11 @@ where
     }
 }
 
-impl<EvmConfig, DB> Executor<DB> for EthBlockExecutor<EvmConfig, DB>
+impl<EvmConfig, DB, BF> Executor<DB> for EthBlockExecutor<EvmConfig, DB, BF>
 where
     EvmConfig: ConfigureEvm,
     DB: Database<Error: Into<ProviderError> + Display>,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     type Input<'a> = BlockExecutionInput<'a, BlockWithSenders>;
     type Output = BlockExecutionOutput<Receipt>;
@@ -397,18 +620,19 @@ where
     /// Returns an error if the block could not be executed or failed verification.
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
         let BlockExecutionInput { block, total_difficulty } = input;
-        let EthExecuteOutput { receipts, requests, gas_used, total_block_fees } =
-            self.execute_without_verification(block, total_difficulty, None)?; // TODO: check block address
+        let EthExecuteOutput { receipts, requests, gas_used, total_block_fees, pegins, pegouts } =
+            self.execute_without_verification(block, total_difficulty)?; // TODO: check block address
 
-        // NOTE: we need to merge keep the reverts for the bundle retention
+        // TODO NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
-
         Ok(BlockExecutionOutput {
             state: self.state.take_bundle(),
             receipts,
             requests,
             gas_used,
             total_block_fees,
+            pegins,
+            pegouts,
         })
     }
 }
@@ -417,16 +641,16 @@ where
 ///
 /// State changes are tracked until the executor is finalized.
 #[derive(Debug)]
-pub struct EthBatchExecutor<EvmConfig, DB> {
+pub struct EthBatchExecutor<EvmConfig, DB, BF> {
     /// The executor used to execute single blocks
     ///
     /// All state changes are committed to the [State].
-    executor: EthBlockExecutor<EvmConfig, DB>,
+    executor: EthBlockExecutor<EvmConfig, DB, BF>,
     /// Keeps track of the batch and records receipts based on the configured prune mode
     batch_record: BlockBatchRecord,
 }
 
-impl<EvmConfig, DB> EthBatchExecutor<EvmConfig, DB> {
+impl<EvmConfig, DB, BF> EthBatchExecutor<EvmConfig, DB, BF> {
     /// Returns mutable reference to the state that wraps the underlying database.
     #[allow(unused)]
     fn state_mut(&mut self) -> &mut State<DB> {
@@ -434,10 +658,11 @@ impl<EvmConfig, DB> EthBatchExecutor<EvmConfig, DB> {
     }
 }
 
-impl<EvmConfig, DB> BatchExecutor<DB> for EthBatchExecutor<EvmConfig, DB>
+impl<EvmConfig, DB, BF> BatchExecutor<DB> for EthBatchExecutor<EvmConfig, DB, BF>
 where
     EvmConfig: ConfigureEvm,
     DB: Database<Error: Into<ProviderError> + Display>,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     type Input<'a> = BlockExecutionInput<'a, BlockWithSenders>;
     type Output = ExecutionOutcome;
@@ -450,8 +675,14 @@ where
             self.batch_record.set_first_block(block.number);
         }
 
-        let EthExecuteOutput { receipts, requests, gas_used: _, total_block_fees: _ } =
-            self.executor.execute_without_verification(block, total_difficulty, None)?; // TODO: check block address
+        let EthExecuteOutput {
+            receipts,
+            requests,
+            gas_used: _,
+            total_block_fees: _,
+            pegins,
+            pegouts,
+        } = self.executor.execute_without_verification(block, total_difficulty)?; // TODO: check block address
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
