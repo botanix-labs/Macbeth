@@ -5,8 +5,8 @@ use crate::{
     EthEvmConfig,
 };
 use core::fmt::Display;
-use tracing::{error, info};
 use ethers::types::U256 as EthersU256;
+use tracing::{error, info};
 
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::{ChainSpec, EthereumHardforks, MAINNET};
@@ -44,7 +44,7 @@ use reth_revm::{
 };
 use revm_primitives::{
     db::{Database, DatabaseCommit},
-    BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ExecutionResult,
+    BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
     ResultAndState,
 };
 
@@ -268,35 +268,17 @@ where
                                     revert_address,
                                     revert_amount,
                                     ..
-                                } => {
-                                    info!(
-                                        "Decrementing address: {:?} by {:?}",
-                                        revert_address, revert_amount
-                                    );
-                                    let mut account_info =
-                                        state.get(&revert_address).expect("should exist").clone();
-                                    account_info.info.balance = account_info
-                                        .info
-                                        .balance
-                                        .checked_sub(U256::from_be_bytes(revert_amount.into()))
-                                        .expect("No overflow for checked_sub");
-                                    state.insert(revert_address, account_info.clone());
-                                }
+                                } => Self::decrement_balance_by_address(
+                                    revert_address,
+                                    revert_amount,
+                                    &mut state,
+                                ),
                                 MintContractError::InvalidPegoutData(_) => {
-                                    let sender_address = sender.clone();
-                                    let amount = EthersU256::from_little_endian(pegout_amount.as_le_slice());
-                                    info!(
-                                        "Incrementing address: {:?} by {:?}",
-                                        sender_address, amount
+                                    Self::increment_balance_by_address(
+                                        *sender,
+                                        EthersU256::from_little_endian(pegout_amount.as_le_slice()),
+                                        &mut state,
                                     );
-                                    let mut account_info =
-                                        state.get(&sender_address).expect("should exist").clone();
-                                    account_info.info.balance = account_info
-                                        .info
-                                        .balance
-                                        .checked_add(pegout_amount)
-                                        .expect("No overflow for checked_add");
-                                    state.insert(sender_address, account_info.clone());
                                 }
                                 MintContractError::InvalidLog { .. } => {
                                     // This means we could not parse what was emitted from the mint contract
@@ -371,6 +353,38 @@ where
             pegins: total_pegins,
             pegouts: total_pegouts,
         })
+    }
+
+    /// Decrement an account by the specified amount and update state
+    /// This should only occur when a pegin reverts based on our custom validation
+    fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
+        let mut account = state.get(&address).expect("Account to exist").clone();
+        // print balance before decrement
+        info!("Balance before decrement: {:?}", account.info.balance);
+        // decrement balance by amount
+        info!("Decrementing address: {:?} by {:?}", address, amount);
+        account.info.balance = account
+            .info
+            .balance
+            .checked_sub(U256::from_be_bytes(amount.into()))
+            .expect("No overflow for checked_sub");
+        // update state with new balance
+        state.insert(address, account);
+    }
+
+    /// Increment an account by the specified amount and update state
+    /// This should only occur when a pegout reverts based on our custom validation
+    fn increment_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
+        let mut account = state.get(&address).expect("Account to exist").clone();
+        // increment balance by amount
+        info!("Incrementing address: {:?} by {:?}", address, amount);
+        account.info.balance = account
+            .info
+            .balance
+            .checked_add(U256::from_be_bytes(amount.into()))
+            .expect("No overflow for checked_add");
+        // update state with new balance
+        state.insert(address, account);
     }
 
     /// Performs additional checks on mint contract transactions.
