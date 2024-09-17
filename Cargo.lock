@@ -9629,6 +9629,8 @@ version = "1.0.5"
 dependencies = [
  "alloy-genesis",
  "alloy-primitives",
+ "bitcoin",
+ "bitcoincore-rpc",
  "eyre",
  "futures",
  "futures-util",
@@ -9636,6 +9638,7 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
+ "reth-btc-wallet",
  "reth-chainspec",
  "reth-consensus",
  "reth-db",

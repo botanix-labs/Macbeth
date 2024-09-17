@@ -543,9 +543,6 @@ where
             self.executor.execute_state_transitions(block, evm, botanix_consensus_pkg)
         }?;
 
-        // TODO check for pegins and pegouts
-        // TODO save pegins / pegouts
-
         // 3. apply post execution changes
         self.post_execution(
             block,

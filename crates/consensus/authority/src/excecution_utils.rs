@@ -39,13 +39,16 @@ pub(crate) mod authority_execution_utils {
         block_builder_address: &Address,
         evm_config: EthEvmConfig,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
-        bitcoind_factory: &impl BitcoindFactory,
+        bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
         authority_signers: &Vec<secp256k1::PublicKey>,
         timestamp: Timestamp,
-    ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError> {
+    ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError>
+    where
+        BF: BitcoindFactory + Clone + Unpin + 'static,
+    {
         // Construct block and header
         let header = build_header_template(
             &transactions,
@@ -83,7 +86,7 @@ pub(crate) mod authority_execution_utils {
 
     /// Execute and run poa validation on the block without inserting it into the storage
     /// Currently un-used
-    /* 
+    /*
     #[allow(dead_code)]
     pub(crate) fn execute_imported_block(
         consensus: &AuthorityConsensus,
@@ -292,11 +295,14 @@ pub(crate) mod authority_execution_utils {
         block: &BlockWithSenders,
         client: &(impl StateProviderFactory + BlockReaderIdExt),
         block_builder_address: Option<Address>,
-        bitcoind_factory: &impl BitcoindFactory,
+        bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<ChainSpec>,
         evm_config: EthEvmConfig,
-    ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError> {
+    ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
+    where
+        BF: BitcoindFactory + Clone + Unpin + 'static,
+    {
         // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
         // We must set those values on the executor after the execution
         // This is only an execution for the block builder, all other executing operations
@@ -306,7 +312,8 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
 
-        let executor = EthBlockExecutor::new(chain_spec, evm_config, db);
+        let executor =
+            EthBlockExecutor::new(chain_spec, evm_config, db, bitcoind_factory, bitcoin_network);
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;
         Ok(exec_results)

@@ -31,6 +31,9 @@ reth-chainspec.workspace = true
 
 # misc
 eyre.workspace = true
+bitcoin.workspace = true
+reth-btc-wallet.workspace = true
+bitcoincore-rpc.workspace = true
 
 [dev-dependencies]
 reth.workspace = true
