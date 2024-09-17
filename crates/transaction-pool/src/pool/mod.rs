@@ -81,11 +81,11 @@ use crate::{
     CanonicalStateUpdate, ChangedAccount, PoolConfig, TransactionOrdering, TransactionValidator,
 };
 use best::BestTransactions;
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use comet_bft_rpc::CometBftRpcFactory;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use reth_eth_wire_types::HandleMempoolData;
 use reth_primitives::{
-    hex, Address, BlobTransaction, BlobTransactionSidecar, IntoRecoveredTransaction,
+    Address, BlobTransaction, BlobTransactionSidecar, IntoRecoveredTransaction,
     PooledTransactionsElement, TransactionSigned, TxHash, B256,
 };
 use std::{

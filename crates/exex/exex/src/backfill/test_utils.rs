@@ -5,7 +5,7 @@ use reth_chainspec::{ChainSpec, ChainSpecBuilder, EthereumHardfork, MAINNET};
 use reth_evm::execute::{
     BatchExecutor, BlockExecutionInput, BlockExecutionOutput, BlockExecutorProvider, Executor,
 };
-use reth_evm_ethereum::execute::EthExecutorProvider;
+use reth_evm_ethereum::create_noop_executor_provider;
 use reth_primitives::{
     b256, constants::ETH_TO_WEI, Address, Block, BlockWithSenders, Genesis, GenesisAccount, Header,
     Receipt, Requests, SealedBlockWithSenders, Transaction, TxEip2930, TxKind, U256,
@@ -57,7 +57,7 @@ where
     let provider = provider_factory.provider()?;
 
     // Execute the block to produce a block execution output
-    let mut block_execution_output = EthExecutorProvider::ethereum(chain_spec)
+    let mut block_execution_output = create_noop_executor_provider(chain_spec.clone())
         .executor(StateProviderDatabase::new(LatestStateProviderRef::new(
             provider.tx_ref(),
             provider.static_file_provider().clone(),
@@ -182,10 +182,12 @@ where
 
     let provider = provider_factory.provider()?;
 
-    let executor =
-        EthExecutorProvider::ethereum(chain_spec).batch_executor(StateProviderDatabase::new(
-            LatestStateProviderRef::new(provider.tx_ref(), provider.static_file_provider().clone()),
-        ));
+    let executor = create_noop_executor_provider(chain_spec.clone()).batch_executor(
+        StateProviderDatabase::new(LatestStateProviderRef::new(
+            provider.tx_ref(),
+            provider.static_file_provider().clone(),
+        )),
+    );
 
     let mut execution_outcome = executor.execute_and_verify_batch(vec![
         (&block1, U256::ZERO).into(),

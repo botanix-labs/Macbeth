@@ -12,7 +12,7 @@ use reth_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
-use reth_chainspec::{ChainSpec, EthereumHardforks, MAINNET};
+use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
     execute::{
@@ -65,9 +65,10 @@ pub struct EthExecutorProvider<BF, EvmConfig = EthEvmConfig> {
     bitcoin_network: bitcoin::Network,
 }
 
-pub fn create_noop_executor_provider() -> EthExecutorProvider<MockBitcoindFactory> {
+/// Create a noop executor provider with chain spec
+pub fn create_noop_executor_provider(chain_spec: Arc<ChainSpec>) -> EthExecutorProvider<MockBitcoindFactory> {
     EthExecutorProvider::new(
-        MAINNET.clone(),
+        chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Bitcoin,
@@ -803,8 +804,10 @@ mod tests {
         db
     }
 
-    fn executor_provider(chain_spec: Arc<ChainSpec>) -> EthExecutorProvider<EthEvmConfig> {
-        EthExecutorProvider { chain_spec, evm_config: Default::default() }
+    fn executor_provider(
+        chain_spec: Arc<ChainSpec>,
+    ) -> EthExecutorProvider<MockBitcoindFactory, EthEvmConfig> {
+        create_noop_executor_provider(chain_spec)
     }
 
     #[test]

@@ -1386,7 +1386,7 @@ mod tests {
     use reth_db::{tables, test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::transaction::DbTxMut;
     use reth_evm::test_utils::MockExecutorProvider;
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::execute::create_noop_executor_provider;
     #[cfg(not(feature = "optimism"))]
     use reth_primitives::proofs::calculate_receipt_root;
     #[cfg(feature = "optimism")]
@@ -1548,7 +1548,7 @@ mod tests {
         );
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         let consensus = Arc::new(TestConsensus::default());
-        let executor_provider = EthExecutorProvider::ethereum(chain_spec.clone());
+        let executor_provider = create_noop_executor_provider(chain_spec.clone());
 
         {
             let provider_rw = provider_factory.provider_rw().unwrap();

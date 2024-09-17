@@ -22,7 +22,6 @@ use reth_network::{
     NetworkEventListenerProvider, NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
-use reth_node_api::EngineTypes;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;

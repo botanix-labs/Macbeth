@@ -1,6 +1,5 @@
 //! Helper macros
 
-use reth_node_ethereum::create_noop_executor_provider;
 
 /// Creates the block executor type based on the configured feature.
 ///
@@ -10,7 +9,7 @@ macro_rules! block_executor {
     ($chain_spec:expr) => {
         // Botanix change: we construct the noop executor provider else where and do not rely on these macros
         // reth_node_ethereum::EthExecutorProvider::noop()
-        create_noop_executor_provider()
+        create_noop_executor_provider($chain_spec)
     };
 }
 

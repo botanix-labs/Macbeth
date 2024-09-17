@@ -59,6 +59,8 @@ impl<DB> Executor<DB> for MockExecutorProvider {
             requests: requests.into_iter().flatten().collect(),
             gas_used: 0,
             total_block_fees: 0,
+            pegins: vec![],
+            pegouts: vec![],
         })
     }
 }

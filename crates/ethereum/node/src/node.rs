@@ -8,7 +8,7 @@ use reth_beacon_consensus::EthBeaconConsensus;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_btc_wallet::{
     bitcoind::BitcoindConfig,
-    test_utils::{MockBitcoind, MockBitcoindFactory},
+    test_utils::MockBitcoindFactory,
 };
 use reth_chainspec::ChainSpec;
 use reth_ethereum_engine_primitives::{

@@ -181,7 +181,7 @@ mod tests {
     use futures::StreamExt;
     use reth_blockchain_tree::noop::NoopBlockchainTree;
     use reth_db_common::init::init_genesis;
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::create_noop_executor_provider;
     use reth_primitives::public_key_to_address;
     use reth_provider::{
         providers::BlockchainProvider, test_utils::create_test_provider_factory_with_chain_spec,
@@ -200,7 +200,7 @@ mod tests {
 
         let chain_spec = chain_spec(address);
 
-        let executor = EthExecutorProvider::ethereum(chain_spec.clone());
+        let executor = create_noop_executor_provider(chain_spec.clone());
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         init_genesis(provider_factory.clone())?;
         let blockchain_db = BlockchainProvider::new(
@@ -241,7 +241,7 @@ mod tests {
 
         let chain_spec = chain_spec(address);
 
-        let executor = EthExecutorProvider::ethereum(chain_spec.clone());
+        let executor = create_noop_executor_provider(chain_spec.clone());
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         init_genesis(provider_factory.clone())?;
         let blockchain_db = BlockchainProvider::new(

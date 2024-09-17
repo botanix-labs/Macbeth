@@ -75,6 +75,7 @@ assert_matches.workspace = true
 rand.workspace = true
 paste.workspace = true
 tempfile.workspace = true
+reth-btc-wallet.workspace = true
 
 # Stage benchmarks
 criterion = { workspace = true, features = ["async_tokio"] }

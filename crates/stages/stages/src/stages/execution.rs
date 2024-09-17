@@ -655,9 +655,10 @@ mod tests {
     use crate::test_utils::TestStageDB;
     use alloy_rlp::Decodable;
     use assert_matches::assert_matches;
+    use reth_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_chainspec::ChainSpecBuilder;
     use reth_db_api::{models::AccountBeforeTx, transaction::DbTxMut};
-    use reth_evm_ethereum::execute::EthExecutorProvider;
+    use reth_evm_ethereum::{create_noop_executor_provider, execute::EthExecutorProvider};
     use reth_execution_errors::BlockValidationError;
     use reth_primitives::{
         address, hex_literal::hex, keccak256, Account, Address, Bytecode, SealedBlock,
@@ -671,8 +672,8 @@ mod tests {
     use reth_stages_api::StageUnitCheckpoint;
     use std::collections::BTreeMap;
 
-    fn stage() -> ExecutionStage<EthExecutorProvider> {
-        let executor_provider = EthExecutorProvider::ethereum(Arc::new(
+    fn stage() -> ExecutionStage<EthExecutorProvider<MockBitcoindFactory>> {
+        let executor_provider = create_noop_executor_provider(Arc::new(
             ChainSpecBuilder::mainnet().berlin_activated().build(),
         ));
         ExecutionStage::new(

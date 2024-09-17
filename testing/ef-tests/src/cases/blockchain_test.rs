@@ -128,7 +128,7 @@ impl Case for BlockchainTestCase {
                 // Execute the execution stage using the EVM processor factory for the test case
                 // network.
                 let _ = ExecutionStage::new_with_executor(
-                    reth_evm_ethereum::execute::EthExecutorProvider::ethereum(Arc::new(
+                    reth_evm_ethereum::execute::create_noop_executor_provider(Arc::new(
                         case.network.clone().into(),
                     )),
                 )
