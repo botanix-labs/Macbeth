@@ -325,9 +325,7 @@ where
             cancel: Default::default(),
             best_payload: None,
         };
-        let res = default_ethereum_payload_builder(self.storage.evm_config, build_args)
-            .expect("payload builder should return best job");
-
+        let res = default_ethereum_payload_builder(self.storage.evm_config, build_args);
         let response = match res {
             Ok(res) => {
                 match res {
@@ -508,13 +506,22 @@ where
             &self.storage.genesis_authorities,
             block_time,
         ) {
-            Ok(sealed_block_with_peg) => {
-                info!(
-                    "Block built successfully, resulting block hash: {:?}",
-                    sealed_block_with_peg.block().hash()
+            Ok((exec_results, block)) => {
+                info!("Block built successfully, resulting block hash: {:?}", block.hash_slow());
+                let block_hash = block.hash_slow();
+                info!("Block built successfully, resulting block hash: {:?}", block_hash);
+                let sealed_block_with_sender =
+                    block.seal_slow().try_seal_with_senders().expect("to seal");
+                let sealed_block_with_peg = SealedBlockWithPeg::new(
+                    sealed_block_with_sender,
+                    exec_results.pegins,
+                    exec_results.pegouts,
                 );
 
-                self.block_cache.write().unwrap().insert(cbft_block_hash, sealed_block_with_peg);
+                self.block_cache
+                    .write()
+                    .expect("to get write lock")
+                    .insert(cbft_block_hash, sealed_block_with_peg);
             }
             Err(e) => {
                 error!("Error building block: {:?}", e);
@@ -578,10 +585,15 @@ where
                     &self.storage.genesis_authorities,
                     block_time,
                 ) {
-                    Ok(sealed_block_with_peg) => {
-                        info!(
-                            "Block built successfully, resulting block hash: {:?}",
-                            sealed_block_with_peg.block().hash()
+                    Ok((exec_results, block)) => {
+                        let block_hash = block.hash_slow();
+                        info!("Block built successfully, resulting block hash: {:?}", block_hash);
+                        let sealed_block_with_sender =
+                            block.seal_slow().try_seal_with_senders().expect("to seal");
+                        let sealed_block_with_peg = SealedBlockWithPeg::new(
+                            sealed_block_with_sender,
+                            exec_results.pegins,
+                            exec_results.pegouts,
                         );
 
                         block_cache_write.insert(cbft_block_hash, sealed_block_with_peg.clone());

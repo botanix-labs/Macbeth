@@ -5,6 +5,11 @@ use std::sync::Arc;
 use reth_auto_seal_consensus::AutoSealConsensus;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::EthBeaconConsensus;
+use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_btc_wallet::{
+    bitcoind::BitcoindConfig,
+    test_utils::{MockBitcoind, MockBitcoindFactory},
+};
 use reth_chainspec::ChainSpec;
 use reth_ethereum_engine_primitives::{
     EthBuiltPayload, EthPayloadAttributes, EthPayloadBuilderAttributes,
@@ -108,7 +113,7 @@ where
     Node: FullNodeTypes<ChainSpec = ChainSpec>,
 {
     type EVM = EthEvmConfig;
-    type Executor = EthExecutorProvider<Self::EVM>;
+    type Executor = EthExecutorProvider<MockBitcoindFactory, Self::EVM>;
 
     async fn build_evm(
         self,
@@ -116,7 +121,10 @@ where
     ) -> eyre::Result<(Self::EVM, Self::Executor)> {
         let chain_spec = ctx.chain_spec();
         let evm_config = EthEvmConfig::default();
-        let executor = EthExecutorProvider::new(chain_spec, evm_config);
+        let mock_bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
+        let regtest = bitcoin::Network::Regtest;
+        let executor =
+            EthExecutorProvider::new(chain_spec, evm_config, mock_bitcoind_factory, regtest);
 
         Ok((evm_config, executor))
     }
