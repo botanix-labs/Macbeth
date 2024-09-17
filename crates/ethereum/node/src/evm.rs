@@ -4,3 +4,5 @@
 pub use reth_evm_ethereum::execute::EthExecutorProvider;
 #[doc(inline)]
 pub use reth_evm_ethereum::EthEvmConfig;
+#[doc(inline)]
+pub use reth_evm_ethereum::create_noop_executor_provider;

@@ -641,7 +641,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         let default_peers_path = data_dir.known_peers();
-        let network_cfg_builder = self
+        let mut network_cfg_builder = self
             .network
             .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
@@ -1072,7 +1072,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 pub struct PoaNodeComponents<P> {
     pool: P,
     evm_config: EthEvmConfig,
-    executor: EthExecutorProvider,
+    executor: EthExecutorProvider<BitcoindClientFactory>,
     network: NetworkHandle,
     provider: BlockchainProvider<Arc<DatabaseEnv>>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -1086,7 +1086,7 @@ where
     pub(crate) fn new(
         pool: P,
         evm_config: EthEvmConfig,
-        executor: EthExecutorProvider,
+        executor: EthExecutorProvider<BitcoindClientFactory>,
         network: NetworkHandle,
         provider: BlockchainProvider<Arc<DatabaseEnv>>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,

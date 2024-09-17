@@ -11,7 +11,7 @@
 pub use reth_ethereum_engine_primitives::EthEngineTypes;
 
 pub mod evm;
-pub use evm::{EthEvmConfig, EthExecutorProvider};
+pub use evm::{EthEvmConfig, EthExecutorProvider, create_noop_executor_provider};
 
 pub mod node;
 pub use node::EthereumNode;
