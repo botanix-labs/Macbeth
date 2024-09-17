@@ -602,11 +602,6 @@ pub async fn create_poa_federation_members(
         None,
         Some(authorities.clone()),
         None,
-        None,
-        // to make sure they're not identical, hash random data
-        BlockHash::hash(&[1]),
-        sha256::Hash::hash(&[2]),
-        nums_secp256k1_pk(),
     );
 
     // now insert peers and edh into each federation member

@@ -244,7 +244,6 @@ impl Consensus for EthBeaconConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
-
 }
 
 #[cfg(test)]

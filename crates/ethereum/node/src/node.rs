@@ -5,9 +5,8 @@ use std::sync::Arc;
 use reth_auto_seal_consensus::AutoSealConsensus;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::EthBeaconConsensus;
-use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_btc_wallet::{
-    bitcoind::BitcoindConfig,
+    bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
 use reth_chainspec::ChainSpec;

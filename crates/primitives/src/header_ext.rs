@@ -147,7 +147,6 @@ mod tests {
 
     use super::*;
     use crate::Header;
-    
 
     #[test]
     fn deserialize_extension_trait() {

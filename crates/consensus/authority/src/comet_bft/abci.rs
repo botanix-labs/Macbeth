@@ -348,7 +348,8 @@ where
                             .collect::<_>();
                         info!("prepare_proposal response: {:?}", txs);
 
-                        // insert non-deterministic data tx at index 0 so historical sync will pass verification
+                        // insert non-deterministic data tx at index 0 so historical sync will pass
+                        // verification
                         txs.insert(0, non_deterministic_data_bytes);
 
                         ResponsePrepareProposal { txs }

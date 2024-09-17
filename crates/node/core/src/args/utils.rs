@@ -10,7 +10,8 @@ use reth_chainspec::{
 use reth_fs_util as fs;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION}, Address,
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    Address,
 };
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tracing::info;

@@ -20,8 +20,7 @@
 //! These downloaders poll the miner, assemble the block, and return transactions that are ready to
 //! be mined.
 
-use reth_chainspec::ChainSpec;
-use reth_chainspec::{EthereumHardfork, EthereumHardforks};
+use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
 };
@@ -97,9 +96,8 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit
-                    * self
-                        .chain_spec
+                parent.gas_limit *
+                    self.chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {
@@ -393,6 +391,15 @@ mod tests {
 
     use super::*;
 
+    #[allow(dead_code)]
+    const EDH_DEFAULT_SIGHASH: &str =
+        "0xaaa3492fe3eec8da1ca35aca5930a44b1a5805e813bdd1773678b5041d905276";
+
+    #[allow(dead_code)]
+    const SK1: &str = "1aabc5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+    #[allow(dead_code)]
+    const SK2: &str = "1bc1f5cc52b62b570dc69001f1ab49cd1a7056bf6312fe058f094135f2c9b019";
+
     // Tests for validating poa extra data header
     #[test]
     fn should_skip_over_genesis() {
@@ -409,7 +416,6 @@ mod tests {
 
         assert!(result.is_ok());
     }
-
 
     // TODO add this back in
     // #[test]
@@ -440,8 +446,8 @@ mod tests {
     //     header.sign_block(&sk1).expect("valid sign");
 
     //     let result =
-    //         consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
-    //     assert!(result.is_err());
+    //         consensus.validate_extra_data_header(&header, &authority_signers,
+    // Some(&dummy_agg_key));     assert!(result.is_err());
     //     assert_eq!(
     //         result.err().unwrap(),
     //         ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
@@ -499,8 +505,8 @@ mod tests {
     //     header.sign_block(&sk1).expect("valid sign");
 
     //     let result =
-    //         consensus.validate_extra_data_header(&header, &authority_signers, Some(&different_pk));
-    //     assert_eq!(
+    //         consensus.validate_extra_data_header(&header, &authority_signers,
+    // Some(&different_pk));     assert_eq!(
     //         result.err().unwrap(),
     //         ConsensusError::InvalidAggregatedPublicKey(
     //             InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey
