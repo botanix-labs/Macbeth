@@ -328,7 +328,6 @@ impl PegoutScheduler {
     fn add_block(&mut self, block: &Block) {
         let hash: BlockHash = block.block_hash();
         let height = block.bip34_block_height().expect("bip34 is active");
-        println!("height: {}", height);
         let last = self.last_blocks.back().expect("always something");
         assert_eq!(block.header.prev_blockhash, last.hash, "adding {}:{}", height, hash);
 
@@ -514,8 +513,7 @@ pub enum BlockError {
 }
 
 mod tests {
-    use bitcoin::block::Header;
-    use bitcoin_hashes::Hash;
+    use bitcoin::{block::Header, hashes::Hash};
 
     use crate::test_utils::test_utils::{
         create_block, create_n_outputs_tx, random_txid, MockBitcoind,
@@ -675,6 +673,9 @@ mod tests {
         let tracked_txs = pegout_scheduler.txs.clone();
         assert_eq!(tracked_txs.len(), 0);
         assert_eq!(utxos.len(), 2);
+
+        // Check the correct last finalized block hash is correct
+        assert_eq!(pegout_scheduler.last_finalized, block.block_hash());
     }
 
     #[test]
