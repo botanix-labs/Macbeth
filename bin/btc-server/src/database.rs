@@ -475,6 +475,11 @@ impl Db {
         Ok(ret)
     }
 
+    pub fn remove_tracked_tx(&self, txid: Txid) -> Result<(), Error> {
+        self.pending_txs.remove(&txid);
+        Ok(())
+    }
+
     pub fn store_pegout_mgr_finalized_block(&self, block_hash: BlockHash) -> Result<(), Error> {
         self.db.insert(KEY_PEGOUTMGR_TIP, &block_hash.to_byte_array())?;
         Ok(())
@@ -638,7 +643,9 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_utils::test_utils::{create_tx, random_p2wpkh_script};
+    use std::time::SystemTime;
+
+    use crate::{pegout_scheduler::Tx, test_utils::test_utils::{create_n_outputs_tx, create_tx, random_p2wpkh_script}};
 
     use super::*;
     use crate::pegout_id::PegoutId;
@@ -898,5 +905,37 @@ mod tests {
             retrieved_merkle_root.is_none(),
             "Should not retrieve a Merkle root when none has been stored."
         );
+    }
+
+    #[test]
+    fn test_tracked_txs_e2e() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            pegout_idxs: vec![0],
+            change_idxs: vec![1],
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        let tx_retrieved = db.get_tracked_txs().unwrap();
+        assert_eq!(tx_retrieved.len(), 1);
+        assert_eq!(tx_retrieved[0], tracked_tx);
+
+        // Storing the same tx again should not add a new entry
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+        let tx_retrieved = db.get_tracked_txs().unwrap();
+        assert_eq!(tx_retrieved.len(), 1);
+        assert_eq!(tx_retrieved[0], tracked_tx);
+
+        // Remove the tracked tx
+        db.remove_tracked_tx(tx.txid()).unwrap();
+        db.flush().unwrap();
+        let tx_retrieved = db.get_tracked_txs().unwrap();
+        assert_eq!(tx_retrieved.len(), 0);
     }
 }
