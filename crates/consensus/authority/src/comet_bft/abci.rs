@@ -637,6 +637,7 @@ where
     }
 
     fn commit(&self) -> ResponseCommit {
+        info!("commit request received");
         let candidate_blocks = self.block_cache.write().unwrap();
 
         let (cbft_block_hash, sealed_block_with_peg) =

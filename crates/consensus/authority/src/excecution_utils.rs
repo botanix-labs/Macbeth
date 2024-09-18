@@ -1,7 +1,7 @@
 pub(crate) mod authority_execution_utils {
-    use bitcoin::hashes::sha256;
+    use bitcoin::hashes::{sha256, Hash};
     use reth_btc_wallet::bitcoind::BitcoindFactory;
-    use reth_chainspec::ChainSpec;
+    use reth_chainspec::{ChainSpec, EthereumHardforks};
 
     use reth_evm::execute::Executor;
     use reth_evm_ethereum::execute::EthBlockExecutor;
@@ -11,6 +11,7 @@ pub(crate) mod authority_execution_utils {
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
+        eip4844::calculate_excess_blob_gas,
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
         header_ext::HeaderExt,
         proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt,
@@ -57,7 +58,7 @@ pub(crate) mod authority_execution_utils {
             block_builder_address,
         )?;
 
-        let block =
+        let mut block =
             Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None };
         let senders = TransactionSigned::recover_signers(&block.body, block.body.len())
             .ok_or(BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError))?;
@@ -77,6 +78,23 @@ pub(crate) mod authority_execution_utils {
             chain_spec,
             evm_config,
         )?;
+
+        let completed_header = complete_header(
+            block_with_senders.header.clone(),
+            &block_exec_output,
+            block_exec_output.gas_used,
+            // Witness Data
+            &None,
+            *bitcoin_checkpoint_block_hash,
+            // UTXO commitment
+            sha256::Hash::all_zeros(),
+            client,
+            agg_pk,
+            &authority_signers,
+        )?;
+
+        // Replace header with the one that is completed
+        block.header = completed_header.clone();
 
         Ok((block_exec_output, block))
     }
@@ -183,6 +201,19 @@ pub(crate) mod authority_execution_utils {
                 parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
             });
 
+        // copied from `build_header_template` in autoseal
+        let blob_gas_used = if chain_spec.is_cancun_active_at_timestamp(timestamp) {
+            let mut sum_blob_gas_used = 0;
+            for tx in transactions {
+                if let Some(blob_tx) = tx.transaction.as_eip4844() {
+                    sum_blob_gas_used += blob_tx.blob_gas();
+                }
+            }
+            Some(sum_blob_gas_used)
+        } else {
+            None
+        };
+
         // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
         // so the botanix consensus package can be constructed from the EDH
         let edh = ExtraDataHeader::new(
@@ -209,12 +240,34 @@ pub(crate) mod authority_execution_utils {
             mix_hash: Default::default(),
             nonce: 0,
             base_fee_per_gas,
-            blob_gas_used: None,
+            blob_gas_used,
             excess_blob_gas: None,
             extra_data: Bytes::from(edh.serialize()),
             parent_beacon_block_root: None,
             requests_root: None,
         };
+
+        // copied from `build_header_template` in autoseal
+        if chain_spec.is_cancun_active_at_timestamp(timestamp) {
+            let parent = client.header(&best_hash).expect("header to be found");
+            header.parent_beacon_block_root =
+                parent.clone().and_then(|parent| parent.parent_beacon_block_root);
+            header.blob_gas_used = Some(0);
+
+            let (parent_excess_blob_gas, parent_blob_gas_used) = match parent {
+                Some(parent_block)
+                    if chain_spec.is_cancun_active_at_timestamp(parent_block.timestamp) =>
+                {
+                    (
+                        parent_block.excess_blob_gas.unwrap_or_default(),
+                        parent_block.blob_gas_used.unwrap_or_default(),
+                    )
+                }
+                _ => (0, 0),
+            };
+            header.excess_blob_gas =
+                Some(calculate_excess_blob_gas(parent_excess_blob_gas, parent_blob_gas_used))
+        }
 
         // TODO (armins) Poa shouldnt be minging empty blocks
         header.transactions_root = if transactions.is_empty() {
