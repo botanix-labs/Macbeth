@@ -52,6 +52,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
         info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
+        // TODO: remove unused code
         let public_keys = genesis_toml_config
             .federation_member_public_key
             .iter()
@@ -136,7 +137,7 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
                     if s.contains('{') {
                         s.to_string()
                     } else {
-                        return Err(io_err.into()) // assume invalid path
+                        return Err(io_err.into()); // assume invalid path
                     }
                 }
             };
