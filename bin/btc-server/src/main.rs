@@ -15,7 +15,6 @@ mod signer;
 mod util;
 
 #[macro_use]
-#[cfg(test)]
 mod test_utils;
 
 mod rpc {

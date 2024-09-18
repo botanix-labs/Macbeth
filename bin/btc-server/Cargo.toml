@@ -9,6 +9,7 @@ name = "btcserverlib"
 [dependencies]
 miniscript = "11.0.0"
 bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+bitcoin_hashes = "0.13.0"
 # Keep this version in sync with the one in the project cargo.toml
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 reth-btc-wallet = { path = "../../crates/btc-wallet" }
