@@ -256,7 +256,7 @@ where
                     .read()
                     .await
                     .expect("no bitcoin checkpoint in block creation procedure");
-                match crate::utils::call_get_psbt(
+                match crate::utils::get_psbt(
                     &mut self.btc_server,
                     &pegouts,
                     &signing_session_id,

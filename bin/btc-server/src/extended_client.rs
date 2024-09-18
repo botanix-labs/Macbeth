@@ -82,7 +82,7 @@ pub struct BtcServerExtendedClient {
 
 impl BtcServerExtendedClient {
     /// Create a new Bitcoin Server Client with extended authentication credentials
-    pub async fn new(url: String, jwt_secret: Option<JwtSecret>) -> Result<Self, GrpcClientError> {
+pub async fn new(url: String, jwt_secret: Option<JwtSecret>) -> Result<Self, GrpcClientError> {
         let uri = url.parse::<Uri>().map_err(|e| GrpcClientError::InvalidUri(e.to_string()))?;
         let chan = tonic::transport::Channel::builder(uri)
             .timeout(Duration::from_secs(20))

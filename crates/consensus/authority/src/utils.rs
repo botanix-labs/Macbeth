@@ -92,10 +92,8 @@ pub(crate) enum FrostParseError {
     InvalidSigningSessionId,
 }
 
-/// send pegouts to the btc server and recieve a psbt
-// TODO better name for this function
-#[allow(dead_code)]
-pub(crate) async fn call_get_psbt(
+/// recieve a psbt containing all pending pegouts awaiting signing
+pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
@@ -103,13 +101,6 @@ pub(crate) async fn call_get_psbt(
     utxo_merkle_root: sha256::Hash,
 ) -> Result<SigningPackage, GrpcClientError> {
     let req = MakeTxRequest {
-        outputs: pegouts
-            .iter()
-            .map(|pegout| Output {
-                address: pegout.destination.to_string(),
-                value: pegout.amount.to_sat(),
-            })
-            .collect(),
         signing_session_id: signing_session_id.to_vec(),
         checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
         utxo_merkle_root: utxo_merkle_root[..].to_vec(),
