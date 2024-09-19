@@ -96,8 +96,9 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit *
-                    self.chain_spec
+                parent.gas_limit
+                    * self
+                        .chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {
@@ -469,7 +470,6 @@ mod tests {
         let mut header = Header::default();
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
