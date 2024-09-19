@@ -242,7 +242,7 @@ pub fn validate_psbt(
         if scs.len() != psbt.inputs.len() {
             return Err(ValidatePSBTError::InvalidNumberOfSigningCommitments);
         }
-        // Each map should have atleast min_signers number of signing commitments
+        // Each map should have at least min_signers number of signing commitments
         for sc in &scs {
             if sc.len() < min_signers as usize {
                 return Err(ValidatePSBTError::InvalidNumberOfSigningCommitments);
@@ -251,7 +251,7 @@ pub fn validate_psbt(
     }
 
     // Check if we have enough round 2 partial sigs
-    // TODO is this neccecary? Will signing fail?
+    // TODO is this necessary? Will signing fail?
     let sigs = psbt.inputs.iter().map(|i| i.all_partial_signatures()).collect::<Vec<_>>();
     if flags & ROUND2 == ROUND2 {
         // if any of the maps have min signers we should fail
@@ -281,7 +281,7 @@ pub fn validate_psbt(
                 return Err(ValidatePSBTError::FrostIdMismatch);
             }
         }
-        // Lastly the signers should ensure they are infact in the signing group before providing
+        // Lastly the signers should ensure they are in fact in the signing group before providing
         // partial sigs That should be done outside the context of this function
     }
 
@@ -527,7 +527,7 @@ mod util_tests {
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
-        // Should fail ROUND2_TRANSITION since we havent added other signers signing commit
+        // Should fail ROUND2_TRANSITION since we haven't added other signers signing commit
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
@@ -785,7 +785,7 @@ mod util_tests {
             ]
         );
 
-        // Should stip 0x prefix
+        // Should strip 0x prefix
         let valid_eth_address = "0x0123456789abcdef0123456789abcdef01234567".to_string();
         let result = parse_eth_address(valid_eth_address);
         assert!(result.is_ok());

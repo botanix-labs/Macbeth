@@ -139,7 +139,7 @@ where
         &self,
         eth_tweak: &[u8; 20],
     ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
-        // try to get pk package from db incase we already did dkg round 3
+        // try to get pk package from db in case we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
             let agg_key = pk_package
                 .verifying_key()
@@ -159,7 +159,7 @@ where
     }
 
     pub(crate) fn get_public_key(&self) -> Result<frost::VerifyingKey, CoordinatorError> {
-        // try to get pk package from db incase we already did dkg round 3
+        // try to get pk package from db in case we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
             return Ok(pk_package.verifying_key().to_owned());
         }
@@ -243,7 +243,7 @@ where
         let selected = selection
             .selected
             .iter()
-            .map(|u| available_utxos.get(&OutPoint::from_bdk(u.outpoint())))
+            .map(|s| available_utxos.get(&OutPoint::from_bdk(s.outpoint())))
             .filter_map(|s| if s.is_some() { s } else { None })
             .collect::<Vec<_>>();
         let change = match selection.excess {
@@ -314,7 +314,7 @@ where
         Err(CoordinatorError::CouldNotFindPsbt)
     }
 
-    /// Retruns finalized and ready to broadcast tx
+    /// Returns finalized and ready to broadcast tx
     pub(crate) async fn finalize_signing(
         &self,
         signing_session_id: &[u8; 32],
@@ -404,7 +404,7 @@ where
             }
             pegout_reqs
         };
-        // TODO adding tracked and remove pending sould be a atomic
+        // TODO adding tracked and remove pending should be a atomic
         // After signing these pegouts are no longer pending, instead they are tracked in the case
         // of a reorg or mempool drop
         self.add_tracked_tx(tx, &pegout_reqs, tx_timestamp).await?;

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct PegoutId {
     /// TxHash of the botanix tx.
     pub txid: [u8; 32],
-    /// Index of the log that includes the pegout request within this tx reciept.
+    /// Index of the log that includes the pegout request within this tx receipt.
     pub idx: u32,
 }
 

@@ -227,7 +227,7 @@ where
         &self,
         psbt: &mut Psbt,
     ) -> Result<(), SigningRound2Error> {
-        // Important note here is that we never re-use the same nonce pairs for a different signing
+        // Important note here is that we never reuse the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
         // to provide new ones
         let key_package =
@@ -268,7 +268,7 @@ where
             }
         }
 
-        // Get a parital sig for each input
+        // Get a partial signature for each input
         for (index, (signing_package, psbt_in)) in
             signing_packages.iter_mut().zip(psbt.inputs.iter_mut()).enumerate()
         {

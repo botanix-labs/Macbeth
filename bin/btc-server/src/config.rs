@@ -188,7 +188,7 @@ pub(crate) struct Config {
     /// The bitcoin L1 network
     pub(crate) btc_network: bitcoin::Network,
     /// Frost participant identifier. Should be your index into the chain.toml federation pk list
-    /// for exmaple if you are the first signer in the chain.toml you should use 0
+    /// for example if you are the first signer in the chain.toml you should use 0
     pub(crate) identifier: u16,
     /// Address to bind to.
     pub(crate) address: String,

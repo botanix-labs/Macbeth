@@ -32,14 +32,14 @@ where
         &self,
     ) -> Result<BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>, DKGError> {
         // Already have done dkg
-        // This function shold error
+        // This function should error
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
 
         if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
             // Retrieve round 1 packages from peers
-            // Here we dont check we have enough that should be done by the frost lib
+            // Here we don't check we have enough that should be done by the frost lib
             // So we just propogate the error
             let round1_packages = self.db.get_round1_dkg_packages()?;
 
@@ -55,7 +55,7 @@ where
 
     pub(crate) fn get_round1_dkg(&self) -> Result<frost::keys::dkg::round1::Package, DKGError> {
         // Already have done dkg
-        // This function shold error
+        // This function should error
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }

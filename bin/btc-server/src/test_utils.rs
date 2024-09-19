@@ -182,7 +182,7 @@ pub mod test_utils {
             btc_signing_server_jwt_secret: None,
             bitcoind_client: mock_bitcoind,
             fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
-            // This config doesnt matter since we are setting app up manually
+            // This config doesn't matter since we are setting app up manually
             // Normally this would be read from a config file
             config: Config {
                 db: temp_dir.path().join("db.db"),
@@ -257,7 +257,7 @@ pub mod test_utils {
             previous_output: OutPoint::new(Txid::from_byte_array([0u8; 32]), 0xFFFFFFFF),
             script_sig: bitcoin::Script::builder()
                 .push_opcode(bitcoin::opcodes::all::OP_PUSHBYTES_3)
-                // This harcodes the height of the block. Could change in the future
+                // This hardcodes the height of the block. Could change in the future
                 .push_slice(&[10u8; 3])
                 .into_script(),
             sequence: bitcoin::Sequence::MAX,
