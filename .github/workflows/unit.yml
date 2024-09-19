@@ -55,7 +55,7 @@ jobs:
         run: |
           cargo nextest run \
             --locked --features "ethereum" \
-            --workspace --exclude examples --exclude ef-tests \
+            --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude test-suite --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
 
   state:
@@ -105,7 +105,6 @@ jobs:
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
-
 
   unit-success:
     name: unit success
