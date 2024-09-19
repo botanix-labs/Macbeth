@@ -19,7 +19,7 @@ pub mod test_utils {
     use url::Url;
 
     use crate::{
-        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, App
+        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, App,
     };
 
     #[macro_export]

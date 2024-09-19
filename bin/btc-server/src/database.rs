@@ -529,10 +529,14 @@ impl Db {
     }
 
     /// Get a pending pegout by id
-    pub fn get_pending_pegout(&self, id: &PegoutId) -> Result<Option<pegout_scheduler::PegoutRequest>, Error> {
-        Ok(self.pending_pegouts.get(id.as_bytes())?.map(|b| {
-            ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")
-        }))
+    pub fn get_pending_pegout(
+        &self,
+        id: &PegoutId,
+    ) -> Result<Option<pegout_scheduler::PegoutRequest>, Error> {
+        Ok(self
+            .pending_pegouts
+            .get(id.as_bytes())?
+            .map(|b| ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")))
     }
 
     /// Get all pending pegouts

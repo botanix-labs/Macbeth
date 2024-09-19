@@ -301,8 +301,8 @@ impl PegoutScheduler {
 
     /// Remove a tx from the tracked set.
     /// This should be called when a tracked tx is reorged or dropped from the mempool.
-    /// Its expected the caller will add the pegout outputs back to the pending pegout set. This is not done by this function
-    /// Note: will panic if provided txid is not tracked
+    /// Its expected the caller will add the pegout outputs back to the pending pegout set. This is
+    /// not done by this function Note: will panic if provided txid is not tracked
     fn un_track_tx(&mut self, txid: &Txid) -> Result<(), database::Error> {
         let tx = self.txs.get(txid).expect("relevant tx should exist");
         for input in tx.inputs() {
