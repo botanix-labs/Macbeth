@@ -602,6 +602,13 @@ clean-btc-server-2:
 	cd bin/btc-server && \
 	rm -rf "db2"
 
+make clean-all:
+	make clean-btc-server-1
+	make clean-btc-server-2
+	make clean-poa-1
+	make clean-poa-2
+	make clean-rpc
+
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
