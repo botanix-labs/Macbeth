@@ -88,7 +88,8 @@ pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> Scrip
     // Note that the public key is already tweaked with the eth address and the taptree merkel root
     // so we can use the dangerous_assume_tweaked method to create the script
     // In the case of a change output being created no eth address tweak is provided
-    let xonly = bitcoin::XOnlyPublicKey::from_slice(&public_key.serialize()).unwrap();
+    let xonly =
+        bitcoin::XOnlyPublicKey::from_slice(&public_key.x_only_public_key().0.serialize()).unwrap();
     let tweaked_pk = TweakedPublicKey::dangerous_assume_tweaked(xonly);
     bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
 }
