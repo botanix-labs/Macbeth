@@ -161,8 +161,8 @@ impl<E> ExecutionStage<E> {
 
         // If we're not executing MerkleStage from scratch (by threshold or first-sync), then erase
         // changeset related pruning configurations
-        if !(max_block - start_block > self.external_clean_threshold ||
-            provider.count_entries::<tables::AccountsTrie>()?.is_zero())
+        if !(max_block - start_block > self.external_clean_threshold
+            || provider.count_entries::<tables::AccountsTrie>()?.is_zero())
         {
             prune_modes.account_history = None;
             prune_modes.storage_history = None;
@@ -207,8 +207,8 @@ where
         let static_file_provider = provider.static_file_provider();
 
         // We only use static files for Receipts, if there is no receipt pruning of any kind.
-        let static_file_producer = if self.prune_modes.receipts.is_none() &&
-            self.prune_modes.receipts_log_filter.is_empty()
+        let static_file_producer = if self.prune_modes.receipts.is_none()
+            && self.prune_modes.receipts_log_filter.is_empty()
         {
             debug!(target: "sync::stages::execution", start = start_block, "Preparing static file producer");
             let mut producer = prepare_static_file_producer(provider, start_block)?;
@@ -405,7 +405,7 @@ where
         if range.is_empty() {
             return Ok(UnwindOutput {
                 checkpoint: input.checkpoint.with_block_number(input.unwind_to),
-            })
+            });
         }
 
         // Unwind account and storage changesets, as well as receipts.
@@ -538,8 +538,8 @@ fn execution_checkpoint(
                 block_range: CheckpointBlockRange { from: start_block, to: max_block },
                 progress: EntitiesCheckpoint {
                     processed,
-                    total: processed +
-                        calculate_gas_used_from_headers(provider, start_block..=max_block)?,
+                    total: processed
+                        + calculate_gas_used_from_headers(provider, start_block..=max_block)?,
                 },
             }
         }
@@ -661,8 +661,8 @@ mod tests {
     use reth_evm_ethereum::{create_noop_executor_provider, execute::EthExecutorProvider};
     use reth_execution_errors::BlockValidationError;
     use reth_primitives::{
-        address, hex_literal::hex, keccak256, Account, Address, Bytecode, SealedBlock,
-        StorageEntry, B256, U256,
+        address, extra_data_header::ExtraDataHeader, header_ext::HeaderExt, hex_literal::hex,
+        keccak256, Account, Address, Bytecode, SealedBlock, StorageEntry, B256, U256,
     };
     use reth_provider::{
         test_utils::create_test_provider_factory, AccountReader, ReceiptProvider,
@@ -989,7 +989,12 @@ mod tests {
         let mut genesis_rlp = hex!("f901faf901f5a00000000000000000000000000000000000000000000000000000000000000000a01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa045571b40ae66ca7480791bbb2887286e4e4c4b1b298b191c889d6959023a32eda056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421b901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000083020000808502540be400808000a00000000000000000000000000000000000000000000000000000000000000000880000000000000000c0c0").as_slice();
         let genesis = SealedBlock::decode(&mut genesis_rlp).unwrap();
         let mut block_rlp = hex!("f90262f901f9a075c371ba45999d87f4542326910a11af515897aebce5265d3f6acd1f1161f82fa01dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347942adc25665018aa1fe0e6bc666dac8fc2697ff9baa098f2dcd87c8ae4083e7017a05456c14eea4b1db2032126e27b3b1563d57d7cc0a08151d548273f6683169524b66ca9fe338b9ce42bc3540046c828fd939ae23bcba03f4e5c2ec5b2170b711d97ee755c160457bb58d8daa338e835ec02ae6860bbabb901000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000083020000018502540be40082a8798203e800a00000000000000000000000000000000000000000000000000000000000000000880000000000000000f863f861800a8405f5e10094100000000000000000000000000000000000000080801ba07e09e26678ed4fac08a249ebe8ed680bf9051a5e14ad223e4b2b9d26e0208f37a05f6e3f188e3e6eab7d7d3b6568f5eac7d687b08d307d3154ccd8c87b4630509bc0").as_slice();
-        let block = SealedBlock::decode(&mut block_rlp).unwrap();
+        let mut block = SealedBlock::decode(&mut block_rlp).unwrap();
+        let edh = ExtraDataHeader::default();
+        let mut header = block.header().clone();
+        header.add_extra_data_header(&edh);
+        block.header = header.seal_slow();
+
         provider.insert_historical_block(genesis.try_seal_with_senders().unwrap()).unwrap();
         provider.insert_historical_block(block.clone().try_seal_with_senders().unwrap()).unwrap();
         provider
