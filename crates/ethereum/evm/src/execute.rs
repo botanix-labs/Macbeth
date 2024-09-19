@@ -818,6 +818,8 @@ mod tests {
     fn eip_4788_non_genesis_call() {
         let mut header =
             Header { timestamp: 1, number: 1, excess_blob_gas: Some(0), ..Header::default() };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         let db = create_state_provider_with_beacon_root_contract();
 
