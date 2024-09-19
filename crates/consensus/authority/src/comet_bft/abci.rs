@@ -108,14 +108,14 @@ where
         }
     }
 
-    pub fn start_server<Pool: TransactionPool + Clone + 'static>(
+    pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
-    ) {
+    ) -> Result<(), tendermint_abci::Error> {
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
 
         let app = ABCIClient::new(
@@ -139,8 +139,7 @@ where
         let server_builder = ServerBuilder::default();
         // server will always bind to default address
         // CometBFT will always run on the same machine and container
-        let server =
-            server_builder.bind(format!("{abci_host}:{abci_port}"), app).expect("build server");
+        let server = server_builder.bind(format!("{abci_host}:{abci_port}"), app)?;
 
         task_executor.spawn_critical(
             "ABCI Client",
@@ -156,6 +155,7 @@ where
                 abci_driver.start().await;
             }),
         );
+        Ok(())
     }
 }
 
