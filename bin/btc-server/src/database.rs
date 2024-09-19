@@ -54,6 +54,7 @@ impl Utxo {
     }
 }
 
+#[derive(Clone)]
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
     /// metadata if we wanted to. But I think it makes sense to have a different
@@ -475,8 +476,8 @@ impl Db {
         Ok(ret)
     }
 
-    pub fn remove_tracked_tx(&self, txid: Txid) -> Result<(), Error> {
-        self.pending_txs.remove(&txid);
+    pub fn remove_tracked_tx(&self, txid: &Txid) -> Result<(), Error> {
+        self.pending_txs.remove(&txid)?;
         Ok(())
     }
 
@@ -524,6 +525,12 @@ impl Db {
         ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
         self.pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
         Ok(())
+    }
+
+    pub fn get_pending_pegout(&self, id: &PegoutId) -> Result<Option<pegout_scheduler::PegoutRequest>, Error> {
+        Ok(self.pegouts.get(id.as_bytes())?.map(|b| {
+            ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")
+        }))
     }
 
     pub fn get_pending_pegouts(&self) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
@@ -645,17 +652,16 @@ impl TryFrom<Utxo> for RpcUtxo {
 mod tests {
     use std::time::SystemTime;
 
-    use crate::{pegout_scheduler::Tx, test_utils::test_utils::{create_n_outputs_tx, create_tx, random_p2wpkh_script}};
+    use crate::{
+        pegout_scheduler::{PegoutRequest, Tx},
+        test_utils::test_utils::{
+            create_n_outputs_tx, create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
+        },
+    };
 
     use super::*;
     use crate::pegout_id::PegoutId;
     use tempfile::TempDir;
-
-    fn setup_db() -> (Db, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Db::open(temp_dir.path()).unwrap();
-        (db, temp_dir)
-    }
 
     #[test]
     fn can_save_and_read_pegout_reqs() {
@@ -672,6 +678,13 @@ mod tests {
         let pegouts = db.get_pending_pegouts().unwrap();
         assert_eq!(pegouts.len(), 1);
         let pegout_req = pegouts.get(0).unwrap();
+        assert_eq!(pegout_req.id, req.id);
+        assert_eq!(pegout_req.spk, req.spk);
+        assert_eq!(pegout_req.value, req.value);
+        assert_eq!(pegout_req.botanix_height, req.botanix_height);
+
+        // Can retrieve by id
+        let pegout_req = db.get_pending_pegout(&pegout_id).unwrap().unwrap();
         assert_eq!(pegout_req.id, req.id);
         assert_eq!(pegout_req.spk, req.spk);
         assert_eq!(pegout_req.value, req.value);
@@ -911,29 +924,34 @@ mod tests {
     fn test_tracked_txs_e2e() {
         let (db, _temp_dir) = setup_db();
         let tx = create_n_outputs_tx(5, 2);
+        let pegout_reqs = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
         let tracked_tx = Tx {
             txid: tx.txid(),
             tx: tx.clone(),
-            pegout_idxs: vec![0],
             change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests: pegout_reqs,
             created: SystemTime::now(),
         };
         db.store_tracked_tx(&tracked_tx).unwrap();
         db.flush().unwrap();
 
         let tx_retrieved = db.get_tracked_txs().unwrap();
-        assert_eq!(tx_retrieved.len(), 1);
         assert_eq!(tx_retrieved[0], tracked_tx);
 
         // Storing the same tx again should not add a new entry
         db.store_tracked_tx(&tracked_tx).unwrap();
         db.flush().unwrap();
         let tx_retrieved = db.get_tracked_txs().unwrap();
-        assert_eq!(tx_retrieved.len(), 1);
         assert_eq!(tx_retrieved[0], tracked_tx);
 
         // Remove the tracked tx
-        db.remove_tracked_tx(tx.txid()).unwrap();
+        db.remove_tracked_tx(&tx.txid()).unwrap();
         db.flush().unwrap();
         let tx_retrieved = db.get_tracked_txs().unwrap();
         assert_eq!(tx_retrieved.len(), 0);
