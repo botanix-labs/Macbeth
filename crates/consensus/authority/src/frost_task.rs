@@ -1,10 +1,9 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
     signing::SigningStateMachine,
-    utils::is_active_sync_in_progress,
     Storage,
 };
 
@@ -210,13 +209,6 @@ where
         }
 
         loop {
-            // ensure the node is not syncing
-            if is_active_sync_in_progress(&self.network_handle) {
-                info!(target: "consensus::authority::frost_task::start_task", " Node is still syncing, frost task is awaiting fully synced status ...");
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
-            }
-
             let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are in turn + initial state + no public key

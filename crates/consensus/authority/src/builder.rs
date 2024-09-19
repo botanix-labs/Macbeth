@@ -10,7 +10,6 @@ use crate::{
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
-use futures_util::StreamExt;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -220,7 +219,7 @@ where
             bitcoin_block_header,
             sk: _,
             network_handle,
-            network_client,
+            network_client: _,
             frost_handle,
             block_import_rx,
             task_executor,

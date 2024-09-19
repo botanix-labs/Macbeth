@@ -25,8 +25,6 @@ pub(crate) fn transactions_signed_from_bytes(
 mod tests {
     use super::*;
     use reth_primitives::TransactionSigned;
-    use std::io::Cursor;
-    use tendermint_rpc::endpoint::tx;
 
     #[test]
     fn test_transactions_signed_from_bytes() {

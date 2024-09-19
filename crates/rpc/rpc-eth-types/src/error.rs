@@ -71,10 +71,13 @@ pub enum EthApiError {
     /// Errors related to invalid transactions
     #[error("error getting the gateway address")]
     GatewayAddress,
+    /// Errors when getting the merkle proof of all utxos from the btc-server
     #[error("error getting the merkle root of all utxos")]
     GetMerkleProof,
+    /// Error when getting the btc fee from the btc-server
     #[error("error getting the btc fee")]
     GetBtcFee,
+    /// Rpc invalid transaction error
     #[error(transparent)]
     InvalidTransaction(#[from] RpcInvalidTransactionError),
     /// Thrown when constructing an RPC block from primitive block data fails

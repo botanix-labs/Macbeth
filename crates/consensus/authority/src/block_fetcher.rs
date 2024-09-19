@@ -1,17 +1,13 @@
 use std::time::{Duration, Instant};
 
 use crate::{engine_util, utils::is_active_sync_in_progress, AuthorityConsensus, Storage};
-use reth_network_api::test_utils::PeersHandleProvider;
-
-use bitcoin::hashes::Hash;
-use comet_bft_rpc::Client;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_eth_wire::NewBlock;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{message::NewBlockMessageWithPeerId, NetworkHandle};
-use reth_network_api::PeerId;
+use reth_network_api::{test_utils::PeersHandleProvider, PeerId};
 use reth_node_ethereum::EthEngineTypes;
 use reth_primitives::{SealedBlockWithSenders, B256};
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};

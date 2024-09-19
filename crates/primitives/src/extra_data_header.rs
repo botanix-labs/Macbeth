@@ -201,13 +201,13 @@ mod tests {
 
     #[test]
     fn create_botanix_testnet_header() {
-        let pk1 = secp256k1::PublicKey::from_slice(
+        let _pk1 = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
                 .unwrap()
                 .as_slice(),
         )
         .unwrap();
-        let pk2 = secp256k1::PublicKey::from_slice(
+        let _pk2 = secp256k1::PublicKey::from_slice(
             hex::decode("02bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710")
                 .unwrap()
                 .as_slice(),

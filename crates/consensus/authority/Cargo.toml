@@ -19,11 +19,9 @@ reth-beacon-consensus = { path = "../beacon" }
 reth-primitives.workspace = true
 reth-execution-errors.workspace = true
 reth-chainspec.workspace = true
-revm-primitives.workspace = true
 reth-evm-ethereum.workspace = true
 reth-provider.workspace = true
 reth-tokio-util.workspace = true
-reth-stages.workspace = true
 reth-revm.workspace = true
 reth-evm.workspace = true
 reth-blockchain-tree-api.workspace = true
@@ -38,11 +36,9 @@ reth-eth-wire = { path = "../../net/eth-wire" }
 reth-node-api.workspace = true
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-transaction-pool.workspace = true
-reth-network-types.workspace = true
 reth-ethereum-payload-builder.workspace = true
 reth-basic-payload-builder.workspace = true
 reth-payload-builder.workspace = true
-reth-node-core.workspace = true
 
 ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
@@ -52,7 +48,6 @@ schnellru.workspace = true
 # async
 futures-util.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
-tokio-stream.workspace = true
 tracing.workspace = true
 
 ## Botanix
@@ -62,6 +57,8 @@ btc-server = {path = "../../../bin/btc-server"}
 
 # CometBFT
 comet-bft-rpc.workspace = true
+
+serde_json.workspace = true
 
 # hex
 hex = "0.4.3"
@@ -92,12 +89,10 @@ thiserror.workspace = true
 # Tendermint 
 tendermint-abci.workspace = true
 tendermint-proto.workspace = true
-tendermint-rpc.workspace = true
 tendermint-light-client.workspace = true
 # compression
 async-compression = {version = "0.4.11", features = ["all"]}
 serde = { version = "1.0", features = ["derive"] }
-serde_json.workspace = true
 strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 

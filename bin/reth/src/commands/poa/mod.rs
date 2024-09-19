@@ -5,7 +5,7 @@ use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
 use client::{Empty, SyncTxIndexRequest};
-use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -242,7 +242,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             debug,
             db,
             bitcoind_config_path,
-            ext,
+            ext: _,
             abci_host,
             abci_port,
             cometbft_rpc_port,
@@ -295,7 +295,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
-        let prometheus_handle = install_prometheus_recorder();
+        let _prometheus_handle = install_prometheus_recorder();
 
         let data_dir =
             datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
@@ -1068,6 +1068,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     }
 }
 
+/// Poa node components needed for the rpc server
+#[allow(missing_debug_implementations)]
 #[derive(Clone)]
 pub struct PoaNodeComponents<P> {
     pool: P,

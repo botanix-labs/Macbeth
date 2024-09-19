@@ -344,7 +344,7 @@ pub(crate) mod authority_execution_utils {
     fn execute<BF>(
         block: &BlockWithSenders,
         client: &(impl StateProviderFactory + BlockReaderIdExt),
-        block_builder_address: Option<Address>,
+        _block_builder_address: Option<Address>,
         bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<ChainSpec>,

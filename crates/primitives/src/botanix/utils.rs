@@ -102,12 +102,12 @@ mod test {
     #[test]
     fn test_satoshi_in_wei() {
         assert_eq!(SATOSHI_IN_WEI, U256::from(10_i64.pow(10)));
-        assert_eq!(Amount::max_value().to_wei(), MAX_SATOSHI * SATOSHI_IN_WEI);
+        assert_eq!(Amount::MAX.to_wei(), MAX_SATOSHI * SATOSHI_IN_WEI);
     }
 
     #[test]
     fn test_amount_wei_conversion() {
-        let max = Amount::max_value();
+        let max = Amount::MAX;
         assert_eq!(max, Amount::from_wei(max.to_wei()).unwrap());
         assert!(Amount::from_wei_floor(max.to_wei() + SATOSHI_IN_WEI).is_none());
 

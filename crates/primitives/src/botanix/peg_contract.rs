@@ -283,6 +283,7 @@ mod tests {
         absolute::LockTime, block::Version, hash_types::TxMerkleNode, hashes::Hash, Amount,
         BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
     };
+    use revm_primitives::hex;
 
     #[test]
     fn serialize_pegin_metadata() {

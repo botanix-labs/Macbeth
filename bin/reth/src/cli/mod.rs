@@ -97,6 +97,7 @@ impl Cli {
 }
 
 impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
+    /// Runs a command using a launcer with context
     pub fn run<L, Fut>(mut self, launcher: L) -> eyre::Result<()>
     where
         L: FnOnce(WithLaunchContext<NodeBuilder<Arc<DatabaseEnv>>>, Ext) -> Fut,
