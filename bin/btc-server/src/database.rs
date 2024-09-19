@@ -79,7 +79,7 @@ pub struct Db {
     /// A tree of PSBTs
     ///
     /// Indexed by signing_session_id
-    /// round 1 signing commitments and round 2 partial signatures are commited inside the psbt
+    /// round 1 signing commitments and round 2 partial signatures are committed inside the psbt
     /// Only relevant for the coordinator
     psbt: sled::Tree,
 
@@ -136,7 +136,7 @@ impl Db {
 
     /// Get PSBT from the database.
     /// Returns None if the PSBT is not found.
-    /// Rertieves psbt using signing_session_id
+    /// Rertrieves psbt using signing_session_id
     pub fn get_psbt(&self, signing_session_id: &[u8; 32]) -> Result<Option<Psbt>, Error> {
         if let Some(b) = self.psbt.get(&signing_session_id[..])? {
             let ret = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
@@ -815,7 +815,7 @@ mod tests {
 
         db.clear_utxos().unwrap();
         db.flush().unwrap();
-        // shouldnt have any utxos
+        // shouldn't have any utxos
         let retrieved_utxos = db.get_all_utxos().unwrap();
         assert!(retrieved_utxos.is_empty());
     }
@@ -841,7 +841,7 @@ mod tests {
         let selected_utxos = utxos.iter().take(2).collect::<Vec<&Utxo>>();
         db.reset_utxos(&selected_utxos).unwrap();
         db.flush().unwrap();
-        // shouldnt have any utxos
+        // shouldn't have any utxos
         let retrieved_utxos = db.get_all_utxos().unwrap();
         assert!(!retrieved_utxos.is_empty());
         assert!(retrieved_utxos.len() == 2);

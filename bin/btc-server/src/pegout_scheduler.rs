@@ -57,12 +57,12 @@ pub struct Tx {
     pub txid: Txid,
     /// The broadcasted transaction on L1
     pub tx: Transaction,
-    /// Which indecies in `tx.output` are pegouts
+    /// Which indices in `tx.output` are pegouts
     pub pegout_idxs: Vec<usize>,
     /// List of pegout requests that this tx is delivering
     /// the size of this vec is equal to the length of pegout_idxs
     pub pegout_requests: Vec<PegoutRequest>,
-    /// Which indecies in `tx.output` are change back to the federation wallet
+    /// Which indices in `tx.output` are change back to the federation wallet
     pub change_idxs: Vec<usize>,
     /// When this transaction was created
     pub created: SystemTime,
@@ -158,7 +158,7 @@ pub struct PegoutScheduler {
     conf_window: u32,
     /// The set of txs we are tracking.
     /// The purpose of tracking the txs is to detect when they have
-    /// suffciently deep confirmations on L1. Once they do change outputs may
+    /// sufficientlydeep confirmations on L1. Once they do change outputs may
     /// be added to the UTXO set as a spendable output
     /// If a tracked tx is reorged or dropped from the mempool the application must
     /// Add the non-change outputs back to the pending pegouts set.
@@ -170,7 +170,7 @@ pub struct PegoutScheduler {
     txs_by_pegout: HashMap<TxOut, Vec<Txid>>,
     /// The txs that are confirmed but not finalized yet.
     confirmed_txs: HashSet<Txid>,
-    /// The last [conf_window] blocks we have seen. This data strucutre
+    /// The last [conf_window] blocks we have seen. This data structure
     /// includes txs and inputs that are relevant to the txs we are tracking.
     last_blocks: VecDeque<BlockInfo>,
     /// The last block that was finalized.  
@@ -312,7 +312,7 @@ impl PegoutScheduler {
             self.txs_by_pegout.remove(&txout);
         }
         self.txs.remove(txid);
-        // Need to remove from the databse as well
+        // Need to remove from the database as well
         self.db.remove_tracked_tx(txid)?;
         Ok(())
     }
@@ -873,7 +873,7 @@ mod tests {
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
 
         let tracked_tx = pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
-        // Add to db as wel
+        // Add to db as well
         db.store_tracked_tx(&tracked_tx).unwrap();
         assert_eq!(pegout_scheduler.txs.len(), 1);
 

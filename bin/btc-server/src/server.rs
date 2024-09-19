@@ -354,7 +354,7 @@ where
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
         let res = tonic::Response::new(rpc::SigningPackage {
-            // indentifier really doent matter here.
+            // identifier really doent matter here.
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
@@ -550,7 +550,7 @@ where
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
         if self.db.get_public_key_package()?.is_some() {
-            warn!("recieved notification about round 2 DKG while having key package");
+            warn!("receivednotification about round 2 DKG while having key package");
             return Err(already_exists!("already have key package"));
         }
 

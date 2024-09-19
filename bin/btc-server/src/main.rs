@@ -513,7 +513,7 @@ mod test {
         assert!(pkgs.contains_key(&frost_id!(2)));
         assert!(pkgs.contains_key(&frost_id!(3)));
         assert_eq!(pkgs.len(), 2);
-        // Note here that we explicity do not store our own round 1 package in db
+        // Note here that we explicitly do not store our own round 1 package in db
 
         // Try to add one more participant
         let extra =
@@ -950,7 +950,7 @@ mod test {
             height: 1,
         });
 
-        // Notifying with the same pegout id shouldnt make a difference
+        // Notifying with the same pegout id shouldn't make a difference
         app.notify_pegout(request_2).await.expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts.len(), 1);
