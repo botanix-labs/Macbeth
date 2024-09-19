@@ -8070,7 +8070,6 @@ dependencies = [
  "tendermint-abci",
  "tendermint-light-client",
  "tendermint-proto",
- "tendermint-rpc",
  "thiserror",
  "tokio",
  "tonic",
