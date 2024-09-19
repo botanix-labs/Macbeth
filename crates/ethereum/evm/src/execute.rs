@@ -907,13 +907,15 @@ mod tests {
     fn eip_4788_no_code_cancun() {
         // This test ensures that we "silently fail" when cancun is active and there is no code at
         // // BEACON_ROOTS_ADDRESS
-        let header = Header {
+        let mut header = Header {
             timestamp: 1,
             number: 1,
             parent_beacon_block_root: Some(B256::with_last_byte(0x69)),
             excess_blob_gas: Some(0),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         let db = StateProviderTest::default();
 
