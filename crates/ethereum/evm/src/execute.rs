@@ -1092,7 +1092,7 @@ mod tests {
     fn eip_4788_high_base_fee() {
         // This test ensures that if we have a base fee, then we don't return an error when the
         // system contract is called, due to the gas price being less than the base fee.
-        let header = Header {
+        let mut header = Header {
             timestamp: 1,
             number: 1,
             parent_beacon_block_root: Some(B256::with_last_byte(0x69)),
@@ -1100,6 +1100,8 @@ mod tests {
             excess_blob_gas: Some(0),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         let db = create_state_provider_with_beacon_root_contract();
 
