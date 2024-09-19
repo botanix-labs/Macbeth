@@ -578,6 +578,14 @@ start-poa-server-2:
 	--port 30304 \
 	--abci-port=36658
 
+start-cometbft-nodes:
+	cd cometbft-local && \
+	docker compose up -f docker-compose-cometbft-local.yml --build -d 
+
+clean-cometbft-nodes:
+	cd cometbft-local && \
+	docker compose down -f docker-compose-cometbft-local.yml
+
 clean-poa-2:
 	cd ${NODE_2_DIR} && \
 	rm -rf "${NODE_2_DIR}/db" && \

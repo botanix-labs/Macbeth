@@ -105,11 +105,12 @@ make start-btc-server-1
 make start-btc-server-2
 ```
 
-4. Start the 2 botanix nodes as follows:
+4. Start the 2 botanix nodes together with the cometbft consensus nodes as follows:
 
 ```bash
 make start-poa-server-1
 make start-poa-server-2
+make start-cometbft-nodes
 ```
 
 where `[PATH_TO_NODE1]` and `[PATH_TO_NODE2]` are the absolute paths to the locations where the node configurations are stored. Wait for the nodes to start and connect to the bitcoind server. Usually takes around ~10secs.
