@@ -1347,13 +1347,15 @@ mod tests {
         let provider = executor_provider(chain_spec);
         let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
 
-        let header = Header {
+        let mut header = Header {
             parent_hash: B256::random(),
             timestamp: 1,
             number: fork_activation_block,
             requests_root: Some(EMPTY_ROOT_HASH),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         // attempt to execute the fork activation block, this should not fail
         executor
