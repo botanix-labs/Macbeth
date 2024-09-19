@@ -27,7 +27,7 @@ const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
 /// sled tree id for the pending txs
-const TREE_PENDING_TXS: &[u8; 10] = b"pendingtxs";
+const TREE_TRACKED_TXS: &[u8; 10] = b"trackedtxs";
 
 /// sled key for the UTXO merkle tree root
 const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
@@ -83,15 +83,15 @@ pub struct Db {
     /// Only relevant for the coordinator
     psbt: sled::Tree,
 
-    /// A tree of pending txs, serialized as the [pegoutTx::Tx] format.
+    /// A tree of tracked txs, serialized as the [pegoutScheduler::Tx] format.
     ///
     /// Indexed by txid.
-    pending_txs: sled::Tree,
+    tracked_txs: sled::Tree,
 
     /// A tree of pending pegout requests, serialized as the [pegouts::PegoutRequest] format.
     ///
     /// Indexed by the [PegoutRequest::id] inspector.
-    pegouts: sled::Tree,
+    pending_pegouts: sled::Tree,
 }
 
 impl Db {
@@ -102,8 +102,8 @@ impl Db {
             round1_dkg_packages: db.open_tree(TREE_ROUND1_DKG_PERSONAL_PACKAGE)?,
             round2_dkg_packages: db.open_tree(TREE_ROUND2_DKG_PERSONAL_PACKAGE)?,
             psbt: db.open_tree(TREE_PSBT)?,
-            pending_txs: db.open_tree(TREE_PENDING_TXS)?,
-            pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
+            tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
+            pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             db,
         })
     }
@@ -114,8 +114,8 @@ impl Db {
         self.round1_dkg_packages.flush()?;
         self.round2_dkg_packages.flush()?;
         self.psbt.flush()?;
-        self.pending_txs.flush()?;
-        self.pegouts.flush()?;
+        self.tracked_txs.flush()?;
+        self.pending_pegouts.flush()?;
         Ok(())
     }
 
@@ -461,14 +461,14 @@ impl Db {
     pub fn store_tracked_tx(&self, tx: &pegout_scheduler::Tx) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
-        self.pending_txs.insert(tx.txid, &bytes[..])?;
+        self.tracked_txs.insert(tx.txid, &bytes[..])?;
         Ok(())
     }
 
     /// Get list of txs that we are tracking for the pegout scheduler.
     pub fn get_tracked_txs(&self) -> Result<Vec<pegout_scheduler::Tx>, Error> {
         let mut ret = Vec::new();
-        for res in self.pending_txs.iter() {
+        for res in self.tracked_txs.iter() {
             let (_k, v) = res?;
             let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
             ret.push(tx);
@@ -477,7 +477,7 @@ impl Db {
     }
 
     pub fn remove_tracked_tx(&self, txid: &Txid) -> Result<(), Error> {
-        self.pending_txs.remove(&txid)?;
+        self.tracked_txs.remove(&txid)?;
         Ok(())
     }
 
@@ -520,22 +520,25 @@ impl Db {
         }))
     }
 
+    /// Store a pending pegout
     pub fn store_pending_pegout(&self, req: &pegout_scheduler::PegoutRequest) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
-        self.pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
+        self.pending_pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
         Ok(())
     }
 
+    /// Get a pending pegout by id
     pub fn get_pending_pegout(&self, id: &PegoutId) -> Result<Option<pegout_scheduler::PegoutRequest>, Error> {
-        Ok(self.pegouts.get(id.as_bytes())?.map(|b| {
+        Ok(self.pending_pegouts.get(id.as_bytes())?.map(|b| {
             ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")
         }))
     }
 
+    /// Get all pending pegouts
     pub fn get_pending_pegouts(&self) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
         let mut ret = Vec::new();
-        for res in self.pegouts.iter() {
+        for res in self.pending_pegouts.iter() {
             let (_k, v) = res?;
             let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
             ret.push(tx);
@@ -546,7 +549,7 @@ impl Db {
     /// Removes pending pegouts from the database.
     pub fn remove_pending_pegout(&self, pegout_ids: &Vec<PegoutId>) -> Result<(), Error> {
         for pegout_id in pegout_ids.iter() {
-            self.pegouts.remove(&pegout_id.as_bytes()[..]);
+            self.pending_pegouts.remove(&pegout_id.as_bytes()[..])?;
         }
         Ok(())
     }
@@ -661,7 +664,6 @@ mod tests {
 
     use super::*;
     use crate::pegout_id::PegoutId;
-    use tempfile::TempDir;
 
     #[test]
     fn can_save_and_read_pegout_reqs() {
