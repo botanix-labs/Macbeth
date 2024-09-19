@@ -405,7 +405,8 @@ where
             pegout_reqs
         };
         // TODO adding tracked and remove pending sould be a atomic
-        // After signing these pegouts are no longer pending, instead they are tracked in the case of a reorg or mempool drop
+        // After signing these pegouts are no longer pending, instead they are tracked in the case
+        // of a reorg or mempool drop
         self.add_tracked_tx(tx, &pegout_reqs, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegout_ids)?;
         self.db.flush()?;
