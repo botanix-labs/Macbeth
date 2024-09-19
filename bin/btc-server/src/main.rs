@@ -42,6 +42,7 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use config::Config;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
+use pegout_scheduler::PegoutRequest;
 use rand::thread_rng;
 use rpc::FILE_DESCRIPTOR_SET;
 use shutdown::{stop_signal, StopHandle};
@@ -127,10 +128,10 @@ where
         if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
             let txs = db.get_tracked_txs()?;
             info!("Loaded pegout scheduler with {} pending txs", txs.len());
-            Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest))
+            Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest, db.clone()))
         } else {
             info!("No finalized block found, using fallback checkpoint: {}", fallback_checkpoint);
-            Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint))
+            Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint, db.clone()))
         }
     }
 
@@ -314,7 +315,7 @@ where
     pub async fn add_tracked_tx(
         &self,
         tx: Transaction,
-        targets: &[TxOut],
+        targets: &[PegoutRequest],
         timestamp: SystemTime,
     ) -> Result<(), database::Error> {
         let mut txindex = self.pegout_scheduler.lock().await;

@@ -385,9 +385,6 @@ where
             .filter(|o| o.script_pubkey != change_script)
             .cloned()
             .collect::<Vec<_>>();
-        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        self.add_tracked_tx(tx, &targets, tx_timestamp).await?;
-
         let pegout_ids = psbt
             .outputs
             .iter()
@@ -395,6 +392,21 @@ where
             .filter(|o| o.is_some())
             .map(|o| PegoutId::from_bytes(&o.unwrap()).expect("valid pegout id"))
             .collect::<Vec<_>>();
+        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
+        let pegout_reqs = {
+            let mut pegout_reqs = Vec::new();
+            for pegout_id in pegout_ids.iter() {
+                pegout_reqs.push(
+                    self.db
+                        .get_pending_pegout(pegout_id)?
+                        .ok_or(CoordinatorError::CouldNotFindPsbt)?,
+                );
+            }
+            pegout_reqs
+        };
+        // TODO adding tracked and remove pending sould be a atomic
+        // After signing these pegouts are no longer pending, instead they are tracked in the case of a reorg or mempool drop
+        self.add_tracked_tx(tx, &pegout_reqs, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegout_ids)?;
         self.db.flush()?;
 

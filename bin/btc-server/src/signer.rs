@@ -341,14 +341,8 @@ where
                 Ok(tx) => tx,
                 Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
             };
-        let targets = tx
-            .output
-            .iter()
-            .filter(|o| o.script_pubkey != change_script)
-            .cloned()
-            .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        self.add_tracked_tx(tx, &targets, tx_timestamp).await?;
+        self.add_tracked_tx(tx, &pending_pegouts, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegouts_ids)?;
         self.db.flush()?;
 
