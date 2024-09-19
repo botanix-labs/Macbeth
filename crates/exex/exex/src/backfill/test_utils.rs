@@ -7,8 +7,9 @@ use reth_evm::execute::{
 };
 use reth_evm_ethereum::create_noop_executor_provider;
 use reth_primitives::{
-    b256, constants::ETH_TO_WEI, Address, Block, BlockWithSenders, Genesis, GenesisAccount, Header,
-    Receipt, Requests, SealedBlockWithSenders, Transaction, TxEip2930, TxKind, U256,
+    b256, constants::ETH_TO_WEI, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
+    Address, Block, BlockWithSenders, Genesis, GenesisAccount, Header, Receipt, Requests,
+    SealedBlockWithSenders, Transaction, TxEip2930, TxKind, U256,
 };
 use reth_provider::{BlockWriter as _, ExecutionOutcome, LatestStateProviderRef, ProviderFactory};
 use reth_revm::database::StateProviderDatabase;
@@ -87,18 +88,19 @@ fn blocks(
     key_pair: Keypair,
 ) -> eyre::Result<(BlockWithSenders, BlockWithSenders)> {
     // First block has a transaction that transfers some ETH to zero address
+    let mut header = Header {
+        parent_hash: chain_spec.genesis_hash(),
+        receipts_root: b256!("d3a6acf9a244d78b33831df95d472c4128ea85bf079a1d41e32ed0b7d2244c9e"),
+        difficulty: chain_spec.fork(EthereumHardfork::Paris).ttd().expect("Paris TTD"),
+        number: 1,
+        gas_limit: 21000,
+        gas_used: 21000,
+        ..Default::default()
+    };
+    let edh = ExtraDataHeader::default();
+    header.add_extra_data_header(&edh);
     let block1 = Block {
-        header: Header {
-            parent_hash: chain_spec.genesis_hash(),
-            receipts_root: b256!(
-                "d3a6acf9a244d78b33831df95d472c4128ea85bf079a1d41e32ed0b7d2244c9e"
-            ),
-            difficulty: chain_spec.fork(EthereumHardfork::Paris).ttd().expect("Paris TTD"),
-            number: 1,
-            gas_limit: 21000,
-            gas_used: 21000,
-            ..Default::default()
-        },
+        header,
         body: vec![sign_tx_with_key_pair(
             key_pair,
             Transaction::Eip2930(TxEip2930 {
@@ -117,18 +119,19 @@ fn blocks(
     .ok_or_eyre("failed to recover senders")?;
 
     // Second block resends the same transaction with increased nonce
+    let mut header = Header {
+        parent_hash: block1.header.hash_slow(),
+        receipts_root: b256!("d3a6acf9a244d78b33831df95d472c4128ea85bf079a1d41e32ed0b7d2244c9e"),
+        difficulty: chain_spec.fork(EthereumHardfork::Paris).ttd().expect("Paris TTD"),
+        number: 2,
+        gas_limit: 21000,
+        gas_used: 21000,
+        ..Default::default()
+    };
+    let edh = ExtraDataHeader::default();
+    header.add_extra_data_header(&edh);
     let block2 = Block {
-        header: Header {
-            parent_hash: block1.header.hash_slow(),
-            receipts_root: b256!(
-                "d3a6acf9a244d78b33831df95d472c4128ea85bf079a1d41e32ed0b7d2244c9e"
-            ),
-            difficulty: chain_spec.fork(EthereumHardfork::Paris).ttd().expect("Paris TTD"),
-            number: 2,
-            gas_limit: 21000,
-            gas_used: 21000,
-            ..Default::default()
-        },
+        header,
         body: vec![sign_tx_with_key_pair(
             key_pair,
             Transaction::Eip2930(TxEip2930 {
