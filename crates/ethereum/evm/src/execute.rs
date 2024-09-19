@@ -707,8 +707,8 @@ where
             requests,
             gas_used: _,
             total_block_fees: _,
-            pegins,
-            pegouts,
+            pegins: _,
+            pegouts: _,
         } = self.executor.execute_without_verification(block, total_difficulty)?; // TODO: check block address
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;

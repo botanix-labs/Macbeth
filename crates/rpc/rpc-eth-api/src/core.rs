@@ -347,12 +347,15 @@ pub trait EthApi {
         block_number: Option<BlockId>,
     ) -> RpcResult<EIP1186AccountProofResponse>;
 
+    /// Method to get the gateway address
     #[method(name = "getGatewayAddress")]
     async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>>;
 
+    /// Method to get the merkle proof from the db
     #[method(name = "getMerkleProof")]
     async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes>;
 
+    /// Method to get the btc fee rate
     #[method(name = "getBtcFeeRate")]
     async fn get_btc_fee_rate(&self) -> RpcResult<Option<U256>>;
 }

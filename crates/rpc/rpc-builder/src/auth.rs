@@ -9,7 +9,6 @@ use jsonrpsee::{
 };
 use reth_engine_primitives::EngineTypes;
 pub use reth_ipc::server::Builder as IpcServerBuilder;
-use reth_network_api::NetworkInfo;
 use reth_rpc_api::servers::*;
 use reth_rpc_eth_types::EthSubscriptionIdProvider;
 use reth_rpc_layer::{

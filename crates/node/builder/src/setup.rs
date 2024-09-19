@@ -89,8 +89,8 @@ pub fn build_pipeline<DB, H, B, Executor, BF>(
     static_file_producer: StaticFileProducer<DB>,
     executor: Executor,
     exex_manager_handle: ExExManagerHandle,
-    bitcoind_factory: BF,
-    bitcoin_network: bitcoin::Network,
+    _bitcoind_factory: BF,
+    _bitcoin_network: bitcoin::Network,
 ) -> eyre::Result<Pipeline<DB>>
 where
     DB: Database + Clone + 'static,

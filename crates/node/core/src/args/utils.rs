@@ -52,15 +52,6 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
         info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
-        // TODO: remove unused code
-        let public_keys = genesis_toml_config
-            .federation_member_public_key
-            .iter()
-            .map(|key| {
-                secp256k1::PublicKey::from_str(&key.key).expect("Invalid hex string for PublicKey")
-            })
-            .collect::<Vec<secp256k1::PublicKey>>();
-
         let extra_data_header = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             CHAIN_VERSION,
@@ -192,15 +183,6 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             // our own toml format
             let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
             let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
-
-            let public_keys = genesis_toml_config
-                .federation_member_public_key
-                .iter()
-                .map(|key| {
-                    secp256k1::PublicKey::from_str(&key.key)
-                        .expect("Invalid hex string for PublicKey")
-                })
-                .collect::<Vec<secp256k1::PublicKey>>();
 
             let extra_data_header = ExtraDataHeader::new(
                 EXTRA_HEADER_VERSION,

@@ -24,8 +24,10 @@ pub trait EthBotanixApi: EthApiTypes {
            + ChainSpecProvider<ChainSpec = ChainSpec>
            + StateProviderFactory;
 
+    /// Returns a handle to the botanix provider
     fn botanix_provider(&self) -> &Botanix;
 
+    /// Retrives the gateway address for deposits
     fn get_gateway_address(
         &self,
         eth_address: Address,
@@ -41,6 +43,7 @@ pub trait EthBotanixApi: EthApiTypes {
         }
     }
 
+    /// Retrieves the merkle proof from the db
     fn get_merkle_proof(
         &self,
         txid: String,
@@ -56,6 +59,7 @@ pub trait EthBotanixApi: EthApiTypes {
         }
     }
 
+    /// Retrieves the btc fee rate
     fn get_btc_fee_rate(&self) -> impl Future<Output = Result<U256, Self::Error>> + Send {
         async move {
             let fee_rate = self

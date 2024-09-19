@@ -550,7 +550,8 @@ start-poa-server-1:
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
-	--port 30303
+	--port 30303 \
+	--abci-port=36658
 
 start-poa-server-2:
 	cd ./bin/reth && \

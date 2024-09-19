@@ -88,7 +88,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
-    pub fn new(
+    pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         network_handle: NetworkHandle,

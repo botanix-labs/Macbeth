@@ -28,7 +28,7 @@ impl TestConsensus {
 }
 
 impl Consensus for TestConsensus {
-    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         if self.fail_validation() {
             Err(ConsensusError::BaseFeeMissing)
         } else {

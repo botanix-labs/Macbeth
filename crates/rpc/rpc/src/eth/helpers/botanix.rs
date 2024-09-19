@@ -3,7 +3,7 @@
 use crate::EthApi;
 use reth_chainspec::ChainSpec;
 use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
-use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, EthBlocks, LoadBlock, LoadPendingBlock};
+use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, LoadBlock};
 
 impl<Provider, Pool, Network, EvmConfig> EthBotanixApi
     for EthApi<Provider, Pool, Network, EvmConfig>

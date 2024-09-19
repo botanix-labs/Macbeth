@@ -132,19 +132,19 @@ impl AuthorityConsensus {
 }
 
 impl Consensus for AuthorityConsensus {
-    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+    fn validate_block_pre_execution(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         Ok(())
     }
 
     fn validate_block_post_execution(
         &self,
-        block: &BlockWithSenders,
-        input: PostExecutionInput<'_>,
+        _block: &BlockWithSenders,
+        _input: PostExecutionInput<'_>,
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
 
-    fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
+    fn validate_header(&self, _header: &SealedHeader) -> Result<(), ConsensusError> {
         // reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?;
         // //TODO check this
         Ok(())
@@ -173,7 +173,7 @@ impl Consensus for AuthorityConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
         //reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec) //
         // TODO: check this
         Ok(())
@@ -181,8 +181,8 @@ impl Consensus for AuthorityConsensus {
 
     fn validate_header_with_total_difficulty(
         &self,
-        header: &Header,
-        total_difficulty: U256,
+        _header: &Header,
+        _total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
         // reth_consensus_common::validation::validate_header_with_total_difficulty(
         //     header,
@@ -280,7 +280,7 @@ impl Consensus for AuthorityConsensus {
         }
 
         // run the reth header validation rule
-        let sealed_header = header.clone().seal_slow();
+        let _sealed_header = header.clone().seal_slow();
         // reth_consensus_common::validation::validate_header_standalone(
         //     &sealed_header,
         //     &self.chain_spec,
@@ -384,10 +384,9 @@ mod tests {
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
-        block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
-        is_inturn,
+        block_fees_split, current_inturn_index, get_in_turn_interval,
     };
-    use reth_primitives::{extra_data_header::ExtraDataHeader, public_key_to_address, Bytes};
+    use reth_primitives::{extra_data_header::ExtraDataHeader, Bytes};
 
     use super::*;
 
@@ -417,42 +416,30 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // TODO add this back in
-    // #[test]
-    // fn fails_when_edh_exceeds_max_size() {
-    //     let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-    //     // In this case we are signing with a non federation different key
-    //     let mut edh = ExtraDataHeader::default();
-    //     let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-    //     let msg = [0u8; 64];
-    //     let mut wit = bitcoin::witness::Witness::default();
-    //     wit.push(msg.clone());
-    //     let mut witnesses = vec![];
-    //     // MAX_EDH_SIZE is 80050 which is ~1211 witnesses
-    //     for _ in 0..1211 {
-    //         witnesses.push(wit.clone());
-    //     }
-    //     edh.witness_data = Some(witnesses);
-    //     edh.set_optional_fields_bitmask();
+    #[test]
+    fn fails_when_edh_exceeds_max_size() {
+        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
+        // In this case we are signing with a non federation different key
+        let mut edh = ExtraDataHeader::default();
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
 
-    //     // Just use the first key as the dummy agg key
-    //     let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
-    //     edh.aggregated_public_key = dummy_agg_key;
+        // Just use the first key as the dummy agg key
+        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
+        edh.aggregated_public_key = dummy_agg_key;
 
-    //     let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-    //     let mut header = Header::default();
-    //     header.number = 1;
-    //     header.extra_data = Bytes::from(edh.serialize());
-    //     header.sign_block(&sk1).expect("valid sign");
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        header.extra_data = Bytes::from([1; 80051]);
 
-    //     let result =
-    //         consensus.validate_extra_data_header(&header, &authority_signers,
-    // Some(&dummy_agg_key));     assert!(result.is_err());
-    //     assert_eq!(
-    //         result.err().unwrap(),
-    //         ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
-    //     );
-    // }
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap(),
+            ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
+        );
+    }
 
     #[test]
     fn should_not_accept_edh_with_nums_point() {
@@ -469,7 +456,6 @@ mod tests {
         let mut header = Header::default();
         header.number = 1;
         header.extra_data = Bytes::from(edh.serialize());
-        header.sign_block(&sk1).expect("valid sign");
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -481,38 +467,36 @@ mod tests {
         );
     }
 
-    // TODO add this back in
-    // #[test]
-    // fn should_not_accept_edh_with_invalid_agg_pk() {
-    //     let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-    //     // By default edh will use the nums point
-    //     let mut edh = ExtraDataHeader::default();
+    #[test]
+    fn should_not_accept_edh_with_invalid_agg_pk() {
+        let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
+        // By default edh will use the nums point
+        let mut edh = ExtraDataHeader::default();
 
-    //     // Just use the first key as the dummy agg key
-    //     let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-    //     let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
+        // Just use the first key as the dummy agg key
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let dummy_agg_key = sk1.public_key(secp256k1::SECP256K1);
 
-    //     edh.aggregated_public_key = dummy_agg_key;
+        edh.aggregated_public_key = dummy_agg_key;
 
-    //     let different_key = secp256k1::SecretKey::from_str(SK2).unwrap();
-    //     let different_pk = different_key.public_key(secp256k1::SECP256K1);
+        let different_key = secp256k1::SecretKey::from_str(SK2).unwrap();
+        let different_pk = different_key.public_key(secp256k1::SECP256K1);
 
-    //     let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
-    //     let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-    //     let mut header = Header::default();
-    //     header.number = 1;
-    //     header.extra_data = Bytes::from(edh.serialize());
-    //     header.sign_block(&sk1).expect("valid sign");
+        let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
+        let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
+        let mut header = Header::default();
+        header.number = 1;
+        header.extra_data = Bytes::from(edh.serialize());
 
-    //     let result =
-    //         consensus.validate_extra_data_header(&header, &authority_signers,
-    // Some(&different_pk));     assert_eq!(
-    //         result.err().unwrap(),
-    //         ConsensusError::InvalidAggregatedPublicKey(
-    //             InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey
-    //         )
-    //     );
-    // }
+        let result =
+            consensus.validate_extra_data_header(&header, &authority_signers, Some(&different_pk));
+        assert_eq!(
+            result.err().unwrap(),
+            ConsensusError::InvalidAggregatedPublicKey(
+                InvalidAggregatedPublicKeyError::InvalidAggregatedPublicKey
+            )
+        );
+    }
 
     #[test]
     fn unix_timestamp() {

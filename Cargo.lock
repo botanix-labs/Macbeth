@@ -8050,20 +8050,16 @@ dependencies = [
  "reth-network-api",
  "reth-network-p2p",
  "reth-network-peers",
- "reth-network-types",
  "reth-node-api",
- "reth-node-core",
  "reth-node-ethereum",
  "reth-payload-builder",
  "reth-primitives",
  "reth-provider",
  "reth-revm",
  "reth-rpc-types",
- "reth-stages",
  "reth-tasks",
  "reth-tokio-util",
  "reth-transaction-pool",
- "revm-primitives",
  "ruint",
  "schnellru",
  "secp256k1 0.29.1",
@@ -8077,7 +8073,6 @@ dependencies = [
  "tendermint-rpc",
  "thiserror",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
  "uuid 1.10.0",
@@ -8492,14 +8487,10 @@ version = "1.0.5"
 dependencies = [
  "mockall",
  "rand 0.8.5",
- "reth-blockchain-tree-api",
  "reth-chainspec",
  "reth-consensus",
  "reth-primitives",
- "reth-provider",
  "reth-storage-api",
- "secp256k1 0.29.1",
- "tracing",
 ]
 
 [[package]]
@@ -9631,7 +9622,6 @@ dependencies = [
  "alloy-genesis",
  "alloy-primitives",
  "bitcoin",
- "bitcoincore-rpc",
  "eyre",
  "futures",
  "futures-util",
@@ -9926,7 +9916,6 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-rpc-types-engine",
  "arbitrary",
- "askama",
  "assert_matches",
  "bitcoin",
  "bitcoincore-rpc",
@@ -9937,7 +9926,6 @@ dependencies = [
  "ethabi",
  "ethers",
  "frost-secp256k1-tr",
- "hex",
  "k256",
  "lazy_static",
  "modular-bitfield",
@@ -10089,7 +10077,6 @@ name = "reth-revm"
 version = "1.0.5"
 dependencies = [
  "alloy-eips",
- "ethers",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-ethereum-forks",
@@ -10100,8 +10087,6 @@ dependencies = [
  "reth-storage-errors",
  "reth-trie",
  "revm",
- "revm-inspectors",
- "tracing",
 ]
 
 [[package]]
@@ -10626,7 +10611,6 @@ dependencies = [
  "assert_matches",
  "auto_impl",
  "bitflags 2.6.0",
- "comet-bft-rpc",
  "criterion",
  "futures-util",
  "metrics",

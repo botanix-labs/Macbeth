@@ -41,7 +41,6 @@ reth-metrics = { workspace = true, features = ["common"] }
 metrics.workspace = true
 
 # misc
-serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
 
@@ -66,4 +65,5 @@ reth-node-api.workspace = true
 
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 serde_json.workspace = true
+serde.workspace = true
 clap = { workspace = true, features = ["derive"] }
