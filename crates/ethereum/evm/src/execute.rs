@@ -759,6 +759,7 @@ mod tests {
     use reth_chainspec::{ChainSpecBuilder, ForkCondition, MAINNET};
     use reth_primitives::{
         constants::{EMPTY_ROOT_HASH, ETH_TO_WEI},
+        extra_data_header::ExtraDataHeader,
         keccak256, public_key_to_address, Account, Block, Transaction, TxKind, TxLegacy, B256,
     };
     use reth_revm::{
@@ -1178,7 +1179,9 @@ mod tests {
         let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
 
         // construct the header for block one
-        let header = Header { timestamp: 1, number: 1, ..Header::default() };
+        let mut header = Header { timestamp: 1, number: 1, ..Header::default() };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         // attempt to execute an empty block, this should not fail
         executor
