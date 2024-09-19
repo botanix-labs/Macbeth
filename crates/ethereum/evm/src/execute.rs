@@ -1578,6 +1578,8 @@ mod tests {
         assert_eq!(input.len(), 56);
 
         let mut header = chain_spec.genesis_header();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
         header.gas_limit = 1_500_000;
         header.gas_used = 134_807;
         header.receipts_root =
