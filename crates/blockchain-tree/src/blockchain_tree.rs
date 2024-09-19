@@ -186,7 +186,7 @@ where
     ) -> Result<Option<BlockStatus>, InsertBlockErrorKind> {
         // check if block is canonical
         if self.is_block_hash_canonical(&block.hash)? {
-            return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)))
+            return Ok(Some(BlockStatus::Valid(BlockAttachment::Canonical)));
         }
 
         let last_finalized_block = self.block_indices().last_finalized_block();
@@ -205,7 +205,7 @@ where
 
         // is block inside chain
         if let Some(attachment) = self.is_block_inside_sidechain(&block) {
-            return Ok(Some(BlockStatus::Valid(attachment)))
+            return Ok(Some(BlockStatus::Valid(attachment)));
         }
 
         // check if block is disconnected
@@ -213,7 +213,7 @@ where
             return Ok(Some(BlockStatus::Disconnected {
                 head: self.state.block_indices.canonical_tip(),
                 missing_ancestor: block.parent_num_hash(),
-            }))
+            }));
         }
 
         Ok(None)
@@ -289,7 +289,7 @@ where
             let Some((first_pending_block_number, _)) = parent_block_hashes.first_key_value()
             else {
                 debug!(target: "blockchain_tree", ?chain_id, "No block hashes stored");
-                return None
+                return None;
             };
             let canonical_chain = canonical_chain
                 .iter()
@@ -299,7 +299,7 @@ where
 
             // get canonical fork.
             let canonical_fork = self.canonical_fork(chain_id)?;
-            return Some(ExecutionData { execution_outcome, parent_block_hashes, canonical_fork })
+            return Some(ExecutionData { execution_outcome, parent_block_hashes, canonical_fork });
         }
 
         // check if there is canonical block
@@ -989,7 +989,7 @@ where
         }
 
         if header.is_none() && self.sidechain_block_by_hash(*hash).is_some() {
-            return Ok(None)
+            return Ok(None);
         }
 
         if header.is_none() {
@@ -1056,7 +1056,7 @@ where
             }
 
             let head = self.state.block_indices.canonical_tip();
-            return Ok(CanonicalOutcome::AlreadyCanonical { header, head })
+            return Ok(CanonicalOutcome::AlreadyCanonical { header, head });
         }
 
         let Some(chain_id) = self.block_indices().get_side_chain_id(&block_hash) else {
@@ -1316,15 +1316,15 @@ where
             .provider_factory
             .static_file_provider()
             .get_highest_static_file_block(StaticFileSegment::Headers)
-            .unwrap_or_default() >
-            revert_until
+            .unwrap_or_default()
+            > revert_until
         {
             trace!(
                 target: "blockchain_tree",
                 "Reverting optimistic canonical chain to block {}",
                 revert_until
             );
-            return Err(CanonicalError::OptimisticTargetRevert(revert_until))
+            return Err(CanonicalError::OptimisticTargetRevert(revert_until));
         }
 
         // read data that is needed for new sidechain
@@ -1621,8 +1621,8 @@ mod tests {
                     signer,
                     (
                         AccountInfo {
-                            balance: initial_signer_balance -
-                                (single_tx_cost * U256::from(num_of_signer_txs)),
+                            balance: initial_signer_balance
+                                - (single_tx_cost * U256::from(num_of_signer_txs)),
                             nonce: num_of_signer_txs,
                             ..Default::default()
                         },
@@ -1635,30 +1635,7 @@ mod tests {
 
             SealedBlockWithSenders::new(
                 SealedBlock {
-                    header: Header {
-                        number,
-                        parent_hash: parent.unwrap_or_default(),
-                        gas_used: body.len() as u64 * 21_000,
-                        gas_limit: chain_spec.max_gas_limit,
-                        mix_hash: B256::random(),
-                        base_fee_per_gas: Some(EIP1559_INITIAL_BASE_FEE),
-                        transactions_root,
-                        receipts_root,
-                        state_root: state_root_unhashed(HashMap::from([(
-                            signer,
-                            (
-                                AccountInfo {
-                                    balance: initial_signer_balance -
-                                        (single_tx_cost * U256::from(num_of_signer_txs)),
-                                    nonce: num_of_signer_txs,
-                                    ..Default::default()
-                                },
-                                EMPTY_ROOT_HASH,
-                            ),
-                        )])),
-                        ..Default::default()
-                    }
-                    .seal_slow(),
+                    header: header.seal_slow(),
                     body: body.clone().into_iter().map(|tx| tx.into_signed()).collect(),
                     ommers: Vec::new(),
                     withdrawals: Some(Withdrawals::default()),
