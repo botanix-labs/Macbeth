@@ -364,6 +364,9 @@ impl PegoutScheduler {
 
         // Now that it's all in the db, we can apply changes here.
         for input in all_inputs {
+            // Remove the tracked tx from the database as well
+            self.db.remove_tracked_tx(&input.txid)?;
+            // Remove local copy
             if let Some(tx) = self.txs.remove(&input.txid) {
                 info!("Dropping tx that conflicts with finalized tx: {:?}", tx);
             }
@@ -507,6 +510,10 @@ impl PegoutScheduler {
             }
         }
 
+        // Here we can aditionally check for txs are tracked for a long periods of time
+        // And no longer are in the mempool
+        // TODO
+
         if self.last_finalized == checkpoint {
             info!("Checkpoint reached: {}", checkpoint);
             Ok(())
@@ -568,11 +575,11 @@ pub enum BlockError {
 }
 
 mod tests {
-    use bitcoin::{block::Header, hashes::Hash};
+    use bitcoin::hashes::Hash;
 
     use crate::test_utils::test_utils::{
         create_block, create_n_outputs_tx, create_random_pegout_id, pegout_requests_from_tx,
-        random_txid, setup_db, MockBitcoind,
+        setup_db,
     };
 
     use super::*;
@@ -708,7 +715,7 @@ mod tests {
     fn test_finalize_block() {
         let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let tx1 = create_n_outputs_tx(3, 3);
         let tx2 = create_n_outputs_tx(3, 3);
         let txs = vec![tx1.clone(), tx2.clone()];
@@ -739,6 +746,9 @@ mod tests {
         let tracked_txs = pegout_scheduler.txs.clone();
         assert_eq!(tracked_txs.len(), 0);
         assert_eq!(utxos.len(), 2);
+
+        let db_tracked_txs = db.get_tracked_txs().unwrap();
+        assert_eq!(db_tracked_txs.len(), 0);
 
         // Check the correct last finalized block hash is correct
         assert_eq!(pegout_scheduler.last_finalized, block.block_hash());
