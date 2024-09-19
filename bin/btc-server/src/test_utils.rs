@@ -14,13 +14,12 @@ pub mod test_utils {
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, RngCore};
+    use tempfile::TempDir;
     use tokio::sync::Mutex;
     use url::Url;
 
     use crate::{
-        config::Config,
-        database::{self},
-        App,
+        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, App
     };
 
     #[macro_export]
@@ -113,6 +112,33 @@ pub mod test_utils {
     }
 
     /* Some Test utils. Should probably be in a separate file */
+
+    pub fn create_random_pegout_id() -> PegoutId {
+        let mut rng = thread_rng();
+        let mut pegout_id = [0u8; 36];
+        rng.fill_bytes(&mut pegout_id);
+        PegoutId::from_bytes(&pegout_id).unwrap()
+    }
+
+    pub fn pegout_requests_from_tx(tx: &Transaction, pegout_idxs: &[usize]) -> Vec<PegoutRequest> {
+        let mut pegout_requests = Vec::new();
+        for idx in pegout_idxs {
+            pegout_requests.push(PegoutRequest {
+                spk: tx.output[*idx].script_pubkey.clone(),
+                value: tx.output[*idx].value,
+                id: create_random_pegout_id(),
+                botanix_height: 0,
+            });
+        }
+        pegout_requests
+    }
+
+    pub fn setup_db() -> (database::Db, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let db = database::Db::open(temp_dir.path()).unwrap();
+        (db, temp_dir)
+    }
+
     pub fn random_txid() -> Txid {
         let mut rng = thread_rng();
         let mut txid = [0u8; 32];
@@ -137,10 +163,8 @@ pub mod test_utils {
 
     pub fn setup() -> App<MockBitcoind> {
         let mock_bitcoind = MockBitcoind::new();
-        let tmpdir = tempfile::tempdir().unwrap();
-        let dbdir = tmpdir.path().to_path_buf().join("db.db");
 
-        let db = database::Db::open(&dbdir).unwrap();
+        let (db, temp_dir) = setup_db();
         let txindex = Mutex::new(
             App::<MockBitcoind>::load_pegout_scheduler(&db, BlockHash::all_zeros(), 6).unwrap(),
         );
@@ -161,7 +185,7 @@ pub mod test_utils {
             // This config doesnt matter since we are setting app up manually
             // Normally this would be read from a config file
             config: Config {
-                db: dbdir,
+                db: temp_dir.path().join("db.db"),
                 btc_network: bitcoin::Network::Regtest,
                 identifier: 1,
                 address: "localhost".to_string(),

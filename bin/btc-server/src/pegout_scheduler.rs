@@ -1,9 +1,9 @@
 /// This module is responsible for tracking pegout transactions and detecting when they are
 /// confirmed or when they need to be retried.
 /// Some vocab used in this file
-/// - tracked tx: a transaction that is being tracked by the pegout scheduler.
+/// - tracked tx: a transaction that is confirmed but not sufficiently deep.
 /// - pending pegout: a pegout that is pending to be signed and broadcasted.
-/// - confirmed tx: a transaction that is confirmed.
+/// - confirmed tx: a transaction that has > 1 confirmation.
 /// - finalized tx: a transaction that is deeply confirmed.
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -51,7 +51,7 @@ impl HeaderExt for bitcoincore_rpc::json::GetBlockHeaderResult {
 /// Transaction with metadata about which outputs are pegouts and which are change.
 /// This is used to track pegouts and detect when they are confirmed or when they need
 /// to be retried.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Tx {
     /// The transaction id on L1
     pub txid: Txid,
@@ -59,6 +59,9 @@ pub struct Tx {
     pub tx: Transaction,
     /// Which indecies in `tx.output` are pegouts
     pub pegout_idxs: Vec<usize>,
+    /// List of pegout requests that this tx is delivering
+    /// the size of this vec is equal to the length of pegout_idxs
+    pub pegout_requests: Vec<PegoutRequest>,
     /// Which indecies in `tx.output` are change back to the federation wallet
     pub change_idxs: Vec<usize>,
     /// When this transaction was created
@@ -98,11 +101,11 @@ struct BlockInfo {
 }
 
 /// A pegout request from the federation wallet to a user defined scriptpubkey.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PegoutRequest {
     /// A unique id to link back to L2 block
     pub id: PegoutId,
-    /// The scriptpubkey of the pegout request.
+    /// The scriptpubkey of the pegout request (user destination).
     pub spk: bitcoin::ScriptBuf,
     /// The btc amount of pegout to deliver.
     pub value: Amount,
@@ -153,7 +156,6 @@ impl OutputMeta {
 pub struct PegoutScheduler {
     /// The number of blocks to track txs for.
     conf_window: u32,
-
     /// The set of txs we are tracking.
     /// The purpose of tracking the txs is to detect when they have
     /// suffciently deep confirmations on L1. Once they do change outputs may
@@ -168,16 +170,22 @@ pub struct PegoutScheduler {
     txs_by_pegout: HashMap<TxOut, Vec<Txid>>,
     /// The txs that are confirmed but not finalized yet.
     confirmed_txs: HashSet<Txid>,
-
     /// The last [conf_window] blocks we have seen. This data strucutre
     /// includes txs and inputs that are relevant to the txs we are tracking.
     last_blocks: VecDeque<BlockInfo>,
     /// The last block that was finalized.  
     last_finalized: BlockHash,
+    /// Database handle
+    db: database::Db,
 }
 
 impl PegoutScheduler {
-    pub fn new(conf_window: u32, txs: Vec<Tx>, last_finalized: BlockHash) -> PegoutScheduler {
+    pub fn new(
+        conf_window: u32,
+        txs: Vec<Tx>,
+        last_finalized: BlockHash,
+        db: database::Db,
+    ) -> PegoutScheduler {
         let mut ret = PegoutScheduler {
             conf_window,
             txs: HashMap::with_capacity(txs.len()),
@@ -186,6 +194,7 @@ impl PegoutScheduler {
             confirmed_txs: HashSet::new(),
             last_blocks: VecDeque::with_capacity(conf_window as usize),
             last_finalized,
+            db,
         };
 
         ret.last_blocks.push_back(BlockInfo {
@@ -222,14 +231,20 @@ impl PegoutScheduler {
     /// This should be called when a new pegout transaction is broadcasted on L1.
     ///
     /// Panics if [pegouts] isn't a strict subset of the transaction's outputs.
-    pub fn add_tx(&mut self, tx: Transaction, pegouts: &[TxOut], timestamp: SystemTime) -> &Tx {
+    pub fn add_tx(
+        &mut self,
+        tx: Transaction,
+        pegouts: &[PegoutRequest],
+        timestamp: SystemTime,
+    ) -> &Tx {
         let pegout_idxs = {
             let mut ret = Vec::with_capacity(pegouts.len());
             for pegout in pegouts {
+                let pegout_txout = pegout.txout();
                 let idx = tx
                     .output
                     .iter()
-                    .position(|txout| *txout == *pegout)
+                    .position(|txout| *txout == pegout_txout)
                     .expect("tx doesn't contain all pegouts");
                 ret.push(idx);
             }
@@ -246,7 +261,14 @@ impl PegoutScheduler {
             ret
         };
         let txid = tx.txid();
-        self.track_tx(Tx { created: timestamp, change_idxs, txid, tx, pegout_idxs });
+        self.track_tx(Tx {
+            created: timestamp,
+            change_idxs,
+            txid,
+            tx,
+            pegout_idxs,
+            pegout_requests: pegouts.to_vec(),
+        });
         self.txs.get(&txid).expect("just put it in")
     }
 
@@ -277,11 +299,44 @@ impl PegoutScheduler {
         ret
     }
 
+    /// Remove a tx from the tracked set.
+    /// This should be called when a tracked tx is reorged or dropped from the mempool.
+    /// Its expected the caller will add the pegout outputs back to the pending pegout set. This is not done by this function
+    /// Note: will panic if provided txid is not tracked
+    fn un_track_tx(&mut self, txid: &Txid) -> Result<(), database::Error> {
+        let tx = self.txs.get(txid).expect("relevant tx should exist");
+        for input in tx.inputs() {
+            self.txs_by_input.remove(&input);
+        }
+        for (_utxo, txout) in tx.pegouts() {
+            self.txs_by_pegout.remove(&txout);
+        }
+        self.txs.remove(txid);
+        // Need to remove from the databse as well
+        self.db.remove_tracked_tx(txid)?;
+        Ok(())
+    }
+
+    /// Add a tx back into the pending pegout set
+    /// This should be called when a tracked tx is reorged or dropped from the mempool.
+    /// Its expected the caller will remove the tx from the tracked set
+    fn add_tx_back_to_pending(&mut self, tx: &Tx) -> Result<(), database::Error> {
+        for pegout in tx.pegout_requests.iter() {
+            self.db.store_pending_pegout(pegout)?;
+        }
+        Ok(())
+    }
+
     fn rollback_tip(&mut self) {
         assert!(!self.last_blocks.is_empty());
         let drop = self.last_blocks.pop_back().unwrap();
-        for tx in drop.relevant_txs {
-            self.confirmed_txs.remove(&tx);
+        for txid in drop.relevant_txs {
+            let tx = self.txs.get(&txid).expect("relevant tx should exist").clone();
+            // Currently confirmed_txs is not used, could remove this
+            self.confirmed_txs.remove(&txid);
+            // TODO should we remove the expect here
+            self.un_track_tx(&txid).expect("untrack tx");
+            self.add_tx_back_to_pending(&tx).expect("add tx back to pending");
         }
     }
 
@@ -516,23 +571,20 @@ mod tests {
     use bitcoin::{block::Header, hashes::Hash};
 
     use crate::test_utils::test_utils::{
-        create_block, create_n_outputs_tx, random_txid, MockBitcoind,
+        create_block, create_n_outputs_tx, create_random_pegout_id, pegout_requests_from_tx,
+        random_txid, setup_db, MockBitcoind,
     };
 
     use super::*;
     #[test]
     fn tracked_tx_utils() {
-        let txid = random_txid();
+        let tx = create_n_outputs_tx(0, 0);
         let tx = Tx {
-            txid,
-            tx: bitcoin::Transaction {
-                version: bitcoin::transaction::Version::TWO,
-                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
-                input: vec![],
-                output: vec![],
-            },
+            txid: tx.txid(),
+            tx,
             pegout_idxs: vec![],
             change_idxs: vec![],
+            pegout_requests: vec![],
             created: SystemTime::now(),
         };
 
@@ -544,12 +596,14 @@ mod tests {
         let dummy_tx = create_n_outputs_tx(5, 2);
         assert_eq!(dummy_tx.input.len(), 5);
         assert_eq!(dummy_tx.output.len(), 2);
+
         let tx2 = Tx {
-            txid,
+            txid: dummy_tx.txid(),
             tx: dummy_tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],
             created: SystemTime::now(),
+            pegout_requests: vec![],
         };
 
         assert_eq!(tx2.inputs().count(), 5);
@@ -562,16 +616,24 @@ mod tests {
 
     #[test]
     fn test_track_tx() {
+        let db = setup_db().0;
+
         let tx = create_n_outputs_tx(3, 3);
         let pegout_idxs = vec![0, 1];
         let change_idxs = vec![2];
 
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros());
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
 
         let mut pegouts = vec![];
         for i in pegout_idxs.iter() {
-            pegouts.push(tx.output[*i].clone());
+            let pegout_req = PegoutRequest {
+                spk: tx.output[*i].script_pubkey.clone(),
+                value: tx.output[*i].value,
+                id: create_random_pegout_id(),
+                botanix_height: 0,
+            };
+            pegouts.push(pegout_req);
         }
         assert_eq!(pegouts.len(), 2);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
@@ -587,7 +649,7 @@ mod tests {
         let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
         assert_eq!(txs_by_pegout.len(), 2);
         for pegout in pegouts.iter() {
-            assert_eq!(txs_by_pegout.get(pegout).unwrap(), &vec![tx.txid()]);
+            assert_eq!(txs_by_pegout.get(&pegout.txout()).unwrap(), &vec![tx.txid()]);
         }
 
         let tx_by_input = pegout_scheduler.txs_by_input.clone();
@@ -614,13 +676,15 @@ mod tests {
 
     #[test]
     fn test_add_block() {
+        let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros());
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
         let tx1 = create_n_outputs_tx(3, 3);
         let tx2 = create_n_outputs_tx(3, 3);
         let txs = vec![tx1.clone(), tx2.clone()];
-        let pegouts1 = vec![tx1.output[0].clone(), tx1.output[1].clone()];
-        let pegouts2 = vec![tx2.output[0].clone(), tx2.output[1].clone()];
+        let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1]);
+        let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1]);
+
         pegout_scheduler.add_tx(tx1.clone(), &pegouts1, SystemTime::now());
         pegout_scheduler.add_tx(tx2.clone(), &pegouts2, SystemTime::now());
         assert_eq!(pegout_scheduler.txs.len(), 2);
@@ -642,13 +706,15 @@ mod tests {
 
     #[test]
     fn test_finalize_block() {
+        let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros());
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
         let tx1 = create_n_outputs_tx(3, 3);
         let tx2 = create_n_outputs_tx(3, 3);
         let txs = vec![tx1.clone(), tx2.clone()];
-        let pegouts1 = vec![tx1.output[0].clone(), tx1.output[1].clone()];
-        let pegouts2 = vec![tx2.output[0].clone(), tx2.output[1].clone()];
+        let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1]);
+        let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1]);
+
         pegout_scheduler.add_tx(tx1.clone(), &pegouts1, SystemTime::now());
         pegout_scheduler.add_tx(tx2.clone(), &pegouts2, SystemTime::now());
 
@@ -680,10 +746,11 @@ mod tests {
 
     #[test]
     fn finalizing_non_change_pegout() {
+        let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros());
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
         let tx = create_n_outputs_tx(3, 1);
-        let pegouts = vec![tx.output[0].clone()];
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
@@ -714,17 +781,20 @@ mod tests {
 
     #[test]
     fn start_with_existing_tracked_txs() {
+        let db = setup_db().0;
         let tx = create_n_outputs_tx(1, 2);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
             tx: tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],
             created: SystemTime::now(),
+            pegout_requests: pegouts,
         };
 
         let mut pegout_scheduler =
-            PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros());
+            PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
         assert_eq!(last_tx_txid, tx.txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
@@ -733,12 +803,14 @@ mod tests {
 
     #[test]
     fn test_finalize_many_blocks() {
-        let mut pegout_scheduler = PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros());
+        let db = setup_db().0;
+        let mut pegout_scheduler =
+            PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db);
         let mut last_block_hash = bitcoin::BlockHash::all_zeros();
         let mut utxos = vec![];
         for _ in 0..100 {
             let tx = create_n_outputs_tx(1, 2);
-            let pegouts = vec![tx.output[0].clone()];
+            let pegouts = pegout_requests_from_tx(&tx, &[0]);
             pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
             let block = create_block(vec![tx], last_block_hash);
             pegout_scheduler.add_block(&block);
@@ -758,5 +830,65 @@ mod tests {
         }
 
         assert_eq!(utxos.len(), 100);
+    }
+
+    #[test]
+    fn test_un_track_tx() {
+        let db = setup_db().0;
+        let tx = create_n_outputs_tx(1, 2);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            pegout_idxs: vec![0],
+            change_idxs: vec![1],
+            created: SystemTime::now(),
+            pegout_requests: pegouts,
+        };
+
+        let mut pegout_scheduler =
+            PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
+        assert_eq!(pegout_scheduler.txs.len(), 1);
+
+        pegout_scheduler.un_track_tx(&tx.txid()).expect("untrack tx");
+        // Check the mapping is correct
+        let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
+        assert_eq!(txs_by_pegout.len(), 0);
+
+        let tx_by_input = pegout_scheduler.txs_by_input.clone();
+        assert_eq!(tx_by_input.len(), 0);
+
+        let tracked_inputs = pegout_scheduler.tracked_inputs();
+        assert_eq!(tracked_inputs.len(), 0);
+
+        assert_eq!(pegout_scheduler.txs.len(), 0);
+    }
+
+    #[test]
+    fn test_roll_back_tip() {
+        let db = setup_db().0;
+        let mut pegout_scheduler =
+            PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        let tx = create_n_outputs_tx(1, 2);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+
+        let tracked_tx = pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+        // Add to db as wel
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        assert_eq!(pegout_scheduler.txs.len(), 1);
+
+        // Add a block
+        let block = BlockInfo {
+            hash: bitcoin::BlockHash::all_zeros(),
+            relevant_txs: vec![tx.txid()],
+            relevant_inputs: vec![],
+        };
+        pegout_scheduler.last_blocks.push_back(block);
+        // Dont need to worry about last finalized
+        pegout_scheduler.rollback_tip();
+        assert_eq!(pegout_scheduler.txs.len(), 0);
+
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts[0], pegouts[0]);
     }
 }
