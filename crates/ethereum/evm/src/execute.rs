@@ -971,13 +971,15 @@ mod tests {
         let provider = executor_provider(chain_spec);
 
         // construct the header for block one
-        let header = Header {
+        let mut header = Header {
             timestamp: 1,
             number: 1,
             parent_beacon_block_root: Some(B256::with_last_byte(0x69)),
             excess_blob_gas: Some(0),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
 
