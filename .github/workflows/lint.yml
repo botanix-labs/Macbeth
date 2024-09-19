@@ -47,21 +47,21 @@ jobs:
     #       env:
     #         RUSTFLAGS: -D warnings
 
-    # Commenting out for now, will re-enable after final upstream merge
-    # crate-checks:
-    #   runs-on: ubuntu-latest
-    #   timeout-minutes: 60
-    #   steps:
-    #     - uses: actions/checkout@v4
-    #     - uses: dtolnay/rust-toolchain@stable
-    #     - uses: taiki-e/install-action@cargo-hack
-    #     - uses: Swatinem/rust-cache@v2
-    #       with:
-    #         cache-on-failure: true
-    #         cache-all-crates: true
-    #     - name: Install Protobuf Compiler
-    #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-    #     - run: cargo hack check
+    #Commenting out for now, will re-enable after final upstream merge
+    crate-checks:
+      runs-on: ubuntu-latest
+      timeout-minutes: 60
+      steps:
+        - uses: actions/checkout@v4
+        - uses: dtolnay/rust-toolchain@stable
+        - uses: taiki-e/install-action@cargo-hack
+        - uses: Swatinem/rust-cache@v2
+          with:
+            cache-on-failure: true
+            cache-all-crates: true
+        - name: Install Protobuf Compiler
+          run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        - run: cargo hack check
 
     # Commenting out for now, will re-enable in once we have a MSRV
     #   msrv:
