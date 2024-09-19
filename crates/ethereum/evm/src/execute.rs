@@ -1407,6 +1407,8 @@ mod tests {
         );
 
         let mut header = chain_spec.genesis_header();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
         header.requests_root = Some(EMPTY_ROOT_HASH);
         let header_hash = header.hash_slow();
 
@@ -1444,13 +1446,15 @@ mod tests {
             .is_zero());
 
         // attempt to execute block 1, this should not fail
-        let header = Header {
+        let mut header = Header {
             parent_hash: header_hash,
             timestamp: 1,
             number: 1,
             requests_root: Some(EMPTY_ROOT_HASH),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
         let header_hash = header.hash_slow();
 
         executor
@@ -1487,13 +1491,15 @@ mod tests {
             .is_zero());
 
         // attempt to execute block 2, this should not fail
-        let header = Header {
+        let mut header = Header {
             parent_hash: header_hash,
             timestamp: 1,
             number: 2,
             requests_root: Some(EMPTY_ROOT_HASH),
             ..Header::default()
         };
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
 
         executor
             .execute_and_verify_one(
