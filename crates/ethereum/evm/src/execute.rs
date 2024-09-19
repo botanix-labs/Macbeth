@@ -1023,6 +1023,8 @@ mod tests {
         );
 
         let mut header = chain_spec.genesis_header();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
         let provider = executor_provider(chain_spec);
         let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
 
