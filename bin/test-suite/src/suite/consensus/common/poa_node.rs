@@ -1,8 +1,5 @@
 use askama::Template;
-use bitcoin::{
-    hashes::{sha256, Hash},
-    BlockHash,
-};
+use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
@@ -18,8 +15,8 @@ use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TEST
 use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_primitives::{
-    constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    Address,
 };
 use reth_provider::{CanonStateNotification, CanonStateSubscriptions};
 use reth_rpc_types::PeerId;
@@ -596,12 +593,13 @@ pub async fn create_poa_federation_members(
     }
 
     // now create the edh
+    let prikey = secp256k1::SecretKey::new(&mut rand::thread_rng());
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
         CHAIN_VERSION,
-        None,
-        Some(authorities.clone()),
-        None,
+        bitcoin::hash_types::BlockHash::all_zeros(),
+        secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &prikey),
+        Address::ZERO,
     );
 
     // now insert peers and edh into each federation member

@@ -13,10 +13,7 @@ use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
 use askama::Template;
-use bitcoin::{
-    hashes::{sha256, Hash},
-    BlockHash,
-};
+use bitcoin::{hashes::Hash, BlockHash};
 use clap::Parser;
 use reth::{
     args::FedMemberPubKey,
@@ -29,6 +26,7 @@ use reth_primitives::{
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
+    Address,
 };
 use reth_provider::CanonStateSubscriptions;
 use reth_rpc_types::PeerId;
@@ -123,14 +121,9 @@ impl NonFederationMemberTestConfig {
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
             CHAIN_VERSION,
-            None,
-            Some(edh_authorities_list.to_vec()),
-            None,
-            None,
-            // to make sure they're not identical, hash random data
             BlockHash::hash(&[1]),
-            sha256::Hash::hash(&[2]),
             nums_secp256k1_pk(),
+            Address::ZERO,
         );
 
         // update genesis config with edh and render file

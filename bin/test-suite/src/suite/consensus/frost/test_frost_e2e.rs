@@ -164,7 +164,7 @@ pub async fn frost_e2e_stable(
         version: 0,
         outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
         address: eth_account,
-        aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
+        aggregate_publickey: secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
         )
         .expect("valid public key"),
@@ -189,10 +189,8 @@ pub async fn frost_e2e_stable(
     pegin_data
         .validate(
             &checkpoint,
-            &bitcoin::secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .unwrap(),
+            &secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
+                .unwrap(),
         )
         .expect("pegin data should be valid!");
     it_info_print!("Pegindata successfully validated");
