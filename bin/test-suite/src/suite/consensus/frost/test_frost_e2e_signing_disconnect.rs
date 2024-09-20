@@ -167,7 +167,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         version: 0,
         outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
         address: eth_account,
-        aggregate_publickey: bitcoin::secp256k1::PublicKey::from_str(
+        aggregate_publickey: secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
         )
         .expect("valid public key"),
