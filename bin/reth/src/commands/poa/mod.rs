@@ -910,15 +910,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         // create botanix client
-        let botanix_config = BotanixConfig::default()
-            .btc_server(node_config.rpc.btc_server.clone())
-            .bitcoin_network(node_config.rpc.btc_network)
-            .bitcoind(
-                bitcoind_config.url().to_owned(),
-                bitcoind_config.username().to_owned(),
-                bitcoind_config.password().to_owned(),
-            )
-            .btc_server_jwt_secret(btc_signing_server_jwt_secret.clone().map(Into::into));
+        let botanix_config = BotanixConfig::new(
+            node_config.rpc.btc_network,
+            btc_server_factory.clone(),
+            bitcoind_factory.clone(),
+        );
 
         // Start RPC servers
         let botanix_provider = Botanix::new(botanix_config);
@@ -1088,10 +1084,12 @@ pub struct PoaNodeComponents<P> {
     pub pool: P,
     /// The EVM config, should always be the default
     pub evm_config: EthEvmConfig,
+    #[allow(dead_code)]
     /// evm executor factory
     pub executor: EthExecutorProvider<BitcoindClientFactory>,
     /// network handle
     pub network: NetworkHandle,
+    #[allow(dead_code)]
     /// The blockchain provider
     pub provider: BlockchainProvider<Arc<DatabaseEnv>>,
     /// payload builder
