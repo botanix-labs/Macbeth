@@ -14,7 +14,6 @@ use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
 };
-use reth_cli_commands::node::NoArgs;
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
@@ -93,6 +92,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
+    cli::NoArgs,
     payload::PayloadBuilderService,
 };
 

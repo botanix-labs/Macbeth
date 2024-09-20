@@ -1,4 +1,5 @@
 //! This contains all of the `reth` commands
 
-pub mod debug_cmd;
+// Commenting these debug commands out as they are not used for poa consensus
+// pub mod debug_cmd;
 pub mod poa;
