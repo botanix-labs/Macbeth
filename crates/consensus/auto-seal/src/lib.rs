@@ -117,10 +117,6 @@ impl Consensus for AutoSealConsensus {
     ) -> Result<(), ConsensusError> {
         Ok(())
     }
-
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
-        Ok(())
-    }
 }
 
 /// Builder type for configuring the setup

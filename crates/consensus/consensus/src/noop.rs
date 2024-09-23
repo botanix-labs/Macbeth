@@ -39,10 +39,6 @@ impl Consensus for NoopConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
-        Ok(())
-    }
-
     fn validate_extra_data_header(
         &self,
         _header: &Header,

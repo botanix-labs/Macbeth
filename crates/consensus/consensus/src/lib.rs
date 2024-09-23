@@ -111,17 +111,6 @@ pub trait Consensus: Debug + Send + Sync {
     /// **This should not be called for the genesis block**.
     ///
     /// Note: validating blocks does not include other validations of the Consensus
-    fn validate_block(&self, block: &SealedBlock) -> Result<(), ConsensusError>;
-
-    /// Validate a block disregarding world state, i.e. things that can be checked before sender
-    /// recovery and execution.
-    ///
-    /// See the Yellow Paper sections 4.3.2 "Holistic Validity", 4.3.4 "Block Header Validity", and
-    /// 11.1 "Ommer Validation".
-    ///
-    /// **This should not be called for the genesis block**.
-    ///
-    /// Note: validating blocks does not include other validations of the Consensus
     fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError>;
 
     /// Validate a block considering world state, i.e. things that can not be checked before

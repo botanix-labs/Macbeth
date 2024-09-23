@@ -173,12 +173,6 @@ impl Consensus for AuthorityConsensus {
         Ok(())
     }
 
-    fn validate_block(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
-        //reth_consensus_common::validation::validate_block_standalone(block, &self.chain_spec) //
-        // TODO: check this
-        Ok(())
-    }
-
     fn validate_header_with_total_difficulty(
         &self,
         _header: &Header,
