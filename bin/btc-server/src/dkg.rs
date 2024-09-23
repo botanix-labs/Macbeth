@@ -37,7 +37,7 @@ where
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
 
-        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
+        if let Some(round1_dkg) = self.frost_round1_dkg.lock().await.clone() {
             // Retrieve round 1 packages from peers
             // Here we don't check we have enough that should be done by the frost lib
             // So we just propogate the error
@@ -53,13 +53,15 @@ where
         }
     }
 
-    pub(crate) fn get_round1_dkg(&self) -> Result<frost::keys::dkg::round1::Package, DKGError> {
+    pub(crate) async fn get_round1_dkg(
+        &self,
+    ) -> Result<frost::keys::dkg::round1::Package, DKGError> {
         // Already have done dkg
         // This function should error
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
-        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
+        if let Some(round1_dkg) = self.frost_round1_dkg.lock().await.clone() {
             Ok(round1_dkg.1)
         } else {
             Err(DKGError::MissingRound1DkgPackage)
@@ -108,12 +110,13 @@ where
         // Clear out round 2 secret
         if dkg_done {
             self.frost_round2_dkg.lock().await.take();
+            self.frost_round1_dkg.lock().await.take();
         }
 
         return Ok(());
     }
 
-    pub(crate) fn add_round1_dkg(
+    pub(crate) async fn add_round1_dkg(
         &self,
         frost_id: frost::Identifier,
         dkg_round1: frost::keys::dkg::round1::Package,
@@ -125,7 +128,7 @@ where
         if frost_id == self.identifier {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
-        if self.frost_round1_dkg.as_ref().expect("valid dkg round1").1 == dkg_round1 {
+        if self.frost_round1_dkg.lock().await.as_ref().expect("valid dkg round1").1 == dkg_round1 {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
         // Should not add if we have max signers
