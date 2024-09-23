@@ -517,6 +517,7 @@ where
                 badarg!("Failed to deserialize round1 dkg package: {}", e)
             })?;
         self.add_round1_dkg(frost_id, dkg_round1)
+            .await
             .map_err(|e| internal!("Failed to add round1 dkg: {}", e))?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -530,6 +531,7 @@ where
         self.validate_jwt(&req)?;
         let round1_dkg_package = self
             .get_round1_dkg()
+            .await
             .map_err(|e| internal!("Failed to get round1 dkg package: {}", e))?;
 
         let res = rpc::DkgPayload {
