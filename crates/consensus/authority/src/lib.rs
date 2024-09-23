@@ -39,11 +39,11 @@ use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
     header_ext::HeaderExt,
-    Address, Header, SealedBlock, SealedHeader, U256,
+    Address, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
 };
 
 use reth_primitives::BlockWithSenders;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::SystemTime};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
@@ -208,14 +208,59 @@ impl Consensus for AuthorityConsensus {
 
     fn validate_header_with_total_difficulty(
         &self,
-        _header: &Header,
-        _total_difficulty: U256,
+        header: &Header,
+        total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
-        // reth_consensus_common::validation::validate_header_with_total_difficulty(
-        //     header,
-        //     total_difficulty,
-        // )?;
-        // TODO: check this
+        let is_post_merge = self
+            .chain_spec
+            .fork(EthereumHardfork::Paris)
+            .active_at_ttd(total_difficulty, header.difficulty);
+
+        if is_post_merge {
+            if !header.is_zero_difficulty() {
+                return Err(ConsensusError::TheMergeDifficultyIsNotZero);
+            }
+
+            if header.nonce != 0 {
+                return Err(ConsensusError::TheMergeNonceIsNotZero);
+            }
+
+            if header.ommers_hash != EMPTY_OMMER_ROOT_HASH {
+                return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty);
+            }
+
+            // Post-merge, the consensus layer is expected to perform checks such that the block
+            // timestamp is a function of the slot. This is different from pre-merge, where blocks
+            // are only allowed to be in the future (compared to the system's clock) by a certain
+            // threshold.
+            //
+            // Block validation with respect to the parent should ensure that the block timestamp
+            // is greater than its parent timestamp.
+
+            // validate header extradata for all networks post merge
+            validate_header_extradata(header)?;
+
+            // mixHash is used instead of difficulty inside EVM
+            // https://eips.ethereum.org/EIPS/eip-4399#using-mixhash-field-instead-of-difficulty
+        } else {
+            // TODO Consensus checks for old blocks:
+            //  * difficulty, mix_hash & nonce aka PoW stuff
+            // low priority as syncing is done in reverse order
+
+            // Check if timestamp is in the future. Clock can drift but this can be consensus issue.
+            let present_timestamp =
+                SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+
+            if header.exceeds_allowed_future_timestamp(present_timestamp) {
+                return Err(ConsensusError::TimestampIsInFuture {
+                    timestamp: header.timestamp,
+                    present_timestamp,
+                });
+            }
+
+            validate_header_extradata(header)?;
+        }
+
         Ok(())
     }
 
@@ -308,11 +353,6 @@ impl Consensus for AuthorityConsensus {
 
         // run the reth header validation rule
         let _sealed_header = header.clone().seal_slow();
-        // reth_consensus_common::validation::validate_header_standalone(
-        //     &sealed_header,
-        //     &self.chain_spec,
-        // )?;
-        // TODO: check this
 
         // Validate EDH serialization and signature on block
         self.validate_extra_data_header(header, genesis_authorities, aggregate_public_key)?;
