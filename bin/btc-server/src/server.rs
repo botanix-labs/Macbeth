@@ -467,13 +467,13 @@ where
             error!("Failed to parse frost peer id: {}", e);
             badarg!("Failed to parse frost peer id: {}", e)
         })?;
-        let packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package> =
+        let package: frost::keys::dkg::round2::Package =
             serde_json::from_slice(req.payload.as_slice()).map_err(|e| {
                 error!("Failed to deserialize round2 dkg package: {}", e);
                 badarg!("Failed to deserialize round2 dkg package: {}", e)
             })?;
 
-        self.add_round2_dkg(frost_id, packages).await.map_err(|e| {
+        self.add_round2_dkg(frost_id, package).await.map_err(|e| {
             error!("Failed to add round2 dkg: {}", e);
             badarg!("Failed to add round2 dkg: {}", e)
         })?;

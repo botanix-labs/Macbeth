@@ -69,7 +69,7 @@ where
     pub(crate) async fn add_round2_dkg(
         &self,
         frost_id: frost::Identifier,
-        packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+        package: frost::keys::dkg::round2::Package,
     ) -> Result<(), DKGError> {
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
@@ -78,36 +78,30 @@ where
         if frost_id == self.identifier {
             return Err(DKGError::InvalidFrostPeerId);
         }
-        for (id, package) in packages.iter() {
-            // Look for our package and store it
-            if self.identifier == *id {
-                if self.db.add_round2_dkg(frost_id, package.clone())? {
-                    self.db.flush()?;
-                    debug!("Stored round2 dkg from peer: {:?}", frost_id);
-                } else {
-                    warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
-                }
-                // If we have a max_signers round2 packages we can generate and save the key package
-                let round2_packages = self.db.get_round2_dkg_packages()?;
-                if round2_packages.len() as u16 == self.max_signers - 1 {
-                    let round1_packages = self.db.get_round1_dkg_packages()?;
-                    if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
-                        let pk_res = frost::keys::dkg::part3(
-                            &round2_secret,
-                            &round1_packages,
-                            &round2_packages,
-                        )?;
 
-                        self.db.set_key_package(pk_res.0.clone())?;
-                        self.db.set_pubkey_package(pk_res.1.clone())?;
-                        self.db.flush()?;
-                    }
-                }
+        if self.db.add_round2_dkg(frost_id, package.clone())? {
+            self.db.flush()?;
+            debug!("Stored round2 dkg from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
+        }
+        // If we have a max_signers round2 packages we can generate and save the key package
+        let round2_packages = self.db.get_round2_dkg_packages()?;
+        if round2_packages.len() as u16 == self.max_signers - 1 {
+            let round1_packages = self.db.get_round1_dkg_packages()?;
+            if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
+                let pk_res =
+                    frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)?;
 
-                return Ok(());
+                self.db.set_key_package(pk_res.0.clone())?;
+                self.db.set_pubkey_package(pk_res.1.clone())?;
+                self.db.flush()?;
+                // TODO Zero out the round2 secret
             }
         }
-        Err(DKGError::InvalidRound2DkgPayloadMissingPackage)
+
+        return Ok(());
+        // Err(DKGError::InvalidRound2DkgPayloadMissingPackage)
     }
 
     pub(crate) fn add_round1_dkg(
