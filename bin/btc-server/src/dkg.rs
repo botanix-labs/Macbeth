@@ -86,6 +86,7 @@ where
             warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
         }
         // If we have a max_signers round2 packages we can generate and save the key package
+        let mut dkg_done = false;
         let round2_packages = self.db.get_round2_dkg_packages()?;
         if round2_packages.len() as u16 == self.max_signers - 1 {
             let round1_packages = self.db.get_round1_dkg_packages()?;
@@ -96,12 +97,20 @@ where
                 self.db.set_key_package(pk_res.0.clone())?;
                 self.db.set_pubkey_package(pk_res.1.clone())?;
                 self.db.flush()?;
-                // TODO Zero out the round2 secret
+
+                dkg_done = true;
+            } else {
+                return Err(DKGError::InvalidRound2DkgPayloadMissingPackage);
             }
         }
 
+        // Signing at this point is successful
+        // Clear out round 2 secret
+        if dkg_done {
+            self.frost_round2_dkg.lock().await.take();
+        }
+
         return Ok(());
-        // Err(DKGError::InvalidRound2DkgPayloadMissingPackage)
     }
 
     pub(crate) fn add_round1_dkg(
