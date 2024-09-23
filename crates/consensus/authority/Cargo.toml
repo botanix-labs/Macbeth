@@ -16,6 +16,7 @@ description = "A PoA consensus engine"
 reth-consensus-common = { path = "../common" }
 reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }
+reth-ethereum-consensus.workspace = true
 reth-primitives.workspace = true
 reth-execution-errors.workspace = true
 reth-chainspec.workspace = true

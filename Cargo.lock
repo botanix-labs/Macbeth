@@ -8043,6 +8043,7 @@ dependencies = [
  "reth-consensus",
  "reth-consensus-common",
  "reth-eth-wire",
+ "reth-ethereum-consensus",
  "reth-ethereum-payload-builder",
  "reth-evm",
  "reth-evm-ethereum",

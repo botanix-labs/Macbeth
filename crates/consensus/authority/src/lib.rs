@@ -29,11 +29,12 @@ use reth_consensus_common::{
     validation::{
         validate_4844_header_standalone, validate_against_parent_4844,
         validate_against_parent_eip1559_base_fee, validate_against_parent_hash_number,
-        validate_against_parent_timestamp, validate_header_base_fee, validate_header_extradata,
-        validate_header_gas,
+        validate_against_parent_timestamp, validate_block_pre_execution, validate_header_base_fee,
+        validate_header_extradata, validate_header_gas,
     },
 };
 
+use reth_ethereum_consensus::validate_block_post_execution;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
@@ -133,16 +134,16 @@ impl AuthorityConsensus {
 }
 
 impl Consensus for AuthorityConsensus {
-    fn validate_block_pre_execution(&self, _block: &SealedBlock) -> Result<(), ConsensusError> {
-        Ok(())
+    fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
+        validate_block_pre_execution(block, &self.chain_spec)
     }
 
     fn validate_block_post_execution(
         &self,
-        _block: &BlockWithSenders,
-        _input: PostExecutionInput<'_>,
+        block: &BlockWithSenders,
+        input: PostExecutionInput<'_>,
     ) -> Result<(), ConsensusError> {
-        Ok(())
+        validate_block_post_execution(block, &self.chain_spec, input.receipts, input.requests)
     }
 
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
