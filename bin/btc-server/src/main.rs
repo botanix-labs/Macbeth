@@ -654,6 +654,13 @@ mod test {
         let pk1 = app1.get_public_key().expect("valid public key request");
         let pk2 = app2.get_public_key().expect("valid public key request");
         assert_eq!(pk1, pk2);
+
+        // Check that round 1 and round 2 secrets are none now
+        // assert!(app1.frost_round1_dkg.is_none());
+        assert!(app1.frost_round2_dkg.lock().await.is_none());
+
+        // assert!(app2.frost_round1_dkg.is_none());
+        assert!(app2.frost_round2_dkg.lock().await.is_none());
     }
 
     // Signing tests
