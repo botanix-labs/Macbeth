@@ -3,7 +3,10 @@
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
-    constants::eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
+    constants::{
+        eip4844::{DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK},
+        MAXIMUM_EXTRA_DATA_SIZE,
+    },
     eip4844::calculate_excess_blob_gas,
     EthereumHardfork, GotExpected, Header, SealedBlock, SealedHeader,
 };
@@ -26,8 +29,8 @@ pub fn validate_header_base_fee(
     header: &Header,
     chain_spec: &ChainSpec,
 ) -> Result<(), ConsensusError> {
-    if chain_spec.is_fork_active_at_block(EthereumHardfork::London, header.number) &&
-        header.base_fee_per_gas.is_none()
+    if chain_spec.is_fork_active_at_block(EthereumHardfork::London, header.number)
+        && header.base_fee_per_gas.is_none()
     {
         return Err(ConsensusError::BaseFeeMissing);
     }
@@ -97,7 +100,7 @@ pub fn validate_block_pre_execution(
         if requests_root != *header_requests_root {
             return Err(ConsensusError::BodyRequestsRootDiff(
                 GotExpected { got: requests_root, expected: *header_requests_root }.into(),
-            ))
+            ));
         }
     }
 
@@ -151,14 +154,13 @@ pub fn validate_4844_header_standalone(header: &Header) -> Result<(), ConsensusE
 /// From yellow paper: extraData: An arbitrary byte array containing data relevant to this block.
 /// This must be 32 bytes or fewer; formally Hx.
 #[inline]
-pub fn validate_header_extradata(_header: &Header) -> Result<(), ConsensusError> {
-    // let extradata_len = header.extra_data.len();
-    // if extradata_len > MAXIMUM_EXTRA_DATA_SIZE {
-    //     Err(ConsensusError::ExtraDataExceedsMax { len: extradata_len })
-    // } else {
-    //     Ok(())
-    // }
-    Ok(())
+pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
+    let extradata_len = header.extra_data.len();
+    if extradata_len > MAXIMUM_EXTRA_DATA_SIZE {
+        return Err(ConsensusError::ExtraDataExceedsMax { len: extradata_len });
+    } else {
+        return Ok(());
+    }
 }
 
 /// Validates against the parent hash and number.
@@ -175,13 +177,13 @@ pub fn validate_against_parent_hash_number(
         return Err(ConsensusError::ParentBlockNumberMismatch {
             parent_block_number: parent.number,
             block_number: header.number,
-        })
+        });
     }
 
     if parent.hash() != header.parent_hash {
         return Err(ConsensusError::ParentHashMismatch(
             GotExpected { got: header.parent_hash, expected: parent.hash() }.into(),
-        ))
+        ));
     }
 
     Ok(())
@@ -211,7 +213,7 @@ pub fn validate_against_parent_eip1559_base_fee(
             return Err(ConsensusError::BaseFeeDiff(GotExpected {
                 expected: expected_base_fee,
                 got: base_fee,
-            }))
+            }));
         }
     }
 
@@ -228,7 +230,7 @@ pub const fn validate_against_parent_timestamp(
         return Err(ConsensusError::TimestampIsInPast {
             present_timestamp: parent.timestamp,
             timestamp: header.timestamp,
-        })
+        });
     }
     Ok(())
 }
@@ -251,7 +253,7 @@ pub fn validate_against_parent_4844(
     let parent_excess_blob_gas = parent.excess_blob_gas.unwrap_or(0);
 
     if header.blob_gas_used.is_none() {
-        return Err(ConsensusError::BlobGasUsedMissing)
+        return Err(ConsensusError::BlobGasUsedMissing);
     }
     let excess_blob_gas = header.excess_blob_gas.ok_or(ConsensusError::ExcessBlobGasMissing)?;
 
@@ -262,7 +264,7 @@ pub fn validate_against_parent_4844(
             diff: GotExpected { got: excess_blob_gas, expected: expected_excess_blob_gas },
             parent_excess_blob_gas,
             parent_blob_gas_used,
-        })
+        });
     }
 
     Ok(())
