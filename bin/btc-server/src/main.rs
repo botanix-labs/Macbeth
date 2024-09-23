@@ -629,8 +629,10 @@ mod test {
         let p3_dkg2 = app3.get_round2_dkg().await.expect("valid round 2 transition");
 
         // Round 2 dkg for 1st participant
-        app1.add_round2_dkg(frost_id!(2), p2_dkg2.clone()).await.expect("valid round2 dkg");
-        app1.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).await.expect("valid round2 dkg");
+        let p1_share = p2_dkg2.get(&frost_id!(1)).unwrap();
+        app1.add_round2_dkg(frost_id!(2), p1_share.clone()).await.expect("valid round2 dkg");
+        let p1_share = p3_dkg2.get(&frost_id!(1)).unwrap();
+        app1.add_round2_dkg(frost_id!(3), p1_share.clone()).await.expect("valid round2 dkg");
 
         // The dkg session should have concluded by now
         let pk_package1 = app1.db.get_public_key_package().expect("valid pk package");
@@ -640,16 +642,15 @@ mod test {
 
         // Lets complete the round 2 dkg for the another participant
         // And compare the results
-        app2.add_round2_dkg(frost_id!(1), p1_dkg2.clone()).await.expect("valid round2 dkg");
-        app2.add_round2_dkg(frost_id!(3), p3_dkg2.clone()).await.expect("valid round2 dkg");
+        let p2_share = p1_dkg2.get(&frost_id!(2)).unwrap();
+        app2.add_round2_dkg(frost_id!(1), p2_share.clone()).await.expect("valid round2 dkg");
+        let p2_share = p3_dkg2.get(&frost_id!(2)).unwrap();
+        app2.add_round2_dkg(frost_id!(3), p2_share.clone()).await.expect("valid round2 dkg");
 
         let pk_package2 = app1.db.get_public_key_package().expect("valid pk package");
         assert!(pk_package2.is_some());
         assert_eq!(pk_package1, pk_package2);
 
-        let _eth = eth_vector_to_fixed_bytes(
-            hex::decode("86Bb524A1c7703C02BcEc36D1C4218aADb7D643D").unwrap(),
-        );
         let pk1 = app1.get_public_key().expect("valid public key request");
         let pk2 = app2.get_public_key().expect("valid public key request");
         assert_eq!(pk1, pk2);
