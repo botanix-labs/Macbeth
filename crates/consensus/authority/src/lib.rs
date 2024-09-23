@@ -27,9 +27,10 @@ use reth_consensus::{
 use reth_consensus_common::{
     utils::validate_chain_version,
     validation::{
-        validate_against_parent_4844, validate_against_parent_eip1559_base_fee,
-        validate_against_parent_hash_number, validate_against_parent_timestamp,
-        validate_header_extradata,
+        validate_4844_header_standalone, validate_against_parent_4844,
+        validate_against_parent_eip1559_base_fee, validate_against_parent_hash_number,
+        validate_against_parent_timestamp, validate_header_base_fee, validate_header_extradata,
+        validate_header_gas,
     },
 };
 
@@ -144,9 +145,40 @@ impl Consensus for AuthorityConsensus {
         Ok(())
     }
 
-    fn validate_header(&self, _header: &SealedHeader) -> Result<(), ConsensusError> {
-        // reth_consensus_common::validation::validate_header_standalone(header, &self.chain_spec)?;
-        // //TODO check this
+    fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
+        validate_header_gas(header)?;
+        validate_header_base_fee(header, &self.chain_spec)?;
+
+        // EIP-4895: Beacon chain push withdrawals as operations
+        if self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
+            && header.withdrawals_root.is_none()
+        {
+            return Err(ConsensusError::WithdrawalsRootMissing);
+        } else if !self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
+            && header.withdrawals_root.is_some()
+        {
+            return Err(ConsensusError::WithdrawalsRootUnexpected);
+        }
+
+        // Ensures that EIP-4844 fields are valid once cancun is active.
+        if self.chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
+            validate_4844_header_standalone(header)?;
+        } else if header.blob_gas_used.is_some() {
+            return Err(ConsensusError::BlobGasUsedUnexpected);
+        } else if header.excess_blob_gas.is_some() {
+            return Err(ConsensusError::ExcessBlobGasUnexpected);
+        } else if header.parent_beacon_block_root.is_some() {
+            return Err(ConsensusError::ParentBeaconBlockRootUnexpected);
+        }
+
+        if self.chain_spec.is_prague_active_at_timestamp(header.timestamp) {
+            if header.requests_root.is_none() {
+                return Err(ConsensusError::RequestsRootMissing);
+            }
+        } else if header.requests_root.is_some() {
+            return Err(ConsensusError::RequestsRootUnexpected);
+        }
+
         Ok(())
     }
 
