@@ -152,15 +152,16 @@ impl Consensus for AuthorityConsensus {
         validate_header_base_fee(header, &self.chain_spec)?;
 
         // EIP-4895: Beacon chain push withdrawals as operations
-        if self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
-            && header.withdrawals_root.is_none()
-        {
-            return Err(ConsensusError::WithdrawalsRootMissing);
-        } else if !self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
-            && header.withdrawals_root.is_some()
-        {
-            return Err(ConsensusError::WithdrawalsRootUnexpected);
-        }
+        // disable withdrawal root checks since there is no staking currently
+        // if self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
+        //     && header.withdrawals_root.is_none()
+        // {
+        //     return Err(ConsensusError::WithdrawalsRootMissing);
+        // } else if !self.chain_spec.is_shanghai_active_at_timestamp(header.timestamp)
+        //     && header.withdrawals_root.is_some()
+        // {
+        //     return Err(ConsensusError::WithdrawalsRootUnexpected);
+        // }
 
         // Ensures that EIP-4844 fields are valid once cancun is active.
         if self.chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
