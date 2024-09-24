@@ -9,6 +9,7 @@ use btcserverlib::extended_client::BtcServerExtendedClient;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_consensus::Consensus;
 use reth_consensus_common::utils::unix_timestamp;
 use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
@@ -19,7 +20,7 @@ use reth_node_ethereum::EthEngineTypes;
 use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlock, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
@@ -125,6 +126,7 @@ where
             self.bitcoin_checkpoint.clone(),
             driver_tx,
             self.cbft_rpc_client_factory.clone(),
+            self.authority_consensus.clone(),
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
@@ -168,6 +170,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
+    authority_consensus: AuthorityConsensus,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -189,6 +192,7 @@ where
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
+        authority_consensus: AuthorityConsensus,
     ) -> Self {
         Self {
             storage,
@@ -199,6 +203,7 @@ where
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
             driver_tx,
             cbft_rpc_provider,
+            authority_consensus,
         }
     }
 
@@ -236,6 +241,56 @@ where
             chain_spec,
         );
         payload_config
+    }
+
+    pub(crate) fn validate_block(&self, block: &SealedBlock) -> ResponseProcessProposal {
+        // validate_block_post_execution() is called when inserting the block (ABCIDriver)
+        match self.authority_consensus.validate_block_pre_execution(&block) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error in validate_block_pre_execution(): {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
+        // standard header validation
+        let parent_header = self
+            .storage
+            .client
+            .header_by_hash(block.header().parent_hash)
+            .expect("parent header to exist");
+        match self.authority_consensus.validate_header_against_parent(&block.header, &parent_header)
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error in validate_header_against_parent(): {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+        match self.authority_consensus.validate_header(&block.header) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error in validate_header(): {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
+        // poa validation
+        let agg_pk =
+            self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk to exist");
+        match self.authority_consensus.validate_header_standalone(
+            &block.header(),
+            &self.storage.genesis_authorities.as_slice(),
+            Some(&agg_pk),
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error in validate_header_standalone(): {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
+        ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
     pub(crate) fn aggregate_public_key(&self) -> secp256k1::PublicKey {
@@ -517,6 +572,14 @@ where
                     exec_results.pegins,
                     exec_results.pegouts,
                 );
+
+                // validate block before caching
+                match self.validate_block(&sealed_block_with_peg.block().block.clone()) {
+                    ResponseProcessProposal { status: VERIFY_ACCEPTED } => {}
+                    _ => {
+                        return ResponseProcessProposal { status: VERIFY_REJECT };
+                    }
+                }
 
                 self.block_cache
                     .write()
