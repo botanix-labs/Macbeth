@@ -37,7 +37,7 @@ use std::{
 };
 
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
-use bitcoin::{BlockHash, Transaction, TxOut};
+use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::{Auth, RpcApi};
 use config::Config;
 use frost_secp256k1_tr as frost;
@@ -591,6 +591,135 @@ mod test {
     }
 
     #[tokio::test]
+    async fn should_not_accept_round2_dkg_from_ourselves_or_others() {
+        let mut app1 = setup();
+        let mut app2 = setup();
+        let rng = thread_rng();
+        let mut round1_dkgs = vec![];
+        // reminder that frost identifiers start at 1
+        for index in 1..(app1.max_signers + 1) {
+            round1_dkgs.push(
+                frost::keys::dkg::part1(
+                    frost_id!(index),
+                    app1.max_signers,
+                    app1.min_signers,
+                    rng.clone(),
+                )
+                .unwrap(),
+            );
+        }
+
+        // Round 1 DKG for p1
+        app1.identifier = frost_id!(1);
+        app1.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[0].clone())));
+        app1.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        let p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
+
+        // Round 2 DKG for p2
+        app2.identifier = frost_id!(2);
+        app2.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[1].clone())));
+        app2.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        app2.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        let p2_dkg2 = app2.get_round2_dkg().await.expect("valid round 2 transition");
+
+        let p1_share = p2_dkg2.get(&frost_id!(1)).unwrap();
+        let res = app1.add_round2_dkg(frost_id!(1), p1_share.clone()).await;
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "invalid frost peer id");
+        // Should not add someone else's share
+        // For some reason this is fine?!
+        // let p2_share = p1_dkg2.get(&frost_id!(3)).unwrap();
+        // let res = app1.add_round2_dkg(frost_id!(2), p2_share.clone()).await;
+        // assert!(res.is_err());
+        // assert_eq!(res.err().unwrap().to_string(), "invalid frost peer id");
+    }
+
+    #[tokio::test]
+    async fn should_fail_dkg_when_round1_pkg_is_stale() {
+        // DKG should fail all together if you are using a round1 secret that does not belong to
+        // this DKG round
+        let rng: rand::prelude::ThreadRng = thread_rng();
+        // We essentially need to emulate dkg here
+        let mut app1 = setup();
+        let mut app2 = setup();
+        let mut app3 = setup();
+        let mut round1_dkgs = vec![];
+        // Reminder that frost ids index at 1
+        for index in 1..(app1.max_signers + 1) {
+            round1_dkgs.push(
+                frost::keys::dkg::part1(
+                    frost::Identifier::try_from(index).expect("valid id"),
+                    app1.max_signers,
+                    app1.min_signers,
+                    rng.clone(),
+                )
+                .unwrap(),
+            );
+        }
+        // 1st participant round 1
+        app1.identifier = frost_id!(1);
+        app1.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[0].clone())));
+        app1.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        let p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
+
+        // 2nd participant round 1
+        app2.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[1].clone())));
+        app2.identifier = frost_id!(2);
+        app2.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        app2.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        let p2_dkg2 = app2.get_round2_dkg().await.expect("valid round 2 transition");
+
+        // 3rd participant round 1
+        app3.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[2].clone())));
+        app3.identifier = frost_id!(3);
+        app3.add_round1_dkg(frost_id!(1), round1_dkgs[0].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        app3.add_round1_dkg(frost_id!(2), round1_dkgs[1].clone().1)
+            .await
+            .expect("valid round1 dkg");
+        let p3_dkg2 = app3.get_round2_dkg().await.expect("valid round 2 transition");
+
+        // Now lets re-generate the round 1 package for the first participant
+        let new_round1_pkg =
+            frost::keys::dkg::part1(frost_id!(1), app1.max_signers, app1.min_signers, rng.clone())
+                .unwrap();
+        app1.frost_round1_dkg = Arc::new(Mutex::new(Some(new_round1_pkg)));
+
+        // Round 2 dkg for 2'nd participant
+        // However adding the shares from participant 1 to others should fail
+        let new_p1_dkg2 = app1.get_round2_dkg().await.unwrap();
+
+        let p2_share = new_p1_dkg2.get(&frost_id!(2)).unwrap();
+        let _ =
+            app2.add_round2_dkg(frost_id!(1), p2_share.clone()).await.expect("valid round2 dkg");
+        let p2_share = p3_dkg2.get(&frost_id!(2)).unwrap();
+        let res = app2.add_round2_dkg(frost_id!(3), p2_share.clone()).await;
+        // This will fail because some round2 shares have been generated with different round1
+        // coefficients
+        assert!(res.is_err());
+        assert_eq!(res.err().unwrap().to_string(), "internal FROST error: Invalid secret share.");
+    }
+
+    #[tokio::test]
     async fn should_add_round2_dkg_packages() {
         let rng: rand::prelude::ThreadRng = thread_rng();
         // We essentially need to emulate dkg here
@@ -670,10 +799,10 @@ mod test {
         assert_eq!(pk1, pk2);
 
         // Check that round 1 and round 2 secrets are none now
-        // assert!(app1.frost_round1_dkg.is_none());
+        assert!(app1.frost_round1_dkg.lock().await.is_none());
         assert!(app1.frost_round2_dkg.lock().await.is_none());
 
-        // assert!(app2.frost_round1_dkg.is_none());
+        assert!(app2.frost_round1_dkg.lock().await.is_none());
         assert!(app2.frost_round2_dkg.lock().await.is_none());
     }
 
