@@ -254,19 +254,6 @@ where
         }
 
         // standard header validation
-        let parent_header = self
-            .storage
-            .client
-            .header_by_hash(block.header().parent_hash)
-            .expect("parent header to exist");
-        match self.authority_consensus.validate_header_against_parent(&block.header, &parent_header)
-        {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error in validate_header_against_parent(): {:?}", e);
-                return ResponseProcessProposal { status: VERIFY_REJECT };
-            }
-        }
         match self.authority_consensus.validate_header(&block.header) {
             Ok(_) => {}
             Err(e) => {
