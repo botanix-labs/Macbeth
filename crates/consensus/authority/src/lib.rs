@@ -207,6 +207,7 @@ impl Consensus for AuthorityConsensus {
         Ok(())
     }
 
+    // not being used since total difficulty is always zero
     fn validate_header_with_total_difficulty(
         &self,
         header: &Header,
