@@ -201,7 +201,6 @@ pub mod test_utils {
                 fall_back_fee_rate_sat_per_vbyte: 30,
             },
         };
-        println!("App setup complete");
 
         app
     }
