@@ -70,7 +70,9 @@ where
 
     pub(crate) async fn add_round2_dkg(
         &self,
+        // Peer's identifier
         frost_id: frost::Identifier,
+        // Peer's round 2 package
         package: frost::keys::dkg::round2::Package,
     ) -> Result<(), DKGError> {
         if self.db.get_key_package()?.is_some() {
