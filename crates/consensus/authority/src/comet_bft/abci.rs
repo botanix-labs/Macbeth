@@ -243,6 +243,15 @@ where
         payload_config
     }
 
+    pub(crate) fn non_deterministic_data_bytes(&self) -> prost::bytes::Bytes {
+        let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
+        let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
+            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
+        );
+
+        ndd_bytes
+    }
+
     pub(crate) fn validate_block(&self, block: &SealedBlock) -> ResponseProcessProposal {
         // validate_block_post_execution() is called when inserting the block (ABCIDriver)
         match self.authority_consensus.validate_block_pre_execution(&block) {
@@ -339,16 +348,8 @@ where
         info!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
 
-        let non_deterministic_data =
-            NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
-
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data_bytes = prost::bytes::Bytes::copy_from_slice(
-            non_deterministic_data
-                .serialize()
-                .expect("non deterministic data to be serialized")
-                .as_slice(),
-        );
+        let non_deterministic_data_bytes = self.non_deterministic_data_bytes();
         if self.pool.pool_size().total == 0 {
             info!("No transactions in pool, waiting...");
 
