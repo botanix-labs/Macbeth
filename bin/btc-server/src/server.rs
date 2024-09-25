@@ -487,6 +487,8 @@ where
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
         self.validate_jwt(&req)?;
+        // Each package is unique for a peer.
+        // Upstream caller must ensure that the package is sent to that specific peer
         let round2_packages = self
             .get_round2_dkg()
             .await

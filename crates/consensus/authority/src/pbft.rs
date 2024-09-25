@@ -8,7 +8,7 @@ use reth_consensus_common::utils::{current_inturn_index, is_inturn, unix_timesta
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
+    manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_p2p::HeadersClient;
@@ -233,7 +233,7 @@ where
         consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
-            peer_id_to_identifier(config.authority_index as u16);
+            authority_index_to_frost_identifier(config.authority_index as u16);
         info!(
             target: "consensus::authority::pbft::new",
             "Frost identifier used: {:?} - {:?}",

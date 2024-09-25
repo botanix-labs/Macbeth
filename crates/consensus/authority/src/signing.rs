@@ -13,7 +13,9 @@ use reth_consensus_common::utils::{
     current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
 };
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
+    manager::{
+        authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager,
+    },
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_rpc_types::PeerId;
@@ -158,7 +160,7 @@ where
         task_executor: TaskExecutor,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
-            peer_id_to_identifier(frost_config.authority_index as u16);
+            authority_index_to_frost_identifier(frost_config.authority_index as u16);
 
         let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
         let signing_states_clone = Arc::clone(&signing_states);
@@ -569,7 +571,7 @@ where
                     leader_selection_window,
                 );
                 let current_inturn_authority_frost_identifier =
-                    peer_id_to_identifier(current_inturn_authority_index as u16);
+                    authority_index_to_frost_identifier(current_inturn_authority_index as u16);
                 let coord = all_connected_frost_peers.iter().find_map(|(_peer_id, peer_data)| {
                     peer_data.frost_identifier.as_ref().and_then(|frost_id| {
                         if *frost_id == current_inturn_authority_frost_identifier {

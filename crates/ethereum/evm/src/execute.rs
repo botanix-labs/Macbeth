@@ -72,7 +72,7 @@ pub fn create_noop_executor_provider(
         chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
-        bitcoin::Network::Bitcoin,
+        bitcoin::Network::Regtest,
     )
 }
 

@@ -11,7 +11,7 @@ use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
-        manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+        manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
         SigningEventResponseType, SigningResponse,
     },
@@ -209,7 +209,8 @@ where
         }
 
         loop {
-            let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
+            let my_frost_id =
+                authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are in turn + initial state + no public key
             if is_coordinator &&
