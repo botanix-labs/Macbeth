@@ -826,3 +826,367 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::{builder::BitcoinCheckpoint, Storage};
+    use bitcoin::{
+        block::{BlockHash, Header, Version},
+        hashes::Hash,
+        CompactTarget, TxMerkleNode,
+    };
+    use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use rand::thread_rng;
+    use reth_blockchain_tree::noop::NoopBlockchainTree;
+    use reth_btc_wallet::bitcoind::BitcoindFactory;
+    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_chainspec::BOTANIX_TESTNET;
+    use reth_cli_runner::tokio_runtime;
+    use reth_db::{init_db, mdbx::DatabaseArguments};
+    use reth_db_common::init::init_genesis;
+    use reth_evm::test_utils::MockExecutorProvider;
+    use reth_node_core::args::TxPoolArgs;
+    use reth_node_core::cli::config::RethTransactionPoolConfig;
+    use reth_node_ethereum::EthEvmConfig;
+    use reth_provider::providers::{BlockchainProvider, ProviderFactory, StaticFileProvider};
+    use reth_revm::primitives::EnvKzgSettings;
+    use reth_tasks::TaskManager;
+    use reth_transaction_pool::{
+        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, Pool as RethPool,
+        TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
+    };
+    use std::path::Path;
+    use tempfile::tempdir;
+    use tendermint_abci::Application;
+    use tendermint_proto::google::protobuf::Timestamp;
+    use tokio::sync::RwLock;
+
+    const GENESIS_APP_HASH_HEX: &str =
+        "a10f8cfbcf437a97e37d8d63f4b0bbdd55d2bee7aec1b629e701ecb12d4e7a88";
+
+    /// Build the db and the ABCI client
+    fn abci_client_builder() -> ABCIClient<
+        MockExecutorProvider,
+        MockBitcoindFactory,
+        BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+        RethPool<
+            TransactionValidationTaskExecutor<
+                EthTransactionValidator<
+                    BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+                    EthPooledTransaction,
+                >,
+            >,
+            reth_transaction_pool::CoinbaseTipOrdering<EthPooledTransaction>,
+            InMemoryBlobStore,
+        >,
+    > {
+        let secp = secp256k1::Secp256k1::new();
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+
+        // setup db client
+        let temp_dir = tempdir().expect("to create temp dir");
+        let db_path = temp_dir.path().join("db");
+        let db_path = Path::new(&db_path);
+        let db = Arc::new(init_db(db_path, DatabaseArguments::default()).expect("to init db"));
+        let spec = Arc::new(BOTANIX_TESTNET.as_ref().to_owned());
+        let factory = ProviderFactory::new(
+            db.clone(),
+            spec.clone(),
+            StaticFileProvider::read_write(db_path.join("static_files"))
+                .expect("static file providerto exist"),
+        );
+        let _ = init_genesis(factory.clone()).expect("to init genesis");
+        let client = BlockchainProvider::new(factory, Arc::new(NoopBlockchainTree::default()))
+            .expect("to create blockchain provider");
+
+        let storage = Storage::new(
+            Vec::new(),
+            0,
+            pk,
+            bitcoin::Network::Regtest,
+            Some(pk),
+            Vec::new(),
+            EthEvmConfig::default(),
+            BOTANIX_TESTNET.clone(),
+            MockBitcoindFactory::new(BitcoindConfig::default()),
+            MockExecutorProvider::default(),
+            client.clone(),
+        );
+
+        // setup validator with task executor
+        let blob_store = InMemoryBlobStore::default();
+        let tokio_runtime: tokio::runtime::Runtime = tokio_runtime().expect("to create runtime");
+        let task_manager = TaskManager::new(tokio_runtime.handle().clone());
+        let task_executor = task_manager.executor();
+        let validator = TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.clone())
+            .with_head_timestamp(0)
+            .kzg_settings(EnvKzgSettings::Default)
+            .with_additional_tasks(1)
+            .build_with_tasks(client, task_executor, blob_store.clone());
+
+        let transaction_pool =
+            RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
+
+        let bitcoin_header = Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+        let bitcoin_checkpoint: BitcoinCheckpoint =
+            Arc::new(RwLock::new(Some((bitcoin_header, 0))));
+
+        let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
+
+        let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
+
+        let abci_client = ABCIClient::new(
+            storage,
+            validator.validator,
+            transaction_pool,
+            bitcoin_checkpoint,
+            driver_tx,
+            cometbft_rpc_factory,
+            AuthorityConsensus::new(spec),
+        );
+
+        abci_client
+    }
+
+    #[test]
+    fn test_init_chain() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestInitChain::default();
+        let response = abci_client.init_chain(request);
+
+        let expected_consensus_params = None;
+        let expected_validators = vec![];
+
+        assert_eq!(response.consensus_params, expected_consensus_params);
+        assert_eq!(response.validators, expected_validators);
+        let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
+        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+    }
+
+    #[test]
+    fn test_info() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestInfo::default();
+        let response = abci_client.info(request);
+
+        assert_eq!(response.data, String::default());
+        assert_eq!(response.version, "TODO".to_string());
+        assert_eq!(response.app_version, 1);
+        assert_eq!(response.last_block_height, 0);
+        let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
+        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+    }
+
+    #[test]
+    fn test_prepare_proposal_empty_mempool() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestPrepareProposal::default();
+        let response = abci_client.prepare_proposal(request);
+
+        let expected_ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
+        let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
+        let mut reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+
+        assert_eq!(response.txs.len(), 1);
+        assert_eq!(response_ndd, expected_ndd);
+    }
+
+    // TODO: fix error ValidationServiceUnreachable when adding tx to mempool
+    #[test]
+    #[ignore]
+    fn test_prepare_proposal_tx_in_mempool() {
+        let abci_client = abci_client_builder();
+
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let pooled_tx = tx_generator.gen_eip1559_pooled();
+
+        let rt = tokio::runtime::Runtime::new().expect("to create runtime");
+
+        rt.block_on(async {
+            match abci_client.pool.add_transaction(TransactionOrigin::Local, pooled_tx).await {
+                Ok(_) => {}
+                Err(e) => {
+                    panic!("Error adding tx to pool: {:?}", e);
+                }
+            }
+        });
+
+        let request = RequestPrepareProposal::default();
+        let response = abci_client.prepare_proposal(request);
+
+        let expected_ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash(),
+            abci_client.aggregate_public_key(),
+        );
+        let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
+        let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
+        let mut reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+
+        // todo: deserialize tx
+
+        assert_eq!(response.txs.len(), 2);
+        assert_eq!(response_ndd, expected_ndd);
+    }
+
+    #[test]
+    fn test_process_proposal_with_ndd_tx_only() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestProcessProposal::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        request.txs = vec![ndd_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.process_proposal(request);
+
+        assert_eq!(response.status, VERIFY_ACCEPTED);
+    }
+
+    #[test]
+    fn test_process_proposal_with_signed_tx() {
+        let abci_client = abci_client_builder();
+
+        // first tx should be non-deterministic data
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        // second tx should be a signed transaction
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let signed_tx = tx_generator.transaction().into_legacy();
+        let mut buf = Vec::new();
+        signed_tx.encode_enveloped(&mut buf);
+        let signed_tx_bytes = prost::bytes::Bytes::copy_from_slice(buf.as_slice());
+
+        let mut request = RequestProcessProposal::default();
+        request.txs = vec![ndd_bytes, signed_tx_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.process_proposal(request);
+
+        // this fails bc prevrandao isn't being set in the evm env during tests
+        // but all the custom code is executed successfully up to `build_and_execute`
+        assert_eq!(response.status, VERIFY_REJECT);
+    }
+
+    #[test]
+    fn test_finalize_block_with_ndd_tx_only() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        request.txs = vec![ndd_bytes.clone()];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        let response = abci_client.finalize_block(request);
+
+        // get newly made block from cache to recreate expected app hash
+        let mut rw_lock = abci_client.block_cache.write().expect("should get lock");
+        let sealed_block_with_peg = rw_lock.pop_newest().expect("to have block");
+        let expected_app_hash =
+            prost::bytes::Bytes::copy_from_slice(&sealed_block_with_peg.1.block().hash().0);
+
+        let expected_response = ResponseFinalizeBlock {
+            events: vec![],
+            tx_results: vec![ExecTxResult { code: SUCCESS, data: ndd_bytes, ..Default::default() }],
+            validator_updates: vec![],
+            consensus_param_updates: None,
+            app_hash: expected_app_hash,
+        };
+
+        assert_eq!(response, expected_response);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_finalize_block_with_signed_tx() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        // first tx should be non-deterministic data
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        // second tx should be a signed transaction
+        let mut tx_generator = TransactionGenerator::new(thread_rng());
+        let signed_tx = tx_generator.transaction().into_legacy();
+        let mut buf = Vec::new();
+        signed_tx.encode_enveloped(&mut buf);
+        let signed_tx_bytes = prost::bytes::Bytes::copy_from_slice(buf.as_slice());
+
+        request.txs = vec![ndd_bytes.clone(), signed_tx_bytes];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        // this should panic bc prevrandao isn't being set in the evm env during tests
+        // but all the custom code is executed successfully up to `build_and_execute`
+        let _response = abci_client.finalize_block(request);
+    }
+
+    // this needs to be an integration test bc the driver needs to be spun up as well
+    // this requires a btc server to be running
+    #[test]
+    #[should_panic]
+    fn test_commit() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestFinalizeBlock::default();
+
+        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+
+        request.txs = vec![ndd_bytes.clone()];
+
+        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
+        request.proposer_address = proposer_address;
+
+        request.time = Some(Timestamp::default());
+        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+
+        // need to call finalize block first to generate a block in the cache to commit
+        let _finalize_block_response = abci_client.finalize_block(request);
+
+        // will panic bc the driver isn't running
+        let _response = abci_client.commit();
+    }
+}
