@@ -841,15 +841,16 @@ mod tests {
     use comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use rand::thread_rng;
     use reth_blockchain_tree::noop::NoopBlockchainTree;
-    use reth_btc_wallet::bitcoind::BitcoindFactory;
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use reth_btc_wallet::{
+        bitcoind::{BitcoindConfig, BitcoindFactory},
+        test_utils::MockBitcoindFactory,
+    };
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_cli_runner::tokio_runtime;
     use reth_db::{init_db, mdbx::DatabaseArguments};
     use reth_db_common::init::init_genesis;
     use reth_evm::test_utils::MockExecutorProvider;
-    use reth_node_core::args::TxPoolArgs;
-    use reth_node_core::cli::config::RethTransactionPoolConfig;
+    use reth_node_core::{args::TxPoolArgs, cli::config::RethTransactionPoolConfig};
     use reth_node_ethereum::EthEvmConfig;
     use reth_provider::providers::{BlockchainProvider, ProviderFactory, StaticFileProvider};
     use reth_revm::primitives::EnvKzgSettings;
