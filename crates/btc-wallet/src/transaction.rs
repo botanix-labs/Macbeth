@@ -14,7 +14,15 @@ pub struct Input {
 }
 
 /// Create psbt with proprietary tweak fields
-pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<(TxOut, Option<PegoutId>)>) -> Psbt {
+pub fn create_psbt(
+    inputs: Vec<Input>,
+    outputs: Vec<(TxOut, Option<PegoutId>)>,
+    change: Option<TxOut>,
+) -> Psbt {
+    let mut output: Vec<TxOut> = outputs.iter().map(|(out, _)| out).cloned().collect();
+    if let Some(change) = change {
+        output.push(change);
+    }
     let tx = bitcoin::Transaction {
         version: bitcoin::transaction::Version(2i32),
         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
@@ -27,7 +35,7 @@ pub fn create_psbt(inputs: Vec<Input>, outputs: Vec<(TxOut, Option<PegoutId>)>) 
                 witness: Default::default(),
             })
             .collect(),
-        output: outputs.iter().map(|(out, _)| out).cloned().collect(),
+        output,
     };
 
     // Create PSBT

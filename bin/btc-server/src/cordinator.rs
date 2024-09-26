@@ -14,7 +14,7 @@ use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PegoutId as PsbtPegoutId, PsbtExt as BtcPsbtExt, PsbtInputExt, PsbtOutputExt},
+    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt, PsbtOutputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -275,6 +275,7 @@ where
                 })
                 .collect(),
             pegout_ids,
+            change,
         );
 
         // Sanity check that we created a valid PSBT
