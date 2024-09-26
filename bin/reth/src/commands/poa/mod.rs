@@ -526,7 +526,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
         let authority_pk = secret_key.public_key(SECP256K1);
-        let authority_index = genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
+        tracing::info!("Federation Member PubKey {:?}", authority_pk.to_string());
+        tracing::info!("Federation Member Enode {:?}", pk2id(&authority_pk));
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
@@ -626,6 +627,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
+            let authority_index =
+                genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
@@ -740,13 +743,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let light_client = {
             if !is_fed_node {
-                let light_client = LightCBFTClientBuilder::new(
-                    HttpCometBFTRpcClientFactory::default()
-                        .with_port(*cometbft_rpc_port)
-                        .with_host(cometbft_rpc_host),
-                )
-                .build_and_verify()
-                .await;
+                let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
+                    .build_and_verify()
+                    .await;
 
                 Some(light_client)
             } else {
@@ -830,29 +829,29 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //         healthcheck_task.expect("health check task exists").start_task().await;
             //     }),
             // );
-
-            let eth_tx_validator = validator.validator;
-            let abci_client_builder = abci_client_builder.expect("abci client builder exists");
-            let fut = || async {
-                abci_client_builder
-                    .start_server(
-                        &executor.clone(),
-                        eth_tx_validator.clone(),
-                        transaction_pool.clone(),
-                        abci_host.to_string(),
-                        *abci_port,
-                    )
-                    .await
-            };
-
-            match retry_exec(fut, 3, Duration::from_secs(2)).await {
-                Ok(()) => {}
-                Err(err) => {
-                    error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
-                    return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
-                }
-            };
         }
+
+        let eth_tx_validator = validator.validator;
+        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
+        let fut = || async {
+            abci_client_builder
+                .start_server(
+                    &executor.clone(),
+                    eth_tx_validator.clone(),
+                    transaction_pool.clone(),
+                    abci_host.to_string(),
+                    *abci_port,
+                )
+                .await
+        };
+
+        match retry_exec(fut, 3, Duration::from_secs(2)).await {
+            Ok(()) => {}
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
+                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
+            }
+        };
         if !is_fed_node {
             info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
             executor.spawn_critical(

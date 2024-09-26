@@ -521,10 +521,10 @@ start-btc-server-1:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 0 \
-	--address 0.0.0.0:8080 \
+	--address 0.0.0.0:8081 \
 	--db "./db1" \
-	--min-signers 2 \
-	--max-signers 2 \
+	--min-signers 3 \
+	--max-signers 3 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -538,10 +538,10 @@ start-btc-server-2:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 1 \
-	--address 0.0.0.0:8081 \
+	--address 0.0.0.0:8082 \
 	--db "./db2" \
-	--min-signers 2 \
-	--max-signers 2 \
+	--min-signers 3 \
+	--max-signers 3 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -549,6 +549,23 @@ start-btc-server-2:
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
+	--fall-back-fee-rate-sat-per-vbyte 5
+
+start-btc-server-3:
+	cd ./bin/btc-server && \
+	cargo run --bin btc-server -- \
+	--identifier 2 \
+	--address 0.0.0.0:8083 \
+	--db "./db3" \
+	--min-signers 3 \
+	--max-signers 3 \
+	--toml ./config.toml \
+	--fee-rate-diff-percentage 30 \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind-url "${BITCOIND_URL}" \
+	--bitcoind-user "${BITCOIND_USER}" \
+	--bitcoind-pass "${BITCOIND_PWD}" \
+	--btc-signing-server-jwt-secret "${NODE_3_DIR}/bjwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5
 
 start-poa-server-1:
@@ -565,14 +582,14 @@ start-poa-server-1:
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--btc-server "localhost:8080" \
+	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
-	--frost.min_signers 2 \
-	--frost.max_signers 2 \
+	--frost.min_signers 3 \
+	--frost.max_signers 3 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303 \
 	--abci-port=26658
@@ -591,17 +608,69 @@ start-poa-server-2:
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
-	--btc-server "localhost:8081" \
+	--btc-server "localhost:8082" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
-	--frost.min_signers 2 \
-	--frost.max_signers 2 \
+	--frost.min_signers 3 \
+	--frost.max_signers 3 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304 \
 	--abci-port=36658
+
+start-poa-server-3:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--is-testnet \
+	--ntp-server "${NTP_SERVER_URL}" \
+	--federation-config-path "${NODE_3_DIR}/federation.toml" \
+	--federation-mode \
+	--datadir ${NODE_3_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8547 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--btc-server "localhost:8083" \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--btc-signing-server-jwt-secret "${NODE_3_DIR}/bjwt.hex" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--frost.min_signers 3 \
+	--frost.max_signers 3 \
+	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
+	--port 30305 \
+	--abci-port=46658
+
+start-non-fed-server-1:
+	cd ./bin/reth && \
+	cargo run --bin reth -- poa \
+	--is-testnet \
+	--ntp-server "${NTP_SERVER_URL}" \
+	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
+	--datadir ${NON_FED_1_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port 8548 \
+	--http.addr "127.0.0.1" \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--btc-network "${BITCOIND_NETWORK}" \
+	--bitcoind.url "${BITCOIND_URL}" \
+	--bitcoind.username "${BITCOIND_USER}" \
+	--bitcoind.password "${BITCOIND_PWD}" \
+	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
+	--port 30306
+	--abci-port=56658
+
+clean-poa-3:
+	cd ${NODE_3_DIR} && \
+	rm -rf "${NODE_3_DIR}/db" && \
+	rm -rf "${NODE_3_DIR}/static_files"
 
 clean-poa-2:
 	cd ${NODE_2_DIR} && \
@@ -627,32 +696,18 @@ clean-btc-server-2:
 	cd bin/btc-server && \
 	rm -rf "db2"
 
+clean-btc-server-3:
+	cd bin/btc-server && \
+	rm -rf "db3"
+
 make clean-all:
 	make clean-btc-server-1
 	make clean-btc-server-2
+	make clean-btc-server-3
 	make clean-poa-1
 	make clean-poa-2
+	make clean-poa-3
 	make clean-rpc
-
-start-non-fed-server-1:
-	cd ./bin/reth && \
-	cargo run --bin reth -- poa \
-	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
-	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
-	--datadir ${NON_FED_1_DIR} \
-	--http \
-	--http.corsdomain "*" \
-	--http.port 8547 \
-	--http.addr "127.0.0.1" \
-	--http.api eth,net,trace,txpool,web3,rpc,admin \
-	-vvv \
-	--btc-network "${BITCOIND_NETWORK}" \
-	--bitcoind.url "${BITCOIND_URL}" \
-	--bitcoind.username "${BITCOIND_USER}" \
-	--bitcoind.password "${BITCOIND_PWD}" \
-	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
-	--port 30305
 
 check-features:
 	cargo hack check \
