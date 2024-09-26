@@ -127,11 +127,6 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         .merkle_root;
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
-            outputs: vec![client::Output {
-                address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
-                // At this point there should be 2000 sats in the wallet
-                value: 1200,
-            }],
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
             utxo_merkle_root: utxo_merkle,

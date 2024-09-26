@@ -986,7 +986,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             let _ = tx.send(res);
         });
 
-        //let _ = ext.on_node_started(components);
+        // let _ = ext.on_node_started(components);
 
         match rx.await? {
             Ok(()) => info!("Beacon consensus engine exited successfully"),
@@ -1085,13 +1085,20 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 #[allow(missing_debug_implementations)]
 #[derive(Clone)]
 pub struct PoaNodeComponents<P> {
-    pool: P,
-    evm_config: EthEvmConfig,
-    executor: EthExecutorProvider<BitcoindClientFactory>,
-    network: NetworkHandle,
-    provider: BlockchainProvider<Arc<DatabaseEnv>>,
-    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
-    task_executor: TaskExecutor,
+    /// The transaction pool
+    pub pool: P,
+    /// The EVM config, should always be the default
+    pub evm_config: EthEvmConfig,
+    /// evm executor factory
+    pub executor: EthExecutorProvider<BitcoindClientFactory>,
+    /// network handle
+    pub network: NetworkHandle,
+    /// The blockchain provider
+    pub provider: BlockchainProvider<Arc<DatabaseEnv>>,
+    /// payload builder
+    pub payload_builder: PayloadBuilderHandle<EthEngineTypes>,
+    /// task executor
+    pub task_executor: TaskExecutor,
 }
 
 impl<P> PoaNodeComponents<P>

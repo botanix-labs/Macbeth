@@ -104,10 +104,9 @@ pub async fn batch_pegins(
                 None,
             )
             .expect("valid send");
-        let agg_pk = bitcoin::secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid agg pk");
+        let agg_pk =
+            secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
+                .expect("valid agg pk");
 
         pegin_txsids.push((pegin_txid, eth_destination, btc_address, agg_pk));
     }
