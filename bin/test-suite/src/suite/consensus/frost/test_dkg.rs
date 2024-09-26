@@ -1,7 +1,9 @@
 use super::error::Error;
 use crate::{it_error_print, suite::consensus::ConsensusIntegrationTestSuite};
 use bitcoin::{consensus::Encodable, Address, Amount};
+use btcserverlib::pegout_id::PegoutId;
 use client::{self, BtcServerClient};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use std::{str::FromStr, vec};
 use tonic::transport::Channel;
 
@@ -118,6 +120,34 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
             }
         }
     }
+    Ok(())
+}
+
+// Uses random spk and pegout id
+pub async fn send_pegout_notification(
+    client: &mut client::BtcServerClient<Channel>,
+    amount: u64,
+    bitcoin_height: u64,
+) -> Result<(), Error> {
+    // Using stdRng here as it implements Send
+    let mut rand = StdRng::from_entropy();
+    let mut pegout_id_bytes = [0u8; 36];
+    rand.fill_bytes(&mut pegout_id_bytes);
+    let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
+    let pk = sk.public_key(&secp);
+
+    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+    let _ = client
+        .notify_pegout(tonic::Request::new(client::NotifyPegoutRequest {
+            pegout_id: pegout_id.clone().as_bytes().to_vec(),
+            spk: spk.to_bytes().to_vec(),
+            amount,
+            height: bitcoin_height,
+        }))
+        .await
+        .map_err(Error::PegoutNotification)?;
     Ok(())
 }
 

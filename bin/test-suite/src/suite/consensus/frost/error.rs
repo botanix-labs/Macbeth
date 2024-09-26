@@ -20,4 +20,6 @@ pub enum Error {
     Round2PackagesLenghtMismatch,
     /// Pegin Notification Error
     PeginNotification,
+    /// Pegout Notification Error
+    PegoutNotification(tonic::Status),
 }
