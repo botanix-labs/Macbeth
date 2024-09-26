@@ -4,7 +4,7 @@ extern crate log;
 extern crate serde;
 
 mod config;
-mod cordinator;
+mod coordinator;
 mod database;
 mod dkg;
 mod pegout_id;
@@ -66,7 +66,7 @@ pub enum Error {
     #[error("DKG error")]
     DKG(#[from] DKGError),
     #[error("Coordination error")]
-    Coordination(#[from] cordinator::CoordinatorError),
+    Coordination(#[from] coordinator::CoordinatorError),
     #[error("Parsing error")]
     Parsing(#[from] ParsingError),
     #[error("io error: {0}")]
