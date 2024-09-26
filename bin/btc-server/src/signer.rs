@@ -16,7 +16,7 @@ use reth_btc_wallet::{
 };
 
 use crate::{
-    cordinator::CoordinatorError,
+    coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
     util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
@@ -206,7 +206,7 @@ where
         let mut nonces = vec![];
 
         let mut rng = thread_rng();
-        // Order here is important for both the signer and cordinator
+        // Order here is important for both the signer and coordinator
         // Each nonce pair is commitment to a input of the tx
         // When the signing package is produced the signer should be careful to
         // Verify that the nonce pairs are in the same order as the inputs
