@@ -320,7 +320,7 @@ where
                 to_engine.clone(),
                 storage.clone(),
                 network_handle.clone(),
-                light_client.unwrap(),
+                light_client,
             ));
         }
 
