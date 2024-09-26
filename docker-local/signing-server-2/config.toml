@@ -1,0 +1,15 @@
+[grpc]
+enable-reflection = true
+accept-compressed = "Gzip"
+send-compressed = "Gzip"
+max-decoding-message-size = 52428800
+max-encoding-message-size = 52428800
+max-channel-size = 128
+timeout = 60
+max-frame-size = 16777215
+concurrency-limit-per-connection = 32
+max-concurrent-streams = 1024
+tcp-nodelay = true
+draw-lookahead-period-count = 10
+http2-keepalive-interval = 60
+http2-keepalive-timeout = 20

@@ -716,3 +716,31 @@ check-features:
 		--package reth-primitives \
 		--package reth-rpc-types \
 		--feature-powerset
+
+start-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml up -d
+
+build-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml --build -d 
+
+clean-docker-poa:
+	cd ./docker-local && \
+	rm -rf poa-1/db && \
+	rm -rf poa-1/static_files && \
+	rm -rf poa-2/db && \
+	rm -rf poa-2/static_files
+
+clean-docker-btc:
+	cd ./docker-local && \
+	rm -rf btc-server-1/db && \
+	rm -rf btc-server-2/db
+
+stop-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml down && \
+	cd ../ && \
+	make clean-docker-poa && \
+	make clean-docker-btc
+	
