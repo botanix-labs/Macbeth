@@ -38,7 +38,8 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     // We are just testing the UTXO sync mechanism. All nodes should have the same UTXOs before
     // attempting to build or verify a block
     let mut pegins = Pegins::new();
-    for _ in 0..5 {
+    let N = 5;
+    for _ in 0..N {
         // Copied from test_utxo_commitment.rs
         let eth_address = ethers::core::types::Address::random();
         pegins.eth_addresses.push(eth_address);
@@ -61,6 +62,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
             pegins.txids.iter().map(|a| a.to_vec()).collect(),
             pegins.eth_addresses.iter().map(hex::encode).collect(),
             pegins.btc_addresses.clone(),
+            vec![100_000_000; N],
         )
         .await?;
     }
