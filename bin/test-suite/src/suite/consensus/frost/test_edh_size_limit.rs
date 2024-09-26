@@ -111,10 +111,9 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
                 None,
             )
             .expect("valid send");
-        let agg_pk = bitcoin::secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid agg pk");
+        let agg_pk =
+            secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
+                .expect("valid agg pk");
         let blocks = bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
 
         pegin_txsids.push((

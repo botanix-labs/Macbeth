@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use reth_chainspec::BotanixTestnetGenesisConfig;
+use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
@@ -17,8 +18,7 @@ use bitcoin::{hashes::Hash, BlockHash};
 use clap::Parser;
 use reth::{
     args::FedMemberPubKey,
-    cli::ext::{NoArgs, PoaNodeCommandConfig, RethNodeComponents},
-    commands::poa::PoaNodeCommand,
+    commands::poa::{PoaNodeCommand, PoaNodeComponents},
     consensus_common::utils::unix_timestamp,
     network::Peers,
 };
@@ -104,7 +104,7 @@ impl NonFederationMemberTestConfig {
         &mut self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
         fed_member_peers_list: Vec<FederationMemberTestConfig>,
-    ) -> PoaNodeCommand<NoArgs<NonFederationMemberTestConfig>> {
+    ) -> PoaNodeCommand<NoArgs> {
         it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
         self.insert_peers_list(fed_member_peers_list.clone());
 
@@ -167,8 +167,8 @@ impl NonFederationMemberTestConfig {
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
 
-        let no_args = NoArgs::with(self.clone());
-        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        // let no_args = NoArgs::with(self.clone());
+        let command = PoaNodeCommand::parse_from([
             "poa",
             "--is-testnet",
             "--ntp-server",
@@ -199,19 +199,19 @@ impl NonFederationMemberTestConfig {
             format!("{}", self.discovery_port).as_str(),
             "--p2p-secret-key",
             discovery_secret_path.to_str().expect("discovery secret path to exist"),
-        ])
-        .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
+        ]);
+        // .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
 
         command
     }
 }
 
-impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
+impl NonFederationMemberTestConfig {
     #[allow(clippy::unwrap_used)]
-    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+    fn on_node_started<P>(&self, components: PoaNodeComponents<P>) -> eyre::Result<()> {
         it_info_print!("Engine started non federation task with index: ", self.index);
 
-        let RethNodeComponents { executor, db, network } = components;
+        let PoaNodeComponents { task_executor, provider: db, network, .. } = components;
 
         let mut canon_events = db.subscribe_to_canonical_state();
         let rx_sender = self.sender.clone();
@@ -220,7 +220,7 @@ impl PoaNodeCommandConfig for NonFederationMemberTestConfig {
         let peers_list = self.peers_list.clone();
         it_info_print!("RPC Engine peers list", peers_list.len());
 
-        executor.spawn(Box::pin(async move {
+        task_executor.spawn(Box::pin(async move {
             // add the peers
             'inner: loop {
                 for peer in peers_list.iter() {

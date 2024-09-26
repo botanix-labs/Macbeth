@@ -6,8 +6,7 @@ use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus
 use ethers::core::types::Address as EtherAddress;
 use reth::{
     args::{FedMemberPubKey, FederationTomlConfig},
-    cli::ext::{PoaNodeCommandConfig, RethNodeComponents},
-    commands::poa::PoaNodeCommand,
+    commands::poa::{PoaNodeCommand, PoaNodeComponents},
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, Peers},
 };
@@ -181,7 +180,7 @@ impl FederationMemberTestConfig {
     pub fn build_command(
         &self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
-    ) -> (PoaNodeCommand<NoArgs<FederationMemberTestConfig>>, ChainSpec) {
+    ) -> (PoaNodeCommand<NoArgs>, ChainSpec) {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));
         it_info_print!(format!("Building federation member index: {}", self.index));
@@ -244,8 +243,8 @@ impl FederationMemberTestConfig {
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
 
-        let no_args = NoArgs::with(self.clone());
-        let command = PoaNodeCommand::<NoArgs<FederationMemberTestConfig>>::parse_from([
+        // let no_args = NoArgs::with(self.clone());
+        let command = PoaNodeCommand::parse_from([
             "poa",
             "--is-testnet",
             "--ntp-server",
@@ -284,8 +283,8 @@ impl FederationMemberTestConfig {
             format!("{}", self.discovery_port).as_str(),
             "--p2p-secret-key",
             discovery_secret_path.to_str().unwrap(),
-        ])
-        .with_ext::<NoArgs<FederationMemberTestConfig>>(no_args);
+        ]);
+        // .with_ext::<NoArgs<FederationMemberTestConfig>>(no_args);
 
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
@@ -300,11 +299,11 @@ impl FederationMemberTestConfig {
     }
 }
 
-impl PoaNodeCommandConfig for FederationMemberTestConfig {
-    fn on_node_started(&self, components: RethNodeComponents) -> eyre::Result<()> {
+impl FederationMemberTestConfig {
+    fn on_node_started<P>(&self, components: PoaNodeComponents<P>) -> eyre::Result<()> {
         it_info_print!("Engine started task with index: ", self.index);
 
-        let RethNodeComponents { executor, db, network } = components;
+        let PoaNodeComponents { task_executor, provider: db, network, .. } = components;
         let network_clone = network.clone();
 
         let mut canon_events = db.subscribe_to_canonical_state();
@@ -314,7 +313,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         let peers_list = self.peers_list.clone();
 
         // ~~~~~~~~~~ spawn initial task that adds peers and awaits dkg to finish ~~~~~~~~~~~
-        executor.spawn(Box::pin(async move {
+        task_executor.spawn(Box::pin(async move {
             // add the peers
             'inner: loop {
                 for peer in peers_list.iter() {
@@ -367,7 +366,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         // ~~~~~~~~~~~ spawn a task that loops and sends over channel all received canon state
         // notifications ~~~~~~~~~~~
         let rx_sender = self.sender.clone();
-        executor.spawn(Box::pin(async move {
+        task_executor.spawn(Box::pin(async move {
             // start waiting for canon event notifications
             while let Some(canon_state_notification) = canon_events.recv().await.ok() {
                 match rx_sender.send(Notifications::CanonState(CannonStateNofificationPayload {
@@ -389,7 +388,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         // ~~~~~~~~~~~ spawn a task awaiting test signals from the test suite ~~~~~~~~~~~
         let mut receiver = self.test_signal_tx.subscribe();
         let peers_list = self.peers_list.clone();
-        executor.spawn(Box::pin(async move {
+        task_executor.spawn(Box::pin(async move {
             while let Ok(test_signal) = receiver.recv().await {
                 match test_signal {
                     TestSignal::DisconnectAll() => {
@@ -460,7 +459,7 @@ impl PoaNodeCommandConfig for FederationMemberTestConfig {
         // ~~~~~~~~~~~ spawn signing finished notification task ~~~~~~~~~~~
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let rx_sender = self.sender.clone();
-        executor.spawn(Box::pin(async move {
+        task_executor.spawn(Box::pin(async move {
             // create a btc client
             let mut btc_server_client =
                 BtcServerExtendedClient::new(format!("http://{}", bitcoin_server_url), None)

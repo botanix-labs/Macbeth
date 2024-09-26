@@ -2,6 +2,7 @@ use displaydoc::Display as DisplayDoc;
 use thiserror::Error;
 use tonic::Status;
 
+#[warn(dead_code)]
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
     /// Grpc Server Connect Error {0}
