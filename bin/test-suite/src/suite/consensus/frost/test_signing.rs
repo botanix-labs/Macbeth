@@ -109,7 +109,14 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             let txid = pegins.txids.get(input).copied().unwrap();
             let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
             let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-            send_pegin_notification(c, btc_address.clone(), hex_encode(eth_address), txid).await?;
+            send_pegin_notification(
+                c,
+                btc_address.clone(),
+                hex_encode(eth_address),
+                txid,
+                100_000_000, // Amount
+            )
+            .await?;
         }
     }
 

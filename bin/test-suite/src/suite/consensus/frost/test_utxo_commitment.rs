@@ -65,8 +65,14 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
             let txid = pegins.txids.get(input).cloned().unwrap();
             let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
             let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-            let _ = send_pegin_notification(c, btc_address.clone(), hex_encode(eth_address), txid)
-                .await?;
+            let _ = send_pegin_notification(
+                c,
+                btc_address.clone(),
+                hex_encode(eth_address),
+                txid,
+                100_000_000,
+            )
+            .await?;
         }
     }
     let mut hashset = HashSet::new();
@@ -154,6 +160,7 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
             btc_address.clone(),
             hex_encode(eth_address),
             txid,
+            100_000_000,
         )
         .await?;
     }
@@ -204,6 +211,7 @@ pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Resu
             pegins.txids.iter().map(|a| a.to_vec()).collect(),
             pegins.eth_addresses.iter().map(hex::encode).collect(),
             pegins.btc_addresses.clone(),
+            vec![100_000_000; NUM_UTXOS],
         )
         .await?;
     }

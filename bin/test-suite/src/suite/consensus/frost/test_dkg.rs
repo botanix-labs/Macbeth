@@ -156,12 +156,13 @@ pub async fn send_pegin_notification(
     address: Address,
     eth_address: String,
     txid: [u8; 32],
+    amount: u64,
 ) -> Result<(), Error> {
     let mut prev_out_bytes = Vec::new();
     address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
     let utxos = [client::Utxo {
         output: Some(client::TxOut {
-            value: Amount::from_sat(100_000_000).to_sat(),
+            value: Amount::from_sat(amount).to_sat(),
             script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
         }),
         outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
@@ -182,24 +183,29 @@ pub async fn send_pegins_notifications(
     txids: Vec<Vec<u8>>,
     eth_addresses: Vec<String>,
     btc_addresses: Vec<Address>,
+    amounts: Vec<u64>,
 ) -> Result<(), Error> {
-    let utxos: Vec<client::Utxo> = txids
-        .into_iter()
-        .zip(eth_addresses.into_iter())
-        .zip(btc_addresses.into_iter())
-        .map(|((txid, eth_address), btc_address)| {
-            let mut prev_out_bytes = Vec::new();
-            btc_address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
-            client::Utxo {
-                output: Some(client::TxOut {
-                    value: Amount::from_sat(100_000_000).to_sat(),
-                    script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
-                }),
-                outpoint: Some(client::OutPoint { txid, vout: 1 }),
-                eth_address,
-            }
-        })
-        .collect();
+    assert_eq!(txids.len(), eth_addresses.len());
+    assert_eq!(txids.len(), btc_addresses.len());
+    assert_eq!(txids.len(), amounts.len());
+
+    let mut utxos = Vec::new();
+    for (i, txid) in txids.iter().enumerate() {
+        let eth_address = eth_addresses[i].clone();
+        let btc_address = btc_addresses[i].clone();
+        let amount = amounts[i];
+
+        let mut prev_out_bytes = Vec::new();
+        btc_address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
+        utxos.push(client::Utxo {
+            output: Some(client::TxOut {
+                value: Amount::from_sat(amount).to_sat(),
+                script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
+            }),
+            outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
+            eth_address,
+        });
+    }
 
     let res =
         client.notify_pegins(tonic::Request::new(client::NotifyPeginsRequest { utxos })).await;
