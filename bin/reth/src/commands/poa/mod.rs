@@ -741,17 +741,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
-        let light_client = {
-            if !is_fed_node {
-                let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
-                    .build_and_verify()
-                    .await;
+        let light_client = None;
+        // let light_client = {
+        //     if !is_fed_node {
+        //         let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
+        //             .build_and_verify()
+        //             .await;
 
-                Some(light_client)
-            } else {
-                None
-            }
-        };
+        //         Some(light_client)
+        //     } else {
+        //         None
+        //     }
+        // };
         // Build authority Consensus
         let (
             _authority_consensus,
@@ -853,13 +854,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         };
         if !is_fed_node {
-            info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
-            executor.spawn_critical(
-                "PoA Block Fetcher Task",
-                Box::pin(async move {
-                    block_fetcher_task.expect("block fetcher task exists").start_task().await;
-                }),
-            );
+            // TODO: remove once non-validator node is setup
+            // info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
+            // executor.spawn_critical(
+            //     "PoA Block Fetcher Task",
+            //     Box::pin(async move {
+            //         block_fetcher_task.expect("block fetcher task exists").start_task().await;
+            //     }),
+            // );
             executor.spawn_critical(
                 "PoA Block Sync Controller Task",
                 Box::pin(async move {
