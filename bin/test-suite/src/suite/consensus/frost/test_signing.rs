@@ -12,7 +12,7 @@ use crate::{
         common::events::BITCOIND_WALLET_NAME,
         frost::{
             error::Error,
-            test_dkg::{do_dkg, send_pegin_notification},
+            test_dkg::{do_dkg, send_pegin_notification, send_pegout_notification},
         },
         ConsensusIntegrationTestSuite,
     },
@@ -42,8 +42,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
     let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
     if create_res.is_err() {
-        // wallet already exists
-        // load wallet
+        // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
@@ -112,6 +111,11 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
             send_pegin_notification(c, btc_address.clone(), hex_encode(eth_address), txid).await?;
         }
+    }
+
+    // Notify some pending pegouts
+    for c in clients.iter_mut() {
+        send_pegout_notification(c, 1_000, 1).await?;
     }
 
     // First step: get the PSBT
