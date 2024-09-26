@@ -1,0 +1,218 @@
+version: '3.7'
+
+services:
+  bitcoin-core:
+    env_file:
+      - .bitcoin.env
+    container_name: bitcoin-core
+    image: ruimarinho/bitcoin-core:latest
+    command:
+      - -printtoconsole
+      - -regtest=1
+      - -txindex=1
+      - -server=1
+      - -rpcport=38332
+      - -rpcuser=${BITCOIND_USER}
+      - -rpcpassword=${BITCOIND_PASS}
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -blockfilterindex=1
+      - -fallbackfee=0.00005
+    ports:
+      - 38332:38332
+      - 38333:38333
+    volumes:
+      - ./bitcoin-core:/home/bitcoin:rw
+    restart: on-failure
+
+
+  signing-server-1:
+    env_file:
+      - .bitcoin.env
+    container_name: signing-server-1
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1
+    hostname: signing-server-1
+    command:
+      - --btc-network=regtest
+      - --identifier=0
+      - --address=0.0.0.0:8080
+      - --db=/bitcoin-server/db
+      - --min-signers=2
+      - --max-signers=2
+      - --toml=/bitcoin-server/config.toml
+      - --fee-rate-diff-percentage=30
+      - --bitcoind-url=http://bitcoin-core:38332
+      - --bitcoind-user=${BITCOIND_USER}
+      - --bitcoind-pass=${BITCOIND_PASS}
+      - --btc-signing-server-jwt-secret=/bitcoin-server/jwt.hex
+      - --fall-back-fee-rate-sat-per-vbyte=5
+    ports:
+      - 4000:8080
+    volumes:
+      - ./signing-server-1:/bitcoin-server:rw
+    restart: on-failure
+
+
+  poa-node-1:
+    env_file:
+      - .bitcoin.env
+    container_name: botanix-poa-node-1
+    #image: poa-node:latest
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    command:
+      - poa
+      - --federation-config-path=/reth/botanix_testnet/chain.toml
+      - --datadir=/reth/botanix_testnet
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=admin,debug,eth,net,trace,txpool,web3,rpc
+      - --http.corsdomain=*
+      - -vvv
+      - --btc-signing-server-jwt-secret=/reth/botanix_testnet/jwt.hex
+      - --authrpc.addr=127.0.0.1
+      - --authrpc.port=8551
+      - --btc-server=signing-server-1:8080
+      - --bitcoind.url=http://bitcoin-core:38332
+      - --bitcoind.username=${BITCOIND_USER}
+      - --bitcoind.password=${BITCOIND_PASS}
+      - --frost.min_signers=2
+      - --frost.max_signers=2
+      - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
+      - --port=30303
+      - --btc-network=regtest
+      - --metrics=0.0.0.0:9001
+      - --federation-mode
+      - --abci-port=26658
+      - --ipcdisable
+      - --abci-host=0.0.0.0
+    ports:
+      - 8545:8545
+      - 8546:8546
+      - 9001:9001
+      - 30303:30303
+      - 26658:26658
+    depends_on:
+      - signing-server-1
+      - consensus-node-1
+    volumes:
+      - ./poa-1:/reth/botanix_testnet:rw
+      - ./signing-server-1/jwt.hex:/reth/botanix_testnet/jwt.hex
+    restart: on-failure
+
+
+  consensus-node-1:
+    container_name: consensus-node-1
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v6
+    ports:
+      - 26656:26656
+      - 16657:26657
+      - 26660:26660
+    volumes:
+      - ./consensus-node-1:/cometbft:rw
+    restart: on-failure
+    user: root
+    environment:
+      - LOG_LEVEL=DEBUG
+      - PROXY_APP=poa-node-1
+      - MONIKER=consensus-node-1
+      - PERSISTENT_PEERS=
+      - P2P_ALLOW_DUPLICATE_IP=true
+      - P2P_ADDR_BOOK_STRICT=false
+
+
+  signing-server-2:
+    env_file:
+      - .bitcoin.env
+    container_name: signing-server-2
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1
+    hostname: signing-server-2
+    command:
+      - --btc-network=regtest
+      - --identifier=1
+      - --address=0.0.0.0:8080
+      - --db=/bitcoin-server/db
+      - --min-signers=2
+      - --max-signers=2
+      - --toml=/bitcoin-server/config.toml
+      - --fee-rate-diff-percentage=30
+      - --bitcoind-url=http://bitcoin-core:38332
+      - --bitcoind-user=${BITCOIND_USER}
+      - --bitcoind-pass=${BITCOIND_PASS}
+      - --btc-signing-server-jwt-secret=/bitcoin-server/jwt.hex
+      - --fall-back-fee-rate-sat-per-vbyte=5
+    ports:
+      - 4001:8080
+    volumes:
+      - ./signing-server-2:/bitcoin-server:rw
+    restart: on-failure
+
+
+  poa-node-2:
+    env_file:
+      - .bitcoin.env
+    container_name: botanix-poa-node-2
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    command:
+      - poa
+      - --federation-config-path=/reth/botanix_testnet/chain.toml
+      - --datadir=/reth/botanix_testnet
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=admin,debug,eth,net,trace,txpool,web3,rpc
+      - --http.corsdomain=*
+      - -vvv
+      - --btc-signing-server-jwt-secret=/reth/botanix_testnet/jwt.hex
+      - --btc-server=signing-server-2:8080
+      - --bitcoind.url=http://bitcoin-core:38332
+      - --bitcoind.username=${BITCOIND_USER}
+      - --bitcoind.password=${BITCOIND_PASS}
+      - --frost.min_signers=2
+      - --frost.max_signers=2
+      - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
+      - --port=30303
+      - --btc-network=regtest
+      - --metrics=0.0.0.0:9001
+      - --federation-mode
+      - --abci-port=26658
+      - --abci-host=0.0.0.0
+      - --ipcdisable
+    ports:
+      - 8547:8545
+      - 8548:8546
+      - 9002:9001
+      - 30304:30303
+      - 36658:26658
+    depends_on:
+      - signing-server-2
+      - consensus-node-2
+    volumes:
+      - ./poa-2:/reth/botanix_testnet:rw
+      - ./signing-server-2/jwt.hex:/reth/botanix_testnet/jwt.hex
+    restart: on-failure
+
+
+  consensus-node-2:
+    container_name: consensus-node-2
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v6
+    ports:
+      - 36656:26656
+      - 36657:26657
+      - 36660:26660
+    volumes:
+      - ./consensus-node-2:/cometbft:rw
+    restart: on-failure
+    environment:
+      - LOG_LEVEL=DEBUG
+      - PROXY_APP=poa-node-2
+      - MONIKER=consensus-node-2
+      - PERSISTENT_PEERS=
+      - P2P_ALLOW_DUPLICATE_IP=true
+      - P2P_ADDR_BOOK_STRICT=false
