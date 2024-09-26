@@ -280,7 +280,7 @@ where
         let mut frost_task = None;
         let mut healthcheck_task = None;
         let mut abci_client_builder = None;
-        let mut block_fetcher_task = None;
+        let block_fetcher_task = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -304,25 +304,18 @@ where
             );
 
             frost_task = Some(task);
-            abci_client_builder = Some(ABCIClientBuilder::new(
-                storage.clone(),
-                bitcoin_block_header.clone(),
-                network_handle.clone(),
-                btc_server_client.expect("to be defined").clone(),
-                consensus.clone(),
-                to_engine.clone(),
-                cometbft_rpc_factory.clone(),
-            ));
-        } else {
-            block_fetcher_task = Some(BlockFetcherTask::new(
-                consensus.clone(),
-                block_import_rx,
-                to_engine.clone(),
-                storage.clone(),
-                network_handle.clone(),
-                light_client,
-            ));
         }
+
+        // all nodes will have an abci client builder
+        abci_client_builder = Some(ABCIClientBuilder::new(
+            storage.clone(),
+            bitcoin_block_header.clone(),
+            network_handle.clone(),
+            btc_server_client,
+            consensus.clone(),
+            to_engine.clone(),
+            cometbft_rpc_factory.clone(),
+        ));
 
         (
             consensus,

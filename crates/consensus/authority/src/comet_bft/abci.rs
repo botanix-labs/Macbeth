@@ -72,7 +72,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     network_handle: NetworkHandle,
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -93,7 +93,7 @@ where
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         network_handle: NetworkHandle,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -729,7 +729,7 @@ pub(crate) struct ABCIDriver<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     network_handle: NetworkHandle,
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -750,7 +750,7 @@ where
         storage: Storage<EF, BF, DB>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -813,9 +813,14 @@ where
                             .collect::<Vec<_>>();
                         // TODO what happens if the pegins fail? Should we panic? Should this be
                         // called in commit?
-                        call_notify_pegin(&mut self.btc_server, &pegins)
+                        if self.btc_server.is_some() {
+                            call_notify_pegin(
+                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                &pegins,
+                            )
                             .await
                             .expect("Should notify pegins");
+                        }
 
                         tx.send(()).expect("to send");
                     }
