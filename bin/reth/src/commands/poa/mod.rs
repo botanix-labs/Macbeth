@@ -526,7 +526,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
         let authority_pk = secret_key.public_key(SECP256K1);
-        let authority_index = genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
+        tracing::info!("Federation Member PubKey {:?}", authority_pk.to_string());
+        tracing::info!("Federation Member Enode {:?}", pk2id(&authority_pk));
 
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
@@ -626,6 +627,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
+            let authority_index =
+                genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
@@ -740,13 +743,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let light_client = {
             if !is_fed_node {
-                let light_client = LightCBFTClientBuilder::new(
-                    HttpCometBFTRpcClientFactory::default()
-                        .with_port(*cometbft_rpc_port)
-                        .with_host(cometbft_rpc_host),
-                )
-                .build_and_verify()
-                .await;
+                let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
+                    .build_and_verify()
+                    .await;
 
                 Some(light_client)
             } else {
