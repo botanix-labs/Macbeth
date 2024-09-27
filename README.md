@@ -159,6 +159,7 @@ docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
 
 ***Notes***
 >> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+
 >> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
 
 
