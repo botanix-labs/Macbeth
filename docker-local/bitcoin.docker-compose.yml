@@ -1,0 +1,28 @@
+version: '3.7'
+
+services:
+  bitcoin-core:
+    env_file:
+      - .bitcoin.env
+    image: ruimarinho/bitcoin-core:latest
+    hostname: bitcoin-core
+    container_name: bitcoin-core
+    command:
+      - -printtoconsole
+      - -regtest=1
+      - -txindex=1
+      - -server=1
+      - -rpcport=38332
+      - -rpcuser=${BITCOIND_USER}
+      - -rpcpassword=${BITCOIND_PASS}
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -blockfilterindex=1
+      - -fallbackfee=0.00005
+    volumes:
+      - ./bitcoin-core:/home/bitcoin/
+    ports:
+      - 38332:38332
+      - 38333:38333
+      - 38334:38334
+
