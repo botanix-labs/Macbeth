@@ -32,7 +32,6 @@ services:
     env_file:
       - .bitcoin.env
     container_name: botanix-poa-node-1
-    #image: poa-node:latest
     image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
     build:
       context: ../
@@ -78,9 +77,8 @@ services:
       - ./signing-server-1/jwt.hex:/reth/botanix_testnet/jwt.hex
     restart: on-failure
 
-
-  consensus-node-1:
-    container_name: consensus-node-1
+  cometbft-node-1:
+    container_name: cometbft-node-1
     image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v4
     ports:
       - 26656:26656
@@ -92,11 +90,10 @@ services:
     environment:
       - LOG_LEVEL=DEBUG
       - NODE_NAME=poa-node-1
-      - MONIKER=consensus-node-1
+      - MONIKER=cometbft-node-1
       - PERSISTENT_PEERS=0d8b29bb1f2427fab43c65230d28f6bb822ba05e@consensus-node-2:26656
       - P2P_ALLOW_DUPLICATE_IP=true
       - P2P_ADDR_BOOK_STRICT=false
-
 
   signing-server-2:
     env_file:
@@ -123,7 +120,6 @@ services:
     volumes:
       - ./signing-server-2:/bitcoin-server:rw
     restart: on-failure
-
 
   poa-node-2:
     env_file:
@@ -172,9 +168,8 @@ services:
       - ./signing-server-2/jwt.hex:/reth/botanix_testnet/jwt.hex
     restart: on-failure
 
-
-  consensus-node-2:
-    container_name: consensus-node-2
+  cometbft-node-2:
+    container_name: cometbft-node-2
     image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v4
     ports:
       - 36656:26656
@@ -186,7 +181,7 @@ services:
     environment:
       - LOG_LEVEL=DEBUG
       - NODE_NAME=poa-node-2
-      - MONIKER=consensus-node-2
+      - MONIKER=cometbft-node-2
       - PERSISTENT_PEERS=a30097a408bf0bffe4fbbf5fc46c0252c3d3e5a8@consensus-node-1:26656
       - P2P_ALLOW_DUPLICATE_IP=true
       - P2P_ADDR_BOOK_STRICT=false
