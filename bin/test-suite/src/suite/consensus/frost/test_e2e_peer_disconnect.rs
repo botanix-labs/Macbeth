@@ -30,7 +30,7 @@ pub async fn e2e_peer_disconnect(
     let targeted_fed_member = test_fed_members.get(&(0u16)).cloned().unwrap();
 
     // create eth client
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");

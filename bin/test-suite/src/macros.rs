@@ -22,7 +22,7 @@ macro_rules! run_test {
             "FullRun"
         };
         $self.destroy_context().await;
-        $self.create_new_context($create_test_config).await;
+        let _ = $self.create_new_context($create_test_config).await;
 
         info!("({}) {} {}...", purple(test_type), cyan(test), "Running");
         tokio::select! {

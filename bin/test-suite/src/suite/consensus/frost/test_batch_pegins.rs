@@ -30,7 +30,7 @@ const NUM_PEGINS: u16 = 5;
 #[allow(clippy::too_many_lines)]
 pub async fn batch_pegins(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -63,7 +63,7 @@ pub async fn batch_pegins(
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 
@@ -214,7 +214,7 @@ pub async fn batch_pegins(
     // mint all the pegins
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().create_botanix_eth_client().await;
+    let provider = test_fed_members.get(&0).unwrap().botanix_eth_client.clone();
     let mut nonce = provider.nonce().await;
     for (_, pegin) in pegins.iter().enumerate() {
         // There is only one pegin that needs to be serialized

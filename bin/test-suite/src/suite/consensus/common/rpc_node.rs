@@ -3,24 +3,21 @@ use crate::{
     suite::consensus::{
         common::{
             poa_node::{CannonStateNofificationPayload, FederationMemberTestConfig, Notifications},
-            MINTING_CONTRACT_BYTECODE,
+            spawn_child_process, MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
 };
+use anyhow::Context;
 use reth_chainspec::BotanixTestnetGenesisConfig;
-use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
 use askama::Template;
 use bitcoin::{hashes::Hash, BlockHash};
-use clap::Parser;
 use reth::{
-    args::FedMemberPubKey,
-    commands::poa::{PoaNodeCommand, PoaNodeComponents},
-    consensus_common::utils::unix_timestamp,
-    network::Peers,
+    args::FedMemberPubKey, commands::poa::PoaNodeComponents,
+    consensus_common::utils::unix_timestamp, network::Peers,
 };
 use reth_primitives::{
     constants::nums_secp256k1_pk,
@@ -38,10 +35,18 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::process::Child;
 use url::Url;
 
 const RPC_PORT_BASE: u16 = 8545;
 const DISCOVERY_PORT_BASE: u16 = 30321;
+
+#[derive(Debug)]
+pub struct SpawnedRpcServer {
+    pub rpc_port: u16,
+    pub discovery_port: u16,
+    pub child_process: Child,
+}
 
 #[derive(Clone, Debug)]
 pub struct NonFederationMemberTestConfig {
@@ -70,17 +75,17 @@ impl NonFederationMemberTestConfig {
         bitcoind_password: String,
         peer_id: PeerId,
         botanix_fee_recipient: String,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let rpc_port = RPC_PORT_BASE + index;
         let discovery_port = DISCOVERY_PORT_BASE + index;
-        Self {
+        Ok(Self {
             index,
             temp_path: {
                 let ret = tempfile::TempDir::new()
-                    .expect("tempdir is okay")
+                    .context("error creating tempdir")?
                     .into_path()
                     .join(format!("_{}", unix_timestamp().to_string()));
-                std::fs::create_dir_all(&ret).expect("can't create tmpdir subdir");
+                let _ = std::fs::create_dir_all(&ret).context("error creating tmpdir subdir")?;
                 ret
             },
             secret_key,
@@ -93,29 +98,31 @@ impl NonFederationMemberTestConfig {
             sender,
             peer_id,
             botanix_fee_recipient,
-        }
+        })
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
         self.peers_list = peers;
     }
 
-    pub fn build_command(
+    pub fn spawn_service(
         &mut self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
         fed_member_peers_list: Vec<FederationMemberTestConfig>,
-    ) -> PoaNodeCommand<NoArgs> {
+    ) -> anyhow::Result<SpawnedRpcServer> {
         it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
         self.insert_peers_list(fed_member_peers_list.clone());
 
-        let datadir = self.temp_path.to_str().expect("temp path is okay");
+        let datadir = self.temp_path.to_str().context("created temp path is unparsable")?;
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .open(discovery_secret_path.clone())
-            .expect("file can be opened");
-        file.write_all(&self.secret_key.as_bytes()).expect("secret key written to file");
+            .context("discovery secret file cannot be created/opened")?;
+        let _ = file
+            .write_all(&self.secret_key.as_bytes())
+            .context("error writing secret key to file")?;
 
         // now create the edh
         let edh = ExtraDataHeader::new(
@@ -130,7 +137,9 @@ impl NonFederationMemberTestConfig {
         let _botanix_testnet_config_genesis = {
             let edh = hex::encode(edh.serialize());
             let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
-            let rendered_json = botanix_testnet_config_genesis.render().unwrap();
+            let rendered_json = botanix_testnet_config_genesis
+                .render()
+                .context("error rendering botanix testnet genesis config")?;
             rendered_json
         };
 
@@ -165,16 +174,35 @@ impl NonFederationMemberTestConfig {
         );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
-        federation_config.write_to_path(&federation_config_path).unwrap();
+        federation_config
+            .write_to_path(&federation_config_path)
+            .context("Error writing federation config to path")?;
 
-        // let no_args = NoArgs::with(self.clone());
-        let command = PoaNodeCommand::parse_from([
+        // point to the relevant working directory
+        let mut working_directory =
+            std::env::current_dir().context("Error obtaining current directory")?;
+        for _ in 0..2 {
+            working_directory.pop();
+        }
+        working_directory.push("bin");
+        working_directory.push("reth");
+
+        let federation_config_path = federation_config_path.display().to_string();
+        let rpc_port = self.rpc_port.to_string();
+        let bitcoind_url = self.bitcoind_url.to_string();
+        let bitcoind_username = self.bitcoind_username.clone();
+        let bitcoind_password = self.bitcoind_password.clone();
+        let discovery_port = self.discovery_port.to_string();
+
+        // prepare run arguments
+        let command = "cargo";
+        let args = vec![
             "poa",
             "--is-testnet",
             "--ntp-server",
             "time.cloudflare.com",
             "--federation-config-path",
-            format!("{}", federation_config_path.display().to_string()).as_str(),
+            federation_config_path.as_str(),
             "--datadir",
             datadir,
             "--debug.terminate",
@@ -182,7 +210,7 @@ impl NonFederationMemberTestConfig {
             "--http.corsdomain",
             "*",
             "--http.port",
-            format!("{}", self.rpc_port).as_str(),
+            rpc_port.as_str(),
             "--http.addr",
             "127.0.0.1",
             "--http.api",
@@ -190,25 +218,27 @@ impl NonFederationMemberTestConfig {
             "--btc-network",
             "regtest",
             "--bitcoind.url",
-            self.bitcoind_url.as_str(),
+            bitcoind_url.as_str(),
             "--bitcoind.username",
-            self.bitcoind_username.as_str(),
+            bitcoind_username.as_str(),
             "--bitcoind.password",
-            self.bitcoind_password.as_str(),
+            bitcoind_password.as_str(),
             "--port",
-            format!("{}", self.discovery_port).as_str(),
+            discovery_port.as_str(),
             "--p2p-secret-key",
-            discovery_secret_path.to_str().expect("discovery secret path to exist"),
-        ]);
-        // .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
+            discovery_secret_path.to_str().context("discovery secret path to exist")?,
+        ];
 
-        command
+        Ok(SpawnedRpcServer {
+            child_process: spawn_child_process(command, args, working_directory)?,
+            discovery_port: self.discovery_port,
+            rpc_port: self.rpc_port,
+        })
     }
 }
 
 impl NonFederationMemberTestConfig {
-    #[allow(clippy::unwrap_used)]
-    fn on_node_started<P>(&self, components: PoaNodeComponents<P>) -> eyre::Result<()> {
+    fn start_node<P>(&self, components: PoaNodeComponents<P>) -> anyhow::Result<()> {
         it_info_print!("Engine started non federation task with index: ", self.index);
 
         let PoaNodeComponents { task_executor, provider: db, network, .. } = components;
@@ -232,7 +262,8 @@ impl NonFederationMemberTestConfig {
                     it_info_print!("RPC added peer", peer.peer_id);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let all_peers = network.get_all_peers().await.unwrap();
+                let all_peers =
+                    network.get_all_peers().await.expect("Error getting all peers from network");
                 it_info_print!(
                     "RPC Engine connected with peers",
                     format!("index={}: peers_count={}", engine_index, all_peers.len())
@@ -250,7 +281,7 @@ impl NonFederationMemberTestConfig {
                         ts: tokio::time::Instant::now(),
                         notification: canon_state_notification,
                     }))
-                    .unwrap();
+                    .expect("Error sending a canon state notification payload");
             }
         }));
 
@@ -263,7 +294,8 @@ pub async fn create_rpc_node(
     global_context: Arc<GlobalContext>,
     federation_members: HashMap<u16, FederationMemberTestConfig>,
     botanix_fee_recipeint: String,
-) -> (NonFederationMemberTestConfig, tokio::sync::broadcast::Sender<Notifications>) {
+) -> anyhow::Result<(NonFederationMemberTestConfig, tokio::sync::broadcast::Sender<Notifications>)>
+{
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let secp = secp256k1::Secp256k1::new();
@@ -288,5 +320,5 @@ pub async fn create_rpc_node(
 
     // Note: before we create the chain.toml edh and authorities list need to be set
 
-    (rpc_node, tx)
+    Ok((rpc_node?, tx))
 }

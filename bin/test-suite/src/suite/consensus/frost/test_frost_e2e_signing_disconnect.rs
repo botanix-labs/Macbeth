@@ -65,7 +65,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 

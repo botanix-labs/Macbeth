@@ -15,8 +15,7 @@ pub async fn invalid_pegout(
 
     // Generate and send pegout tx
     // invalid bitcoin address
-    let botanix_eth_client =
-        test_fed_members.get(&0).cloned().unwrap().create_botanix_eth_client().await;
+    let botanix_eth_client = test_fed_members.get(&0).cloned().unwrap().botanix_eth_client.clone();
     let invalid_pegout_destination = ethers::core::types::Bytes::from(
         "invalid_pegout_destination".to_string().as_bytes().to_vec(),
     );

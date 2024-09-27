@@ -1,17 +1,25 @@
+use super::{
+    botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer, MINT_CONTRACT_ADDRESS,
+    PREFUNDED_ACCOUNT_SECRET_KEY,
+};
+use crate::{
+    context::GlobalContext,
+    it_error_print, it_info_print, it_warn_print,
+    suite::consensus::common::{spawn_child_process, MINTING_CONTRACT_BYTECODE},
+};
+use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
-use clap::Parser;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::core::types::Address as EtherAddress;
 use reth::{
     args::{FedMemberPubKey, FederationTomlConfig},
-    commands::poa::{PoaNodeCommand, PoaNodeComponents},
+    commands::poa::PoaNodeComponents,
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, Peers},
 };
 use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
-use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
@@ -28,18 +36,11 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::broadcast::{channel, Sender};
-use url::Url;
-
-use super::{botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer};
-use crate::{
-    context::GlobalContext, it_error_print, it_info_print, it_warn_print,
-    suite::consensus::common::MINTING_CONTRACT_BYTECODE,
+use tokio::{
+    process::Child,
+    sync::broadcast::{channel, Sender},
 };
-
-const MINT_CONTRACT_ADDRESS: &str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
-pub const PREFUNDED_ACCOUNT_SECRET_KEY: &str =
-    "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
+use url::Url;
 
 #[derive(Template, Clone, Debug)]
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
@@ -59,6 +60,13 @@ pub enum TestSignal {
     DisconnectAll(),
     ReconnectAll(),
     GetAllPeers(tokio::sync::broadcast::Sender<Vec<PeerInfo>>),
+}
+
+#[derive(Debug)]
+pub struct SpawnedPoaServer {
+    pub rpc_port: u16,
+    pub discovery_port: u16,
+    pub child_process: Child,
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +104,7 @@ pub struct FederationMemberTestConfig {
     pub edh: Option<ExtraDataHeader>,
     pub test_signal_tx: Sender<TestSignal>,
     pub botanix_fee_recipient: String,
+    pub botanix_eth_client: BotanixEthClient,
 }
 
 impl FederationMemberTestConfig {
@@ -115,10 +124,12 @@ impl FederationMemberTestConfig {
         discovery_port_base: u16,
         test_signal_tx: Sender<TestSignal>,
         botanix_fee_recipient: String,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let rpc_port = rpc_port_base + index;
         let discovery_port = discovery_port_base + index;
-        Self {
+        let botanix_eth_client =
+            FederationMemberTestConfig::create_botanix_eth_client(rpc_port).await?;
+        Ok(Self {
             index,
             temp_path: {
                 let ret = tempfile::TempDir::new()
@@ -145,14 +156,15 @@ impl FederationMemberTestConfig {
             edh: None,
             test_signal_tx,
             botanix_fee_recipient,
-        }
+            botanix_eth_client,
+        })
     }
 
-    pub async fn create_botanix_eth_client(&self) -> BotanixEthClient {
+    async fn create_botanix_eth_client(rpc_port: u16) -> anyhow::Result<BotanixEthClient> {
         let mint_contract_address: EtherAddress =
-            MINT_CONTRACT_ADDRESS.parse().expect("Must be a valid ethereum address");
-        BotanixEthClient::new(self.rpc_port, PREFUNDED_ACCOUNT_SECRET_KEY, mint_contract_address)
-            .await
+            MINT_CONTRACT_ADDRESS.parse().context("Must be a valid ethereum address")?;
+        Ok(BotanixEthClient::new(rpc_port, PREFUNDED_ACCOUNT_SECRET_KEY, mint_contract_address)
+            .await)
     }
 
     pub fn insert_peers_list(&mut self, peers: Vec<FederationMemberTestConfig>) {
@@ -177,31 +189,37 @@ impl FederationMemberTestConfig {
         }
     }
 
-    pub fn build_command(
+    pub fn spawn_service(
         &self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
-    ) -> (PoaNodeCommand<NoArgs>, ChainSpec) {
+    ) -> anyhow::Result<SpawnedPoaServer> {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));
         it_info_print!(format!("Building federation member index: {}", self.index));
 
-        let datadir = self.temp_path.to_str().expect("temp path is okay");
+        let datadir = self.temp_path.to_str().context("created temp path is unparsable")?;
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .open(discovery_secret_path.clone())
-            .unwrap();
-        file.write_all(&self.secret_key.display_secret().to_string().as_bytes()).unwrap();
+            .context("discovery secret file cannot be created/opened")?;
+        let _ = file
+            .write_all(&self.secret_key.display_secret().to_string().as_bytes())
+            .context("error writing secret key to file")?;
 
         // update genesis config with edh and render file
         let botanix_testnet_config_genesis = if let Some(edh) = self.edh.as_ref() {
             let edh = hex::encode(edh.serialize());
             let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
-            let rendered_json = botanix_testnet_config_genesis.render().unwrap();
+            let rendered_json = botanix_testnet_config_genesis
+                .render()
+                .context("error rendering botanix testnet genesis config")?;
             rendered_json
         } else {
-            panic!("Edh data missing. Cannot create botanix testnet config genesis file");
+            return Err(anyhow::anyhow!(
+                "Edh data missing. Cannot create botanix testnet config genesis file"
+            ));
         };
 
         // Need to zip together the soc address and pk
@@ -213,7 +231,7 @@ impl FederationMemberTestConfig {
             };
             fed_member_pks.push(pk);
         }
-        // add our selves
+        // add ourselves
         let my_pk = FedMemberPubKey {
             key: self.secret_key.public_key(SECP256K1).to_string(),
             socket_addr: format!("127.0.0.1:{}", self.discovery_port),
@@ -241,16 +259,42 @@ impl FederationMemberTestConfig {
         );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
-        federation_config.write_to_path(&federation_config_path).unwrap();
+        federation_config
+            .write_to_path(&federation_config_path)
+            .context("Error writing federation config to path")?;
 
-        // let no_args = NoArgs::with(self.clone());
-        let command = PoaNodeCommand::parse_from([
+        // point to the relevant working directory
+        let mut working_directory =
+            std::env::current_dir().context("Error obtaining current directory")?;
+        for _ in 0..2 {
+            working_directory.pop();
+        }
+        working_directory.push("bin");
+        working_directory.push("reth");
+
+        let federation_config_path = federation_config_path.display().to_string();
+        let rpc_port = self.rpc_port.to_string();
+        let bitcoin_server_url = self.bitcoin_server_url.clone();
+        let bitcoind_url = self.bitcoind_url.to_string();
+        let bitcoind_username = self.bitcoind_username.clone();
+        let bitcoind_password = self.bitcoind_password.clone();
+        let frost_min_signers = self.frost_min_signers.to_string();
+        let frost_max_signers = self.frost_max_signers.to_string();
+        let discovery_port = self.discovery_port.to_string();
+
+        // prepare run arguments
+        let command = "cargo";
+        let args = vec![
+            "run",
+            "--bin",
+            "reth",
+            "--",
             "poa",
             "--is-testnet",
             "--ntp-server",
             "time.cloudflare.com",
             "--federation-config-path",
-            format!("{}", federation_config_path.display().to_string()).as_str(),
+            federation_config_path.as_str(),
             "--federation-mode",
             "--ipcdisable",
             "--datadir",
@@ -260,7 +304,7 @@ impl FederationMemberTestConfig {
             "--http.corsdomain",
             "*",
             "--http.port",
-            format!("{}", self.rpc_port).as_str(),
+            rpc_port.as_str(),
             "--http.addr",
             "127.0.0.1",
             "--http.api",
@@ -268,34 +312,37 @@ impl FederationMemberTestConfig {
             "--btc-network",
             "regtest",
             "--btc-server",
-            self.bitcoin_server_url.as_str(),
+            bitcoin_server_url.as_str(),
             "--bitcoind.url",
-            self.bitcoind_url.as_str(),
+            bitcoind_url.as_str(),
             "--bitcoind.username",
-            self.bitcoind_username.as_str(),
+            bitcoind_username.as_str(),
             "--bitcoind.password",
-            self.bitcoind_password.as_str(),
+            bitcoind_password.as_str(),
             "--frost.min_signers",
-            self.frost_min_signers.to_string().as_str(),
+            frost_min_signers.as_str(),
             "--frost.max_signers",
-            self.frost_max_signers.to_string().as_str(),
+            frost_max_signers.as_str(),
             "--port",
-            format!("{}", self.discovery_port).as_str(),
+            discovery_port.as_str(),
             "--p2p-secret-key",
-            discovery_secret_path.to_str().unwrap(),
-        ]);
-        // .with_ext::<NoArgs<FederationMemberTestConfig>>(no_args);
+            discovery_secret_path.to_str().context("discovery secret path to exist")?,
+        ];
 
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
-            .expect("Can't deserialize Botanix Testnet genesis json");
+            .context("Can't deserialize Botanix Testnet genesis json")?;
         let botanix_testnet = create_botanix_config_with_genesis(
             genesis,
             BOTANIX_TESTNET.parent_confirmation_depth,
             self.botanix_fee_recipient.clone(),
         );
 
-        (command, botanix_testnet)
+        Ok(SpawnedPoaServer {
+            child_process: spawn_child_process(command, args, working_directory)?,
+            discovery_port: self.discovery_port,
+            rpc_port: self.rpc_port,
+        })
     }
 }
 
@@ -532,11 +579,11 @@ pub async fn create_poa_federation_members(
     global_context: Arc<GlobalContext>,
     btc_servers: Option<&Vec<SpawnedBtcServer>>,
     botanix_fee_recipient: String,
-) -> (
+) -> anyhow::Result<(
     HashMap<u16, FederationMemberTestConfig>,
     tokio::sync::broadcast::Sender<Notifications>,
     Vec<PublicKey>,
-) {
+)> {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let mut fed_members: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
@@ -587,7 +634,7 @@ pub async fn create_poa_federation_members(
             test_signal_tx,
             botanix_fee_recipient.clone(),
         )
-        .await;
+        .await?;
         fed_members.insert(member_index, fed_member_config);
     }
 
@@ -622,7 +669,7 @@ pub async fn create_poa_federation_members(
         };
     }
 
-    (fed_members, tx, authorities)
+    Ok((fed_members, tx, authorities))
 }
 
 #[cfg(test)]
@@ -635,12 +682,11 @@ mod tests {
     fn test_edh_template() {
         let secp: secp256k1::Secp256k1<secp256k1::All> = secp256k1::Secp256k1::new();
         let secret_key1 = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk1 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key1);
+        let _pk1 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key1);
         let secret_key2 = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
+        let _pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
 
-        let mut extra_data_header = ExtraDataHeader::default();
-        extra_data_header.add_authority_signers(vec![pk1, pk2]);
+        let extra_data_header = ExtraDataHeader::default();
 
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };

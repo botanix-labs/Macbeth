@@ -34,7 +34,7 @@ pub async fn test_mempool_gossip(
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create eth client
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");

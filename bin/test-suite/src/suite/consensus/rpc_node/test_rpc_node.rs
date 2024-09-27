@@ -5,8 +5,7 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            botanix_client::BotanixEthClient, events::SEND_AMOUNT,
-            poa_node::PREFUNDED_ACCOUNT_SECRET_KEY,
+            botanix_client::BotanixEthClient, events::SEND_AMOUNT, PREFUNDED_ACCOUNT_SECRET_KEY,
         },
         rpc_node::error::NonFederationMemberTestConfigError,
         ConsensusIntegrationTestSuite,
@@ -29,8 +28,7 @@ pub async fn test_rpc_node(
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
     for (index, fed_member_config) in test_fed_members.iter() {
-        let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
-        botanix_clients.push(botanix_eth_client);
+        botanix_clients.push(fed_member_config.botanix_eth_client.clone());
         it_info_print!("Botanix client created for poa member {}", index);
     }
 

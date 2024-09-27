@@ -1,9 +1,8 @@
-use bitcoin::{hashes::Hash, Address};
+use bitcoin::Address;
 
 use bytes::Buf;
 use hex::{self, encode as hex_encode};
 use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
-use reth_btc_wallet::address::EthAddress;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::extra_data_header::ExtraDataHeader;
 
@@ -38,8 +37,8 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     // We are just testing the UTXO sync mechanism. All nodes should have the same UTXOs before
     // attempting to build or verify a block
     let mut pegins = Pegins::new();
-    let N = 5;
-    for _ in 0..N {
+    let n = 5;
+    for _ in 0..n {
         // Copied from test_utxo_commitment.rs
         let eth_address = ethers::core::types::Address::random();
         pegins.eth_addresses.push(eth_address);
@@ -62,7 +61,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
             pegins.txids.iter().map(|a| a.to_vec()).collect(),
             pegins.eth_addresses.iter().map(hex::encode).collect(),
             pegins.btc_addresses.clone(),
-            vec![100_000_000; N],
+            vec![100_000_000; n],
         )
         .await?;
     }
@@ -78,7 +77,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
@@ -138,7 +137,7 @@ pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), supe
     target_client.reset_all_utxos(client::ResetAllUtxosRequest { utxos: vec![] }).await.unwrap();
 
     // Create a another eoa which should kick off utxo sync
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
     let last_tx_hash = botanix_eth_client

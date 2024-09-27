@@ -66,7 +66,7 @@ pub async fn block_builder(
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
 
     let botanix_block_reward_address_balance_before = botanix_eth_client
         .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
@@ -125,7 +125,7 @@ pub async fn block_builder(
             // Check that all members accepted the block
             let mut botanix_clients: Vec<BotanixEthClient> = vec![];
             for (index, fed_member_config) in test_fed_members.iter() {
-                let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
+                let botanix_eth_client = fed_member_config.botanix_eth_client.clone();
                 botanix_clients.push(botanix_eth_client);
                 it_info_print!("Botanix client created for poa member {}", index);
             }

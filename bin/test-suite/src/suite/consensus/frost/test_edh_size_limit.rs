@@ -70,7 +70,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 
@@ -228,7 +228,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     // mint all the pegins across multiple blocks
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().create_botanix_eth_client().await;
+    let provider = test_fed_members.get(&0).unwrap().botanix_eth_client.clone();
     let mut nonce = provider.nonce().await;
     for (index, pegin) in pegins.iter().enumerate() {
         it_info_print!("Pegin #", index);
