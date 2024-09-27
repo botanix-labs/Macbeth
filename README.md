@@ -129,15 +129,15 @@ NODE_2_DIR=[your node 2 directory path]
 
 ## Run a local federation (Docker-Compose)
 
-1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose
+1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose.
 
-2. Start the bitcoind server using  `make start-docker-bitcoin` 
+2. Start the bitcoind server using  `make start-docker-bitcoin`.
 
 3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
 
 ```bash
-cp federation.template.toml `docker-local/poa-1/chain.toml`
-cp federation.template.toml `docker-local/poa-2/chain.toml`
+cp federation.template.toml docker-local/poa-1/chain.toml
+cp federation.template.toml docker-local/poa-2/chain.toml
 ```
 
 4. Update the `chain.toml` federation members ip addresses to host machine ip to avoid network connectivity issues.
@@ -157,10 +157,10 @@ docker exec -it consensus-node-1 cometbft show-node-id --home /cometbft
 docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
 ```
 
->***Notes***
-> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+***Notes***
+>> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+>> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
 
-> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
 
 ## Testing
 
