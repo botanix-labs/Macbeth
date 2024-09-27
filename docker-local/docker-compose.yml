@@ -1,31 +1,6 @@
 version: '3.7'
 
 services:
-  bitcoin-core:
-    env_file:
-      - .bitcoin.env
-    container_name: bitcoin-core
-    image: ruimarinho/bitcoin-core:latest
-    command:
-      - -printtoconsole
-      - -regtest=1
-      - -txindex=1
-      - -server=1
-      - -rpcport=38332
-      - -rpcuser=${BITCOIND_USER}
-      - -rpcpassword=${BITCOIND_PASS}
-      - -rpcbind=0.0.0.0
-      - -rpcallowip=0.0.0.0/0
-      - -blockfilterindex=1
-      - -fallbackfee=0.00005
-    ports:
-      - 38332:38332
-      - 38333:38333
-    volumes:
-      - ./bitcoin-core:/home/bitcoin:rw
-    restart: on-failure
-
-
   signing-server-1:
     env_file:
       - .bitcoin.env
@@ -106,7 +81,7 @@ services:
 
   consensus-node-1:
     container_name: consensus-node-1
-    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v6
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v4
     ports:
       - 26656:26656
       - 16657:26657
@@ -114,12 +89,11 @@ services:
     volumes:
       - ./consensus-node-1:/cometbft:rw
     restart: on-failure
-    user: root
     environment:
       - LOG_LEVEL=DEBUG
-      - PROXY_APP=poa-node-1
+      - NODE_NAME=poa-node-1
       - MONIKER=consensus-node-1
-      - PERSISTENT_PEERS=
+      - PERSISTENT_PEERS=0d8b29bb1f2427fab43c65230d28f6bb822ba05e@consensus-node-2:26656
       - P2P_ALLOW_DUPLICATE_IP=true
       - P2P_ADDR_BOOK_STRICT=false
 
@@ -201,7 +175,7 @@ services:
 
   consensus-node-2:
     container_name: consensus-node-2
-    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v6
+    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v4
     ports:
       - 36656:26656
       - 36657:26657
@@ -211,8 +185,8 @@ services:
     restart: on-failure
     environment:
       - LOG_LEVEL=DEBUG
-      - PROXY_APP=poa-node-2
+      - NODE_NAME=poa-node-2
       - MONIKER=consensus-node-2
-      - PERSISTENT_PEERS=
+      - PERSISTENT_PEERS=a30097a408bf0bffe4fbbf5fc46c0252c3d3e5a8@consensus-node-1:26656
       - P2P_ALLOW_DUPLICATE_IP=true
       - P2P_ADDR_BOOK_STRICT=false
