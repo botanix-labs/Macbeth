@@ -28,7 +28,7 @@ pub struct BlockFetcherTask<EF, BF, DB> {
     /// Network Handle
     network_handle: NetworkHandle,
     /// Light client
-    light_client: Option<Instance>,
+    light_client: Instance,
 }
 
 impl<EF, BF, DB> BlockFetcherTask<EF, BF, DB>
@@ -49,7 +49,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         storage: Storage<EF, BF, DB>,
         network_handle: NetworkHandle,
-        light_client: Option<Instance>,
+        light_client: Instance,
     ) -> Self {
         Self { consensus, block_import_rx, to_engine, storage, network_handle, light_client }
     }
@@ -61,130 +61,125 @@ where
     }
 
     pub async fn start_task(&mut self) {
-        // loop {
-        //     // ensure the node is not syncing
-        //     if is_active_sync_in_progress(&self.network_handle) {
-        //         warn!(target: "consensus::authority", "Node is still syncing, block fetcher task
-        //     is awaiting fully synced status ...");
-        //         tokio::time::sleep(Duration::from_millis(250)).await;
-        //         return;
-        //     }
+        loop {
+            // ensure the node is not syncing
+            if is_active_sync_in_progress(&self.network_handle) {
+                warn!(target: "consensus::authority", "Node is still syncing, block fetcher task
+            is awaiting fully synced status ...");
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                return;
+            }
 
-        //     let new_block_with_peer_id = match self.block_import_rx.recv().await {
-        //         Some(b) => b,
-        //         None => {
-        //             info!(target: "consensus::authority",
-        //                 "block fetcher task shutting down (channel closed)",
-        //             );
-        //             return;
-        //         }
-        //     };
+            let new_block_with_peer_id = match self.block_import_rx.recv().await {
+                Some(b) => b,
+                None => {
+                    info!(target: "consensus::authority",
+                        "block fetcher task shutting down (channel closed)",
+                    );
+                    return;
+                }
+            };
 
-        //     let new_block = new_block_with_peer_id.message;
-        //     let peer_id = new_block_with_peer_id.peer_id;
+            let new_block = new_block_with_peer_id.message;
+            let peer_id = new_block_with_peer_id.peer_id;
 
-        //     let block = new_block.block.block.clone();
-        //     let block_hash = block.header.hash_slow();
-        //     info!(target: "consensus::authority", "Recieved new block from peer {:?}", block_hash);
+            let block = new_block.block.block.clone();
+            let block_hash = block.header.hash_slow();
+            info!(target: "consensus::authority", "Recieved new block from peer {:?}", block_hash);
 
-        //     // This shouldn't happen but check that the block we are importing is not already in the
-        //     // chain
-        //     let client = self.storage.client.clone();
-        //     let best_block = client.best_block_number().expect("best block number exists");
-        //     let best_hash = client
-        //         .block_hash(best_block)
-        //         .expect("best block hash exists")
-        //         .unwrap_or_else(|| {
-        //             panic!("best block hash is valid");
-        //         });
-        //     if block_hash == best_hash {
-        //         warn!(target: "consensus::authority", "Recieved block is already in the chain");
-        //         continue;
-        //     }
+            // This shouldn't happen but check that the block we are importing is not already in the
+            // chain
+            let client = self.storage.client.clone();
+            let best_block = client.best_block_number().expect("best block number exists");
+            let best_hash = client
+                .block_hash(best_block)
+                .expect("best block hash exists")
+                .unwrap_or_else(|| {
+                    panic!("best block hash is valid");
+                });
+            if block_hash == best_hash {
+                warn!(target: "consensus::authority", "Recieved block is already in the chain");
+                continue;
+            }
 
-        //     let start_time = Instant::now();
-        //     // skip block adding if this fails
-        //     let block_number = match new_block.number().try_into() {
-        //         Ok(block_number) => block_number,
-        //         Err(_) => {
-        //             warn!(target: "consensus::authority", "Block number does not fit in u64");
-        //             self.ban_peer(peer_id);
-        //             continue;
-        //         }
-        //     };
+            let start_time = Instant::now();
+            // skip block adding if this fails
+            let block_number = match new_block.number().try_into() {
+                Ok(block_number) => block_number,
+                Err(_) => {
+                    warn!(target: "consensus::authority", "Block number does not fit in u64");
+                    self.ban_peer(peer_id);
+                    continue;
+                }
+            };
+            let cbft_block = match self.light_client.get_or_fetch_block(block_number) {
+                Ok(cbft_block) => cbft_block,
+                Err(e) => {
+                    warn!(target: "consensus::authority", "Failed to get or fetch block from light client primary source: {:?}", e);
+                    self.ban_peer(peer_id);
+                    continue;
+                }
+            };
+            self.light_client.trust_block(&cbft_block);
 
-        //     // TODO: remove once non-validator node is setup
-        //     // remove all references to light client (ie mod/builder.rs)
-        //     if self.light_client.is_some() {
-        //         let client = self.light_client.expect("light client to exist");
-        //         let cbft_block = match client.get_or_fetch_block(block_number) {
-        //             Ok(cbft_block) => cbft_block,
-        //             Err(e) => {
-        //                 warn!(target: "consensus::authority", "Failed to get or fetch block from light client primary source: {:?}", e);
-        //                 self.ban_peer(peer_id);
-        //                 continue;
-        //             }
-        //         };
-        //         client.trust_block(&cbft_block);
+            let _latest_trusted =
+                self.light_client.latest_trusted().expect("to get latest trusted");
+            match self.light_client.light_client.verify_to_highest(&mut self.light_client.state) {
+                Ok(_) => (),
+                Err(e) => {
+                    warn!(target: "consensus::authority", "Failed to verify block: {:?}", e);
+                    self.ban_peer(peer_id);
+                    continue;
+                }
+            };
 
-        //         let _latest_trusted = client.latest_trusted().expect("to get latest trusted");
-        //         match client.light_client.verify_to_highest(&mut client.state) {
-        //             Ok(_) => (),
-        //             Err(e) => {
-        //                 warn!(target: "consensus::authority", "Failed to verify block: {:?}", e);
-        //                 self.ban_peer(peer_id);
-        //                 continue;
-        //             }
-        //         };
-        //     }
+            let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
+            if app_hash != &block.parent_hash.0 {
+                warn!(target: "consensus::authority", "App hash mismatch");
+                warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
+                self.ban_peer(peer_id);
+                continue;
+            }
+            let end_time = Instant::now();
+            info!("light_client.get_or_fetch_block took {:?}", end_time.duration_since(start_time));
 
-        //     let app_hash = cbft_block.signed_header.header.app_hash.as_bytes();
-        //     if app_hash != &block.parent_hash.0 {
-        //         warn!(target: "consensus::authority", "App hash mismatch");
-        //         warn!(target: "consensus::authority", "Expecting {:?}, got {:?}", block.hash_slow(), B256::from_slice(app_hash));
-        //         self.ban_peer(peer_id);
-        //         continue;
-        //     }
-        //     let end_time = Instant::now();
-        //     info!("light_client.get_or_fetch_block took {:?}", end_time.duration_since(start_time));
+            // Seal the block
+            let sealed_block = block.clone().seal_slow();
+            let senders = new_block.block.block.senders().unwrap();
+            if senders.len() != new_block.block.block.body.len() {
+                warn!(target: "consensus::authority", "Senders length does not match transactions length");
+                self.ban_peer(peer_id);
+                continue;
+            }
+            let sealed_block_with_senders = SealedBlockWithSenders::new(sealed_block, senders)
+                .expect("senders length to match transactions length");
+            let header = sealed_block_with_senders.header.clone();
+            assert!(header.hash_slow() == block_hash);
 
-        //     // Seal the block
-        //     let sealed_block = block.clone().seal_slow();
-        //     let senders = new_block.block.block.senders().unwrap();
-        //     if senders.len() != new_block.block.block.body.len() {
-        //         warn!(target: "consensus::authority", "Senders length does not match transactions length");
-        //         self.ban_peer(peer_id);
-        //         continue;
-        //     }
-        //     let sealed_block_with_senders = SealedBlockWithSenders::new(sealed_block, senders)
-        //         .expect("senders length to match transactions length");
-        //     let header = sealed_block_with_senders.header.clone();
-        //     assert!(header.hash_slow() == block_hash);
+            // Notify engine api about new FCU
+            let start_time = Instant::now();
 
-        //     // Notify engine api about new FCU
-        //     let start_time = Instant::now();
+            match engine_util::send_fork_choice_update_payload(
+                header.hash(),
+                self.to_engine.clone(),
+            )
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    error!(target: "consensus::authority", ?e, "Failed to notify engine of new
+            FCU");
+                    continue;
+                }
+            };
+            let end_time = Instant::now();
+            info!("send_fork_choice_update_payload took {:?}", end_time.duration_since(start_time));
+            // update canon chain for rpc
+            client.set_canonical_head(header.clone());
+            client.set_safe(header.clone());
+            client.set_finalized(header.clone());
 
-        //     match engine_util::send_fork_choice_update_payload(
-        //         header.hash(),
-        //         self.to_engine.clone(),
-        //     )
-        //     .await
-        //     {
-        //         Ok(_) => (),
-        //         Err(e) => {
-        //             error!(target: "consensus::authority", ?e, "Failed to notify engine of new
-        //     FCU");
-        //             continue;
-        //         }
-        //     };
-        //     let end_time = Instant::now();
-        //     info!("send_fork_choice_update_payload took {:?}", end_time.duration_since(start_time));
-        //     // update canon chain for rpc
-        //     client.set_canonical_head(header.clone());
-        //     client.set_safe(header.clone());
-        //     client.set_finalized(header.clone());
-
-        //     self.network_handle.announce_block(NewBlock { block, td: Uint::ZERO }, block_hash);
-        // }
+            self.network_handle.announce_block(NewBlock { block, td: Uint::ZERO }, block_hash);
+        }
     }
 }

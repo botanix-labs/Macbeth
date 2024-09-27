@@ -841,14 +841,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         };
         if !is_fed_node {
-            // TODO: remove once non-validator node is setup
-            // info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
-            // executor.spawn_critical(
-            //     "PoA Block Fetcher Task",
-            //     Box::pin(async move {
-            //         block_fetcher_task.expect("block fetcher task exists").start_task().await;
-            //     }),
-            // );
             executor.spawn_critical(
                 "PoA Block Sync Controller Task",
                 Box::pin(async move {
