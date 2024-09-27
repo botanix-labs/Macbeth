@@ -43,6 +43,11 @@ reth-tracing.workspace = true
 ## Bitcoin rpc
 bitcoincore-rpc.workspace = true
 
+
+# frost
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
+
 # crates.io dependencies
 askama = "0.12.1"
 port-killer = "0.1.0"

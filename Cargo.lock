@@ -12493,6 +12493,7 @@ dependencies = [
  "dotenv",
  "ethers",
  "eyre",
+ "frost-secp256k1-tr",
  "hex",
  "port-killer",
  "pretty_assertions",
