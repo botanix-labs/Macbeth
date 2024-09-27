@@ -127,6 +127,41 @@ NODE_2_DIR=[your node 2 directory path]
 `cast rpc admin_addPeer "enode://bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826@127.0.0.1:30304"`
 ```
 
+## Run a local federation (Docker-Compose)
+
+1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose
+
+2. Start the bitcoind server using  `make start-docker-bitcoin` 
+
+3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
+
+```bash
+cp federation.template.toml `docker-local/poa-1/chain.toml
+cp federation.template.toml `docker-local/poa-2/chain.toml
+```
+
+4. Update the `chain.toml` federation members ip addresses to host machine ip to avoid network connectivity issues.
+
+5. Start local-federation with 2/2/2 nodes using:
+
+```bash
+make start-docker-local
+```
+
+6. Update the `genesis.json` for cometbft nodes with the appropriate validator keys
+
+7. Update the `PERSISTENT_PEERS` value for cometbft nodes with the appropriate id. To get the peer id run:
+
+```bash
+docker exec -it consensus-node-1 cometbft show-node-id --home /cometbft
+docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
+```
+
+>***Notes***
+> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+
+
+
 > **Note**
 >
 > you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
