@@ -136,8 +136,8 @@ NODE_2_DIR=[your node 2 directory path]
 3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
 
 ```bash
-cp federation.template.toml `docker-local/poa-1/chain.toml
-cp federation.template.toml `docker-local/poa-2/chain.toml
+cp federation.template.toml `docker-local/poa-1/chain.toml`
+cp federation.template.toml `docker-local/poa-2/chain.toml`
 ```
 
 4. Update the `chain.toml` federation members ip addresses to host machine ip to avoid network connectivity issues.
@@ -160,10 +160,6 @@ docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
 >***Notes***
 > To build poa-node locally for feature or refactor testing use `make build-docker-local`
 
-
-
-> **Note**
->
 > you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
 
 ## Testing
