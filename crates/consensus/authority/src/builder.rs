@@ -30,7 +30,6 @@ use reth_provider::{
 
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
-use tendermint_light_client::instance::Instance;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
@@ -55,7 +54,6 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
-    light_client: Option<Instance>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
 }
 
@@ -108,7 +106,6 @@ where
         bitcoind_factory: BF,
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
-        light_client: Option<Instance>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -192,7 +189,6 @@ where
             task_executor,
             frost_config,
             payload_builder,
-            light_client,
             cometbft_rpc_factory,
         })
     }
@@ -225,7 +221,6 @@ where
             task_executor,
             frost_config,
             payload_builder: _,
-            light_client,
             cometbft_rpc_factory,
         } = self;
         let is_fed_node = btc_server_factory.is_some();

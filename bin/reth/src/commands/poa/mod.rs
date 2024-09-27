@@ -12,7 +12,7 @@ use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt, TryFutureExt};
 use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
-    AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
+    AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
@@ -741,18 +741,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
-        let light_client = None;
-        // let light_client = {
-        //     if !is_fed_node {
-        //         let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
-        //             .build_and_verify()
-        //             .await;
-
-        //         Some(light_client)
-        //     } else {
-        //         None
-        //     }
-        // };
         // Build authority Consensus
         let (
             _authority_consensus,
@@ -783,7 +771,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             bitcoind_factory.clone(),
             evm_config.clone(),
             cometbft_rpc_factory,
-            light_client,
         )
         .expect("Failed to create authority consensus builder")
         .build()
