@@ -19,7 +19,7 @@ reth-consensus.workspace = true
 reth-beacon-consensus = { path = "../beacon" }
 reth-blockchain-tree.workspace = true
 reth-ethereum-consensus.workspace = true
-reth-primitives.workspace = true
+reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-execution-errors.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
