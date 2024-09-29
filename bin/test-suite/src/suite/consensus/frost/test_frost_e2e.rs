@@ -30,7 +30,7 @@ use crate::{
 #[allow(clippy::too_many_lines)]
 pub async fn frost_e2e_stable(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
 

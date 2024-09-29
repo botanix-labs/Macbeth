@@ -25,7 +25,9 @@ impl Pegins {
     }
 }
 
-pub async fn test_utxo_commitment(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn test_utxo_commitment(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), Error> {
     // create pegins container
     let mut pegins = Pegins::new();
 

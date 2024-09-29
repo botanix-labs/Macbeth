@@ -138,7 +138,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GrpcClientFactory {
     grpc_url: String,
     jwt_secret: Option<JwtSecret>,

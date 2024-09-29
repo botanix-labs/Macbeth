@@ -23,7 +23,7 @@ use crate::{
 #[allow(clippy::too_many_lines)]
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running block builder test...");
     let leader_selection_window =
         BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");

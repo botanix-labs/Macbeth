@@ -18,7 +18,9 @@ use crate::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub async fn utxo_sync(suite: &ConsensusIntegrationTestSuite) -> Result<(), super::error::Error> {
+pub async fn utxo_sync(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running block builder test...");
     let leader_selection_window =
         BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");

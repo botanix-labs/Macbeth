@@ -7,7 +7,7 @@ use bitcoin::{
     BlockHash,
 };
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{MakeTxRequest, NotifyPeginsRequest, Output, ScriptBuf, SigningPackage, TxOut, Utxo};
+use client::{MakeTxRequest, NotifyPeginsRequest, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{

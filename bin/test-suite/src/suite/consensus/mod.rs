@@ -9,7 +9,9 @@ use crate::{
     context::GlobalContext,
     it_info_print, it_warn_print, run_test,
     suite::consensus::common::{
-        btc_server::{clean_db, spawn_n_btc_servers, SpawnedBtcServer, BTC_SERVER_START_PORT},
+        btc_server::{
+            clean_db, spawn_n_btc_server_processes, SpawnedBtcServerProcess, BTC_SERVER_START_PORT,
+        },
         events::await_dkg,
         poa_node::create_poa_federation_members,
         rpc_node::create_rpc_node,
@@ -18,7 +20,10 @@ use crate::{
 use anyhow::Context;
 use async_trait::async_trait;
 use client::BtcServerClient;
-use common::{kill_process_at_port, BOTANIX_FEE_RECEIPIENT};
+use common::{
+    kill_process_at_port, poa_node::SpawnedPoaServerProcess, rpc_node::SpawnedRpcServerProcess,
+    BOTANIX_FEE_RECEIPIENT,
+};
 use reth_tracing::tracing::error;
 use std::{
     collections::{HashMap, HashSet},
@@ -36,7 +41,6 @@ mod frost;
 mod invalid_transactions;
 mod pbft;
 mod rpc_node;
-
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
     pub global_context: Arc<GlobalContext>,
@@ -44,11 +48,16 @@ pub struct ConsensusIntegrationTestSuite {
     pub local_context: LocalContext,
 }
 pub struct LocalContext {
-    pub btc_servers: Option<Vec<SpawnedBtcServer>>,
+    // btc
+    pub btc_processes: Option<Vec<SpawnedBtcServerProcess>>,
+    pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
+    // poa
+    pub poa_processes: Option<Vec<SpawnedPoaServerProcess>>,
     pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
-    pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
-    pub rpc_node: Option<NonFederationMemberTestConfig>,
+    // rpc
+    pub rpc_processes: Option<Vec<SpawnedRpcServerProcess>>,
+    pub rpc_node: Option<Vec<NonFederationMemberTestConfig>>,
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<Notifications>>,
     pub authorities: Vec<secp256k1::PublicKey>,
     pub botanix_fee_recipient: String,
@@ -156,12 +165,12 @@ impl Suite for ConsensusIntegrationTestSuite {
         // get all child processes which are to be killed
         let child_processes_to_kill = self
             .local_context
-            .btc_servers
+            .btc_processes
             .as_ref()
-            .map(|btc_servers| {
-                btc_servers
+            .map(|btc_processes| {
+                btc_processes
                     .iter()
-                    .map(|server| server.child_process.id())
+                    .map(|process| process.child_process.id())
                     .collect::<Vec<Option<u32>>>()
             })
             .unwrap_or_default()
@@ -171,10 +180,13 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         let dbs_to_delete = self
             .local_context
-            .btc_servers
+            .btc_processes
             .as_ref()
-            .map(|btc_servers| {
-                btc_servers.iter().map(|server| server.db_path.clone()).collect::<Vec<PathBuf>>()
+            .map(|btc_processes| {
+                btc_processes
+                    .iter()
+                    .map(|process| process.db_path.clone())
+                    .collect::<Vec<PathBuf>>()
             })
             .unwrap_or_default();
 
@@ -200,7 +212,8 @@ impl Suite for ConsensusIntegrationTestSuite {
         &mut self,
         create_test_config: CreateTestConfig,
     ) -> anyhow::Result<()> {
-        self.local_context.btc_servers = Some(spawn_n_btc_servers(self.global_context.clone())?);
+        self.local_context.btc_processes =
+            Some(spawn_n_btc_server_processes(self.global_context.clone())?);
         // let btc servers come up
         tokio::time::sleep(Duration::from_secs(5)).await;
         // try to connect to each btc server before moving on
@@ -218,9 +231,11 @@ impl Suite for ConsensusIntegrationTestSuite {
             for instance in 0..self.global_context.instances {
                 let port = self
                     .local_context
-                    .btc_servers
+                    .btc_processes
                     .as_ref()
-                    .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+                    .and_then(|processes| {
+                        processes.iter().nth(instance as usize).map(|val| val.port)
+                    })
                     .context("could not find btc server at instance index")?;
                 match client::BtcServerClient::connect(format!("http://localhost:{}", port)).await {
                     Ok(_) => {
@@ -242,9 +257,9 @@ impl Suite for ConsensusIntegrationTestSuite {
         for instance in 0..self.global_context.instances {
             let port = self
                 .local_context
-                .btc_servers
+                .btc_processes
                 .as_ref()
-                .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+                .and_then(|processes| processes.iter().nth(instance as usize).map(|val| val.port))
                 .context("could not find btc server at instance index")?;
             let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
                 .await
@@ -260,7 +275,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         // generate test fed members poa nodes
         let (mut test_fed_members, tx, edh_authorities_list) = create_poa_federation_members(
             self.global_context.clone(),
-            self.local_context.btc_servers.as_ref(),
+            self.local_context.btc_processes.as_ref(),
             self.local_context.botanix_fee_recipient.clone(),
         )
         .await?;
@@ -333,7 +348,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 federation_members.clone().into_values().collect::<Vec<_>>(),
             )?;
             self.local_context.rpc_notification = Some(tx);
-            self.local_context.rpc_node = Some(rpc_node);
+            self.local_context.rpc_node = Some(vec![rpc_node]);
 
             // wait for rpc node to start on thread
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -344,20 +359,22 @@ impl Suite for ConsensusIntegrationTestSuite {
 
     async fn destroy_context(&mut self) {
         it_info_print!("Destroying test suite context");
-        if let Some(btc_servers) = self.local_context.btc_servers.as_mut() {
-            for (index, btc_server) in btc_servers.iter_mut().enumerate() {
-                let _ = btc_server.child_process.kill().await;
+        if let Some(btc_processes) = self.local_context.btc_processes.as_mut() {
+            for (index, btc_process) in btc_processes.iter_mut().enumerate() {
+                let _ = btc_process.child_process.kill().await;
                 kill_process_at_port(BTC_SERVER_START_PORT + index as u16);
             }
             // Remove db dirs
-            clean_db(btc_servers);
+            clean_db(btc_processes);
         }
-        self.local_context.btc_servers = None;
-        self.local_context.poa_nodes = None;
-        self.local_context.poa_notification = None;
+        self.local_context.btc_processes = None;
         self.local_context.btc_server_clients = None;
+        self.local_context.poa_nodes = None;
+        self.local_context.poa_processes = None;
+        self.local_context.poa_notification = None;
         self.local_context.rpc_node = None;
         self.local_context.rpc_notification = None;
+        self.local_context.rpc_processes = None;
         self.local_context.eth_providers = None;
 
         // allow a few seconds to pass after cleanup
@@ -372,7 +389,7 @@ impl ConsensusIntegrationTestSuite {
             global_context,
             outcomes: Default::default(),
             local_context: LocalContext {
-                btc_servers: None,
+                btc_processes: None,
                 poa_nodes: None,
                 poa_notification: None,
                 btc_server_clients: None,
@@ -381,6 +398,8 @@ impl ConsensusIntegrationTestSuite {
                 authorities: vec![],
                 botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
                 eth_providers: None,
+                poa_processes: None,
+                rpc_processes: None,
             },
         }
     }

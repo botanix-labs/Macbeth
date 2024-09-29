@@ -32,7 +32,9 @@ impl Pegins {
     }
 }
 
-pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn test_many_inputs_signing(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     let bitcoind = suite.global_context.bitcoind_rpc();
     // Load up the bitcoin wallet and generate some blocks

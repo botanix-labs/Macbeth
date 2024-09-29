@@ -42,7 +42,7 @@ const RPC_PORT_BASE: u16 = 8545;
 const DISCOVERY_PORT_BASE: u16 = 30321;
 
 #[derive(Debug)]
-pub struct SpawnedRpcServer {
+pub struct SpawnedRpcServerProcess {
     pub rpc_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
@@ -109,7 +109,7 @@ impl NonFederationMemberTestConfig {
         &mut self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
         fed_member_peers_list: Vec<FederationMemberTestConfig>,
-    ) -> anyhow::Result<SpawnedRpcServer> {
+    ) -> anyhow::Result<SpawnedRpcServerProcess> {
         it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
         self.insert_peers_list(fed_member_peers_list.clone());
 
@@ -229,7 +229,7 @@ impl NonFederationMemberTestConfig {
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
         ];
 
-        Ok(SpawnedRpcServer {
+        Ok(SpawnedRpcServerProcess {
             child_process: spawn_child_process(command, args, working_directory)?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,

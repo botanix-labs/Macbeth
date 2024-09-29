@@ -2,10 +2,10 @@
 
 use std::{fmt, str::FromStr};
 
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use reth_btc_wallet::bitcoind::{BitcoindClient, BitcoindConfig, BitcoindError};
+use bitcoincore_rpc::RpcApi;
+use btcserverlib::extended_client::{GrpcClientError, GrpcClientFactory};
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_primitives::U256;
-use reth_rpc_types::engine::JwtSecret;
 use revm_primitives::alloy_primitives::hex;
 use tracing::error;
 use url::Url;
@@ -16,87 +16,37 @@ pub struct BotanixConfig {
     /// Bitcoin network
     pub bitcoin_network: bitcoin::Network,
 
-    // TODO set up stronger url types
     /// The gRPC url for the bitcoin signer
-    pub btc_server: Option<String>,
+    pub btc_server_factory: Option<GrpcClientFactory>,
 
     /// bitcoind configuration
-    pub bitcoind_config: BitcoindConfig,
-
-    /// Jwt btc-server authentication secret
-    pub btc_server_jwt_secret: Option<JwtSecret>,
+    pub bitcoind_factory: BitcoindClientFactory,
 }
 
 impl Default for BotanixConfig {
+    // Creates a mocked config. Do not use in production
     fn default() -> Self {
         BotanixConfig {
             bitcoin_network: bitcoin::Network::Regtest,
-            btc_server: Some("http://localhost:8080".to_string()),
+            btc_server_factory: None,
             // Use a public signet endpoint by default
-            bitcoind_config: BitcoindConfig::new(
+            bitcoind_factory: BitcoindClientFactory::new(BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
                 "foo".to_string(),
                 "bar".to_string(),
-            ),
-            btc_server_jwt_secret: None,
+            )),
         }
     }
 }
 
 impl BotanixConfig {
-    //  TODO (armins) bitcoin network should be a Arc<dyn BlockSource>
-    #[allow(dead_code)]
-    fn new(
+    /// Creates a new [BotanixConfig]
+    pub fn new(
         bitcoin_network: bitcoin::Network,
-        btc_server: Option<String>,
-        bitcoind_username: String,
-        bitcoind_password: String,
-        btc_server_jwt_secret: Option<JwtSecret>,
+        btc_server_factory: Option<GrpcClientFactory>,
+        bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
-        // TODO(armins) Update these to point to botanix mempool instances
-        let bitcoind_url = match bitcoin_network {
-            bitcoin::Network::Bitcoin => "https://bitcoind.botanixlabs.dev", // TODO: update this
-            bitcoin::Network::Testnet => "https://bitcoind.botanixlabs.dev", // TODO: update this
-            bitcoin::Network::Signet => "https://bitcoind.botanixlabs.dev/", // TODO: update this
-            bitcoin::Network::Regtest => "http://localhost:18443",           /* local regetest */
-            // network
-            _ => panic!("Unsupported network"),
-        };
-
-        BotanixConfig {
-            bitcoin_network,
-            btc_server,
-            bitcoind_config: BitcoindConfig::new(
-                bitcoind_url.parse::<Url>().expect("must be valid ip address"),
-                bitcoind_username,
-                bitcoind_password,
-            ),
-            btc_server_jwt_secret,
-        }
-    }
-
-    /// Set btc server Grpc Url
-    pub fn btc_server(mut self, btc_server: Option<String>) -> Self {
-        self.btc_server = btc_server;
-        self
-    }
-
-    /// Set btc server jwt secret
-    pub fn btc_server_jwt_secret(mut self, btc_server_jwt_secret: Option<JwtSecret>) -> Self {
-        self.btc_server_jwt_secret = btc_server_jwt_secret;
-        self
-    }
-
-    /// Set bitcoin network
-    pub fn bitcoin_network(mut self, bitcoin_network: bitcoin::Network) -> Self {
-        self.bitcoin_network = bitcoin_network;
-        self
-    }
-
-    /// Set mempool space block source url
-    pub fn bitcoind(mut self, url: Url, username: String, password: String) -> Self {
-        self.bitcoind_config = BitcoindConfig::new(url, username, password);
-        self
+        BotanixConfig { bitcoin_network, btc_server_factory, bitcoind_factory }
     }
 }
 
@@ -115,6 +65,8 @@ pub enum GatewayAddressRPCError {
     InvalidNetwork,
     /// Missing btc server connection information
     MissingBtcServerUrl,
+    /// Rpc node does not have access to this resource
+    ResourceAccess,
 }
 
 impl fmt::Display for GatewayAddressRPCError {
@@ -134,6 +86,9 @@ impl fmt::Display for GatewayAddressRPCError {
             }
             GatewayAddressRPCError::InvalidNetwork => write!(f, "Invalid network"),
             GatewayAddressRPCError::Client(e) => write!(f, "Grpc client error: {}", e),
+            GatewayAddressRPCError::ResourceAccess => {
+                write!(f, "Resource access denied for this node")
+            }
         }
     }
 }
@@ -192,7 +147,11 @@ impl From<MerkleProofRPCError> for String {
 #[derive(Debug)]
 pub enum BtcFeeRateRPCError {
     /// Failed to get estimate smart fee rate
-    FailedToGetEstimateSmartFee(BitcoindError),
+    FailedToGetEstimateSmartFee(bitcoincore_rpc::Error),
+    /// Failed to initialize bitcoind client
+    BitcoindClientInitialization,
+    /// Failed to get estimate smart fee rate
+    FailedToEstimateSmartFee(String),
 }
 
 impl fmt::Display for BtcFeeRateRPCError {
@@ -200,6 +159,12 @@ impl fmt::Display for BtcFeeRateRPCError {
         match self {
             BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e) => {
                 write!(f, "Failed to get estimate smart fee rate: {}", e)
+            }
+            BtcFeeRateRPCError::BitcoindClientInitialization => {
+                write!(f, "Failed to initialize bitcoind client")
+            }
+            BtcFeeRateRPCError::FailedToEstimateSmartFee(e) => {
+                write!(f, "Failed to estimate smart fee rate: {}", e)
             }
         }
     }
@@ -236,18 +201,18 @@ impl Botanix {
         eth_address: reth_primitives::Address,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
         // Non-federation nodes will not have btc_server set
-        let btc_server_address = self
-            .botanix_rpc_config
-            .btc_server
-            .clone()
-            .ok_or_else(|| GatewayAddressRPCError::MissingBtcServerUrl)?;
+        if self.botanix_rpc_config.btc_server_factory.is_none() {
+            return Err(GatewayAddressRPCError::ResourceAccess);
+        }
 
-        let mut btc_server_client = BtcServerExtendedClient::new(
-            btc_server_address,
-            self.botanix_rpc_config.btc_server_jwt_secret.clone(),
-        )
-        .await
-        .map_err(GatewayAddressRPCError::Client)?;
+        let mut btc_server_client = self
+            .botanix_rpc_config
+            .btc_server_factory
+            .clone()
+            .expect("checked above")
+            .build_and_connect()
+            .await
+            .map_err(GatewayAddressRPCError::Client)?;
 
         let request = client::GetGatewayAddressRequest { eth_address: eth_address.to_string() };
 
@@ -278,16 +243,20 @@ impl Botanix {
     ) -> std::result::Result<Vec<u8>, MerkleProofRPCError> {
         let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
             .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
-        // TODO replace this with the jsonrpc client for bitcoind
-        let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
+
+        let bitcoind_client = self.botanix_rpc_config.bitcoind_factory.clone();
+        let bitcoind_client = bitcoind_client
+            .build_and_connect()
             .map_err(|_| MerkleProofRPCError::BitcoindClientInitialization)?;
 
+        let block_hash = bitcoin::BlockHash::from_str(&block_hash)
+            .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?;
+
         let txids = bitcoind_client
-            .get_txids(
-                bitcoin::BlockHash::from_str(&block_hash)
-                    .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?,
-            )
-            .map_err(|_e| MerkleProofRPCError::FailedToGetTxIds)?;
+            .get_block_info(&block_hash)
+            .map_err(|_e| MerkleProofRPCError::BitcoindClientInitialization)?
+            .tx;
+
         if !txids.contains(&tx_id) {
             return Err(MerkleProofRPCError::TxIdNotInBlock);
         }
@@ -302,11 +271,13 @@ impl Botanix {
     ///
     /// Converts fee rate to sat/vB and returns it.
     pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
-        let bitcoind_client = BitcoindClient::new(self.config().bitcoind_config.clone())
-            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
+        let bitcoind_client = self.botanix_rpc_config.bitcoind_factory.clone();
+        let bitcoind_client = bitcoind_client
+            .build_and_connect()
+            .map_err(|_| BtcFeeRateRPCError::BitcoindClientInitialization)?;
         let fee_result = bitcoind_client
-            .get_estimate_smart_fee()
-            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
+            .estimate_smart_fee(1, None)
+            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
 
         if let Some(fee) = fee_result.fee_rate {
             let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
@@ -317,17 +288,11 @@ impl Botanix {
             if let Some(errors) = fee_result.errors {
                 let concatenated_errors = errors.join(", ");
                 error!("Failed to get estimate smart fee rate: {}", concatenated_errors);
-                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
-                    BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
-                        concatenated_errors,
-                    )),
-                ))
+                Err(BtcFeeRateRPCError::FailedToEstimateSmartFee(concatenated_errors))
             } else {
                 // else use default generic error
-                Err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee(
-                    BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::ReturnedError(
-                        "Failed to get estimate smart fee rate".to_string(),
-                    )),
+                Err(BtcFeeRateRPCError::FailedToEstimateSmartFee(
+                    "Failed to get estimate smart fee rate".to_string(),
                 ))
             }
         }

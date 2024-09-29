@@ -5,21 +5,15 @@ use crate::{
         utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
         LogArgs,
     },
-    commands::{debug_cmd, poa::PoaNodeCommand},
-    macros::block_executor,
+    commands::poa::PoaNodeCommand,
     version::{LONG_VERSION, SHORT_VERSION},
 };
-use clap::{value_parser, Parser, Subcommand};
+use clap::{value_parser, Args, Parser, Subcommand};
 use reth_chainspec::ChainSpec;
-use reth_cli_commands::{
-    config_cmd, db, dump_genesis, import, init_cmd, init_state,
-    node::{self, NoArgs},
-    p2p, prune, recover, stage,
-};
+
 use reth_cli_runner::CliRunner;
 use reth_db::DatabaseEnv;
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
-use reth_node_ethereum::create_noop_executor_provider;
 use reth_tracing::FileWorkerGuard;
 use std::{ffi::OsString, fmt, future::Future, sync::Arc};
 use tracing::info;
@@ -30,6 +24,11 @@ use tracing::info;
 /// `reth::cli` but were moved to the `reth_node_core` crate. This re-export avoids a breaking
 /// change.
 pub use crate::core::cli::*;
+
+/// No Additional arguments
+#[derive(Debug, Clone, Copy, Default, Args)]
+#[non_exhaustive]
+pub struct NoArgs;
 
 /// Default [Directive] for [EnvFilter] which disables high-frequency debug logs from `hyper` and
 /// `trust-dns`
@@ -98,7 +97,7 @@ impl Cli {
 
 impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
     /// Runs a command using a launcher with context
-    pub fn run<L, Fut>(mut self, launcher: L) -> eyre::Result<()>
+    pub fn run<L, Fut>(mut self, _launcher: L) -> eyre::Result<()>
     where
         L: FnOnce(WithLaunchContext<NodeBuilder<Arc<DatabaseEnv>>>, Ext) -> Fut,
         Fut: Future<Output = eyre::Result<()>>,
@@ -112,33 +111,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
 
         let runner = CliRunner::default();
         match self.command {
-            Commands::Node(command) => {
-                runner.run_command_until_exit(|ctx| command.execute(ctx, launcher))
-            }
             Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
-            Commands::Init(command) => runner.run_blocking_until_ctrl_c(command.execute()),
-            Commands::InitState(command) => runner.run_blocking_until_ctrl_c(command.execute()),
-            Commands::Import(command) => runner.run_blocking_until_ctrl_c(
-                command.execute(|chain_spec| block_executor!(chain_spec)),
-            ),
-            #[cfg(feature = "optimism")]
-            Commands::ImportOp(command) => runner.run_blocking_until_ctrl_c(command.execute()),
-            #[cfg(feature = "optimism")]
-            Commands::ImportReceiptsOp(command) => {
-                runner.run_blocking_until_ctrl_c(command.execute())
-            }
-            Commands::DumpGenesis(command) => runner.run_blocking_until_ctrl_c(command.execute()),
-            Commands::Db(command) => runner.run_blocking_until_ctrl_c(command.execute()),
-            Commands::Stage(command) => runner.run_command_until_exit(|ctx| {
-                command.execute(ctx, |chain_spec| block_executor!(chain_spec))
-            }),
-            Commands::P2P(command) => runner.run_until_ctrl_c(command.execute()),
-            #[cfg(feature = "dev")]
-            Commands::TestVectors(command) => runner.run_until_ctrl_c(command.execute()),
-            Commands::Config(command) => runner.run_until_ctrl_c(command.execute()),
-            Commands::Debug(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
-            Commands::Recover(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
-            Commands::Prune(command) => runner.run_until_ctrl_c(command.execute()),
         }
     }
 
@@ -156,130 +129,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
 #[warn(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum Commands<Ext: clap::Args + fmt::Debug = NoArgs> {
-    /// Start the node
-    #[command(name = "node")]
-    Node(node::NodeCommand<Ext>),
     /// Start the POA node
     #[command(name = "poa")]
     Poa(PoaNodeCommand<Ext>),
-    /// Initialize the database from a genesis file.
-    #[command(name = "init")]
-    Init(init_cmd::InitCommand),
-    /// Initialize the database from a state dump file.
-    #[command(name = "init-state")]
-    InitState(init_state::InitStateCommand),
-    /// This syncs RLP encoded blocks from a file.
-    #[command(name = "import")]
-    Import(import::ImportCommand),
-    /// This syncs RLP encoded OP blocks below Bedrock from a file, without executing.
-    #[cfg(feature = "optimism")]
-    #[command(name = "import-op")]
-    ImportOp(reth_optimism_cli::ImportOpCommand),
-    /// This imports RLP encoded receipts from a file.
-    #[cfg(feature = "optimism")]
-    #[command(name = "import-receipts-op")]
-    ImportReceiptsOp(reth_optimism_cli::ImportReceiptsOpCommand),
-    /// Dumps genesis block JSON configuration to stdout.
-    DumpGenesis(dump_genesis::DumpGenesisCommand),
-    /// Database debugging utilities
-    #[command(name = "db")]
-    Db(db::Command),
-    /// Manipulate individual stages.
-    #[command(name = "stage")]
-    Stage(stage::Command),
-    /// P2P Debugging utilities
-    #[command(name = "p2p")]
-    P2P(p2p::Command),
-    /// Generate Test Vectors
-    #[cfg(feature = "dev")]
-    #[command(name = "test-vectors")]
-    TestVectors(reth_cli_commands::test_vectors::Command),
-    /// Write config to stdout
-    #[command(name = "config")]
-    Config(config_cmd::Command),
-    /// Various debug routines
-    #[command(name = "debug")]
-    Debug(debug_cmd::Command),
-    /// Scripts for node recovery
-    #[command(name = "recover")]
-    Recover(recover::Command),
-    /// Prune according to the configuration without any limits
-    #[command(name = "prune")]
-    Prune(prune::PruneCommand),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::args::ColorMode;
-    use clap::CommandFactory;
-
-    #[test]
-    fn parse_color_mode() {
-        let reth = Cli::try_parse_args_from(["reth", "node", "--color", "always"]).unwrap();
-        assert_eq!(reth.logs.color, ColorMode::Always);
-    }
-
-    /// Tests that the help message is parsed correctly. This ensures that clap args are configured
-    /// correctly and no conflicts are introduced via attributes that would result in a panic at
-    /// runtime
-    #[test]
-    fn test_parse_help_all_subcommands() {
-        let reth = Cli::<NoArgs>::command();
-        for sub_command in reth.get_subcommands() {
-            let err = Cli::try_parse_args_from(["reth", sub_command.get_name(), "--help"])
-                .err()
-                .unwrap_or_else(|| {
-                    panic!("Failed to parse help message {}", sub_command.get_name())
-                });
-
-            // --help is treated as error, but
-            // > Not a true "error" as it means --help or similar was used. The help message will be sent to stdout.
-            assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
-        }
-    }
-
-    /// Tests that the log directory is parsed correctly. It's always tied to the specific chain's
-    /// name
-    #[test]
-    fn parse_logs_path() {
-        let mut reth = Cli::try_parse_args_from(["reth", "node"]).unwrap();
-        reth.logs.log_file_directory =
-            reth.logs.log_file_directory.join(reth.chain.chain.to_string());
-        let log_dir = reth.logs.log_file_directory;
-        let end = format!("reth/logs/{}", SUPPORTED_CHAINS[0]);
-        assert!(log_dir.as_ref().ends_with(end), "{log_dir:?}");
-
-        let mut iter = SUPPORTED_CHAINS.iter();
-        iter.next();
-        for chain in iter {
-            // TODO remove this condition once we add botanix_testnet to the supported chains
-            if chain == &"botanix_testnet" {
-                continue;
-            }
-            let mut reth = Cli::try_parse_args_from(["reth", "node", "--chain", chain]).unwrap();
-            reth.logs.log_file_directory =
-                reth.logs.log_file_directory.join(reth.chain.chain.to_string());
-            let log_dir = reth.logs.log_file_directory;
-            let end = format!("reth/logs/{chain}");
-            assert!(log_dir.as_ref().ends_with(end), "{log_dir:?}");
-        }
-    }
-
-    #[test]
-    fn parse_env_filter_directives() {
-        let temp_dir = tempfile::tempdir().unwrap();
-
-        std::env::set_var("RUST_LOG", "info,evm=debug");
-        let reth = Cli::try_parse_args_from([
-            "reth",
-            "init",
-            "--datadir",
-            temp_dir.path().to_str().unwrap(),
-            "--log.file.filter",
-            "debug,net=trace",
-        ])
-        .unwrap();
-        assert!(reth.run(|_, _| async move { Ok(()) }).is_ok());
-    }
 }

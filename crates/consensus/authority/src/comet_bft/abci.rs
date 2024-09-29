@@ -290,6 +290,7 @@ where
     }
 
     pub(crate) fn aggregate_public_key(&self) -> secp256k1::PublicKey {
+        // TODO should return error if agg pk is not set
         self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk exists")
     }
 

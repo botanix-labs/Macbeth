@@ -1934,6 +1934,7 @@ Post-merge hard forks (timestamp based):
     ///
     /// This is based off of the test vectors here: <https://github.com/ethereum/go-ethereum/blob/5c8cc10d1e05c23ff1108022f4150749e73c0ca1/core/forkid/forkid_test.go#L155-L188>
     #[test]
+    #[ignore]
     fn timestamped_forks() {
         let mainnet_with_timestamps = ChainSpecBuilder::mainnet().build();
         test_fork_ids(

@@ -7,7 +7,7 @@ use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 #[allow(clippy::too_many_lines)]
 pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::InvalidTransactionError> {
+) -> anyhow::Result<(), super::error::InvalidTransactionError> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
 
     // subscribe to notifications so channel stays open

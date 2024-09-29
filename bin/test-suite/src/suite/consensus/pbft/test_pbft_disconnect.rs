@@ -32,7 +32,7 @@ use bitcoincore_rpc::{Auth, RpcApi};
 
 pub async fn pbft_e2e_failed_disconnect(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     // Set up regtest connection
     // config is hardcoded to only work with regtest
     let host = suite.global_context.bitcoind_url.host_str().unwrap_or_default().to_owned();

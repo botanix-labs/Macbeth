@@ -7,15 +7,15 @@ use rand::{rngs::StdRng, RngCore, SeedableRng};
 use std::{str::FromStr, vec};
 use tonic::transport::Channel;
 
-pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<(), Error> {
     // create btc server clients
     let mut clients: Vec<BtcServerClient<Channel>> = vec![];
     for instance in 0..suite.global_context.instances {
         let port = suite
             .local_context
-            .btc_servers
+            .btc_processes
             .as_ref()
-            .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+            .and_then(|process| process.iter().nth(instance as usize).map(|val| val.port))
             .ok_or_else(|| Error::InvalidBtcServerPort)?;
         let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
             .await
